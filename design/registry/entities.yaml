@@ -37,7 +37,7 @@
 #   Each entry: name, status, source, referenced_by[], attributes{}, added, revised
 
 version: 1
-last_updated: ""
+last_updated: "2026-06-14"  # client-side-prediction.md designed: TICK_RATE_HZ referenced_by updated. Prior: npc-shop.md blockers applied.  # npc-shop.md design review blockers applied: CompensatingRefund=8 added to GoldTransactionReason; npc-shop.md added to referenced_by for GOLD_CAP, SESSION_TTL_SECONDS, INVENTORY_SLOT_COUNT, GoldTransactionReason. Prior: networking-wire-protocol.md Zone Instancing amendment: EntityState restructured as tagged union (EntityType, MobTypeID, isInDeadState, respawnTicksRemaining); EntityType + JoinRejectedReason enums added; ZoneFullResponse + ZoneSnapshotRequest messages added. OQ-ZI-1/2/3/7 resolved. Prior: zone-instancing.md design review: ZONE_OPEN_THRESHOLD, ZONE_DRAIN_GRACE_SECONDS, ZONE_LOAD_TIMEOUT_SECONDS, ZONE_ENTRY_STALL_TIMEOUT_SECONDS, ZoneSessionState added; EntityState characterName encoding clarified. Prior: skill-system.md Phase 5: SkillID, SkillEffectType, TargetConstraint, SkillCastRejectionCode, ISkillSystem, MANA_COST_MULTIPLIER, SKILL_READY_AUDIO_COOLDOWN_THRESHOLD_TICKS added.
 
 # ─── ENTITIES ────────────────────────────────────────────────────────────────
 # Named game-world objects: enemies, NPCs, characters, factions, bosses.
@@ -49,6 +49,1628 @@ last_updated: ""
 #   (health, damage, drops, faction, etc.)
 
 entities: []
+
+# ─── CONSTANTS ───────────────────────────────────────────────────────────────
+# Named numerical values and type definitions referenced across multiple systems.
+
+constants:
+  - name: ItemID
+    status: active
+    source: design/gdd/item-database.md
+    referenced_by:
+      - design/gdd/item-database.md
+      - design/gdd/character-stats.md
+    type: "readonly struct wrapping uint"
+    special_value: "ItemID(0) = ItemID.Invalid — reserved, must not be assigned to any item"
+    il2cpp_note: "Requires IEqualityComparer<ItemID> for Dictionary use — nested ItemIDComparer class defined in source GDD"
+    added: "2026-04-23"
+    revised: ""
+
+  - name: ItemRarity
+    status: deprecated
+    source: design/gdd/item-database.md
+    referenced_by:
+      - design/gdd/item-database.md
+    type: "enum : byte"
+    values: "{Common=0, Uncommon=1, Rare=2, Epic=3}"
+    note: "REMOVED in review pass 1 (2026-04-24). Rarity was removed from the MVP design — no ItemRarity field exists on ItemDefinition. All items of the same name have identical stats for all players. May be reintroduced in Vertical Slice."
+    added: "2026-04-23"
+    revised: "2026-04-24"
+
+  - name: GearSlot
+    status: active
+    source: design/gdd/item-database.md
+    referenced_by:
+      - design/gdd/item-database.md
+      - design/gdd/inventory-system.md
+    type: "enum : byte"
+    values: "{Weapon=0, Helmet=1, Chest=2, Legs=3, Boots=4, Ring=5, Necklace=6}"
+    note: "Seven equipment slots per character. Equipment System enforces one item per slot. OQ-3 resolved 2026-05-15: Accessory=5 split into Ring=5 and Necklace=6 — 2×7=14 modifier entries, within the 16-entry Character Stats cap. MVP item count: 28 equipment (was 24)."
+    added: "2026-04-23"
+    revised: "2026-05-15"
+
+  - name: GearTier
+    status: active
+    source: design/gdd/item-database.md
+    referenced_by:
+      - design/gdd/item-database.md
+      - design/gdd/loot-table-system.md
+    type: "enum : byte"
+    values: "{None=0, Bronze=1, Iron=2, Steel=3, DarkSteel=4}"
+    note: "Consumables have GearTier.None. Tier represents categorical power level, not a continuous scale."
+    added: "2026-04-23"
+    revised: ""
+
+  - name: ElementType
+    status: active
+    source: design/gdd/item-database.md
+    referenced_by:
+      - design/gdd/item-database.md
+      - design/gdd/character-stats.md
+      - design/gdd/damage-calculation.md
+    type: "enum : byte"
+    values: "{None=0, Fire=1, Cold=2, Lightning=3, Poison=4}"
+    note: "One element per weapon. Non-weapon gear is always ElementType.None. MagicDefense in Character Stats mitigates all element types with a single shared value."
+    added: "2026-04-23"
+    revised: ""
+
+  - name: ElementalDamage_ceiling
+    status: active
+    source: design/gdd/item-database.md
+    referenced_by:
+      - design/gdd/item-database.md
+      - design/gdd/character-stats.md
+      - design/gdd/damage-calculation.md
+    value: 9999
+    unit: "flat elemental damage (int)"
+    note: "Matches MagicDefense ceiling in Character Stats. Raising this above 9999 requires a coordinated change to Character Stats."
+    added: "2026-04-23"
+    revised: ""
+
+  - name: MIN_DAMAGE_FRACTION
+    status: active
+    source: design/gdd/damage-calculation.md
+    referenced_by:
+      - design/gdd/damage-calculation.md
+    type: "float constant"
+    value: 0.05
+    unit: "fraction of BaseDamage (5% minimum physical damage floor)"
+    note: "Physical damage floor. At Defense ≥ BaseDamage, attacker always deals at least 5% of their BaseDamage. Safe range: [0.01, 0.20]. Below 0.01: F-DC-4 absolute-1 floor carries more weight; above 0.20: high-defense builds lose meaningful protection."
+    added: "2026-04-25"
+    revised: "2026-05-19"
+
+  - name: K_MAGIC
+    status: active
+    source: design/gdd/damage-calculation.md
+    referenced_by:
+      - design/gdd/damage-calculation.md
+    type: "int constant"
+    value: 200
+    unit: "MagicDefense units (half-life constant for elemental mitigation)"
+    note: "Shape constant for F-DC-2 hyperbolic curve. At MagicDefense=K_MAGIC the target absorbs 50% of ElementalBonus. Safe range: [100, 500]. Below 100: even moderate MagicDefense nearly nullifies elemental damage; above 500: high-MagicDefense builds (Healer MD≈196) barely reduce elemental hits."
+    added: "2026-04-25"
+    revised: ""
+
+  - name: MIN_ELEMENTAL_FRACTION
+    status: active
+    source: design/gdd/damage-calculation.md
+    referenced_by:
+      - design/gdd/damage-calculation.md
+    type: "float constant"
+    value: 0.10
+    unit: "fraction of ElementalBonus (10% minimum elemental damage floor)"
+    note: "Elemental damage floor. No matter how high MagicDefense, at least 10% of ElementalBonus always lands. Safe range: [0.05, 0.20]. Below 0.05: high-MagicDefense builds trivially nullify elemental weapons; above 0.20: MagicDefense investment loses meaningful value."
+    added: "2026-04-25"
+    revised: ""
+
+  - name: DamageResult
+    status: active
+    source: design/gdd/damage-calculation.md
+    referenced_by:
+      - design/gdd/damage-calculation.md
+      - design/gdd/auto-attack-combat.md
+      - design/gdd/loot-table-system.md
+      - design/gdd/skill-system.md
+    type: "readonly struct"
+    fields: "{PhysicalDamage: int, ElementalDamage: int, FinalDamage: int, IsCrit: bool, IsKill: bool, DamageContext: DamageContext, HasElementalContribution: bool}"
+    note: "Return type of DamageCalculation(). readonly struct = zero GC allocation per call. PhysicalDamage and ElementalDamage are pre-crit values; FinalDamage is post-crit — PhysicalDamage + ElementalDamage ≠ FinalDamage on crits. HasElementalContribution = ElementalMitigated > 0.0f (use this, not ElementalDamage > 0, for VFX/audio tinting to fix dead zone at ElementalBonus < 10). DamageContext echoes caller's input — used by VFX/audio routing, not formula logic; distinct from wire-format DamageType {Physical=0, Magical=1, True=2}. IsCrit and IsKill used by Auto-Attack Combat state machine and kill feedback systems."
+    added: "2026-04-25"
+    revised: "2026-05-19"
+
+  - name: CharacterID
+    status: active
+    source: design/gdd/currency-system.md
+    referenced_by:
+      - design/gdd/currency-system.md
+      - design/gdd/inventory-system.md
+      - design/gdd/loot-table-system.md
+      - design/gdd/party-system.md
+      - design/gdd/character-persistence.md
+    type: "readonly struct wrapping uint"
+    special_value: "CharacterID(0) = CharacterID.Invalid — reserved, must not be assigned to any character"
+    il2cpp_note: "Requires IEqualityComparer<CharacterID> for Dictionary use — nested CharacterIDComparer class defined in source GDD. Consistent pattern with EntityID (Character Stats) and ItemID (Item Database)."
+    added: "2026-04-26"
+    revised: ""
+
+  - name: GOLD_CAP
+    status: active
+    source: design/gdd/currency-system.md
+    referenced_by:
+      - design/gdd/currency-system.md
+      - design/gdd/npc-shop.md
+      - design/gdd/hud.md
+    type: "uint constant"
+    value: 9999999
+    unit: "gold (g)"
+    note: "Per-character gold ceiling. Balance is clamped to this value by F-CS-1. NPC Shop GDD must not set item prices above this value. Loot Table GDD must not author drop amounts above this value. HUD GDD must size the gold display field for 7-digit max. Safe range: [999999, 99999999]."
+    added: "2026-04-26"
+    revised: ""
+
+  - name: GoldMutationResult
+    status: active
+    source: design/gdd/currency-system.md
+    referenced_by:
+      - design/gdd/currency-system.md
+    type: "readonly struct"
+    fields: "{Success: bool, NewBalance: uint, PreviousBalance: uint, Error: GoldMutationError}"
+    note: "Return type of AddGold() and TrySpendGold(). readonly struct = zero GC allocation. GoldMutationError enum : byte values: None=0, InsufficientFunds=1, CharacterNotFound=2, InvalidAmount=3, ConcurrencyConflict=4, NotImplemented=5. WouldExceedCap was REMOVED (2026-04-26) — cap-clamped AddGold returns Success=true, Error=None, NewBalance=GOLD_CAP. Callers detect cap from result.NewBalance == GOLD_CAP. Callers must handle all remaining error cases — do not assume Success without checking. API signatures: AddGold(CharacterID, uint amount, GoldTransactionReason reason) and TrySpendGold(CharacterID, uint cost, GoldTransactionReason reason)."
+    added: "2026-04-26"
+    revised: "2026-04-26"
+
+  - name: GoldSyncEvent
+    status: active
+    source: design/gdd/currency-system.md
+    referenced_by:
+      - design/gdd/currency-system.md
+      - design/gdd/networking-core.md
+      - design/gdd/character-persistence.md
+      - design/gdd/hud.md
+    type: "struct"
+    fields: "{CharacterID: CharacterID, NewBalance: uint, Version: uint, Reason: GoldTransactionReason}"
+    note: "Emitted by Currency System to the owning client connection after every successful AddGold or TrySpendGold. GoldTransactionReason enum wire format declared in networking-core.md CR-NET-7 (see GoldTransactionReason entry). NewBalance MUST be transmitted as absolute balance (never delta) — EC-CS-7 stale-discard correctness depends on this. Client discards events where Version <= cachedVersion (stale out-of-order delivery). HUD GDD consumes this. Character Persistence GDD emits this to client after load. Transport mechanism resolved by Networking Core GDD (OQ-CS-3 closed)."
+    added: "2026-04-26"
+    revised: "2026-05-06"
+
+  - name: GoldTransactionReason
+    status: active
+    source: design/gdd/networking-core.md
+    referenced_by:
+      - design/gdd/currency-system.md
+      - design/gdd/networking-core.md
+      - design/gdd/networking-wire-protocol.md
+      - design/gdd/inventory-system.md
+      - design/gdd/loot-table-system.md
+      - design/gdd/character-persistence.md
+      - design/gdd/npc-shop.md
+    type: "enum : byte"
+    values: "{MonsterDrop=0, ScrollPurchase=1, RespecStat=2, RespecSkill=3, AdminAdjust=4, Enhancement=5, ItemPurchase=6, ItemSell=7, CompensatingRefund=8, Other=255}"
+    # CompensatingRefund=8 added 2026-06-07 (npc-shop.md review): compensating AddGold on failed PickupRequest after gold debit must be distinguishable from admin adjustments in audit logs. Prior values: Other=255 was used for this case.
+    note: "Wire format for the Reason field in GoldSyncEvent. Enum declared in networking-core.md CR-NET-7 (wire format authority). ItemSell RE-ADDED (2026-05-15) — sell-back is in MVP scope per Inventory System design review; was incorrectly removed (2026-04-26). NPC Shop sells the entire stack at MVP (no partial-stack sell). Enhancement(5), ItemPurchase(6), and ItemSell(7) must be assigned before Enhancement System GDD, NPC Shop GDD, and Inventory System GDD go live respectively. Receivers must treat unknown byte values as Other=255 and still apply the balance update — do not drop the event on unknown reason. Enhancement(5) confirmed in use: Enhancement System F-ENH-5 economy validation cites this reason code."
+    added: "2026-05-06"
+    revised: "2026-05-22"
+
+  - name: LEVEL_CAP
+    status: active
+    source: design/gdd/leveling-system.md
+    referenced_by:
+      - design/gdd/leveling-system.md
+      - design/gdd/party-system.md
+      - design/gdd/character-persistence.md
+    type: "int constant"
+    value: 60
+    unit: "maximum character level (terminal state)"
+    note: "HUD displays 'MAX' instead of level number at L60. XP bar is full and static. Character Persistence must treat Level == 60 as the AtCap terminal state on load — no F-3–F-9 recompute, no spurious level-up events. Party System level gate (CR-PS-3) uses this cap as the upper bound: |memberLevel − leaderLevel| ≤ 5 checked server-side at invite accept. XpThreshold array must have length ≥ 62 (index 61 = int.MaxValue sentinel). LevelTierMultiplier at L60 = ×2.0 (highest tier)."
+    added: "2026-04-27"
+    revised: ""
+
+  - name: PartyBonusIncrement
+    status: active
+    source: design/gdd/leveling-system.md
+    referenced_by:
+      - design/gdd/leveling-system.md
+    type: "float constant"
+    value: 0.10
+    unit: "additive multiplier per additional party member (XP)"
+    note: "Used in F-LS-2 (XP) only. Additive: a 4-person party each earns ×1.30, not ×1.1^3=×1.33. Safe range: [0.05, 0.25]. The Loot Table System GDD evaluated this value for a gold-drop party bonus (2026-05-16) and declined to use it — gold distributes evenly via floor(baseGold/N) with no party multiplier. Do NOT add loot-table-system.md to referenced_by. The Party System GDD (2026-05-16) also declined this value — Party System uses XP_PARTY_DEDUCTION_RATE (a detriment direction, not a bonus) for its own F-PS-1 formula. Do NOT add party-system.md to referenced_by."
+    added: "2026-04-27"
+    revised: "2026-05-16"
+
+  - name: ClassType
+    status: active
+    source: design/gdd/class-system.md
+    referenced_by:
+      - design/gdd/class-system.md
+      - design/gdd/leveling-system.md
+      - design/gdd/character-persistence.md
+      - design/gdd/skill-system.md
+    type: "enum : byte"
+    values: "{Warrior=0, Healer=1}"
+    note: "MVP has 2 classes only. Class selection is permanent — no class change ever. Switch statements on ClassType MUST be exhaustive (compiler-enforced by enum : byte pattern); adding a new class value will produce a compile error at all switch sites, which is intentional. Leveling System GDD must read auto-alloc increments from IClassRegistry.TryGetClass() keyed by ClassType — not hardcode them (OQ-CS-4 BLOCKING). Skill System GDD must reference this enum for per-class skill routing."
+    added: "2026-04-27"
+    revised: ""
+
+  - name: ArchetypeRole
+    status: active
+    source: design/gdd/class-system.md
+    referenced_by:
+      - design/gdd/class-system.md
+      - design/gdd/hud.md
+    type: "enum : byte"
+    values: "{DamageTank=0, Support=1}"
+    note: "Descriptive label carried on ClassDefinition for display and routing purposes (party role icons, HUD role badge, Party System slot composition). Not a mechanical constraint — does not gate any combat formula. Warrior is always DamageTank; Healer is always Support. Party System GDD and HUD GDD should read ArchetypeRole from IClassRegistry.GetClass(ClassType).ArchetypeRole."
+    added: "2026-04-27"
+    revised: ""
+
+  - name: TICK_RATE_HZ
+    status: active
+    source: design/gdd/networking-core.md
+    referenced_by:
+      - design/gdd/networking-core.md
+      - design/gdd/auto-attack-combat.md
+      - design/gdd/leveling-system.md
+      - design/gdd/loot-table-system.md
+      - design/gdd/party-system.md
+      - design/gdd/networking-owl-compensation.md
+      - design/gdd/status-effects.md
+      - design/gdd/enemy-ai.md
+      - design/gdd/movement-system.md
+      - design/gdd/skill-system.md
+      - design/gdd/death-and-respawn.md
+      - design/gdd/client-side-prediction.md
+    type: "int constant"
+    value: 20
+    unit: "server ticks per second (tick interval = 50ms)"
+    note: "The server runs a fixed 20 Hz tick loop. 1.0s auto-attack cadence = 20 ticks per Beat. Respec TTL = 30s = 600 ticks. All systems that count time in ticks must use this constant. Changing TICK_RATE_HZ requires a full cross-system audit: auto-attack cadence, all tick-expressed timeouts, tick budget formula (F-NET-6), and the MAX_WRAP_WINDOW_TICKS bound in networking-owl-compensation.md CR-OWL-3. Safe range: [10, 30]. Do not change without coordinated cross-system review."
+    added: "2026-05-02"
+    revised: ""
+
+  - name: SESSION_TTL_SECONDS
+    status: active
+    source: design/gdd/networking-core.md
+    referenced_by:
+      - design/gdd/networking-core.md
+      - design/gdd/death-and-respawn.md
+      - design/gdd/party-system.md
+      - design/gdd/character-persistence.md
+      - design/gdd/npc-shop.md
+    type: "int constant"
+    value: 300
+    unit: "seconds (5 minutes)"
+    note: "Server-side session TTL for disconnected players (Disconnected_SessionActive state). Server preserves zone membership, HP, stats, gold, inventory, and active respec reservation for this duration after a client disconnect. After expiry: final state written to persistence, all session resources released. Character Persistence GDD must read this constant to understand the save-on-disconnect timing. Party System CR-PS-9 uses this value as the ghost party-slot TTL — ghost slots are released when SESSION_TTL_SECONDS expires. Safe range: [60, 600]. Below 60s: mobile reconnects experience frequent full reload cycles."
+    added: "2026-05-02"
+    revised: ""
+
+  - name: GHOST_COMBAT_TTL_MINUTES
+    status: active
+    source: design/gdd/networking-core.md
+    referenced_by:
+      - design/gdd/networking-core.md
+      - design/gdd/death-and-respawn.md
+    type: "float constant (tuning knob)"
+    value: 1
+    unit: "minutes (ghost entity combat duration after disconnect)"
+    note: "Minutes of auto-attack combat a ghost entity continues after entering Disconnected_SessionActive before disengaging. Default changed from 5 to 1 (2026-05-06) — 5-minute default created intentional-disconnect farming as a dominant strategy (~100 kills). At 1 minute ≈ 20 kills. Safe range: [0.5, 10]. Death & Respawn GDD must reference this constant: ghost-mode deaths (during the TTL window) have no death penalty per EC-NET-1. TTL tracked via tick arithmetic: ghostCombatExpiryTick = disconnectTickNumber + (GHOST_COMBAT_TTL_MINUTES × 60 × TICK_RATE_HZ)."
+    added: "2026-05-06"
+    revised: ""
+
+  - name: GHOST_COMBAT_TTL_MIN_S
+    status: active
+    source: design/gdd/networking-ghost-session.md
+    referenced_by:
+      - design/gdd/networking-ghost-session.md
+    type: "int constant (tuning knob)"
+    value: 30
+    unit: "seconds (baseline ghost party-slot retention TTL)"
+    note: "Baseline TTL for the ghost session cleanup sequence (CR-GH-10). After this many seconds without reconnect, the ghost entity is removed from the zone, the party slot released, and the session transitions to Disconnected_SessionExpired. Separate from GHOST_COMBAT_TTL_MINUTES (combat auto-attack duration) — this governs when the party slot is freed. Safe range: [15, 60]. Below 15s: does not cover mobile TCP reconnect retry overhead. Above 60s: party waits too long for slot release. Tuned from GHOST_COMBAT_TTL_S = GHOST_COMBAT_TTL_MIN_S + k × OWL_P95_S (F-GH-1 in networking-ghost-session.md). Must stay strictly below SESSION_TTL_SECONDS (300s)."
+    added: "2026-05-14"
+    revised: ""
+
+  - name: MessageTypeID
+    status: active
+    source: design/gdd/networking-core.md
+    referenced_by:
+      - design/gdd/networking-core.md
+    type: "ushort (uint16)"
+    special_value: "0xE000–0xEFFF = reserved for priority/control messages (sent outside tick batch); 0xF000–0xFFFF = reserved for bulk transfer messages (connection events only, never at tick rate)"
+    note: "Every game message type is identified by a unique ushort MessageTypeID in its envelope header. All dependent GDDs that define new message types must register their MessageTypeID values in the Networking ADR's message type registry — not in this YAML (there are too many). The reserved ranges must not be used for regular game event messages."
+    added: "2026-05-02"
+    revised: ""
+
+  - name: DamageType
+    status: active
+    source: design/gdd/networking-core.md
+    referenced_by:
+      - design/gdd/networking-core.md
+      - design/gdd/damage-calculation.md
+    type: "enum : byte"
+    values: "{Physical=0, Magical=1, True=2}"
+    note: "Wire type declared in CR-NET-7.9. True(2) ignores defense; reserved for future use. Receivers must range-check before casting — Enum.IsDefined() forbidden on IL2CPP. DamageResult struct references this type for VFX/audio routing."
+    added: "2026-05-06"
+    revised: ""
+
+  - name: DisconnectReason
+    status: active
+    source: design/gdd/networking-core.md
+    referenced_by:
+      - design/gdd/networking-core.md
+      - design/gdd/death-and-respawn.md
+    type: "enum : byte"
+    values: "{ZoneClosed=0, ServerShutdown=1, AdminKick=2, GhostDeath=3, Other=255}"
+    note: "Wire type declared in CR-NET-7.9. Used in ZoneSessionEnded message. GhostDeath=3 added in networking-ghost-character-state.md (2026-05-15). Zone Instancing GDD must reference this for zone teardown messages."
+    added: "2026-05-06"
+    revised: "2026-05-19"
+
+  - name: DisconnectType
+    status: active
+    source: design/gdd/networking-core.md
+    referenced_by:
+      - design/gdd/networking-core.md
+    type: "enum : byte"
+    values: "{Graceful=0, Timeout=1, ZoneTransfer=2}"
+    note: "Wire type declared in CR-NET-7.9. Used in PlayerLeftZone message to distinguish graceful logout from timeout from zone transfer. Zone Instancing GDD and Client-Side Prediction GDD must reference for entity despawn logic."
+    added: "2026-05-06"
+    revised: ""
+
+  - name: ZoneID
+    status: active
+    source: design/gdd/networking-core.md
+    referenced_by:
+      - design/gdd/networking-core.md
+      - design/gdd/character-persistence.md
+      - design/gdd/zone-instancing.md
+    type: "uint (4 bytes)"
+    special_value: "0 = Invalid — must never appear in a valid game message"
+    note: "Wire type declared in CR-NET-7.9. Used in ZoneSessionEnded, ZoneStateSnapshot, ZoneSnapshotRequest, SessionReady. Zone Instancing GDD is the logical owner; Networking Core declares the wire format. Never reused within a server run. Allocated from a server-process-level monotonic counter (CR-ZI-1, zone-instancing.md)."
+    added: "2026-05-06"
+    revised: "2026-05-29"
+
+  - name: GroundItemID
+    status: active
+    source: design/gdd/networking-wire-protocol.md
+    referenced_by:
+      - design/gdd/networking-wire-protocol.md
+      - design/gdd/loot-table-system.md
+    type: "uint (4 bytes)"
+    special_value: "0 = Invalid — must not appear in any loot system message body"
+    note: "Wire type declared in CR-NET-7.9. Identifies a spawned ground item instance within a zone session. Not persisted across sessions — scoped to the zone's lifetime. Used in all 10 loot system messages (GroundItemSpawned, GroundItemAssigned, GroundItemDespawned, LootBidUpdate, AuctionResolved, LootBidRequest, BagFullPickupBlocked, GroundItemExpiryWarning). Serializers must assert GroundItemID != 0 before writing per CR-NET-7.3."
+    added: "2026-05-17"
+    revised: ""
+
+  - name: PartyID
+    status: active
+    source: design/gdd/networking-core.md
+    referenced_by:
+      - design/gdd/networking-core.md
+      - design/gdd/loot-table-system.md
+      - design/gdd/party-system.md
+    type: "uint (4 bytes)"
+    special_value: "0 = uninitialized sentinel — must not appear in stable game state; every player always has a server-assigned PartyID ≥ 1"
+    note: "Wire type declared in CR-NET-7.9. Used in PartyStateUpdate, PartyDisbanded, PartyInviteRequest/Received/Response. Party System GDD is the logical owner; Networking Core declares the wire format. CORRECTED 2026-05-16: Previous special_value '0 = no party' was a design bug — PartyID=0 caused all solo players to share the same damageRecord key (Loot Table System blocker #1). Fix: solo players are allocated a unique PartyID ≥ 1 via sequential server counter; IsSoloParty=true on PartyState distinguishes solo from group parties."
+    added: "2026-05-06"
+    revised: "2026-05-16"
+
+  - name: EntityState
+    status: active
+    source: design/gdd/networking-core.md
+    referenced_by:
+      - design/gdd/networking-core.md
+      - design/gdd/hit-detection.md
+      - design/gdd/movement-system.md
+      - design/gdd/death-and-respawn.md
+    type: "struct (network message — tagged discriminated union)"
+    fields: "{SHARED HEADER (33B): entityType:byte(Player=0,Mob=1), entityId:uint, posX/Y/Z:short(×100), rotX/Y/Z/W:short(×32767), currentHP:int, maxHP:int, isInCombat:bool, isGhost:bool, cycleTimer:ushort(0-10000), facingAngle:short(×10); PLAYER FIELDS (20-44B): characterName:string(2B prefix+UTF-8 max 24B), level:int, currentMP:int, maxMP:int, equipmentAppearanceFlags:byte, isInDeadState:bool, respawnTicksRemaining:uint; MOB FIELDS (2B): mobTypeId:ushort}"
+    wire_size: "Player: 53–77 bytes (33B header + 20–44B player fields; avg ~65B at 11-char name). Mob: 35 bytes (33B header + 2B mobTypeId). AMENDED 2026-05-29 (OQ-ZI-2 resolved): EntityType added as first field; isInDeadState + respawnTicksRemaining added for player entries (+6B vs prior spec); mobTypeId for mob entries. Prior player range was 47–71B."
+    note: "Used in ZoneStateSnapshotFragment on zone join (bulk message). entityType is ALWAYS the first field — deserializer reads it first to determine player vs. mob layout. isGhost always false for mobs. isInDeadState=true when player is in DEAD state countdown (death-and-respawn.md CR-DR-6); respawnTicksRemaining=max(0,RespawnTick-currentTick). facingAngle is NOT replicated in per-tick EntityPositionUpdate — it flows via AutoFaceEvent (R-U batch) only when facing changes (hit-detection.md CR-HD-9). At MVP full zone (P=50, M=150): avg snapshot body ~8,500B → 17 fragments; max ~9,100B → 19 fragments (F-ZI-1, zone-instancing.md)."
+    added: "2026-05-06"
+    revised: "2026-05-29"
+
+  - name: INVENTORY_SLOT_COUNT
+    status: active
+    source: design/gdd/inventory-system.md
+    referenced_by:
+      - design/gdd/inventory-system.md
+      - design/gdd/character-persistence.md
+      - design/gdd/npc-shop.md
+    type: "int constant"
+    value: 20
+    unit: "inventory slots per character (fixed capacity)"
+    note: "Fixed inventory bag size. HUD must size the slot grid display for exactly this count. Character Persistence must serialize/deserialize exactly this many slot indices. NPC Shop must not assume a larger capacity when displaying sell-eligible items. Safe range: [15, 40]. Changing this constant requires coordinated updates to HUD, Character Persistence, and NPC Shop GDDs."
+    added: "2026-05-15"
+    revised: ""
+
+  - name: StatID
+    status: active
+    source: design/gdd/character-stats.md
+    referenced_by:
+      - design/gdd/networking-core.md
+      - design/gdd/networking-wire-protocol.md
+      - design/gdd/leveling-system.md
+    type: "enum : byte"
+    special_value: "MAX_STAT_ID reserved as upper-bound sentinel for range validation"
+    note: "Declared as enum:byte in character-stats.md (B-SD-2 resolved — cross-doc correction from networking-wire-protocol.md CR-NET-7.4; all game-message enums with <256 values must be enum:byte). networking-wire-protocol.md and leveling-system.md must not declare or cast StatID as uint. Used in AllocateFreePointRequest (client→server RPC) to identify the stat being allocated."
+    added: "2026-05-07"
+    revised: "2026-05-17"
+
+  - name: TAG_THRESHOLD_FRACTION
+    status: active
+    source: design/gdd/loot-table-system.md
+    referenced_by:
+      - design/gdd/loot-table-system.md
+    type: "float constant (tuning knob)"
+    value: 0.33
+    unit: "fraction of mob.MaxHP required for party tag lock"
+    note: "First party to deal Mathf.CeilToInt(mob.MaxHP × TAG_THRESHOLD_FRACTION) cumulative damage locks drop ownership (F-LT-3). Safe range: [0.10, 0.50]. Too low → tag-racing meta; too high → burst snipe. Party System GDD and Auto-Attack Combat GDD must not hardcode this value — read from Loot Table System constants."
+    added: "2026-05-16"
+    revised: ""
+
+  - name: GROUND_ITEM_TTL_TICKS
+    status: active
+    source: design/gdd/loot-table-system.md
+    referenced_by:
+      - design/gdd/loot-table-system.md
+      - design/gdd/hud.md
+    type: "int constant (tuning knob)"
+    value: 2400
+    unit: "server ticks (120 seconds at TICK_RATE_HZ=20)"
+    note: "Lifetime of a spawned ground item before permanent despawn. HUD GDD must display a countdown or expiry indicator for items assigned to the local player. Networking Core GDD must reserve a GroundItemDespawned message type. Safe range: [600, 7200]."
+    added: "2026-05-16"
+    revised: ""
+
+  - name: AUCTION_WINDOW_TICKS
+    status: active
+    source: design/gdd/loot-table-system.md
+    referenced_by:
+      - design/gdd/loot-table-system.md
+    type: "int constant (tuning knob)"
+    value: 600
+    unit: "server ticks (30 seconds at TICK_RATE_HZ=20)"
+    note: "Duration of the open gold bid auction window for Steel/DarkSteel drops. UI GDD auction bid window must display a countdown starting at this value. Safe range: [200, 1200]. GROUND_ITEM_TTL_TICKS must always be ≥ AUCTION_WINDOW_TICKS + resolution overhead — a ground item must not expire while an auction is in progress."
+    added: "2026-05-16"
+    revised: ""
+
+  - name: PICKUP_RADIUS_UNITS
+    status: active
+    source: design/gdd/loot-table-system.md
+    referenced_by:
+      - design/gdd/loot-table-system.md
+    type: "float constant (tuning knob)"
+    value: 2.0
+    unit: "Unity world units"
+    note: "Proximity radius from the ground item origin at which auto-pickup triggers for the assigned character. Provisional — set at design without playtesting. Must be re-evaluated during first playtest session. Safe range: [1.0, 5.0]. Too small: fiddly on touch; too large: auto-delivers before player consciously walks to item, undermining 'walk to claim' player fantasy."
+    added: "2026-05-17"
+    revised: ""
+
+  - name: GROUND_ITEM_TTL_PAUSE_CAP_TICKS
+    status: active
+    source: design/gdd/loot-table-system.md
+    referenced_by:
+      - design/gdd/loot-table-system.md
+    type: "int constant (tuning knob)"
+    value: 1200
+    unit: "server ticks (60 seconds at TICK_RATE_HZ=20)"
+    note: "Maximum total pause budget per ground item assignment for CR-LT-13.1 (TTL pause on app background). Each assignment starts with this budget; every backgrounded tick spent pausing decrements it. At 0 the TTL runs normally regardless of background state. Safe range: [0, 3600]. Too low (0): no pause benefit; mobile players lose drops when switching apps. Too high: players exploit backgrounding to hold items indefinitely."
+    added: "2026-05-17"
+    revised: ""
+
+  - name: EXPIRY_WARNING_TICKS
+    status: active
+    source: design/gdd/loot-table-system.md
+    referenced_by:
+      - design/gdd/loot-table-system.md
+      - design/gdd/hud.md
+    type: "int constant (tuning knob)"
+    value: 600
+    unit: "server ticks (30 seconds at TICK_RATE_HZ=20)"
+    note: "How far before expiryTick the server sends GroundItemExpiryWarning to the assigned character (CR-LT-13.3). Fires once per item. Must be < GROUND_ITEM_TTL_TICKS (2400) — a warning cannot precede item spawn. Safe range: [100, 1200]. Too low (5s): insufficient reaction time. Too high (60s): warnings fire so early they lose urgency."
+    added: "2026-05-17"
+    revised: ""
+
+  - name: MAX_EHU_PER_CLIENT
+    status: active
+    source: design/gdd/networking-relevance-filter.md
+    referenced_by:
+      - design/gdd/networking-relevance-filter.md
+      - design/gdd/networking-wire-protocol.md
+    type: "int constant (structural, not tunable)"
+    value: 2
+    unit: "EntityHealthUpdate sub-messages per client per tick (self-slot + target-slot)"
+    note: "Fixed at 2 by design: one self-slot (always present, per RFR-5) + one target-slot (non-party target only, per RFR-1 separation invariant). Not derived from any tuning knob — increasing requires a design change (multi-target slots or expanded self-slot semantics). networking-wire-protocol.md must use this value when recalculating Scenario C R-U batch size (318 bytes, see OQ-RFR-3)."
+    added: "2026-05-19"
+    revised: ""
+
+  - name: MAX_PARTY_SIZE
+    status: active
+    source: design/gdd/party-system.md
+    referenced_by:
+      - design/gdd/party-system.md
+      - design/gdd/networking-relevance-filter.md
+    type: "int constant"
+    value: 4
+    unit: "maximum number of players in one party"
+    note: "Party System CR-PS-2: maximum party size is 4 (MVP). Design review 2026-05-16 set value to 4 (was 6) — 6-frame HUD layout infeasible on iPhone landscape; MVP scope aligned with game-concept.md provisional 2–4. Flat 4-slot CharacterID array in PartyState; join-order stable. F-PS-1 N_eligible range is [1,4]; output range multiplier [×0.70 to ×1.00]. Safe range: [2, 6]. Joint constraint with XP_PARTY_DEDUCTION_RATE: RATE × (MAX_PARTY_SIZE − 1) < 1.0 must hold. Changing this constant requires coordinated updates to: F-PS-1 output table, HUD party panel slot count, loot-table-system.md F-LT-2 N range, and game-concept.md party size statement."
+    added: "2026-05-16"
+    revised: "2026-05-16"
+
+  - name: XP_PARTY_DEDUCTION_RATE
+    status: active
+    source: design/gdd/party-system.md
+    referenced_by:
+      - design/gdd/party-system.md
+    type: "float constant (tuning knob)"
+    value: 0.10
+    unit: "fractional XP deduction per additional eligible party member"
+    note: "Used exclusively in F-PS-1_PartyXpDeduction. Distinct from PartyBonusIncrement (leveling-system.md) which drives an additive bonus — this constant drives a detriment. At N_eligible=4 (MAX_PARTY_SIZE): multiplier = 1.0 − 0.10×3 = 0.70 (70% XP floor). At N_eligible=1: multiplier = 1.00 (no deduction). Joint constraint with MAX_PARTY_SIZE: RATE × (MAX_PARTY_SIZE − 1) < 1.0 must hold to keep the multiplier positive. Do NOT conflate with PartyBonusIncrement. Safe range: [0.00, 0.20]. Above 0.33 at MAX_PARTY_SIZE=4: multiplier reaches 0 or negative — F-PS-1 Mathf.Max(0f,...) floor catches this."
+    added: "2026-05-16"
+    revised: "2026-05-16"
+
+  - name: GOLD_MAX_CONSECUTIVE_DROP
+    status: active
+    source: design/gdd/networking-message-criticality.md
+    referenced_by:
+      - design/gdd/networking-message-criticality.md
+      - design/gdd/networking-wire-protocol.md
+    type: "int constant (tuning knob)"
+    value: 3
+    unit: "consecutive ticks before forced GoldSyncEvent R-OD delivery"
+    note: "Defined in MCR-4 and F-MCR-1. Maximum consecutive ticks GoldSyncEvent may be overflow-dropped before the server forces R-OD delivery. ForcedDeliveryRate = TICK_RATE_HZ / (GOLD_MAX_CONSECUTIVE_DROP + 1). At 3: 5 forced deliveries/s per overflowing client. Safe range: [1, 5]. 0 disables forced delivery entirely; 6+ risks noticeable gold display lag. networking-wire-protocol.md references this in the R-U batch overflow policy (B-SD-3)."
+    added: "2026-05-17"
+    revised: ""
+
+  - name: FORCED_DELIVERY_CONSECUTIVE_TICKS
+    status: active
+    source: design/gdd/networking-message-criticality.md
+    referenced_by:
+      - design/gdd/networking-message-criticality.md
+    type: "int constant (tuning knob)"
+    value: 100
+    unit: "consecutive ticks of forced delivery before logging anomaly"
+    note: "Anomaly threshold for the GoldSyncForcedDelivery critical log. If GoldSyncEvent has been forced via R-OD for more than this many consecutive ticks without a successful normal R-U delivery, the server logs an anomaly. At 100 ticks = 5 seconds at 20Hz — captures sustained degradation while ignoring brief AoE overflow bursts. Safe range: [60, 300]."
+    added: "2026-05-17"
+    revised: ""
+
+  - name: MAX_COMPENSATABLE_OWL_MS
+    status: active
+    source: design/gdd/networking-core.md
+    referenced_by:
+      - design/gdd/networking-core.md
+      - design/gdd/networking-owl-compensation.md
+    type: "int constant (tuning knob)"
+    value: 120
+    unit: "milliseconds (OWL suspension threshold)"
+    note: "Maximum one-way latency at which OWL compensation remains active (CR-NET-8.3). Above this threshold, the server suspends wrap correction entirely — compensation at >120ms OWL produces unreliable results. Together with TICK_RATE_HZ, determines the MAX_WRAP_WINDOW_TICKS hard upper bound: floor(MAX_COMPENSATABLE_OWL_MS / (1000 / TICK_RATE_HZ)) = floor(120 / 50) = 2. Changing this constant requires re-deriving MAX_WRAP_WINDOW_TICKS in networking-owl-compensation.md CR-OWL-3. Safe range: [50, 200]. Below 50ms: suspends compensation for typical mobile connections. Above 200ms: extends wrap window past practical mobile degraded-mode threshold."
+    added: "2026-05-18"
+    revised: ""
+
+  - name: MAX_PLAYERS_PER_ZONE
+    status: active
+    source: design/gdd/networking-core.md
+    referenced_by:
+      - design/gdd/networking-core.md
+      - design/gdd/networking-owl-compensation.md
+      - design/gdd/status-effects.md
+      - design/gdd/zone-instancing.md
+    type: "int constant"
+    value: 50
+    unit: "players per zone instance"
+    note: "Maximum concurrent players in a single zone instance. Used to size the LastBeatServerTick array in networking-owl-compensation.md CR-OWL-4: LastBeatServerTick[MAX_PLAYERS_PER_ZONE + MAX_MOBS_PER_ZONE]. Also governs relevance filter sizing and tick budget calculations. Safe range: [10, 100]. Above 50: tick budget re-verification required (F-NET-6)."
+    added: "2026-05-18"
+    revised: ""
+
+  - name: MAX_WRAP_WINDOW_TICKS
+    status: active
+    source: design/gdd/networking-owl-compensation.md
+    referenced_by:
+      - design/gdd/networking-owl-compensation.md
+    type: "int constant (tuning knob)"
+    value: 2
+    unit: "server ticks after a Beat during which wrap correction is active"
+    note: "Number of ticks after a Beat during which the OWL wrap correction path may activate (CR-OWL-1, CR-OWL-3). Hard upper bound: floor(MAX_COMPENSATABLE_OWL_MS / (1000 / TICK_RATE_HZ)) = floor(120 / 50) = 2. Do not raise above bound — raises the correction window into OWL ranges where compensation is already suspended (CR-NET-8.3 inconsistency). Re-derive bound when MAX_COMPENSATABLE_OWL_MS or TICK_RATE_HZ change. Safe range: [1, floor(MAX_COMPENSATABLE_OWL_MS / (1000 / TICK_RATE_HZ))]. 1 = LAN-only coverage (≤25ms OWL). 2 = design-target mobile coverage (≤75ms OWL guaranteed)."
+    added: "2026-05-18"
+    revised: ""
+
+  - name: MAX_MOBS_PER_ZONE
+    status: active
+    source: design/gdd/zone-instancing.md
+    referenced_by:
+      - design/gdd/networking-owl-compensation.md
+      - design/gdd/status-effects.md
+      - design/gdd/enemy-ai.md
+      - design/gdd/zone-instancing.md
+    type: "int constant (tuning knob)"
+    value: 150
+    unit: "concurrent mob entities per zone instance"
+    note: "Confirmed by zone-instancing.md (2026-05-29) — no longer a placeholder. Hard mob slot ceiling per zone instance. Used to size the LastBeatServerTick array in CR-OWL-4: LastBeatServerTick[MAX_PLAYERS_PER_ZONE + MAX_MOBS_PER_ZONE] = 200 entries × 4 bytes = 800 bytes per zone. Safe range: [50, 500]. Content designers set actual mob density per template; this is the architecture ceiling (CR-ZI-4, zone-instancing.md)."
+    added: "2026-05-18"
+    revised: "2026-05-29"
+
+  - name: ZoneTemplateID
+    status: active
+    source: design/gdd/zone-instancing.md
+    referenced_by:
+      - design/gdd/zone-instancing.md
+    type: "enum ZoneTemplateID : byte"
+    special_value: "StartingZone = 0"
+    note: "Identifies an authored zone definition (terrain, mob spawn tables, respawn point, walkable bounds). Stable across server runs — unlike ZoneID which is per-instance-per-run. MVP defines one value: StartingZone=0. All content systems reference templates; the template ID is never transmitted as a live session wire identifier. See CR-ZI-1, zone-instancing.md."
+    added: "2026-05-29"
+    revised: ""
+
+  - name: MAX_ZONE_WALKABLE_HALF_EXTENT
+    status: active
+    source: design/gdd/zone-instancing.md
+    referenced_by:
+      - design/gdd/zone-instancing.md
+      - design/gdd/movement-system.md
+    type: "float constant"
+    value: 250
+    unit: "meters (half-extent per axis)"
+    note: "Conservative ceiling on the half-extent of any zone template's walkable area per axis. Chosen as a safe margin below the networking-wire-protocol.md CR-NET-7.2 hard cap of ±327.67m (short×100 encoding). Zone Instancing validates this at Loading-phase initialization and aborts zone creation if exceeded (T-3). Level Design must author all zones within ±250m on all axes. See CR-ZI-10, zone-instancing.md."
+    added: "2026-05-29"
+    revised: ""
+
+  - name: ZONE_OPEN_THRESHOLD
+    status: active
+    source: design/gdd/zone-instancing.md
+    referenced_by:
+      - design/gdd/zone-instancing.md
+    type: "int constant (tuning knob)"
+    value: 35
+    unit: "players per zone instance"
+    note: "Fill-first routing threshold (CR-ZI-6): a new zone instance is only created when ALL existing Active same-template instances have >= ZONE_OPEN_THRESHOLD players. Drives Social Gravity pillar delivery by maximising zone population density before sharding. Must be < MAX_PLAYERS_PER_ZONE by at least 2. Safe range: [20, 48]."
+    added: "2026-05-29"
+    revised: ""
+
+  - name: ZONE_DRAIN_GRACE_SECONDS
+    status: active
+    source: design/gdd/zone-instancing.md
+    referenced_by:
+      - design/gdd/zone-instancing.md
+    type: "int constant (tuning knob)"
+    value: 60
+    unit: "seconds"
+    note: "Grace period given to Connected players after T-4 drain signal before zone teardown is forced. Transmitted to clients in ZoneSessionEnded.gracePeriodSeconds. T-5 fires early if all sessions release before this window. Safe range: [30, 300]. See CR-ZI-12, zone-instancing.md."
+    added: "2026-05-29"
+    revised: ""
+
+  - name: ZONE_LOAD_TIMEOUT_SECONDS
+    status: active
+    source: design/gdd/zone-instancing.md
+    referenced_by:
+      - design/gdd/zone-instancing.md
+    type: "int constant (tuning knob)"
+    value: 30
+    unit: "seconds"
+    note: "Maximum time a zone instance may remain in Loading state before T-3 abort is triggered. Prevents the per-template loadingInProgress coalescing flag from deadlocking routing indefinitely on asset load failure (EC-ZI-9, CR-ZI-6). Safe range: [10, 120]."
+    added: "2026-05-29"
+    revised: ""
+
+  - name: ZONE_ENTRY_STALL_TIMEOUT_SECONDS
+    status: active
+    source: design/gdd/zone-instancing.md
+    referenced_by:
+      - design/gdd/zone-instancing.md
+    type: "int constant (tuning knob)"
+    value: 35
+    unit: "seconds"
+    note: "Server-side staleness window for detecting a duplicate CharacterID handshake after a failed zone entry (CR-ZI-17). Must be > MaxZoneEntryStall (30s) so the client's own retry logic fires before server-side stale detection triggers. Safe range: [31, 60]."
+    added: "2026-05-29"
+    revised: ""
+
+  - name: ZoneSessionState
+    status: active
+    source: design/gdd/zone-instancing.md
+    referenced_by:
+      - design/gdd/zone-instancing.md
+    type: "enum : byte"
+    values: "{Connected=0, Disconnected_SessionActive=1, Dead=2, Respawning=3}"
+    note: "Per-slot session state tracking the lifecycle of a player's presence in a zone instance. Written at CR-ZI-8 step 5. All four states count toward MAX_PLAYERS_PER_ZONE capacity (CR-ZI-3). Death & Respawn GDD may reference Dead=2 and Respawning=3 for cross-system state queries."
+    added: "2026-05-29"
+    revised: ""
+
+  - name: BuffID
+    status: active
+    source: design/gdd/status-effects.md
+    referenced_by:
+      - design/gdd/status-effects.md
+      - design/gdd/skill-system.md
+    type: "enum : uint"
+    special_value: "BuffID(0) = BuffID.Invalid — reserved, must not be assigned to any buff definition"
+    note: "Identifies a buff definition. One active BuffID per entity at a time — applying the same BuffID to an entity that already holds it triggers a refresh (CR-SE-4), not a new stack. Skill System assigns BuffIDs to its buff-granting skills; the registry of specific BuffID values belongs in the Skill System GDD. enum:uint (not byte) — allows >256 unique buff types for expansion."
+    added: "2026-05-20"
+    revised: ""
+
+  - name: MAX_STATS_PER_BUFF
+    status: active
+    source: design/gdd/status-effects.md
+    referenced_by:
+      - design/gdd/status-effects.md
+    type: "int constant (tuning knob)"
+    value: 8
+    unit: "StatModifier entries per BuffDefinition (max)"
+    note: "Maximum number of distinct stat modifiers a single BuffDefinition may contain. Hard upper bound: CharacterStats modifier capacity (32 entries). Must satisfy: MAX_ACTIVE_BUFFS_PER_ENTITY ≥ floor(32 / MAX_STATS_PER_BUFF). Reducing this value requires re-deriving the MAX_ACTIVE_BUFFS_PER_ENTITY safe range and the AC-SE-26 CI guard. Safe range: [1, 32]."
+    added: "2026-05-20"
+    revised: ""
+
+  - name: MAX_ACTIVE_BUFFS_PER_ENTITY
+    status: active
+    source: design/gdd/status-effects.md
+    referenced_by:
+      - design/gdd/status-effects.md
+      - design/gdd/hud.md
+    type: "int constant (tuning knob)"
+    value: 8
+    unit: "concurrent active effects per entity"
+    note: "Maximum concurrent active effects (rows in ActiveEffect[][]) per entity. Separate from the CharacterStats 32-modifier-entry limit — this is the per-entity concurrency cap for the Status Effects internal array. Hard lower bound: floor(32 / MAX_STATS_PER_BUFF) = 4 (at default MAX_STATS_PER_BUFF=8). Memory cost per unit: ~128 bytes × MAX_ENTITY_SLOTS (200) = 25.6 KB per increment. At value 8: total array ≈ 205 KB. Safe range: [4, 16]. Joint constraint with MAX_STATS_PER_BUFF: MAX_ACTIVE_BUFFS_PER_ENTITY ≥ floor(32 / MAX_STATS_PER_BUFF) — enforced by AC-SE-26 CI build guard."
+    added: "2026-05-20"
+    revised: ""
+
+  - name: AccountID
+    status: active
+    source: design/gdd/authentication.md
+    referenced_by:
+      - design/gdd/authentication.md
+      - design/gdd/networking-session-token.md
+      - design/gdd/auth-wire-messages.md
+      - design/gdd/auth-sidecar-ipc.md
+      - design/gdd/character-persistence.md
+    type: "readonly struct wrapping uint"
+    special_value: "AccountID(0) = AccountID.Invalid — reserved, must not be assigned to any account"
+    il2cpp_note: "Requires IEqualityComparer<AccountID> for Dictionary use — nested AccountIDComparer class defined in source GDD. Consistent pattern with CharacterID (currency-system.md) and ItemID (item-database.md)."
+    note: "Server-allocated monotonically increasing counter; never visible to the client. Defined by Authentication as the identity key that precedes all session and character records. networking-session-token.md CR-TOK-7 uses AccountID as the dictionary key for ActiveSessionTokens[]. Character Persistence GDD and Zone Instancing GDD must add themselves to referenced_by when authored — both will reference AccountID as the join key between account, character, and zone records. The 1:1 AccountID:CharacterID mapping (MVP) is defined in authentication.md CR-AUTH-12 — CharacterID is the companion struct defined in currency-system.md."
+    added: "2026-05-20"
+    revised: "2026-05-21"
+
+  - name: HitResult
+    status: active
+    source: design/gdd/hit-detection.md
+    referenced_by:
+      - design/gdd/hit-detection.md
+      - design/gdd/auto-attack-combat.md
+    type: "enum"
+    fields: "{Hit = 0, MissOutOfRange = 1, MissFacing = 2}"
+    note: "Return type of CheckHit() in ServerLogic.asmdef. Used in HitCheckResult wire message (R-U batch, byte field). Callers gate DamageCalculation.Compute on HitResult == Hit only. MissFacing is only relevant for monster attacks — player auto-attacks always pass the facing check (CR-HD-5)."
+    added: "2026-05-25"
+    revised: ""
+
+  - name: ATTACK_FACING_TOLERANCE_DEG
+    status: active
+    source: design/gdd/hit-detection.md
+    referenced_by:
+      - design/gdd/hit-detection.md
+    type: "float constant (tuning knob)"
+    value: 60.0
+    unit: "degrees — half-angle of the monster facing arc"
+    note: "Threshold for the facing check in CheckHit() F-HD-2: dot(capturedForward, toTarget) >= cos(ATTACK_FACING_TOLERANCE_DEG × π/180). Applies to monster attacks only — player auto-attacks re-face the target at swing time and always pass. Safe tuning range: [45°, 90°]. Below 45°: too strict for mobile, produces noise misses. Above 90°: facing check becomes a hemisphere (effectively omnidirectional). Do not use raw value for disabled check — use FACING_CHECK_DISABLED_DEG sentinel."
+    added: "2026-05-25"
+    revised: ""
+
+  - name: POINT_BLANK_EPSILON_SQ
+    status: active
+    source: design/gdd/hit-detection.md
+    referenced_by:
+      - design/gdd/hit-detection.md
+    type: "float constant (correctness guard)"
+    value: 0.0005
+    unit: "squared world units"
+    note: "Epsilon guard in CheckHit() CR-HD-3: if d_sq < POINT_BLANK_EPSILON_SQ, bypass facing check and return Hit. Value must exceed worst-case wire encoding noise: 2 axes × (0.01 units)² = 0.0002. Set to 0.0005 (2.5× safety margin). Not a tunable gameplay value — do not modify without recalculating wire rounding floor."
+    added: "2026-05-25"
+    revised: "2026-05-25"
+
+  - name: ATTACK_RANGE_MIN
+    status: active
+    source: design/gdd/hit-detection.md
+    referenced_by:
+      - design/gdd/hit-detection.md
+      - design/gdd/enemy-ai.md
+    type: "float constant"
+    value: 0.5
+    unit: "world units"
+    note: "Practical minimum for any AttackRange value. Below 0.5 units, wire encoding rounding (±0.01 units per axis from short×100 encoding) makes the range check unreliable at near-zero distance. Callers must validate AttackRange >= ATTACK_RANGE_MIN before invoking CheckHit. AttackRange = 0 is reserved and must not be used."
+    added: "2026-05-25"
+    revised: ""
+
+  - name: FACING_CHECK_DISABLED_DEG
+    status: active
+    source: design/gdd/hit-detection.md
+    referenced_by:
+      - design/gdd/hit-detection.md
+    type: "float constant (named sentinel)"
+    value: 180.0
+    unit: "degrees"
+    note: "Named sentinel for omnidirectional attacks: cos(180°) = -1.0, so all facing check comparisons pass (dot product is always >= -1.0). Use this constant by name for AoE or ranged attacks that should not have a facing requirement. Must not be used as a tuning value for normal auto-attacks or treated as adjustable. Changing the value breaks the semantic contract."
+    added: "2026-05-25"
+    revised: ""
+
+  - name: EquipmentSlotEntry
+    status: active
+    source: design/gdd/equipment-system.md
+    referenced_by:
+      - design/gdd/equipment-system.md
+      - design/gdd/enhancement-system.md
+      - design/gdd/character-persistence.md
+    type: "readonly struct"
+    fields: "{ItemId: ItemID, IsTransitioning: bool, EnhancementLevel: byte}"
+    il2cpp_note: "readonly struct satisfies IL2CPP constraint from character-stats.md. Array indexed by (int)GearSlot — no IEqualityComparer needed. Registry length = 7 (GEAR_SLOT_COUNT)."
+    note: "Internal slot registry entry for the Equipment System. ItemId=ItemID.Invalid → slot is Empty. IsTransitioning=true only during the modifier-removal → modifier-addition window of auto-swap or unequip. EnhancementLevel: byte added 2026-05-22 (Enhancement System upstream amendment #2) — Enhancement System must update equipmentAppearanceFlags[2:1] when a successfully enhanced item is equipped. Character Persistence saves the 7 ItemID values + 7 EnhancementLevel values and restores modifiers from Item Database on load."
+    added: "2026-05-21"
+    revised: "2026-05-22"
+
+  - name: EquipResult
+    status: active
+    source: design/gdd/equipment-system.md
+    referenced_by:
+      - design/gdd/equipment-system.md
+    type: "enum (result code)"
+    values: "{NoChange, StatRequirementNotMet, SlotMismatch, InventoryFull, InventoryError, CriticalFailure}"
+    note: "StatRequirementNotMet carries associated data: (StatID required, float actual) for UI display. All failure codes are surfaced to Inventory UI via the EquipResult return from equip/unequip calls. CriticalFailure indicates a data integrity event requiring monitoring alert."
+    added: "2026-05-21"
+    revised: ""
+
+  - name: MoveItemOutResult
+    status: active
+    source: design/gdd/equipment-system.md
+    referenced_by:
+      - design/gdd/equipment-system.md
+      - design/gdd/inventory-system.md
+    type: "readonly struct (cross-document impact)"
+    fields: "{ItemId: ItemID, Code: MoveItemOutCode}"
+    note: "CROSS-DOCUMENT IMPACT: Inventory System GDD currently returns ItemID from MoveItemOut(slotIndex). Must be extended to MoveItemOutResult to distinguish SlotEmpty from SlotLocked (Enhancement lock) — both currently return ItemID.Invalid which is ambiguous. MoveItemOutCode: byte {Success=0, SlotEmpty=1, SlotLocked=2}. Required by Equipment System EC-EQS-4 and CR-EQS-5/CR-EQS-6."
+    added: "2026-05-21"
+    revised: ""
+
+  - name: MAX_ENHANCEMENT_LEVEL
+    status: active
+    source: design/gdd/enhancement-system.md
+    referenced_by:
+      - design/gdd/enhancement-system.md
+      - design/gdd/equipment-system.md
+    type: "int constant (tuning knob)"
+    value: 10
+    unit: "maximum enhancement level per item"
+    note: "Hard cap for all item enhancement. EnhancementLevel: byte field range is [0, MAX_ENHANCEMENT_LEVEL]. Equipment System CR-EQS-11 PrestigeBand encoding and Enhancement System CR-ENH-12 band table are both bounded by this value. AC-ENH-14 verifies server rejection at this level. Safe range: [9, 12]. Values below 9 remove the +9 broadcast milestone; above 12 require probability table extension."
+    added: "2026-05-22"
+    revised: ""
+
+  - name: ENHANCEMENT_GLOW_THRESHOLD
+    status: active
+    source: design/gdd/enhancement-system.md
+    referenced_by:
+      - design/gdd/enhancement-system.md
+    type: "int constant (tuning knob)"
+    value: 7
+    unit: "enhancement level at which PrestigeBand transitions VISIBLE_NO_GLOW → GLOW_LOW (glow becomes visible to other players)"
+    note: "Level at which PrestigeBand transitions VISIBLE_NO_GLOW → GLOW_LOW (bits 01 → 10 in equipmentAppearanceFlags[2:1]). VFX System renders a glow visible to other players when this band or higher is set. Glow activates at level 7 (PRESTIGE_MID_THRESHOLD=5 < 7 ≤ PRESTIGE_HIGH_THRESHOLD=8). Non-weapon items never glow regardless of enhancement level. Safe range: [6, 9] (must be > PRESTIGE_MID_THRESHOLD and < PRESTIGE_HIGH_THRESHOLD)."
+    added: "2026-05-22"
+    revised: ""
+
+  - name: IEnhancementBonusProvider
+    status: active
+    source: design/gdd/enhancement-system.md
+    referenced_by:
+      - design/gdd/enhancement-system.md
+      - design/gdd/equipment-system.md
+      - design/gdd/damage-calculation.md
+      - design/gdd/character-persistence.md
+    type: "interface (cross-system contract)"
+    methods: "GetFlatBonus(level: int, baseFlatBonus: int, gearTier: GearTier): int | GetElementalBonus(level: int, gearTier: GearTier, isWeapon: bool): int"
+    note: "Owned and implemented by Enhancement System; consumed by Equipment System (AddEquipmentModifier stat computation) and Damage Calculation (F-DC-2 elemental bonus path). GearTier parameter required to look up the correct BonusPerLevel/ElementalBonusPerLevel table entry. isWeapon: bool required for GetElementalBonus — returns 0 when false. Equipment System upstream amendment required: AddEquipmentModifier must call GetFlatBonus rather than using raw Item Database FlatBonus. Damage Calculation must obtain weapon enhancement level via Equipment.GetEquippedWeaponEnhancementLevel(): byte before calling GetElementalBonus. Signatures updated 2026-05-23 (lean re-review Pass 2 R-4)."
+    added: "2026-05-22"
+    revised: ""
+
+  - name: PRESTIGE_MID_THRESHOLD
+    status: active
+    source: design/gdd/enhancement-system.md
+    referenced_by:
+      - design/gdd/equipment-system.md
+      - design/gdd/enhancement-system.md
+    type: "int constant"
+    value: 5
+    note: "Enhancement level at which PrestigeBand bits [2:1] in equipmentAppearanceFlags transition NONE → VISIBLE_NO_GLOW (0b01). Aligns with the tier parity crossover (+5 item ≈ +0 next tier). Equipment System CR-EQS-11 and Enhancement System CR-ENH-12 are co-constrained — changing this value requires updating both. RESOLVED 2026-05-22 (was TBD, provisionally ~5). Safe range: [3, 6]; must be < ENHANCEMENT_GLOW_THRESHOLD."
+    added: "2026-05-21"
+    revised: "2026-05-22"
+
+  - name: PRESTIGE_HIGH_THRESHOLD
+    status: active
+    source: design/gdd/enhancement-system.md
+    referenced_by:
+      - design/gdd/equipment-system.md
+      - design/gdd/enhancement-system.md
+    type: "int constant"
+    value: 8
+    note: "Enhancement level at which PrestigeBand bits [2:1] in equipmentAppearanceFlags transition GLOW_LOW → HIGH (0b10 → 0b11). HIGH band items have the highest-intensity glow. Equipment System CR-EQS-11 and Enhancement System CR-ENH-12 are co-constrained. RESOLVED 2026-05-22 (was TBD, provisionally ~8). Safe range: [7, 10]; must be > ENHANCEMENT_GLOW_THRESHOLD."
+    added: "2026-05-21"
+    revised: "2026-05-22"
+
+  - name: equipmentAppearanceFlags_encoding
+    status: active
+    source: design/gdd/equipment-system.md
+    referenced_by:
+      - design/gdd/equipment-system.md
+      - design/gdd/enhancement-system.md
+    type: "byte encoding spec"
+    bit_layout: "[7:6]=WeaponTier(2b: Bronze=0,Iron=1,Steel=2,DarkSteel=3), [5:3]=ElementType(3b: None=0,Fire=1,Cold=2,Lightning=3,Poison=4; 5-7 reserved), [2:1]=PrestigeBand(2b: NONE=0,VISIBLE_NO_GLOW=1,GLOW_LOW=2,HIGH=3), [0]=ArmorTier(1b: 0=Bronze/Iron silhouette, 1=Steel/DarkSteel silhouette)"
+    encode: "flags = (byte)(((int)weaponTier & 0x03) << 6 | ((int)elementType & 0x07) << 3 | (prestigeBand & 0x03) << 1 | (armorBit & 0x01))"
+    note: "Encoding for ZoneStateSnapshotEntityEntry.EquipmentAppearanceFlags (already registered at line ~433). Equipment System owns write for equip/unequip; Enhancement System owns write for PrestigeBand bits [2:1] on successful enhancement. Rendering/Inventory UI owns read. PrestigeBand 4-state encoding: NONE=0 (levels 0–4), VISIBLE_NO_GLOW=1 (levels 5–6, badge color only, no glow), GLOW_LOW=2 (level 7, low glow), HIGH=3 (levels 8–10, high glow). All thresholds: PRESTIGE_MID_THRESHOLD=5, ENHANCEMENT_GLOW_THRESHOLD=7, PRESTIGE_HIGH_THRESHOLD=8. Default unequipped state = 0x00."
+    added: "2026-05-21"
+    revised: ""
+
+  - name: CharacterLoadResult
+    status: active
+    source: design/gdd/character-persistence.md
+    referenced_by:
+      - design/gdd/character-persistence.md
+      - design/gdd/authentication.md
+    type: "readonly struct"
+    fields: "{Code: CharacterLoadCode, LastZoneID: ZoneID}"
+    note: "Return type of ICharacterPersistence.LoadCharacter(). Code=Success is the only path that proceeds to gameplay — all other codes cause the auth layer to reject the session. LastZoneID is only meaningful when Code=Success (or Code=ItemDatabaseMiss, which completes the load). CharacterLoadCode : byte {Success=0, CharacterNotFound=1, AccountMismatch=2, CorruptRecord=3, ItemDatabaseMiss=4, DatabaseError=255}."
+    added: "2026-05-24"
+    revised: ""
+
+  - name: CharacterSaveResult
+    status: active
+    source: design/gdd/character-persistence.md
+    referenced_by:
+      - design/gdd/character-persistence.md
+    type: "enum : byte"
+    values: "{Success=0, CharacterNotFound=1, ConcurrencyConflict=2, DatabaseError=255}"
+    note: "Return type of ICharacterPersistence.SaveIrreversibleOutcome() and SaveSession(). On SaveIrreversibleOutcome: any non-Success code triggers CR-CP-5 (caller rollback + client disconnect + session TTL preserved + critical alert). On SaveSession: ConcurrencyConflict is a WARNING (EC-CP-4 expected double-call race); DatabaseError is a critical alert (CleanLogout: client may retry; TTLExpiry: release resources). ConcurrencyConflict severity is method-dependent per CR-CP-6."
+    added: "2026-05-24"
+    revised: ""
+
+  - name: IrreversibleOutcomeTrigger
+    status: active
+    source: design/gdd/character-persistence.md
+    referenced_by:
+      - design/gdd/character-persistence.md
+      - design/gdd/consumable-use-system.md
+    type: "enum : byte"
+    values: "{LevelUp=0, EnhancementResult=1, RespecCommit=2, ItemConsumption=3}"
+    note: "Identifies which irreversible outcome caused a SaveIrreversibleOutcome call. Used for structured logging and monitoring dashboards — the server logs which trigger fired on every critical alert. Leveling System must pass LevelUp; Enhancement System must pass EnhancementResult; Respec System must pass RespecCommit; Item Consumption System must pass ItemConsumption."
+    added: "2026-05-24"
+    revised: ""
+
+  - name: SessionEndReason
+    status: active
+    source: design/gdd/character-persistence.md
+    referenced_by:
+      - design/gdd/character-persistence.md
+      - design/gdd/zone-instancing.md
+    type: "enum : byte"
+    values: "{CleanLogout=0, SessionTTLExpiry=1, ZoneClosed=2}"
+    note: "Identifies why SaveSession was called. Networking Core passes CleanLogout on player-initiated logout and SessionTTLExpiry on CR-NET-2 TTL expiry. Zone Instancing passes ZoneClosed during zone teardown (CR-ZI-12 step 2). Used for structured logging and for distinguishing expected vs. unexpected session end events in monitoring. AMENDED 2026-05-29 (OQ-ZI-6 resolved): ZoneClosed=2 added."
+    added: "2026-05-24"
+    revised: "2026-05-29"
+
+  - name: CHARACTER_LOAD_TIMEOUT_SECONDS
+    status: active
+    source: design/gdd/character-persistence.md
+    referenced_by:
+      - design/gdd/character-persistence.md
+    type: "int constant (tuning knob)"
+    value: 10
+    unit: "seconds (inner timeout for LoadCharacter DB call)"
+    note: "CancellationToken passed to ICharacterPersistence.LoadCharacter fires after this many seconds. Hard constraint: CHARACTER_LOAD_TIMEOUT_SECONDS < CONNECTING_TIMEOUT_SECONDS (30s) — exceeding CONNECTING_TIMEOUT_SECONDS makes a DB timeout look like a silent connection drop to the client. Safe range: [5, 25]."
+    added: "2026-05-24"
+    revised: ""
+
+  - name: MobTypeID
+    status: active
+    source: design/gdd/enemy-ai.md
+    referenced_by:
+      - design/gdd/enemy-ai.md
+      - design/gdd/mob-spawning.md
+    type: "readonly struct wrapping uint"
+    special_value: "MobTypeID(0) = MobTypeID.Invalid — reserved, must not be assigned to any mob type"
+    il2cpp_note: "Requires IEqualityComparer<MobTypeID> for Dictionary use — consistent pattern with EntityID, ItemID, CharacterID."
+    note: "Identifies a mob type definition (MobDefinition). Distinct from EntityID which identifies a live mob instance. Multiple live mob entities may share the same MobTypeID. Used by Enemy AI to load MobDefinition at spawn time. Zone Instancing GDD and Loot Table GDD must add themselves to referenced_by when authored."
+    added: "2026-05-25"
+    revised: ""
+
+  - name: MIN_WIND_UP_TICKS
+    status: active
+    source: design/gdd/hit-detection.md
+    referenced_by:
+      - design/gdd/hit-detection.md
+      - design/gdd/enemy-ai.md
+    type: "int constant (structural — derived from TICK_RATE_HZ)"
+    value: 12
+    unit: "server ticks (= Mathf.CeilToInt(0.6f × TICK_RATE_HZ) at TICK_RATE_HZ=20)"
+    note: "600ms minimum wind-up duration enforced by Hit Detection — players must have at least one full Beat to sidestep (CR-HD design constraint). Enemy AI asserts this at startup (CR-AI-7): all MobDefinition.AttackWindUpTicks must be ≥ this value. Re-derive when TICK_RATE_HZ changes: MIN_WIND_UP_TICKS = Mathf.CeilToInt(0.6f × TICK_RATE_HZ). Animation team must produce wind-up animations ≥ (MIN_WIND_UP_TICKS × 50ms) = 600ms for every mob type."
+    added: "2026-05-25"
+    revised: ""
+
+  - name: ILootTableSystem
+    status: active
+    source: design/gdd/enemy-ai.md
+    referenced_by:
+      - design/gdd/enemy-ai.md
+      - design/gdd/loot-table-system.md
+    type: "interface (cross-system contract)"
+    methods: "ResolveMobDrop(EntityID mobEntityID, int tierShift): void — tierShift ∈ [0, 2]"
+    note: "Caller-side API contract defined in Enemy AI (OQ-AI-1 partially resolved — 2026-05-25). Enemy AI calls ResolveMobDrop on Dead entry: tierShift=0 for normal mobs, EnragedLootQualityBonusTier (default 1, range [0,2]) for Enraged mobs. Loot Table System must implement CR-LT-N (next available number; CR-LT-5 is taken by Drop Tier Classification) exposing this entry point with tier-shift parameter in its drop resolution path. The Loot Table System uses the mob's damageRecord to resolve tag ownership before running its Bernoulli trial drop roll."
+    added: "2026-05-25"
+    revised: ""
+
+  - name: MovementIntentMessage
+    status: active
+    source: design/gdd/movement-system.md
+    referenced_by:
+      - design/gdd/movement-system.md
+      - design/gdd/networking-wire-protocol.md
+    type: "struct (network message — U-U channel)"
+    fields: "{SenderEntityID: uint, DirX: short(×2, normalized direction X), DirZ: short(×2, normalized direction Z), FacingAngle: short(×10, 0–3599 → 0.0°–359.9°), TickNumber: uint}"
+    note: "Wire message defined in CR-MOV-10 and registered in networking-wire-protocol.md (OQ-MOV-1 CLOSED 2026-05-26). Sent by client at 20 Hz (one per server tick) conveying movement input direction and facing. SenderEntityID must match the authenticated session — server discards and logs security event on mismatch (EC-MOV-16). DirX/DirZ are short×32767 encoded unit direction (×32,767 per CR-NET-7.2). Zero vector (DirX=0, DirZ=0) signals no movement input. FacingAngle: short×10 matches EntityState.facingAngle encoding; sent even during Prohibited state for pre-aiming exit vector. TickNumber enables stale-message discard (F-MOV-7) with STALE_TICK_TOLERANCE=1."
+    added: "2026-05-25"
+    revised: "2026-05-26"
+
+  - name: SelfPositionUpdate
+    status: active
+    source: design/gdd/networking-wire-protocol.md
+    referenced_by:
+      - design/gdd/networking-wire-protocol.md
+      - design/gdd/client-side-prediction.md
+    type: "struct (network message — R-U batch, S→C)"
+    fields: "{EntityID: entityId (4B), posX: short(×100 cm), posY: short(×100 cm), posZ: short(×100 cm)}"
+    note: "Per-tick authoritative self-position delivery. Added 2026-06-14 (CSP amendment) to supply the data source for CR-CSP-7 reconciliation. Sent every tick to the owning client only via R-U batch (not U-U — reconciliation data most critical under packet loss). ServerTickNumber from batch envelope identifies the prediction snapshot. Body: 10B; batch: 14B. Suppressed when ZoneSessionState is Dead or Respawning. entityId field allows client-side SelfPositionDirectionViolation assertion. Defined in networking-wire-protocol.md Movement System Messages section."
+    added: "2026-06-14"
+    revised: ""
+
+  - name: STALE_TICK_TOLERANCE
+    status: active
+    source: design/gdd/movement-system.md
+    referenced_by:
+      - design/gdd/movement-system.md
+    type: "int constant (tuning knob — TK-MOV-4)"
+    value: 3
+    unit: "server ticks (stale message discard window)"
+    note: "Maximum age a MovementIntentMessage may have (relative to serverCurrentTick) before the server discards it without applying a position update (F-MOV-7). Default 3 covers 150ms OWL tolerance (3 × 50ms), matching the 150ms RTT / 75ms OWL target — resolved OQ-CSP-1 (2026-06-15). Startup guard: when serverCurrentTick ≤ STALE_TICK_TOLERANCE, all messages are accepted unconditionally to avoid uint underflow (EC-MOV-22). Safe range: [2, 5]. Coordinate with Networking Core before changing."
+    added: "2026-05-25"
+    revised: ""
+
+  - name: NAVMESH_STALL_RECOVERY_TICKS
+    status: active
+    source: design/gdd/movement-system.md
+    referenced_by:
+      - design/gdd/movement-system.md
+    type: "int constant (tuning knob — TK-MOV-6)"
+    value: 10
+    unit: "server ticks (500ms at TICK_RATE_HZ=20)"
+    note: "Consecutive ticks without a valid NavMesh.SamplePosition hit before the server escalates from holding position to a 5.0f-radius recovery teleport (EC-MOV-11). Distinct from TK-MOV-3 (BASE_MOVE_SPEED) — previously incorrectly referenced as TK-MOV-3 in EC-MOV-11, corrected 2026-05-26. Safe range: [5, 30]. Zone Instancing GDD must reference this constant to document expected geometry edge-case duration budgets."
+    added: "2026-05-26"
+    revised: ""
+
+  - name: BASE_MOVE_SPEED
+    status: active
+    source: design/gdd/movement-system.md
+    referenced_by:
+      - design/gdd/movement-system.md
+    type: "float constant (tuning knob — TK-MOV-3)"
+    value: 6.0
+    unit: "Unity world units per second (v_base in F-MOV-2)"
+    note: "Default movement speed before equipment and buff modifiers. Fed into F-MOV-2 as v_base: v_eff = clamp((v_base + ΣFlatEquip + ΣFlatBuff) × (1 + ΣPctEquip) × (1 + ΣPctBuff), 0.5, 20.0). v_eff floor (0.5) and ceiling (20.0) are enforced by F-MOV-2 and originate from Character Stats (MovementSpeed stat range). Safe range: [4.0, 10.0]. Below 4.0: world feels sluggish; above 10.0: players outrun mob aggro ranges in tested zones. Coordinate with level design before changing — zone geometry pacing is tuned to this baseline."
+    added: "2026-05-25"
+    revised: ""
+
+  - name: SkillID
+    status: active
+    source: design/gdd/skill-system.md
+    referenced_by:
+      - design/gdd/skill-system.md
+      - design/gdd/class-system.md
+      - design/gdd/combat-ui.md
+    type: "readonly struct wrapping uint"
+    special_value: "SkillID(0) = SkillID.Invalid — reserved, must not be assigned to any skill"
+    il2cpp_note: "No boxing in hot path. Requires IEqualityComparer<SkillID> for Dictionary use if needed. Consistent pattern with ItemID, EntityID, CharacterID."
+    note: "ClassDefinition.SkillList stores SkillID[]. IClassRegistry.GetClassSkills(ClassType) returns IReadOnlyList<SkillID>. Class System provisional uint[] SkillList must be updated to SkillID[] once Skill System GDD is approved. This type closes OQ-CS-1(a) from the Class System GDD."
+    added: "2026-05-27"
+    revised: ""
+
+  - name: SkillEffectType
+    status: active
+    source: design/gdd/skill-system.md
+    referenced_by:
+      - design/gdd/skill-system.md
+    type: "enum : byte, flags"
+    values: "{PhysicalDamage=1, MagicalDamage=2, InstantHeal=4, ApplyBuff=8, ApplyDebuff=16}"
+    note: "Bitflag enum — a skill may combine flags (e.g., PhysicalDamage|ApplyDebuff for a hit that also debuffs). Stored on SkillDefinition. Routes execution to: DamageCalculation() for damage flags, StatusEffects.ApplyInstantHeal() for InstantHeal, StatusEffects.ApplyEffect() for buff/debuff flags. DamageContext is a separate field — SkillEffectType does not encode which context to use."
+    added: "2026-05-27"
+    revised: ""
+
+  - name: TargetConstraint
+    status: active
+    source: design/gdd/skill-system.md
+    referenced_by:
+      - design/gdd/skill-system.md
+    type: "enum : byte"
+    values: "{SingleHostile=0, SingleFriendly=1, Self=2}"
+    note: "Per-skill targeting rule. Server validates target type against this constraint at V-7. Self skills: server replaces client-submitted targetID with casterID unconditionally (CR-SK-19). AoE values deferred to post-MVP. UI system reads TargetConstraint to determine target reticle behavior per skill."
+    added: "2026-05-27"
+    revised: ""
+
+  - name: SkillCastRejectionCode
+    status: active
+    source: design/gdd/skill-system.md
+    referenced_by:
+      - design/gdd/skill-system.md
+      - design/gdd/combat-ui.md
+    type: "enum : byte"
+    values: "{InvalidSkill=1, SkillLocked=2, OnCooldown=3, InvalidTarget=4, OutOfRange=5, InsufficientMana=6, ServerError=7, Silenced=8, CasterNotAlive=9}"
+    note: "Wire type — carried in SkillCastResult.rejectionCode when castAccepted==false. Value 0 is not assigned (0 indicates no rejection, i.e., accepted). V-1 and V-2 failures produce no SkillCastResult at all (silently dropped). Silenced=8 added 2026-06-20 (V-5b gate); CasterNotAlive=9 added 2026-06-20 (V-0 liveness gate). Networking Wire Protocol GDD must register the SkillCastResult message schema."
+    added: "2026-05-27"
+    revised: "2026-06-20"
+
+  - name: ISkillSystem
+    status: active
+    source: design/gdd/skill-system.md
+    referenced_by:
+      - design/gdd/skill-system.md
+      - design/gdd/class-system.md
+    type: "interface"
+    note: "Declared by Skill System, consumed by Class System. Methods: void OnEntitySpawned(EntityID, ClassType), void OnEntityDespawned(EntityID), void OnLevelUp(EntityID, int). Class System's provisional null-conditional _skillSystem?.OnEntitySpawned() must be replaced with a hard ISkillSystem dependency once Skill System GDD is approved. Closes OQ-CS-1(b)."
+    added: "2026-05-27"
+    revised: ""
+
+  - name: MANA_COST_MULTIPLIER
+    status: active
+    source: design/gdd/skill-system.md
+    referenced_by:
+      - design/gdd/skill-system.md
+    type: "float constant (tuning knob)"
+    value: 1.0
+    unit: "multiplier applied to all SkillDefinition.ManaCost values at cast time"
+    note: "Global mana cost scaler. Effective cost = Ceil(ManaCost × MANA_COST_MULTIPLIER). Stored in assets/data/SkillSystemConfig.asset. Not hardcoded. Safe range: [0.5, 2.0]. Below 0.5: Warrior mana economy collapses (effectively unlimited casts); above 2.0: Warrior skills become uncastable at low levels."
+    added: "2026-05-27"
+    revised: ""
+
+  - name: RESPAWN_DELAY_SECONDS
+    status: active
+    source: design/gdd/death-and-respawn.md
+    referenced_by:
+      - design/gdd/death-and-respawn.md
+    type: "float constant (tuning knob)"
+    value: 7.0
+    unit: "seconds (death-to-respawn countdown duration)"
+    note: "How long a player waits in DEAD state before the respawn sequence executes. Server startup must reject values < 5.0 with a hard error (EC-DR-5) — do not silently clamp. Safe range: [5.0, 10.0]. Below 5.0: death loses its pacing cost. Above 10.0: mobile players will close the app. Converted to ticks via F-DR-1: RESPAWN_DELAY_TICKS = (int)Mathf.RoundToInt(RESPAWN_DELAY_SECONDS * TICK_RATE_HZ) — use RoundToInt, not truncation. Result stored as long in DeathState."
+    added: "2026-05-28"
+    revised: "2026-05-29"
+
+  - name: RESPAWN_ANCHOR_RETRY_TICKS
+    status: active
+    source: design/gdd/death-and-respawn.md
+    referenced_by:
+      - design/gdd/death-and-respawn.md
+    type: "int constant (tuning knob)"
+    value: 40
+    unit: "server ticks (2.0 seconds at TICK_RATE_HZ=20)"
+    note: "Maximum ticks the Death & Respawn system retries GetTownRespawnPoint() before applying the hardcoded zone fallback Vector3 and logging a critical server alert (EC-DR-9). Only relevant when a zone has no town respawn point defined — a content authoring error. Since GetTownRespawnPoint is a static lookup (not a spatial query), this retry is a safeguard only. Not a gameplay-visible value under normal operation. Safe range: [20, 200]."
+    added: "2026-05-28"
+    revised: "2026-05-29"
+
+  - name: SKILL_READY_AUDIO_COOLDOWN_THRESHOLD_TICKS
+    status: active
+    source: design/gdd/skill-system.md
+    referenced_by:
+      - design/gdd/skill-system.md
+    type: "int constant (tuning knob)"
+    value: 300
+    unit: "server ticks (15 seconds at TICK_RATE_HZ=20)"
+    note: "Minimum cooldown duration (in ticks) for a skill to play the sfx_skill_ready_01 audio cue on cooldown expiry. Skills with shorter cooldowns expire silently (the UI visual change suffices). Setting to 6000 globally silences all cooldown-ready audio. Stored in assets/data/SkillSystemConfig.asset. Safe range: [0, 6000]."
+    added: "2026-05-27"
+    revised: ""
+
+  - name: DamageStat
+    status: active
+    source: design/gdd/skill-system.md
+    referenced_by:
+      - design/gdd/skill-system.md
+    type: "enum (byte)"
+    values:
+      AttackPower: 0
+      Intelligence: 1
+      Strength: 2
+    note: "Controls which character stat is used as the base for skill BaseDamage computation (CR-SK-4). Default: PhysicalDamage skills use AttackPower; MagicalDamage skills use Intelligence. Override to Strength for STR-scaling Healer skills (Divine Strike, Smite Armor, Judgment). Stored as DamageStat field on SkillDefinition struct."
+    added: "2026-05-27"
+    revised: ""
+
+  - name: EntityType
+    status: active
+    source: design/gdd/networking-wire-protocol.md
+    referenced_by:
+      - design/gdd/networking-wire-protocol.md
+      - design/gdd/zone-instancing.md
+    type: "enum (byte)"
+    values: "{Player=0, Mob=1}"
+    note: "First field in EntityState tagged discriminated union. Deserializer reads this before parsing any other EntityState field. Unknown bytes: log anomaly, discard the entire EntityState entry. Added 2026-05-29 (Zone Instancing amendment, OQ-ZI-2 resolved)."
+    added: "2026-05-29"
+    revised: ""
+
+  - name: JoinRejectedReason
+    status: active
+    source: design/gdd/networking-wire-protocol.md
+    referenced_by:
+      - design/gdd/networking-wire-protocol.md
+      - design/gdd/zone-instancing.md
+    type: "enum (byte)"
+    values: "{ZoneFull=0, ZoneDoesNotExist=1, LoadCharacterFailed=2, Other=255}"
+    note: "Carried in ZoneFullResponse. ZoneFull=0: zone at MAX_PLAYERS_PER_ZONE capacity; retryAfterSeconds advisory applies. ZoneDoesNotExist=1: zone is no longer Active (EC-ZI-1, EC-ZI-6, EC-ZI-8); retryAfterSeconds=0. LoadCharacterFailed=2: Character Persistence error during CR-ZI-8 step 3; retryAfterSeconds=0. Added 2026-05-29 (Zone Instancing amendment, OQ-ZI-1 resolved)."
+    added: "2026-05-29"
+    revised: ""
+
+  - name: ZoneFullResponse
+    status: active
+    source: design/gdd/networking-wire-protocol.md
+    referenced_by:
+      - design/gdd/networking-wire-protocol.md
+      - design/gdd/zone-instancing.md
+    type: "struct (network message)"
+    fields: "{zoneId: ZoneID(uint), reason: JoinRejectedReason(byte), retryAfterSeconds: byte}"
+    wire_size: "6-byte body; 16 bytes standalone (R-OD, S→C)"
+    note: "Sent when zone entry is rejected. Three causes: ZoneFull (capacity), ZoneDoesNotExist (zone closed/failed), LoadCharacterFailed (persistence error). retryAfterSeconds is advisory (proposed default 30s for ZoneFull; 0 for other reasons). Client displays retry prompt — server does not queue the player. Added 2026-05-29 (Zone Instancing amendment, OQ-ZI-1 resolved)."
+    added: "2026-05-29"
+    revised: ""
+
+  - name: ZoneSnapshotRequest
+    status: active
+    source: design/gdd/networking-wire-protocol.md
+    referenced_by:
+      - design/gdd/networking-wire-protocol.md
+      - design/gdd/zone-instancing.md
+    type: "struct (network message)"
+    fields: "{zoneId: ZoneID(uint), snapshotVersion: uint}"
+    wire_size: "8-byte body; 22 bytes standalone (R-OD, C→S)"
+    note: "Sent by client when FRAGMENT_REASSEMBLY_TIMEOUT_SECONDS expires before all ZoneStateSnapshot fragments arrive. Server responds with fresh snapshot of current state (not the requested version). Rate-limited: 1 per FRAGMENT_REASSEMBLY_TIMEOUT_SECONDS per connection. If zone has closed: server responds with ZoneFullResponse(ZoneDoesNotExist=1). Added 2026-05-29 (Zone Instancing amendment, OQ-ZI-3 resolved)."
+    added: "2026-05-29"
+    revised: ""
+
+  - name: LoginResult
+    status: active
+    source: design/gdd/auth-wire-messages.md
+    referenced_by:
+      - design/gdd/auth-wire-messages.md
+      - design/gdd/authentication.md
+      - design/gdd/zone-instancing.md
+    type: "struct (network message)"
+    fields: "{success: bool, errorCode: AuthFailureReason(byte), zoneId: ZoneID(uint)}"
+    wire_size: "6-byte body (1B success + 1B errorCode + 4B zoneId)"
+    note: "Unified auth+zone-routing result. On success (success=true): errorCode=None(0), zoneId=server-assigned zone per CR-ZI-6. On failure (success=false): errorCode carries reason, zoneId=0 (not used). Server sends ConnectionAccepted (token+charId) alongside this on success path. Client MUST wait for this message before sending SessionHandshake — zoneId is the zone target. AMENDED 2026-05-29 (OQ-ZI-4): previously documented as failure-only; now unified success+failure result carrying zoneId."
+    added: "2026-05-29"
+    revised: ""
+
+  - name: RoutingRedirectMessage
+    status: active
+    source: design/gdd/auth-wire-messages.md
+    referenced_by:
+      - design/gdd/auth-wire-messages.md
+      - design/gdd/zone-instancing.md
+    type: "struct (network message)"
+    fields: "{newZoneId: ZoneID(uint)}"
+    wire_size: "4-byte body; 18 bytes standalone (R-OD, S→C)"
+    note: "Sent when the zone from LoginResult becomes unavailable (Draining/Closed/T-3 failed) before the client's SessionHandshake is processed. Server re-runs CR-ZI-6 routing and sends new zone assignment. Client replaces stored zoneId and resubmits SessionHandshake(newZoneId). If re-routing also fails (all instances at hard cap): server sends ZoneFullResponse(ZoneFull=0) instead. Added 2026-05-29 (OQ-ZI-4 resolved)."
+    added: "2026-05-29"
+    revised: ""
+
+  # ── Consumable Use System (design/gdd/consumable-use-system.md) ──────────
+
+  - name: UseItemRejectedReason
+    status: active
+    source: design/gdd/consumable-use-system.md
+    referenced_by:
+      - design/gdd/consumable-use-system.md
+      - design/gdd/networking-wire-protocol.md
+      - design/gdd/networking-channel-contract.md
+      - design/gdd/networking-message-criticality.md
+    type: "enum : byte"
+    values: "{CharacterDead=0, RejectedOnCooldown=1, RejectedNoItem=2, RejectedInvalidTarget=3, ServerError=255}"
+    note: "Carried in UseItemRejected.reason. CharacterDead=0: server received UseItemRequest while ZoneSessionState is Dead or Respawning (EC-8). RejectedOnCooldown=1: server-side EffectType cooldown active. RejectedNoItem=2: HasItem check failed (quantity = 0). RejectedInvalidTarget=3: Step 4(e) guard — GetEffectiveStat(MaxMP) = 0 for a RestoreMP request (character class has no MP pool) or analogous MaxHP = 0 guard. ServerError=255: unexpected server-side fault. Client resets EffectTypeCooldownRemaining to 0 and un-greys the hotbar slot for any rejection reason. RejectedInvalidTarget added 2026-06-09 (review pass). Added 2026-06-07."
+    added: "2026-06-07"
+    revised: "2026-06-09"
+
+  - name: HotbarState
+    status: active
+    source: design/gdd/consumable-use-system.md
+    referenced_by:
+      - design/gdd/consumable-use-system.md
+      - design/gdd/character-persistence.md
+    type: "struct"
+    fields: "{AssignedItemID: ItemID (ItemID.Invalid = Unassigned)}"
+    note: "Represents one consumable hotbar slot. Two instances exist per character (Slot 0 = RestoreHP, Slot 1 = RestoreMP). SlotEffectType is NOT persisted — it is always derived from the slot index at load time (Slot 0 = RestoreHP, Slot 1 = RestoreMP). Save record stores only AssignedItemID. AssignedItemID is persisted to character save record; cooldown timers are NOT persisted. At hotbar load (EC-10): if GetItem(AssignedItemID) returns null or ConsumableData.EffectType != index-derived SlotEffectType, AssignedItemID is set to ItemID.Invalid. Save schema: 2 × { AssignedItemID: uint }. Updated 2026-06-09 (review pass — removed SlotEffectType from persisted fields). Added 2026-06-07."
+    added: "2026-06-07"
+    revised: "2026-06-09"
+
+  - name: HotbarSlotState
+    status: active
+    source: design/gdd/consumable-use-system.md
+    referenced_by:
+      - design/gdd/consumable-use-system.md
+    type: "enum : byte"
+    values: "{Unassigned=0, AssignedReady=1, AssignedOnCooldown=2, AssignedOutOfStock=3, AssignedOutOfStockOnCooldown=4}"
+    note: "Runtime state of a single consumable hotbar slot. Carried in HotbarStateChangedEvent.newState. Distinct from HotbarState (the persisted save struct). AssignedOutOfStockOnCooldown is the fifth state: last potion unit consumed while cooldown is still active — transitions to AssignedOutOfStock when timer expires, not to AssignedReady. Added 2026-06-09."
+    added: "2026-06-09"
+
+  - name: UseItemRequest
+    status: active
+    source: design/gdd/consumable-use-system.md
+    referenced_by:
+      - design/gdd/consumable-use-system.md
+      - design/gdd/networking-wire-protocol.md
+      - design/gdd/networking-channel-contract.md
+      - design/gdd/networking-message-criticality.md
+    type: "struct (network message — R-OD, C→S)"
+    fields: "{requestId: uint, itemId: uint, quantity: byte}"
+    note: "Sent by client when a potion is used from hotbar or bag. quantity is always 1 in MVP (no bulk-use mechanic). requestId is a per-session monotonic uint counter following ADR-001 deduplication pattern — server deduplicates on (CharacterID, messageType, requestId) within SESSION_TTL_SECONDS per ADR-001 Amendment A1. Counter persists across same-session reconnect — client seeds from SessionHandshake.lastSeenUseItemRequestId + 1 (CR-NET-6.4 in networking-session.md). Wire registered 2026-06-09 (OQ-CUS-2 resolved). 23B standalone. OQ-CUS-1 RESOLVED 2026-06-11 (counter continuity — networking-session.md amended). OQ-CUS-3 RESOLVED 2026-06-09 (ADR-001 Amendment A1 accepted). Added 2026-06-07."
+    added: "2026-06-07"
+    revised: "2026-06-09"
+
+  - name: UseItemResult
+    status: active
+    source: design/gdd/consumable-use-system.md
+    referenced_by:
+      - design/gdd/consumable-use-system.md
+      - design/gdd/networking-wire-protocol.md
+      - design/gdd/networking-channel-contract.md
+      - design/gdd/networking-message-criticality.md
+    type: "struct (network message — R-OD, S→C)"
+    fields: "{requestId: uint, itemId: uint, newResourceValue: int, newInventoryQuantity: int}"
+    note: "Sent by server on successful potion use. newResourceValue wire type is int (FloorToInt per CR-NET-7.2); game-logic type is float. Client updates HP/MP bar from this value subject to Display Authority Rule in resource-display-authority.md: UseItemResult HP applied only if ServerTickNumber > HPDisplayTick (strictly greater); EntityHealthUpdate from same or later tick supersedes. No wire format changes — rule uses CR-NET-7.1 ServerTickNumber from envelope. OQ-CUS-4 RESOLVED 2026-06-09. newInventoryQuantity = TOTAL count of the used ItemID across all inventory slots (not one stack count) — required for hotbar quantity badge. Wire registered 2026-06-09 (OQ-CUS-2 resolved). 26B standalone. Updated 2026-06-09. Added 2026-06-07."
+    added: "2026-06-07"
+    revised: "2026-06-09"
+
+  - name: UseItemRejected
+    status: active
+    source: design/gdd/consumable-use-system.md
+    referenced_by:
+      - design/gdd/consumable-use-system.md
+      - design/gdd/networking-wire-protocol.md
+      - design/gdd/networking-channel-contract.md
+      - design/gdd/networking-message-criticality.md
+    type: "struct (network message — R-OD, S→C)"
+    fields: "{requestId: uint, reason: UseItemRejectedReason(byte)}"
+    note: "Sent by server when UseItemRequest validation fails at Step 4. Client resets EffectTypeCooldownRemaining to 0 and un-greys the slot on any rejection. requestId matches the in-flight UseItemRequest. Wire registered 2026-06-09 (OQ-CUS-2 resolved). 15B standalone. Added 2026-06-07."
+    added: "2026-06-07"
+    revised: "2026-06-09"
+
+  # ── Mob Spawning (design/gdd/mob-spawning.md) ──────────
+
+  - name: MobTier
+    status: active
+    source: design/gdd/mob-spawning.md
+    referenced_by:
+      - design/gdd/mob-spawning.md
+    type: "enum : byte"
+    values: "{Common=0, Uncommon=1, Rare=2, Elite=3}"
+    note: "Power/difficulty tier for mob types. Distinct from GearTier (which classifies equipment items). Stored on MobDefinition (Enemy AI GDD must add this field). Determines respawn delay tier via RESPAWN_DELAY_*_TICKS tuning knobs (CR-MS-9, mob-spawning.md). Tier mapping to family examples: Common=Bandicoot, Uncommon=Wild Bandicoot, Rare=Bandicoot Scavenger, Elite=Giant Bandicoot."
+    added: "2026-06-11"
+    revised: ""
+
+  - name: RESPAWN_DELAY_COMMON_TICKS
+    status: active
+    source: design/gdd/mob-spawning.md
+    referenced_by:
+      - design/gdd/mob-spawning.md
+    type: "int constant (tuning knob)"
+    value: 60
+    unit: "server ticks (= 3.0s at TICK_RATE_HZ=20)"
+    note: "Respawn delay for MobTier.Common mobs (CR-MS-9). Fast refill to support near-town density — at this value a stripped 20-mob area refills within ~6.5s under peak player density. Safe range: [20, 300]. Below 20 ticks (1s): mobs feel instantly reborn, no weight. Above 300 ticks (15s): near-town areas strip out and new players see empty fields."
+    added: "2026-06-11"
+    revised: ""
+
+  - name: RESPAWN_DELAY_UNCOMMON_TICKS
+    status: active
+    source: design/gdd/mob-spawning.md
+    referenced_by:
+      - design/gdd/mob-spawning.md
+    type: "int constant (tuning knob)"
+    value: 120
+    unit: "server ticks (= 6.0s at TICK_RATE_HZ=20)"
+    note: "Respawn delay for MobTier.Uncommon mobs (CR-MS-9). Must be > RESPAWN_DELAY_COMMON_TICKS to maintain tier-rhythm gradient. Safe range: [60, 600]."
+    added: "2026-06-11"
+    revised: ""
+
+  - name: RESPAWN_DELAY_RARE_TICKS
+    status: active
+    source: design/gdd/mob-spawning.md
+    referenced_by:
+      - design/gdd/mob-spawning.md
+    type: "int constant (tuning knob)"
+    value: 300
+    unit: "server ticks (= 15.0s at TICK_RATE_HZ=20)"
+    note: "Respawn delay for MobTier.Rare mobs (CR-MS-9). Safe range: [120, 1200]. Too high (above 120s): a single clearing of 10 Rare mobs creates a 2-minute dead zone that blocks grind flow."
+    added: "2026-06-11"
+    revised: ""
+
+  - name: RESPAWN_DELAY_ELITE_TICKS
+    status: active
+    source: design/gdd/mob-spawning.md
+    referenced_by:
+      - design/gdd/mob-spawning.md
+    type: "int constant (tuning knob)"
+    value: 600
+    unit: "server ticks (= 30.0s at TICK_RATE_HZ=20)"
+    note: "Respawn delay for MobTier.Elite mobs (CR-MS-9). Safe range: [300, 3600]. Default 30s is the sweet spot for solo sessions; reduce if competitive group farming dominates. Boss/event spawns use RespawnDelayOverrideTicks directly and bypass this knob (OQ-MS-1)."
+    added: "2026-06-11"
+    revised: ""
+
+  - name: SPAWN_DENSITY_RETRY_INTERVAL_TICKS
+    status: active
+    source: design/gdd/mob-spawning.md
+    referenced_by:
+      - design/gdd/mob-spawning.md
+    type: "int constant (tuning knob)"
+    value: 20
+    unit: "server ticks (= 1.0s at TICK_RATE_HZ=20)"
+    note: "How often the deferred spawn queue is polled for capacity-blocked spawn points (CR-MS-6). At N=150 deferred entries and O(1) per GetMobCount + TryAddMob, iteration cost is negligible. Safe range: [10, 200]. Below 10 ticks (0.5s): wasteful polling since slots rarely free faster than once per second. Above 200 ticks (10s): visible 'holes' in the field as freed slots take up to 10s to fill."
+    added: "2026-06-11"
+    revised: ""
+
+  - name: SpawnPointState
+    status: active
+    source: design/gdd/mob-spawning.md
+    referenced_by:
+      - design/gdd/mob-spawning.md
+    type: "enum : byte"
+    values: "{Uninitialized=0, Live=1, Dying=2, Respawning=3, Deferred=4, Cancelled=5}"
+    note: "Runtime lifecycle state of a SpawnPoint instance (CR-MS-3, CR-MS-4). Uninitialized: zone T-1 complete, T-2 fill not yet run. Live: mob alive in zone, CurrentEntityID valid. Dying: HP=0 / MobDied received, corpse linger countdown (DEATH_LINGER_TICKS). Respawning: corpse removed, respawn delay countdown. Deferred: respawn ready but zone at MAX_MOBS_PER_ZONE cap. Cancelled: zone draining or closed, all timers discarded. SpawnPoint.TimerTick is reused across Dying and Respawning states — semantics differ per active state."
+    added: "2026-06-11"
+    revised: ""
+
+  - name: MobEventBus
+    status: active
+    source: design/gdd/mob-spawning.md
+    referenced_by:
+      - design/gdd/mob-spawning.md
+      - design/gdd/navigation-pathfinding.md
+    type: "interface (cross-system event bus — per zone instance)"
+    methods: "MobDied(ZoneID, EntityID): void — raised by Enemy AI on HP=0, after ILootTableSystem.ResolveMobDrop call; consumed by Mob Spawning to start corpse linger. MobSpawned(ZoneID, EntityID, MobTypeID, Vector3): void — raised by Mob Spawning after successful TryAddMob; consumed by Enemy AI factory to initialize MobController."
+    note: "C# event bus scoped to each zone instance. Neither Mob Spawning nor Enemy AI holds a direct reference to the other's interface — both interact exclusively through MobEventBus (CR-MS-5). Prevents circular dependency between the two systems. Enemy AI GDD must add MobSpawned subscription and MobDied publication to its cross-system interface table. Navigation/Pathfinding subscribes to MobSpawned (agent claim, CR-NAV-5) and MobDied (agent release, CR-NAV-6)."
+    added: "2026-06-11"
+    revised: "2026-06-14"
+
+  - name: MAX_PATH_UPDATES_PER_TICK
+    status: active
+    source: design/gdd/navigation-pathfinding.md
+    referenced_by:
+      - design/gdd/navigation-pathfinding.md
+    type: "int constant (tuning knob)"
+    value: 20
+    unit: "path requests per server tick"
+    note: "Maximum number of SetDestination calls drained from _pendingRequests per Tick() call (CR-NAV-14). Default 20 → worst-case 150-mob burst drains in 8 ticks = 0.40s (F-NAV-1). Do not set below 5 (R=5 → 1.50s lag — visible stutter per F-NAV-3). Safe range: [5, 150]."
+    added: "2026-06-14"
+    revised: ""
+
+  - name: PARTIAL_PATH_TIMEOUT_TICKS
+    status: active
+    source: design/gdd/navigation-pathfinding.md
+    referenced_by:
+      - design/gdd/navigation-pathfinding.md
+    type: "int constant (tuning knob)"
+    value: 20
+    unit: "server ticks (1.0s at TICK_RATE_HZ=20)"
+    note: "Ticks before a PathPartial result triggers IsPathStale=true and Enemy AI re-issues SetDestination (CR-NAV-15, F-NAV-2). Default 20 = 1.0s — matches the ≤1s freeze tolerance stated in the navigation Player Fantasy. Prior default was 60 (3.0s), revised 2026-06-14 when Player Fantasy quality bar was established. Values below 10 risk re-route loops on complex geometry. Safe range: [10, 200]."
+    added: "2026-06-14"
+    revised: "2026-06-14"
+
+  - name: MIN_VALID_SPAWN_FRACTION
+    status: active
+    source: design/gdd/navigation-pathfinding.md
+    referenced_by:
+      - design/gdd/navigation-pathfinding.md
+    type: "float constant (tuning knob)"
+    value: 0.90
+    unit: "fraction [0.0, 1.0]"
+    note: "Minimum fraction of zone spawn points that must pass NavMesh.SamplePosition validation for zone initialization to succeed (CR-NAV-13). If fewer than this fraction survive, zone initialization is aborted. Default 0.90 = ≥90% valid. Lower values permit zones with significant authoring defects to serve. Safe range: [0.50, 1.00]."
+    added: "2026-06-14"
+    revised: ""
+
+  - name: NAV_STUCK_REROUTE_DETECTION_TICKS
+    status: active
+    source: design/gdd/navigation-pathfinding.md
+    referenced_by:
+      - design/gdd/navigation-pathfinding.md
+    type: "int constant (tuning knob)"
+    value: 10
+    unit: "server ticks (0.5s at TICK_RATE_HZ=20)"
+    note: "Consecutive ticks the same EntityID issues SetDestination to the same Vector3 with PathInvalid before a diagnostic warning is logged (EC-NAV-8). Detects permanent return-loop defects from off-NavMesh spawn points. Logging only — navigation cannot unilaterally resolve the authoring defect. Safe range: [3, 60]."
+    added: "2026-06-14"
+    revised: ""
+
+  - name: NAV_OFF_MESH_RECOVERY_TICKS
+    status: active
+    source: design/gdd/navigation-pathfinding.md
+    referenced_by:
+      - design/gdd/navigation-pathfinding.md
+    type: "int constant (tuning knob)"
+    value: 3
+    unit: "server ticks (150ms at TICK_RATE_HZ=20)"
+    note: "Consecutive ticks isOnNavMesh==false before ZoneNavigationService calls NavMeshAgent.Warp(lastKnownCommittedPos) to force re-constraint (EC-NAV-10). Default 3 = 150ms — imperceptible to players and low enough to avoid false-positive Warps during legitimate 1–2 tick isOnNavMesh gaps. Safe range: [1, 10]."
+    added: "2026-06-14"
+    revised: ""
+
+  - name: INavigationProvider
+    status: active
+    source: design/gdd/navigation-pathfinding.md
+    referenced_by:
+      - design/gdd/enemy-ai.md
+      - design/gdd/navigation-pathfinding.md
+    type: "interface (C# — implemented by ZoneNavigationService, consumed by Enemy AI)"
+    methods: "SetDestination(EntityID, Vector3): void; SetSpeed(EntityID, float): void; Stop(EntityID): void; Resume(EntityID): void; IsPathStale(EntityID): bool; GetCurrentVelocity(EntityID): Vector3"
+    note: "Stub defined in Enemy AI CR-AI-11; full implementation owned by Navigation/Pathfinding. Resume() added by ADR-003 (2026-06-14) to clear isStopped without requiring a new SetDestination — fixes permanent-freeze-after-attack-cycle bug. Methods without Resume() are superseded by ADR-003."
+    added: "2026-06-14"
+    revised: "2026-06-14"
+
+  - name: RETURN_SPEED_CAP
+    status: active
+    source: design/gdd/navigation-pathfinding.md
+    referenced_by:
+      - design/gdd/navigation-pathfinding.md
+      - design/gdd/enemy-ai.md
+    type: "float constant (tuning knob)"
+    value: 6.0
+    unit: "m/s"
+    note: "Maximum NavMeshAgent speed during mob Returning state. Enemy AI calls SetSpeed(RETURN_SPEED_CAP) on Returning entry and restores MobDefinition.MoveSpeed on Dormant/Pursuing exit. Caps return at player walk speed (6 m/s) so mobs do not appear to sprint to spawn. Upper bound 10 m/s: at 10 m/s + autoBraking=false, max overshoot per tick = 0.5m = RETURN_ARRIVAL_THRESHOLD — just within arrival window. Established by ADR-003 to fix autoBraking=false Returning-overshoot bug for MoveSpeed > 10 m/s. Safe range: [1.0, 10.0] m/s."
+    added: "2026-06-14"
+    revised: ""
+
+  - name: CHAT_HISTORY_DISPLAY_COUNT
+    status: active
+    source: design/gdd/hud.md
+    referenced_by:
+      - design/gdd/hud.md
+      - design/gdd/party-chat.md
+    type: "int constant (tuning knob)"
+    value: 12
+    unit: "visible chat message lines in the party chat panel"
+    note: "Number of chat messages visible in the party chat panel at one time (client-side display buffer). Resolves Party Chat GDD OQ-PC-4. Changing this value requires re-layout verification that the panel does not encroach on the joystick or Combat UI skill zones. Safe range: [8, 20]."
+    added: "2026-06-19"
+    revised: ""
+
+  - name: SkillBarLayout
+    status: active
+    source: design/gdd/combat-ui.md
+    referenced_by:
+      - design/gdd/combat-ui.md
+      - design/gdd/character-persistence.md
+    type: "struct"
+    definition: "SkillBarLayout { SkillID[8] Slots }"
+    note: "Stores the player's 8-slot skill bar binding. Each slot holds either a valid SkillID or SkillID.Invalid (empty). Index 0–3 = primary row S1–S4; index 4–7 = secondary row S5–S8. Server-persisted via Character Persistence; loaded on zone join and applied to the Combat UI bar display. Players choose any 8 of their 10 class skills to fill the bar."
+    added: "2026-06-20"
+    revised: ""
+
+  - name: SkillCooldownUpdate
+    status: active
+    source: design/gdd/skill-system.md
+    referenced_by:
+      - design/gdd/skill-system.md
+      - design/gdd/combat-ui.md
+      - design/gdd/networking-core.md
+    type: "message schema"
+    definition: "SkillCooldownUpdate { SkillID skillID, uint cooldownExpiryTick }"
+    note: "Server-to-client message sent per R-U batch tick for any skill whose cooldown state changed. cooldownExpiryTick is an absolute server tick at which the cooldown expires (CR-SK-12 amended 2026-06-20 from ticksRemaining to cooldownExpiryTick for drift-correct client rendering). Combat UI computes fraction = clamp((cooldownExpiryTick − clientCurrentTick) / CooldownTicks, 0, 1) from this value."
+    added: "2026-06-20"
+    revised: ""
+
+  - name: SkillCooldownSnapshot
+    status: active
+    source: design/gdd/skill-system.md
+    referenced_by:
+      - design/gdd/skill-system.md
+      - design/gdd/combat-ui.md
+    type: "message schema"
+    definition: "SkillCooldownSnapshot { SkillCooldownEntry[10] Skills }"
+    note: "Full cooldown state for all 10 of the caster's skills. Sent by the server on zone join and reconnect. Combat UI uses this to restore cooldown display state after a zone transition or session recovery without waiting for the first SkillCooldownUpdate tick."
+    added: "2026-06-20"
+    revised: ""
+
+  - name: CHAT_CORRIDOR_MIN_WIDTH_DP
+    status: active
+    source: design/gdd/combat-ui.md
+    referenced_by:
+      - design/gdd/combat-ui.md
+      - design/gdd/hud.md
+    type: "int constant (layout threshold)"
+    value: 140
+    unit: "dp"
+    note: "Minimum corridor width (dp) required to display the party chat panel alongside Zone E (292dp) and the joystick zone (≈293dp). When available corridor width falls below this threshold, the HUD enters combat-collapse mode: chat panel collapses to a small expand button during combat. Established by Combat UI GDD (CR-CUI-21) to handle iPhone SE 3rd gen (651dp safe width) which yields only 66dp corridor — well below threshold. Safe range: [100, 200] dp."
+    added: "2026-06-20"
+    revised: ""
 
 # Example (remove when first real entry is added):
 #
@@ -77,7 +1699,176 @@ entities: []
 # Attribute fields: value_gold, weight, stackable, category, and any stat
 #   modifiers that another system (e.g., economy, crafting) might reference.
 
-items: []
+items:
+  - name: Bronze Enhancement Scroll
+    status: active
+    source: design/gdd/enhancement-system.md
+    referenced_by:
+      - design/gdd/enhancement-system.md
+      - design/gdd/item-database.md
+      - design/gdd/npc-shop.md
+    value_gold: 90
+    sell_price_gold: 0
+    stackable: true
+    category: consumable
+    target_gear_tier: Bronze
+    scroll_data: "ScrollData { TargetGearTier: GearTier.Bronze }"
+    note: "Purchased from NPC Shop only — must not appear in any monster loot table (Enhancement System CR-ENH-3). Buy price CONFIRMED 90g (NPC Shop GDD 2026-06-06; TK-ENH-9 range [75, 125]). SellPriceGold=0 — cannot be sold to any NPC. Consumed on ConfirmEnhancement; not refunded on rejection."
+    added: "2026-05-22"
+    revised: "2026-06-06"
+
+  - name: Iron Enhancement Scroll
+    status: active
+    source: design/gdd/enhancement-system.md
+    referenced_by:
+      - design/gdd/enhancement-system.md
+      - design/gdd/item-database.md
+      - design/gdd/npc-shop.md
+    value_gold: 150
+    sell_price_gold: 0
+    stackable: true
+    category: consumable
+    target_gear_tier: Iron
+    scroll_data: "ScrollData { TargetGearTier: GearTier.Iron }"
+    note: "NPC Shop only. Buy price CONFIRMED 150g (NPC Shop GDD 2026-06-06; TK-ENH-9 range [125, 210]). SellPriceGold=0 — cannot be sold. Consumed on ConfirmEnhancement."
+    added: "2026-05-22"
+    revised: "2026-06-06"
+
+  - name: Steel Enhancement Scroll
+    status: active
+    source: design/gdd/enhancement-system.md
+    referenced_by:
+      - design/gdd/enhancement-system.md
+      - design/gdd/item-database.md
+      - design/gdd/npc-shop.md
+    value_gold: 230
+    sell_price_gold: 0
+    stackable: true
+    category: consumable
+    target_gear_tier: Steel
+    scroll_data: "ScrollData { TargetGearTier: GearTier.Steel }"
+    note: "NPC Shop only. Buy price CONFIRMED 230g (NPC Shop GDD 2026-06-06; TK-ENH-9 range [190, 320]). SellPriceGold=0 — cannot be sold. Consumed on ConfirmEnhancement."
+    added: "2026-05-22"
+    revised: "2026-06-06"
+
+  - name: Dark Steel Enhancement Scroll
+    status: active
+    source: design/gdd/enhancement-system.md
+    referenced_by:
+      - design/gdd/enhancement-system.md
+      - design/gdd/item-database.md
+      - design/gdd/npc-shop.md
+    value_gold: 350
+    sell_price_gold: 0
+    stackable: true
+    category: consumable
+    target_gear_tier: DarkSteel
+    scroll_data: "ScrollData { TargetGearTier: GearTier.DarkSteel }"
+    note: "NPC Shop only. Buy price CONFIRMED 350g (NPC Shop GDD 2026-06-06; TK-ENH-9 range [270, 450]). SellPriceGold=0 — cannot be sold. Economy validation: expected 2,727 scrolls × 350g ≈ 955K gold to reach +9 from +0 (F-ENH-5, two-outcome model post revision)."
+    added: "2026-05-22"
+    revised: "2026-06-06"
+
+  - name: HP Potion (Small)
+    status: active
+    source: design/gdd/npc-shop.md
+    referenced_by:
+      - design/gdd/npc-shop.md
+      - design/gdd/item-database.md
+    buy_price_gold: 3
+    sell_price_gold: 2
+    stackable: true
+    stack_limit: 99
+    category: consumable
+    potion_type: HP
+    size: Small
+    note: "NPC Shop buy price 3g (confirmed NPC Shop GDD 2026-06-06). Sell price 2g (OQ-9 resolved Path A: F-2 invariant superseded; Item Database GDD must be amended). Anti-arbitrage ratio: 3/2 = 1.5× exactly (boundary case — must pass F-NS-3). SellPriceGold from Item Database GDD F-2 (SmallBasePrice=2g × SizeMultiplier=1.0). Effect: RestoreHP, EffectMagnitude=80 HP (resolved by consumable-use-system.md F-CUS-3, 2026-06-09)."
+    added: "2026-06-06"
+    revised: "2026-06-09"
+
+  - name: HP Potion (Medium)
+    status: active
+    source: design/gdd/npc-shop.md
+    referenced_by:
+      - design/gdd/npc-shop.md
+      - design/gdd/item-database.md
+    buy_price_gold: 10
+    sell_price_gold: 6
+    stackable: true
+    stack_limit: 99
+    category: consumable
+    potion_type: HP
+    size: Medium
+    note: "NPC Shop buy price 10g (confirmed NPC Shop GDD 2026-06-06). Sell price 6g (OQ-9 resolved Path A; SmallBasePrice=2g × SizeMultiplier=3.0). Anti-arbitrage ratio: 10/6 = 1.67×. Effect: RestoreHP, EffectMagnitude=220 HP (resolved by consumable-use-system.md F-CUS-3, 2026-06-09)."
+    added: "2026-06-06"
+    revised: "2026-06-09"
+
+  - name: HP Potion (Large)
+    status: active
+    source: design/gdd/npc-shop.md
+    referenced_by:
+      - design/gdd/npc-shop.md
+      - design/gdd/item-database.md
+    buy_price_gold: 30
+    sell_price_gold: 18
+    stackable: true
+    stack_limit: 99
+    category: consumable
+    potion_type: HP
+    size: Large
+    note: "NPC Shop buy price 30g (confirmed NPC Shop GDD 2026-06-06). Sell price 18g (OQ-9 resolved Path A: SmallBasePrice=2g × SizeMultiplier=9.0 = 18g; this exceeds Item Database F-2 invariant ceiling of 10g — Item Database GDD must be amended per OQ-NS-3). Anti-arbitrage ratio: 30/18 = 1.67×. Effect: RestoreHP, EffectMagnitude=500 HP (resolved by consumable-use-system.md F-CUS-3, 2026-06-09)."
+    added: "2026-06-06"
+    revised: "2026-06-09"
+
+  - name: MP Potion (Small)
+    status: active
+    source: design/gdd/npc-shop.md
+    referenced_by:
+      - design/gdd/npc-shop.md
+      - design/gdd/item-database.md
+    buy_price_gold: 3
+    sell_price_gold: 2
+    stackable: true
+    stack_limit: 99
+    category: consumable
+    potion_type: MP
+    size: Small
+    note: "Mirror of HP Potion (Small) — same buy (3g) and sell (2g) price. Anti-arbitrage ratio: 1.5× exactly. Effect: RestoreMP, EffectMagnitude=80 MP (resolved by consumable-use-system.md F-CUS-3, 2026-06-09)."
+    added: "2026-06-06"
+    revised: "2026-06-09"
+
+  - name: MP Potion (Medium)
+    status: active
+    source: design/gdd/npc-shop.md
+    referenced_by:
+      - design/gdd/npc-shop.md
+      - design/gdd/item-database.md
+    buy_price_gold: 10
+    sell_price_gold: 6
+    stackable: true
+    stack_limit: 99
+    category: consumable
+    potion_type: MP
+    size: Medium
+    note: "Mirror of HP Potion (Medium) — buy 10g, sell 6g. Anti-arbitrage ratio: 1.67×. Effect: RestoreMP, EffectMagnitude=220 MP (resolved by consumable-use-system.md F-CUS-3, 2026-06-09)."
+    added: "2026-06-06"
+    revised: "2026-06-09"
+
+  - name: MP Potion (Large)
+    status: active
+    source: design/gdd/npc-shop.md
+    referenced_by:
+      - design/gdd/npc-shop.md
+      - design/gdd/item-database.md
+    buy_price_gold: 30
+    sell_price_gold: 18
+    stackable: true
+    stack_limit: 99
+    category: consumable
+    potion_type: MP
+    size: Large
+    note: "Mirror of HP Potion (Large) — buy 30g, sell 18g. Anti-arbitrage ratio: 1.67×. Same OQ-NS-3 F-2 amendment needed. Effect: RestoreMP, EffectMagnitude=500 MP (resolved by consumable-use-system.md F-CUS-3, 2026-06-09)."
+    added: "2026-06-06"
+    revised: "2026-06-09"
 
 # Example:
 #
@@ -106,7 +1897,202 @@ items: []
 #   output_range[min, max], added
 # Optional: expression (the actual formula), notes
 
-formulas: []
+formulas:
+  - name: F1_EquipmentSellPrice
+    status: active
+    source: design/gdd/item-database.md
+    referenced_by:
+      - design/gdd/item-database.md
+      - design/gdd/loot-table-system.md
+    expression: "SellPriceGold = TierBasePrice(GearTier)"
+    variables:
+      - "TierBasePrice: {Bronze=10, Iron=30, Steel=90, DarkSteel=270} gold"
+    output_range: [10, 270]
+    notes: "Authoring guide only — not a runtime formula. SellPriceGold is authored directly. Validation warns on >±5% deviation. Rarity multiplier removed in review pass 1 (2026-04-24). DarkSteel sell price (270g) confirmed 2026-05-22: Enhancement System economy validation (F-ENH-5) verified destruction-recovery ratio ≈ 14,667× — DarkSteel scroll investment dominates item value. OQ-8 closed. IRON RANGE CORRECTION APPLIED (2026-05-23): Equipment System F-EQS-2 Iron flat bonus range corrected to 22–28 (was 16–22) to satisfy F-ENH-3 parity constraint. Bronze→Iron Δ=0 ✓, Iron→Steel Δ=+8 ✓, Steel→DarkSteel Δ=+4 ✓."
+    added: "2026-04-23"
+    revised: "2026-05-22"
+
+  - name: F4_PctBonusCap
+    status: deprecated
+    source: design/gdd/item-database.md
+    referenced_by:
+      - design/gdd/item-database.md
+    expression: "PctBonus(modifier) ∈ [0.0, PctBonusCap(Rarity)]"
+    variables:
+      - "PctBonusCap: {Common=0.0, Uncommon=0.05, Rare=0.15, Epic=0.25}"
+    output_range: [0.0, 0.25]
+    notes: "REMOVED in review pass 1 (2026-04-24). Rarity and PctBonus on equipment were removed from MVP. All MVP equipment uses flat bonuses only (ΣPctEquip = 0). May be reintroduced in VS."
+    added: "2026-04-23"
+    revised: "2026-04-24"
+
+  - name: F-DC-1_PhysicalMitigation
+    status: active
+    source: design/gdd/damage-calculation.md
+    referenced_by:
+      - design/gdd/damage-calculation.md
+    expression: "PhysicalMitigated = max(BaseDamage × MIN_DAMAGE_FRACTION, BaseDamage − Defense)"
+    variables:
+      - "BaseDamage: int, attacker's AttackPower, range [1, 9999]"
+      - "Defense: int, target's GetEffectiveStat(Defense), range [0, 9999]"
+      - "MIN_DAMAGE_FRACTION: 0.05 (tuning constant)"
+    output_range: [1, 9999]
+    notes: "Flat subtraction model. At Defense=0 returns BaseDamage exactly. At Defense≥BaseDamage the 5% floor fires. Result is float; floored to int in F-DC-3/F-DC-4."
+    added: "2026-04-25"
+    revised: ""
+
+  - name: F-DC-2_ElementalMitigation
+    status: active
+    source: design/gdd/damage-calculation.md
+    referenced_by:
+      - design/gdd/damage-calculation.md
+    expression: "ElementalMitigated = ElementalBonus × max(MIN_ELEMENTAL_FRACTION, 1 − MagicDefense / (MagicDefense + K_MAGIC))"
+    variables:
+      - "ElementalBonus: int, weapon's flat elemental damage from Item Database, range [0, 9999]"
+      - "MagicDefense: int, target's GetEffectiveStat(MagicDefense), range [0, 9999]"
+      - "K_MAGIC: 200 (tuning constant — MagicDefense value at which 50% elemental is absorbed)"
+      - "MIN_ELEMENTAL_FRACTION: 0.10 (tuning constant — 10% elemental floor)"
+    output_range: [0, 9999]
+    notes: "Hyperbolic soft cap. At MagicDefense=0 returns ElementalBonus exactly. At MagicDefense=200 returns 50% of ElementalBonus. At MagicDefense=9999 returns ~10% (clamped by MIN_ELEMENTAL_FRACTION floor). ElementalBonus=0 always returns 0.0."
+    added: "2026-04-25"
+    revised: ""
+
+  - name: F-DC-3_CritApplication
+    status: active
+    source: design/gdd/damage-calculation.md
+    referenced_by:
+      - design/gdd/damage-calculation.md
+    expression: "FinalDamage = Mathf.FloorToInt(PreCritDamage × (IsCrit ? CritMultiplier : 1.0f)) where PreCritDamage = PhysicalMitigated + ElementalMitigated"
+    variables:
+      - "PhysicalMitigated: float output of F-DC-1"
+      - "ElementalMitigated: float output of F-DC-2"
+      - "CritMultiplier: float, attacker's GetEffectiveStat(CritMultiplier), range [1.0, 3.0]"
+      - "IsCrit: bool, determined by server RNG roll < CritChance"
+    output_range: [0, 59994]
+    notes: "Mitigation-first order: mitigation applied before crit multiplier. Crit is exactly CritMultiplier × mitigated damage. Max theoretical: BaseDamage=9999, Defense=0, ElementalBonus=9999, CritMultiplier=3.0 → (9999+9999)×3=59994. Uses Mathf.FloorToInt (not System.Math.Floor) — IL2CPP requirement. Output fed into F-DC-4 for absolute floor."
+    added: "2026-04-25"
+    revised: ""
+
+  - name: F-DC-4_AbsoluteMinimumFloor
+    status: active
+    source: design/gdd/damage-calculation.md
+    referenced_by:
+      - design/gdd/damage-calculation.md
+    expression: "FinalDamage = max(1, Mathf.FloorToInt(PreCritDamage × CritOrNot))"
+    variables:
+      - "PreCritDamage: float sum of F-DC-1 + F-DC-2 outputs"
+    output_range: [1, 59994]
+    notes: "Load-bearing at BaseDamage < 20: Mathf.FloorToInt(BaseDamage × 0.05) truncates to 0 for BaseDamage in [1,19]. The absolute-1 floor prevents zero damage from being applied and incorrectly triggering a kill. Not a safety net — a required correction for valid stat ranges."
+    added: "2026-04-25"
+    revised: ""
+
+  - name: F-LS-1_XpThreshold
+    status: active
+    source: design/gdd/leveling-system.md
+    referenced_by:
+      - design/gdd/leveling-system.md
+    expression: "XP(L) = Mathf.RoundToInt(C × L^α × R^L)"
+    variables:
+      - "L: int, target level, range [1, 59]"
+      - "C: float = 178.6 (base coefficient — primary tuning lever for overall XP scale)"
+      - "α: float = 0.648 (polynomial exponent — controls early-game growth)"
+      - "R: float = 1.1198 (exponential base ≈ e^0.1132 — controls late-game acceleration)"
+    output_range: [200, 2000000]
+    notes: "HUD bar fill = (Experience − XpThreshold[Level]) / (XpThreshold[Level+1] − XpThreshold[Level]). Sentinel XpThreshold[61] = int.MaxValue — array must be declared with length ≥ 62. C, α, R calibrated together against anchors L1=200, L20=12173, L59≈2,000,000 — retune as a system, not individually. Party System GDD must confirm Mathf.RoundToInt as the float→int conversion for F-LS-2 output before AddExperience() calls."
+    added: "2026-04-27"
+    revised: ""
+
+  - name: F-LS-2_PartyXpBonus
+    status: deprecated
+    source: design/gdd/leveling-system.md
+    referenced_by:
+      - design/gdd/leveling-system.md
+    expression: "XP_member = XP_base × (1.0f + PartyBonusIncrement × (N − 1))"
+    variables:
+      - "XP_base: int, kill XP from F-LS-1 lookup, range [200, 2000000]"
+      - "N: int, party members within XP range, range [1, 4]"
+      - "PartyBonusIncrement: float = 0.10 (additive per extra member)"
+    output_range_multiplier: "[×1.0 (solo) to ×1.30 (full party of 4)]"
+    notes: "SUPERSEDED BY F-PS-1_PartyXpDeduction (2026-05-16). Party System GDD authored F-PS-1 with opposite direction — a detriment (10% less per additional member). F-PS-1 is the canonical formula. leveling-system.md must mark this formula superseded in a propagation pass (HIGH priority — tracked in session-state). N range [1,4] for MAX_PARTY_SIZE=4. Party System GDD confirmed Mathf.RoundToInt as float→int conversion."
+    added: "2026-04-27"
+    revised: "2026-05-17"
+
+  - name: F-CS-1_RespecFloor
+    status: active
+    source: design/gdd/class-system.md
+    referenced_by:
+      - design/gdd/class-system.md
+      - design/gdd/leveling-system.md
+    expression: "FloorValue(stat) = BASE_ATTR + (Level − 1) × AutoAllocIncrement[stat]"
+    variables:
+      - "BASE_ATTR: int = 10 (base attribute value at L1, same for all stats and classes)"
+      - "Level: int, character's current level, range [1, 60]"
+      - "AutoAllocIncrement[stat]: int, class auto-alloc rate for the stat (0, 1, or 2), from ClassDefinition"
+    output_range: [10, 128]
+    notes: "Lower bound for free-point placement after a respec — free points cannot be set below this floor for any stat. At L1 the floor equals BASE_ATTR=10 for all stats. Maximum: 10 + 59×2 = 128 (L60 Warrior STR or Healer INT at auto-alloc rate 2). Leveling System GDD CR-4.3 references this formula for respec boundary enforcement. Class System is the sole authority on AutoAllocIncrement values; Leveling System must read them from IClassRegistry.TryGetClass(), not hardcode them (OQ-CS-4 BLOCKING)."
+    added: "2026-04-27"
+    revised: ""
+
+  - name: F-ENH-1_EnhancementFlatBonus
+    status: active
+    source: design/gdd/enhancement-system.md
+    referenced_by:
+      - design/gdd/enhancement-system.md
+      - design/gdd/equipment-system.md
+    expression: "EnhancedFlatBonus(modifier, level) = modifier.FlatBonus + (level × BonusPerLevel[GearTier])"
+    variables:
+      - "modifier.FlatBonus: int, base flat bonus from Item Database StatModifiers[], range varies by tier"
+      - "level: int, current enhancement level, range [0, MAX_ENHANCEMENT_LEVEL=10]"
+      - "BonusPerLevel: {Bronze=3, Iron=4, Steel=6, DarkSteel=10} per modifier"
+    output_range: [8, 168]
+    notes: "Output feeds IEnhancementBonusProvider.GetFlatBonus(). Equipment System must use this interface instead of raw Item Database FlatBonus when computing AddEquipmentModifier values. Upper bound: DarkSteel max base (68) + 10×10 = 168. Bronze min base (8) + 0×3 = 8. These bounds include +10, which has very low practical probability. Output_range corrected 2026-05-23 (was 212 — derived from a pre-revision formula; correct derivation gives 168)."
+    added: "2026-05-22"
+    revised: ""
+
+  - name: F-ENH-2_EnhancementElementalBonus
+    status: active
+    source: design/gdd/enhancement-system.md
+    referenced_by:
+      - design/gdd/enhancement-system.md
+      - design/gdd/damage-calculation.md
+    expression: "EnhancedElementalDamage(level) = item.ElementalDamage + (level × ElementalBonusPerLevel[GearTier])"
+    variables:
+      - "item.ElementalDamage: int, weapon's base elemental damage from Item Database, range [0, 9999]"
+      - "level: int, current enhancement level, range [0, MAX_ENHANCEMENT_LEVEL=10]"
+      - "ElementalBonusPerLevel: {Bronze=1, Iron=2, Steel=3, DarkSteel=5} for weapons; returns 0 for non-weapons"
+    output_range: [0, 9999]
+    notes: "Output feeds IEnhancementBonusProvider.GetElementalBonus(). Damage Calculation F-DC-2 must use the enhanced value, not the raw Item Database ElementalDamage. Damage Calculation must obtain the level from Equipment.GetEquippedWeaponEnhancementLevel(): byte. Non-weapon items always return 0."
+    added: "2026-05-22"
+    revised: ""
+
+  - name: F-ENH-3_TierParityConstraint
+    status: active
+    source: design/gdd/enhancement-system.md
+    referenced_by:
+      - design/gdd/enhancement-system.md
+      - design/gdd/equipment-system.md
+    expression: "midpoint(T) + 5 × BonusPerLevel[T] ≈ midpoint(T+1)"
+    variables:
+      - "midpoint(T): float, midpoint of tier T's flat bonus range per modifier"
+      - "BonusPerLevel[T]: int, from F-ENH-1 table"
+    notes: "Parity invariant: a +5 item of tier T has approximately the same stat total as a +0 item of tier T+1. VERIFIED for Bronze→Iron (exact, Δ=0), Steel→DarkSteel (Δ=+4), Iron→Steel (Δ=+8, surplus acceptable). IRON RANGE CORRECTION APPLIED (2026-05-23): Equipment System F-EQS-2 Iron flat bonus range corrected to 22–28 (was 16–22). Changing BonusPerLevel values invalidates this constraint and requires re-verification plus re-derivation of the Iron range."
+    added: "2026-05-22"
+    revised: ""
+
+  - name: F-PS-1_PartyXpDeduction
+    status: active
+    source: design/gdd/party-system.md
+    referenced_by:
+      - design/gdd/party-system.md
+    expression: "XP_member = Mathf.RoundToInt(Mathf.Max(0f, XP_base × (1.0f - XP_PARTY_DEDUCTION_RATE × (N_eligible − 1))))"
+    variables:
+      - "XP_base: int, kill XP from F-LS-1 lookup, range [200, 2000000]"
+      - "N_eligible: int, members in same zone + within ±5 of leader level + not Ghost/OutOfZone, range [1, 4]"
+      - "XP_PARTY_DEDUCTION_RATE: float = 0.10"
+    output_range_multiplier: "[×0.70 (N=4) to ×1.00 (N=1)]"
+    guard: "If N_eligible = 0: award 0 XP to all members, do not evaluate formula — unguarded at N=0 produces ×1.10 (a bug). Mathf.Max(0f,...) catches negative multipliers if tuning knobs are pushed beyond joint constraint."
+    notes: "Canonical party XP formula. Party System CR-PS-5 calls AddExperience(EntityID, int) per eligible member after each kill. Supersedes F-LS-2_PartyXpBonus (leveling-system.md) which uses opposite direction (bonus). leveling-system.md must defer to this formula in a propagation pass. Uses Mathf.RoundToInt (IL2CPP requirement — not System.Math.Round; uses round-half-away-from-zero, NOT banker's rounding). Solo (N=1): ×1.00. Full party (N=4, MVP): ×0.70 per kill, but higher kill throughput keeps net XP/hour favourable. Joint constraint: XP_PARTY_DEDUCTION_RATE × (MAX_PARTY_SIZE − 1) < 1.0."
+    added: "2026-05-16"
+    revised: "2026-05-16"
 
 # Example:
 #

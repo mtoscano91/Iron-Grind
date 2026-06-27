@@ -54,9 +54,28 @@ When creating multi-section documents (design docs, architecture docs, lore entr
 This keeps the context window holding only the *current* section's discussion
 (~3-5k tokens) instead of the entire document's conversation history (~30-50k tokens).
 
+## GDD Revision Triad
+
+When working on any Game Design Document, treat these three files as a single
+atomic unit — all three must be updated before the task is complete:
+
+1. `design/gdd/[system].md` — the revised GDD
+2. `design/registry/entities.yaml` — any new or changed entities/stats
+3. `production/session-state/active.md` — current progress and open questions
+
+Also update `design/gdd/systems-index.md` whenever a GDD status changes.
+
+Never apply blocker fixes to the GDD and stop there. An incomplete triad means
+the next session starts with stale registry and state — the most common cause
+of cross-doc inconsistencies.
+
+See `.claude/docs/design-review-workflow.md` for the full protocol.
+
 ## Proactive Compaction
 
 - **Compact proactively** at ~60-70% context usage, not reactively at the limit
+- **Checkpoint every 10 edits** — after every 10 Write/Edit operations, update
+  `production/session-state/active.md` regardless of where you are in the task
 - **Use `/clear`** between unrelated tasks, or after 2+ failed correction attempts
 - **Natural compaction points:** after writing a section to file, after committing,
   after completing a task, before starting a new topic

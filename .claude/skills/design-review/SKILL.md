@@ -8,13 +8,26 @@ allowed-tools: Read, Glob, Grep, Write, Edit, Task, AskUserQuestion
 
 ## Phase 0: Parse Arguments
 
-Extract `--depth [full|lean|solo]` if present. Default is `full` when no flag is given.
+Extract `--depth [full|lean|solo]` if present.
 
-**Note**: `--depth` controls the *analysis depth* of this skill (how many specialist agents are spawned). It is independent of the global review mode in `production/review-mode.txt`, which controls director gate spawning. These are two different concepts — `--depth` is about how thoroughly *this* skill analyses the document.
+**Note**: `--depth` controls the *analysis depth* of this skill (how many specialist agents are spawned). It is independent of the global review mode in `production/review-mode.txt`, which controls director gate spawning.
 
 - **`full`**: Complete review — all phases + specialist agent delegation (Phase 3b)
 - **`lean`**: All phases, no specialist agents — faster, single-session analysis
 - **`solo`**: Phases 1-4 only, no delegation, no Phase 5 next-step prompt — use when called from within another skill
+
+**If `--depth` is not explicitly specified**, read `design/gdd/reviews/[doc-name]-review-log.md` (if it exists) and apply this decision table before proceeding:
+
+| Situation | Default depth | Reason |
+|-----------|--------------|--------|
+| No prior review log (first pass) | `full` | Discovery — all domains need fresh eyes |
+| Prior verdict APPROVED | `full` | New content added; treat as fresh discovery |
+| Prior verdict NEEDS REVISION, targeted fixes applied | `lean` | Verify specific gaps closed; escalate to full only if lean finds new structural issues |
+| Prior verdict MAJOR REVISION NEEDED, structural rewrite (new sections, split, major rearrangement) | `full` | New structure needs full coverage |
+| Prior verdict MAJOR REVISION NEEDED, targeted fix sprint (same structure, filling specific gaps) | `lean` | Specialist agents will re-find same structural gaps unless upstream contracts were written |
+| 3+ consecutive MAJOR REVISION NEEDED entries in log | **STOP — see Convergence Check in Phase 1** | Reviewing again without extracting undefined primitives will produce another MAJOR REVISION NEEDED |
+
+Tell the user which depth was selected and why, in one sentence, before proceeding.
 
 ---
 
@@ -27,6 +40,26 @@ Read the target design document in full. Read CLAUDE.md to understand project co
 **Lore/narrative alignment:** If `design/gdd/game-concept.md` or any file in `design/narrative/` exists, read it. Note any mechanical choices in this GDD that contradict established world rules, tone, or design pillars. Pass this context to `game-designer` in Phase 3b.
 
 **Prior review check:** Check whether `design/gdd/reviews/[doc-name]-review-log.md` exists. If it does, read the most recent entry — note what verdict was given and what blocking items were listed. This session is a re-review; track whether prior items were addressed.
+
+**Convergence Check (run after reading the review log — do this before Phase 2):**
+
+Count consecutive MAJOR REVISION NEEDED verdicts in the log. If the count is ≥ 3:
+
+1. List the blocker clusters that appear in two or more of those passes by name.
+2. Check whether each of those clusters references an undefined primitive (e.g., "session token is referenced but never defined", "state machine transition missing from table"). Do this by grepping `design/gdd/` for the primitive name.
+3. If the primitive still does not exist on disk: **surface a Convergence Warning** before proceeding with Phase 2:
+
+> ⚠️ **Convergence Warning**: This document has had [N] consecutive MAJOR REVISION NEEDED verdicts. The following clusters have recurred without resolution: [list]. The root cause appears to be [primitive X] which is referenced in this document but has no spec file. Running another full review will reproduce these findings. **Recommended action: write [primitive X] as a standalone spec first, then re-review.** Continuing with `--depth lean` to document current state without burning full specialist budget.
+
+Then automatically switch to `lean` depth and proceed. Do not run a full specialist review on a document in convergence stall.
+
+**Primitive Readiness Check (run immediately after the Convergence Check):**
+
+Scan the GDD for terms that pattern-match as "referenced but not defined here": phrases like "defined in [other doc]", "see [ADR]", "pending [other GDD]", "type unspecified", "schema TBD". For each:
+- Check whether the referenced document or definition actually exists on disk.
+- If it does not: flag it as a **primitive gap** in the Phase 4 output (not a blocker in the traditional sense, but a readiness concern that will generate downstream blockers).
+
+This check runs in the main session context — no agents needed. It prevents specialists from independently re-discovering the same "X is referenced but not defined" finding six times.
 
 ---
 
@@ -106,6 +139,24 @@ actual Task calls. A simulated review is not a specialist review.**
 
 Issue all Task calls simultaneously. Do NOT spawn one at a time.
 
+**Specialist prompt segmentation — REQUIRED:**
+
+Do NOT paste the full GDD text into every specialist prompt. Each specialist receives only the sections relevant to their domain, plus a brief summary of other sections. This reduces per-agent prompt cost by 30–50% on large documents without reducing review quality.
+
+Use this section mapping when constructing each prompt:
+
+| Specialist | Include in full | Summarise (key rules only, no prose) | Omit |
+|-----------|----------------|---------------------------------------|------|
+| `network-programmer` | Detailed Rules, Edge Cases, Dependencies, Tuning Knobs | Formulas (values only, no derivation), Overview | Player Fantasy, ACs |
+| `systems-designer` | Formulas, Tuning Knobs | Detailed Rules (data structures and state machines only), Overview | Player Fantasy, ACs |
+| `qa-lead` | Acceptance Criteria | Detailed Rules (one sentence per rule, enough to judge whether the AC matches the rule) | Formulas, Player Fantasy, Tuning Knobs |
+| `game-designer` | Overview, Player Fantasy, Detailed Rules | Edge Cases (summary only), Formulas (results only, no derivation) | ACs, Dependencies |
+| `performance-analyst` | Formulas, Tuning Knobs, any section containing tick rates / batch sizes / memory estimates | Overview (1 sentence) | Player Fantasy, ACs, Edge Cases |
+| `economy-designer` | Formulas, Tuning Knobs, any resource/cost/reward rules | Overview | Player Fantasy, ACs |
+| `network-programmer` + `qa-lead` together | As above for each | — | — |
+
+When a section is "summarised", extract only the rule names and their one-sentence definitions — not the full prose. Example: "CR-NET-6.1: Server preserves session state for 5 minutes on disconnect." not the full multi-paragraph rule text.
+
 **Prompt each specialist adversarially:**
 > "Here is the GDD for [system] and the main review's structural findings so far.
 > Your job is NOT to validate this design — your job is to find problems.
@@ -119,7 +170,7 @@ Issue all Task calls simultaneously. Do NOT spawn one at a time.
 
 - **`systems-designer`**: For every formula in the GDD, plug in boundary values (minimum and maximum plausible inputs). Report whether any outputs go degenerate — negative values, division by zero, infinity, or nonsensical results at the extremes.
 
-- **`qa-lead`**: Review every acceptance criterion. Flag any that are not independently testable — phrases like "feels balanced", "works correctly", "performs well" are not ACs. Suggest concrete rewrites for any that fail this test.
+- **`qa-lead`**: Review every acceptance criterion. Flag any that are not independently testable — phrases like "feels balanced", "works correctly", "performs well" are not ACs. Also list every rule in the Detailed Rules section that has no corresponding AC. Suggest concrete rewrites for untestable ACs.
 
 ### Step 3 — Senior lead review
 
@@ -200,10 +251,14 @@ If NEEDS REVISION or MAJOR REVISION NEEDED, options:
 
 Work through all blocking items, asking for design decisions only where you cannot resolve the issue from the GDD and existing docs alone. Group all design-decision questions into a single multi-tab `AskUserQuestion` before making any edits — do not interrupt mid-revision for each blocker individually.
 
+**Batched edits rule:** When applying fixes, group all changes to the same GDD section into a single Edit call. Do not apply one Edit per blocker. Identify every change needed within a section, then apply them together. This significantly reduces context consumption and Edit churn.
+
+**GDD Revision Triad:** After all GDD edits are complete, always update `design/registry/entities.yaml` (for any new or changed entities/stats) and `production/session-state/active.md` (current progress) before considering the revision done.
+
 After all revisions are complete, show a summary table (blocker → fix applied) and use `AskUserQuestion` for a **post-revision closing widget**:
 
 - Prompt: "Revisions complete — [N] blockers resolved. What next?"
-- Note current context usage: if context is above ~50%, add: "(Recommended: /clear before re-review — this session has used X% context. A full re-review runs 5 agents and needs clean context.)"
+- Note current context usage: if context is above ~40%, add: "(Recommended: /clear before re-review — this session has used X% context. A full re-review spawns 6+ agents and needs clean context.)"
 - Options:
   - `[A] Re-review in a new session — run /design-review [doc-path] after /clear`
   - `[B] Accept revisions and mark Approved — update systems index, skip re-review`

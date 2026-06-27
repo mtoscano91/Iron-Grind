@@ -1,154 +1,111 @@
-# Unity 6.3 LTS — Breaking Changes
+# Unity 6 — Breaking Changes
 
-**Last verified:** 2026-02-13
+*Last verified: 2026-04-19*
+*Covers: Unity 6.0 (6000.0) through Unity 6.3 LTS (6000.4)*
 
-This document tracks breaking API changes and behavioral differences between Unity 2022 LTS
-(likely in model training) and Unity 6.3 LTS (current version). Organized by risk level.
+---
 
-## HIGH RISK — Will Break Existing Code
+## Unity 6.0 (6000.0)
 
-### Entities/DOTS API Complete Overhaul
-**Versions:** Entities 1.0+ (Unity 6.0+)
-
+### Object Search API — BREAKING
 ```csharp
-// ❌ OLD (pre-Unity 6, GameObjectEntity pattern)
-public class HealthComponent : ComponentData {
-    public float Value;
-}
+// OLD (deprecated — generates warning)
+var objects = FindObjectsOfType<PlayerController>();
+var obj = FindObjectOfType<PlayerController>();
 
-// ✅ NEW (Unity 6+, IComponentData)
-public struct HealthComponent : IComponentData {
-    public float Value;
-}
-
-// ❌ OLD: ComponentSystem
-public class DamageSystem : ComponentSystem { }
-
-// ✅ NEW: ISystem (unmanaged, Burst-compatible)
-public partial struct DamageSystem : ISystem {
-    public void OnCreate(ref SystemState state) { }
-    public void OnUpdate(ref SystemState state) { }
-}
+// NEW (required)
+var objects = FindObjectsByType<PlayerController>(FindObjectsSortMode.None);
+var obj = FindAnyObjectByType<PlayerController>();      // faster, any instance
+var obj = FindFirstObjectByType<PlayerController>();    // deterministic, slower
 ```
 
-**Migration:** Follow Unity's ECS migration guide. Major architectural changes required.
+### UI Toolkit Event Handling — BREAKING
+- `ExecuteDefaultAction` → `HandleEventTrickleDown`
+- `ExecuteDefaultActionAtTarget` → `HandleEventBubbleUp`
+- `PreventDefault()` → `StopPropagation()`
+
+### Render Pipeline Custom Attributes — BREAKING
+- `CustomEditorForRenderPipelineAttribute` → `[CustomEditor] + [SupportedOnRenderPipeline]`
+- `VolumeComponentMenuForRenderPipelineAttribute` → `[VolumeComponentMenu] + [SupportedOnRenderPipeline]`
+
+### Lighting API — BREAKING (type changed)
+- `LightingSettings.filteringGaussRadiusAO` (int) → `filteringGaussianRadiusAO` (float)
+- `LightingSettings.filteringGaussRadiusDirect` (int) → `filteringGaussianRadiusDirect` (float)
+- `LightingSettings.filteringGaussRadiusIndirect` (int) → `filteringGaussianRadiusIndirect` (float)
+
+### Android — BREAKING
+- `UnityPlayer` no longer extends `FrameLayout`
+- Replace with `UnityPlayerForActivityOrService` or `UnityPlayerForGameActivity`
+
+### Behavior Changes (not API breaks but observable)
+- Light Probe brightness: 94% → 100% of lightmap brightness (subtle visual shift)
+- Runtime 2D textures: no longer mipmap-limited by default (now opt-in)
+- Metal shaders: `min16float`, `half`, `real` now compile to 32-bit (was 16-bit)
+- Enlighten Baked GI removed; replaced by Progressive Lightmapper automatically
+- Environment lighting no longer auto-baked — must call `Lightmapping.Bake()`
 
 ---
 
-### Input System — Legacy Input Deprecated
-**Versions:** Unity 6.0+
+## Unity 6.1 (6000.1)
+
+### Shader Keywords — BREAKING
+`_FORWARD_PLUS` keyword replaced by `_CLUSTER_LIGHT_LOOP`.
+Custom shaders referencing `_FORWARD_PLUS` must be updated.
+
+### Platform Default Changes
+- Windows new projects: DirectX12 is the default Auto Graphics API
+- Android: Default Gradle 8.11, AGP 8.7.2, NDK r27c, JDK 17
+
+---
+
+## Unity 6.2 (6000.2)
+
+### URP Rendering — BEHAVIORAL CHANGE
+`AfterRendering` injection point now consistently fires AFTER final blit to back buffer.
+Previous behavior was inconsistent. Migration: switch to `AfterRenderingPostProcessing`
+if you need the pre-6.2 timing.
+
+---
+
+## Unity 6.3 LTS (6000.4)
+
+### URP Compatibility Mode — REMOVED
+`RenderGraphSettings.enableRenderCompatibilityMode` is now read-only (returns false).
+**All custom URP rendering must use the render graph system.**
+`SetupRenderPasses` is deprecated → migrate to `AddRenderPasses` + `RecordRenderGraph`.
+
+### SerializeField — NOW A COMPILE ERROR
+`[SerializeField]` can ONLY be applied to fields. Applying to properties, methods,
+or types causes a **compile-time error** (was a warning in earlier versions).
 
 ```csharp
-// ❌ OLD: Input class (deprecated)
-if (Input.GetKeyDown(KeyCode.Space)) { }
+// COMPILE ERROR in 6.3+
+[SerializeField] public float Speed { get; set; }
 
-// ✅ NEW: Input System package
-using UnityEngine.InputSystem;
-if (Keyboard.current.spaceKey.wasPressedThisFrame) { }
+// CORRECT
+[SerializeField] private float _speed;
+// or: [field: SerializeField] public float Speed { get; private set; }
 ```
 
-**Migration:** Install Input System package, replace all `Input.*` calls with new API.
+### Accessibility Enums — BREAKING (precompiled assemblies)
+- `AccessibilityRole` changed from flags enum → standard enum (bitwise ops break)
+- `AccessibilityRole` and `AccessibilityState` underlying type: `int` → `byte`
+- Precompiled `.dll` assemblies will throw `MissingFieldException` — require recompile
 
----
+### Scene/Entities — BREAKING (precompiled assemblies)
+- `Scene.handle` type: `int` → `SceneHandle`
+- `UnityEngine.Experimental.GlobalIllumination.instanceID` (int) → `entityID` (EntityId)
+- Precompiled assemblies require recompilation
 
-### URP/HDRP Renderer Feature API Changes
-**Versions:** Unity 6.0+
+### Netcode for GameObjects (NGO) — BREAKING
+- `NetworkTransform.Update` can no longer be overridden
+- Use new `NetworkTransform.OnUpdate` method instead
+- Multiplay Hosting service shut down March 31, 2026
 
-```csharp
-// ❌ OLD: ScriptableRenderPass.Execute signature
-public override void Execute(ScriptableRenderContext context, ref RenderingData data)
+### Lightmapping API — REMOVED
+- `AdditionalBakedProbes` API removed
+- `CustomBake` API obsolete → use `LightTransport.IProbeIntegrator`
 
-// ✅ NEW: Uses RenderGraph API
-public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData)
-```
-
-**Migration:** Update custom render passes to use RenderGraph API.
-
----
-
-## MEDIUM RISK — Behavioral Changes
-
-### Addressables — Asset Loading Returns
-**Versions:** Unity 6.2+
-
-Asset loading failures now throw exceptions by default instead of returning null.
-Add proper exception handling or use `TryLoad` variants.
-
-```csharp
-// ❌ OLD: Silent null on failure
-var handle = Addressables.LoadAssetAsync<Sprite>("key");
-var sprite = handle.Result; // null if failed
-
-// ✅ NEW: Throws on failure, use try/catch or TryLoad
-try {
-    var handle = Addressables.LoadAssetAsync<Sprite>("key");
-    var sprite = await handle.Task;
-} catch (Exception e) {
-    Debug.LogError($"Failed to load: {e}");
-}
-```
-
----
-
-### Physics — Default Solver Iterations Changed
-**Versions:** Unity 6.0+
-
-Default solver iterations increased for better stability.
-Check `Physics.defaultSolverIterations` if you rely on old behavior.
-
----
-
-## LOW RISK — Deprecations (Still Functional)
-
-### UGUI (Legacy UI)
-**Status:** Deprecated but supported
-**Replacement:** UI Toolkit
-
-UGUI still works but UI Toolkit is recommended for new projects.
-
----
-
-### Legacy Particle System
-**Status:** Deprecated
-**Replacement:** Visual Effect Graph (VFX Graph)
-
----
-
-### Old Animation System
-**Status:** Deprecated
-**Replacement:** Animator Controller (Mecanim)
-
----
-
-## Platform-Specific Breaking Changes
-
-### WebGL
-- **Unity 6.0+**: WebGPU is now the default (WebGL 2.0 fallback available)
-- Update shaders for WebGPU compatibility
-
-### Android
-- **Unity 6.0+**: Minimum API level raised to 24 (Android 7.0)
-
-### iOS
-- **Unity 6.0+**: Minimum deployment target raised to iOS 13
-
----
-
-## Migration Checklist
-
-When upgrading from 2022 LTS to Unity 6.3 LTS:
-
-- [ ] Audit all DOTS/ECS code (complete rewrite likely needed)
-- [ ] Replace `Input` class with Input System package
-- [ ] Update custom render passes to RenderGraph API
-- [ ] Add exception handling to Addressables calls
-- [ ] Test physics behavior (solver iterations changed)
-- [ ] Consider migrating UGUI to UI Toolkit for new UI
-- [ ] Update WebGL shaders for WebGPU
-- [ ] Verify minimum platform versions (Android/iOS)
-
----
-
-**Sources:**
-- https://docs.unity3d.com/6000.0/Documentation/Manual/upgrade-guides.html
-- https://docs.unity3d.com/Packages/com.unity.entities@1.3/manual/upgrade-guide.html
+### USS (UI Toolkit) — STRICTER VALIDATION
+Invalid USS syntax now **blocks file import** in 6.3 (was previously a warning).
+Fix all USS syntax errors before upgrading.

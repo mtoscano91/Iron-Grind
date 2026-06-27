@@ -1,334 +1,150 @@
-# Unity 6.3 LTS — Current Best Practices
+# Unity 6 — Current Best Practices
 
-**Last verified:** 2026-02-13
-
-Modern Unity 6 patterns that may not be in the LLM's training data.
-These are production-ready recommendations as of Unity 6.3 LTS.
+*Last verified: 2026-04-19*
+*Focused on mobile (iOS) + URP + C# — relevant to Project Iron Grind.*
 
 ---
 
-## Project Setup
+## URP Rendering (Unity 6 required patterns)
 
-### Use Unity 6.3 LTS for Production
-- **Tech Stream** (6.4+): Latest features, less stable
-- **LTS** (6.3): Production-ready, 2-year support (until Dec 2027)
+### Render Graph is Required for Custom Passes
+URP Compatibility Mode was removed in 6.3. All `ScriptableRendererFeature` must use render graph.
 
-### Choose the Right Render Pipeline
-- **URP (Universal)**: Mobile, cross-platform, good performance ✅ Recommended for most games
-- **HDRP (High Definition)**: High-end PC/console, photorealistic
-- **Built-in**: Deprecated, avoid for new projects
+```csharp
+// WRONG — removed in Unity 6.3
+public override void SetupRenderPasses(ScriptableRenderer renderer, in RenderingData data) { }
+
+// CORRECT — Unity 6 render graph pattern
+public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData data) { }
+public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData) { }
+```
+
+### Mobile URP Performance Checklist
+- **SRP Batching**: Enable in URP Asset → Advanced → SRP Batcher (significant CPU win)
+- **Store Actions**: Set to `Auto` or `Discard` for iOS (tile-based GPU — TBDR architecture)
+- **MSAA**: Disable or set to 2x on lower-end targets (memory bandwidth cost on mobile)
+- **Opaque materials**: Prefer over transparent wherever possible (no sorting overhead)
+- **Shadows**: Disable shadow casting on props that don't need it (draw call reduction)
+- **Render Graph native passes**: On iOS TBDR, URP merges passes into native render passes,
+  keeping textures in tile memory — significant bandwidth savings vs. old Compatibility Mode
 
 ---
 
-## Scripting
-
-### Use C# 9+ Features (Unity 6 Supports C# 9)
+## Object Search — Required Unity 6 Pattern
 
 ```csharp
-// ✅ Record types for data
-public record PlayerData(string Name, int Level, float Health);
+// WRONG (deprecated — compiler warning)
+var players = FindObjectsOfType<PlayerController>();
+var player  = FindObjectOfType<PlayerController>();
 
-// ✅ Init-only properties
-public class Config {
-    public string GameMode { get; init; }
-}
-
-// ✅ Pattern matching
-var result = enemy switch {
-    Boss boss => boss.Enrage(),
-    Minion minion => minion.Flee(),
-    _ => null
-};
-```
-
-### Async/Await for Asset Loading
-
-```csharp
-// ✅ Modern async pattern
-public async Task<GameObject> LoadEnemyAsync(string key) {
-    var handle = Addressables.LoadAssetAsync<GameObject>(key);
-    return await handle.Task;
-}
-```
-
-### Use Source Generators for Serialization (Unity 6+)
-
-```csharp
-// ✅ Source-generated serialization (faster, less reflection)
-[GenerateSerializer]
-public partial struct PlayerStats : IComponentData {
-    public int Health;
-    public int Mana;
-}
+// CORRECT
+var players = FindObjectsByType<PlayerController>(FindObjectsSortMode.None); // unsorted = fastest
+var player  = FindAnyObjectByType<PlayerController>();   // fastest single-object lookup
+var player  = FindFirstObjectByType<PlayerController>(); // deterministic (sorted by InstanceID)
 ```
 
 ---
 
-## DOTS/ECS (Production-Ready in Unity 6.3 LTS)
-
-### Use ISystem (Not ComponentSystem)
+## SerializeField — Unity 6.3 Enforcement
 
 ```csharp
-// ✅ Modern unmanaged ISystem (Burst-compatible)
-public partial struct MovementSystem : ISystem {
-    public void OnCreate(ref SystemState state) { }
+// COMPILE ERROR in 6.3+
+[SerializeField] public float Speed { get; set; }
 
-    public void OnUpdate(ref SystemState state) {
-        foreach (var (transform, speed) in
-            SystemAPI.Query<RefRW<LocalTransform>, RefRO<MoveSpeed>>()) {
-            transform.ValueRW.Position += speed.ValueRO.Value * SystemAPI.Time.DeltaTime;
-        }
-    }
-}
-```
+// CORRECT — field only
+[SerializeField] private float _speed;
 
-### Use IJobEntity for Parallel Jobs
-
-```csharp
-// ✅ IJobEntity (replaces IJobForEach)
-[BurstCompile]
-public partial struct DamageJob : IJobEntity {
-    public float DeltaTime;
-
-    void Execute(ref Health health, in DamageOverTime dot) {
-        health.Value -= dot.DamagePerSecond * DeltaTime;
-    }
-}
-
-// Schedule it
-var job = new DamageJob { DeltaTime = SystemAPI.Time.DeltaTime };
-job.ScheduleParallel();
+// ALSO CORRECT — backing field attribute
+[field: SerializeField] public float Speed { get; private set; }
 ```
 
 ---
 
-## Input
+## C# Patterns (Unity 6)
 
-### Use Input System Package (Not Legacy Input)
+### Component access
+```csharp
+// Prefer TryGetComponent over GetComponent + null check
+if (TryGetComponent<Rigidbody>(out var rb))
+    rb.AddForce(Vector3.up);
+```
+
+### Events
+```csharp
+// C# events for code-to-code (better performance than UnityEvent)
+public event Action<int> OnHealthChanged;
+
+// UnityEvent is fine for designer-facing Inspector connections
+public UnityEvent OnDeath;
+```
+
+### Null coalescing with Unity objects
+```csharp
+// WARNING: C# null-coalescing (?? and ?.) does NOT work correctly with
+// Unity Object subclasses — use explicit null checks instead
+if (target != null) target.DoSomething(); // CORRECT
+target?.DoSomething();                    // UNSAFE with Unity Objects
+```
+
+---
+
+## iOS Build Settings (Unity 6)
+
+| Setting | Value | Reason |
+|---------|-------|--------|
+| Scripting Backend | IL2CPP | Required for iOS App Store |
+| Architecture | ARM64 | iPhone 5S+ (all supported devices) |
+| Graphics API | Metal only | Remove OpenGL ES from the list |
+| Texture format | ASTC | Best quality/size on all modern iPhones |
+| Frame Pacing | Enabled | Smoother frame delivery on iOS |
+| `Application.targetFrameRate` | 60 | Set in Awake — iOS defaults to 30 |
 
 ```csharp
-// ✅ Input Actions (rebindable, cross-platform)
-using UnityEngine.InputSystem;
-
-public class PlayerInput : MonoBehaviour {
-    private PlayerControls controls;
-
-    void Awake() {
-        controls = new PlayerControls();
-        controls.Gameplay.Jump.performed += ctx => Jump();
-    }
-
-    void OnEnable() => controls.Enable();
-    void OnDisable() => controls.Disable();
+// Set this early in game startup
+void Awake()
+{
+    Application.targetFrameRate = 60;
+    Screen.sleepTimeout = SleepTimeout.NeverSleep; // optional for active gameplay
 }
 ```
 
-Create Input Actions asset in editor, generate C# class via inspector.
-
----
-
-## UI
-
-### Use UI Toolkit for Runtime UI (Production-Ready in Unity 6)
-
+### Safe Area (notched iPhones)
 ```csharp
-// ✅ UI Toolkit (replaces UGUI for new projects)
-using UnityEngine.UIElements;
-
-public class MainMenu : MonoBehaviour {
-    void OnEnable() {
-        var root = GetComponent<UIDocument>().rootVisualElement;
-
-        var playButton = root.Q<Button>("play-button");
-        playButton.clicked += StartGame;
-
-        var scoreLabel = root.Q<Label>("score");
-        scoreLabel.text = $"High Score: {PlayerPrefs.GetInt("HighScore")}";
-    }
-}
-```
-
-**UXML** (UI structure) + **USS** (styling) = HTML/CSS-like workflow.
-
----
-
-## Asset Management
-
-### Use Addressables (Not Resources)
-
-```csharp
-// ✅ Addressables (async, memory-efficient)
-using UnityEngine.AddressableAssets;
-
-public async Task SpawnEnemyAsync(string enemyKey) {
-    var handle = Addressables.InstantiateAsync(enemyKey);
-    var enemy = await handle.Task;
-
-    // Cleanup: release when destroyed
-    Addressables.ReleaseInstance(enemy);
-}
-```
-
-**Benefits:** Async loading, remote content delivery, better memory control.
-
----
-
-## Rendering
-
-### Use RenderGraph API for Custom Passes (URP/HDRP)
-
-```csharp
-// ✅ RenderGraph API (Unity 6+)
-public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData) {
-    using (var builder = renderGraph.AddRasterRenderPass<PassData>("My Pass", out var passData)) {
-        // Setup pass
-        builder.SetRenderFunc((PassData data, RasterGraphContext context) => {
-            // Execute commands
-        });
-    }
-}
-```
-
-**Replaces:** Old `CommandBuffer.Execute()` pattern.
-
----
-
-## Performance
-
-### Use Burst Compiler + Jobs System
-
-```csharp
-// ✅ Burst-compiled job (massive performance gain)
-[BurstCompile]
-struct ParticleUpdateJob : IJobParallelFor {
-    public NativeArray<float3> Positions;
-    public NativeArray<float3> Velocities;
-    public float DeltaTime;
-
-    public void Execute(int index) {
-        Positions[index] += Velocities[index] * DeltaTime;
-    }
-}
-
-// Schedule
-var job = new ParticleUpdateJob {
-    Positions = positions,
-    Velocities = velocities,
-    DeltaTime = Time.deltaTime
-};
-job.Schedule(positions.Length, 64).Complete();
-```
-
-**20-100x faster** than equivalent C# code.
-
----
-
-### Use GPU Instancing for Repeated Objects
-
-```csharp
-// ✅ GPU Instancing (thousands of objects, minimal draw calls)
-Graphics.RenderMeshInstanced(
-    new RenderParams(material),
-    mesh,
-    0,
-    matrices // NativeArray<Matrix4x4>
-);
+// Always apply safe area to UI root — accounts for notch and Dynamic Island
+Rect safeArea = Screen.safeArea;
+Vector2 anchorMin = safeArea.position;
+Vector2 anchorMax = safeArea.position + safeArea.size;
+anchorMin.x /= Screen.width;  anchorMin.y /= Screen.height;
+anchorMax.x /= Screen.width;  anchorMax.y /= Screen.height;
+rectTransform.anchorMin = anchorMin;
+rectTransform.anchorMax = anchorMax;
 ```
 
 ---
 
-## Memory Management
+## Networking (Relevant for Project Iron Grind)
 
-### Use NativeContainers (Not Managed Arrays in Jobs)
+Unity 6.3 changed Netcode for GameObjects (NGO):
+- `NetworkTransform.Update` override removed → use `NetworkTransform.OnUpdate`
+- Multiplay Hosting shut down March 31, 2026 — do not use
+
+**This project uses NGO — see `docs/architecture/ADR-004-networking-library-ngo.md`.**
+Mirror was evaluated and rejected: it is battle-tested for traditional MMO patterns and better suited for persistent-world topology, but it is not officially supported on Unity 6.x, and approved CSP rules (CR-CSP-3/21) already lock in `NetworkManager.ServerTime.Tick` (NGO API). Iron Grind's instanced-zone model (10-50 players per zone) is session-shaped, which sits inside NGO's design center rather than requiring Mirror's persistent-world strengths.
+
+---
+
+## UI Toolkit (Unity 6)
 
 ```csharp
-// ✅ NativeArray (no GC, Burst-compatible)
-NativeArray<int> data = new NativeArray<int>(1000, Allocator.TempJob);
-// ... use in job
-data.Dispose(); // Manual cleanup required
+// WRONG — deprecated in 6.2
+element.transform.position = new Vector3(10, 10, 0);
 
-// ✅ Or use using statement
-using var data = new NativeArray<int>(1000, Allocator.TempJob);
-// Auto-disposed
+// CORRECT
+element.style.translate = new StyleTranslate(new Translate(10, 10));
 ```
 
----
+USS files: invalid syntax now **blocks import** in 6.3 (was warning). Fix all USS
+syntax errors before they accumulate.
 
-## Multiplayer
-
-### Use Netcode for GameObjects (Official)
-
-```csharp
-// ✅ Unity's official netcode
-using Unity.Netcode;
-
-public class Player : NetworkBehaviour {
-    private NetworkVariable<int> health = new NetworkVariable<int>(100);
-
-    [ServerRpc]
-    public void TakeDamageServerRpc(int damage) {
-        health.Value -= damage;
-    }
-}
-```
-
-**Replaces:** UNet (deprecated), MLAPI (renamed to Netcode for GameObjects).
-
----
-
-## Testing
-
-### Use Unity Test Framework (NUnit-based)
-
-```csharp
-// ✅ Play Mode Test
-[UnityTest]
-public IEnumerator Player_TakesDamage_HealthDecreases() {
-    var player = new GameObject().AddComponent<Player>();
-    player.Health = 100;
-
-    player.TakeDamage(25);
-    yield return null; // Wait one frame
-
-    Assert.AreEqual(75, player.Health);
-}
-```
-
----
-
-## Debugging
-
-### Use Logging Best Practices
-
-```csharp
-// ✅ Structured logging (Unity 6+)
-using UnityEngine;
-
-Debug.Log($"Player {playerName} scored {score} points");
-
-// ✅ Conditional compilation for debug code
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-    Debug.DrawRay(transform.position, direction, Color.red);
-#endif
-```
-
----
-
-## Summary: Unity 6 Tech Stack
-
-| Feature | Use This (2026) | Avoid This (Legacy) |
-|---------|------------------|----------------------|
-| **Input** | Input System package | `Input` class |
-| **UI** | UI Toolkit | UGUI (Canvas) |
-| **ECS** | ISystem + IJobEntity | ComponentSystem |
-| **Rendering** | URP + RenderGraph | Built-in pipeline |
-| **Assets** | Addressables | Resources |
-| **Jobs** | Burst + IJobParallelFor | Coroutines for heavy work |
-| **Multiplayer** | Netcode for GameObjects | UNet |
-
----
-
-**Sources:**
-- https://docs.unity3d.com/6000.0/Documentation/Manual/BestPracticeGuides.html
-- https://docs.unity3d.com/Packages/com.unity.entities@1.3/manual/index.html
-- https://docs.unity3d.com/Packages/com.unity.inputsystem@1.11/manual/index.html
+**For new projects**: UI Toolkit (UXML/USS) is the recommended UI system. UGUI
+(Canvas) is still fully supported — use it if the team is more familiar with it.

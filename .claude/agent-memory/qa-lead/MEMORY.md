@@ -1,0 +1,2 @@
+- [Project Iron Grind — game concept and QA context](project_iron_grind.md) — Knight Online mobile MMORPG; Character Stats GDD NOT READY for sprint (4 critical AC gaps as of 2026-04-22)
+- [Adversarial AC review approach](feedback_adversarial_review_style.md) — attack testability/coverage/spec completeness; classify CRITICAL/MAJOR/MINOR; always give revised AC and gate verdict

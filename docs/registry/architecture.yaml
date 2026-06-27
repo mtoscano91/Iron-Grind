@@ -43,7 +43,30 @@ last_updated: ""
 # interface: how other systems access this state (read-only property, method call,
 #   signal, shared resource, etc.) — this is the contract other ADRs depend on.
 
-state_ownership: []
+state_ownership:
+  - state: character_record
+    status: active
+    owner_system: CharacterPersistenceService
+    adr: docs/architecture/ADR-006-persistence-layer.md
+    interface: "ICharacterPersistence (async methods: LoadCharacter, SaveIrreversibleOutcome, SaveSession, CreateStub)"
+    write_access: CharacterPersistenceService-only
+    referenced_by:
+      - docs/architecture/ADR-006-persistence-layer.md
+      - docs/architecture/ADR-001-purchase-transaction-integrity.md
+    added: 2026-06-27
+    revised: ""
+
+  - state: pending_purchase
+    status: active
+    owner_system: CharacterPersistenceService
+    adr: docs/architecture/ADR-006-persistence-layer.md
+    interface: "pending_purchases table; INSERT shares NpgsqlTransaction with TrySpendGold UPDATE (ADR-001 Decision 2)"
+    write_access: CharacterPersistenceService-only (NPC Shop triggers via ICharacterPersistence)
+    referenced_by:
+      - docs/architecture/ADR-006-persistence-layer.md
+      - docs/architecture/ADR-001-purchase-transaction-integrity.md
+    added: 2026-06-27
+    revised: ""
 
 # Example:
 #
@@ -131,7 +154,95 @@ performance_budgets: []
 # Register an API decision when the choice is non-obvious and other ADRs might
 # make a different choice for the same purpose without knowing this was decided.
 
-api_decisions: []
+api_decisions:
+  - purpose: hud_screen_space_ui_framework
+    status: active
+    api: UI Toolkit (UIDocument / VisualElement / UXML / USS)
+    not: UGUI Canvas for screen-space HUD layer elements
+    adr: docs/architecture/ADR-005-hud-ui-framework-ui-toolkit.md
+    reason: "Unity 6's recommended UI system for new projects; retained-mode rendering avoids full Canvas rebuild per stat change; UsageHints.DynamicTransform achieves per-element dirty isolation without nested Canvas workaround"
+    referenced_by:
+      - docs/architecture/ADR-005-hud-ui-framework-ui-toolkit.md
+    added: 2026-06-20
+    revised: ""
+
+  - purpose: world_space_damage_numbers_framework
+    status: active
+    api: UGUI Canvas (RenderMode.WorldSpace) + TextMeshPro
+    not: UI Toolkit (has no world-space Canvas equivalent)
+    adr: docs/architecture/ADR-005-hud-ui-framework-ui-toolkit.md
+    reason: "World-space floating damage numbers must exist in 3D camera space; UI Toolkit panel renders in screen space only; UGUI world-space Canvas is the only Unity 6 option for camera-relative floating text"
+    referenced_by:
+      - docs/architecture/ADR-005-hud-ui-framework-ui-toolkit.md
+    added: 2026-06-20
+    revised: ""
+
+  - purpose: fill_bar_animation_pattern
+    status: active
+    api: "style.scale (X axis) + usageHints = UsageHints.DynamicTransform; USS: transform-origin: left center; position: absolute"
+    not: "Image.fillAmount (UGUI); style.width percentage (triggers tessellation / layout recalculation per frame)"
+    adr: docs/architecture/ADR-005-hud-ui-framework-ui-toolkit.md
+    reason: "style.scale is applied GPU-side without mesh re-tessellation; DynamicTransform hint allows renderer to update transform without re-tessellating geometry; satisfies <0.3ms HUD update budget. Note: style.scale with border-radius on fill elements produces incorrect corners at low values — use absolute-positioned width-percent pattern if fill layers have border-radius"
+    referenced_by:
+      - docs/architecture/ADR-005-hud-ui-framework-ui-toolkit.md
+    added: 2026-06-20
+    revised: ""
+
+  - purpose: persistence_database
+    status: active
+    api: "PostgreSQL (via Npgsql async driver) + Dapper micro-ORM"
+    not: "SQLite; Entity Framework Core; raw ADO.NET without Dapper"
+    adr: docs/architecture/ADR-006-persistence-layer.md
+    reason: "ACID-compliant, async-native, scales to multi-zone concurrent saves. WHERE save_version = @expected optimistic concurrency is idiomatic SQL. Dapper maps 23-field record with minimal reflection footprint. SQLite rejected: WAL single-writer limit conflicts with multi-zone topology. EF Core rejected: heavy reflection, IL2CPP risk, overkill for fixed schema."
+    referenced_by:
+      - docs/architecture/ADR-006-persistence-layer.md
+      - docs/architecture/ADR-001-purchase-transaction-integrity.md
+    added: 2026-06-27
+    revised: ""
+
+  - purpose: game_server_hosting
+    status: active
+    api: "Self-hosted Linux VPS (Hetzner CPX41 / Ubuntu 22.04 LTS) — all components co-located on one machine at MVP"
+    not: "AWS GameLift; Agones on Kubernetes; Unity Multiplay Hosting (shut down 2026-03-31); any managed game-server fleet at MVP"
+    adr: docs/architecture/ADR-007-hosting-backend.md
+    reason: "ADR-006 co-location constraint (≤50ms PostgreSQL write latency) is satisfied at ~0.1ms on loopback. Managed fleet services add engineering overhead that returns value only at 20+ concurrent zone instances. Hetzner CPX41 at ~€20/month handles 4 concurrent Unity IL2CPP processes with headroom. Scale-out path (Agones/Cloud SQL) documented for post-MVP."
+    referenced_by:
+      - docs/architecture/ADR-007-hosting-backend.md
+    added: 2026-06-27
+    revised: ""
+
+  - purpose: zone_server_process_model
+    status: active
+    api: "One Unity 6.3 IL2CPP headless process per active zone instance; managed as systemd services"
+    not: "Multiple zone instances in a single Unity process; containerised Unity processes at MVP"
+    adr: docs/architecture/ADR-007-hosting-backend.md
+    reason: "Zone Instancing GDD (CR-ZI Runtime Model) mandates single-threaded main-loop execution — 'all zone management logic executes on the Unity main thread.' Hosting multiple zone instances in one process requires threading the Unity main loop, which is not supported without DOTS architecture. One-process-per-zone matches the GDD exactly and provides natural capacity isolation."
+    referenced_by:
+      - docs/architecture/ADR-007-hosting-backend.md
+    added: 2026-06-27
+    revised: ""
+
+  - purpose: combat_ui_arc_renderer
+    status: active
+    api: "Painter2D generateVisualContent callback (MeshGenerationContext.painter2D; BeginPath/Arc/Stroke; MarkDirtyRepaint per-frame while OnCooldown)"
+    not: "HLSL shader via background-image material; sprite-based arc atlas; UGUI stacked over UI Toolkit"
+    adr: docs/architecture/ADR-008-combat-ui-framework.md
+    reason: "Painter2D is UI Toolkit's first-class custom drawing API — purpose-built for procedural arc geometry. No shader asset, no RenderTexture, no IL2CPP stripping concern. 8 simple stroked arcs per frame are negligible on A15 Bionic hardware; validated against 0.3ms HUD budget before sprint start (CR-CUI-19 gate). Material-property-block UI Toolkit integration in Unity 6.3 has HIGH post-cutoff risk not covered by engine reference docs."
+    referenced_by:
+      - docs/architecture/ADR-008-combat-ui-framework.md
+    added: 2026-06-27
+    revised: ""
+
+  - purpose: skill_bar_presenter_pattern
+    status: active
+    api: "SkillBarPresenter : MonoBehaviour — owns UIDocument, Queue<SkillCooldownUpdate> for decoupling, flushes SkillBarState deltas to VisualElements in Update()"
+    not: "Direct VisualElement writes from NetworkBehaviour message handlers"
+    adr: docs/architecture/ADR-008-combat-ui-framework.md
+    reason: "Separates the network layer (NGO message delivery) from the UI layer (VisualElement updates). NetworkBehaviour writes to Queue<T>; SkillBarPresenter reads in Update() and flushes. Enables independent unit testing of presenter logic without a running NGO session. Direct NetworkBehaviour→VisualElement coupling is untestable without a server session and makes network-layer changes break UI code."
+    referenced_by:
+      - docs/architecture/ADR-008-combat-ui-framework.md
+    added: 2026-06-27
+    revised: ""
 
 # Example:
 #
@@ -157,7 +268,48 @@ api_decisions: []
 # Register a pattern when an ADR explicitly bans it AND other ADRs might
 # unknowingly use it (i.e., it's a tempting but wrong approach for this project).
 
-forbidden_patterns: []
+forbidden_patterns:
+  - pattern: visual_element_transform_setter
+    status: active
+    description: "Do not use VisualElement.transform setter for positional animation. Use element.style.translate = new StyleTranslate(new Translate(x, y)) instead."
+    why: "VisualElement.transform setter was deprecated in Unity 6.2 and produces a compile warning. In Unity 6.3 it is effectively removed. All UI Toolkit positional animation must use style.translate, style.rotate, or style.scale."
+    adr: docs/architecture/ADR-005-hud-ui-framework-ui-toolkit.md
+    added: 2026-06-20
+
+  - pattern: picking_mode_parent_inheritance
+    status: active
+    description: "Do not rely on PickingMode.Ignore set on a parent VisualElement to make children non-interactive. Set PickingMode.Ignore (or USS picking-mode: ignore) explicitly on every non-interactive leaf element."
+    why: "PickingMode.Ignore does NOT propagate down the VisualElement tree. Children with the default PickingMode.Position remain in the hit-test tree and will silently consume touches over their bounding rect, blocking input from reaching the 3D scene. On a touch-only iOS game this produces untraceable input bugs."
+    adr: docs/architecture/ADR-005-hud-ui-framework-ui-toolkit.md
+    added: 2026-06-20
+
+  - pattern: entity_framework_core_for_persistence
+    status: active
+    description: "Do not use Entity Framework Core for character or transaction persistence. Use Npgsql + Dapper with explicit parameterised SQL."
+    why: "EF Core's reflection footprint requires extensive link.xml entries for IL2CPP and introduces change-tracking overhead with no benefit for a fixed 23-field schema where every save is a full-record UPDATE. The ICharacterPersistence interface already provides the abstraction layer — EF Core adds complexity without value."
+    adr: docs/architecture/ADR-006-persistence-layer.md
+    added: 2026-06-27
+
+  - pattern: unity_relay_for_dedicated_server
+    status: active
+    description: "Do not use Unity Gaming Services Relay for server-to-client UDP connectivity. Use a direct NGO UDP connection to the server's public IP and port."
+    why: "Unity Relay is a NAT traversal service for P2P topologies. A dedicated server on a public IP does not need NAT traversal. Routing all traffic through Unity's relay datacenter adds ~20–50ms RTT per hop, conflicting with the commit-before-broadcast latency budget (ENHANCEMENT_PROCESS_LATENCY_MAX_MS = 200ms) and defeating the purpose of co-locating PostgreSQL for low write latency."
+    adr: docs/architecture/ADR-007-hosting-backend.md
+    added: 2026-06-27
+
+  - pattern: deprecated_ui_event_api_names
+    status: active
+    description: "Do not use pre-Unity-6.0 UI Toolkit event override names: ExecuteDefaultAction, ExecuteDefaultActionAtTarget, PreventDefault(). Use HandleEventTrickleDown, HandleEventBubbleUp, StopPropagation() respectively."
+    why: "Unity 6.0 renamed these methods. The old names are deprecated and generate compile warnings; they may be removed in a future version. All combat UI and HUD interaction code must use the 6.0+ names to prevent warning accumulation and future breakage."
+    adr: docs/architecture/ADR-008-combat-ui-framework.md
+    added: 2026-06-27
+
+  - pattern: direct_visually_element_from_network_behaviour
+    status: active
+    description: "Do not write directly to a VisualElement from a NetworkBehaviour callback. Use SkillBarPresenter or an equivalent MonoBehaviour presenter with a Queue<T> to decouple network callbacks from VisualElement updates."
+    why: "Coupling NetworkBehaviour to VisualElement makes the UI logic untestable without a running NGO session and couples the network and UI layers — changes to VisualElement structure require edits in the network layer. The presenter pattern (SkillBarPresenter : MonoBehaviour) keeps these layers independent per ADR-008."
+    adr: docs/architecture/ADR-008-combat-ui-framework.md
+    added: 2026-06-27
 
 # Example:
 #

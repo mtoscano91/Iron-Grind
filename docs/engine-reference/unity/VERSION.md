@@ -1,57 +1,44 @@
 # Unity Engine — Version Reference
 
+*Last verified: 2026-04-19*
+
 | Field | Value |
 |-------|-------|
 | **Engine Version** | Unity 6.3 LTS |
-| **Release Date** | December 2025 |
-| **Project Pinned** | 2026-02-13 |
-| **Last Docs Verified** | 2026-02-13 |
+| **Internal Version** | 6000.4 |
+| **LTS Support Until** | December 2027 |
+| **Project Pinned** | 2026-04-19 |
+| **Last Docs Verified** | 2026-04-19 |
 | **LLM Knowledge Cutoff** | May 2025 |
+| **Risk Level** | HIGH — Unity 6.x is beyond LLM training data |
 
 ## Knowledge Gap Warning
 
-The LLM's training data likely covers Unity up to ~2022 LTS (2022.3). The entire
-Unity 6 release series (formerly Unity 2023 Tech Stream) introduced significant
-changes that the model does NOT know about. Always cross-reference this directory
-before suggesting Unity API calls.
+The LLM's training data likely covers Unity up to ~2023 LTS / early 6000.0.
+Unity 6.0 through 6.3 introduced significant changes the model may not know about:
+- Render graph system is now required for URP custom rendering (Compatibility Mode removed in 6.3)
+- `Object.FindObjectsOfType` → `Object.FindObjectsByType` (new required parameter)
+- `SetupRenderPasses` deprecated → use `AddRenderPasses` with render graph
+- `[SerializeField]` on properties now causes compile errors (fields only)
+- URP Compatibility Mode fully removed in 6.3
+
+Always cross-reference this directory before suggesting Unity API calls.
 
 ## Post-Cutoff Version Timeline
 
-| Version | Release | Risk Level | Key Theme |
-|---------|---------|------------|-----------|
-| 6.0 | Oct 2024 | HIGH | Unity 6 rebrand, new rendering features, Entities 1.3, DOTS improvements |
-| 6.1 | Nov 2024 | MEDIUM | Bug fixes, stability improvements |
-| 6.2 | Dec 2024 | MEDIUM | Performance optimizations, new input system improvements |
-| 6.3 LTS | Dec 2025 | HIGH | First LTS since 6.0, production-ready DOTS, enhanced graphics features |
-
-## Major Changes from 2022 LTS to Unity 6.3 LTS
-
-### Breaking Changes
-- **Entities/DOTS**: Major API overhaul in Entities 1.0+, complete redesign of ECS patterns
-- **Input System**: Legacy Input Manager deprecated, new Input System is default
-- **Rendering**: URP/HDRP significant upgrades, SRP Batcher improvements
-- **Addressables**: Asset management workflow changes
-- **Scripting**: C# 9 support, new API patterns
-
-### New Features (Post-Cutoff)
-- **DOTS**: Production-ready Entity Component System (Entities 1.3+)
-- **Graphics**: Enhanced URP/HDRP pipelines, GPU Resident Drawer
-- **Multiplayer**: Netcode for GameObjects improvements
-- **UI Toolkit**: Production-ready for runtime UI (replaces UGUI for new projects)
-- **Async Asset Loading**: Improved Addressables performance
-- **Web**: WebGPU support
-
-### Deprecated Systems
-- **Legacy Input Manager**: Use new Input System package
-- **Legacy Particle System**: Use Visual Effect Graph
-- **UGUI**: Still supported, but UI Toolkit recommended for new projects
-- **Old ECS (GameObjectEntity)**: Replaced by modern DOTS/Entities
+| Version | Internal | Key Theme | Risk |
+|---------|----------|-----------|------|
+| Unity 6.0 | 6000.0 | Render graph, FindObjects API change, lighting overhaul | HIGH |
+| Unity 6.1 | 6000.1 | Physics API changes, PVRTC deprecated, DX12 default on Windows | MEDIUM |
+| Unity 6.2 | 6000.2 | SetupRenderPasses deprecated, VisualElement.transform deprecated | MEDIUM |
+| Unity 6.3 LTS | 6000.4 | URP Compat Mode removed, SerializeField fields-only, NGO changes | HIGH |
 
 ## Verified Sources
 
-- Official docs: https://docs.unity3d.com/6000.0/Documentation/Manual/index.html
-- Unity 6 release: https://unity.com/releases/unity-6
-- Unity 6.3 LTS announcement: https://unity.com/blog/unity-6-3-lts-is-now-available
-- Migration guide: https://docs.unity3d.com/6000.0/Documentation/Manual/upgrade-guides.html
-- Unity 6 support: https://unity.com/releases/unity-6/support
-- C# API reference: https://docs.unity3d.com/6000.0/Documentation/ScriptReference/index.html
+- Unity 6.0 upgrade guide: https://docs.unity3d.com/6000.0/Documentation/Manual/UpgradeGuideUnity6.html
+- Unity 6.1 upgrade guide: https://docs.unity3d.com/6000.1/Documentation/Manual/UpgradeGuideUnity61.html
+- Unity 6.2 upgrade guide: https://docs.unity3d.com/6000.2/Documentation/Manual/UpgradeGuideUnity62.html
+- Unity 6.3 upgrade guide: https://docs.unity3d.com/6000.4/Documentation/Manual/UpgradeGuideUnity63.html
+- URP render graph intro: https://docs.unity3d.com/6000.1/Documentation/Manual/urp/render-graph-introduction.html
+- URP mobile performance: https://docs.unity3d.com/6000.3/Documentation/Manual/urp/configure-for-better-performance.html
+- Unity 6 releases: https://unity.com/releases/unity-6
