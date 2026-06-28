@@ -94,7 +94,32 @@ state_ownership:
 #
 # pattern options: signal | direct_call | event_bus | shared_resource | rpc | none
 
-interfaces: []
+interfaces:
+  - contract: point_to_point_messaging
+    status: active
+    pattern: direct_call
+    producer: any system that needs a response or has a single known consumer
+    consumers:
+      - the injected interface implementation for that system
+    adr: docs/architecture/ADR-010-event-messaging-architecture.md
+    signal_signature: "I[System]Service interface methods; constructor-injected (server) or Awake-injected (client MonoBehaviour)"
+    referenced_by:
+      - docs/architecture/ADR-010-event-messaging-architecture.md
+    added: 2026-06-27
+    revised: ""
+
+  - contract: broadcast_messaging
+    status: active
+    pattern: event
+    producer: any system that must notify multiple independent consumers (no return value needed)
+    consumers:
+      - all subscribers registered via += at construction/Awake time
+    adr: docs/architecture/ADR-010-event-messaging-architecture.md
+    signal_signature: "event Action<T> where T : readonly struct; emit with no boxing; subscribers use named methods (no lambda captures); IDisposable required on all server-side subscribers"
+    referenced_by:
+      - docs/architecture/ADR-010-event-messaging-architecture.md
+    added: 2026-06-27
+    revised: ""
 
 # Example:
 #
@@ -309,6 +334,34 @@ forbidden_patterns:
     description: "Do not write directly to a VisualElement from a NetworkBehaviour callback. Use SkillBarPresenter or an equivalent MonoBehaviour presenter with a Queue<T> to decouple network callbacks from VisualElement updates."
     why: "Coupling NetworkBehaviour to VisualElement makes the UI logic untestable without a running NGO session and couples the network and UI layers — changes to VisualElement structure require edits in the network layer. The presenter pattern (SkillBarPresenter : MonoBehaviour) keeps these layers independent per ADR-008."
     adr: docs/architecture/ADR-008-combat-ui-framework.md
+    added: 2026-06-27
+
+  - pattern: scene_handle_as_int
+    status: active
+    description: "Do not cache Scene.handle as an int or store it in any int-typed field or variable. Always cache loaded scenes as Scene structs (e.g., Scene _zoneScene = SceneManager.GetActiveScene())."
+    why: "Scene.handle changed from int to SceneHandle in Unity 6.3 LTS (6000.4). Any precompiled assembly that references Scene.handle as an int will throw MissingFieldException at runtime without a compile-time error. Project code must use Scene struct identity throughout to remain safe across Unity 6.3 precompiled assembly constraints."
+    adr: docs/architecture/ADR-009-scene-zone-load-management.md
+    added: 2026-06-27
+
+  - pattern: central_event_bus
+    status: active
+    description: "Do not introduce a central EventBus, MessageBus, or publish-subscribe singleton for cross-system communication. Use injected I[System]Service interfaces (point-to-point) or C# event Action<T> with readonly struct args (broadcast) instead."
+    why: "A central EventBus singleton creates hidden dependencies (nothing shows what subscribes to what without grep), allocates a managed object per Publish() call (GC pressure at server tick rate), and is not unit-testable without a running bus instance. ADR-010 closes this pattern in favour of direct injection + C# events."
+    adr: docs/architecture/ADR-010-event-messaging-architecture.md
+    added: 2026-06-27
+
+  - pattern: lambda_capture_persistent_subscription
+    status: active
+    description: "Do not use lambda expressions for persistent event subscriptions (event +=). Use named instance methods only. Lambda captures on long-lived subscriptions prevent GC of closed-over references and cannot be unsubscribed by reference."
+    why: "A lambda capture like `_combat.OnMobDied += ctx => ProcessDeath(ctx.MobEntityId)` cannot be unsubscribed without storing the delegate. If the subscriber outlives the zone instance, the producer holds a reference that prevents GC. Named methods are required so that Dispose() can -= the same delegate reference."
+    adr: docs/architecture/ADR-010-event-messaging-architecture.md
+    added: 2026-06-27
+
+  - pattern: urp_setup_render_passes_loading_screen
+    status: active
+    description: "Do not use SetupRenderPasses in any loading-screen or zone-transition rendering code. Use AddRenderPasses + RecordRenderGraph (URP render graph API) if a custom URP pass is ever required on a loading screen."
+    why: "SetupRenderPasses was deprecated in Unity 6.2 and URP Compatibility Mode was fully removed in Unity 6.3. Any custom URP rendering pass written with SetupRenderPasses will not compile or run correctly in Unity 6.3+. The loading overlay implementation (FullScreenLoadingOverlay using UI Toolkit VisualElement) avoids this entirely — if a custom URP pass is ever added, it must use the render graph API."
+    adr: docs/architecture/ADR-009-scene-zone-load-management.md
     added: 2026-06-27
 
 # Example:

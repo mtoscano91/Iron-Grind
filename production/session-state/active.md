@@ -4,10 +4,10 @@
 
 ## Current Status
 
-**Task**: `/gate-check pre-production` — CONCERNS, advance authorized → awaiting user approval to write `production/stage.txt`
-**Stage**: Technical Setup → Pre-Production (gate passed with CONCERNS)
+**Task**: Writing Foundation ADRs (ADR-009 + ADR-010 complete this session)
+**Stage**: Pre-Production
 **GDD Count**: 38 Approved, 0 In Review = 38 of 38 MVP complete (6 Presentation GDDs deferred)
-**ADR Count**: 8 written (ADR-001 through ADR-008), all Accepted
+**ADR Count**: 10 written (ADR-001 through ADR-010), all Accepted
 **UX Specs**: `design/ux/hud.md` (complete), `design/ux/interaction-patterns.md` (28 patterns), `design/accessibility-requirements.md` (Standard tier)
 
 ## Gate Check Session (2026-06-27)
@@ -29,12 +29,23 @@ Director panel (lean mode — all 4 run as PHASE-GATEs):
 
 Gate report: `production/gate-checks/technical-setup-to-pre-production-2026-06-27.md`
 
+## ADR Session — 2026-06-27
+
+Both Foundation Required ADRs written (previously blocking Zone Instancing + Feature-layer stories):
+
+| ADR | Title | Status | Domain | Engine Risk |
+|-----|-------|--------|--------|-------------|
+| ADR-009 | Scene/Zone-Load Management | Accepted | Core — Scene Management | HIGH |
+| ADR-010 | Event/Messaging Architecture | Accepted | Core — C# Messaging | LOW |
+
+Registry updated: 4 new forbidden patterns (`scene_handle_as_int`, `urp_setup_render_passes_loading_screen`, `central_event_bus`, `lambda_capture_persistent_subscription`) and 2 new interface contracts (`point_to_point_messaging`, `broadcast_messaging`).
+
 ## Top Priority Items for Pre-Production
 
 1. **[IMMEDIATE]** Resolve party drop bonus contradiction (CD Concern 1 — HIGH) — amend game concept OR restore bonus
-2. Write Scene/Zone-Load Management ADR (HIGH engine risk, blocks Zone Instancing stories)
-3. Write Event/Messaging Architecture ADR (LOW engine risk, blocks Feature-layer stories)
-4. `/create-control-manifest` — before first sprint opens
+2. ~~Write Scene/Zone-Load Management ADR~~ ✓ DONE (ADR-009)
+3. ~~Write Event/Messaging Architecture ADR~~ ✓ DONE (ADR-010)
+4. **[NEXT]** `/create-control-manifest` — before first sprint opens (all 10 ADRs now Accepted)
 5. Name/license typeface (AD Concern 1 — before UI asset production)
 6. Author 6 deferred MVP GDDs (Inventory UI, Enhancement UI, Map/Minimap, Audio System, VFX System, Onboarding)
 
