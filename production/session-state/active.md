@@ -1,14 +1,53 @@
 # Session State
 
-*Updated: 2026-06-27*
+*Updated: 2026-07-02*
 
 ## Current Status
 
-**Task**: Writing Foundation ADRs (ADR-009 + ADR-010 complete this session)
+**Task**: Story 007 complete. Story 008 is Blocked (depends on Leveling System epic). Next non-blocked story TBD.
 **Stage**: Pre-Production
 **GDD Count**: 38 Approved, 0 In Review = 38 of 38 MVP complete (6 Presentation GDDs deferred)
 **ADR Count**: 10 written (ADR-001 through ADR-010), all Accepted
 **UX Specs**: `design/ux/hud.md` (complete), `design/ux/interaction-patterns.md` (28 patterns), `design/accessibility-requirements.md` (Standard tier)
+
+## Session Extract — /story-done 2026-06-29
+
+- Verdict: COMPLETE WITH NOTES
+- Story: `production/epics/character-stats/story-002-modifier-stack.md` — F-1 Modifier Stack
+- Tech debt logged: None (3 advisory items in Completion Notes)
+- Pre-Story-003 action: fix B-01 (add IsFloatStat guard to GetEffectiveStat / GetEffectiveStatFloat)
+- Next recommended: Story 003 — Modifier lifecycle (story-003-modifier-lifecycle.md)
+
+## Session Extract — /dev-story 2026-06-29
+
+- Story: `production/epics/character-stats/story-004-resource-pools.md` — Resource Pools
+- Files changed: `src/Foundation/CharacterStats/CharacterStats.cs` (5 edits: _currentHp/_currentMp fields, OnEntityDied stub, GetCurrentHP/MP accessors, GetEffectiveStat early-exit, RemoveEquipmentModifier MaxHP reconciliation, full method implementations)
+- Test written: `tests/EditMode/CharacterStats/CharacterStats_ResourcePool_tests.cs` (12 test methods)
+- Blockers: None
+- Next: `/code-review src/Foundation/CharacterStats/ tests/EditMode/CharacterStats/` then `/story-done production/epics/character-stats/story-004-resource-pools.md`
+
+## Session Extract — /dev-story 2026-06-29
+
+- Story: `production/epics/character-stats/story-002-modifier-stack.md` — F-1 Modifier Stack
+- Files changed:
+  - `src/Foundation/CharacterStats/StatID.cs` — extended with float-schema stats (CritChance=12 through MovementSpeed=16)
+  - `src/Foundation/CharacterStats/StatSchema.cs` — new file; schema routing, FloatStatArraySize=5, GetStatMin/GetStatMax
+  - `src/Foundation/CharacterStats/CharacterStats.cs` — per-entity internal modifier dicts, FloatStatValues, GetBaseStatFloat/SetBaseStatFloat, GetEffectiveStat + GetEffectiveStatFloat with absent-stat guard
+  - `tests/EditMode/CharacterStats/TestHelpers/CharacterStatsFixture.cs` — added SetFloatBaseStat, SetEquipmentModifiers, SetBuffModifiers, ClearModifiers
+  - `tests/EditMode/CharacterStats/CharacterStats_ModifierStack_tests.cs` — new file, 11 test methods covering AC-01, AC-02, AC-03, AC-04, AC-05, AC-24, AC-28a, AC-28b, AC-21, AC-30, AC-26
+- Blockers: None
+
+## Session Extract — /dev-story 2026-06-29 (Story 003)
+
+- Story: `production/epics/character-stats/story-003-modifier-lifecycle.md` — Modifier Lifecycle
+- Files changed:
+  - `src/Foundation/CharacterStats/CharacterStats.cs` — storage migrated to per-entity-per-stat nested dicts; AddBuffModifier, AddEquipmentModifier, RemoveBuffModifier, RemoveEquipmentModifier implemented with write-lock guard, duplicate-ID overwrite (no double-stack), capacity overflow (log+return); GetEffectiveStat/GetEffectiveStatFloat updated to query per-stat buckets
+  - `tests/EditMode/CharacterStats/TestHelpers/CharacterStatsFixture.cs` — SetEquipmentModifiers and SetBuffModifiers updated to require StatID parameter; ClearModifiers unchanged
+  - `tests/EditMode/CharacterStats/CharacterStats_ModifierStack_tests.cs` — all fixture calls updated to pass appropriate StatID (no AC changes, test plumbing only)
+  - `tests/EditMode/CharacterStats/CharacterStats_ModifierLifecycle_tests.cs` — new file, 7 test methods covering AC-16, AC-17, AC-18, AC-19, AC-20, AC-22, capacity overflow
+- Blockers: None
+- Next: /code-review src/Foundation/CharacterStats/ tests/EditMode/CharacterStats/ then /story-done production/epics/character-stats/story-003-modifier-lifecycle.md
+- Next: `/code-review src/Foundation/CharacterStats/ tests/EditMode/CharacterStats/` then `/story-done production/epics/character-stats/story-002-modifier-stack.md`
 
 ## Gate Check Session (2026-06-27)
 
@@ -45,7 +84,8 @@ Registry updated: 4 new forbidden patterns (`scene_handle_as_int`, `urp_setup_re
 1. **[IMMEDIATE]** Resolve party drop bonus contradiction (CD Concern 1 — HIGH) — amend game concept OR restore bonus
 2. ~~Write Scene/Zone-Load Management ADR~~ ✓ DONE (ADR-009)
 3. ~~Write Event/Messaging Architecture ADR~~ ✓ DONE (ADR-010)
-4. **[NEXT]** `/create-control-manifest` — before first sprint opens (all 10 ADRs now Accepted)
+4. ~~`/create-control-manifest`~~ ✓ DONE — `docs/architecture/control-manifest.md` v2026-06-28 (99 rules across 4 layers + global)
+4b. ~~`/create-stories character-stats`~~ ✓ DONE — 8 stories written (001–007 Ready, 008 Blocked pending Leveling System); QA Lead gate passed with revisions; EPIC.md DoD updated to AC-01–AC-34
 5. Name/license typeface (AD Concern 1 — before UI asset production)
 6. Author 6 deferred MVP GDDs (Inventory UI, Enhancement UI, Map/Minimap, Audio System, VFX System, Onboarding)
 
@@ -230,11 +270,37 @@ Written: `docs/architecture/ADR-008-combat-ui-framework.md` — Status: Proposed
 
 ADR-001 through ADR-008 written. All priority ADRs from architecture-review-2026-06-21 are now addressed.
 
+## Foundation Epics — 2026-06-27
+
+`/create-epics layer: foundation` complete. 4 epics written, index created.
+
+| Epic Slug | Layer | GDD(s) | Status |
+|---|---|---|---|
+| character-stats | Foundation | design/gdd/character-stats.md | Ready |
+| item-database | Foundation | design/gdd/item-database.md | Ready |
+| currency-system | Foundation | design/gdd/currency-system.md | Ready |
+| networking-core | Foundation | design/gdd/networking-core.md + 9 sub-contracts | Ready |
+
+**Files written:**
+- `production/epics/character-stats/EPIC.md`
+- `production/epics/item-database/EPIC.md`
+- `production/epics/currency-system/EPIC.md`
+- `production/epics/networking-core/EPIC.md`
+- `production/epics/index.md`
+
+**Open items from this pass:**
+1. `docs/architecture/tr-registry.yaml` is empty — populate before `/story-readiness` can run
+2. `docs/architecture/architecture.md` Foundation module table still shows `⚠️` for ADR-009/ADR-010 — update to remove markers (both Accepted 2026-06-27)
+3. Leveling/Inventory/Loot Table in architecture.md Foundation table → actually Core layer per systems-index; will appear in `/create-epics layer: core`
+
 ## Recommended Next Steps
 
-1. Re-run **`/architecture-review`** in a **fresh session** to get an updated verdict
-2. **`/create-control-manifest`** → **`/create-epics`** → **`/create-stories`**
-3. 6 MVP GDDs still not started: Inventory UI, Enhancement UI, Map/Minimap, Audio System, VFX System, Onboarding
+1. **`/create-stories character-stats`** — first implementable stories (lowest risk, no engine surface)
+2. **`/create-stories item-database`** — data layer stories
+3. **`/create-stories currency-system`** — economy foundation stories
+4. **`/create-stories networking-core`** — largest epic; 10 sub-contracts
+5. **`/create-epics layer: core`** — Core layer epics after Foundation stories are underway
+6. 6 MVP GDDs still not started: Inventory UI, Enhancement UI, Map/Minimap, Audio System, VFX System, Onboarding
 
 ## Prior Approved GDDs (37 total)
 
@@ -283,3 +349,64 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Key patterns: Resource Bar, Touch Toggle, Expand/Collapse, Skill Slot, Cooldown Arc, Long-Press Context Menu, Toast Notification, Shake Feedback, Status Effect Icon, Party Frame, Target Frame, Loot Countdown Notification, Context-Adaptive Overlay, Safe Area Container, Tabbed Panel, Scrollable Item List, Item Row, Quantity Selector, Confirm Button with Spinner, Locked Item State, Destructive Confirmation Overlay, Risk Warning Badge, Outcome Animation, Persistent Chat Panel, Compose Button, Input Field with Validation, Character Counter, Keyboard-Slide Layout Shift
 - **All 4 gate blockers now resolved** — ready to re-run /gate-check pre-production
 - Next: /gate-check pre-production
+
+## Session Extract — /story-done 2026-06-29
+- Verdict: COMPLETE WITH NOTES
+- Story: `production/epics/character-stats/story-003-modifier-lifecycle.md` — Modifier Lifecycle
+- Tech debt logged: None (2 advisory items in Completion Notes)
+- Next recommended: Story 004 — Resource Pools (`production/epics/character-stats/story-004-resource-pools.md`)
+
+## Session Extract — /story-done 2026-06-29 (Story 004)
+- Verdict: COMPLETE WITH NOTES
+- Story: `production/epics/character-stats/story-004-resource-pools.md` — CurrentHP / CurrentMP Lifecycle
+- Tech debt logged: None (pre-existing TR-ID advisory)
+- Next recommended: Story 005 — Events (`production/epics/character-stats/story-005-events.md`)
+
+
+## Session Extract — /dev-story 2026-07-02 (Story 007)
+
+- Story: `production/epics/character-stats/story-007-transaction-api.md` — Transaction API
+- Files changed: `src/Foundation/CharacterStats/CharacterStats.cs` (transaction fields + BeginStatTransaction/EndStatTransaction/RollbackStatTransaction/AddToDeferredDedup + SetBaseStat conditional), `tests/EditMode/CharacterStats/CharacterStats_Transaction_tests.cs` (new, 7 tests)
+- Test written: `tests/EditMode/CharacterStats/CharacterStats_Transaction_tests.cs` (7 tests)
+- Blockers: None
+- Next: /code-review src/Foundation/CharacterStats/ tests/EditMode/CharacterStats/ then /story-done production/epics/character-stats/story-007-transaction-api.md
+
+## Session Extract — /story-done 2026-07-02 (Story 006)
+
+- Verdict: COMPLETE WITH NOTES
+- Story: `production/epics/character-stats/story-006-write-ownership.md` — Write Ownership
+- Tech debt logged: None (advisory: TR-stats-006 unregistered; AC-13/AC-15 deferred OQ-1 pending)
+- Next recommended: Story 007 — Transaction API (`production/epics/character-stats/story-007-transaction-api.md`)
+
+## Session Extract — /dev-story 2026-07-02
+
+- Story: `production/epics/character-stats/story-006-write-ownership.md` — Write Ownership
+- Files changed: `src/Foundation/CharacterStats/ILevelingService.cs` (new), `src/Foundation/CharacterStats/CharacterStats.cs` (constructor + AddExperience + OQ-1 TODO), `tests/EditMode/CharacterStats/TestHelpers/CharacterStatsFixture.cs` (NullLevelingService, CreateWithLeveling), `tests/EditMode/CharacterStats/CharacterStats_WriteOwnership_tests.cs` (new, 6 tests)
+- Test written: `tests/EditMode/CharacterStats/CharacterStats_WriteOwnership_tests.cs` (6 tests — AC-14 × 3, NEW AC × 3)
+- Blockers: None
+- Next: `/code-review src/Foundation/CharacterStats/ tests/EditMode/CharacterStats/` then `/story-done production/epics/character-stats/story-006-write-ownership.md`
+
+## Session Extract — /story-done 2026-07-02
+
+- Verdict: COMPLETE WITH NOTES
+- Story: `production/epics/character-stats/story-005-events.md` — OnStatChanged / OnEntityDied Events
+- Tech debt logged: None (4 advisory items in Completion Notes)
+- Code review fixes applied: count snapshot in FireOnStatChanged/FireOnEntityDied; IsFiringAndAssert guards on Subscribe/Unsubscribe
+- Next recommended: Story 006 — Write Ownership (`production/epics/character-stats/story-006-write-ownership.md`)
+
+## Session Extract — /dev-story 2026-06-29
+
+- Story: `production/epics/character-stats/story-005-events.md` — OnStatChanged / OnEntityDied Events
+- Files changed:
+  - `src/Foundation/CharacterStats/CharacterStats.cs` — replaced OnEntityDied stub with full event infrastructure (StatChangedHandler/EntityDiedHandler delegates, 16-slot fixed arrays, Subscribe/Unsubscribe, _isFiring guard, FireOnStatChanged/FireOnEntityDied); added IsFiringAndAssert guard + OnStatChanged firing to SetBaseStat, SetBaseStatFloat, AddBuffModifier, RemoveBuffModifier, AddEquipmentModifier, RemoveEquipmentModifier; added guard to ApplyDamage/ApplyRegen/ConsumeMana/ApplyManaRegen; replaced OnEntityDied?.Invoke with FireOnEntityDied in ApplyDamage and RemoveEquipmentModifier MaxHP path
+  - `tests/EditMode/CharacterStats/CharacterStats_ResourcePool_tests.cs` — replaced 5x `OnEntityDied += ...` with `Subscribe(_ => diedCount++)` (event syntax incompatible with fixed-array pattern)
+  - `tests/EditMode/CharacterStats/TestHelpers/StatEventRecorder.cs` — added Subscribe/Unsubscribe wiring methods
+- Test written: `tests/EditMode/CharacterStats/CharacterStats_Events_tests.cs` (8 test methods — AC-29, AC-29 edge, AC-29b, AC-29b edge, Unsubscribe, Unsubscribe re-subscribe, OnEntityDied re-entrance, OnEntityDied read-permitted)
+- Blockers: None
+- Next: `/code-review src/Foundation/CharacterStats/ tests/EditMode/CharacterStats/` then `/story-done production/epics/character-stats/story-005-events.md`
+
+## Session Extract — /story-done 2026-07-02
+- Verdict: COMPLETE WITH NOTES
+- Story: `production/epics/character-stats/story-007-transaction-api.md` — Transaction API
+- Tech debt logged: None (3 advisory items in Completion Notes)
+- Next recommended: Story 008 is Blocked (depends on Leveling System epic)
