@@ -11,6 +11,16 @@ namespace IronGrind.CharacterStats
         /// <summary>Sentinel value representing no item / an unassigned equipment slot.</summary>
         public static readonly ItemID None = new ItemID(0u);
 
+        /// <summary>
+        /// Sentinel value used by the Item Database to represent an unregistered or reserved item ID.
+        /// Both <see cref="None"/> and <see cref="Invalid"/> map to <c>uint(0)</c>. <see cref="None"/>
+        /// is the CharacterStats vocabulary for "empty slot"; <see cref="Invalid"/> is the Item Database
+        /// vocabulary for "no item / unregistered". They are aliases — <c>None == Invalid</c> is
+        /// <c>true</c>. <see cref="IronGrind.ItemDatabase.ItemDatabase.GetItem"/> returns <c>null</c>
+        /// silently (no error) when passed this value.
+        /// </summary>
+        public static readonly ItemID Invalid = new ItemID(0u);
+
         private readonly uint _value;
 
         /// <summary>Initializes a new <see cref="ItemID"/> with the specified raw value.</summary>

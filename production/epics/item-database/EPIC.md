@@ -4,7 +4,7 @@
 > **GDD**: design/gdd/item-database.md
 > **Architecture Module**: Item Database
 > **Status**: Ready
-> **Stories**: Not yet created — run `/create-stories item-database`
+> **Stories**: 4 stories created (001–004)
 
 ## Overview
 
@@ -39,6 +39,13 @@ This epic is complete when:
 - The 34 MVP item records are authored as data assets and pass the import validator
 - `GetItem(ItemID.Invalid)` and `GetItemsByCategory(unknown)` defensive-path tests pass
 
-## Next Step
+## Stories
 
-Run `/create-stories item-database` to break this epic into implementable stories.
+| # | Story | Type | Status | ADR |
+|---|-------|------|--------|-----|
+| 001 | IItemDatabase Interface, Runtime Database, and Core Type Definitions | Logic | Ready | None (design-only) |
+| 002 | Import Validator — Reject Rules (Error Path) | Logic | Ready | None (design-only) |
+| 003 | Import Validator — Warning Rules (Accept Path) | Logic | Ready | None (design-only) |
+| 004 | MVP Item Records — 34 Authored ScriptableObject Assets | Config/Data | Ready | None (data authoring) |
+
+Work through stories in order — each story's `Depends on:` field tells you what must be Done before you can start it.
