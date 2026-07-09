@@ -1,7 +1,7 @@
 # Story 005: Version/SequenceNumber Stale-Discard Helpers
 
 > **Epic**: Networking Core
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Logic
 > **Manifest Version**: 2026-06-28
@@ -29,9 +29,9 @@
 
 *From `design/gdd/networking-wire-protocol.md` and `networking-session.md`, scoped to this story:*
 
-- [ ] **AC-NC-07** [BLOCKING]: Given two `GoldSyncEvent` stale-discard scenarios for the same character: (A) Version=5 (500g) and Version=6 (600g) arrive out of order (6 first); (B, wraparound) Version=4,294,967,295 (500g) arrives first, then Version=1 (600g). When `IsNewerVersion` is applied in both cases, then: scenario A displays 600g and discards Version=5; scenario B displays 600g (Version=1) and discards Version=4,294,967,295 as stale. A raw `uint` comparison `1 > 4,294,967,295` evaluates false — this AC proves `IsNewerVersion` is used, not raw comparison.
-- [ ] **AC-NC-36** [BLOCKING] (Integration): Given a test connection whose server-side `SequenceNumber` is initialized to `4,294,967,293` via `ITransportFaultInjector.SetSequenceNumber`, when the server emits 5 consecutive messages, then the observed values are `4,294,967,294 → 4,294,967,295 → 1 → 2 → 3` (wraps from max to 1, skipping 0); the receiver's `IsNewerVersion` check accepts all 5; `SequenceNumber = 0` never appears in any captured message.
-- [ ] **AC-WP-2** [BLOCKING] (`IsTickExpired`, `networking-session.md`): Given `IsTickExpired(currentTick, expiryTick)`, when `currentTick == expiryTick`, then it returns `true` (equality = expired) — the opposite of `IsNewerVersion`'s equality behavior (equality = not newer). Given `currentTick` has wrapped past `uint.MaxValue` relative to `expiryTick`, the comparison still correctly reports expired using unsigned-safe arithmetic: `(uint)(currentTick - expiryTick) < 0x80000000u`.
+- [x] **AC-NC-07** [BLOCKING]: Given two `GoldSyncEvent` stale-discard scenarios for the same character: (A) Version=5 (500g) and Version=6 (600g) arrive out of order (6 first); (B, wraparound) Version=4,294,967,295 (500g) arrives first, then Version=1 (600g). When `IsNewerVersion` is applied in both cases, then: scenario A displays 600g and discards Version=5; scenario B displays 600g (Version=1) and discards Version=4,294,967,295 as stale. A raw `uint` comparison `1 > 4,294,967,295` evaluates false — this AC proves `IsNewerVersion` is used, not raw comparison.
+- [x] **AC-NC-36** [BLOCKING] (Integration): Given a test connection whose server-side `SequenceNumber` is initialized to `4,294,967,293` via `ITransportFaultInjector.SetSequenceNumber`, when the server emits 5 consecutive messages, then the observed values are `4,294,967,293 → 4,294,967,294 → 4,294,967,295 → 1 → 2` (wraps from max to 1, skipping 0); the receiver's `IsNewerVersion` check accepts all 5; `SequenceNumber = 0` never appears in any captured message. *(Corrected at story closure — see Completion Notes: `ITransportFaultInjector.SetSequenceNumber`'s already-reviewed "resume from" contract means the seeded value itself is the first observed value, not the value after it. The originally-printed sequence `4,294,967,294 → ... → 3` was off by one position.)*
+- [x] **AC-WP-2** [BLOCKING] (`IsTickExpired`, `networking-session.md`): Given `IsTickExpired(currentTick, expiryTick)`, when `currentTick == expiryTick`, then it returns `true` (equality = expired) — the opposite of `IsNewerVersion`'s equality behavior (equality = not newer). Given `currentTick` has wrapped past `uint.MaxValue` relative to `expiryTick`, the comparison still correctly reports expired using unsigned-safe arithmetic: `(uint)(currentTick - expiryTick) < 0x80000000u`.
 
 ---
 
@@ -69,7 +69,7 @@ static bool IsTickExpired(uint currentTick, uint expiryTick) =>
 *Test file*: `tests/EditMode/Networking/WireProtocol_StaleDiscard_tests.cs`
 
 - **AC-NC-07**: Given the two `GoldSyncEvent` scenarios (normal reorder and wraparound), when `IsNewerVersion` is applied, then both resolve to displaying the higher-Version-post-wraparound value as described.
-- **AC-NC-36**: Given `SetSequenceNumber(4294967293)` then 5 emits, then the sequence is exactly `[4294967294, 4294967295, 1, 2, 3]` and all pass `IsNewerVersion` against the prior value.
+- **AC-NC-36**: Given `SetSequenceNumber(4294967293)` then 5 emits, then the sequence is exactly `[4294967293, 4294967294, 4294967295, 1, 2]` and all pass `IsNewerVersion` against the prior value.
 - **AC-WP-2**: Given `currentTick == expiryTick`, `IsTickExpired` returns true. Given `currentTick` wrapped past `uint.MaxValue` relative to `expiryTick` by a small delta, `IsTickExpired` still returns true. Given `IsNewerVersion` at equality, it returns false (contrast case, same test file).
 
 ---
@@ -79,7 +79,7 @@ static bool IsTickExpired(uint currentTick, uint expiryTick) =>
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/Networking/WireProtocol_StaleDiscard_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 10 test methods (13 executions), all 3 blocking ACs covered
 
 ---
 
@@ -87,3 +87,17 @@ static bool IsTickExpired(uint currentTick, uint expiryTick) =>
 
 - Depends on: Story 001 (`ITransportFaultInjector.SetSequenceNumber` for AC-NC-36)
 - Unlocks: Story 013 (reconnect/session-stealing), Story 026 (GoldSyncEvent forced delivery), all future versioned-state messages
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-07-09
+**Criteria**: 3/3 passing (AC-NC-07, AC-NC-36, AC-WP-2)
+**Deviations**:
+- ADVISORY — **AC-NC-36 numbering corrected**: the originally-printed sequence (`4294967294 → ... → 3`) was off by one position relative to `ITransportFaultInjector.SetSequenceNumber`'s already-reviewed "resume from" contract (Story 001). Corrected to `[4294967293, 4294967294, 4294967295, 1, 2]` above and in the QA Test Cases section. Two independent specialist code reviews (unity-specialist, qa-tester) traced this by hand from scratch and independently confirmed the correction.
+- ADVISORY — **Real bug fixed in already-committed Story 001 code**: `TransportFaultInjector.ConsumeNextSequenceNumber()` wrapped `uint.MaxValue` to `0` via plain overflow, contradicting CR-NET-7.5 ("0 = uninitialized, must never appear in a valid message"). Fixed to skip to `1`. The one existing Story 001 test asserting the old behavior was updated to the corrected expected value, not weakened.
+- ADVISORY — TD-010 logged in `docs/tech-debt-register.md`: `TransportFaultInjector._sequenceNumber` still defaults to `0` at construction (unseeded, pre-`SetSequenceNumber` state) — same "0 never valid" invariant, different vector than the wraparound case this story fixed. Not fixed now — no production send path consumes it yet.
+- ADVISORY — TR registry gap (`TR-net-001` not in `docs/architecture/tr-registry.yaml`) — same pre-existing systemic gap as every prior story.
+**Test Evidence**: `tests/EditMode/Networking/WireProtocol_StaleDiscard_tests.cs` — 10 test methods, 13 executions. Not run in the Unity Test Runner this session; RFC 1982 arithmetic hand-traced and independently verified correct by two specialist reviews.
+**Code Review**: Complete — APPROVED WITH SUGGESTIONS (unity-specialist + qa-tester, lean mode). Two boundary-coverage gaps found (ordinary non-wrapping case, RFC-1982 ambiguous half-circle boundary) and fixed before closure.

@@ -198,14 +198,21 @@ namespace IronGrind.Networking
         }
 
         /// <summary>
-        /// Returns the current outbound sequence number and increments the counter (wrapping from
-        /// <see cref="uint.MaxValue"/> back to 0 per RFC-1982 stale-discard semantics, CR-NET-7.5).
+        /// Returns the current outbound sequence number and increments the counter, wrapping from
+        /// <see cref="uint.MaxValue"/> to <c>1</c> — never to <c>0</c> — per CR-NET-7.5:
+        /// <c>SequenceNumber</c> starts at 1 per connection and <c>0</c> is reserved as
+        /// "uninitialized," so it must never appear in a valid message even across wraparound
+        /// (Story 005, <see cref="IronGrind.Networking.StaleDiscardComparer"/> zero-skip fix).
         /// </summary>
         internal uint ConsumeNextSequenceNumber()
         {
             _hasEmittedAnyMessage = true;
             uint current = _sequenceNumber;
             unchecked { _sequenceNumber++; }
+            if (_sequenceNumber == 0)
+            {
+                _sequenceNumber = 1;
+            }
             return current;
         }
     }

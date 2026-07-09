@@ -1,5 +1,16 @@
 # Session State
 
+## Session Extract — /code-review + /story-done 2026-07-09 (Networking Core Story 005)
+
+- Verdict: COMPLETE WITH NOTES
+- Story: `production/epics/networking-core/story-005-version-sequencenumber-stale-discard.md` — Version/SequenceNumber Stale-Discard Helpers
+- `/code-review` ran in lean mode with 2 specialists in parallel (unity-specialist, qa-tester): APPROVED WITH SUGGESTIONS — both independently traced and confirmed the AC-NC-36 numbering resolution (see below); qa-tester found 2 boundary-coverage gaps (ordinary non-wrapping case, RFC-1982 ambiguous half-circle boundary) → fixed → 10 test methods (13 executions)
+- **AC-NC-36 numbering corrected**: story's own AC text had the observed wraparound sequence off by one position relative to `ITransportFaultInjector.SetSequenceNumber`'s already-reviewed "resume from" contract. Two independent specialist reviews traced this from scratch and agreed the story text (not the code) had the error. Corrected in the story file itself (AC-NC-36, QA Test Cases) at closure.
+- **Real bug fixed in already-committed Story 001 code**: `TransportFaultInjector.ConsumeNextSequenceNumber()` wrapped `uint.MaxValue` to `0`, contradicting CR-NET-7.5. Fixed to skip to `1`; the one affected existing Story 001 test was updated (not weakened).
+- Tech debt logged: TD-010 (unseeded `_sequenceNumber` still defaults to `0` — same invariant, different vector; not fixed, no production send path consumes it yet)
+- Files updated: `production/epics/networking-core/story-005-...md` (Status: Complete, ACs checked + corrected numbering, Completion Notes), `production/epics/networking-core/EPIC.md` (Story 005 → Complete)
+- Next recommended: Story 006 — Priority-Path Cap & Two-Path Delivery Model (`production/epics/networking-core/story-006-priority-path-cap-two-path-delivery.md`) — next in the Wire Protocol Core cluster
+
 ## Session Extract — /code-review + /story-done 2026-07-09 (Networking Core Story 004)
 
 - Verdict: COMPLETE WITH NOTES

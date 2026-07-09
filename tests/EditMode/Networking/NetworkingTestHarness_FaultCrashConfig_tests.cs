@@ -138,20 +138,22 @@ namespace IronGrind.Tests.EditMode.Networking
         // -----------------------------------------------------------------------
         // AC-TH-1: SetSequenceNumber — called before any message is emitted
         // applies immediately (EC-NET-6 wraparound scenario: seed 3 below
-        // uint.MaxValue, wraps to 0 after 3 messages).
+        // uint.MaxValue, wraps past uint.MaxValue to 1 after 4 messages, skipping
+        // 0 — Story 005's zero-skip fix to ConsumeNextSequenceNumber, CR-NET-7.5).
         // -----------------------------------------------------------------------
 
         [Test]
-        public void SetSequenceNumber_CalledBeforeAnyMessageEmitted_AppliesImmediatelyAndWrapsCorrectly()
+        public void SetSequenceNumber_CalledBeforeAnyMessageEmitted_AppliesImmediatelyAndWrapsSkippingZero()
         {
             // Arrange
             _injector.SetSequenceNumber(4294967293u);
 
-            // Act & Assert
+            // Act & Assert — Story 005 (CR-NET-7.5): 0 is reserved as "uninitialized" and must
+            // never appear in a valid message, so wraparound skips 0 and resumes at 1.
             Assert.AreEqual(4294967293u, _injector.ConsumeNextSequenceNumber());
             Assert.AreEqual(4294967294u, _injector.ConsumeNextSequenceNumber());
             Assert.AreEqual(4294967295u, _injector.ConsumeNextSequenceNumber());
-            Assert.AreEqual(0u, _injector.ConsumeNextSequenceNumber(), "Sequence number must wrap from uint.MaxValue back to 0.");
+            Assert.AreEqual(1u, _injector.ConsumeNextSequenceNumber(), "Sequence number must wrap from uint.MaxValue to 1, skipping 0 (CR-NET-7.5).");
         }
 
         // -----------------------------------------------------------------------
