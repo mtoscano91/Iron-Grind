@@ -3,8 +3,8 @@
 > **Layer**: Foundation
 > **GDD**: design/gdd/currency-system.md
 > **Architecture Module**: Currency
-> **Status**: Ready
-> **Stories**: Not yet created — run `/create-stories currency-system`
+> **Status**: Complete
+> **Stories**: 6 stories created (001–006), all Complete
 
 ## Overview
 
@@ -38,6 +38,20 @@ This epic is complete when:
 - Logic stories (`TrySpendGold` no-overdraft guarantee, `AddGold` reason logging, concurrency conflict path) have passing test files in `tests/EditMode/Currency/`
 - Integration test covers full spend → persist → reload round-trip
 
-## Next Step
+## Stories
 
-Run `/create-stories currency-system` to break this epic into implementable stories.
+| # | Story | Type | Status | ADR |
+|---|-------|------|--------|-----|
+| 001 | Core Types & AddGold (Cap-Safe Addition) | Logic | Complete | None (design-only) |
+| 002 | TrySpendGold (Spend Guard) | Logic | Complete | None (design-only) |
+| 003 | Input Guards & State Machine | Logic | Complete | None (design-only) |
+| 004 | Concurrency Safety (Thread-Safe Balance Mutation) | Logic | Complete | ADR-006 (reference only — in-memory model) |
+| 005 | GoldSyncEvent Emission | Logic | Complete | ADR-010 |
+| 006 | TransferGold Stub & Compensating Refund | Logic | Complete | ADR-001 |
+
+Work through stories in order — each story's `Depends on:` field tells you what must be Done before you can start it.
+
+**Scoped out of this epic** (infrastructure that doesn't exist yet in this project):
+- GDD Group G (Server Assembly Isolation via `ServerLogic.asmdef`) — no server/client assembly split exists yet
+- GDD Group I (Session Resync) — depends on Networking Core's session handshake, not yet built
+- Real PostgreSQL persistence — Character Persistence's future responsibility; these stories implement an in-memory model matching `CharacterStats`/`ItemDatabase`'s established pattern
