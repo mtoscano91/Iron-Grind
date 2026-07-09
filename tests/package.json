@@ -1,0 +1,7 @@
+{
+  "name": "com.irongrind.tests",
+  "version": "0.1.0",
+  "displayName": "Iron Grind - Test Suites",
+  "description": "Local Unity package wrapping this project's tests/ directory (EditMode, PlayMode) so it compiles in place and is discoverable by the Unity Test Runner without moving test files into Assets/. Referenced from Packages/manifest.json via a relative file: path.",
+  "unity": "6000.3"
+}

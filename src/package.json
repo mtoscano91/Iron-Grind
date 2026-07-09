@@ -1,0 +1,7 @@
+{
+  "name": "com.irongrind.src",
+  "version": "0.1.0",
+  "displayName": "Iron Grind - Game Source",
+  "description": "Local Unity package wrapping this project's src/ directory (core, gameplay, ai, networking, ui, tools) so it compiles in place without moving code into Assets/. Referenced from Packages/manifest.json via a relative file: path — see docs/tech-debt-register.md TD-002.",
+  "unity": "6000.3"
+}

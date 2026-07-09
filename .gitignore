@@ -53,6 +53,7 @@ export_presets.cfg
 *.csproj
 *.unityproj
 *.sln
+*.slnx
 *.suo
 *.tmp
 *.user
