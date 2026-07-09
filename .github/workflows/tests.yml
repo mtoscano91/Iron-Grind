@@ -22,7 +22,7 @@ jobs:
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
         with:
-          unityVersion: 6000.4.0f1
+          unityVersion: 6000.3.10f1
           testMode: editmode
           artifactsPath: test-results/editmode
           coverageOptions: generateAdditionalMetrics;generateHtmlReport;generateBadgeReport
@@ -32,7 +32,7 @@ jobs:
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
         with:
-          unityVersion: 6000.4.0f1
+          unityVersion: 6000.3.10f1
           testMode: playmode
           artifactsPath: test-results/playmode
 
@@ -42,3 +42,73 @@ jobs:
         with:
           name: test-results
           path: test-results/
+
+  # ---------------------------------------------------------------------------
+  # AC-TC-02 (Networking Core epic, Story 002 — networking-test-harness.md):
+  # pre-build static analysis. Fails the pipeline if any of the four
+  # test-harness interfaces (ITransportFaultInjector, IServerCrashInjector,
+  # IZoneTestConfigurator, INetworkTestObserver) are referenced by a call site
+  # in src/ outside an `#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD` block.
+  # This is a real, fully-implemented, BLOCKING check — it only needs
+  # source-text inspection, not a Unity/IL2CPP build. See
+  # tools/ci/check-test-harness-guards.sh for the implementation and its
+  # documented limitations.
+  # ---------------------------------------------------------------------------
+  test-harness-guard-check:
+    name: Test-Harness Interface Guard Check (AC-TC-02)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Self-test the guard-checker script (proves it is not a no-op)
+        run: bash tools/ci/check-test-harness-guards.sh --self-test
+
+      - name: Run static analysis against src/
+        run: bash tools/ci/check-test-harness-guards.sh src
+
+  # ---------------------------------------------------------------------------
+  # AC-TC-01 (Networking Core epic, Story 002 — networking-test-harness.md):
+  # post-build binary string-scan of an IL2CPP Release Player build, verifying
+  # the strings ITransportFaultInjector, IServerCrashInjector,
+  # IZoneTestConfigurator, and INetworkTestObserver are absent from every
+  # output assembly (IL2CPP strips by type name; a surviving reference would
+  # confirm stripping failed).
+  #
+  # NON-BLOCKING PLACEHOLDER: this repository's CI does not yet produce an
+  # IL2CPP Release Player build anywhere (the `test` job above only runs
+  # editmode/playmode tests via game-ci/unity-test-runner, which does not
+  # produce a Player build artifact). There is currently no real build output
+  # for this job to scan, so it cannot be wired to a real check yet without
+  # fabricating a build step outside this story's scope (adding a full Player
+  # build pipeline is a devops-engineer / build-infrastructure concern, not a
+  # Story 002 Foundation-layer change).
+  #
+  # TODO(networking-core): once a real `game-ci/unity-builder` (or equivalent)
+  # Release/IL2CPP Player build step exists in this workflow (or a dedicated
+  # build workflow this one can depend on via `needs:`), replace the
+  # placeholder step below with a real scan of that build's output assemblies,
+  # e.g.:
+  #   grep -R -E "ITransportFaultInjector|IServerCrashInjector|IZoneTestConfigurator|INetworkTestObserver" \
+  #     <player-build-output-path>/**/*.{so,dll,dylib} && exit 1 || exit 0
+  # Remove `continue-on-error: true` once wired to a real build — this job must
+  # become BLOCKING at that point, per the GDD's "not optional" requirement.
+  # ---------------------------------------------------------------------------
+  release-build-stripping-check:
+    name: "[PLACEHOLDER] Release-Build Stripping Verification (AC-TC-01)"
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: "[PLACEHOLDER] No IL2CPP Release Player build exists yet in this workflow"
+        run: |
+          echo "AC-TC-01 placeholder: this workflow does not yet produce an IL2CPP Release"
+          echo "Player build, so there is no build output for this job to scan."
+          echo "This job is a non-blocking placeholder (continue-on-error: true) — it must be"
+          echo "wired to a real Player build's output assemblies once one exists in this"
+          echo "workflow. See the TODO comment on this job in .github/workflows/tests.yml."
+          exit 0

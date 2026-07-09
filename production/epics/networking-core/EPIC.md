@@ -4,7 +4,7 @@
 > **GDD**: design/gdd/networking-core.md + 9 sub-contracts
 > **Architecture Module**: Networking Core
 > **Status**: Ready
-> **Stories**: Not yet created — run `/create-stories networking-core`
+> **Stories**: 29 stories created (001–029)
 
 ## Overview
 
@@ -61,6 +61,51 @@ This epic is complete when:
 | Networking Relevance Filter | design/gdd/networking-relevance-filter.md | Approved |
 | Networking OWL Compensation | design/gdd/networking-owl-compensation.md | Approved |
 
+## Stories
+
+*Work through in order — each story's `Depends on:` field tells you what must be Done first. Test Harness (001-002) unlocks nearly everything else; Wire Protocol Core (003-008) is the next foundational layer.*
+
+| # | Story | Type | Status | ADR |
+|---|-------|------|--------|-----|
+| 001 | Test Harness: Fault/Crash/Zone-Config Injection | Logic | Complete | ADR-004 |
+| 002 | Test Harness: INetworkTestObserver + Release-Build Stripping | Logic | Complete | ADR-004 |
+| 003 | Message Envelope & Fixed-Point Primitive Serialization | Logic | Ready | ADR-004 |
+| 004 | EntityID/Enum Wire-Safety Guards | Logic | Ready | ADR-004 |
+| 005 | Version/SequenceNumber Stale-Discard Helpers | Logic | Ready | ADR-004 |
+| 006 | Priority-Path Cap & Two-Path Delivery Model | Logic | Ready | ADR-004 |
+| 007 | R-U/U-U Batch Framing, Buffer Pooling & Overflow Policy | Integration | Ready | ADR-004 |
+| 008 | Heartbeat Message & IL2CPP AOT Guardrails | Logic | Ready | ADR-004 |
+| 009 | Fixed 20Hz Server Tick Loop | Logic | Ready | ADR-004 |
+| 010 | Cross-Cutting RPC Guards | Logic | Ready | ADR-004 |
+| 011 | Commit-Before-Broadcast Generic Pattern | Logic | Ready | ADR-001 |
+| 012 | Player Connection State Machine — Core Transitions | Logic | Ready | ADR-004 |
+| 013 | Player Connection State Machine — Reconnect, Session-Stealing & Re-Auth | Integration | Ready | ADR-001 + ADR-004 |
+| 014 | Zone Session State Machine & Capacity Enforcement | Logic | Ready | ADR-004 |
+| 015 | TTL Expiry, Zone Crash Recovery & In-Flight RPC Edge Cases | Integration | Ready | ADR-004 |
+| 016 | Session Token Generation, Validation & Rotation (NSCRT) | Logic | Ready | None (pure crypto, no ADR applies) |
+| 017 | Ghost Promotion & State Constraints | Logic | Ready | ADR-004 |
+| 018 | Pre-Disconnect Snapshot & Write-Ordering | Logic | Ready | ADR-004 |
+| 019 | Ghost Death & Mob De-Targeting | Logic | Ready | ADR-004 |
+| 020 | Ghost Reward Forfeit Policy — Two-Pool XP & Party Slot Retention | Logic | Ready | ADR-004 |
+| 021 | Ghost Cleanup, Zone Crash & Voluntary Dismissal | Integration | Ready | ADR-004 |
+| 022 | LastBeatServerTick Slot Allocation & Data Structure | Logic | Ready | ADR-004 |
+| 023 | OWL Wrap-Correction Compensation Formula | Logic | Ready | ADR-004 |
+| 024 | OWL Threshold Suspension & Hysteresis Signal | Logic | Ready | ADR-004 |
+| 025 | Message Criticality/Channel Routing Table & Unclassified-Message Fallback | Logic | Ready | ADR-004 |
+| 026 | GoldSyncEvent Forced-Delivery Overflow Policy | Logic | Ready | ADR-004 |
+| 027 | SelfDamageEvent vs DamageEvent Delivery Exclusivity | Integration | Ready | ADR-004 |
+| 028 | EntityHealthUpdate/PartyMemberHealthUpdate Relevance Filter Algorithm | Integration | Ready | ADR-004 |
+| 029 | SetTarget RPC & Target Slot Management | Logic | Ready | ADR-004 |
+
+**Scoped out of this epic** (owned by other systems' future epics, using these GDDs as their wire-contract reference): every specific downstream message schema for Auto-Attack Combat, Currency, Leveling, Zone Instancing, Party, Inventory, Equipment, NPC Shop, Consumable Use, Movement, and Skill systems. Networking Core owns the envelope/channel/tick/session/ghost/OWL/relevance-filter/test-harness substrate only.
+
+**Known blockers/inconsistencies to resolve before final sign-off** (do not block starting implementation, but should be tracked):
+- OQ-NET-1 (BLOCKING, design): `HEARTBEAT_TIMEOUT_SECONDS` production default undetermined (recommended 8-12s) — stories 012/013/017 use test-injected override values and are unaffected, but the production default must be set before launch.
+- Cross-doc AC-ID collision: root `networking-core.md` and `networking-wire-protocol.md` each independently define an unrelated "AC-NC-31" (Story 024 vs. Story 004 respectively).
+- Cross-doc constant inconsistency: `GHOST_COMBAT_TTL_MINUTES` (`networking-session.md`, flat 60s) vs. `GHOST_COMBAT_TTL_MIN_S` (`networking-ghost-session.md` F-GH-1, formula-based 30s baseline) — Stories 019/021 use the ghost-session formula as authoritative pending a design decision.
+- `StatID` enum cross-doc dependency: Character Stats GDD's `StatID` needs `enum:uint`→`enum:byte` before Story 004 can drop its byte-transmission workaround.
+- ADR-004's engine-risk profiling gate (verify `CustomMessagingManager` + `NetworkManager.ServerTime.Tick` in a real Unity 6.3 headless build) must pass before the implementation sprint is greenlit, per this epic's own "Engine risk gate" note above.
+
 ## Next Step
 
-Run `/create-stories networking-core` to break this epic into implementable stories.
+Run `/story-readiness [story-path]` on Story 001 to confirm implementation-readiness, then `/dev-story` to begin.
