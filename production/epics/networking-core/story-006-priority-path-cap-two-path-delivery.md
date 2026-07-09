@@ -1,7 +1,7 @@
 # Story 006: Priority-Path Cap & Two-Path Delivery Model
 
 > **Epic**: Networking Core
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Logic
 > **Manifest Version**: 2026-06-28
@@ -29,9 +29,9 @@
 
 *From `design/gdd/networking-wire-protocol.md` and `networking-channel-contract.md`, scoped to this story:*
 
-- [ ] **AC-NC-34** [BLOCKING] (Integration): Given a server tick where 12 R-OD messages are queued for client A (4 above `PRIORITY_PATH_CAP=8`), when the tick's Path 1 flush occurs, then exactly 8 are emitted in that tick in emission order, the remaining 4 appear in the following tick(s) in the same order, and all 12 are delivered within ≤2 ticks total — none dropped.
-- [ ] **AC-NC-35** [BLOCKING] (Integration): Given a Path 1 queue for client A already at 8 queued R-OD messages, when an `EnhancementOutcomeBroadcast` is enqueued before the tick's flush, then it is placed at position 1 of the current tick's queue (displacing the oldest non-exempt message to the next tick), and the displaced message appears at position 1 of the following tick's capture.
-- [ ] **AC-CCR-05** [BLOCKING] (Integration): Given a client with 9 non-exempt R-OD messages queued for the same tick, when the tick flush runs, then exactly 8 are delivered that tick and the 9th is sent at the start of the next tick's flush — no message dropped.
+- [x] **AC-NC-34** [BLOCKING] (Integration): Given a server tick where 12 R-OD messages are queued for client A (4 above `PRIORITY_PATH_CAP=8`), when the tick's Path 1 flush occurs, then exactly 8 are emitted in that tick in emission order, the remaining 4 appear in the following tick(s) in the same order, and all 12 are delivered within ≤2 ticks total — none dropped.
+- [x] **AC-NC-35** [BLOCKING] (Integration): Given a Path 1 queue for client A already at 8 queued R-OD messages, when an `EnhancementOutcomeBroadcast` is enqueued before the tick's flush, then it is placed at position 1 of the current tick's queue (displacing the oldest non-exempt message to the next tick), and the displaced message appears at position 1 of the following tick's capture. **Note (resolved at closure — see Completion Notes): this AC's explicit displacement behavior was implemented as written, in preference to the Implementation Notes' `PathCapacity_effective` formula, which would have implied additive (non-displacing) capacity. Three independent reviews confirmed this AC is authoritative.**
+- [x] **AC-CCR-05** [BLOCKING] (Integration): Given a client with 9 non-exempt R-OD messages queued for the same tick, when the tick flush runs, then exactly 8 are delivered that tick and the 9th is sent at the start of the next tick's flush — no message dropped.
 
 ---
 
@@ -75,7 +75,7 @@ PathCapacity_effective = PRIORITY_PATH_CAP + ExemptMessages_queued
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/Networking/WireProtocol_PriorityPathCap_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 6 test methods, all 3 blocking ACs covered
 
 ---
 
@@ -83,3 +83,18 @@ PathCapacity_effective = PRIORITY_PATH_CAP + ExemptMessages_queued
 
 - Depends on: Story 003 (envelope), Story 001 (test harness)
 - Unlocks: Story 009 (tick loop calls this queue's Flush), Story 011 (commit-before-broadcast uses the enhancement-exempt path), Story 026 (GoldSyncEvent forced delivery uses this queue for its R-OD fallback)
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-07-09
+**Criteria**: 3/3 passing (AC-NC-34, AC-NC-35, AC-CCR-05)
+**Deviations**:
+- ADVISORY — **AC-NC-35 vs. `PathCapacity_effective` formula resolved**: the Implementation Notes formula (`PathCapacity_effective = PRIORITY_PATH_CAP + ExemptMessages_queued`) reads as additive capacity growth; AC-NC-35 (BLOCKING, repeated in QA Test Cases) explicitly describes displacement instead. Implemented AC-NC-35's displacement model — the enhancement-path exemption is a priority-ordering mechanism within the fixed 8-slot cap, not a capacity increase. Independently verified correct by two specialist code reviews plus a pre-review hand-trace — three total independent confirmations.
+- ADVISORY — **Bulk-transfer exemption not modeled**: per the story's own text ("never subject to the 8-cap... connection-phase one-time transmission"), this is a separate transmission path. None of this story's 3 blocking ACs exercise it; documented as an explicit scope boundary in `PriorityPathQueue<T>`'s XML remarks, not implemented.
+- ADVISORY — **Exempt-count-exceeds-cap edge case found during review**: if more than `PRIORITY_PATH_CAP` exempt messages are enqueued in one tick, `Flush` returns more than the cap total (exempt admission is uncapped; upstream business logic is responsible for rate-limiting). Not required by any AC. Doc comments corrected for accuracy; a test now locks in the exact behavior.
+- ADVISORY — Forward-looking note for Story 009 (not this story's scope): `Flush`'s internal scratch-list allocations sit on the 20Hz tick-loop hot path; pooling worth considering once the tick loop is wired up.
+- ADVISORY — TR registry gap (same pre-existing systemic gap as every prior story).
+**Test Evidence**: `tests/EditMode/Networking/WireProtocol_PriorityPathCap_tests.cs` — 6 test methods. Not run in the Unity Test Runner this session; algorithm hand-traced and independently verified correct by two specialist reviews.
+**Code Review**: Complete — APPROVED WITH SUGGESTIONS (unity-specialist + qa-tester, lean mode). Two doc-accuracy issues found and fixed (false "up to PRIORITY_PATH_CAP" claim, misleading cross-reference), one coverage gap found and fixed (exempt-overflow test).

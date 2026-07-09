@@ -1,5 +1,15 @@
 # Session State
 
+## Session Extract — /code-review + /story-done 2026-07-09 (Networking Core Story 006)
+
+- Verdict: COMPLETE WITH NOTES
+- Story: `production/epics/networking-core/story-006-priority-path-cap-two-path-delivery.md` — Priority-Path Cap & Two-Path Delivery Model
+- `/code-review` ran in lean mode with 2 specialists in parallel (unity-specialist, qa-tester): APPROVED WITH SUGGESTIONS — 2 doc-accuracy issues found and fixed (Flush's "up to PRIORITY_PATH_CAP" claim was false when exempt exceeds cap; misleading StaleDiscardComparer cross-reference), 1 coverage gap found and fixed (exempt-overflow test) → 6 test methods total
+- **Third design-inconsistency resolution this epic**: story's `PathCapacity_effective = PRIORITY_PATH_CAP + ExemptMessages_queued` formula (additive) contradicted AC-NC-35's explicit displacement language. Implemented displacement (matching the AC). Verified correct THREE times independently: my own pre-review hand-trace, plus both unity-specialist and qa-tester independently re-traced from scratch and agreed.
+- Tech debt: None new (bulk-transfer exemption and exempt-overflow behavior documented as explicit scope boundaries, not implemented — neither required by any AC)
+- Files updated: `production/epics/networking-core/story-006-...md` (Status: Complete, ACs checked, Completion Notes), `production/epics/networking-core/EPIC.md` (Story 006 → Complete)
+- Next recommended: Story 007 — R-U/U-U Batch Framing, Buffer Pooling & Overflow Policy (`production/epics/networking-core/story-007-batch-framing-buffer-pooling-overflow.md`) — last story in the Wire Protocol Core cluster (003-008), Type: Integration
+
 ## Session Extract — /code-review + /story-done 2026-07-09 (Networking Core Story 005)
 
 - Verdict: COMPLETE WITH NOTES

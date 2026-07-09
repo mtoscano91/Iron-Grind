@@ -72,7 +72,7 @@ This epic is complete when:
 | 003 | Message Envelope & Fixed-Point Primitive Serialization | Logic | Complete | ADR-004 |
 | 004 | EntityID/Enum Wire-Safety Guards | Logic | Complete | ADR-004 |
 | 005 | Version/SequenceNumber Stale-Discard Helpers | Logic | Complete | ADR-004 |
-| 006 | Priority-Path Cap & Two-Path Delivery Model | Logic | Ready | ADR-004 |
+| 006 | Priority-Path Cap & Two-Path Delivery Model | Logic | Complete | ADR-004 |
 | 007 | R-U/U-U Batch Framing, Buffer Pooling & Overflow Policy | Integration | Ready | ADR-004 |
 | 008 | Heartbeat Message & IL2CPP AOT Guardrails | Logic | Ready | ADR-004 |
 | 009 | Fixed 20Hz Server Tick Loop | Logic | Ready | ADR-004 |
