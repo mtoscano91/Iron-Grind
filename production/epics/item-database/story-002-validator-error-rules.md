@@ -1,7 +1,7 @@
 # Story 002: Import Validator — Reject Rules (Error Path)
 
 > **Epic**: Item Database
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Logic
 > **Manifest Version**: 2026-06-28
@@ -31,21 +31,21 @@
 
 *From GDD `design/gdd/item-database.md`, scoped to this story — error/rejection cases only:*
 
-- [ ] **AC-3** [BLOCKING]: Validator receives two records sharing the same `ItemID` → returns fatal error naming both records; database loader aborts without registering either record.
-- [ ] **AC-4** [BLOCKING]: Validator receives equipment record with `StackLimit ≠ 1` → error, record rejected.
-- [ ] **AC-5** [BLOCKING]: Validator receives consumable record with `GearSlot ≠ None` → error, rejected. Independently: consumable with `GearTier ≠ None` → error, rejected. Both conditions simultaneously → error, rejected.
-- [ ] **AC-7** [BLOCKING]: Validator receives equipment record with `GearSlot` outside `{Weapon=0, Helmet=1, Chest=2, Legs=3, Boots=4, Ring=5, Necklace=6}` (e.g., a cast integer value of 7 or 255) → error, rejected.
-- [ ] **AC-8** [BLOCKING]: Validator receives non-weapon equipment (`GearSlot ≠ Weapon`) with `ElementType ≠ None` → error, rejected. Independently: non-weapon with `ElementalDamage > 0` → error, rejected.
-- [ ] **AC-10** [BLOCKING]: Validator receives equipment record with `GearTier == GearTier.None` → error, rejected. (Equipment must carry Bronze/Iron/Steel/DarkSteel.)
-- [ ] **AC-11** [BLOCKING]: Validator receives equipment record with any `StatModifierEntry` where `FlatBonus == 0.0f` → error, rejected.
-- [ ] **AC-12** [BLOCKING]: Validator receives weapon record with `ElementType == ElementType.None` and `ElementalDamage > 0` → error, rejected.
-- [ ] **AC-14** [BLOCKING]: Validator receives weapon record with `ElementalDamage == 10_000` (one above ceiling of 9,999) → error, rejected.
-- [ ] **AC-15** [BLOCKING]: Validator receives equipment record with 3 or more `StatModifier` entries → error, rejected. (Max 2 per item to stay within 16-entry Character Stats capacity.)
-- [ ] **AC-21** [BLOCKING]: Validator receives consumable record with `EffectMagnitude ≤ 0` → error, rejected. (Test: == 0 separately from < 0.)
-- [ ] **AC-22** [BLOCKING]: Validator receives consumable record with `StackLimit == 0` → error, rejected.
-- [ ] **AC-25** [BLOCKING]: Validator receives any item record with `SellPriceGold < 0` → error, rejected.
-- [ ] **AC-26** [BLOCKING]: Validator receives record with `ItemID == 0` (`ItemID.Invalid`) → fatal error, rejected.
-- [ ] **AC-41** [BLOCKING]: Validator receives equipment record with `StatModifierEntry.StatId` not present in the `StatID` enum → error, rejected. (Character Stats silently drops unknown StatIDs in release builds — invisible stat loss.)
+- [x] **AC-3** [BLOCKING]: Validator receives two records sharing the same `ItemID` → returns fatal error naming both records; database loader aborts without registering either record.
+- [x] **AC-4** [BLOCKING]: Validator receives equipment record with `StackLimit ≠ 1` → error, record rejected.
+- [x] **AC-5** [BLOCKING]: Validator receives consumable record with `GearSlot ≠ None` → error, rejected. Independently: consumable with `GearTier ≠ None` → error, rejected. Both conditions simultaneously → error, rejected.
+- [x] **AC-7** [BLOCKING]: Validator receives equipment record with `GearSlot` outside `{Weapon=0, Helmet=1, Chest=2, Legs=3, Boots=4, Ring=5, Necklace=6}` (e.g., a cast integer value of 7 or 255) → error, rejected.
+- [x] **AC-8** [BLOCKING]: Validator receives non-weapon equipment (`GearSlot ≠ Weapon`) with `ElementType ≠ None` → error, rejected. Independently: non-weapon with `ElementalDamage > 0` → error, rejected.
+- [x] **AC-10** [BLOCKING]: Validator receives equipment record with `GearTier == GearTier.None` → error, rejected. (Equipment must carry Bronze/Iron/Steel/DarkSteel.)
+- [x] **AC-11** [BLOCKING]: Validator receives equipment record with any `StatModifierEntry` where `FlatBonus == 0.0f` → error, rejected.
+- [x] **AC-12** [BLOCKING]: Validator receives weapon record with `ElementType == ElementType.None` and `ElementalDamage > 0` → error, rejected.
+- [x] **AC-14** [BLOCKING]: Validator receives weapon record with `ElementalDamage == 10_000` (one above ceiling of 9,999) → error, rejected.
+- [x] **AC-15** [BLOCKING]: Validator receives equipment record with 3 or more `StatModifier` entries → error, rejected. (Max 2 per item to stay within 16-entry Character Stats capacity.)
+- [x] **AC-21** [BLOCKING]: Validator receives consumable record with `EffectMagnitude ≤ 0` → error, rejected. (Test: == 0 separately from < 0.)
+- [x] **AC-22** [BLOCKING]: Validator receives consumable record with `StackLimit == 0` → error, rejected.
+- [x] **AC-25** [BLOCKING]: Validator receives any item record with `SellPriceGold < 0` → error, rejected.
+- [x] **AC-26** [BLOCKING]: Validator receives record with `ItemID == 0` (`ItemID.Invalid`) → fatal error, rejected.
+- [x] **AC-41** [BLOCKING]: Validator receives equipment record with `StatModifierEntry.StatId` not present in the `StatID` enum → error, rejected. (Character Stats silently drops unknown StatIDs in release builds — invisible stat loss.)
 
 ---
 
@@ -201,7 +201,7 @@ This story implements **only rejection (error) cases**. Warning rules are in Sto
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/ItemDatabase/ItemDatabase_Validator_Error_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 25 test methods, all 15 blocking ACs covered (reject + accept/boundary pairs)
 
 ---
 
@@ -209,3 +209,11 @@ This story implements **only rejection (error) cases**. Warning rules are in Sto
 
 - Depends on: Story 001 must be Done (ItemDefinition type required)
 - Unlocks: Story 003 (warning rules extend the same validator), Story 004 (assets must pass both error and warning rules)
+
+## Completion Notes
+**Completed**: 2026-07-04
+**Criteria**: 15/15 passing (0 deferred)
+**Deviations**: Advisory only — `StatModifierEntry.cs`/`EquipmentData.cs`/`ConsumableData.cs` extended with `CreateForTesting` seams (outside stated file scope, approved mid-session, consistent with Story 001's pattern); `ValidationResult` API redesigned from the story's sketched `IsFatal`/`Errors`/`Warnings` shape to `Issues`/`ValidationSeverity` (approved, no downstream dependents yet); a mid-session scope-creep incident (Story 003 warning logic added then removed) left no residual trace in the final code
+**Test Evidence**: Logic — `tests/EditMode/ItemDatabase/ItemDatabase_Validator_Error_tests.cs` (25 test methods)
+**Code Review**: Complete — `/code-review` ran twice (CHANGES REQUIRED → APPROVED WITH SUGGESTIONS after the 6 missing boundary tests were added)
+**Tech debt logged**: TD-004, TD-005 in `docs/tech-debt-register.md`

@@ -43,5 +43,28 @@ namespace IronGrind.ItemDatabase
         /// Seconds before this item can be used again after one use. Zero means no cooldown.
         /// </summary>
         public float CooldownSeconds => _cooldownSeconds;
+
+#if UNITY_EDITOR
+        /// <summary>
+        /// Test seam — for EditMode tests only. Constructs an instance with all fields set
+        /// directly, bypassing the Unity Inspector. Must not be called outside of test code.
+        /// </summary>
+        /// <param name="effectType">The gameplay effect triggered on use.</param>
+        /// <param name="effectMagnitude">Magnitude of the effect. Pass a value &lt;= 0 to
+        /// construct an intentionally invalid record for validator error-path tests.</param>
+        /// <param name="cooldownSeconds">Seconds before the item can be used again.</param>
+        internal static ConsumableData CreateForTesting(
+            EffectType effectType,
+            float effectMagnitude,
+            float cooldownSeconds)
+        {
+            return new ConsumableData
+            {
+                _effectType = effectType,
+                _effectMagnitude = effectMagnitude,
+                _cooldownSeconds = cooldownSeconds
+            };
+        }
+#endif
     }
 }

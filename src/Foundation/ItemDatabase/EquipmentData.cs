@@ -80,5 +80,45 @@ namespace IronGrind.ItemDatabase
         /// </summary>
         public ItemID? MergeResultItemID =>
             _hasMergeResultItemID ? _mergeResultItemID : (ItemID?)null;
+
+#if UNITY_EDITOR
+        /// <summary>
+        /// Test seam — for EditMode tests only. Constructs an instance with all fields set
+        /// directly, bypassing the Unity Inspector. Must not be called outside of test code.
+        /// </summary>
+        /// <param name="gearSlot">Body slot this item occupies when equipped.</param>
+        /// <param name="gearTier">Material tier. Pass <see cref="ItemDatabase.GearTier.None"/>
+        /// to construct an intentionally invalid record for validator error-path tests.</param>
+        /// <param name="statModifiers">Flat stat bonuses; null or empty is valid.</param>
+        /// <param name="elementType">Elemental damage type; weapons only.</param>
+        /// <param name="elementalDamage">Flat elemental bonus damage; weapons only.</param>
+        /// <param name="equipRequirementStat">Optional stat gate; null means no requirement.</param>
+        /// <param name="equipRequirementMin">Minimum threshold for <paramref name="equipRequirementStat"/>.</param>
+        /// <param name="mergeResultItemID">Optional merge-result item; null means not mergeable.</param>
+        internal static EquipmentData CreateForTesting(
+            GearSlot gearSlot,
+            GearTier gearTier,
+            StatModifierEntry[] statModifiers = null,
+            ElementType elementType = ElementType.None,
+            int elementalDamage = 0,
+            StatID? equipRequirementStat = null,
+            float equipRequirementMin = 0f,
+            ItemID? mergeResultItemID = null)
+        {
+            return new EquipmentData
+            {
+                _gearSlot = gearSlot,
+                _gearTier = gearTier,
+                _statModifiers = statModifiers,
+                _elementType = elementType,
+                _elementalDamage = elementalDamage,
+                _hasEquipRequirementStat = equipRequirementStat.HasValue,
+                _equipRequirementStat = equipRequirementStat ?? default,
+                _equipRequirementMin = equipRequirementMin,
+                _hasMergeResultItemID = mergeResultItemID.HasValue,
+                _mergeResultItemID = mergeResultItemID ?? default
+            };
+        }
+#endif
     }
 }

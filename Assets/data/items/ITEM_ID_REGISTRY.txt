@@ -1,0 +1,46 @@
+Item Database — ItemID Registry
+================================
+Story: production/epics/item-database/story-004-mvp-item-records.md
+Process: OQ-6 resolution for MVP — sequential IDs assigned at authoring time.
+Generated/authored by: src/Foundation/ItemDatabase/MvpItemRecordData.cs
+                        (single source of truth for both the Editor seeder
+                        and the EditMode test suite — see ItemDatabaseSeeder.cs)
+
+RULES
+-----
+- ItemID(0) is permanently reserved as ItemID.Invalid — never assign it.
+- IDs are PERMANENT once an item ships. Never reassign or reuse a retired ID
+  (see design/gdd/item-database.md Rule 32).
+- Add new items at the END of this list (id 35+). Do not renumber existing entries.
+- This file is documentation only — it is not read by any runtime or Editor code.
+  The authoritative record set is MvpItemRecordData.cs; keep this file in sync
+  whenever that file changes.
+
+ID RANGES (MVP — 34 records)
+-----------------------------
+ 1– 4  Swords     (Weapon)     Bronze, Iron, Steel, DarkSteel
+ 5– 8  Helmets    (Helmet)     Bronze, Iron, Steel, DarkSteel
+ 9–12  Chestplates(Chest)      Bronze, Iron, Steel, DarkSteel
+13–16  Leggings   (Legs)       Bronze, Iron, Steel, DarkSteel
+17–20  Boots      (Boots)      Bronze, Iron, Steel, DarkSteel
+21–24  Rings      (Ring)       Bronze, Iron, Steel, DarkSteel
+25–28  Necklaces  (Necklace)   Bronze, Iron, Steel, DarkSteel
+29     HP Potion (Small)
+30     HP Potion (Medium)
+31     HP Potion (Large)
+32     MP Potion (Small)
+33     MP Potion (Medium)
+34     MP Potion (Large)
+
+TOTALS: 28 Equipment, 6 Consumable (AC-18, AC-34).
+
+KNOWN-PROVISIONAL VALUES (do not treat as final balance)
+---------------------------------------------------------
+- OQ-1 UNRESOLVED: flat-bonus values per stat/tier are MVP placeholders.
+  Must be replaced before Vertical Slice per economy design resolution.
+- OQ-5 UNRESOLVED: consumable CooldownSeconds=30.0 is a placeholder for all
+  6 potions. Requires designer confirmation before playtesting.
+- OQ-8: DarkSteel sell price (270g) is provisional pending Enhancement
+  System cost-curve verification.
+
+NEXT FREE ID: 35

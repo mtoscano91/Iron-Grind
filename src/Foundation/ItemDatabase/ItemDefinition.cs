@@ -89,8 +89,10 @@ namespace IronGrind.ItemDatabase
 
 #if UNITY_EDITOR
         /// <summary>
-        /// Test seam — for EditMode tests only. Sets all private fields directly,
-        /// bypassing the Unity Inspector. Must not be called outside of test code.
+        /// Editor-only seam — for EditMode tests and Editor-only data-authoring tools
+        /// (e.g. <c>ItemDatabaseSeeder</c>). Sets all private fields directly, bypassing
+        /// the Unity Inspector. Compiled out of player builds via <c>#if UNITY_EDITOR</c> —
+        /// must not be called from runtime/gameplay code.
         /// </summary>
         /// <param name="itemId">The item's unique identifier.</param>
         /// <param name="displayName">Display name shown in UI.</param>
@@ -100,6 +102,8 @@ namespace IronGrind.ItemDatabase
         /// <param name="stackLimit">Max stack size per inventory slot.</param>
         /// <param name="equipmentData">Equipment sub-schema; null for consumables.</param>
         /// <param name="consumableData">Consumable sub-schema; null for equipment.</param>
+        /// <param name="description">Flavour text shown in the item tooltip. Defaults to empty for tests that don't exercise it.</param>
+        /// <param name="iconAddress">Addressables address of the item's icon sprite. Defaults to empty for tests that don't exercise it.</param>
         internal void SetForTesting(
             ItemID itemId,
             string displayName,
@@ -108,7 +112,9 @@ namespace IronGrind.ItemDatabase
             bool isUpgradeable,
             int stackLimit,
             EquipmentData equipmentData = null,
-            ConsumableData consumableData = null)
+            ConsumableData consumableData = null,
+            string description = "",
+            string iconAddress = "")
         {
             _itemId          = itemId;
             _displayName     = displayName;
@@ -118,6 +124,8 @@ namespace IronGrind.ItemDatabase
             _stackLimit      = stackLimit;
             _equipmentData   = equipmentData;
             _consumableData  = consumableData;
+            _description     = description;
+            _iconAddress     = iconAddress;
         }
 #endif
     }

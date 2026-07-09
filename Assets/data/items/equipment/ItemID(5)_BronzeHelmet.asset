@@ -1,0 +1,44 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 915867187b864c54b96671b7f0710c6c, type: 3}
+  m_Name: ItemID(5)_BronzeHelmet
+  m_EditorClassIdentifier: IronGrind.Foundation::IronGrind.ItemDatabase.ItemDefinition
+  _displayName: Bronze Helmet
+  _description: Bronze-tier helmet. Placeholder flavour text (OQ-1 pending).
+  _iconAddress: icons/items/helmet_bronze
+  _itemCategory: 0
+  _sellPriceGold: 10
+  _isUpgradeable: 1
+  _stackLimit: 1
+  _equipmentData:
+    rid: 2614314403735535685
+  _consumableData:
+    rid: -2
+  references:
+    version: 2
+    RefIds:
+    - rid: -2
+      type: {class: , ns: , asm: }
+    - rid: 2614314403735535685
+      type: {class: EquipmentData, ns: IronGrind.ItemDatabase, asm: IronGrind.Foundation}
+      data:
+        _gearSlot: 1
+        _gearTier: 1
+        _statModifiers:
+        - _statId: 6
+          _flatBonus: 3
+        _elementType: 0
+        _elementalDamage: 0
+        _hasEquipRequirementStat: 0
+        _equipRequirementStat: 0
+        _equipRequirementMin: 0
+        _hasMergeResultItemID: 0

@@ -1,7 +1,7 @@
 # Story 001: IItemDatabase Interface, Runtime Database, and Core Type Definitions
 
 > **Epic**: Item Database
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Logic
 > **Manifest Version**: 2026-06-28
@@ -37,17 +37,17 @@
 
 *From GDD `design/gdd/item-database.md`, scoped to this story:*
 
-- [ ] **AC-1** [BLOCKING]: `GetItem(ItemID.Invalid)` (ItemID(0)) returns `null`, no exception thrown, no error logged. `ItemID.Invalid` is a valid sentinel — not an error condition.
-- [ ] **AC-2** [BLOCKING]: Two callers invoking `GetItem(new ItemID(1))` in the same frame receive the exact same `ItemDefinition` reference (`object.ReferenceEquals(ref1, ref2) == true`). Single authoritative data, no per-caller copies.
-- [ ] **AC-19** [BLOCKING]: `GetItemsByCategory` called with a value outside `{Equipment, Consumable}` (e.g., `(ItemCategory)999`) returns an empty `IReadOnlyList<ItemDefinition>`, logs a dev-build error, and throws no exception.
-- [ ] **AC-28** [BLOCKING]: Database constructed but `Initialize()` not called — `GetItem(new ItemID(1))` returns `null`, `IsReady == false`, a dev-build error is logged, no exception thrown.
-- [ ] **AC-29a** [BLOCKING]: After `Initialize()` completes, `IsReady == true`.
-- [ ] **AC-29b** [BLOCKING]: Handler subscribed to `OnDatabaseReady` before `Initialize()` is invoked exactly once when `Initialize()` completes. A second call to `Initialize()` does not fire `OnDatabaseReady` again.
-- [ ] **AC-29c** [BLOCKING]: When `IsReady` is already `true` and a new handler is added via `+=`, the handler is invoked synchronously on the calling thread before the assignment expression returns.
-- [ ] **AC-36** [BLOCKING]: `TryGetItem(new ItemID(1), out var def)` returns `true` and `def` is `object.ReferenceEquals`-equal to `GetItem(new ItemID(1))`.
-- [ ] **AC-37** [BLOCKING]: `TryGetItem(ItemID.Invalid, out var def)` returns `false`, `def == null`, no exception.
-- [ ] **AC-38** [BLOCKING]: Database not initialized — `TryGetItem(new ItemID(1), out var def)` returns `false`, `def == null`, `IsReady == false`, dev error logged, no exception.
-- [ ] **AC-40** [BLOCKING]: Database not initialized — `GetItemsByCategory(ItemCategory.Equipment)` returns empty `IReadOnlyList<ItemDefinition>`, `IsReady == false`, dev error logged, no exception.
+- [x] **AC-1** [BLOCKING]: `GetItem(ItemID.Invalid)` (ItemID(0)) returns `null`, no exception thrown, no error logged. `ItemID.Invalid` is a valid sentinel — not an error condition.
+- [x] **AC-2** [BLOCKING]: Two callers invoking `GetItem(new ItemID(1))` in the same frame receive the exact same `ItemDefinition` reference (`object.ReferenceEquals(ref1, ref2) == true`). Single authoritative data, no per-caller copies.
+- [x] **AC-19** [BLOCKING]: `GetItemsByCategory` called with a value outside `{Equipment, Consumable}` (e.g., `(ItemCategory)999`) returns an empty `IReadOnlyList<ItemDefinition>`, logs a dev-build error, and throws no exception.
+- [x] **AC-28** [BLOCKING]: Database constructed but `Initialize()` not called — `GetItem(new ItemID(1))` returns `null`, `IsReady == false`, a dev-build error is logged, no exception thrown.
+- [x] **AC-29a** [BLOCKING]: After `Initialize()` completes, `IsReady == true`.
+- [x] **AC-29b** [BLOCKING]: Handler subscribed to `OnDatabaseReady` before `Initialize()` is invoked exactly once when `Initialize()` completes. A second call to `Initialize()` does not fire `OnDatabaseReady` again.
+- [x] **AC-29c** [BLOCKING]: When `IsReady` is already `true` and a new handler is added via `+=`, the handler is invoked synchronously on the calling thread before the assignment expression returns.
+- [x] **AC-36** [BLOCKING]: `TryGetItem(new ItemID(1), out var def)` returns `true` and `def` is `object.ReferenceEquals`-equal to `GetItem(new ItemID(1))`.
+- [x] **AC-37** [BLOCKING]: `TryGetItem(ItemID.Invalid, out var def)` returns `false`, `def == null`, no exception.
+- [x] **AC-38** [BLOCKING]: Database not initialized — `TryGetItem(new ItemID(1), out var def)` returns `false`, `def == null`, `IsReady == false`, dev error logged, no exception.
+- [x] **AC-40** [BLOCKING]: Database not initialized — `GetItemsByCategory(ItemCategory.Equipment)` returns empty `IReadOnlyList<ItemDefinition>`, `IsReady == false`, dev error logged, no exception.
 
 ---
 
@@ -186,7 +186,7 @@ Place all new Item Database types in `src/Foundation/ItemDatabase/` with namespa
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/ItemDatabase/ItemDatabase_Core_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 12 test methods, all 11 blocking ACs covered
 
 ---
 
@@ -194,3 +194,11 @@ Place all new Item Database types in `src/Foundation/ItemDatabase/` with namespa
 
 - Depends on: Story 001 through Story 007 in Character Stats epic must be Done (ItemID and StatID are defined there)
 - Unlocks: Story 002 (Validator uses ItemDefinition from this story), Story 003, Story 004
+
+## Completion Notes
+**Completed**: 2026-07-04
+**Criteria**: 11/11 passing (0 deferred)
+**Deviations**: Advisory only — `ItemID.cs` extended with `ItemID.Invalid` alias (outside stated file scope but additive/non-breaking, required by GDD sentinel vocabulary); `docs/architecture/tr-registry.yaml` still empty project-wide, verified against GDD directly instead
+**Test Evidence**: Logic — `tests/EditMode/ItemDatabase/ItemDatabase_Core_tests.cs` (12 test methods, all 11 blocking ACs covered)
+**Code Review**: Complete — `/code-review` verdict APPROVED WITH SUGGESTIONS (AC-2 test gap fixed before closure)
+**Tech debt logged**: TD-001, TD-002, TD-003 in `docs/tech-debt-register.md`

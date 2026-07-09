@@ -3,8 +3,8 @@
 > **Layer**: Foundation
 > **GDD**: design/gdd/item-database.md
 > **Architecture Module**: Item Database
-> **Status**: Ready
-> **Stories**: 4 stories created (001–004)
+> **Status**: Complete
+> **Stories**: 4 stories created (001–004), all Complete
 
 ## Overview
 
@@ -43,9 +43,9 @@ This epic is complete when:
 
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
-| 001 | IItemDatabase Interface, Runtime Database, and Core Type Definitions | Logic | Ready | None (design-only) |
-| 002 | Import Validator — Reject Rules (Error Path) | Logic | Ready | None (design-only) |
-| 003 | Import Validator — Warning Rules (Accept Path) | Logic | Ready | None (design-only) |
-| 004 | MVP Item Records — 34 Authored ScriptableObject Assets | Config/Data | Ready | None (data authoring) |
+| 001 | IItemDatabase Interface, Runtime Database, and Core Type Definitions | Logic | Complete | None (design-only) |
+| 002 | Import Validator — Reject Rules (Error Path) | Logic | Complete | None (design-only) |
+| 003 | Import Validator — Warning Rules (Accept Path) | Logic | Complete | None (design-only) |
+| 004 | MVP Item Records — 34 Authored ScriptableObject Assets | Config/Data | Complete | None (data authoring) |
 
 Work through stories in order — each story's `Depends on:` field tells you what must be Done before you can start it.

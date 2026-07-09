@@ -36,7 +36,7 @@ namespace IronGrind.Tests.EditMode.ItemDatabase
             foreach (var def in _itemsToDestroy)
             {
                 if (def != null)
-                    Object.DestroyImmediate(def);
+                    UnityEngine.Object.DestroyImmediate(def);
             }
             _itemsToDestroy.Clear();
         }
@@ -89,6 +89,28 @@ namespace IronGrind.Tests.EditMode.ItemDatabase
         }
 
         // -----------------------------------------------------------------------
+        // AC-2 edge case: distinct ItemIDs must not alias to the same reference.
+        // -----------------------------------------------------------------------
+
+        [Test]
+        public void ItemDatabase_GetItem_DifferentIds_ReturnsDistinctReferences()
+        {
+            // Arrange
+            var defA = MakeItem(1u, "Iron Sword", ItemCategory.Equipment);
+            var defB = MakeItem(2u, "Health Potion", ItemCategory.Consumable);
+            _db.Initialize(new[] { defA, defB });
+
+            // Act
+            var refA = _db.GetItem(new ItemID(1u));
+            var refB = _db.GetItem(new ItemID(2u));
+
+            // Assert
+            Assert.IsFalse(
+                ReferenceEquals(refA, refB),
+                "GetItem for distinct IDs must not return the same reference (no cross-ID aliasing).");
+        }
+
+        // -----------------------------------------------------------------------
         // AC-19: GetItemsByCategory with an unknown enum value returns empty list
         //        and logs a dev-build error. No exception thrown.
         // -----------------------------------------------------------------------
@@ -100,12 +122,15 @@ namespace IronGrind.Tests.EditMode.ItemDatabase
             _db.Initialize(Array.Empty<ItemDefinition>());
 
             // Expect — must be declared before the call that logs.
+            // Note: ItemCategory is byte-backed (Rule byte range 0-255); 255 is used here
+            // (not the story text's illustrative 999, which overflows byte and is a
+            // compile-time error — CS0221 — for a constant enum cast).
             LogAssert.Expect(
                 LogType.Error,
-                "[ItemDatabase] GetItemsByCategory called with unknown ItemCategory value (999).");
+                "[ItemDatabase] GetItemsByCategory called with unknown ItemCategory value (255).");
 
             // Act
-            var result = _db.GetItemsByCategory((ItemCategory)999);
+            var result = _db.GetItemsByCategory((ItemCategory)255);
 
             // Assert
             Assert.IsNotNull(result, "Result must not be null.");

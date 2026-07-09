@@ -35,5 +35,23 @@ namespace IronGrind.ItemDatabase
         /// Can be negative (a penalty).
         /// </summary>
         public float FlatBonus => _flatBonus;
+
+#if UNITY_EDITOR
+        /// <summary>
+        /// Test seam — for EditMode tests only. Constructs an instance with both fields set
+        /// directly, bypassing the Unity Inspector. Must not be called outside of test code.
+        /// </summary>
+        /// <param name="statId">The stat receiving the flat bonus.</param>
+        /// <param name="flatBonus">The additive flat bonus value. May be zero or negative for
+        /// error/warning-path validator tests.</param>
+        internal static StatModifierEntry CreateForTesting(StatID statId, float flatBonus)
+        {
+            return new StatModifierEntry
+            {
+                _statId = statId,
+                _flatBonus = flatBonus
+            };
+        }
+#endif
     }
 }

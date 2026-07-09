@@ -1,7 +1,7 @@
 # Story 003: Import Validator — Warning Rules (Accept Path)
 
 > **Epic**: Item Database
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Logic
 > **Manifest Version**: 2026-06-28
@@ -29,10 +29,10 @@
 
 *From GDD `design/gdd/item-database.md`, scoped to this story — warning cases and confirmed-accept paths:*
 
-- [ ] **AC-13** [BLOCKING]: Validator receives weapon record with `ElementType = Fire` and `ElementalDamage = 0` → result is accepted (`IsValid = true`), no error, no warning. *(Non-None element + zero damage is valid — Enhancement System may scale elemental damage from zero.)*
-- [ ] **AC-17** [ADVISORY]: Validator receives equipment record with `StatModifierEntry.FlatBonus < 0.0f` → result is accepted (`IsValid = true`); a warning is emitted naming the item DisplayName and the `StatId`; no error returned.
-- [ ] **AC-32** [ADVISORY]: Validator receives equipment record where `SellPriceGold` deviates from the F-1 `TierBasePrice` for its `GearTier` by more than ±5% → result is accepted (`IsValid = true`); a warning is emitted naming the item, the authored value, and the F-1 expected value. *(Tolerance: exclusive threshold — deviation strictly > 5% triggers the warning.)*
-- [ ] **AC-35** [ADVISORY]: Validator receives any item with `SellPriceGold = 0` → result is accepted (`IsValid = true`); a warning is emitted naming the item. *(Zero sell price is technically valid but likely a data authoring error for any non-gift item.)*
+- [x] **AC-13** [BLOCKING]: Validator receives weapon record with `ElementType = Fire` and `ElementalDamage = 0` → result is accepted (`IsValid = true`), no error, no warning. *(Non-None element + zero damage is valid — Enhancement System may scale elemental damage from zero.)*
+- [x] **AC-17** [ADVISORY]: Validator receives equipment record with `StatModifierEntry.FlatBonus < 0.0f` → result is accepted (`IsValid = true`); a warning is emitted naming the item DisplayName and the `StatId`; no error returned.
+- [x] **AC-32** [ADVISORY]: Validator receives equipment record where `SellPriceGold` deviates from the F-1 `TierBasePrice` for its `GearTier` by more than ±5% → result is accepted (`IsValid = true`); a warning is emitted naming the item, the authored value, and the F-1 expected value. *(Tolerance: exclusive threshold — deviation strictly > 5% triggers the warning.)*
+- [x] **AC-35** [ADVISORY]: Validator receives any item with `SellPriceGold = 0` → result is accepted (`IsValid = true`); a warning is emitted naming the item. *(Zero sell price is technically valid but likely a data authoring error for any non-gift item.)*
 
 ---
 
@@ -59,8 +59,10 @@ Add warning checks to the existing `ItemDefinitionValidator.Validate()` method. 
 float expected = TierBasePrice(record.EquipmentData.GearTier);
 float deviation = Mathf.Abs(record.SellPriceGold - expected) / expected;
 if (deviation > 0.05f)
-    warnings.Add($"[ItemDatabase] '{record.DisplayName}': SellPriceGold={record.SellPriceGold} deviates from F-1 expected {expected}g by {deviation:P1}.");
+    result.AddWarning($"[ItemDatabase] '{record.DisplayName}': SellPriceGold={record.SellPriceGold} deviates from F-1 expected {expected}g by {deviation:P1}.");
 ```
+
+*(Matches the `ValidateEquipment`/`ValidateConsumable` pattern already established in `ItemDefinitionValidator.cs` — each rule method receives a `ValidationResult result` parameter and calls `AddWarning`/`AddError`/`AddFatal` directly. `ValidationResult` does not expose separate `Warnings`/`Errors` list properties — all findings live in `Issues: IReadOnlyList<ValidationIssue>`, filterable by `ValidationSeverity`.)*
 
 Only applies to Equipment records (F-2 governs Consumable sell prices separately — no tolerance check for consumables in MVP).
 
@@ -91,32 +93,34 @@ Only applies to Equipment records (F-2 governs Consumable sell prices separately
 
 *Test file*: `tests/EditMode/ItemDatabase/ItemDatabase_Validator_Warning_tests.cs`
 
+*(All assertions below use the actual `ValidationResult` API: `IsValid: bool`, `Issues: IReadOnlyList<ValidationIssue>` where each `ValidationIssue` has `Severity: ValidationSeverity` and `Message: string`. There are no separate `Warnings`/`Errors` list properties.)*
+
 - **AC-13**: ElementType non-None + ElementalDamage = 0 → accepted without warning
-  - Given: Sword record with `ElementType = ElementType.Fire`, `ElementalDamage = 0`
-  - When: `Validate(record)`
-  - Then: `IsValid == true`; `Errors.Count == 0`; `Warnings.Count == 0`
-  - Edge case: `ElementType = ElementType.None`, `ElementalDamage = 0` (physical weapon) → also accepted, also no warning
+  - Given: Sword record with `ElementType = ElementType.Fire`, `ElementalDamage = 0` (otherwise fully valid)
+  - When: `ItemDefinitionValidator.ValidateRecord(record)`
+  - Then: `result.IsValid == true`; `result.Issues.Count == 0`
+  - Edge case: `ElementType = ElementType.None`, `ElementalDamage = 0` (physical weapon) → also `Issues.Count == 0`
 
 - **AC-17**: FlatBonus < 0 → warning, accepted
   - Given: Equipment record with `StatModifierEntry { StatId = StatID.MovementSpeed, FlatBonus = -5.0f }`
-  - When: `Validate(record)`
-  - Then: `IsValid == true`; `Errors.Count == 0`; `Warnings.Count >= 1`; warning text contains "MovementSpeed"
-  - Edge case: Two entries, both negative → two warnings, both named
+  - When: `ItemDefinitionValidator.ValidateRecord(record)`
+  - Then: `result.IsValid == true`; `result.Issues.Any(i => i.Severity == ValidationSeverity.Warning)`; the warning's `Message` contains "MovementSpeed"; no `Error`/`Fatal` severity present
+  - Edge case: Two entries, both negative → two `Warning`-severity issues, both messages named
 
 - **AC-32**: SellPrice deviation > 5% → warning, accepted
   - Given: Bronze equipment (TierBasePrice=10) with `SellPriceGold = 8` (deviation = 20%, above 5% threshold)
-  - When: `Validate(record)`
-  - Then: `IsValid == true`; warning emitted naming item, authored value (8), expected value (10)
-  - Edge case: `SellPriceGold = 10` (exactly F-1) → no warning
-  - Edge case: `SellPriceGold = 9` (10% below — above threshold) → warning
+  - When: `ItemDefinitionValidator.ValidateRecord(record)`
+  - Then: `result.IsValid == true`; a `Warning`-severity issue's `Message` names the item, authored value (8), and expected value (10)
+  - Edge case: `SellPriceGold = 10` (exactly F-1) → no `Warning`-severity issue from this rule
+  - Edge case: `SellPriceGold = 9` (10% below — above threshold) → warning present
   - Edge case: `SellPriceGold = 11` (within ±5% exclusive) → verify boundary (5% of 10 = 0.5g; 10.5g is > 5%? → yes, 10 + 0.5 = 10.5 is the exclusive boundary; SellPrice = 10 is no warning, = 11 is warning)
-    - Boundary: Bronze tolerance window [9g–11g] exclusive — `SellPriceGold = 9` triggers warning; `SellPriceGold = 10` does not
+    - Boundary: Bronze tolerance window [9g–11g] exclusive — `SellPriceGold = 9` triggers a warning; `SellPriceGold = 10` does not
 
 - **AC-35**: SellPriceGold = 0 → warning, accepted
   - Given: Equipment record with `SellPriceGold = 0`
-  - When: `Validate(record)`
-  - Then: `IsValid == true`; `Errors.Count == 0`; warning emitted naming the item
-  - Edge case: `SellPriceGold = 1` → no warning from AC-35 (though AC-32 might fire if it deviates from F-1)
+  - When: `ItemDefinitionValidator.ValidateRecord(record)`
+  - Then: `result.IsValid == true`; no `Error`/`Fatal` severity present; a `Warning`-severity issue names the item
+  - Edge case: `SellPriceGold = 1` → no warning from this specific rule (though AC-32's deviation rule might independently fire)
 
 ---
 
@@ -125,7 +129,7 @@ Only applies to Equipment records (F-2 governs Consumable sell prices separately
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/ItemDatabase/ItemDatabase_Validator_Warning_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 11 test methods, all 4 ACs covered
 
 ---
 
@@ -133,3 +137,10 @@ Only applies to Equipment records (F-2 governs Consumable sell prices separately
 
 - Depends on: Story 001 (ItemDefinition type), Story 002 (validator error infrastructure) must be Done
 - Unlocks: Story 004 (all 34 records must pass the complete validator — error + warning rules)
+
+## Completion Notes
+**Completed**: 2026-07-04
+**Criteria**: 4/4 passing (0 deferred)
+**Deviations**: None
+**Test Evidence**: Logic — `tests/EditMode/ItemDatabase/ItemDatabase_Validator_Warning_tests.cs` (11 test methods)
+**Code Review**: Complete — `/code-review` ran twice (CHANGES REQUIRED → APPROVED after adding the missing SellPriceGold=11 boundary test and the explicit AC-32/AC-35 co-firing assertion; also hardened `GetTierBasePrice`'s unreachable branch to throw instead of returning 0)
