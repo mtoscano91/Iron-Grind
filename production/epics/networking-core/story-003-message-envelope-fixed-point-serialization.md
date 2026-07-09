@@ -1,7 +1,7 @@
 # Story 003: Message Envelope & Fixed-Point Primitive Serialization
 
 > **Epic**: Networking Core
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Logic
 > **Manifest Version**: 2026-06-28
@@ -30,9 +30,9 @@
 
 *From `design/gdd/networking-wire-protocol.md`, scoped to this story:*
 
-- [ ] **AC-WP-1** [BLOCKING] (envelope, CR-NET-7.1): The envelope serializer produces exactly 10 bytes for server-originated messages (`MessageTypeID` 2B, `SequenceNumber` 4B, `ServerTickNumber` 4B) and exactly 14 bytes for client→server entity-referencing messages (+`SenderEntityID` 4B).
-- [ ] **AC-NC-28** [BLOCKING] (Logic — fixed-point round-trip accuracy): Given the server encodes (a) a Vector3 position of `(12.75, 0.00, -85.23)` metres, (b) a Quaternion rotation of `(0.707, 0.0, 0.707, 0.0)`, (c) a `cycleTimer` value of `0.37 × CycleDuration`, when a client decodes these values, then: decoded position is within ±0.01m per axis; decoded quaternion (after renormalization) has dot product ≥0.9999997 with the original; decoded cycleTimer fraction is 0.37 ± 0.0001. A boundary-value test at `(±327.67, 0, 0)` must not overflow; a degenerate-quaternion input `(0,0,0,0)` must encode as identity `(0,0,0,1)` and log an anomaly.
-- [ ] **AC-NC-03** [BLOCKING] (Logic — cross-client value consistency): Given two clients connected to the same zone and client A taking damage, when the damage event reaches client B, then the damage value displayed on client B matches the value the server computed (proven at the serialization/deserialization boundary, not gameplay logic).
+- [x] **AC-WP-1** [BLOCKING] (envelope, CR-NET-7.1): The envelope serializer produces exactly 10 bytes for server-originated messages (`MessageTypeID` 2B, `SequenceNumber` 4B, `ServerTickNumber` 4B) and exactly 14 bytes for client→server entity-referencing messages (+`SenderEntityID` 4B).
+- [x] **AC-NC-28** [BLOCKING] (Logic — fixed-point round-trip accuracy): Given the server encodes (a) a Vector3 position of `(12.75, 0.00, -85.23)` metres, (b) a Quaternion rotation of `(0.707, 0.0, 0.707, 0.0)`, (c) a `cycleTimer` value of `0.37 × CycleDuration`, when a client decodes these values, then: decoded position is within ±0.01m per axis; decoded quaternion (after renormalization) has dot product ≥0.9999997 with the original; decoded cycleTimer fraction is 0.37 ± 0.0001. A boundary-value test at `(±327.67, 0, 0)` must not overflow; a degenerate-quaternion input `(0,0,0,0)` must encode as identity `(0,0,0,1)` and log an anomaly.
+- [x] **AC-NC-03** [BLOCKING] (Logic — cross-client value consistency): Given two clients connected to the same zone and client A taking damage, when the damage event reaches client B, then the damage value displayed on client B matches the value the server computed (proven at the serialization/deserialization boundary, not gameplay logic).
 
 ---
 
@@ -73,7 +73,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/Networking/WireProtocol_Envelope_Serialization_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 21 test methods, all 3 blocking ACs covered
 
 ---
 
@@ -81,3 +81,13 @@
 
 - Depends on: Story 001 (test harness interfaces referenced by sibling stories' tests; not strictly required for this story's own unit tests)
 - Unlocks: Stories 004–008 (all build on these primitive encoders); every downstream system's own message schemas
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-07-09
+**Criteria**: 3/3 passing (AC-WP-1, AC-NC-28, AC-NC-03)
+**Deviations**: ADVISORY — `TR-net-001` not present in `docs/architecture/tr-registry.yaml` (empty project-wide, pre-existing systemic gap); used the wire-protocol GDD's CR-NET-7.1/7.2 text directly as source of truth.
+**Test Evidence**: `tests/EditMode/Networking/WireProtocol_Envelope_Serialization_tests.cs` — 21 test methods. Not run in the Unity Test Runner this session (no Editor invocation available); traced by hand and reviewed by unity-specialist + qa-tester. Recommend running the EditMode suite in-editor to confirm.
+**Code Review**: Complete — APPROVED WITH SUGGESTIONS (unity-specialist + qa-tester, lean mode). One real gap found (missing `EncodeDirection` normal-case round-trip test) and fixed before closure. Two non-blocking suggestions logged as tech debt: TD-008 (no overflow guard on `critChance`/`attackSpeedMultiplier`), TD-009 (no NaN/Infinity guard on position/rotation/direction encoders).

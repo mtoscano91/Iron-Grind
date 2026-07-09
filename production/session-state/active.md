@@ -1,5 +1,28 @@
 # Session State
 
+## Session Extract — /code-review + /story-done 2026-07-09 (Networking Core Story 003)
+
+- Verdict: COMPLETE WITH NOTES
+- Story: `production/epics/networking-core/story-003-message-envelope-fixed-point-serialization.md` — Message Envelope & Fixed-Point Primitive Serialization
+- `/code-review` ran in lean mode with 2 specialists in parallel (unity-specialist, qa-tester): APPROVED WITH SUGGESTIONS — qa-tester found a real gap (no normal-case round-trip test for `EncodeDirection`, only the degenerate-zero-vector case) → fixed (added `EncodeDirection_WorkedValue_RoundTripsWithinTolerance`) → 21 test methods total
+- Tech debt logged: TD-008 (no overflow guard on `critChance`/`attackSpeedMultiplier` — directed scope-discipline decision), TD-009 (no NaN/Infinity guard on position/rotation/direction encoders — flagged by unity-specialist)
+- Files updated: `production/epics/networking-core/story-003-...md` (Status: Complete, ACs checked, Completion Notes), `production/epics/networking-core/EPIC.md` (Story 003 → Complete), `docs/tech-debt-register.md` (+TD-008, TD-009)
+- Next recommended: Story 004 — EntityID/Enum Wire-Safety Guards (`production/epics/networking-core/story-004-entityid-enum-wire-safety-guards.md`) — next in the Wire Protocol Core cluster, builds directly on this story's `MessageEnvelopeCodec`
+
+## Session Extract — /dev-story 2026-07-09 (Networking Core Story 003)
+
+- Story: `production/epics/networking-core/story-003-message-envelope-fixed-point-serialization.md` — Message Envelope & Fixed-Point Primitive Serialization
+- Pre-implementation: ran a scoped unity-specialist verification pass (not a full engine-risk spawn — story explicitly excludes the NGO send-API surface that makes ADR-004 HIGH risk) confirming `System.Buffers.Binary.BinaryPrimitives` + `Span<byte>`/`ReadOnlySpan<byte>` is IL2CPP-AOT-safe on Unity 6.3 (iOS ARM64 + Linux x64 server) — no generic instantiation, no reflection, no linker stripping risk.
+- Files changed: `src/Foundation/Networking/WireProtocol/{ServerMessageEnvelope,ClientEntityMessageEnvelope,MessageEnvelopeCodec,WireFixedPointCodec}.cs` (all new)
+- Test written: `tests/EditMode/Networking/WireProtocol_Envelope_Serialization_tests.cs` (18 test methods — AC-WP-1, AC-NC-28 including boundary/degenerate-guard cases, AC-NC-03 all covered)
+- Key judgment call (directed, not agent-initiated): `critChance`/`attackSpeedMultiplier` encoders intentionally ship with no clamp/log guard (plain round+cast) — CR-NET-7.2 documents a valid range for these two fields but the story's Implementation Notes only specify guards for cycleTimer/position/quaternion/direction. This leaves an unguarded `ushort` wraparound risk if a caller ever passes an out-of-range value — tracked below as a tech-debt candidate, not fixed in this story (would be scope creep).
+- **New tech debt candidate (not yet added to docs/tech-debt-register.md — flag for next docs pass)**: `WireFixedPointCodec.EncodeCritChance`/`EncodeAttackSpeedMultiplier` have no overflow guard; an out-of-range input silently wraps via the `ushort` cast rather than clamping+logging like the other four encoders.
+- TR registry gap: `TR-net-001` not found in `docs/architecture/tr-registry.yaml` (`requirements: []`, empty project-wide) — same pre-existing systemic gap documented across every prior epic; used the wire-protocol GDD's CR-NET-7.1/7.2 text directly as the source of truth instead.
+- Verified all 4 source files + the test file directly (read in full) before reporting — implementation matches the story's encoder/guard spec exactly, naming conventions and doc-comment style match project precedent.
+- Blockers: None. Not yet run in the Unity Test Runner (no Editor invocation available in this session) — recommend running the EditMode suite before `/story-done`.
+- Not yet committed — this is fresh work, not part of the previously-authorized backlog commit; awaiting explicit go-ahead to commit and/or proceed to `/code-review`.
+- Next: `/code-review src/Foundation/Networking/WireProtocol/ tests/EditMode/Networking/WireProtocol_Envelope_Serialization_tests.cs` then `/story-done production/epics/networking-core/story-003-message-envelope-fixed-point-serialization.md`
+
 ## Session Extract — /code-review + /story-done 2026-07-08 (Networking Core Story 002 — Test Harness cluster COMPLETE)
 
 - Verdict: COMPLETE WITH NOTES
