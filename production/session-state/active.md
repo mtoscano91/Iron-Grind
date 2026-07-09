@@ -1,14 +1,207 @@
 # Session State
 
-*Updated: 2026-07-02*
+## Session Extract — /code-review + /story-done 2026-07-08 (Networking Core Story 002 — Test Harness cluster COMPLETE)
+
+- Verdict: COMPLETE WITH NOTES
+- Story: `production/epics/networking-core/story-002-test-harness-observer-release-stripping.md` — Test Harness: INetworkTestObserver + Release-Build Stripping
+- `/code-review` ran with 3 specialists in parallel (unity-specialist, qa-tester, devops-engineer): CHANGES REQUIRED (`Reset()` test only asserted 3 of ~25 capture lists cleared) → fixed to assert all 25 → APPROVED WITH SUGGESTIONS
+- Final test count: 13 test methods, all 3 blocking ACs covered; AC-TC-01/02 additionally backed by CI config (`.github/workflows/tests.yml` + `tools/ci/check-test-harness-guards.sh`)
+- Tech debt logged: None new (TR-net-009 registry gap pre-existing; AC-TC-01's placeholder CI job tracked as a future follow-up, not tech debt — no real Player build pipeline exists in this repo yet to wire it to)
+- **Test Harness cluster (Stories 001-002) is now Complete** — every other Networking Core story references these interfaces in its own tests
+- Files updated: `production/epics/networking-core/story-002-test-harness-observer-release-stripping.md` (Status: Complete, ACs checked, Completion Notes), `production/epics/networking-core/EPIC.md` (Story 002 → Complete)
+- Next recommended: Story 003 — Message Envelope & Fixed-Point Primitive Serialization (`production/epics/networking-core/story-003-message-envelope-fixed-point-serialization.md`) — first story in the Wire Protocol Core cluster (003-008)
+
+## Session Extract — /dev-story 2026-07-08 (Networking Core Story 002)
+
+- Story: `production/epics/networking-core/story-002-test-harness-observer-release-stripping.md` — Test Harness: INetworkTestObserver + Release-Build Stripping
+- Files changed: `src/Foundation/Networking/TestHarness/{INetworkTestObserver,NetworkTestObserver}.cs` (new), `NetworkingTestHarness.cs` (added `CreateNetworkTestObserver()`), `.github/workflows/tests.yml` (2 new CI jobs), `tools/ci/check-test-harness-guards.sh` (new)
+- Test written: `tests/EditMode/Networking/NetworkingTestHarness_Observer_tests.cs` (13 test methods — AC-NC-43 via a clearly-scoped test-only queue fixture, not Story 006's real queue)
+- Process note: the implementing subagent's final response was truncated mid-sentence ("Let's validate the YAML syntax.") — no summary was received. Verified all files directly (Read every changed/created file) before reporting; everything was complete, correct, and consistent with the story's scope — no corruption or partial writes found.
+- Key judgment calls (verified, endorsed): AC-TC-01 implemented as a documented non-blocking CI placeholder (this repo has no real IL2CPP Release Player build step yet — wiring one is out of scope, devops/build-infra concern); AC-TC-02 fully implemented as a real blocking CI check with a `--self-test` mode proving it isn't a no-op.
+- Blockers: None
+- Next: `/code-review src/Foundation/Networking/ tests/EditMode/Networking/ tools/ci/` then `/story-done production/epics/networking-core/story-002-test-harness-observer-release-stripping.md`
+
+## Session Extract — /code-review + /story-done 2026-07-08 (Networking Core Story 001)
+
+- Verdict: COMPLETE WITH NOTES
+- Story: `production/epics/networking-core/story-001-test-harness-fault-crash-zone-config-injection.md` — Test Harness: Fault/Crash/Zone-Config Injection
+- `/code-review` verdict: CHANGES REQUIRED (`Reset()` wasn't clearing `_hasEmittedAnyMessage`, contradicting its "clean state" doc comment — found independently by qa-tester during the review pass) → fixed + regression test added → APPROVED WITH SUGGESTIONS
+- Final test count: 31 test methods, all 4 blocking ACs covered
+- Tech debt logged: None new (TR-net-009 registry gap is the same pre-existing systemic issue already documented across every epic)
+- Files updated: `production/epics/networking-core/story-001-test-harness-fault-crash-zone-config-injection.md` (Status: Complete, ACs checked, Completion Notes), `production/epics/networking-core/EPIC.md` (Story 001 → Complete), `src/Foundation/Networking/TestHarness/TransportFaultInjector.cs` (Reset() fix), `tests/EditMode/Networking/NetworkingTestHarness_FaultCrashConfig_tests.cs` (+1 test)
+- Next recommended: Story 002 — Test Harness: INetworkTestObserver + Release-Build Stripping (`production/epics/networking-core/story-002-test-harness-observer-release-stripping.md`) — the last Test Harness story before the Wire Protocol Core cluster (003-008) can begin
+
+## Session Extract — /dev-story 2026-07-08 (Networking Core Story 001)
+
+- Story: `production/epics/networking-core/story-001-test-harness-fault-crash-zone-config-injection.md` — Test Harness: Fault/Crash/Zone-Config Injection
+- Files changed: `src/Foundation/Networking/SessionState.cs` (new), `ZoneState.cs` (new), `src/Foundation/Networking/TestHarness/{ITransportFaultInjector,IServerCrashInjector,IZoneTestConfigurator,TransportFaultInjector,ServerCrashInjector,ZoneTestConfigurator,NetworkingTestHarness}.cs` (all new)
+- Test written: `tests/EditMode/Networking/NetworkingTestHarness_FaultCrashConfig_tests.cs` (30 test methods across 4 fixtures, all 4 ACs covered — AC-TH-4 verified structurally, full CI stripping check deferred to Story 002)
+- Notable judgment call (verified, endorsed): implementing agent replaced the GDD's literal `NetworkingTestHarness.RegisterInterfaces()` wording with a guarded static factory (`Create*` methods) since this project has no DI container and ADR-010 forbids a service-locator/EventBus singleton — same compile-guard effect, no architectural conflict
+- Blockers: None. Known limitation: no `dotnet`/`csc` available in the sandboxed shell to run an automated compile check or the real Unity Test Runner — implementation was traced by hand against every test; recommend running the EditMode suite in Unity before/during `/story-done`
+- Next: `/code-review src/Foundation/Networking/ tests/EditMode/Networking/` then `/story-done production/epics/networking-core/story-001-test-harness-fault-crash-zone-config-injection.md`
+
+## Session Extract — /create-stories networking-core 2026-07-08
+
+- **29 stories written** to `production/epics/networking-core/` — the largest epic in the project (10 GDDs, ~130 ACs total)
+- Research approach: 4 parallel Explore agents extracted structured AC/Formula/EdgeCase/Dependency summaries from the 9 sub-contract GDDs (root `networking-core.md` + ADR-004 read directly); synthesis and story decomposition done in main session
+- 9 clusters: Test Harness (001-002, implement first — nearly everything else's tests depend on it), Wire Protocol Core (003-008), Tick Loop & Authority (009-011), Session Lifecycle (012-015), Session Token (016), Ghost Session (017-021), OWL Compensation (022-024), Message Routing (025-027), Relevance Filter (028-029)
+- Scoping decision: Networking Core owns the envelope/channel/tick/session/ghost/OWL/relevance-filter/test-harness substrate only — every downstream system's specific message schema (NPC Shop, Loot, Party, Inventory, Equipment, Movement, Skill, etc.) is explicitly out of scope, left to each system's own future epic
+- Explicitly deferred (blocked on unauthored/unapproved GDDs, or already covered): AC-NC-01 (Zone Instancing boundary), AC-NC-33b (Death & Respawn penalties), AC-NC-08a/08b + AC-NC-44 (Leveling schema-pending), AC-NC-39/wire SelfPositionUpdate (Client-Side Prediction not yet approved), AC-GH-EXP-1-4 (Visual/Feel playtest evidence), AC-NC-25 (already proven by existing Currency System tests)
+- **3 cross-doc issues surfaced** (not fixed — flagged in EPIC.md for future propagation-check): (1) OQ-NET-1 BLOCKING — `HEARTBEAT_TIMEOUT_SECONDS` production default still undetermined; (2) AC-ID collision — root GDD and wire-protocol.md each independently define an unrelated "AC-NC-31"; (3) `GHOST_COMBAT_TTL_MINUTES` (session.md, 60s) vs `GHOST_COMBAT_TTL_MIN_S` (ghost-session.md F-GH-1 formula, 30s baseline) — two different constants for what reads as the same concept, Stories 019/021 chose the ghost-session formula as authoritative pending a design decision
+- Also flagged: `StatID` enum cross-doc dependency (Character Stats GDD needs `enum:uint`→`enum:byte`, Story 004 workaround in place until then); ADR-004's engine-risk profiling gate (NGO `CustomMessagingManager`/`NetworkManager.ServerTime.Tick` headless-build verification) must pass before implementation sprint is greenlit, per EPIC.md's own pre-existing note
+- Files updated: `production/epics/networking-core/story-001` through `story-029` (new), `production/epics/networking-core/EPIC.md` (Stories table + blockers section), `production/epics/index.md` (Networking Core row)
+- Next recommended: `/story-readiness production/epics/networking-core/story-001-test-harness-fault-crash-zone-config-injection.md` before starting implementation; consider addressing the ADR-004 engine-risk profiling gate first since it's a pre-sprint blocker per the epic's own Definition of Done
+
+## Session Extract — /code-review + /story-done 2026-07-08 (Currency Story 006 — Currency System epic COMPLETE)
+
+- Verdict: COMPLETE WITH NOTES
+- Story: `production/epics/currency-system/story-006-transfergold-stub-and-compensating-refund.md` — TransferGold Stub & Compensating Refund
+- `/code-review` verdict: APPROVED WITH SUGGESTIONS (non-blocking: optional input-invariance regression test for the stub, optional explicit assertion on `NotImplemented`'s placeholder fields)
+- Final test count: 2 test methods, both blocking ACs covered (AC-CS-E-02, AC-CS-E-03)
+- Tech debt logged: None new (TR-currency-002 registry gap and GDD `AdminAdjust`/`CompensatingRefund` drift are both pre-existing/already documented, not new to this story)
+- **Currency System epic is now fully Complete — all 6 stories Done** (`production/epics/currency-system/EPIC.md` updated to Status: Complete)
+- Files updated: `production/epics/currency-system/story-006-transfergold-stub-and-compensating-refund.md` (Status: Complete, ACs checked, Completion Notes), `production/epics/currency-system/EPIC.md` (Status: Complete, Story 006 → Complete)
+- Next recommended: no other Foundation-layer epic has stories remaining in progress. Candidates: `/create-stories networking-core` (largest remaining Foundation epic, 10 sub-contracts, not yet story'd), or start Core-layer epics (`/create-epics layer: core`) for Leveling/Inventory/Loot Table (needed to unblock Character Stats Story 008, which is Blocked). Note: `production/epics/index.md` is stale (last updated 2026-06-27, predates all story creation) — consider refreshing it.
+
+## Session Extract — /story-readiness + /dev-story 2026-07-08 (Currency Story 006)
+
+- `/story-readiness` verdict: READY (2 advisory gaps noted, neither blocking): (1) TR-currency-002 not in `tr-registry.yaml` — same pre-existing empty-registry systemic gap as every prior Currency story; (2) new finding — `design/gdd/currency-system.md` EC-CS-5 still says the compensating refund uses `GoldTransactionReason.AdminAdjust`, which is stale — ADR-001 Decision 3 and `control-manifest.md` (line 29) both mandate the dedicated `CompensatingRefund` value instead. The story's own text already correctly specifies `CompensatingRefund`, so implementation followed the story/ADR/manifest, not the stale GDD line. GDD fix deferred as a follow-up propagation-check edit, not done this session.
+- Story: `production/epics/currency-system/story-006-transfergold-stub-and-compensating-refund.md` — TransferGold Stub & Compensating Refund
+- Files changed: `src/Foundation/Currency/ICurrencyService.cs` (added `TransferGold` to interface), `src/Foundation/Currency/CurrencySystem.cs` (stub implementation, always `NotImplemented`, touches neither balance), `tests/EditMode/Currency/Currency_EdgeCases_tests.cs` (new, 2 tests)
+- Test written: `tests/EditMode/Currency/Currency_EdgeCases_tests.cs` (2 test methods — AC-CS-E-02, AC-CS-E-03)
+- Blockers: None
+- Next: `/code-review src/Foundation/Currency/ tests/EditMode/Currency/` then `/story-done production/epics/currency-system/story-006-transfergold-stub-and-compensating-refund.md` — this is the last story in the Currency System epic
+
+## Session Extract — /code-review + /story-done 2026-07-08 (Currency Story 005)
+
+- Verdict: COMPLETE WITH NOTES
+- Story: `production/epics/currency-system/story-005-goldsyncevent-emission.md` — GoldSyncEvent Emission
+- `/code-review` ran once: CHANGES REQUIRED (missing test proving `OnGoldSync` fires exactly once on a successful retry after a forced `ConcurrencyConflict` — independently flagged by both unity-specialist and qa-tester) → fixed → APPROVED WITH SUGGESTIONS
+- Final test count: 9 test methods, all 4 blocking ACs covered plus the retry-fires-once edge case
+- Tech debt logged: None new (TR-currency-004 registry gap is the same pre-existing systemic issue already covered in EPIC.md, not new)
+- Files updated: `production/epics/currency-system/story-005-goldsyncevent-emission.md` (Status: Complete, ACs checked, Completion Notes), `production/epics/currency-system/EPIC.md` (Story 005 → Complete), `tests/EditMode/Currency/Currency_GoldSyncEvent_tests.cs` (+1 test)
+- Next recommended: Story 006 — TransferGold Stub & Compensating Refund (`production/epics/currency-system/story-006-transfergold-stub-and-compensating-refund.md`)
+
+## Session Extract — /dev-story 2026-07-04 (Currency Story 005)
+- Story: `production/epics/currency-system/story-005-goldsyncevent-emission.md` — GoldSyncEvent Emission
+- Files changed: `src/Foundation/Currency/GoldSyncEventArgs.cs` (new), `src/Foundation/Currency/ICurrencyService.cs`, `src/Foundation/Currency/CurrencySystem.cs`
+- Test written: `tests/EditMode/Currency/Currency_GoldSyncEvent_tests.cs` (8 test methods, all 4 ACs covered)
+- Blockers: None
+- Next: `/code-review src/Foundation/Currency/ tests/EditMode/Currency/` then `/story-done production/epics/currency-system/story-005-goldsyncevent-emission.md`
+
+*Updated: 2026-07-04*
 
 ## Current Status
 
-**Task**: Story 007 complete. Story 008 is Blocked (depends on Leveling System epic). Next non-blocked story TBD.
+**Task**: Character Stats epic Stories 001-007 complete (008 Blocked). Item Database epic Complete (4/4). Currency System epic — Story 001 Complete (1/6); Stories 002-006 Ready. Real Unity project verified working.
 **Stage**: Pre-Production
 **GDD Count**: 38 Approved, 0 In Review = 38 of 38 MVP complete (6 Presentation GDDs deferred)
 **ADR Count**: 10 written (ADR-001 through ADR-010), all Accepted
 **UX Specs**: `design/ux/hud.md` (complete), `design/ux/interaction-patterns.md` (28 patterns), `design/accessibility-requirements.md` (Standard tier)
+
+## Session Extract — Real bug found on first-ever Unity compile 2026-07-04
+
+- **Bug**: `CharacterStats.StatChangedHandler` and `CharacterStats.EntityDiedHandler` (Story 005) are delegate types nested inside the `CharacterStats` class, not top-level types in the `IronGrind.CharacterStats` namespace. `using IronGrind.CharacterStats;` only imports the namespace — it does not bring a class's nested types into unqualified scope. Test files referenced both bare (`StatChangedHandler handler = ...`, `new EntityDiedHandler(...)`), which compiles fine when *inside* the `CharacterStats` class (all production usages in `CharacterStats.cs` are fine) but fails with CS0246 from *outside* it.
+- This is exactly what TD-006 predicted: a real, pre-existing defect from Story 005 that sat undetected through code review and `/story-done` sign-off because nothing had ever actually compiled in Unity until this session.
+- **Fixed**: qualified all 9 bare usages in `tests/EditMode/CharacterStats/CharacterStats_Events_tests.cs` and `tests/EditMode/CharacterStats/TestHelpers/StatEventRecorder.cs` as `IronGrind.CharacterStats.CharacterStats.StatChangedHandler`/`.EntityDiedHandler`, matching the file's existing fully-qualified pattern for `_stats` (same namespace/class name collision as `IronGrind.ItemDatabase.ItemDatabase`).
+- Verified `BuffModifierEntry`/`EquipmentModifierEntry` do NOT have the same issue — both are top-level types in their own files, not nested in `CharacterStats`.
+- **Second bug found on same compile pass**: CS0104 ambiguous reference `Object` between `System.Object` and `UnityEngine.Object` in `ItemDatabase_Core_tests.cs:39` (`Object.DestroyImmediate(def)`). Same latent bug pattern in 3 more files that all use the identical `[TearDown] Object.DestroyImmediate` convention: `ItemDatabase_MvpRecords_tests.cs`, `ItemDatabase_Validator_Error_tests.cs`, `ItemDatabase_Validator_Warning_tests.cs`. Fixed all 4 by qualifying as `UnityEngine.Object.DestroyImmediate(def)`. (2 of these files had no explicit `using System;` yet still needed the fix — Unity 6.3's project likely has implicit global usings enabled, making `System` ambient project-wide regardless of per-file usings.)
+- **Third bug found on same compile pass**: CS0234 in `CharacterStatsFixture.cs` — `CharacterStats.StatSlotCount` (bare) failed because this file's own namespace, `IronGrind.Tests.EditMode.CharacterStats`, *also* ends in the segment "CharacterStats." That makes the bare identifier "CharacterStats" resolve to a namespace tail rather than the production class, so the compiler reports "StatSlotCount does not exist in the namespace" (CS0234, distinct from CS0246 — correctly diagnosing a namespace/type confusion, not a missing type). Fixed all 4 occurrences by fully qualifying as `IronGrind.CharacterStats.CharacterStats.StatSlotCount`. Verified via project-wide grep that no other bare `CharacterStats.Member` shorthand remains anywhere in the test suite — every reference is now fully qualified.
+- **Fourth bug found on same compile pass**: CS0221 in `ItemDatabase_Core_tests.cs:130` — `(ItemCategory)999` is a compile-time error, not a runtime concern: `ItemCategory` is `byte`-backed and `999` overflows a byte, which C# rejects for constant enum casts (would need `unchecked`, which the story never intended). The story's own AC-19 text used "999" as its illustrative out-of-range value, and the test carried that same overflow bug through implementation and code review, undetected until real compilation. Fixed by using `255` instead (matching the pattern already correctly used elsewhere for `(GearSlot)255`/`(StatID)255` in the Story 002 validator tests) — updated both the cast and its matching `LogAssert.Expect` message. Grepped for other literal-999-to-enum-cast patterns project-wide; none found.
+- **Fifth issue — a red herring, not a bug**: user reported console "warnings" after all 128 tests passed. Confirmed these are the intentional `Debug.LogError` calls from write-lock rejection and equipment-modifier capacity-overflow test scenarios (both documented, by-design production behavior), correctly declared via `LogAssert.Expect` so the tests pass despite the console still showing the red error line (LogAssert suppresses test failure, not console output). No fix needed.
+- **MILESTONE: All 128 EditMode tests pass** — Character Stats (Stories 001-007) and Item Database (Stories 001-003) are the first code in this project's history to actually compile and execute in Unity, confirming the designs are sound beyond code review. TD-002 and TD-006 closed in `docs/tech-debt-register.md`.
+- Remaining open item: Story 004 (MVP Item Records) — the `ItemDatabaseSeeder` menu tool hasn't been run yet; the 34 real `.asset` files and smoke-check evidence are still pending.
+
+## Session Extract — /story-done 2026-07-04 (Story 004 — Item Database epic COMPLETE)
+
+- Verdict: COMPLETE WITH NOTES
+- Story: `production/epics/item-database/story-004-mvp-item-records.md` — MVP Item Records — 34 Authored ScriptableObject Assets
+- Seeder run in real Unity Editor: 0 fatal, 0 errors, 0 warnings across all 34 records. Smoke check recorded at `production/qa/smoke-2026-07-04-item-database.md`.
+- **Item Database epic is now fully Complete** — all 4 stories Done (`production/epics/item-database/EPIC.md` updated)
+- Tech debt logged: None new (deviations were advisory, already covered by TD-002/TD-006 closure notes)
+- Next recommended: Character Stats Story 008 is Blocked (depends on Leveling System epic, not yet started). No other Foundation-layer epic has stories created yet. Candidates: `/create-stories currency-system` or `/create-stories networking-core` (both epics exist, Ready, per `production/epics/index.md`), or start the Leveling System epic to unblock Character Stats Story 008.
+
+## Session Extract — /create-stories currency-system 2026-07-04
+
+- 6 stories written to `production/epics/currency-system/`: Core Types & AddGold, TrySpendGold, Guards & State Machine, Concurrency Safety, GoldSyncEvent Emission, TransferGold Stub & Compensating Refund
+- All 6 are Logic type, Foundation layer, scoped as an in-memory C# model (`CurrencySystem : ICurrencyService`) matching the CharacterStats/ItemDatabase precedent — real PostgreSQL persistence deferred to Character Persistence (not yet built)
+- Explicitly scoped OUT: GDD Group G (ServerLogic.asmdef isolation — no server/client split exists yet), GDD Group I (session resync — needs Networking Core's handshake, not yet built)
+- Key design decisions embedded in the stories: `CharacterID`/`GoldTransactionReason`/`GoldMutationResult`/`GoldMutationError` types sourced authoritatively from `design/registry/entities.yaml` (already pre-registered with exact enum values); Story 003 revises Stories 001-002's lazy-balance-creation into explicit `RegisterCharacter` registration (needed for `CharacterNotFound` to be meaningful); Story 004 uses a real optimistic CAS-with-retry pattern (not a single big lock) with an `internal` test seam (`TryCompareAndSwapSpend`) so `ConcurrencyConflict` can be tested deterministically per this project's test-standards rule, while final-state correctness under real concurrency is tested via `Task.WhenAll`
+- Next recommended: `/story-readiness production/epics/currency-system/story-001-core-types-and-addgold.md`, or `/create-stories networking-core` if you want all epics story'd out before implementing
+
+## Session Extract — /story-readiness + /dev-story 2026-07-04 (Currency Story 001)
+
+- `/story-readiness` verdict: NEEDS WORK → fixed (all 6 stories were missing the `Estimate` header field — caught during this check, added: 3-4h/1-2h/2-3h/3-4h/2-3h/1-2h for stories 001-006) → READY
+- Story: `production/epics/currency-system/story-001-core-types-and-addgold.md` — Core Types & AddGold (Cap-Safe Addition)
+- Files changed: `src/Foundation/Currency/{CharacterID,GoldTransactionReason,GoldMutationError,GoldMutationResult,ICurrencyService,CurrencySystem}.cs` (new), `tests/EditMode/Currency/Currency_AddGold_tests.cs` (new, 6 tests)
+- Process note: same approval-chain limitation as earlier this session — implementing subagent correctly refused a relayed "approved," so files were written directly by the orchestrator using the subagent's already-reviewed exact code.
+- Test written: 6 tests covering AC-CS-A-01, A-04, A-05 (+ uint.MaxValue edge case), C-01, C-02
+- Blockers: None
+- Next: `/code-review src/Foundation/Currency/ tests/EditMode/Currency/` then `/story-done production/epics/currency-system/story-001-core-types-and-addgold.md`
+
+## Session Extract — /code-review + /story-done 2026-07-04 (Currency Story 004)
+
+- Verdict: COMPLETE
+- Story: `production/epics/currency-system/story-004-concurrency-safety.md` — Concurrency Safety (Thread-Safe Balance Mutation)
+- `/code-review` verdict: APPROVED WITH SUGGESTIONS — two independent specialist passes (Unity + qa-tester) scrutinized the concurrency correctness in depth, found no race conditions/deadlocks; doc-comment caveat added to RegisterCharacter (not lock-protected, not safe for concurrent re-registration); two lower-priority suggestions deferred (OR-assertion annotation, extra 3-way/interleaved-op test coverage beyond the 3 stated ACs)
+- Final test count: 5 test methods, all 3 blocking ACs covered
+- Tech debt logged: None
+- Next recommended: Story 005 — GoldSyncEvent Emission (`production/epics/currency-system/story-005-goldsyncevent-emission.md`)
+
+## Session Extract — /story-readiness + /dev-story 2026-07-04 (Currency Story 004)
+
+- `/story-readiness` verdict: READY (no gaps)
+- Story: `production/epics/currency-system/story-004-concurrency-safety.md` — Concurrency Safety (Thread-Safe Balance Mutation)
+- Switched `CurrencySystem`'s internal storage from plain `Dictionary` to `ConcurrentDictionary` (`_balances`, new `_versions`, new `_locks`) for structural thread-safety across different characters, layered with a per-character `lock` (`GetLockFor`) for compound-operation atomicity. `AddGold` is a single atomic lock (never rejects on conflict). `TrySpendGold` is now a 2-attempt retry wrapper around new `internal TryCompareAndSwapSpend` (optimistic version-checked CAS), guard order extended to: CharacterNotFound → InvalidAmount → version mismatch (ConcurrencyConflict) → InsufficientFunds → success.
+- Files changed: `src/Foundation/Currency/CurrencySystem.cs`, `src/Foundation/Currency/ICurrencyService.cs` (doc comments only), `tests/EditMode/Currency/Currency_Concurrency_tests.cs` (new, 5 tests — 2 real-concurrency via Task.WhenAll asserting only invariant final state, 3 deterministic via the internal CAS seam)
+- Pre-existing 3 Currency test files unaffected (verified: only touch the public interface, ConcurrentDictionary preserves identical single-threaded semantics)
+- Blockers: None
+- Next: `/code-review src/Foundation/Currency/ tests/EditMode/Currency/` then `/story-done production/epics/currency-system/story-004-concurrency-safety.md`
+
+## Session Extract — /code-review + /story-done 2026-07-04 (Currency Story 003)
+
+- Verdict: COMPLETE
+- Story: `production/epics/currency-system/story-003-guards-and-state-machine.md` — Input Guards & State Machine
+- `/code-review` verdict: APPROVED WITH SUGGESTIONS — guard-order-proving test added (real gap: no test proved CharacterNotFound is checked before InvalidAmount); double-register overwrite test and TryGetValue refactor deferred (both minor, not logged as tech debt — too low priority)
+- Final test count: 13 test methods, all 10 blocking ACs covered
+- Tech debt logged: None
+- Next recommended: Story 004 — Concurrency Safety (`production/epics/currency-system/story-004-concurrency-safety.md`)
+
+## Session Extract — /story-readiness + /dev-story 2026-07-04 (Currency Story 003)
+
+- `/story-readiness` verdict: READY (no gaps)
+- Story: `production/epics/currency-system/story-003-guards-and-state-machine.md` — Input Guards & State Machine
+- This story revised Stories 001/002's guard-free behavior: added `RegisterCharacter` to `ICurrencyService`/`CurrencySystem`; `AddGold`/`TrySpendGold` now check `CharacterNotFound` then `InvalidAmount` before their formula guard. Critically required fixing 10 of 11 pre-existing Story 001/002 tests (added `RegisterCharacter` calls) so they kept exercising their original behavior instead of spuriously failing with `CharacterNotFound`; `GetBalance_CharacterNeverTouched_ReturnsZero` correctly left unregistered.
+- Files changed: `src/Foundation/Currency/ICurrencyService.cs`, `src/Foundation/Currency/CurrencySystem.cs`, `tests/EditMode/Currency/Currency_AddGold_tests.cs` (6 tests patched), `tests/EditMode/Currency/Currency_TrySpendGold_tests.cs` (4 tests patched), `tests/EditMode/Currency/Currency_GuardsAndStateMachine_tests.cs` (new, 11 tests)
+- Blockers: None
+- Next: `/code-review src/Foundation/Currency/ tests/EditMode/Currency/` then `/story-done production/epics/currency-system/story-003-guards-and-state-machine.md`
+
+## Session Extract — /code-review + /story-done 2026-07-04 (Currency Story 002)
+
+- Verdict: COMPLETE
+- Story: `production/epics/currency-system/story-002-tryspendgold.md` — TrySpendGold (Spend Guard)
+- `/code-review` verdict: APPROVED (no required changes)
+- Final test count: 4 test methods, all 3 blocking ACs + 1 boundary edge case covered
+- Tech debt logged: None (deviations were None; TR-registry gap already documented as known epic-level tech debt in EPIC.md, not new)
+- Next recommended: Story 003 — Input Guards & State Machine (`production/epics/currency-system/story-003-guards-and-state-machine.md`)
+
+## Session Extract — /story-readiness + /dev-story 2026-07-04 (Currency Story 002)
+
+- `/story-readiness` verdict: NEEDS WORK → fixed → READY. Two gaps found: (1) stale `GetOrCreateBalance(charId)` reference in the story's F-CS-2 code sample — that helper no longer exists after Story 001's code-review simplification; fixed to `GetBalance(charId)`. (2) `TR-currency-001` not found in `docs/architecture/tr-registry.yaml` — registry's `requirements:` list is empty project-wide (systemic, pre-existing, affects every story including the already-Complete Story 001); accepted as known tech debt, not blocking.
+- Story: `production/epics/currency-system/story-002-tryspendgold.md` — TrySpendGold (Spend Guard)
+- Files changed: `src/Foundation/Currency/ICurrencyService.cs` (added `TrySpendGold` signature), `src/Foundation/Currency/CurrencySystem.cs` (implemented F-CS-2 guard-before-subtract), `tests/EditMode/Currency/Currency_TrySpendGold_tests.cs` (new, 4 tests)
+- Test written: 4 tests covering AC-CS-A-02, A-03, E-01, plus cost==balance boundary edge case; failure-path tests explicitly assert balance unchanged via `GetBalance`, not just call failure
+- Blockers: None
+- Next: `/code-review src/Foundation/Currency/ tests/EditMode/Currency/` then `/story-done production/epics/currency-system/story-002-tryspendgold.md`
+
+## Session Extract — /code-review + /story-done 2026-07-04 (Currency Story 001)
+
+- Verdict: COMPLETE (no deviations)
+- Story: `production/epics/currency-system/story-001-core-types-and-addgold.md` — Core Types & AddGold (Cap-Safe Addition)
+- `/code-review` verdict: APPROVED WITH SUGGESTIONS — both applied (added `GetBalance_CharacterNeverTouched_ReturnsZero` test; simplified `AddGold` to remove a redundant double-write via `GetOrCreateBalance`, now just calls `GetBalance` directly)
+- Final test count: 7 test methods, all 5 blocking ACs covered
+- Tech debt logged: None (clean verdict)
+- Next recommended: Story 002 — TrySpendGold (Spend Guard) (`production/epics/currency-system/story-002-tryspendgold.md`)
 
 ## Session Extract — /story-done 2026-06-29
 
@@ -328,7 +521,7 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - **Gate blocker #1 RESOLVED**: test framework scaffolded
 - Files created: tests/README.md, tests/EditMode/README.md, tests/EditMode/SmokeTest.cs (example test), tests/PlayMode/README.md, tests/smoke/critical-paths.md, tests/evidence/.gitkeep, .github/workflows/tests.yml
 - Framework: Unity Test Framework (NUnit, built-in) — EditMode (unit) + PlayMode (integration)
-- CI: game-ci/unity-test-runner@v4, Unity 6000.4.0f1, runs on push to main + PRs
+- CI: game-ci/unity-test-runner@v4, Unity 6000.3.10f1, runs on push to main + PRs
 - One-time manual step required: add UNITY_LICENSE to GitHub repository secrets before first CI run
 - **Remaining gate blockers**: design/accessibility-requirements.md (pick tier); /ux-design patterns (interaction-patterns.md)
 - Next: accessibility doc (pick tier) → /ux-design patterns → re-run /gate-check pre-production
@@ -410,3 +603,82 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Story: `production/epics/character-stats/story-007-transaction-api.md` — Transaction API
 - Tech debt logged: None (3 advisory items in Completion Notes)
 - Next recommended: Story 008 is Blocked (depends on Leveling System epic)
+
+## Session Extract — /code-review + /story-done 2026-07-04
+- Story: `production/epics/item-database/story-001-core-types-and-runtime-database.md` — IItemDatabase Interface, Runtime Database, and Core Type Definitions
+- Implementation was already committed at session start (`bd30009`, prior session) but had not been code-reviewed or closed
+- `/code-review` verdict: APPROVED WITH SUGGESTIONS (Required Change: AC-2 test spec had an untested cross-ID no-aliasing edge case)
+- Fixed: added `ItemDatabase_GetItem_DifferentIds_ReturnsDistinctReferences` to `tests/EditMode/ItemDatabase/ItemDatabase_Core_tests.cs`
+- `/story-done` verdict: COMPLETE WITH NOTES — 11/11 ACs passing
+- Tech debt logged: TD-001 (GetItemsByCategory encapsulation leak), TD-002 (missing .asmdef project-wide), TD-003 (untested duplicate-ID/null-entry Initialize() behavior) — new `docs/tech-debt-register.md` created
+- Files updated: `production/epics/item-database/story-001-core-types-and-runtime-database.md` (Status: Complete, ACs checked, Completion Notes), `production/epics/item-database/EPIC.md` (Story 001 → Complete), `docs/tech-debt-register.md` (new file)
+- Next recommended: Story 002 — Import Validator — Reject Rules (`production/epics/item-database/story-002-validator-error-rules.md`)
+
+## Session Extract — /story-readiness + /dev-story 2026-07-04 (Story 002)
+
+- Story: `production/epics/item-database/story-002-validator-error-rules.md` — Import Validator — Reject Rules (Error Path)
+- `/story-readiness` verdict: READY (17/17 checks passing)
+- Files changed: `src/Foundation/ItemDatabase/ItemDefinitionValidator.cs` (new, 378 lines — `ValidationSeverity`, `ValidationIssue`, `ValidationResult`, `ItemDefinitionValidator.ValidateRecord`/`ValidateBatch`), `src/Foundation/ItemDatabase/StatModifierEntry.cs` + `EquipmentData.cs` + `ConsumableData.cs` (each: added `#if UNITY_EDITOR internal CreateForTesting` seam)
+- Test written: `tests/EditMode/ItemDatabase/ItemDatabase_Validator_Error_tests.cs` (17 test methods, all 15 blocking ACs covered: AC-3,4,5,7,8,10,11,12,14,15,21,22,25,26,41)
+- Correction mid-session: implementing agent initially added 4 out-of-scope Story 003 warning checks (negative FlatBonus, duplicate StatID, CooldownSeconds==0, equipment SellPriceGold==0) despite explicit instruction not to, and silently redesigned `ValidationResult` from the story's suggested `IsFatal`/`Errors`/`Warnings: IReadOnlyList<string>` shape to `Issues: IReadOnlyList<ValidationIssue>` + `ValidationSeverity` enum. User decision: stripped the warning logic (kept scope clean for Story 003), kept the new API shape (no downstream code depends on either shape yet).
+- IL2CPP note: `StatID` membership check uses non-generic `(StatID[])Enum.GetValues(typeof(StatID))`, not the generic overload, per project engine-safety convention (no `.csproj` yet to confirm IL2CPP BCL surface).
+- Blockers: None
+
+## Session Extract — /code-review + /story-done 2026-07-04 (Story 002)
+
+- Verdict: COMPLETE WITH NOTES
+- Story: `production/epics/item-database/story-002-validator-error-rules.md` — Import Validator — Reject Rules (Error Path)
+- `/code-review` ran twice: CHANGES REQUIRED (missing 6 accept/boundary tests for AC-8, 14, 15, 21, 22, 25) → fixed → APPROVED WITH SUGGESTIONS
+- Final test count: 25 test methods, all 15 blocking ACs covered with both reject and accept/boundary cases
+- Tech debt logged: TD-004 (StatID/GearSlot validation rationale wording), TD-005 (undefined-ItemCategory and Equipment+ConsumableData cross-contamination paths untested)
+- Files updated: `production/epics/item-database/story-002-validator-error-rules.md` (Status: Complete, ACs checked, Completion Notes), `production/epics/item-database/EPIC.md` (Story 002 → Complete), `docs/tech-debt-register.md` (TD-004, TD-005 added)
+- Next recommended: Story 003 — Import Validator — Warning Rules (`production/epics/item-database/story-003-validator-warning-rules.md`)
+
+## Session Extract — /story-readiness + /dev-story 2026-07-04 (Story 003)
+
+- Story: `production/epics/item-database/story-003-validator-warning-rules.md` — Import Validator — Warning Rules (Accept Path)
+- `/story-readiness` verdict: NEEDS WORK → fixed (story's Implementation Notes + QA Test Cases referenced a stale `ValidationResult` API — `Warnings`/`Errors` list properties — that no longer exists after Story 002's approved redesign to `Issues`/`ValidationSeverity`; corrected in-file, then READY)
+- Files changed: `src/Foundation/ItemDatabase/ItemDefinitionValidator.cs` (+48 lines — `GetTierBasePrice`, AC-35/AC-32/AC-17 warning checks, additive only), `tests/EditMode/ItemDatabase/ItemDatabase_Validator_Warning_tests.cs` (new, 9 tests)
+- Test written: 9 tests covering AC-13 (2, no-op confirmation), AC-17 (2), AC-32 (3, incl. 9g/10g boundary), AC-35 (2)
+- Process note: the implementing subagent correctly refused to treat a coordinator-relayed "user approved" as valid consent (per its own no-agent-can-authorize-writes constraint), creating a dead end since subagents have no direct channel to the user in this architecture. Resolved by applying the subagent's already-presented, user-approved diff directly via Edit/Write in the main session.
+- Blockers: None
+- Next: `/code-review src/Foundation/ItemDatabase/ tests/EditMode/ItemDatabase/` then `/story-done production/epics/item-database/story-003-validator-warning-rules.md`
+
+## Session Extract — /code-review + /story-done 2026-07-04 (Story 003)
+
+- Verdict: COMPLETE (no deviations)
+- Story: `production/epics/item-database/story-003-validator-warning-rules.md` — Import Validator — Warning Rules (Accept Path)
+- `/code-review` ran twice: CHANGES REQUIRED (missing SellPriceGold=11 boundary test, missing AC-32/AC-35 co-firing assertion) → fixed → APPROVED
+- Also hardened `GetTierBasePrice`'s unreachable `default` branch to throw `ArgumentOutOfRangeException` instead of returning `0f` (Unity specialist suggestion — avoids a latent Infinity/NaN if a future GearTier value is added without updating the switch)
+- Final test count: 11 test methods, all 4 ACs (13, 17, 32, 35) covered including boundary/co-firing/multi-tier cases
+- Tech debt logged: None (verdict was clean, no advisory deviations)
+- Files updated: `production/epics/item-database/story-003-validator-warning-rules.md` (Status: Complete, ACs checked, Completion Notes), `production/epics/item-database/EPIC.md` (Story 003 → Complete)
+- Next recommended: Story 004 — MVP Item Records (`production/epics/item-database/story-004-mvp-item-records.md`) — Type: Config/Data, no programmer agent needed
+
+## Session Extract — Unity project bootstrapping 2026-07-04
+
+- User created the actual Unity project via Unity Hub: `C:\Users\Manuel Toscano\Claude-Code-Game-Studios\IronGrind\` (subfolder, as Unity Hub's wizard forces — not yet merged into repo root)
+- **Version correction**: installed Editor is `6000.3.10f1`, confirmed LTS-labeled in Unity Hub. Project docs had incorrectly recorded Unity 6.3 LTS's internal version as `6000.4` (should be `6000.3` — Unity's internal numbering maps directly: 6.0→6000.0, 6.1→6000.1, 6.2→6000.2, 6.3→6000.3). Independently confirmed via WebFetch: `docs.unity3d.com/6000.3/.../UpgradeGuideUnity63.html` resolves and is titled "Upgrade to Unity 6.3"; the `/6000.4/` path was never real.
+- Corrected `6000.4` → `6000.3` (and `.github/workflows/tests.yml`'s `unityVersion` → the exact confirmed `6000.3.10f1`) across 14 living documents: `docs/engine-reference/unity/VERSION.md`, `breaking-changes.md`, `.github/workflows/tests.yml`, `docs/architecture/control-manifest.md`, `architecture.md`, `architecture-traceability.md`, `docs/registry/architecture.yaml`, `tests/README.md`, `production/epics/index.md`, ADR-001, 002, 003, 004, 005, 006, 007, 009, 010.
+- Deliberately left 3 point-in-time historical snapshots uncorrected (not revising history): `production/gate-checks/technical-setup-to-pre-production-2026-06-27.md`, `docs/architecture/architecture-review-2026-06-21.md`, `docs/architecture/architecture-review-2026-06-27.md`.
+- **Merge completed**: `assets/` renamed to `Assets/` (case-corrected, plain `mv` since it was never git-tracked); Unity's generated `Assets/` content (InputSystem_Actions, Readme, Scenes/, Settings/, TutorialInfo/) merged alongside the existing `Assets/data/items/`; `ProjectSettings/` and `Packages/` moved to repo root; disposable `IronGrind/` subfolder (Library/Temp/Logs/UserSettings/.vscode/.csproj/.slnx — all Unity/IDE cache) deleted by the user after a Bash permission block on `rm -rf`.
+- `.gitignore` already covered `Library/`/`Temp/`/`Logs/`/`UserSettings/`/`*.csproj`/`*.sln` — only added `*.slnx` (Unity 6's newer solution format) which was missing.
+- Updated `.claude/docs/directory-structure.md` to document `Assets/`, `ProjectSettings/`, `Packages/` at repo root.
+- Fixed lowercase `assets/` path references in the two places that are functionally live right now: `src/Foundation/ItemDatabase/ItemDatabaseSeeder.cs` and `story-004-mvp-item-records.md`. Left ~40 other files (GDDs, entities.yaml) with stale lowercase paths for not-yet-authored assets — logged as **TD-007**, fix opportunistically per-system rather than in bulk.
+- TD-006 updated: Unity project + folder casing now resolved; still open — `src/` needs wrapping as a local Unity package + `.asmdef` (TD-002) before it will actually compile in the new project, and the seeder hasn't been run yet.
+- **`src/` wrapped as a local Unity package**: `src/package.json` (name `com.irongrind.src`), referenced from `Packages/manifest.json` via `file:../src`. Runtime asmdef `src/Foundation/IronGrind.Foundation.asmdef` (unrestricted platforms, matches existing file-level `#if UNITY_EDITOR` guards). Test asmdef `tests/EditMode/IronGrind.Foundation.EditModeTests.asmdef` (Editor-only, references the Foundation asmdef + TestRunner assemblies). `InternalsVisibleTo("IronGrind.Foundation.EditModeTests")` added via `src/Foundation/AssemblyInfo.cs` so test seams stay reachable across the new assembly boundary. TD-002 marked resolved-pending-Editor-verification.
+- **Two follow-up fixes after "no tests to show" in Test Runner**:
+  1. Added missing `"optionalUnityReferences": ["TestAssemblies"]` to the EditMode test asmdef — this is the actual field Unity's "Tests" checkbox controls; having `UnityEngine.TestRunner`/`UnityEditor.TestRunner` as references alone isn't sufficient.
+  2. **Root cause**: `tests/` was never registered with Unity at all — only `src/` was wired into `Packages/manifest.json`. `tests/EditMode/` sat at the repo root as a plain sibling folder, invisible to Unity's compiler (which only scans `Assets/` and registered `Packages/`). Fixed by making `tests/` its own local package too: `tests/package.json` (`com.irongrind.tests`), added to `Packages/manifest.json` via `file:../tests`.
+- Next: user reloads Unity again, confirms Test Runner now discovers all `ItemDatabase_*_Tests` and `CharacterStats_*_Tests`. New `.meta` files Unity generates for `src/`/`tests/` package content should be committed (essential metadata, not cache). Then run the `ItemDatabaseSeeder` menu item and confirm Story 004's smoke check.
+
+## Session Extract — /story-readiness + /dev-story 2026-07-04 (Story 004)
+
+- Story: `production/epics/item-database/story-004-mvp-item-records.md` — MVP Item Records — 34 Authored ScriptableObject Assets
+- `/story-readiness` verdict: READY (OQ-1/OQ-5 "unresolved" markers present but already owned in the story's Out of Scope section with concrete placeholders — not blocking)
+- Structural decision: no Unity Editor available in this environment to author real `.asset` files. Chose an Editor seeder script (`ItemDatabaseSeeder.cs`, `[MenuItem]`) over hand-written YAML, per user's explicit choice — user must run it once in Unity.
+- Files changed: `src/Foundation/ItemDatabase/ItemDefinition.cs` (extended `SetForTesting` with `description`/`iconAddress`, backward-compatible), `src/Foundation/ItemDatabase/MvpItemRecordData.cs` (new — shared 34-record data table), `src/Foundation/ItemDatabase/ItemDatabaseSeeder.cs` (new — Editor tool, manual run required), `assets/data/items/ITEM_ID_REGISTRY.txt` (new), `tests/EditMode/ItemDatabase/ItemDatabase_MvpRecords_tests.cs` (new, 8 tests)
+- **Major discovery**: no Unity Editor project exists anywhere on disk for this repo (no `.meta`/`ProjectSettings`/`Packages`; `assets/` was empty before this story). Every "test evidence" claim across Stories 001-004 has only been code-reviewed, never actually run in Unity. Logged as **TD-006** (High impact, Large effort) — recommend addressing before any story is treated as fully verified.
+- AC coverage: 6/6 blocking ACs (18, 24, 30, 31, 33, 34) covered via in-memory test against the shared data table; real `.asset` files + in-Editor smoke check remain a deferred manual step for the user.
+- Blockers: Real Unity project needed to complete the manual seeder run + smoke check evidence file.
+- Next: `/code-review src/Foundation/ItemDatabase/ tests/EditMode/ItemDatabase/`, then likely a project-level conversation about bootstrapping an actual Unity project before `/story-done` can reach a clean COMPLETE verdict.
