@@ -40,7 +40,7 @@ namespace IronGrind.Tests.EditMode.CharacterStats
             bool handlerFired = false;
             float notifiedValue = 0f;
 
-            StatChangedHandler handler = (id, stat) =>
+            IronGrind.CharacterStats.CharacterStats.StatChangedHandler handler = (id, stat) =>
             {
                 if (stat != StatID.AttackPower) return;
                 handlerFired = true;
@@ -163,7 +163,7 @@ namespace IronGrind.Tests.EditMode.CharacterStats
             // Arrange
             _stats.SetBaseStat(_player, StatID.AttackPower, 100);
             int callCount = 0;
-            StatChangedHandler handler = (id, stat) => callCount++;
+            IronGrind.CharacterStats.CharacterStats.StatChangedHandler handler = (id, stat) => callCount++;
             _stats.Subscribe(handler);
 
             // Confirm active subscription
@@ -189,8 +189,8 @@ namespace IronGrind.Tests.EditMode.CharacterStats
             // Arrange
             _stats.SetBaseStat(_player, StatID.AttackPower, 100);
             int callCount = 0;
-            StatChangedHandler activeHandler  = (id, stat) => callCount++;
-            StatChangedHandler neverSubscribed = (id, stat) => { };
+            IronGrind.CharacterStats.CharacterStats.StatChangedHandler activeHandler  = (id, stat) => callCount++;
+            IronGrind.CharacterStats.CharacterStats.StatChangedHandler neverSubscribed = (id, stat) => { };
             _stats.Subscribe(activeHandler);
 
             // Act — unsubscribe a handler that was never registered; must not throw
@@ -212,7 +212,7 @@ namespace IronGrind.Tests.EditMode.CharacterStats
             // Arrange
             _stats.SetBaseStat(_player, StatID.AttackPower, 100);
             int callCount = 0;
-            StatChangedHandler handler = (id, stat) => callCount++;
+            IronGrind.CharacterStats.CharacterStats.StatChangedHandler handler = (id, stat) => callCount++;
 
             _stats.Subscribe(handler);
             _stats.AddBuffModifier(_player, StatID.AttackPower,
@@ -244,7 +244,7 @@ namespace IronGrind.Tests.EditMode.CharacterStats
             _stats.ApplyRegen(_player, 50f); // CurrentHP = 50f
             bool exceptionThrown = false;
 
-            _stats.Subscribe(new EntityDiedHandler(id =>
+            _stats.Subscribe(new IronGrind.CharacterStats.CharacterStats.EntityDiedHandler(id =>
             {
                 try
                 {
@@ -276,7 +276,7 @@ namespace IronGrind.Tests.EditMode.CharacterStats
             _stats.ApplyRegen(_player, 50f);
             bool readSucceeded = false;
 
-            _stats.Subscribe(new EntityDiedHandler(id =>
+            _stats.Subscribe(new IronGrind.CharacterStats.CharacterStats.EntityDiedHandler(id =>
             {
                 // Read-only query inside handler — must not throw
                 int _ = _stats.GetEffectiveStat(id, StatID.MaxHP);

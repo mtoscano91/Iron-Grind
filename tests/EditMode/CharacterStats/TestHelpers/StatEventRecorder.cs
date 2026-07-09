@@ -35,7 +35,7 @@ namespace IronGrind.Tests.EditMode.CharacterStats
         }
 
         // Adapter method: bridges StatChangedHandler(EntityID, StatID) → RecordFire(StatID).
-        // Named method (not a lambda) so (StatChangedHandler)HandleStatChanged produces
+        // Named method (not a lambda) so (IronGrind.CharacterStats.CharacterStats.StatChangedHandler)HandleStatChanged produces
         // reference-equal delegates on the same recorder instance — enabling correct Unsubscribe.
         private void HandleStatChanged(EntityID entityId, StatID statId) => RecordFire(statId);
 
@@ -44,12 +44,12 @@ namespace IronGrind.Tests.EditMode.CharacterStats
         /// Each fire increments <see cref="FiredCount"/> for the changed stat.
         /// </summary>
         public void Subscribe(IronGrind.CharacterStats.CharacterStats stats) =>
-            stats.Subscribe((StatChangedHandler)HandleStatChanged);
+            stats.Subscribe((IronGrind.CharacterStats.CharacterStats.StatChangedHandler)HandleStatChanged);
 
         /// <summary>
         /// Removes this recorder's handler from <paramref name="stats"/>.<c>OnStatChanged</c>.
         /// </summary>
         public void Unsubscribe(IronGrind.CharacterStats.CharacterStats stats) =>
-            stats.Unsubscribe((StatChangedHandler)HandleStatChanged);
+            stats.Unsubscribe((IronGrind.CharacterStats.CharacterStats.StatChangedHandler)HandleStatChanged);
     }
 }

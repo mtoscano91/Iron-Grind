@@ -1,4 +1,6 @@
 using NUnit.Framework;
+using UnityEngine;
+using UnityEngine.TestTools;
 using IronGrind.CharacterStats;
 
 namespace IronGrind.Tests.EditMode.CharacterStats
@@ -274,6 +276,11 @@ namespace IronGrind.Tests.EditMode.CharacterStats
                 "base=10 + 16 modifiers × +10 flat: effective must be 170 before overflow attempt.");
 
             // Act — attempt 17th modifier (distinct ItemID to bypass the overwrite path)
+            // Expect — capacity overflow logs an error (documented behavior); must be
+            // declared before the call or Unity Test Framework fails the test outright.
+            LogAssert.Expect(
+                LogType.Error,
+                $"[CharacterStats] AddEquipmentModifier: {_player} stat {StatID.AttackPower} equipment layer is at capacity (16). Modifier not added.");
             Assert.DoesNotThrow(
                 () => _stats.AddEquipmentModifier(_player, StatID.AttackPower,
                     new EquipmentModifierEntry(10f, 0f, new ItemID(1017u))),

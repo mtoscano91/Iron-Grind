@@ -85,7 +85,7 @@ namespace IronGrind.Tests.EditMode.CharacterStats
 
             if (!stats.EntityEquipModifiers.TryGetValue(entityId, out var equipSlots))
             {
-                equipSlots = new EquipmentModifierEntry[CharacterStats.StatSlotCount][];
+                equipSlots = new EquipmentModifierEntry[IronGrind.CharacterStats.CharacterStats.StatSlotCount][];
                 stats.EntityEquipModifiers[entityId] = equipSlots;
             }
 
@@ -96,7 +96,7 @@ namespace IronGrind.Tests.EditMode.CharacterStats
 
             if (!stats.EntityEquipCount.TryGetValue(entityId, out var counts))
             {
-                counts = new int[CharacterStats.StatSlotCount];
+                counts = new int[IronGrind.CharacterStats.CharacterStats.StatSlotCount];
                 stats.EntityEquipCount[entityId] = counts;
             }
 
@@ -118,7 +118,7 @@ namespace IronGrind.Tests.EditMode.CharacterStats
 
             if (!stats.EntityBuffModifiers.TryGetValue(entityId, out var buffSlots))
             {
-                buffSlots = new BuffModifierEntry[CharacterStats.StatSlotCount][];
+                buffSlots = new BuffModifierEntry[IronGrind.CharacterStats.CharacterStats.StatSlotCount][];
                 stats.EntityBuffModifiers[entityId] = buffSlots;
             }
 
@@ -129,7 +129,7 @@ namespace IronGrind.Tests.EditMode.CharacterStats
 
             if (!stats.EntityBuffCount.TryGetValue(entityId, out var counts))
             {
-                counts = new int[CharacterStats.StatSlotCount];
+                counts = new int[IronGrind.CharacterStats.CharacterStats.StatSlotCount];
                 stats.EntityBuffCount[entityId] = counts;
             }
 
