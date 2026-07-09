@@ -10,7 +10,7 @@ Accepted (2026-06-27)
 
 | Field | Value |
 |-------|-------|
-| **Engine** | Unity 6.3 LTS (6000.4) |
+| **Engine** | Unity 6.3 LTS (6000.3) |
 | **Domain** | UI |
 | **Knowledge Risk** | HIGH — Unity 6.x is beyond LLM training data |
 | **References Consulted** | `docs/engine-reference/unity/VERSION.md`, `docs/engine-reference/unity/modules/ui.md`, `docs/engine-reference/unity/breaking-changes.md`, `docs/engine-reference/unity/deprecated-apis.md`, `docs/engine-reference/unity/current-best-practices.md` |

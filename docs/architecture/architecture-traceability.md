@@ -1,7 +1,7 @@
 # Architecture Traceability Index
 
 > **Last Updated:** 2026-06-27
-> **Engine:** Unity 6.3 LTS (6000.4)
+> **Engine:** Unity 6.3 LTS (6000.3)
 > **Source review:** `docs/architecture/architecture-review-2026-06-27.md`
 
 ## Coverage Summary (domain-level)

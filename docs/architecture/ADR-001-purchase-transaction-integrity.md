@@ -11,7 +11,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Engine** | Unity 6.3 LTS (6000.4) |
+| **Engine** | Unity 6.3 LTS (6000.3) |
 | **Domain** | Server / Transaction Integrity (no Unity engine APIs involved) |
 | **Knowledge Risk** | LOW — idempotency key and `PendingPurchase` record pattern are pure C# server application logic; no Unity client or server engine APIs are used |
 | **References Consulted** | None — this ADR governs server-side transaction semantics, independent of engine version |

@@ -15,7 +15,7 @@ Accepted (2026-06-27)
 | **Knowledge Risk** | LOW — hosting topology is cloud infrastructure, not Unity APIs. Unity IL2CPP Linux headless build is a supported, stable configuration confirmed by the engine reference. |
 | **References Consulted** | `docs/engine-reference/unity/VERSION.md`; `docs/engine-reference/unity/breaking-changes.md`; ADR-004 (NGO); ADR-006 (Persistence Layer) |
 | **Post-Cutoff APIs Used** | None — this decision is cloud infrastructure, not Unity APIs. One post-cutoff NGO breaking change is noted in Risks. |
-| **Verification Required** | (1) Unity 6.3 IL2CPP Linux headless build compiles and runs on Ubuntu 22.04 LTS without errors. (2) NGO server transport binds to UDP port correctly in headless mode. (3) Any game code subclassing `NetworkTransform` must migrate `Update()` override to `OnUpdate()` — NGO 6.3 breaking change. Consult Unity 6.3 upgrade guide (https://docs.unity3d.com/6000.4/Documentation/Manual/UpgradeGuideUnity63.html) for full NGO release notes before implementation. |
+| **Verification Required** | (1) Unity 6.3 IL2CPP Linux headless build compiles and runs on Ubuntu 22.04 LTS without errors. (2) NGO server transport binds to UDP port correctly in headless mode. (3) Any game code subclassing `NetworkTransform` must migrate `Update()` override to `OnUpdate()` — NGO 6.3 breaking change. Consult Unity 6.3 upgrade guide (https://docs.unity3d.com/6000.3/Documentation/Manual/UpgradeGuideUnity63.html) for full NGO release notes before implementation. |
 
 ## ADR Dependencies
 

@@ -24,7 +24,7 @@ The Navigation/Pathfinding GDD (`navigation-pathfinding.md`) described the `Zone
 
 | Field | Value |
 |-------|-------|
-| **Engine** | Unity 6.3 LTS (6000.4) |
+| **Engine** | Unity 6.3 LTS (6000.3) |
 | **Domain** | Navigation / Networking |
 | **Knowledge Risk** | HIGH — Unity 6.x is past LLM cutoff; async pathfinding timing and `NavMeshAgent` behavior in `UNITY_SERVER` builds must be verified empirically |
 | **References Consulted** | `docs/engine-reference/unity/VERSION.md`, `docs/engine-reference/unity/breaking-changes.md` |

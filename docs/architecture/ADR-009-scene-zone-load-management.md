@@ -10,7 +10,7 @@ Accepted (2026-06-27)
 
 | Field | Value |
 |-------|-------|
-| **Engine** | Unity 6.3 LTS (6000.4) |
+| **Engine** | Unity 6.3 LTS (6000.3) |
 | **Domain** | Core — Scene Management / URP Rendering |
 | **Knowledge Risk** | HIGH — `Scene.handle` type change and URP render graph removal are post-cutoff breaking changes |
 | **References Consulted** | `docs/engine-reference/unity/VERSION.md`, `docs/engine-reference/unity/breaking-changes.md`, `docs/engine-reference/unity/deprecated-apis.md` |

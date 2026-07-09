@@ -10,7 +10,7 @@ Accepted (2026-06-27)
 
 | Field | Value |
 |-------|-------|
-| **Engine** | Unity 6.3 LTS (6000.4) |
+| **Engine** | Unity 6.3 LTS (6000.3) |
 | **Domain** | Core / Persistence (server-side) |
 | **Knowledge Risk** | LOW — persistence layer runs in server-side .NET; no Unity engine APIs involved |
 | **References Consulted** | `docs/engine-reference/unity/VERSION.md`, `docs/engine-reference/unity/current-best-practices.md` |

@@ -24,7 +24,7 @@ The Navigation/Pathfinding GDD described the `ZoneNavigationService` agent lifec
 
 | Field | Value |
 |-------|-------|
-| **Engine** | Unity 6.3 LTS (6000.4) |
+| **Engine** | Unity 6.3 LTS (6000.3) |
 | **Domain** | Navigation / Scripting |
 | **Knowledge Risk** | HIGH — NavMeshAgent state persistence across `enabled` toggle unverified for Unity 6.3 |
 | **References Consulted** | `docs/engine-reference/unity/VERSION.md`, `docs/engine-reference/unity/breaking-changes.md` |

@@ -1,7 +1,7 @@
 # Unity 6 — Breaking Changes
 
 *Last verified: 2026-04-19*
-*Covers: Unity 6.0 (6000.0) through Unity 6.3 LTS (6000.4)*
+*Covers: Unity 6.0 (6000.0) through Unity 6.3 LTS (6000.3)*
 
 ---
 
@@ -67,7 +67,7 @@ if you need the pre-6.2 timing.
 
 ---
 
-## Unity 6.3 LTS (6000.4)
+## Unity 6.3 LTS (6000.3)
 
 ### URP Compatibility Mode — REMOVED
 `RenderGraphSettings.enableRenderCompatibilityMode` is now read-only (returns false).

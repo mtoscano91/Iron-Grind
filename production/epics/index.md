@@ -1,7 +1,7 @@
 # Epics Index
 
 Last Updated: 2026-06-27
-Engine: Unity 6.3 LTS (6000.4)
+Engine: Unity 6.3 LTS (6000.3)
 Control Manifest Version: 2026-06-27
 
 | Epic | Layer | System | GDD | Stories | Status |
@@ -9,7 +9,7 @@ Control Manifest Version: 2026-06-27
 | [Character Stats](character-stats/EPIC.md) | Foundation | Character Stats | design/gdd/character-stats.md | Not yet created | Ready |
 | [Item Database](item-database/EPIC.md) | Foundation | Item Database | design/gdd/item-database.md | Not yet created | Ready |
 | [Currency System](currency-system/EPIC.md) | Foundation | Currency System | design/gdd/currency-system.md | Not yet created | Ready |
-| [Networking Core](networking-core/EPIC.md) | Foundation | Networking Core (+ 10 sub-contracts) | design/gdd/networking-core.md | Not yet created | Ready |
+| [Networking Core](networking-core/EPIC.md) | Foundation | Networking Core (+ 10 sub-contracts) | design/gdd/networking-core.md | 29 stories (001-029) | Ready |
 
 ## Notes
 

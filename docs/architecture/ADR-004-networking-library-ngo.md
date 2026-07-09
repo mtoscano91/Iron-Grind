@@ -23,7 +23,7 @@ A second forcing function already exists in committed design: the Client-Side Pr
 
 ### 1. Library Selection Rationale
 
-1. **First-party, version-aligned support.** NGO ships and is versioned by Unity for the pinned engine (Unity 6.3 LTS, internal 6000.4, LTS through Dec 2027). It is the only option with guaranteed forward compatibility for the pinned engine and its security/LTS patch stream.
+1. **First-party, version-aligned support.** NGO ships and is versioned by Unity for the pinned engine (Unity 6.3 LTS, internal 6000.3, LTS through Dec 2027). It is the only option with guaranteed forward compatibility for the pinned engine and its security/LTS patch stream.
 2. **Already locked in by approved design.** CR-CSP-3 and CR-CSP-21 specify `NetworkManager.ServerTime.Tick` (NGO `NetworkTickSystem`) as the authoritative clock. Choosing otherwise invalidates approved CSP rules and ACs.
 3. **Mirror is not officially supported for Unity 6.x** and is community-maintained; its LTS/patch cadence is not aligned with the pinned engine.
 4. **Photon Fusion / PUN** requires leaving Unity's built-in networking ecosystem and adopting a third-party transport and matchmaking model, increasing vendor lock-in at the transport layer.
@@ -125,7 +125,7 @@ OQ-NET-5 (commit-before-broadcast write latency budget, CR-NET-5) is **out of sc
 
 | Field | Value |
 |-------|-------|
-| **Engine** | Unity 6.3 LTS (internal 6000.4) |
+| **Engine** | Unity 6.3 LTS (internal 6000.3) |
 | **Domain** | Networking |
 | **Knowledge Risk** | HIGH — NGO API changed across Unity 6.0–6.3, beyond LLM training cutoff |
 | **Post-Cutoff APIs Used** | `NetworkManager.ServerTime.Tick` / `NetworkTickSystem` (confirmed via CSP GDD and engine reference); `NetworkConfig.TickRate`; `CustomMessagingManager`; `NetworkDelivery` enum; transport RTT (seed-only) |

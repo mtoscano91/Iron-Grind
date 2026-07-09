@@ -4,7 +4,7 @@
 
 - **Version:** 1.0
 - **Last Updated:** 2026-06-27
-- **Engine:** Unity 6.3 LTS (internal 6000.4), C#, URP, IL2CPP (Linux server + iOS client)
+- **Engine:** Unity 6.3 LTS (internal 6000.3), C#, URP, IL2CPP (Linux server + iOS client)
 - **GDDs Covered:** 38 Approved MVP systems (+2 Draft auth primitives); 6 Presentation/Polish GDDs Not Started
 - **ADRs Referenced:** ADR-001 … ADR-008 (all Accepted, 2026-06-27)
 - **Source review:** `docs/architecture/architecture-review-2026-06-27.md` (PASS)
@@ -20,7 +20,7 @@
 
 ## Engine Knowledge Gap Summary
 
-LLM training covers ~Unity 2023 LTS / early 6000.0; the project runs Unity 6.3 (6000.4).
+LLM training covers ~Unity 2023 LTS / early 6000.0; the project runs Unity 6.3 (6000.3).
 All engine-touching architecture is verified against `docs/engine-reference/unity/`.
 
 | Risk | Domain | Post-cutoff reality | Systems | ADR |

@@ -1,6 +1,6 @@
 # Control Manifest
 
-> **Engine**: Unity 6.3 LTS (6000.4)
+> **Engine**: Unity 6.3 LTS (6000.3)
 > **Last Updated**: 2026-06-28
 > **Manifest Version**: 2026-06-28
 > **ADRs Covered**: ADR-001, ADR-002, ADR-003, ADR-004, ADR-005, ADR-006, ADR-007, ADR-008, ADR-009, ADR-010

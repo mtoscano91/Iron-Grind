@@ -10,7 +10,7 @@ Accepted (2026-06-27)
 
 | Field | Value |
 |-------|-------|
-| **Engine** | Unity 6.3 LTS (6000.4) |
+| **Engine** | Unity 6.3 LTS (6000.3) |
 | **Domain** | Core — C# Messaging / Event Patterns |
 | **Knowledge Risk** | LOW — C# `event Action<T>` and interface injection are engine-version-agnostic managed code. No post-cutoff breaking changes in this domain. |
 | **References Consulted** | `docs/engine-reference/unity/current-best-practices.md` (confirmed: "C# events for code-to-code — better performance than UnityEvent") |

@@ -339,7 +339,7 @@ forbidden_patterns:
   - pattern: scene_handle_as_int
     status: active
     description: "Do not cache Scene.handle as an int or store it in any int-typed field or variable. Always cache loaded scenes as Scene structs (e.g., Scene _zoneScene = SceneManager.GetActiveScene())."
-    why: "Scene.handle changed from int to SceneHandle in Unity 6.3 LTS (6000.4). Any precompiled assembly that references Scene.handle as an int will throw MissingFieldException at runtime without a compile-time error. Project code must use Scene struct identity throughout to remain safe across Unity 6.3 precompiled assembly constraints."
+    why: "Scene.handle changed from int to SceneHandle in Unity 6.3 LTS (6000.3). Any precompiled assembly that references Scene.handle as an int will throw MissingFieldException at runtime without a compile-time error. Project code must use Scene struct identity throughout to remain safe across Unity 6.3 precompiled assembly constraints."
     adr: docs/architecture/ADR-009-scene-zone-load-management.md
     added: 2026-06-27
 

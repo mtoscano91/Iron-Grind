@@ -5,7 +5,7 @@
 | Field | Value |
 |-------|-------|
 | **Engine Version** | Unity 6.3 LTS |
-| **Internal Version** | 6000.4 |
+| **Internal Version** | 6000.3 |
 | **LTS Support Until** | December 2027 |
 | **Project Pinned** | 2026-04-19 |
 | **Last Docs Verified** | 2026-04-19 |
@@ -31,14 +31,14 @@ Always cross-reference this directory before suggesting Unity API calls.
 | Unity 6.0 | 6000.0 | Render graph, FindObjects API change, lighting overhaul | HIGH |
 | Unity 6.1 | 6000.1 | Physics API changes, PVRTC deprecated, DX12 default on Windows | MEDIUM |
 | Unity 6.2 | 6000.2 | SetupRenderPasses deprecated, VisualElement.transform deprecated | MEDIUM |
-| Unity 6.3 LTS | 6000.4 | URP Compat Mode removed, SerializeField fields-only, NGO changes | HIGH |
+| Unity 6.3 LTS | 6000.3 | URP Compat Mode removed, SerializeField fields-only, NGO changes | HIGH |
 
 ## Verified Sources
 
 - Unity 6.0 upgrade guide: https://docs.unity3d.com/6000.0/Documentation/Manual/UpgradeGuideUnity6.html
 - Unity 6.1 upgrade guide: https://docs.unity3d.com/6000.1/Documentation/Manual/UpgradeGuideUnity61.html
 - Unity 6.2 upgrade guide: https://docs.unity3d.com/6000.2/Documentation/Manual/UpgradeGuideUnity62.html
-- Unity 6.3 upgrade guide: https://docs.unity3d.com/6000.4/Documentation/Manual/UpgradeGuideUnity63.html
+- Unity 6.3 upgrade guide: https://docs.unity3d.com/6000.3/Documentation/Manual/UpgradeGuideUnity63.html
 - URP render graph intro: https://docs.unity3d.com/6000.1/Documentation/Manual/urp/render-graph-introduction.html
 - URP mobile performance: https://docs.unity3d.com/6000.3/Documentation/Manual/urp/configure-for-better-performance.html
 - Unity 6 releases: https://unity.com/releases/unity-6
