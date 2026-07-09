@@ -70,7 +70,7 @@ This epic is complete when:
 | 001 | Test Harness: Fault/Crash/Zone-Config Injection | Logic | Complete | ADR-004 |
 | 002 | Test Harness: INetworkTestObserver + Release-Build Stripping | Logic | Complete | ADR-004 |
 | 003 | Message Envelope & Fixed-Point Primitive Serialization | Logic | Complete | ADR-004 |
-| 004 | EntityID/Enum Wire-Safety Guards | Logic | Ready | ADR-004 |
+| 004 | EntityID/Enum Wire-Safety Guards | Logic | Complete | ADR-004 |
 | 005 | Version/SequenceNumber Stale-Discard Helpers | Logic | Ready | ADR-004 |
 | 006 | Priority-Path Cap & Two-Path Delivery Model | Logic | Ready | ADR-004 |
 | 007 | R-U/U-U Batch Framing, Buffer Pooling & Overflow Policy | Integration | Ready | ADR-004 |

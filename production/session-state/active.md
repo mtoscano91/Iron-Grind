@@ -1,5 +1,17 @@
 # Session State
 
+## Session Extract — /code-review + /story-done 2026-07-09 (Networking Core Story 004)
+
+- Verdict: COMPLETE WITH NOTES
+- Story: `production/epics/networking-core/story-004-entityid-enum-wire-safety-guards.md` — EntityID/Enum Wire-Safety Guards
+- `/code-review` ran in lean mode with 2 specialists in parallel (unity-specialist, qa-tester): APPROVED WITH SUGGESTIONS — qa-tester found real gaps (missing `DisconnectType` valid-round-trip test, missing adjacent-boundary tests for `DamageType`/`DisconnectType`/`DisconnectReason`) → fixed → 20 test methods total
+- **StatID blocker resolved, contrary to the story's own text** — verified directly before implementation that `StatID` is already `enum : byte` (0-16) in both `StatID.cs` and the Character Stats GDD; no workaround was needed or implemented
+- **Real C# bug found and fixed**: `Span<byte>` (ref struct) cannot be captured inside a lambda closure — Story 003's test file (`WireProtocol_Envelope_Serialization_tests.cs`, already committed in `de7a15e`) had exactly this bug in `EncodePosition_BoundaryValue_DoesNotOverflowOrThrow`'s two `Assert.DoesNotThrow` lambdas. Found by the implementing subagent, confirmed, fixed (`Span<byte>` → `byte[]` for any buffer referenced inside a throw-assertion lambda), applied consistently in Story 004's own new test file. Undetected until now because this sandbox has no C# compiler — same class of issue as the "first real Unity compile" bugs from 2026-07-04.
+- Deviation: `RawValue` property added to `EntityID`/`ItemID`/`CharacterID` (pre-existing structs, outside story's file list) — necessary for `WireIdCodec` to read the wrapped `uint` without reflection (CR-NET-7.3 forbids generic serializers)
+- Tech debt logged: None new
+- Files updated: `production/epics/networking-core/story-004-...md` (Status: Complete, ACs checked, Completion Notes), `production/epics/networking-core/EPIC.md` (Story 004 → Complete)
+- Next recommended: Story 005 — Version/SequenceNumber Stale-Discard Helpers (`production/epics/networking-core/story-005-version-sequencenumber-stale-discard.md`) — next in the Wire Protocol Core cluster
+
 ## Session Extract — /code-review + /story-done 2026-07-09 (Networking Core Story 003)
 
 - Verdict: COMPLETE WITH NOTES

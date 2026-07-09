@@ -26,6 +26,13 @@ namespace IronGrind.Currency
             _value = value;
         }
 
+        /// <summary>
+        /// The raw wire-format value. Intended for use by wire codecs only (e.g.
+        /// <c>IronGrind.Networking.WireIdCodec</c>) — gameplay code should treat
+        /// <see cref="CharacterID"/> as opaque and compare via equality, not this value.
+        /// </summary>
+        public uint RawValue => _value;
+
         /// <inheritdoc/>
         public bool Equals(CharacterID other) => _value == other._value;
 

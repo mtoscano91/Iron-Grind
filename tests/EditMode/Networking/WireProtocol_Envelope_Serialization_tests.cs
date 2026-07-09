@@ -147,9 +147,12 @@ namespace IronGrind.Tests.EditMode.Networking
         public void EncodePosition_BoundaryValue_DoesNotOverflowOrThrow()
         {
             // Arrange
+            // byte[] (not Span<byte>) — Span<T> is a ref struct and cannot be captured inside the
+            // Assert.DoesNotThrow lambdas below; byte[] converts to Span<byte> implicitly at each
+            // call site without ever being captured itself.
             var positiveBoundary = new Vector3(327.67f, 0f, 0f);
             var negativeBoundary = new Vector3(-327.67f, 0f, 0f);
-            Span<byte> buffer = new byte[WireFixedPointCodec.PositionWireSize];
+            byte[] buffer = new byte[WireFixedPointCodec.PositionWireSize];
 
             // Act & Assert — positive boundary: 327.67 x 100 = 32767 = short.MaxValue exactly
             Assert.DoesNotThrow(() => WireFixedPointCodec.EncodePosition(buffer, positiveBoundary),

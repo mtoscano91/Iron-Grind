@@ -29,6 +29,13 @@ namespace IronGrind.CharacterStats
             _value = value;
         }
 
+        /// <summary>
+        /// The raw wire-format value. Intended for use by wire codecs only (e.g.
+        /// <c>IronGrind.Networking.WireIdCodec</c>) — gameplay code should treat
+        /// <see cref="ItemID"/> as opaque and compare via equality, not this value.
+        /// </summary>
+        public uint RawValue => _value;
+
         /// <inheritdoc/>
         public bool Equals(ItemID other) => _value == other._value;
 
