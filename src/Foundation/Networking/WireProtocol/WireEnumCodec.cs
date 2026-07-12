@@ -1,4 +1,5 @@
 using IronGrind.CharacterStats;
+using IronGrind.Currency;
 using UnityEngine;
 
 namespace IronGrind.Networking
@@ -15,9 +16,17 @@ namespace IronGrind.Networking
     /// </para>
     /// <para>
     /// <b>Substitute-and-continue</b> (<see cref="DecodeDamageType"/>, <see cref="DecodeDisconnectReason"/>,
-    /// <see cref="DecodeDisconnectType"/>): an out-of-range byte does <i>not</i> drop the message.
-    /// It logs an anomaly and returns a documented fallback value, and the caller proceeds with
-    /// that value as if it were legitimately received (CR-NET-7.9).
+    /// <see cref="DecodeDisconnectType"/>, <see cref="DecodeGoldTransactionReason"/>): an
+    /// out-of-range byte does <i>not</i> drop the message. It logs an anomaly and returns a
+    /// documented fallback value, and the caller proceeds with that value as if it were
+    /// legitimately received (CR-NET-7.9). <see cref="DecodeGoldTransactionReason"/> is not one of
+    /// the enums CR-NET-7.9 explicitly enumerates a fallback for, but
+    /// <see cref="GoldTransactionReason"/>'s own type-level doc comment (Currency System,
+    /// pre-dates this story) already specifies the identical policy verbatim: "Receivers must
+    /// treat unknown byte values as <c>Other</c> and still apply the balance update — never drop
+    /// the event on an unrecognized reason." This method exists solely to give that
+    /// already-documented receiver contract the same guarded, testable form as its CR-NET-7.9
+    /// siblings.
     /// </para>
     /// <para>
     /// <b>Reject</b> (<see cref="TryValidateStatID"/>): an out-of-range byte must cause the whole
@@ -144,6 +153,43 @@ namespace IronGrind.Networking
                         $"for messageTypeId={messageTypeId} — substituting Other (255) and continuing (CR-NET-7.9).");
                     return DisconnectReason.Other;
             }
+        }
+
+        // ---------------------------------------------------------------------------------------
+        // GoldTransactionReason — non-contiguous valid set {0..8, 255}, substitute Other=255.
+        // Added by Networking Core Story 007 (GoldSyncEvent.Reason decode) — see class remarks
+        // for why this enum (not explicitly listed in CR-NET-7.9) still gets a guarded decoder.
+        // ---------------------------------------------------------------------------------------
+
+        private const byte GoldTransactionReasonMaxNamedValue = (byte)GoldTransactionReason.CompensatingRefund;
+
+        /// <summary>
+        /// Validates <paramref name="rawByte"/> against the non-contiguous
+        /// <see cref="GoldTransactionReason"/> valid set <c>{0..8, 255}</c> (a contiguous range
+        /// check for <c>0..8</c> plus an explicit outlier check for <c>255</c> — <c>255</c> is not
+        /// the top of the contiguous range, matching the shape used by
+        /// <see cref="DecodeDisconnectReason"/>) and casts. A byte outside this set substitutes
+        /// <see cref="GoldTransactionReason.Other"/> and logs an anomaly — the message is
+        /// <i>not</i> dropped; the balance update still applies (per
+        /// <see cref="GoldTransactionReason"/>'s own documented receiver contract, reiterated in
+        /// class remarks above).
+        /// </summary>
+        /// <example>
+        /// <code>
+        /// GoldTransactionReason reason = WireEnumCodec.DecodeGoldTransactionReason(rawByte: 200, messageTypeId: 0x0520);
+        /// // reason == GoldTransactionReason.Other; anomaly logged.
+        /// </code>
+        /// </example>
+        public static GoldTransactionReason DecodeGoldTransactionReason(byte rawByte, ushort messageTypeId)
+        {
+            if (rawByte <= GoldTransactionReasonMaxNamedValue || rawByte == (byte)GoldTransactionReason.Other)
+            {
+                return (GoldTransactionReason)rawByte;
+            }
+
+            Debug.LogWarning($"[WireEnumCodec] DecodeGoldTransactionReason: received out-of-range byte {rawByte} " +
+                $"for messageTypeId={messageTypeId} — substituting Other (255) and continuing (per GoldTransactionReason's documented receiver contract).");
+            return GoldTransactionReason.Other;
         }
 
         // ---------------------------------------------------------------------------------------
