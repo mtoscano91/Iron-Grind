@@ -1,7 +1,7 @@
 # Story 008: Heartbeat Message & IL2CPP AOT Guardrails
 
 > **Epic**: Networking Core
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Logic
 > **Manifest Version**: 2026-06-28
@@ -28,9 +28,9 @@
 
 *From `design/gdd/networking-wire-protocol.md`, scoped to this story:*
 
-- [ ] **AC-HB-1** [BLOCKING] (`HeartbeatMessage` schema, CR-NET-7.10): `HeartbeatMessage` is a client→server keep-alive with no body fields (10-byte wire size = envelope only), sent on the U-U channel, standalone (not batched). Mere receipt resets the server's inactivity timeout.
-- [ ] **AC-NC-38** [BLOCKING] (Integration, wire-protocol's numbering — skip-on-activity semantics): Given a test client that sends a `NotifySkillUsed` RPC in tick T, when tick T completes and the heartbeat timer has not yet elapsed, then no `HeartbeatMessage` is emitted for tick T (the RPC resets the heartbeat counter). When no outbound RPC has been sent for exactly `HEARTBEAT_INTERVAL_SECONDS` after the last packet, a `HeartbeatMessage` is sent; a second is not sent until another full interval of silence elapses.
-- [ ] **AC-AOT-1** [BLOCKING] (Static Analysis): Given the `src/Foundation/Networking` (or equivalent) assembly, when a static analysis pass runs, then no serializer method uses `typeof(T)`-based generic dispatch, no `BinaryFormatter`/`JsonUtility` call sites exist for wire messages, and no `event`/delegate handler registration in this assembly uses a lambda that closes over a heap object (matches the ADR-010 lambda-capture prohibition, extended here to serialization callbacks).
+- [x] **AC-HB-1** [BLOCKING] (`HeartbeatMessage` schema, CR-NET-7.10): `HeartbeatMessage` is a client→server keep-alive with no body fields (10-byte wire size = envelope only), sent on the U-U channel, standalone (not batched). Mere receipt resets the server's inactivity timeout.
+- [x] **AC-NC-38** [BLOCKING] (Integration, wire-protocol's numbering — skip-on-activity semantics): Given a test client that sends a `NotifySkillUsed` RPC in tick T, when tick T completes and the heartbeat timer has not yet elapsed, then no `HeartbeatMessage` is emitted for tick T (the RPC resets the heartbeat counter). When no outbound RPC has been sent for exactly `HEARTBEAT_INTERVAL_SECONDS` after the last packet, a `HeartbeatMessage` is sent; a second is not sent until another full interval of silence elapses.
+- [x] **AC-AOT-1** [BLOCKING] (Static Analysis): Given the `src/Foundation/Networking` (or equivalent) assembly, when a static analysis pass runs, then no serializer method uses `typeof(T)`-based generic dispatch, no `BinaryFormatter`/`JsonUtility` call sites exist for wire messages, and no `event`/delegate handler registration in this assembly uses a lambda that closes over a heap object (matches the ADR-010 lambda-capture prohibition, extended here to serialization callbacks).
 
 ---
 
@@ -70,7 +70,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/Networking/WireProtocol_Heartbeat_AOT_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — `tests/EditMode/Networking/WireProtocol_Heartbeat_AOT_tests.cs`, 24 test methods, verified by direct file review + 2 independent specialist passes (not yet run in a real Unity Editor)
 
 ---
 
@@ -78,3 +78,13 @@
 
 - Depends on: Story 003 (envelope), Story 005 (tick-based timing pattern)
 - Unlocks: Story 012 (heartbeat timeout drives the Connected→Disconnected_SessionActive transition)
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-07-11
+**Criteria**: 3/3 passing (AC-HB-1, AC-NC-38, AC-AOT-1) — verified by direct file review plus 2 independent specialist passes (unity-specialist, qa-tester); not yet confirmed in a real Unity Editor run (unlike Story 007)
+**Deviations**: None blocking. Advisory (logged as tech debt, TD-011 extended): `HeartbeatMessage.MessageTypeId = 0x0210` not yet formally registered. Also surfaced (not a defect in this story): a pre-existing cross-doc AC-ID collision — AC-NC-38 means unrelated things in `networking-wire-protocol.md` vs. `networking-session.md` — logged in `EPIC.md`'s known-inconsistencies list.
+**Test Evidence**: Logic — `tests/EditMode/Networking/WireProtocol_Heartbeat_AOT_tests.cs`, 24 test methods, not yet run in real Unity
+**Code Review**: Complete — lean mode, 2 specialists in parallel (unity-specialist, qa-tester), APPROVED WITH SUGGESTIONS; 3 real test-coverage gaps found and fixed during review (untested `intervalTicks=0` degenerate case, missing `HeartbeatMessage` equality future-proofing test, missing empty-directory scanner test)
