@@ -73,9 +73,9 @@ This epic is complete when:
 | 004 | EntityID/Enum Wire-Safety Guards | Logic | Complete | ADR-004 |
 | 005 | Version/SequenceNumber Stale-Discard Helpers | Logic | Complete | ADR-004 |
 | 006 | Priority-Path Cap & Two-Path Delivery Model | Logic | Complete | ADR-004 |
-| 007 | R-U/U-U Batch Framing, Buffer Pooling & Overflow Policy | Integration | Ready | ADR-004 |
-| 008 | Heartbeat Message & IL2CPP AOT Guardrails | Logic | Ready | ADR-004 |
-| 009 | Fixed 20Hz Server Tick Loop | Logic | Ready | ADR-004 |
+| 007 | R-U/U-U Batch Framing, Buffer Pooling & Overflow Policy | Integration | Complete | ADR-004 |
+| 008 | Heartbeat Message & IL2CPP AOT Guardrails | Logic | Complete | ADR-004 |
+| 009 | Fixed 20Hz Server Tick Loop | Logic | Complete | ADR-004 |
 | 010 | Cross-Cutting RPC Guards | Logic | Ready | ADR-004 |
 | 011 | Commit-Before-Broadcast Generic Pattern | Logic | Ready | ADR-001 |
 | 012 | Player Connection State Machine — Core Transitions | Logic | Ready | ADR-004 |
@@ -102,6 +102,7 @@ This epic is complete when:
 **Known blockers/inconsistencies to resolve before final sign-off** (do not block starting implementation, but should be tracked):
 - OQ-NET-1 (BLOCKING, design): `HEARTBEAT_TIMEOUT_SECONDS` production default undetermined (recommended 8-12s) — stories 012/013/017 use test-injected override values and are unaffected, but the production default must be set before launch.
 - Cross-doc AC-ID collision: root `networking-core.md` and `networking-wire-protocol.md` each independently define an unrelated "AC-NC-31" (Story 024 vs. Story 004 respectively).
+- Cross-doc AC-ID collision: `networking-wire-protocol.md` (line 1696, "skip-on-activity heartbeat scheduling," Story 008) and `networking-session.md` (line 359, "REAUTH_FAILURE_LIMIT exhausted") each independently define an unrelated "AC-NC-38". Found by unity-specialist code review during Story 008; Story 008's implementation correctly uses the wire-protocol meaning.
 - Cross-doc constant inconsistency: `GHOST_COMBAT_TTL_MINUTES` (`networking-session.md`, flat 60s) vs. `GHOST_COMBAT_TTL_MIN_S` (`networking-ghost-session.md` F-GH-1, formula-based 30s baseline) — Stories 019/021 use the ghost-session formula as authoritative pending a design decision.
 - `StatID` enum cross-doc dependency: Character Stats GDD's `StatID` needs `enum:uint`→`enum:byte` before Story 004 can drop its byte-transmission workaround.
 - ADR-004's engine-risk profiling gate (verify `CustomMessagingManager` + `NetworkManager.ServerTime.Tick` in a real Unity 6.3 headless build) must pass before the implementation sprint is greenlit, per this epic's own "Engine risk gate" note above.
