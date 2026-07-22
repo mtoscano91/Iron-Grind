@@ -126,6 +126,9 @@ namespace IronGrind.Networking
         /// <summary>Every <see cref="OnSnapshotRetransmitAttempt"/> call, in call order.</summary>
         public List<(uint characterId, int attemptNumber, int maxAttempts)> SnapshotRetransmitAttemptCalls { get; } = new();
 
+        /// <summary>Every <see cref="OnPartyDisbanded"/> call, in call order.</summary>
+        public List<(uint partyId, uint tickNumber)> PartyDisbandedCalls { get; } = new();
+
         // ---------------------------------------------------------------------
         // Priority path capture
         // ---------------------------------------------------------------------
@@ -144,6 +147,57 @@ namespace IronGrind.Networking
 
         /// <summary>Every <see cref="OnSkillUsedRateLimitRejected"/> call, in call order.</summary>
         public List<uint> SkillUsedRateLimitRejectedCalls { get; } = new();
+
+        // ---------------------------------------------------------------------
+        // OWL compensation capture
+        // ---------------------------------------------------------------------
+
+        /// <summary>Every <see cref="OnConnectionQualityUpdateEmitted"/> call, in call order.</summary>
+        public List<(uint entityId, bool rhythmCompensationActive)> ConnectionQualityUpdateEmittedCalls { get; } = new();
+
+        // ---------------------------------------------------------------------
+        // Commit-before-broadcast capture
+        // ---------------------------------------------------------------------
+
+        /// <summary>Every <see cref="OnCriticalInfrastructureAlertFired"/> call, in call order.</summary>
+        public List<(uint clientId, string reason)> CriticalInfrastructureAlertFiredCalls { get; } = new();
+
+        // ---------------------------------------------------------------------
+        // Message routing capture
+        // ---------------------------------------------------------------------
+
+        /// <summary>Every <see cref="OnUnclassifiedMessageTypeLogged"/> call, in call order.</summary>
+        public List<ushort> UnclassifiedMessageTypeLoggedCalls { get; } = new();
+
+        // ---------------------------------------------------------------------
+        // Gold sync forced delivery capture (Story 026)
+        // ---------------------------------------------------------------------
+
+        /// <summary>Every <see cref="OnServerGoldSyncForcedDeliveryEmitted"/> call, in call order.</summary>
+        public List<(uint characterId, uint newBalance, uint version, uint tickNumber)> ServerGoldSyncForcedDeliveryEmittedCalls { get; } = new();
+
+        /// <summary>Every <see cref="OnClientGoldSyncForcedDeliveryReceived"/> call, in call order.</summary>
+        public List<(uint characterId, uint newBalance, uint version)> ClientGoldSyncForcedDeliveryReceivedCalls { get; } = new();
+
+        /// <summary>Every <see cref="OnGoldSyncForcedDeliveryAnomalyLogged"/> call, in call order.</summary>
+        public List<(uint characterId, int consecutiveTicksWithoutNormalDelivery)> GoldSyncForcedDeliveryAnomalyLoggedCalls { get; } = new();
+
+        // ---------------------------------------------------------------------
+        // Self-damage recipient defense capture (Story 027)
+        // ---------------------------------------------------------------------
+
+        /// <summary>Every <see cref="OnSelfDamageDirectionViolationLogged"/> call, in call order.</summary>
+        public List<(uint attackerEntityId, uint localPlayerEntityId)> SelfDamageDirectionViolationLoggedCalls { get; } = new();
+
+        // ---------------------------------------------------------------------
+        // Target slot capture (Story 029)
+        // ---------------------------------------------------------------------
+
+        /// <summary>Every <see cref="OnSelfTargetAttemptLogged"/> call, in call order.</summary>
+        public List<uint> SelfTargetAttemptLoggedCalls { get; } = new();
+
+        /// <summary>Every <see cref="OnInvalidTargetEntityIdLogged"/> call, in call order.</summary>
+        public List<(uint clientId, uint invalidTargetEntityId)> InvalidTargetEntityIdLoggedCalls { get; } = new();
 
         // ---------------------------------------------------------------------
         // INetworkTestObserver implementation — server-side capture
@@ -260,6 +314,10 @@ namespace IronGrind.Networking
         public void OnSnapshotRetransmitAttempt(uint characterId, int attemptNumber, int maxAttempts)
             => SnapshotRetransmitAttemptCalls.Add((characterId, attemptNumber, maxAttempts));
 
+        /// <inheritdoc/>
+        public void OnPartyDisbanded(uint partyId, uint tickNumber)
+            => PartyDisbandedCalls.Add((partyId, tickNumber));
+
         // ---------------------------------------------------------------------
         // INetworkTestObserver implementation — priority path capture
         // ---------------------------------------------------------------------
@@ -283,6 +341,66 @@ namespace IronGrind.Networking
         /// <inheritdoc/>
         public void OnSkillUsedRateLimitRejected(uint entityId)
             => SkillUsedRateLimitRejectedCalls.Add(entityId);
+
+        // ---------------------------------------------------------------------
+        // INetworkTestObserver implementation — OWL compensation capture
+        // ---------------------------------------------------------------------
+
+        /// <inheritdoc/>
+        public void OnConnectionQualityUpdateEmitted(uint entityId, bool rhythmCompensationActive)
+            => ConnectionQualityUpdateEmittedCalls.Add((entityId, rhythmCompensationActive));
+
+        // ---------------------------------------------------------------------
+        // INetworkTestObserver implementation — commit-before-broadcast capture
+        // ---------------------------------------------------------------------
+
+        /// <inheritdoc/>
+        public void OnCriticalInfrastructureAlertFired(uint clientId, string reason)
+            => CriticalInfrastructureAlertFiredCalls.Add((clientId, reason));
+
+        // ---------------------------------------------------------------------
+        // INetworkTestObserver implementation — message routing capture
+        // ---------------------------------------------------------------------
+
+        /// <inheritdoc/>
+        public void OnUnclassifiedMessageTypeLogged(ushort messageTypeId)
+            => UnclassifiedMessageTypeLoggedCalls.Add(messageTypeId);
+
+        // ---------------------------------------------------------------------
+        // INetworkTestObserver implementation — gold sync forced delivery capture (Story 026)
+        // ---------------------------------------------------------------------
+
+        /// <inheritdoc/>
+        public void OnServerGoldSyncForcedDeliveryEmitted(uint characterId, uint newBalance, uint version, uint tickNumber)
+            => ServerGoldSyncForcedDeliveryEmittedCalls.Add((characterId, newBalance, version, tickNumber));
+
+        /// <inheritdoc/>
+        public void OnClientGoldSyncForcedDeliveryReceived(uint characterId, uint newBalance, uint version)
+            => ClientGoldSyncForcedDeliveryReceivedCalls.Add((characterId, newBalance, version));
+
+        /// <inheritdoc/>
+        public void OnGoldSyncForcedDeliveryAnomalyLogged(uint characterId, int consecutiveTicksWithoutNormalDelivery)
+            => GoldSyncForcedDeliveryAnomalyLoggedCalls.Add((characterId, consecutiveTicksWithoutNormalDelivery));
+
+        // ---------------------------------------------------------------------
+        // INetworkTestObserver implementation — self-damage recipient defense capture (Story 027)
+        // ---------------------------------------------------------------------
+
+        /// <inheritdoc/>
+        public void OnSelfDamageDirectionViolationLogged(uint attackerEntityId, uint localPlayerEntityId)
+            => SelfDamageDirectionViolationLoggedCalls.Add((attackerEntityId, localPlayerEntityId));
+
+        // ---------------------------------------------------------------------
+        // INetworkTestObserver implementation — target slot capture (Story 029)
+        // ---------------------------------------------------------------------
+
+        /// <inheritdoc/>
+        public void OnSelfTargetAttemptLogged(uint entityId)
+            => SelfTargetAttemptLoggedCalls.Add(entityId);
+
+        /// <inheritdoc/>
+        public void OnInvalidTargetEntityIdLogged(uint clientId, uint invalidTargetEntityId)
+            => InvalidTargetEntityIdLoggedCalls.Add((clientId, invalidTargetEntityId));
 
         // ---------------------------------------------------------------------
         // INetworkTestObserver implementation — query methods
@@ -350,12 +468,28 @@ namespace IronGrind.Networking
             ZoneStateTransitionedCalls.Clear();
             SessionHandshakeEmittedCalls.Clear();
             SnapshotRetransmitAttemptCalls.Clear();
+            PartyDisbandedCalls.Clear();
 
             PriorityPathMessageFlushedCalls.Clear();
             TickCompletedCalls.Clear();
             SkillGraceWindowEvaluatedCalls.Clear();
             StatSnapshotEmittedCalls.Clear();
             SkillUsedRateLimitRejectedCalls.Clear();
+
+            ConnectionQualityUpdateEmittedCalls.Clear();
+
+            CriticalInfrastructureAlertFiredCalls.Clear();
+
+            UnclassifiedMessageTypeLoggedCalls.Clear();
+
+            ServerGoldSyncForcedDeliveryEmittedCalls.Clear();
+            ClientGoldSyncForcedDeliveryReceivedCalls.Clear();
+            GoldSyncForcedDeliveryAnomalyLoggedCalls.Clear();
+
+            SelfDamageDirectionViolationLoggedCalls.Clear();
+
+            SelfTargetAttemptLoggedCalls.Clear();
+            InvalidTargetEntityIdLoggedCalls.Clear();
 
             _outboundMessageCounts.Clear();
         }

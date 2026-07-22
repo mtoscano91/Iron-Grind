@@ -1,7 +1,7 @@
 # Story 026: GoldSyncEvent Forced-Delivery Overflow Policy
 
 > **Epic**: Networking Core
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Logic
 > **Manifest Version**: 2026-06-28
@@ -29,8 +29,8 @@
 
 *From `design/gdd/networking-message-criticality.md`, scoped to this story:*
 
-- [ ] **AC-MCR-01** [BLOCKING] (Integration): Given a simulated zone with 50 players causing R-U batch overflow for 3 consecutive ticks for at least one client, when `GoldSyncEvent` is overflow-dropped on ticks T, T+1, T+2, then on tick T+3 the server emits a standalone `GoldSyncEvent` on the R-OD priority path, and the client's gold balance display matches the server's authoritative balance within 1 tick of receiving the forced delivery. *Requires `IZoneTestConfigurator.SetBatchSizeLimit(int)` to force deterministic overflow — if absent, this AC is blocked pending that test-harness addition.*
-- [ ] **AC-MCR-07** [BLOCKING] (Integration): Given a client where forced delivery has fired continuously for `FORCED_DELIVERY_CONSECUTIVE_TICKS` consecutive ticks without a successful normal R-U delivery, when the threshold is reached, then the server logs a `GoldSyncForcedDelivery` critical anomaly with the affected EntityID and the consecutive-tick count.
+- [x] **AC-MCR-01** [BLOCKING] (Integration): Given a simulated zone with 50 players causing R-U batch overflow for 3 consecutive ticks for at least one client, when `GoldSyncEvent` is overflow-dropped on ticks T, T+1, T+2, then on tick T+3 the server emits a standalone `GoldSyncEvent` on the R-OD priority path, and the client's gold balance display matches the server's authoritative balance within 1 tick of receiving the forced delivery. *Requires `IZoneTestConfigurator.SetBatchSizeLimit(int)` to force deterministic overflow — if absent, this AC is blocked pending that test-harness addition.*
+- [x] **AC-MCR-07** [BLOCKING] (Integration): Given a client where forced delivery has fired continuously for `FORCED_DELIVERY_CONSECUTIVE_TICKS` consecutive ticks without a successful normal R-U delivery, when the threshold is reached, then the server logs a `GoldSyncForcedDelivery` critical anomaly with the affected EntityID and the consecutive-tick count.
 
 ---
 
@@ -72,7 +72,7 @@ ForcedDeliveryRate_per_client = TICK_RATE_HZ ÷ (GOLD_MAX_CONSECUTIVE_DROP + 1)
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/Networking/MessageRouting_GoldSyncForcedDelivery_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 10 tests, both blocking ACs covered
 
 ---
 
@@ -80,3 +80,15 @@ ForcedDeliveryRate_per_client = TICK_RATE_HZ ÷ (GOLD_MAX_CONSECUTIVE_DROP + 1)
 
 - Depends on: Story 006 (priority-path queue), Story 007 (R-U overflow-drop counter), Story 025 (routing table)
 - Unlocks: None — completes the gold-sync delivery guarantee chain
+
+---
+
+## Completion Notes
+**Completed**: 2026-07-21
+**Criteria**: 2/2 passing (AC-MCR-01, AC-MCR-07) — 10 tests in `tests/EditMode/Networking/MessageRouting_GoldSyncForcedDelivery_tests.cs`, independently verified via grep, no discrepancy with self-report.
+**Deviations**:
+- `IZoneTestConfigurator.SetBatchSizeLimit` has zero production call sites — TD-027 logged, same forward-dependency-placeholder pattern as TD-020/TD-026. `RUBatchWriter.MAX_MESSAGE_BODY_BYTES` remains a compile-time constant, correctly left untouched (out of scope).
+- TR-net-005 not present in `docs/architecture/tr-registry.yaml` (registry still empty) — systemic gap, unchanged since Story 018.
+- 4 non-blocking test-coverage suggestions from code review (defensive out-of-sequence guard, multi-character isolation test, never-seen-characterId default test, `wasDelivered:true`-on-fresh-record test) were surfaced but not applied — no tech debt logged for these, noted here for the record.
+**Test Evidence**: Logic — `tests/EditMode/Networking/MessageRouting_GoldSyncForcedDelivery_tests.cs`, 10 tests, both blocking ACs covered. Not run in a live Unity Editor this session; verified statically via hand-traced state-machine derivation and independently recomputed byte arithmetic.
+**Code Review**: Complete (lean self-performed review: unity-specialist CLEAN + qa-tester GAPS, both parallel; 2 Required Changes applied — a discriminating real-tick-count assertion added to the "realistic cycle" regression test, and a doc-comment correction re: the `GhostEntityTracker` teardown analogy — 4 Suggestions declined).

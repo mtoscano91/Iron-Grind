@@ -1,7 +1,7 @@
 # Story 015: TTL Expiry, Zone Crash Recovery & In-Flight RPC Edge Cases
 
 > **Epic**: Networking Core
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Integration
 > **Manifest Version**: 2026-06-28
@@ -29,13 +29,13 @@
 
 *From `design/gdd/networking-session.md`, scoped to this story:*
 
-- [ ] **AC-NC-12** [BLOCKING] (Logic): Given a player in `Disconnected_SessionActive`, when the tick counter reaches `sessionExpiryTick`, then `OnPersistenceWriteCompleted(characterId, SessionExpiry)` fires before any resource release; the transition to `Disconnected_SessionExpired` fires; entity removed; resources released; a subsequent connection starts at `Connecting`.
-- [ ] **AC-NC-16** [BLOCKING]: Given a server crash (via `IServerCrashInjector`) immediately after the persistence write completes and before emitting the outcome message, when the server restarts and the player reconnects, then the session handshake delivers the post-outcome item state without replaying the animation.
-- [ ] **AC-NC-27** [BLOCKING]: Given a player who submits an enhancement attempt (`RequestID=X`) processed successfully, when the same client sends a second request with `RequestID=X`, then the server rejects it as a duplicate unconditionally — even when >30 seconds have elapsed (no time window on dedup, per `LastEnhancementRequestID`).
-- [ ] **AC-NC-35** [BLOCKING] (Integration — fragment reassembly timeout): Given a client joining a zone where `ZoneStateSnapshot` is fragmented and `ITransportFaultInjector.DropSnapshotFragment(ushort.MaxValue)` drops the last fragment, when `FRAGMENT_REASSEMBLY_TIMEOUT_SECONDS` elapses, then the client emits `ZoneSnapshotRequest`; the zone-entry gate remains closed throughout; when reassembly completes, the gate opens within 100ms of the final fragment.
-- [ ] **AC-NC-40** [BLOCKING] (Logic — snapshot retransmit limit): Given `MAX_SNAPSHOT_RETRANSMIT_ATTEMPTS=3` and repeated fragment drops, when the 3rd reassembly timeout elapses, then `OnSnapshotRetransmitAttempt` fires 3 times in order with correct `(attemptNumber, maxAttempts)`, after which the client drops the connection and begins a fresh reconnect; the gate never opened.
-- [ ] **AC-NC-42** [BLOCKING] (Logic — in-flight RPC at disconnect boundary): Given a connected player with `heldFreePoints=1`, when heartbeat timeout is processed on tick T while an `AllocateFreePointRequest` is simultaneously in the input queue, then either the RPC was fully processed (persisted, `heldFreePoints=0`) OR fully dropped (`heldFreePoints=1`) — never a partial-application state.
-- [ ] **AC-NC-34-CRASH** [BLOCKING] (Integration, session's own AC-NC-34 — distinct from wire-protocol's identically-numbered AC): Given an enhancement `RequestID=X` committed to persistence, and a crash after write but before broadcast, when the server restarts and the player reconnects, then the handshake delivers post-enhancement state, a re-submitted `RequestID=X` is rejected, and item state is unchanged by the rejected re-submit.
+- [x] **AC-NC-12** [BLOCKING] (Logic): Given a player in `Disconnected_SessionActive`, when the tick counter reaches `sessionExpiryTick`, then `OnPersistenceWriteCompleted(characterId, SessionExpiry)` fires before any resource release; `OnSessionStateTransitioned(accountId, Disconnected_SessionActive, Disconnected_SessionExpired, "TTLExpired")` fires (exact trigger string, restored from the GDD's current text — the original copy of this AC dropped it); entity removed; resources released; a subsequent connection starts at `Connecting`.
+- [x] **AC-NC-16** [BLOCKING]: Given a server crash (via `IServerCrashInjector`) immediately after the persistence write completes and before emitting the outcome message, when the server restarts and the player reconnects, then the session handshake delivers the post-outcome item state without replaying the animation.
+- [x] **AC-NC-27** [BLOCKING]: Given a player who submits an enhancement attempt (`RequestID=X`) processed successfully, when the same client sends a second request with `RequestID=X`, then the server rejects it as a duplicate unconditionally — even when >30 seconds have elapsed (no time window on dedup, per `LastEnhancementRequestID`).
+- [x] **AC-NC-35** [BLOCKING] (Integration — fragment reassembly timeout): Given a client joining a zone where `ZoneStateSnapshot` is fragmented and `ITransportFaultInjector.DropSnapshotFragment(ushort.MaxValue)` drops the last fragment, when `FRAGMENT_REASSEMBLY_TIMEOUT_SECONDS` elapses, then the client emits `ZoneSnapshotRequest`; the zone-entry gate remains closed throughout; when reassembly completes, the gate opens within 100ms of the final fragment.
+- [x] **AC-NC-40** [BLOCKING] (Logic — snapshot retransmit limit): Given `MAX_SNAPSHOT_RETRANSMIT_ATTEMPTS=3` and repeated fragment drops, when the 3rd reassembly timeout elapses, then `OnSnapshotRetransmitAttempt` fires 3 times in order with correct `(attemptNumber, maxAttempts)`, after which the client drops the connection and begins a fresh reconnect; the gate never opened.
+- [x] **AC-NC-42** [BLOCKING] (Logic — in-flight RPC at disconnect boundary): Given a connected player with `heldFreePoints=1`, when heartbeat timeout is processed on tick T while an `AllocateFreePointRequest` is simultaneously in the input queue, then either the RPC was fully processed (persisted, `heldFreePoints=0`) OR fully dropped (`heldFreePoints=1`) — never a partial-application state.
+- [x] **AC-NC-34-CRASH** [BLOCKING] (Integration, session's own AC-NC-34 — distinct from wire-protocol's identically-numbered AC, a confirmed genuine cross-doc AC-ID collision): Given an enhancement `RequestID=X` committed to persistence, and a crash after write but before broadcast, when the server restarts and the player reconnects, then the handshake delivers post-enhancement state, a re-submitted `RequestID=X` is rejected, and item state is unchanged by the rejected re-submit.
 
 ---
 
@@ -62,7 +62,7 @@
 
 ## QA Test Cases
 
-*Test file*: `tests/PlayMode/Networking/Session_TTLExpiry_ZoneCrash_tests.cs`
+*Test file*: `tests/EditMode/Networking/Session_TTLExpiry_ZoneCrash_tests.cs` (corrected from the original `tests/PlayMode/...` path — same recurring PlayMode/EditMode mismatch as Stories 007/013; no real PlayMode multiplayer harness exists anywhere in this codebase)
 
 - **AC-NC-12**: Given tick advance to `sessionExpiryTick`, then persistence-write-before-release ordering holds, entity removed, fresh reconnect confirmed.
 - **AC-NC-16**: Given a post-write, pre-broadcast crash, then reconnect handshake shows post-outcome state, no animation replay.
@@ -77,9 +77,9 @@
 ## Test Evidence
 
 **Story Type**: Integration
-**Required evidence**: `tests/PlayMode/Networking/Session_TTLExpiry_ZoneCrash_tests.cs` OR documented playtest evidence in `production/qa/evidence/`
+**Required evidence**: `tests/EditMode/Networking/Session_TTLExpiry_ZoneCrash_tests.cs` (corrected from the original `tests/PlayMode/...` path) OR documented playtest evidence in `production/qa/evidence/`
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 34 test cases across 4 fixtures, all 7 blocking ACs COVERED with traceability
 
 ---
 
@@ -87,3 +87,14 @@
 
 - Depends on: Story 001 (`IServerCrashInjector`, `ITransportFaultInjector`), Story 011 (commit-before-broadcast pattern), Story 012–014 (state machines)
 - Unlocks: Story 019/021 (ghost death/cleanup reuse this crash-recovery reasoning)
+
+---
+
+## Completion Notes
+**Completed**: 2026-07-18
+**Criteria**: 7/7 passing (AC-NC-12, AC-NC-16, AC-NC-27, AC-NC-34-CRASH, AC-NC-35, AC-NC-40, AC-NC-42)
+**Deviations**: ADVISORY — TR-net-006 not in `docs/architecture/tr-registry.yaml` (systemic, pre-existing gap). ADVISORY — 3 forward-dependency scope limitations, all documented and 2 tracked as tech debt: AC-NC-42's authority-boundary proof is test-local (no real RPC-dispatch layer exists yet — TD-016); AC-NC-35(a)'s "dropped fragment causes retransmit" link is narrative-only, not wired in code (no real transport/snapshot-send path exists yet — TD-015); AC-NC-16/34-CRASH's crash-durability proof is a unit-level mock, not a real process-boundary test (no real Enhancement System exists yet — accepted, not separately tracked since it mirrors Story 011's own established precedent).
+**Test Evidence**: Integration: `tests/EditMode/Networking/Session_TTLExpiry_ZoneCrash_tests.cs` (34 executed test cases across 4 fixtures)
+**Code Review**: Complete — `/code-review` (lean mode, unity-specialist + qa-tester parallel): APPROVED WITH SUGGESTIONS. unity-specialist: CLEAN — independently hand-verified the `ZoneSnapshotReassemblyTracker` re-baselining tick math and the `EnhancementRequestDeduplicator` crash-simulation plumbing. qa-tester: GAPS — found the story's own stale `tests/PlayMode/...` references, a missing per-character dedup-scoping test, and a missing `Reconnecting`-state guard test for `CompleteSessionActiveTTLExpiry`, plus flagged that 2 of the 7 ACs (AC-NC-35(a), AC-NC-42) have weaker-than-their-AC-number-implies coverage. All 4 suggestions fixed this session: stale paths corrected, both missing tests added, TD-015/TD-016 logged. Final test count: 34 (32 + 2 new).
+
+**This story closes out the Session Lifecycle cluster (012-015) — all 4 stories now Complete.**

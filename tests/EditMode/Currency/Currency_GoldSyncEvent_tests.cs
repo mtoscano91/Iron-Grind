@@ -1,6 +1,9 @@
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using IronGrind.Currency;
 using NUnit.Framework;
+using UnityEngine;
+using UnityEngine.TestTools;
 
 namespace IronGrind.Tests.EditMode.Currency
 {
@@ -91,7 +94,9 @@ namespace IronGrind.Tests.EditMode.Currency
             void Recorder(GoldSyncEventArgs args) => captured.Add(args);
             _currency.OnGoldSync += Recorder;
 
-            // Act
+            // Act — AddGold's InvalidAmount guard is a deliberate Debug.LogError (caller bug, not
+            // a runtime condition — see CurrencySystem's class remarks), so it must be declared.
+            LogAssert.Expect(LogType.Error, new Regex(@"\[CurrencySystem\] AddGold: amount must be nonzero"));
             var result = _currency.AddGold(Player, 0u, GoldTransactionReason.MonsterDrop);
 
             // Assert
@@ -114,7 +119,9 @@ namespace IronGrind.Tests.EditMode.Currency
             void Recorder(GoldSyncEventArgs args) => captured.Add(args);
             _currency.OnGoldSync += Recorder;
 
-            // Act
+            // Act — AddGold's CharacterNotFound guard is a deliberate Debug.LogError (caller bug,
+            // not a runtime condition — see CurrencySystem's class remarks), so it must be declared.
+            LogAssert.Expect(LogType.Error, new Regex(@"\[CurrencySystem\] AddGold:.*is not a registered character"));
             var result = _currency.AddGold(Player, 100u, GoldTransactionReason.MonsterDrop);
 
             // Assert
@@ -162,7 +169,9 @@ namespace IronGrind.Tests.EditMode.Currency
             void Recorder(GoldSyncEventArgs args) => captured.Add(args);
             _currency.OnGoldSync += Recorder;
 
-            // Act
+            // Act — TrySpendGold's InvalidAmount guard is a deliberate Debug.LogError (caller bug,
+            // not a runtime condition — see CurrencySystem's class remarks), so it must be declared.
+            LogAssert.Expect(LogType.Error, new Regex(@"\[CurrencySystem\] TrySpendGold: cost must be nonzero"));
             var result = _currency.TrySpendGold(Player, 0u, GoldTransactionReason.ScrollPurchase);
 
             // Assert
@@ -185,7 +194,9 @@ namespace IronGrind.Tests.EditMode.Currency
             void Recorder(GoldSyncEventArgs args) => captured.Add(args);
             _currency.OnGoldSync += Recorder;
 
-            // Act
+            // Act — TrySpendGold's CharacterNotFound guard is a deliberate Debug.LogError (caller
+            // bug, not a runtime condition — see CurrencySystem's class remarks), so it must be declared.
+            LogAssert.Expect(LogType.Error, new Regex(@"\[CurrencySystem\] TrySpendGold:.*is not a registered character"));
             var result = _currency.TrySpendGold(Player, 100u, GoldTransactionReason.ScrollPurchase);
 
             // Assert

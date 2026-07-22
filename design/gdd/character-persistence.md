@@ -256,7 +256,7 @@ CR-CP-5 (caller-rollback + session-preservation + disconnect) applies **exclusiv
 
 | Failure path | Protocol |
 |---|---|
-| `SaveIrreversibleOutcome` → non-Success | CR-CP-5: caller rollback → client disconnect → session preserved for TTL → critical alert |
+| `SaveIrreversibleOutcome` → non-Success | CR-CP-5: caller rollback → client disconnect → critical alert → session preserved for TTL |
 | `SaveSession(CleanLogout)` → non-Success | Log critical error; return `DatabaseError` to caller. Client may retry logout. Character Persistence does not issue disconnect. |
 | `SaveSession(SessionTTLExpiry)` → non-Success | Log critical error; release session resources regardless. Client already disconnected. |
 | `SaveSession(ZoneClosed[, hpOverride])` → non-Success | Log critical error; Zone Instancing continues teardown (slot released regardless — zone is closing). Client already disconnected or connection will be closed by `ZoneSessionEnded`. Character Persistence does not block zone teardown on save failure. |

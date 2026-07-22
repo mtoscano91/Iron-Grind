@@ -1,7 +1,7 @@
 # Story 028: EntityHealthUpdate/PartyMemberHealthUpdate Relevance Filter Algorithm
 
 > **Epic**: Networking Core
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Logic
 > **Manifest Version**: 2026-06-28
@@ -29,10 +29,10 @@
 
 *From `design/gdd/networking-relevance-filter.md`, scoped to this story:*
 
-- [ ] **AC-RFR-01** [BLOCKING] (Integration): Given a 50-player zone where client A is solo with no target, when 50 ticks are serialized, then each of A's R-U batches contains exactly 1 `EntityHealthUpdate` (self-slot) and zero `PartyMemberHealthUpdate`.
-- [ ] **AC-RFR-02** [BLOCKING] (Integration): Given client A in a 4-person party (B,C,D) with no target, when 1 tick processes, then A's batch contains exactly 3 `PartyMemberHealthUpdate` (one per B,C,D) and exactly 1 `EntityHealthUpdate` (self-slot only) — none for B/C/D or any other entity.
-- [ ] **AC-RFR-04** [BLOCKING] (Integration): Given client A in a 4-person party targeting a non-party entity, when the R-U batch serializes at n=50 Scenario C density (10 DamageEvent/tick), then the total batch size is ≤400 bytes (below the 512-byte cap), and no HP or damage sub-message is dropped.
-- [ ] **AC-RFR-07** [BLOCKING] (Integration): Given client A with HP=750 at zone entry, when 10 ticks of active combat process (HP decrementing), then each R-U batch contains a self-slot `EntityHealthUpdate` reflecting current authoritative HP, matching the server's tracked value.
+- [x] **AC-RFR-01** [BLOCKING] (Integration): Given a 50-player zone where client A is solo with no target, when 50 ticks are serialized, then each of A's R-U batches contains exactly 1 `EntityHealthUpdate` (self-slot) and zero `PartyMemberHealthUpdate`.
+- [x] **AC-RFR-02** [BLOCKING] (Integration): Given client A in a 4-person party (B,C,D) with no target, when 1 tick processes, then A's batch contains exactly 3 `PartyMemberHealthUpdate` (one per B,C,D) and exactly 1 `EntityHealthUpdate` (self-slot only) — none for B/C/D or any other entity.
+- [x] **AC-RFR-04** [BLOCKING] (Integration): Given client A in a 4-person party targeting a non-party entity, when the R-U batch serializes at n=50 Scenario C density (10 DamageEvent/tick), then the total batch size is ≤400 bytes (below the 512-byte cap), and no HP or damage sub-message is dropped.
+- [x] **AC-RFR-07** [BLOCKING] (Integration): Given client A with HP=750 at zone entry, when 10 ticks of active combat process (HP decrementing), then each R-U batch contains a self-slot `EntityHealthUpdate` reflecting current authoritative HP, matching the server's tracked value.
 
 ---
 
@@ -72,10 +72,10 @@
 
 ## Test Evidence
 
-**Story Type**: Integration
-**Required evidence**: `tests/PlayMode/Networking/RelevanceFilter_HealthUpdateSets_tests.cs` OR documented playtest evidence (load-density ACs need a running tick loop; the core set-construction algorithm may additionally have EditMode unit coverage)
+**Story Type**: Logic
+**Required evidence**: `tests/EditMode/Networking/RelevanceFilter_HealthUpdateSets_tests.cs` — must exist and pass. Corrected during `/story-readiness` (2026-07-21): this section previously said "Story Type: Integration" with a `tests/PlayMode/...` requirement, contradicting the header (`Type: Logic`) and this document's own QA Test Cases section (EditMode path) — the same self-contradiction Story 027 had. All 4 blocking ACs are verified via `INetworkTestObserver.OnRUBatchEntityHealthUpdates` per the GDD's own text, the same structural EditMode-composition mechanism used throughout this epic (including other "n=50"/multi-tick scenarios) — nothing here requires a live tick loop or PlayMode session. See TD-028 for the broader (unresolved, project-wide) question of whether this MMORPG needs a real PlayMode/Integration testing tier — this is further evidence for that entry, not a new tech-debt item.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 11 tests, all 4 blocking ACs covered, confirmed passing in a live Unity 6.3.10f1 Editor
 
 ---
 
@@ -83,3 +83,16 @@
 
 - Depends on: Story 007 (R-U batch this filter feeds), Story 001 (test harness `OnRUBatchEntityHealthUpdates`)
 - Unlocks: Story 029 (target-slot mutation this filter reads)
+
+---
+
+## Completion Notes
+**Completed**: 2026-07-21
+**Criteria**: 4/4 passing (AC-RFR-01, AC-RFR-02, AC-RFR-04, AC-RFR-07) — 11 tests in `tests/EditMode/Networking/RelevanceFilter_HealthUpdateSets_tests.cs`. First story this session verified via an actual live Unity 6.3.10f1 Editor test run (725/730 project-wide tests passing), not just static review.
+**Deviations**:
+- `MessageRoutingRegistry` was missing rows for `EntityHealthUpdate`/`PartyMemberHealthUpdate` (this story's own new message types) — added. While adding them, discovered Story 026's `GoldSyncEventForcedDelivery` and Story 027's `SelfDamageEvent` were also never registered (an invisible gap until the registry's own completeness test could actually run in a live Editor for the first time). Added all 4 rows, cross-referenced against the GDD; code review caught and fixed one incorrect direction value (`PartyMemberHealthUpdate` used `ServerToParty` instead of `ServerToOwningClient`).
+- TD-029 logged: 5 genuine, pre-existing test failures surfaced in already-"Complete" Stories 018/020/021 — unrelated to this story, left for a dedicated future session.
+- Fixed 3 unrelated pre-existing compile errors blocking all EditMode compilation (Story 016's `SessionTokenStore.cs` and its test file; Story 027's test file) — necessary to get any real test run this session.
+- TD-028 (systemic Type/Test-Evidence pattern) and the empty `tr-registry.yaml` — both pre-existing, unchanged.
+**Test Evidence**: Logic — `tests/EditMode/Networking/RelevanceFilter_HealthUpdateSets_tests.cs`, 11 tests, all blocking ACs covered, live-confirmed passing.
+**Code Review**: Complete (lean self-performed review: unity-specialist 1 BLOCKING (wrong `MessageDirection` on the `PartyMemberHealthUpdate` registry row, independently verified against the GDD and fixed) + qa-tester TESTABLE, both parallel).

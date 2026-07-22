@@ -21,6 +21,7 @@ namespace IronGrind.Networking
         {
             public (short posX, short posY, short posZ)? EntryPoint;
             public int? Capacity;
+            public int? BatchSizeLimit;
             public ZoneState State = ZoneState.Empty;
         }
 
@@ -64,6 +65,12 @@ namespace IronGrind.Networking
         public void SetZoneCapacity(uint zoneInstanceId, int maxPlayers)
         {
             GetOrCreateZone(zoneInstanceId).Capacity = maxPlayers;
+        }
+
+        /// <inheritdoc/>
+        public void SetBatchSizeLimit(uint zoneInstanceId, int maxBytes)
+        {
+            GetOrCreateZone(zoneInstanceId).BatchSizeLimit = maxBytes;
         }
 
         /// <inheritdoc/>
@@ -129,6 +136,16 @@ namespace IronGrind.Networking
         internal int? GetZoneCapacityOverride(uint zoneInstanceId)
         {
             return _zones.TryGetValue(zoneInstanceId, out ZoneOverrides overrides) ? overrides.Capacity : null;
+        }
+
+        /// <summary>
+        /// Returns the raw batch-size-limit override for <paramref name="zoneInstanceId"/>, or
+        /// <see langword="null"/> if never set — used to assert instance-scoping and set/read-back/
+        /// reset behavior (Story 026), mirroring <see cref="GetZoneCapacityOverride"/>'s precedent.
+        /// </summary>
+        internal int? GetBatchSizeLimitOverride(uint zoneInstanceId)
+        {
+            return _zones.TryGetValue(zoneInstanceId, out ZoneOverrides overrides) ? overrides.BatchSizeLimit : null;
         }
 
         /// <summary>

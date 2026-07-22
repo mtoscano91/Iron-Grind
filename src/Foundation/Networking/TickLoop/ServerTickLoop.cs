@@ -225,7 +225,7 @@ namespace IronGrind.Networking
         /// <see cref="AdvanceTick"/> (though within a single <see cref="AdvanceTick"/> call, an
         /// unhandled exception from one delegate propagates out of that <see cref="AdvanceTick"/>
         /// call entirely — skipping any delegates registered after it, that tick's TTL expiry pass,
-        /// its EC-NET-10 drift sample, and its <see cref="INetworkTestObserver.OnTickCompleted"/>
+        /// its EC-NET-10 drift sample, and its test/dev-build observer's <c>OnTickCompleted</c>
         /// callback — before being rethrown to the caller. <see cref="ServerTickNumber"/> has
         /// already been incremented by that point and is not rolled back; no internal state is
         /// corrupted, and skipped TTL timers are simply evaluated on a later <see cref="AdvanceTick"/>
@@ -340,8 +340,8 @@ namespace IronGrind.Networking
         /// <see cref="ServerTickNumber"/> by 1, invokes every registered tick-driven delegate with
         /// <see cref="FIXED_DELTA_TIME"/>, fires and removes any TTL timer whose expiry has been
         /// reached (AC-TICK-2), records <paramref name="actualTickDurationSeconds"/> into the
-        /// EC-NET-10 drift-monitoring window, and finally invokes
-        /// <see cref="INetworkTestObserver.OnTickCompleted"/> if <paramref name="observer"/> is
+        /// EC-NET-10 drift-monitoring window, and finally invokes the test/dev-build observer's
+        /// <c>OnTickCompleted</c> hook if <paramref name="observer"/> is
         /// non-null (AC-NC-04, AC-NC-05, AC-TICK-2). <see cref="ServerTickNumber"/> never advances
         /// by more than 1 per call, regardless of how long a tick actually took — this loop never
         /// runs multiple ticks to compensate for a slow tick (EC-NET-10).
@@ -362,10 +362,13 @@ namespace IronGrind.Networking
         /// monitoring, such as most deterministic tests.
         /// </param>
         /// <param name="observer">
-        /// Optional test/dev-build observer. When non-null,
-        /// <see cref="INetworkTestObserver.OnTickCompleted"/> fires once, after all tick-driven
-        /// processing and TTL expiry checks for this tick complete. Matches this folder's
-        /// established nullable-observer convention (<see cref="RUBatchWriter.Write"/>).
+        /// Optional test/dev-build observer. When non-null, its <c>OnTickCompleted</c> hook fires
+        /// once, after all tick-driven processing and TTL expiry checks for this tick complete.
+        /// Matches this folder's established nullable-observer convention (<see cref="RUBatchWriter.Write"/>).
+        /// This parameter only exists inside <c>#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD</c> —
+        /// see remarks on why the observer's interface type is never referenced in an unguarded
+        /// production context (Story 002 release-stripping contract, AC-TC-02; this was a real
+        /// defect here until Story 010's code review surfaced and fixed it project-wide).
         /// </param>
         /// <example>
         /// <code>
@@ -373,7 +376,11 @@ namespace IronGrind.Networking
         /// tickLoop.AdvanceTick(actualTickDurationSeconds: 0.08f, observer: myTestObserver); // a slow tick, observed
         /// </code>
         /// </example>
-        public void AdvanceTick(float actualTickDurationSeconds = FIXED_DELTA_TIME, INetworkTestObserver observer = null)
+        public void AdvanceTick(float actualTickDurationSeconds = FIXED_DELTA_TIME
+#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
+            , INetworkTestObserver observer = null
+#endif
+            )
         {
             ServerTickNumber++;
 
@@ -424,7 +431,9 @@ namespace IronGrind.Networking
 
             RecordDriftSample(actualTickDurationSeconds);
 
+#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
             observer?.OnTickCompleted(ServerTickNumber);
+#endif
         }
 
         /// <summary>

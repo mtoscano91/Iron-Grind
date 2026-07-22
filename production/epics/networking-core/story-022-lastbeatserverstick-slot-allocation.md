@@ -1,7 +1,7 @@
 # Story 022: LastBeatServerTick Slot Allocation & Data Structure
 
 > **Epic**: Networking Core
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Logic
 > **Manifest Version**: 2026-06-28
@@ -85,3 +85,14 @@
 
 - Depends on: Story 009 (tick loop's Beat evaluation phase), Story 001 (`IZoneTestConfigurator.SetLastBeatServerTick`)
 - Unlocks: Story 023 (wrap-correction formula reads this array), Story 017 (ghost period Beat continuation)
+
+---
+
+## Completion Notes
+**Completed**: 2026-07-20
+**Criteria**: 5/5 passing (AC-OWL-03, AC-OWL-04, AC-OWL-06a, AC-OWL-06b, AC-OWL-06c) — none deferred
+**Deviations**:
+- ADVISORY: `TR-net-007` not present in `docs/architecture/tr-registry.yaml` — systemic registry gap tracked since Story 001 (same as "TR-net-006"), not new to this story.
+- ADVISORY: AC-OWL-06a/06c's "ghost period" proof is structural (no `DeallocatePlayerSlot` call between allocation and simulated reconnect), not a real integration test against a zone session manager — logged as **TD-024**.
+**Test Evidence**: Logic — `tests/EditMode/Networking/OwlCompensation_SlotAllocation_tests.cs`, 27 tests, all 5 blocking ACs covered.
+**Code Review**: Complete — unity-specialist + qa-tester (parallel). unity-specialist found 1 Required Change (missing "never allocated" guard on `DeallocateMobSlot`, creating a latent double-allocation hazard); applied, plus 3 qa-tester-suggested regression tests. Final verdict: APPROVED.

@@ -222,6 +222,16 @@ namespace IronGrind.Networking
         /// </summary>
         void OnSnapshotRetransmitAttempt(uint characterId, int attemptNumber, int maxAttempts);
 
+        /// <summary>
+        /// Called when a party is disbanded while a ghost entity holds a slot in it (EC-GH-7,
+        /// CR-GH-8, <c>networking-ghost-session.md</c>). <paramref name="tickNumber"/> is the server
+        /// tick the disband event is processed at -- the boundary after which post-disconnect party
+        /// XP share accumulation must stop for every ghosted member (AC-GH-18). Fires once per
+        /// disband event, before any per-member <see cref="GhostXpPoolTracker.StopAccumulation"/>
+        /// call issued by <see cref="PartyDisbandCoordinator.ProcessPartyDisband"/>.
+        /// </summary>
+        void OnPartyDisbanded(uint partyId, uint tickNumber);
+
         // ---------------------------------------------------------------------
         // Priority path capture
         // ---------------------------------------------------------------------
@@ -267,6 +277,108 @@ namespace IronGrind.Networking
         void OnSkillUsedRateLimitRejected(uint entityId);
 
         // ---------------------------------------------------------------------
+        // OWL compensation capture
+        // ---------------------------------------------------------------------
+
+        /// <summary>
+        /// Called when the server emits a <c>ConnectionQualityUpdate</c> to a single client
+        /// (CR-NET-8.3, <see cref="OwlThresholdHysteresisTracker.EvaluateOwlSample"/>). Fires only
+        /// on an actual OWL-compensation mode flip (ON&#8596;OFF) — never on every OWL sample, and
+        /// never for the implicit default-mode baseline established by an entity's first sample
+        /// (unless that very first sample itself crosses the threshold, in which case the flip is
+        /// real and must be reported). <paramref name="rhythmCompensationActive"/> is the mode's new
+        /// value after the flip (<see langword="true"/> = compensation ON/back in compensated mode;
+        /// <see langword="false"/> = compensation OFF, entering uncompensated/degraded mode). Used by
+        /// AC-NC-31-HYSTERESIS.
+        /// </summary>
+        void OnConnectionQualityUpdateEmitted(uint entityId, bool rhythmCompensationActive);
+
+        // ---------------------------------------------------------------------
+        // Commit-before-broadcast capture
+        // ---------------------------------------------------------------------
+
+        /// <summary>
+        /// Called when the server fires a critical infrastructure alert following a
+        /// <c>SaveIrreversibleOutcome</c> persistence write failure
+        /// (<see cref="CommitBeforeBroadcastSequencer"/>, CR-NET-5.5 / CR-CP-5 step 4). Fires after
+        /// the caller's revert callback and the client disconnect, before the session is preserved
+        /// for <see cref="CommitBeforeBroadcastSequencer.SESSION_TTL_SECONDS"/> (CR-CP-5's numbered
+        /// order — see that class's remarks). Used by AC-CBB-1.
+        /// </summary>
+        void OnCriticalInfrastructureAlertFired(uint clientId, string reason);
+
+        // ---------------------------------------------------------------------
+        // Message routing capture
+        // ---------------------------------------------------------------------
+
+        /// <summary>
+        /// Called when <see cref="MessageRoutingRegistry.ValidateAndRoute"/> routes an unregistered
+        /// <c>MessageTypeID</c> to the R-U fallback channel in a release build (EC-MCR-1, AC-MCR-03).
+        /// Never fires when the build is a debug build — that path instead raises
+        /// <see cref="PendingSchemaDispatchException"/> at registration time and never reaches this
+        /// callback. Used by <c>MessageRouting_CriticalityChannelTable_tests.cs</c>.
+        /// </summary>
+        void OnUnclassifiedMessageTypeLogged(ushort messageTypeId);
+
+        /// <summary>
+        /// Called when the server serializes a standalone R-OD <c>GoldSyncEvent</c> forced-delivery
+        /// message (MCR-4, <see cref="GoldSyncForcedDeliveryCodec.Write"/>), fired at the point of
+        /// serialization — analogous to <see cref="OnServerGoldSyncBatched"/> for the R-U path. Used
+        /// by AC-MCR-01.
+        /// </summary>
+        void OnServerGoldSyncForcedDeliveryEmitted(uint characterId, uint newBalance, uint version, uint tickNumber);
+
+        /// <summary>
+        /// Called on the client when a standalone R-OD <c>GoldSyncEvent</c> forced-delivery message is
+        /// received at the transport boundary (MCR-4) — a distinct wire path from
+        /// <see cref="OnClientGoldSyncReceived"/>'s R-U batch extraction, analogous to the
+        /// <see cref="OnClientDamageEventReceived"/>/<see cref="OnClientSelfDamageEventReceived"/>
+        /// split. Used by AC-MCR-01.
+        /// </summary>
+        void OnClientGoldSyncForcedDeliveryReceived(uint characterId, uint newBalance, uint version);
+
+        /// <summary>
+        /// Called when forced <c>GoldSyncEvent</c> delivery has been substituting for normal R-U
+        /// delivery for more than <c>FORCED_DELIVERY_CONSECUTIVE_TICKS</c> consecutive elapsed real
+        /// ticks without a normal R-U delivery succeeding in between (MCR-4's anomaly threshold,
+        /// <see cref="GoldSyncForcedDeliveryTracker"/>). Fires exactly once per anomaly streak — never
+        /// on every subsequent tick while still elevated (same idiom as
+        /// <see cref="OnConnectionQualityUpdateEmitted"/>). Used by AC-MCR-07.
+        /// </summary>
+        void OnGoldSyncForcedDeliveryAnomalyLogged(uint characterId, int consecutiveTicksWithoutNormalDelivery);
+
+        // ---------------------------------------------------------------------
+        // Self-damage recipient defense capture (Story 027)
+        // ---------------------------------------------------------------------
+
+        /// <summary>
+        /// Called on the client when <see cref="SelfDamageRecipientGuard.ValidateRecipient"/> detects
+        /// that a received <c>SelfDamageEvent</c>'s <c>attackerEntityId</c> does not match this
+        /// client's own <c>EntityID</c> (EC-CCR-2's <c>SelfDamageDirectionViolation</c> anomaly). This
+        /// is a client-side sanity check layered on top of the server-side singleton-recipient
+        /// guarantee (<see cref="SelfDamageEventDispatcher"/>), not a substitute for it. Used by
+        /// <c>MessageRouting_SelfDamageExclusivity_tests.cs</c>.
+        /// </summary>
+        void OnSelfDamageDirectionViolationLogged(uint attackerEntityId, uint localPlayerEntityId);
+
+        // ---------------------------------------------------------------------
+        // Target slot capture (Story 029)
+        // ---------------------------------------------------------------------
+
+        /// <summary>
+        /// Called when <see cref="TargetSlotTracker.ProcessSetTarget"/> rejects a self-target attempt
+        /// (RFR-5/EC-RFR-4, <c>SelfTargetAttempt</c> advisory anomaly). Used by AC-RFR-05.
+        /// </summary>
+        void OnSelfTargetAttemptLogged(uint entityId);
+
+        /// <summary>
+        /// Called when <see cref="TargetSlotTracker.ProcessSetTarget"/> rejects a <c>SetTarget</c> RPC
+        /// because <c>targetEntityId</c> is not present in the current zone's valid EntityIDs
+        /// (RFR-3a, <c>InvalidTargetEntityId</c> advisory anomaly).
+        /// </summary>
+        void OnInvalidTargetEntityIdLogged(uint clientId, uint invalidTargetEntityId);
+
+        // ---------------------------------------------------------------------
         // Query methods
         // ---------------------------------------------------------------------
 
@@ -307,6 +419,20 @@ namespace IronGrind.Networking
 
         /// <summary>The ghost entity's HP reached zero; pre-disconnect snapshot HP persisted per CGS-5.</summary>
         GhostDeath = 5,
+
+        /// <summary>
+        /// The ghost session was voluntarily dismissed by a party member (CR-GH-12/CR-GH-12.1,
+        /// Story 021). Distinct from <see cref="GhostCombatTTLExpiry"/> — the cleanup sequence is
+        /// identical (CR-GH-10), but the trigger was a <c>GhostDismissRequest</c>, not TTL elapsing.
+        /// </summary>
+        GhostDismissed = 6,
+
+        /// <summary>
+        /// The zone instance crashed while ghost/reconnecting sessions were present (CR-GH-11,
+        /// Story 021). Distinct from <see cref="ZoneClose"/> — that value is Story 014's non-ghost
+        /// <c>Draining → Closed</c> teardown reason, an unrelated ST-NET-2 row.
+        /// </summary>
+        GhostZoneCrash = 7,
     }
 }
 #endif

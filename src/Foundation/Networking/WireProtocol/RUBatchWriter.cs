@@ -69,13 +69,15 @@ namespace IronGrind.Networking
     /// System, Loot Table System, Client-Side Prediction, relevance filtering).
     /// </para>
     /// <para>
-    /// <b><see cref="INetworkTestObserver.OnServerGoldSyncBatched"/> is invoked at the point each
-    /// <see cref="GoldSyncEvent"/> is actually written into the destination buffer</b> — i.e.
+    /// <b>The test/dev-build observer's <c>OnServerGoldSyncBatched</c> hook is invoked at the point
+    /// each <see cref="GoldSyncEvent"/> is actually written into the destination buffer</b> — i.e.
     /// after the category-level eviction decision, only for entries that survive (if
     /// <see cref="RUBatchCategory.GoldSyncEvent"/> is evicted this tick, the hook does not fire
     /// for the dropped entries). <paramref name="observer"/> is optional/nullable — production
     /// call sites that have no observer wired pass <see langword="null"/>, matching this
-    /// codebase's established nullable-observer convention.
+    /// codebase's established nullable-observer convention. (Not naming the observer's interface
+    /// type directly in this comment is deliberate — see the release-stripping remarks on
+    /// <see cref="Write"/> itself.)
     /// </para>
     /// </remarks>
     /// <example>
@@ -172,9 +174,12 @@ namespace IronGrind.Networking
         /// </param>
         /// <param name="clientIdForLogging">The destination client's ID, included in anomaly log messages for traceability.</param>
         /// <param name="observer">
-        /// Optional test/dev-build observer. When non-null,
-        /// <see cref="INetworkTestObserver.OnServerGoldSyncBatched"/> fires once per
-        /// <see cref="GoldSyncEvent"/> actually written (AC-NC-19).
+        /// Optional test/dev-build observer. When non-null, its <c>OnServerGoldSyncBatched</c> hook
+        /// fires once per <see cref="GoldSyncEvent"/> actually written (AC-NC-19). This parameter
+        /// only exists inside <c>#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD</c> — see remarks on
+        /// why the observer's interface type is never referenced in an unguarded production context
+        /// (Story 002 release-stripping contract, AC-TC-02; fixed alongside Story 010's code review,
+        /// which surfaced this same defect in a new file and traced it back here).
         /// </param>
         /// <returns>The total number of bytes written to <paramref name="destination"/> (never exceeds <see cref="MAX_MESSAGE_BODY_BYTES"/>).</returns>
         /// <example>
@@ -189,8 +194,11 @@ namespace IronGrind.Networking
             IReadOnlyList<DamageEvent> damageEvents,
             IReadOnlyList<GoldSyncEvent> goldSyncEvents,
             IReadOnlyList<PendingSubMessage> otherSubMessages,
-            uint clientIdForLogging,
-            INetworkTestObserver observer = null)
+            uint clientIdForLogging
+#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
+            , INetworkTestObserver observer = null
+#endif
+            )
         {
             damageEvents ??= Array.Empty<DamageEvent>();
             goldSyncEvents ??= Array.Empty<GoldSyncEvent>();
@@ -339,7 +347,9 @@ namespace IronGrind.Networking
                     {
                         GoldSyncEvent goldSyncEvent = goldSyncEvents[i];
                         offset += BatchSubMessageCodec.WriteGoldSyncEvent(destination.Slice(offset), in goldSyncEvent);
+#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
                         observer?.OnServerGoldSyncBatched(goldSyncEvent.CharacterId.RawValue, goldSyncEvent.NewBalance, goldSyncEvent.Version);
+#endif
                     }
                 }
                 else

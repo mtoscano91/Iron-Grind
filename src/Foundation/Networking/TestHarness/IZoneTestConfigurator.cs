@@ -46,6 +46,21 @@ namespace IronGrind.Networking
         /// <param name="maxPlayers">The overridden player capacity.</param>
         void SetZoneCapacity(uint zoneInstanceId, int maxPlayers);
 
+        /// <summary>
+        /// Overrides the R-U batch body-size limit for <paramref name="zoneInstanceId"/> (Story 026,
+        /// AC-MCR-01/AC-MCR-07), intended to force deterministic R-U overflow in a test/dev-build
+        /// environment. <b>Not currently wired to any production consumer</b> —
+        /// <see cref="RUBatchWriter.MAX_MESSAGE_BODY_BYTES"/> remains a compile-time structural
+        /// constant (out of scope for Story 026, per that class's own doc comment) and does not read
+        /// this override. This is a stored injection point for a future story that wires a real
+        /// per-connection configurable batch-size check, matching this codebase's established
+        /// forward-dependency-placeholder pattern (e.g. Story 025's <c>ConnectionSequenceCounter</c>,
+        /// tracked as tech debt — see <c>docs/tech-debt-register.md</c>).
+        /// </summary>
+        /// <param name="zoneInstanceId">The zone instance to configure.</param>
+        /// <param name="maxBytes">The overridden R-U batch body-size limit, in bytes.</param>
+        void SetBatchSizeLimit(uint zoneInstanceId, int maxBytes);
+
         /// <summary>Reads the current ST-NET-2 zone state of <paramref name="zoneInstanceId"/> as of the last tick boundary.</summary>
         /// <param name="zoneInstanceId">The zone instance to query.</param>
         ZoneState GetCurrentZoneState(uint zoneInstanceId);

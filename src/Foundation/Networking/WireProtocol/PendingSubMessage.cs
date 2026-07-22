@@ -29,8 +29,8 @@ namespace IronGrind.Networking
     /// schemas (<see cref="DamageEvent"/>, <see cref="GoldSyncEvent"/>) owned by this GDD document
     /// itself and are passed to <see cref="RUBatchWriter.Write"/> via their own dedicated typed
     /// list parameters instead, so the writer can apply their category-specific overflow policies
-    /// (DamageEvent's intra-class cap; GoldSyncEvent's <see cref="INetworkTestObserver.OnServerGoldSyncBatched"/>
-    /// hook) precisely at the point of batch insertion. <see cref="RUBatchWriter.Write"/> throws
+    /// (DamageEvent's intra-class cap; GoldSyncEvent's test/dev-build-only <c>OnServerGoldSyncBatched</c>
+    /// observer hook) precisely at the point of batch insertion. <see cref="RUBatchWriter.Write"/> throws
     /// <see cref="ArgumentException"/> if a <see cref="PendingSubMessage"/> tagged with either of
     /// those two categories is passed through this generic path.
     /// </para>

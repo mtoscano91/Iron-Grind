@@ -1,5 +1,8 @@
+using System.Text.RegularExpressions;
 using IronGrind.Currency;
 using NUnit.Framework;
+using UnityEngine;
+using UnityEngine.TestTools;
 
 namespace IronGrind.Tests.EditMode.Currency
 {
@@ -37,7 +40,9 @@ namespace IronGrind.Tests.EditMode.Currency
             // Arrange
             _currency.RegisterCharacter(Player, 500u);
 
-            // Act
+            // Act — the InvalidAmount guard is a deliberate Debug.LogError (caller bug, not a
+            // runtime condition — see CurrencySystem's class remarks), so it must be declared.
+            LogAssert.Expect(LogType.Error, new Regex(@"\[CurrencySystem\] AddGold: amount must be nonzero"));
             var result = _currency.AddGold(Player, 0u, GoldTransactionReason.MonsterDrop);
 
             // Assert
@@ -59,7 +64,9 @@ namespace IronGrind.Tests.EditMode.Currency
             // Arrange
             _currency.RegisterCharacter(Player, 500u);
 
-            // Act
+            // Act — the InvalidAmount guard is a deliberate Debug.LogError (caller bug, not a
+            // runtime condition — see CurrencySystem's class remarks), so it must be declared.
+            LogAssert.Expect(LogType.Error, new Regex(@"\[CurrencySystem\] TrySpendGold: cost must be nonzero"));
             var result = _currency.TrySpendGold(Player, 0u, GoldTransactionReason.ScrollPurchase);
 
             // Assert
@@ -80,7 +87,9 @@ namespace IronGrind.Tests.EditMode.Currency
         {
             // Arrange — Player has never been passed to RegisterCharacter.
 
-            // Act
+            // Act — the CharacterNotFound guard is a deliberate Debug.LogError (caller bug, not a
+            // runtime condition — see CurrencySystem's class remarks), so it must be declared.
+            LogAssert.Expect(LogType.Error, new Regex(@"\[CurrencySystem\] AddGold:.*is not a registered character"));
             var result = _currency.AddGold(Player, 100u, GoldTransactionReason.MonsterDrop);
 
             // Assert
@@ -96,7 +105,9 @@ namespace IronGrind.Tests.EditMode.Currency
         {
             // Arrange — Player has never been passed to RegisterCharacter.
 
-            // Act
+            // Act — the CharacterNotFound guard is a deliberate Debug.LogError (caller bug, not a
+            // runtime condition — see CurrencySystem's class remarks), so it must be declared.
+            LogAssert.Expect(LogType.Error, new Regex(@"\[CurrencySystem\] TrySpendGold:.*is not a registered character"));
             var result = _currency.TrySpendGold(Player, 100u, GoldTransactionReason.ScrollPurchase);
 
             // Assert
@@ -121,7 +132,9 @@ namespace IronGrind.Tests.EditMode.Currency
             // Arrange — Player is both unregistered AND amount is zero; if the guards
             // were swapped, this would return InvalidAmount instead.
 
-            // Act
+            // Act — CharacterNotFound is checked before InvalidAmount, so only the
+            // CharacterNotFound Debug.LogError fires here (see CurrencySystem's class remarks).
+            LogAssert.Expect(LogType.Error, new Regex(@"\[CurrencySystem\] AddGold:.*is not a registered character"));
             var result = _currency.AddGold(Player, 0u, GoldTransactionReason.MonsterDrop);
 
             // Assert
@@ -134,7 +147,9 @@ namespace IronGrind.Tests.EditMode.Currency
             // Arrange — Player is both unregistered AND cost is zero; if the guards
             // were swapped, this would return InvalidAmount instead.
 
-            // Act
+            // Act — CharacterNotFound is checked before InvalidAmount, so only the
+            // CharacterNotFound Debug.LogError fires here (see CurrencySystem's class remarks).
+            LogAssert.Expect(LogType.Error, new Regex(@"\[CurrencySystem\] TrySpendGold:.*is not a registered character"));
             var result = _currency.TrySpendGold(Player, 0u, GoldTransactionReason.ScrollPurchase);
 
             // Assert

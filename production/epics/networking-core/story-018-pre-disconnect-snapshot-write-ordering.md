@@ -1,7 +1,7 @@
 # Story 018: Pre-Disconnect Snapshot & Write-Ordering
 
 > **Epic**: Networking Core
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Logic
 > **Manifest Version**: 2026-06-28
@@ -18,6 +18,7 @@
 
 **Engine**: Unity 6.3 LTS (6000.3) | **Risk**: LOW
 **Engine Notes**: None.
+**Performance Notes**: No performance impact expected — CGS-6's same-tick priority ordering is structural (synchronous method-call order within one tick's single-threaded dispatch), not a new per-tick scan.
 
 **Control Manifest Rules (Foundation layer)**:
 - Required: pre-disconnect snapshot written to an external WAL keyed on `(characterId, disconnectTickNumber)` before ghost promotion continues — source: CGS-3
@@ -30,10 +31,10 @@
 
 *From `design/gdd/networking-ghost-character-state.md`, scoped to this story:*
 
-- [ ] **AC-CGS-1** [BLOCKING]: Given a ghost entity that receives N damage during the ghost period and then expires via TTL without reconnect, when character state is written to persistence, then the persisted HP equals the pre-disconnect snapshot HP — not the ghost-period-reduced HP.
-- [ ] **AC-CGS-2** [BLOCKING]: Given a ghost entity whose HP reaches zero, when death processing completes and state is persisted, then the persisted HP equals the pre-disconnect snapshot HP (not respawn HP — no HP penalty on ghost death, GD-CGS-2); persisted position equals the zone-entry respawn position.
-- [ ] **AC-CGS-3** [BLOCKING]: Given a ghost entity whose HP reaches zero AND a reconnect acknowledgment queued in the same server tick, when the tick processes both, then death processing wins (single-tick priority rule) — session transitions to `Disconnected_SessionExpired` reason `GHOST_DEATH`, the reconnecting client receives `ZoneSessionEnded(reason: GhostDeath)`.
-- [ ] **AC-CGS-4** [BLOCKING]: Given a ghost TTL expiry, when the cleanup sequence runs, then `OnPersistenceWriteCompleted` fires before the session transitions to `Disconnected_SessionExpired` and before `GhostExpiredEvent` is emitted — verified by sequence-index ordering, not timestamps (events within the same 50ms tick have no meaningful timestamp ordering).
+- [x] **AC-CGS-1** [BLOCKING]: Given a ghost entity that receives N damage during the ghost period and then expires via TTL without reconnect, when character state is written to persistence, then the persisted HP equals the pre-disconnect snapshot HP — not the ghost-period-reduced HP. **Pass condition (restored from GDD, story-readiness fix):** `OnPersistenceWriteCompleted(characterId, PersistenceWriteReason.GhostCombatTTLExpiry)` fires before `OnSessionStateTransitioned(_, Disconnected_SessionExpired)`; character persistence record HP = disconnect-moment HP.
+- [x] **AC-CGS-2** [BLOCKING]: Given a ghost entity whose HP reaches zero, when death processing completes and state is persisted, then the persisted HP equals the pre-disconnect snapshot HP (not respawn HP — no HP penalty on ghost death, GD-CGS-2); persisted position equals the zone-entry respawn position. **Pass condition (restored from GDD, story-readiness fix):** `OnPersistenceWriteCompleted(characterId, PersistenceWriteReason.GhostDeath)` fires; character persistence record HP = pre-disconnect snapshot HP; character persistence record position = respawn position; `wasKilledWhileDisconnected = true` in session record.
+- [x] **AC-CGS-3** [BLOCKING]: Given a ghost entity whose HP reaches zero AND a reconnect acknowledgment queued in the same server tick, when the tick processes both, then death processing wins (single-tick priority rule) — session transitions to `Disconnected_SessionExpired` reason `GHOST_DEATH`, the reconnecting client receives `ZoneSessionEnded(reason: GhostDeath)`. **Pass condition (restored from GDD, story-readiness fix — the `fromState` matters):** `OnSessionStateTransitioned(accountId, Reconnecting, Disconnected_SessionExpired, "GhostDeath")` fires — note the `fromState` is `Reconnecting`, NOT `Disconnected_SessionActive`; this scenario is specifically a death racing a reconnect already in progress, a transition row no prior story has built (`ConnectionStateMachine`'s existing `Reconnecting`-adjacent methods — `EnterReconnecting`, `CompleteReAuthSuccess`, `RecordFailedReAuthAttempt`, `HandleReconnectSessionSteal` — none represent this case). Reconnect client receives `ZoneSessionEnded` with `reason = DisconnectReason.GhostDeath` (already an existing enum value, `= 3`). **Test-technique resolution (story-readiness fix, same class of issue as Story 017's AC-GH-13):** the GDD's own text says "Automatable via `ITransportFaultInjector` (inject reconnect ACK in same tick as injected killing blow)" — confirmed by direct interface read that this is imprecise: `ITransportFaultInjector`'s entire API (`DropNextOutbound`/`DelayNextOutbound`/`ReorderNext`/`DropSnapshotFragment`/`SetSequenceNumber`) is outbound-fault-injection only, with no capability to inject an inbound reconnect ACK. Do not attempt to use it for this. Instead, drive both code paths (death processing, reconnect-ACK processing) directly against whatever new ordering-guarantee method this story builds, proving the single-tick priority rule structurally — same resolution shape as Story 017's `ShouldRejectCommand`.
+- [x] **AC-CGS-4** [BLOCKING]: Given a ghost TTL expiry, when the cleanup sequence runs, then `OnPersistenceWriteCompleted` fires before the session transitions to `Disconnected_SessionExpired` and before `GhostExpiredEvent` is emitted — verified by sequence-index ordering, not timestamps (events within the same 50ms tick have no meaningful timestamp ordering). **Pass condition (restored from GDD, story-readiness fix):** callback order verified by sequence index (a monotonically incrementing counter reset per tick). Automatable via `IServerCrashInjector.AfterGhostCleanupPersistenceWrite` (already an existing crash step — crash after step 1, character state must be durable on recovery).
 
 ---
 
@@ -76,7 +77,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/Networking/GhostSession_SnapshotWriteOrdering_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 18 test cases, all 4 blocking ACs COVERED with traceability
 
 ---
 
@@ -84,3 +85,14 @@
 
 - Depends on: Story 017 (promotion trigger this snapshot hooks into), Story 011 (shares the commit-before-broadcast reasoning pattern)
 - Unlocks: Story 019 (ghost death uses this write-ordering), Story 021 (cleanup sequence uses this write-ordering)
+
+---
+
+## Completion Notes
+**Completed**: 2026-07-18
+**Criteria**: 4/4 passing (AC-CGS-1, AC-CGS-2, AC-CGS-3, AC-CGS-4)
+**Deviations**: ADVISORY — TR-net-006 not in `docs/architecture/tr-registry.yaml` (systemic, pre-existing gap). ADVISORY — TD-019 logged: no `CrashStep` exists for the CGS-3 snapshot-WAL write specifically, so EC-CGS-2's crash-recovery narrative is proven at the logic level only, not end-to-end via a real crash injection. ADVISORY — AC-CGS-2's `wasKilledWhileDisconnected = true` clause is unverifiable at this layer (no real persisted-record type exists yet); documented honestly rather than asserted vacuously. ADVISORY — AC-CGS-3's "single-tick priority" is proven as caller-discipline-enforced ordering (both directions tested symmetrically), not system-arbitrated — no per-tick dispatcher exists yet to arbitrate independently of call order; that arbitration is a future orchestration story's job.
+**Test Evidence**: Logic: `tests/EditMode/Networking/GhostSession_SnapshotWriteOrdering_tests.cs` (18 test cases)
+**Code Review**: Complete — `/code-review` (lean mode, unity-specialist + qa-tester parallel): APPROVED WITH SUGGESTIONS. unity-specialist: CLEAN — mechanically verified every claim including EC-CGS-2 idempotency, call orders against the actual GDD source, and crash-simulation soundness. qa-tester: GAPS — found the mechanical correctness didn't fully match the AC's semantic claims (a vacuous test assertion, a design-consistency gap in `HandleGhostDeathWhileReconnecting`'s parameter list, and an honest reframing of what the AC-CGS-3 tests can prove absent a real dispatcher). All 4 suggestions fixed: `HandleGhostDeathWhileReconnecting` now derives `characterId` structurally from the account record; the vacuous assertion was removed and honestly documented; a reverse-order symmetry test was added; cross-character isolation is now tested; TD-019 logged. Final test count: 18 (16 + 2 new).
+
+**Second story in the Ghost Session cluster (017-021) — the write-ordering guarantee Stories 019 and 021 will both build on.**

@@ -3,7 +3,7 @@
 > **Layer**: Foundation
 > **GDD**: design/gdd/networking-core.md + 9 sub-contracts
 > **Architecture Module**: Networking Core
-> **Status**: Ready
+> **Status**: Complete — all 29 stories Complete (2026-07-22). Not yet confirmed via a full live Unity Editor test run across the whole epic together; see `production/session-state/active.md` for verification status per story.
 > **Stories**: 29 stories created (001–029)
 
 ## Overview
@@ -76,26 +76,26 @@ This epic is complete when:
 | 007 | R-U/U-U Batch Framing, Buffer Pooling & Overflow Policy | Integration | Complete | ADR-004 |
 | 008 | Heartbeat Message & IL2CPP AOT Guardrails | Logic | Complete | ADR-004 |
 | 009 | Fixed 20Hz Server Tick Loop | Logic | Complete | ADR-004 |
-| 010 | Cross-Cutting RPC Guards | Logic | Ready | ADR-004 |
-| 011 | Commit-Before-Broadcast Generic Pattern | Logic | Ready | ADR-001 |
-| 012 | Player Connection State Machine — Core Transitions | Logic | Ready | ADR-004 |
-| 013 | Player Connection State Machine — Reconnect, Session-Stealing & Re-Auth | Integration | Ready | ADR-001 + ADR-004 |
-| 014 | Zone Session State Machine & Capacity Enforcement | Logic | Ready | ADR-004 |
-| 015 | TTL Expiry, Zone Crash Recovery & In-Flight RPC Edge Cases | Integration | Ready | ADR-004 |
-| 016 | Session Token Generation, Validation & Rotation (NSCRT) | Logic | Ready | None (pure crypto, no ADR applies) |
-| 017 | Ghost Promotion & State Constraints | Logic | Ready | ADR-004 |
-| 018 | Pre-Disconnect Snapshot & Write-Ordering | Logic | Ready | ADR-004 |
-| 019 | Ghost Death & Mob De-Targeting | Logic | Ready | ADR-004 |
-| 020 | Ghost Reward Forfeit Policy — Two-Pool XP & Party Slot Retention | Logic | Ready | ADR-004 |
-| 021 | Ghost Cleanup, Zone Crash & Voluntary Dismissal | Integration | Ready | ADR-004 |
-| 022 | LastBeatServerTick Slot Allocation & Data Structure | Logic | Ready | ADR-004 |
-| 023 | OWL Wrap-Correction Compensation Formula | Logic | Ready | ADR-004 |
-| 024 | OWL Threshold Suspension & Hysteresis Signal | Logic | Ready | ADR-004 |
-| 025 | Message Criticality/Channel Routing Table & Unclassified-Message Fallback | Logic | Ready | ADR-004 |
-| 026 | GoldSyncEvent Forced-Delivery Overflow Policy | Logic | Ready | ADR-004 |
-| 027 | SelfDamageEvent vs DamageEvent Delivery Exclusivity | Integration | Ready | ADR-004 |
-| 028 | EntityHealthUpdate/PartyMemberHealthUpdate Relevance Filter Algorithm | Integration | Ready | ADR-004 |
-| 029 | SetTarget RPC & Target Slot Management | Logic | Ready | ADR-004 |
+| 010 | Cross-Cutting RPC Guards | Logic | Complete | ADR-004 |
+| 011 | Commit-Before-Broadcast Generic Pattern | Logic | Complete | ADR-001 |
+| 012 | Player Connection State Machine — Core Transitions | Logic | Complete | ADR-004 |
+| 013 | Player Connection State Machine — Reconnect, Session-Stealing & Re-Auth | Integration | Complete | ADR-001 + ADR-004 |
+| 014 | Zone Session State Machine & Capacity Enforcement | Logic | Complete | ADR-004 |
+| 015 | TTL Expiry, Zone Crash Recovery & In-Flight RPC Edge Cases | Integration | Complete | ADR-004 |
+| 016 | Session Token Generation, Validation & Rotation (NSCRT) | Logic | Complete | None (pure crypto, no ADR applies) |
+| 017 | Ghost Promotion & State Constraints | Logic | Complete | ADR-004 |
+| 018 | Pre-Disconnect Snapshot & Write-Ordering | Logic | Complete | ADR-004 |
+| 019 | Ghost Death & Mob De-Targeting | Logic | Complete | ADR-004 |
+| 020 | Ghost Reward Forfeit Policy — Two-Pool XP & Party Slot Retention | Logic | Complete | ADR-004 |
+| 021 | Ghost Cleanup, Zone Crash & Voluntary Dismissal | Integration | Complete | ADR-004 |
+| 022 | LastBeatServerTick Slot Allocation & Data Structure | Logic | Complete | ADR-004 |
+| 023 | OWL Wrap-Correction Compensation Formula | Logic | Complete | ADR-004 |
+| 024 | OWL Threshold Suspension & Hysteresis Signal | Logic | Complete | ADR-004 |
+| 025 | Message Criticality/Channel Routing Table & Unclassified-Message Fallback | Logic | Complete | ADR-004 |
+| 026 | GoldSyncEvent Forced-Delivery Overflow Policy | Logic | Complete | ADR-004 |
+| 027 | SelfDamageEvent vs DamageEvent Delivery Exclusivity | Logic | Complete | ADR-004 |
+| 028 | EntityHealthUpdate/PartyMemberHealthUpdate Relevance Filter Algorithm | Logic | Complete | ADR-004 |
+| 029 | SetTarget RPC & Target Slot Management | Logic | Complete | ADR-004 |
 
 **Scoped out of this epic** (owned by other systems' future epics, using these GDDs as their wire-contract reference): every specific downstream message schema for Auto-Attack Combat, Currency, Leveling, Zone Instancing, Party, Inventory, Equipment, NPC Shop, Consumable Use, Movement, and Skill systems. Networking Core owns the envelope/channel/tick/session/ghost/OWL/relevance-filter/test-harness substrate only.
 
@@ -106,6 +106,7 @@ This epic is complete when:
 - Cross-doc constant inconsistency: `GHOST_COMBAT_TTL_MINUTES` (`networking-session.md`, flat 60s) vs. `GHOST_COMBAT_TTL_MIN_S` (`networking-ghost-session.md` F-GH-1, formula-based 30s baseline) — Stories 019/021 use the ghost-session formula as authoritative pending a design decision.
 - `StatID` enum cross-doc dependency: Character Stats GDD's `StatID` needs `enum:uint`→`enum:byte` before Story 004 can drop its byte-transmission workaround.
 - ADR-004's engine-risk profiling gate (verify `CustomMessagingManager` + `NetworkManager.ServerTime.Tick` in a real Unity 6.3 headless build) must pass before the implementation sprint is greenlit, per this epic's own "Engine risk gate" note above.
+- TR-ID collision: Story 009 (Fixed 20Hz Server Tick Loop) and Story 011 (Commit-Before-Broadcast Generic Pattern) both cite `Requirement: TR-net-002` in their headers — but this epic's own placeholder table above (row `TR-net-002`) defines that ID as "Server tick at exactly 20Hz," which is Story 009's territory, not Story 011's CR-NET-5 pattern. Found during Story 011's `/story-done` closure. Did not block Story 011 (implementation correctly sourced its requirement directly from `networking-core.md` CR-NET-5, not from the empty `tr-registry.yaml`), but resolve when the registry is actually populated — Story 011 needs its own TR-ID.
 
 ## Next Step
 

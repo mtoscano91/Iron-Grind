@@ -1,7 +1,7 @@
 # Story 024: OWL Threshold Suspension & Hysteresis Signal
 
 > **Epic**: Networking Core
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Logic
 > **Manifest Version**: 2026-06-28
@@ -75,3 +75,14 @@
 
 - Depends on: Story 023 (the formula this threshold gates)
 - Unlocks: None — completes the OWL Compensation cluster
+
+---
+
+## Completion Notes
+**Completed**: 2026-07-20
+**Criteria**: 1/1 passing (AC-NC-31-HYSTERESIS)
+**Deviations**:
+- ADVISORY: `TR-net-007` — systemic registry gap tracked since Story 001, shared as one umbrella requirement with Stories 022/023.
+- ADVISORY: Story 002's `NetworkingTestHarness_Observer_tests.cs` exhaustive-reset test wasn't extended to cover the new `OnConnectionQualityUpdateEmitted` callback — logged as **TD-025**.
+**Test Evidence**: Logic — `tests/EditMode/Networking/OwlCompensation_ThresholdHysteresis_tests.cs`, 12 tests, the single blocking AC covered.
+**Code Review**: Complete — unity-specialist (CLEAN) + qa-tester (TESTABLE, 4 named gaps). 2 Required Changes (entry-boundary mutation-testing hole, dedicated first-sample-crossing test) + 2 Suggestions (idempotency test, doc-comment parity with Story 023) all applied and independently verified. Final verdict: APPROVED. **This closes the OWL Compensation sub-cluster (022-024) — all 3 stories now Complete.**
