@@ -3,8 +3,8 @@
 > **Layer**: Foundation
 > **GDD**: design/gdd/character-stats.md
 > **Architecture Module**: Character Stats
-> **Status**: Ready
-> **Stories**: 8 stories created (001–007 Ready, 008 Blocked)
+> **Status**: Ready (7/8 stories Complete; Story 008 Blocked on Leveling System epic, not yet created)
+> **Stories**: 8 stories created (001–007 Complete, 008 Blocked)
 
 ## Overview
 
@@ -35,11 +35,11 @@ Character Stats is the authoritative data store for every numeric attribute that
 |---|-------|------|--------|-----|
 | 001 | [CharacterStats container — stat schema, IL2CPP-safe types, GetBaseStat/SetBaseStat](story-001-container-schema.md) | Logic | Complete | ADR-010 |
 | 002 | [F-1 modifier stack — GetEffectiveStat, intra-layer additive pct, StatMin/StatMax clamp](story-002-modifier-stack.md) | Logic | Complete | — |
-| 003 | [Modifier lifecycle — AddBuffModifier, AddEquipmentModifier, Remove, idempotency](story-003-modifier-lifecycle.md) | Logic | Ready | — |
-| 004 | [CurrentHP/MP lifecycle — ApplyDamage, ApplyRegen, ConsumeMana, death boundary](story-004-resource-pools.md) | Logic | Ready | — |
-| 005 | [OnStatChanged/OnEntityDied events — named delegates, fixed subscriber array, re-entrance guard](story-005-events.md) | Logic | Ready | ADR-010 |
-| 006 | [Write ownership — ILevelingService injection, mob guard, write-locked stat rejection](story-006-write-ownership.md) | Logic | Ready | ADR-010 |
-| 007 | [Transaction API — BeginStatTransaction/EndStatTransaction/RollbackStatTransaction](story-007-transaction-api.md) | Logic | Ready | — |
+| 003 | [Modifier lifecycle — AddBuffModifier, AddEquipmentModifier, Remove, idempotency](story-003-modifier-lifecycle.md) | Logic | Complete | — |
+| 004 | [CurrentHP/MP lifecycle — ApplyDamage, ApplyRegen, ConsumeMana, death boundary](story-004-resource-pools.md) | Logic | Complete | — |
+| 005 | [OnStatChanged/OnEntityDied events — named delegates, fixed subscriber array, re-entrance guard](story-005-events.md) | Logic | Complete | ADR-010 |
+| 006 | [Write ownership — ILevelingService injection, mob guard, write-locked stat rejection](story-006-write-ownership.md) | Logic | Complete | ADR-010 |
+| 007 | [Transaction API — BeginStatTransaction/EndStatTransaction/RollbackStatTransaction](story-007-transaction-api.md) | Logic | Complete | — |
 | 008 | [Integration — Leveling System ↔ Character Stats (spawn path, tier transitions, MaxMP ceiling)](story-008-integration-leveling.md) | Integration | Blocked | — |
 
 ## Definition of Done

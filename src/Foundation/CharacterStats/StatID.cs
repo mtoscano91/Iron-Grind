@@ -6,13 +6,15 @@ namespace IronGrind.CharacterStats
     /// The 256-value ceiling (0–255) is sufficient for all planned stats.
     /// </summary>
     /// <remarks>
-    /// <para>When adding a new <see cref="StatID"/> value, always append to the end to
-    /// preserve backward-compatible array indices in <see cref="CharacterStats"/>.</para>
+    /// <para>When adding a new <see cref="StatID"/> value, prefer appending to the end of its
+    /// schema block. <c>MagicDefense</c> (value 7) is inserted mid-block rather than appended —
+    /// see its own doc comment for why that was still safe (every array-size constant in this
+    /// file is computed from enum member references, never a hardcoded literal).</para>
     ///
-    /// <para><b>Int-schema stats</b> (Strength – Experience, values 0–11) are stored in the
+    /// <para><b>Int-schema stats</b> (Strength – Experience, values 0–12) are stored in the
     /// per-entity <c>int[]</c> array indexed by <c>(int)StatID</c>.</para>
     ///
-    /// <para><b>Float-schema stats</b> (CritChance – MovementSpeed, values 12–16) are stored
+    /// <para><b>Float-schema stats</b> (CritChance – MovementSpeed, values 13–17) are stored
     /// in a separate per-entity <c>float[]</c> via <c>FloatStatValues</c>. Their enum values
     /// must never be used as indices into the int array. Use
     /// <see cref="StatSchema.IsFloatStat"/> and <see cref="StatSchema.FloatStatIndex"/>.</para>
@@ -20,7 +22,8 @@ namespace IronGrind.CharacterStats
     /// <para>INVARIANT: <c>Experience</c> must remain the highest-valued
     /// <b>int-schema</b> StatID member. <c>MovementSpeed</c> must remain the highest-valued
     /// float-schema StatID member. Adding a new stat in either schema: append to the
-    /// corresponding block and update <see cref="StatSchema"/> constants accordingly.</para>
+    /// corresponding block (or insert carefully, per the <c>MagicDefense</c> precedent) and
+    /// update <see cref="StatSchema"/> constants accordingly.</para>
     /// </remarks>
     public enum StatID : byte
     {
@@ -54,6 +57,18 @@ namespace IronGrind.CharacterStats
         /// <summary>Incoming damage reduction. Derived from equipment and class, or written directly (mob).</summary>
         Defense      = 6,
 
+        /// <summary>
+        /// Elemental damage mitigation (fire/cold/lightning/poison share one value, F-7). Derived
+        /// from Intelligence (player) or written directly (mob). Added post-Character-Stats-Story-007
+        /// (Leveling System Story 002) — the GDD always required this stat (character-stats.md F-7,
+        /// range [0, 9999]) but it was never added to this enum. Inserted here, not appended at the
+        /// end, to keep the "Derived stats" grouping coherent; every array size in this file
+        /// (<c>StatArraySize</c>, <c>StatSchema.FloatStatArraySize</c>/<c>FloatStatStart</c>) is
+        /// computed from enum member references, not hardcoded literals, so this insertion safely
+        /// renumbers every member below it with no other code changes required.
+        /// </summary>
+        MagicDefense = 7,
+
         // -----------------------------------------------------------------------
         // Resource pools — valid for both player and mob entities.
         // Mobs have CurrentHP managed by ApplyDamage / ApplyRegen (Story 004).
@@ -61,13 +76,13 @@ namespace IronGrind.CharacterStats
         // -----------------------------------------------------------------------
 
         /// <summary>Current hit points. Written by ApplyDamage / ApplyRegen (Story 004). Valid for mobs.</summary>
-        CurrentHP    = 7,
+        CurrentHP    = 8,
 
         /// <summary>Maximum mana ceiling. Derived from Intelligence.</summary>
-        MaxMP        = 8,
+        MaxMP        = 9,
 
         /// <summary>Current mana. Written by ConsumeMana / ApplyManaRegen (Story 004).</summary>
-        CurrentMP    = 9,
+        CurrentMP    = 10,
 
         // -----------------------------------------------------------------------
         // Progression stats — player-only for Experience; Level valid for mobs.
@@ -76,16 +91,16 @@ namespace IronGrind.CharacterStats
         // -----------------------------------------------------------------------
 
         /// <summary>Character level (1–60). Written by the Leveling System. Valid for mobs (mob level scaling).</summary>
-        Level        = 10,
+        Level        = 11,
 
         /// <summary>Accumulated experience points. Written by AddExperience (Story 006).</summary>
-        Experience   = 11,
+        Experience   = 12,
 
         // -----------------------------------------------------------------------
         // Float-schema stats (Story 002+).
         // Stored in FloatStatValues, NOT in the int[] stat array.
         // Use StatSchema.IsFloatStat() / StatSchema.FloatStatIndex() to work with these.
-        // INVARIANT: Experience (= 11) must remain the highest int-schema value.
+        // INVARIANT: Experience (= 12) must remain the highest int-schema value.
         // INVARIANT: MovementSpeed must remain the highest float-schema value.
         // -----------------------------------------------------------------------
 
@@ -93,30 +108,30 @@ namespace IronGrind.CharacterStats
         /// Probability of landing a critical hit (0.0–0.75). Float-schema.
         /// StatMax = 0.75 (AC-03). Use GetEffectiveStatFloat / GetBaseStatFloat.
         /// </summary>
-        CritChance            = 12,
+        CritChance            = 13,
 
         /// <summary>
         /// Damage multiplier applied on a critical hit (1.0–3.0). Float-schema.
         /// Use GetEffectiveStatFloat / GetBaseStatFloat.
         /// </summary>
-        CritMultiplier        = 13,
+        CritMultiplier        = 14,
 
         /// <summary>
         /// Maximum attack reach in world units (0.5–20.0). Float-schema.
         /// Use GetEffectiveStatFloat / GetBaseStatFloat.
         /// </summary>
-        AttackRange           = 14,
+        AttackRange           = 15,
 
         /// <summary>
         /// Multiplier applied to base attack cadence (0.5–2.0). Float-schema.
         /// StatMin = 0.5, StatMax = 2.0 (AC-28a/b). Use GetEffectiveStatFloat / GetBaseStatFloat.
         /// </summary>
-        AttackSpeedMultiplier = 15,
+        AttackSpeedMultiplier = 16,
 
         /// <summary>
         /// Character movement speed in world units per second (0.5–20.0). Float-schema.
         /// Use GetEffectiveStatFloat / GetBaseStatFloat.
         /// </summary>
-        MovementSpeed         = 16,
+        MovementSpeed         = 17,
     }
 }

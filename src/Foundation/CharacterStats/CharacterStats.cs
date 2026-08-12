@@ -220,7 +220,11 @@ namespace IronGrind.CharacterStats
         /// <summary>
         /// Stores the base value of a float-schema stat exactly as written.
         /// Does NOT enforce StatMin or StatMax — the caller is responsible for clamping
-        /// before writing. No formula re-evaluation occurs.
+        /// before writing. No formula re-evaluation occurs. Fires
+        /// <see cref="OnStatChanged"/> for <paramref name="statId"/> — deferred and deduped
+        /// the same way as <see cref="SetBaseStat"/>/<see cref="SetCurrentHP"/>/
+        /// <see cref="SetCurrentMP"/> when a transaction is open (Leveling System Story 006
+        /// respec fix), firing immediately otherwise.
         /// </summary>
         public void SetBaseStatFloat(EntityID entityId, StatID statId, float value)
         {
@@ -233,7 +237,10 @@ namespace IronGrind.CharacterStats
             }
 
             arr[StatSchema.FloatStatIndex(statId)] = value;
-            FireOnStatChanged(entityId, statId);
+            if (_transactionOpen)
+                AddToDeferredDedup(entityId, statId);
+            else
+                FireOnStatChanged(entityId, statId);
         }
 
         // -----------------------------------------------------------------------
@@ -733,6 +740,63 @@ namespace IronGrind.CharacterStats
             if (mp < 0f) mp = 0f;
             if (mp > maxMp) mp = maxMp;
             _currentMp[entityId] = mp;
+        }
+
+        // -----------------------------------------------------------------------
+        // Leveling System Story 002: discrete full-state resource-pool overwrite.
+        // Unlike ApplyRegen/ApplyDamage (deltas), these are direct writes — used by
+        // CR-2.7's level-up HP/MP restore, which is a full-state reset, not a regen tick.
+        // -----------------------------------------------------------------------
+
+        /// <summary>
+        /// Forcibly overwrites CurrentHP to <paramref name="value"/>, clamped to
+        /// <c>[0, GetEffectiveStat(MaxHP)]</c> — the modifier-inclusive ceiling, matching
+        /// <see cref="ApplyDamage"/>/<see cref="ApplyRegen"/>'s existing clamp convention.
+        /// Fires <see cref="OnStatChanged"/> for <see cref="StatID.CurrentHP"/> — deferred and
+        /// deduped the same way as <see cref="SetBaseStat"/> when a transaction is open
+        /// (Leveling System Story 006 respec fix), firing immediately otherwise.
+        /// </summary>
+        /// <remarks>
+        /// Callers do not need to compute the correct ceiling themselves — pass the
+        /// freshly-written target value (or an intentionally large value to mean "fill to
+        /// max") and this method clamps against the true effective ceiling internally.
+        /// Added for the Leveling System's CR-2.7 level-up HP restore (Story 002): a
+        /// level-up is a discrete full-state reset, not a regen delta, so it fires an event
+        /// (unlike <see cref="ApplyRegen"/>) and does not accumulate against the prior value.
+        /// </remarks>
+        public void SetCurrentHP(EntityID entityId, float value)
+        {
+            if (IsFiringAndAssert("SetCurrentHP")) return;
+
+            float maxHp = GetEffectiveStat(entityId, StatID.MaxHP);
+            if (value < 0f) value = 0f;
+            if (value > maxHp) value = maxHp;
+            _currentHp[entityId] = value;
+            if (_transactionOpen)
+                AddToDeferredDedup(entityId, StatID.CurrentHP);
+            else
+                FireOnStatChanged(entityId, StatID.CurrentHP);
+        }
+
+        /// <summary>
+        /// Forcibly overwrites CurrentMP to <paramref name="value"/>, clamped to
+        /// <c>[0, GetEffectiveStat(MaxMP)]</c>. Fires <see cref="OnStatChanged"/> for
+        /// <see cref="StatID.CurrentMP"/>. Same discrete-overwrite contract as
+        /// <see cref="SetCurrentHP"/> — see its remarks, including transaction-aware
+        /// deferral/dedup when a transaction is open (Leveling System Story 006 respec fix).
+        /// </summary>
+        public void SetCurrentMP(EntityID entityId, float value)
+        {
+            if (IsFiringAndAssert("SetCurrentMP")) return;
+
+            float maxMp = GetEffectiveStat(entityId, StatID.MaxMP);
+            if (value < 0f) value = 0f;
+            if (value > maxMp) value = maxMp;
+            _currentMp[entityId] = value;
+            if (_transactionOpen)
+                AddToDeferredDedup(entityId, StatID.CurrentMP);
+            else
+                FireOnStatChanged(entityId, StatID.CurrentMP);
         }
 
         // -----------------------------------------------------------------------

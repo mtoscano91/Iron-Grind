@@ -7,7 +7,7 @@ namespace IronGrind.CharacterStats
     /// <remarks>
     /// <para><b>Int-schema stats</b> (Strength – Experience) are stored in the per-entity
     /// <c>int[]</c> array indexed by <c>(int)StatID</c>. The array size is
-    /// <c>(int)StatID.Experience + 1 = 12</c>.</para>
+    /// <c>(int)StatID.Experience + 1 = 13</c>.</para>
     ///
     /// <para><b>Float-schema stats</b> (CritChance – MovementSpeed) are stored in a
     /// separate per-entity <c>float[]</c> array of size <see cref="FloatStatArraySize"/>.
@@ -20,7 +20,7 @@ namespace IronGrind.CharacterStats
     /// </remarks>
     internal static class StatSchema
     {
-        // First float-schema StatID value (= 12).
+        // First float-schema StatID value (= 13).
         private const int FloatStatStart = (int)StatID.CritChance;
 
         /// <summary>
@@ -55,6 +55,7 @@ namespace IronGrind.CharacterStats
                 case StatID.AttackPower:           return 1f;
                 case StatID.MaxHP:                 return 1f;
                 case StatID.Defense:               return 0f;
+                case StatID.MagicDefense:          return 0f;
                 case StatID.MaxMP:                 return 0f;
                 case StatID.Level:                 return 1f;
                 case StatID.Experience:            return 0f;
@@ -84,6 +85,7 @@ namespace IronGrind.CharacterStats
                 case StatID.MaxHP:                 return 99999f;
                 case StatID.AttackPower:           return 99999f;
                 case StatID.Defense:               return 9999f;
+                case StatID.MagicDefense:          return 9999f;
                 case StatID.MaxMP:                 return 9999f;
                 case StatID.Level:                 return 60f;
                 case StatID.Experience:            return 999999f;
