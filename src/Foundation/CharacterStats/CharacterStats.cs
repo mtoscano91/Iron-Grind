@@ -974,12 +974,34 @@ namespace IronGrind.CharacterStats
         /// <summary>
         /// Awards <paramref name="amount"/> experience to the entity.
         /// Delegates level-up threshold detection to the injected ILevelingService (ADR-010 Tier 1).
-        /// No-op for mob entities or non-positive amounts.
+        /// No-op for mob entities or non-positive amounts. No-op at the level cap (CR-5.2, Story
+        /// 008): once <see cref="StatID.Level"/> == 60, any further XP is discarded outright — no
+        /// write to <see cref="StatID.Experience"/>, no <c>OnStatChanged</c>, no threshold check,
+        /// no <c>NotifyExperienceCrossedThreshold</c> call.
         /// </summary>
+        /// <remarks>
+        /// The at-cap guard is a flat <c>Level == 60</c> check, not an
+        /// <c>Experience == XpThreshold[60]</c> equality check. This is deliberate and still
+        /// correct for every post-cap kill (not just the exact-threshold case CR-5.2's prose
+        /// describes): the CR-2.2a clamp (Story 004) already pins <c>Experience</c> to exactly
+        /// <c>XpThreshold[60]</c> the instant <c>Level</c> reaches 60, and the CR-2.1 at-cap guard
+        /// (Story 002) guarantees <c>Level</c> never exceeds 60 — so once the guard below is true,
+        /// <c>Experience</c> is already sitting at the cap value and must never move again.
+        /// <para><b>Depends on OQ-1</b> (see the <c>// TODO: OQ-1</c> note on <see cref="SetBaseStat"/>):
+        /// this guarantee holds only because <see cref="StatID.Level"/> is, in practice, written
+        /// exclusively by <see cref="LevelingSystem.LevelingService"/>'s CR-2 sequence today. If
+        /// OQ-1 (caller-identity enforcement on the <c>Level</c> write) is ever resolved by adding
+        /// alternate writers, re-verify this guard's correctness against whatever new write paths
+        /// are introduced.</para>
+        /// </remarks>
         public void AddExperience(EntityID entityId, int amount)
         {
             if (!_levelingService.IsPlayerEntity(entityId)) return;
             if (amount <= 0) return;
+
+            // CR-5.2 (Story 008) — at-cap guard. See remarks above for why a flat Level==60 check
+            // is sufficient.
+            if (GetBaseStat(entityId, StatID.Level) == 60) return;
 
             int current = GetBaseStat(entityId, StatID.Experience);
             SetBaseStat(entityId, StatID.Experience, current + amount);

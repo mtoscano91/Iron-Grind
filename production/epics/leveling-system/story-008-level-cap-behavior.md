@@ -1,7 +1,7 @@
 # Story 008: Level Cap Behavior
 
 > **Epic**: Leveling System
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-06-28
@@ -29,10 +29,10 @@
 
 *From `design/gdd/leveling-system.md`, scoped to this story:*
 
-- [ ] **AC-LS-23** [BLOCKING]: `AddExperience` at `Experience == XpThreshold[60]` exactly → no write, no `OnStatChanged`, no `OnExperienceThresholdCrossed`, zero `SetBaseStat` calls.
-- [ ] **AC-LS-24** [BLOCKING]: CR-2.1 at-cap guard aborts the sequence when `Level == 60` — `SetBaseStat(Level, 61)` is never called; no auto-alloc, no recompute, no broadcast.
-- [ ] **AC-LS-25** [BLOCKING]: `XpThreshold[61] = int.MaxValue` sentinel prevents `IndexOutOfRangeException` in the CR-2.9 consecutive-level check at L60; array length ≥ 62.
-- [ ] **AC-LS-26** [BLOCKING]: `heldFreePoints` remains spendable at L60 — allocation proceeds normally, F-3–F-9 recompute uses ×2.0.
+- [x] **AC-LS-23** [BLOCKING]: `AddExperience` at `Experience == XpThreshold[60]` exactly → no write, no `OnStatChanged`, no `OnExperienceThresholdCrossed`, zero `SetBaseStat` calls.
+- [x] **AC-LS-24** [BLOCKING]: CR-2.1 at-cap guard aborts the sequence when `Level == 60` — `SetBaseStat(Level, 61)` is never called; no auto-alloc, no recompute, no broadcast.
+- [x] **AC-LS-25** [BLOCKING]: `XpThreshold[61] = int.MaxValue` sentinel prevents `IndexOutOfRangeException` in the CR-2.9 consecutive-level check at L60; array length ≥ 62.
+- [x] **AC-LS-26** [BLOCKING]: `heldFreePoints` remains spendable at L60 — allocation proceeds normally, F-3–F-9 recompute uses ×2.0.
 
 ---
 
@@ -73,7 +73,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/LevelingSystem/LevelingSystem_LevelCapBehavior_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — `tests/EditMode/LevelingSystem/LevelingSystem_LevelCapBehavior_tests.cs` (5 test functions: one per AC plus a below-cap regression test added from code review). Not yet executed against a live Unity Editor this session (none available) — every assertion hand-traced independently by the implementer, qa-tester, unity-specialist, and the coordinator, including the full 3-level-up-plus-spend arithmetic chain for AC-LS-26.
 
 ---
 
@@ -81,3 +81,14 @@
 
 - Depends on: Story 002 (CR-2.1 guard), Story 004 (L59→L60 transition, the entry point into the AtCap state), Story 005 (`AllocateFreePoint`, exercised at cap by AC-LS-26). **Does NOT depend on Story 010** (Blocked on OQ-LS-7) — AC-LS-25's sentinel/bounds-safety test uses a small test-local `XpThreshold` array (e.g. L1–5 plus the sentinel at index 61), not the real economy-signed-off table. This story is unblocked regardless of Story 010's status.
 - Unlocks: None
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-08-15
+**Criteria**: 4/4 passing.
+**Deviations**: ADVISORY — this story's own AC-LS-23 required genuinely new production code (`CharacterStats.AddExperience`, Character Stats epic, already-Complete Story 006) despite the story package's framing reading as though only dedicated tests were needed for already-implemented behavior. Confirmed via direct source reading before implementation: `AddExperience` had zero at-cap logic — a small, mechanical, spec-required guard (`if (GetBaseStat(Level) == 60) return;`) was added, matching CR-5.2's own text exactly. AC-LS-24 and AC-LS-26 were confirmed already correctly implemented (Stories 002 and 005 respectively) and needed only dedicated tests, as the story's Implementation Notes anticipated. AC-LS-25's sentinel contract was confirmed real but not reachable through any current production call path — tested directly against `GetExperienceThreshold` itself.
+**Test Evidence**: Logic: `tests/EditMode/LevelingSystem/LevelingSystem_LevelCapBehavior_tests.cs` (5 tests). Not run against a live Unity Editor this session (none available) — static/hand-trace verification only.
+**Code Review**: Complete — self-performed parallel review (unity-specialist + qa-tester, lean mode). Both returned CLEAN: 0 BLOCKING, 0 Required Changes. 2 actionable non-blocking suggestions, both applied (an OQ-1 cross-reference note on the new guard's doc comment, and a below-cap regression test proving the new guard's boundary directly rather than relying on incidental coverage from sibling stories).
+**New production**: `CharacterStats.AddExperience`'s CR-5.2 at-cap guard (4 lines + doc comment). `LevelingService.cs` was not modified — its existing CR-2.1 guard and `AllocateFreePoint`'s guard chain were already correct.
