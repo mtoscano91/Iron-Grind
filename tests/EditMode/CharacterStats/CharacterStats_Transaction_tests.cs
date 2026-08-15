@@ -14,7 +14,13 @@ namespace IronGrind.Tests.EditMode.CharacterStats
     ///   Gate: Non-nestable  BeginStatTransaction while open → InvalidOperationException.
     ///   Gate: End/no-Begin  EndStatTransaction with no open transaction → InvalidOperationException.
     ///   Gate: Rollback no-op  RollbackStatTransaction with no open transaction → no-op.
-    ///   NEW: Mid-transaction Rollback  Writes preserved; deferred events discarded; transaction closed.
+    ///   REVISED (Leveling System Story 007): Mid-transaction Rollback  Writes REVERTED to their
+    ///     pre-transaction values; deferred events discarded; transaction closed. Root-cause fix
+    ///     coordinated with Class System AC-CS-24 — see RollbackStatTransaction's doc comment.
+    ///   NEW (Story 007 revision): Same stat written twice in one transaction reverts to the
+    ///     TRUE pre-transaction value, not an intermediate write.
+    ///   NEW (Story 007 revision): Float-schema stat rollback reverts via FloatStatValues.
+    ///   NEW (Story 007 revision): CurrentHP/CurrentMP rollback reverts via their own dictionaries.
     ///   NEW: Mid-transaction read  GetBaseStat returns the written value immediately during a transaction.
     /// </summary>
     [TestFixture]
@@ -149,11 +155,14 @@ namespace IronGrind.Tests.EditMode.CharacterStats
         }
 
         // -----------------------------------------------------------------------
-        // NEW: Mid-transaction Rollback — writes preserved; deferred events discarded.
+        // REVISED (Leveling System Story 007): Mid-transaction Rollback — writes REVERTED to
+        // their pre-transaction values; deferred events discarded. Was previously
+        // "...PreservesWritesDiscardsEvents" — flipped per the Story 007 root-cause fix (see
+        // RollbackStatTransaction's doc comment and story-007-transaction-api.md's Revision Note).
         // -----------------------------------------------------------------------
 
         [Test]
-        public void CharacterStats_RollbackStatTransaction_MidTransaction_PreservesWritesDiscardsEvents()
+        public void CharacterStats_RollbackStatTransaction_MidTransaction_RevertsWritesDiscardsEvents()
         {
             // Arrange — set baseline VIT before opening the transaction
             EntityID entity = CharacterStatsFixture.PlayerEntityId;
@@ -166,9 +175,9 @@ namespace IronGrind.Tests.EditMode.CharacterStats
             _stats.SetBaseStat(entity, StatID.Vitality, 54);
             _stats.RollbackStatTransaction();
 
-            // Assert — write preserved
-            Assert.AreEqual(54, _stats.GetBaseStat(entity, StatID.Vitality),
-                "Rollback must preserve base stat writes — GetBaseStat(VIT) must be 54.");
+            // Assert — write reverted to its pre-transaction value
+            Assert.AreEqual(10, _stats.GetBaseStat(entity, StatID.Vitality),
+                "Rollback must revert base stat writes — GetBaseStat(VIT) must return to its pre-transaction value of 10.");
 
             // Assert — deferred event discarded
             Assert.IsFalse(_recorder.FiredCount.ContainsKey(StatID.Vitality),
@@ -177,6 +186,94 @@ namespace IronGrind.Tests.EditMode.CharacterStats
             // Assert — transaction is closed; EndStatTransaction now throws
             Assert.Throws<InvalidOperationException>(() => _stats.EndStatTransaction(),
                 "EndStatTransaction must throw after Rollback has already closed the transaction.");
+        }
+
+        // -----------------------------------------------------------------------
+        // NEW (Story 007 revision): Same stat written twice in one transaction reverts to the
+        // TRUE pre-transaction value, not the intermediate write — proves only the FIRST write
+        // per (EntityID, StatID) pair is snapshotted.
+        // -----------------------------------------------------------------------
+
+        [Test]
+        public void CharacterStats_RollbackStatTransaction_StatWrittenTwiceInTransaction_RevertsToTruePreTransactionValue()
+        {
+            // Arrange
+            EntityID entity = CharacterStatsFixture.PlayerEntityId;
+            _stats.SetBaseStat(entity, StatID.Vitality, 10);
+            _recorder.Subscribe(_stats);
+            _recorder.Reset();
+
+            // Act
+            _stats.BeginStatTransaction();
+            _stats.SetBaseStat(entity, StatID.Vitality, 40);
+            _stats.SetBaseStat(entity, StatID.Vitality, 54);
+            _stats.RollbackStatTransaction();
+
+            // Assert
+            Assert.AreEqual(10, _stats.GetBaseStat(entity, StatID.Vitality),
+                "Rollback must revert to the value BEFORE the transaction's first write (10), not the intermediate write (40).");
+            Assert.IsFalse(_recorder.FiredCount.ContainsKey(StatID.Vitality),
+                "Rollback must discard deferred events regardless of how many writes occurred.");
+        }
+
+        // -----------------------------------------------------------------------
+        // NEW (Story 007 revision): Float-schema stat rollback — restores via FloatStatValues,
+        // not the int[] array (a different backing store than SetBaseStat).
+        // -----------------------------------------------------------------------
+
+        [Test]
+        public void CharacterStats_RollbackStatTransaction_FloatSchemaStat_RevertsToPreTransactionValue()
+        {
+            // Arrange
+            EntityID entity = CharacterStatsFixture.PlayerEntityId;
+            _stats.SetBaseStatFloat(entity, StatID.CritChance, 0.10f);
+            _recorder.Subscribe(_stats);
+            _recorder.Reset();
+
+            // Act
+            _stats.BeginStatTransaction();
+            _stats.SetBaseStatFloat(entity, StatID.CritChance, 0.55f);
+            _stats.RollbackStatTransaction();
+
+            // Assert
+            Assert.AreEqual(0.10f, _stats.GetBaseStatFloat(entity, StatID.CritChance), 1e-6f,
+                "Rollback must revert a float-schema stat to its pre-transaction value (FloatStatValues backing store).");
+            Assert.IsFalse(_recorder.FiredCount.ContainsKey(StatID.CritChance),
+                "Rollback must discard the deferred event for the float-schema stat.");
+        }
+
+        // -----------------------------------------------------------------------
+        // NEW (Story 007 revision): CurrentHP/CurrentMP rollback — restores via the _currentHp/
+        // _currentMp dictionaries, the third and final backing store Rollback must handle.
+        // -----------------------------------------------------------------------
+
+        [Test]
+        public void CharacterStats_RollbackStatTransaction_CurrentHpAndCurrentMp_RevertToPreTransactionValues()
+        {
+            // Arrange
+            EntityID entity = CharacterStatsFixture.PlayerEntityId;
+            _stats.SetBaseStat(entity, StatID.MaxHP, 1000);
+            _stats.SetBaseStat(entity, StatID.MaxMP, 500);
+            _stats.SetCurrentHP(entity, 800f);
+            _stats.SetCurrentMP(entity, 300f);
+            _recorder.Subscribe(_stats);
+            _recorder.Reset();
+
+            // Act
+            _stats.BeginStatTransaction();
+            _stats.SetCurrentHP(entity, 250f);
+            _stats.SetCurrentMP(entity, 50f);
+            _stats.RollbackStatTransaction();
+
+            // Assert
+            Assert.AreEqual(800f, _stats.GetCurrentHP(entity),
+                "Rollback must revert CurrentHP to its pre-transaction value.");
+            Assert.AreEqual(300f, _stats.GetCurrentMP(entity),
+                "Rollback must revert CurrentMP to its pre-transaction value.");
+            Assert.IsFalse(_recorder.FiredCount.ContainsKey(StatID.CurrentHP),
+                "Rollback must discard the deferred event for CurrentHP.");
+            Assert.IsFalse(_recorder.FiredCount.ContainsKey(StatID.CurrentMP),
+                "Rollback must discard the deferred event for CurrentMP.");
         }
 
         // -----------------------------------------------------------------------

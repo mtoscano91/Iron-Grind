@@ -59,7 +59,7 @@ This epic is complete when:
 | 004 | [Tier Transition From-Scratch Recompute & Raw-Write Ceilings](story-004-tier-transition-recompute.md) | Logic | Complete | — |
 | 005 | [Free Point Allocation](story-005-free-point-allocation.md) | Logic | Complete | — |
 | 006 | [Respec Core Commit Sequence](story-006-respec-commit-sequence.md) | Logic | Complete | — |
-| 007 | [Respec Two-Phase Commit & Exception Safety](story-007-respec-two-phase-commit.md) | Integration | Ready (AC-LS-18b sub-case Blocked on OQ-LS-3) | — |
+| 007 | [Respec Two-Phase Commit & Exception Safety](story-007-respec-two-phase-commit.md) | Integration | Complete (AC-LS-18b sub-case remains Blocked on OQ-LS-3) | — |
 | 008 | [Level Cap Behavior](story-008-level-cap-behavior.md) | Logic | Ready | — |
 | 009 | [Spawn Initialization & Persistence Load](story-009-spawn-persistence-load.md) | Integration | Ready | — |
 | 010 | [XP Threshold Formula & Table](story-010-xp-threshold-formula-table.md) | Logic | Blocked (OQ-LS-7) | — |

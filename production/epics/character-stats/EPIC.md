@@ -42,6 +42,8 @@ Character Stats is the authoritative data store for every numeric attribute that
 | 007 | [Transaction API — BeginStatTransaction/EndStatTransaction/RollbackStatTransaction](story-007-transaction-api.md) | Logic | Complete | — |
 | 008 | [Integration — Leveling System ↔ Character Stats (spawn path, tier transitions, MaxMP ceiling)](story-008-integration-leveling.md) | Integration | Blocked | — |
 
+> **Note:** Story 007's `RollbackStatTransaction()` semantics were revised 2026-08-15 by Leveling System Story 007 (root-cause fix: real snapshot-and-restore, not a reopen) — see the Revision Note in `story-007-transaction-api.md`.
+
 ## Definition of Done
 
 This epic is complete when:

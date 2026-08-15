@@ -40,7 +40,7 @@
 - [ ] **[Gate] End with no open transaction** [BLOCKING]: `EndStatTransaction()` with no prior `Begin` → `InvalidOperationException`.
 - [ ] **[Gate] Rollback no-op** [BLOCKING]: `RollbackStatTransaction()` with no open transaction → no exception; no state change.
 - [ ] **[Gate] Deduplication** [BLOCKING]: `BeginStatTransaction()`, `SetBaseStat(VIT, 40)`, `SetBaseStat(VIT, 54)`, `EndStatTransaction()` → `firedCount[VIT]==1` (not 2); `GetBaseStat(VIT)` = 54 (last write wins).
-- [ ] **[NEW] Mid-transaction Rollback semantic** [BLOCKING]: `BeginStatTransaction()`, `SetBaseStat(VIT, 54)` (write immediate), `RollbackStatTransaction()` → `GetBaseStat(VIT)` = **54** (write preserved); `firedCount[VIT]==0` (deferred event discarded). Transaction closed: `EndStatTransaction()` → `InvalidOperationException`.
+- [ ] **[REVISED] Mid-transaction Rollback semantic** [BLOCKING]: `BeginStatTransaction()`, `SetBaseStat(VIT, 54)` (write immediate), `RollbackStatTransaction()` → `GetBaseStat(VIT)` = **10** (write REVERTED to its pre-transaction value — see Revision Note below); `firedCount[VIT]==0` (deferred event discarded). Transaction closed: `EndStatTransaction()` → `InvalidOperationException`. **Revised by Leveling System Story 007** (`production/epics/leveling-system/story-007-respec-two-phase-commit.md`).
 - [ ] **[NEW] GetBaseStat during open transaction** [ADVISORY]: `BeginStatTransaction()`, `SetBaseStat(VIT, 54)`, `GetBaseStat(VIT)` mid-transaction → **54** (write is immediate; only events are deferred, not reads).
 
 ---
@@ -53,9 +53,9 @@
 - `BeginStatTransaction()`: Set `_transactionOpen = true`. Initialize deferred dedup array (fixed-size `StatID[]`, 18 elements). `OnStatChanged` events are queued, not fired.
 - `SetBaseStat()` during a transaction: Apply the write immediately (base stat updated in-place). Add `StatID` to the deferred dedup array using linear scan (skip if already present). Do NOT fire `OnStatChanged`.
 - `EndStatTransaction()`: Fire `OnStatChanged` once per StatID in the dedup array. Clear dedup array. Set `_transactionOpen = false`.
-- `RollbackStatTransaction()`: Clear the deferred dedup array. Set `_transactionOpen = false`. Base stat writes are NOT reversed — Rollback discards pending events only. Safe to call with no open transaction (no-op in that case).
+- `RollbackStatTransaction()`: Reverts every base stat write made since the transaction began (snapshot-and-restore, captured on the FIRST write per (EntityID, StatID) pair — see Revision Note below), writing directly into the correct backing store. Clears the deferred dedup array and the snapshot array. Set `_transactionOpen = false`. Safe to call with no open transaction (no-op in that case).
 
-**Why writes are not reversed on Rollback:** Rollback is for exception recovery — the Leveling System or Status Effects system uses a `try/catch` where the `catch` block calls Rollback and either restarts or aborts the operation. The stat store reflects the partially-applied state, which is the caller's responsibility to handle.
+**Revision Note (Leveling System Story 007, 2026-08-15):** The original design above assumed the *caller* (Leveling System or Status Effects) would decide whether to retry or abandon a partially-applied write set, with `RollbackStatTransaction()` discarding only pending events and leaving base stat writes in place. In practice, two downstream GDDs' acceptance criteria required real value-level reversion on exception: Leveling System AC-LS-22/EC-LS-22/EC-LS-23 (respec exception mid-transaction — "all stats revert to pre-transaction values") and Class System AC-CS-24 (respec item integrity — "no stat changes persist" after Rollback). `RollbackStatTransaction()` now performs snapshot-and-restore: the pre-transaction value of each (EntityID, StatID) pair is captured on its FIRST write within the transaction (via `SetBaseStat`/`SetBaseStatFloat`/`SetCurrentHP`/`SetCurrentMP`) and restored via a direct backing-store write during Rollback — bypassing the public Set* methods so no event or dedup machinery re-opens. This is a root-cause fix at the Character Stats layer, not a Leveling-System-side workaround (see `production/epics/leveling-system/story-007-respec-two-phase-commit.md`). The `[NEW] Mid-transaction Rollback semantic` gate above was updated to assert reversion instead of preservation (now `[REVISED]`); the corresponding test in `tests/EditMode/CharacterStats/CharacterStats_Transaction_tests.cs` was flipped and renamed, and two new cases were added (float-schema stat rollback, CurrentHP/CurrentMP rollback) since three different backing stores are now involved.
 
 **Deduplication array:** Fixed-size `StatID[]` with 18 elements (one per stat in the schema). Linear scan on add: if `StatID` already present, skip. On `EndStatTransaction`, iterate and fire `OnStatChanged` for each non-empty slot. Zero heap allocation beyond the array itself (allocated once at construction or transaction open, reused per transaction).
 
@@ -112,13 +112,13 @@
   - Then: No exception. No state change.
   - Edge cases: Call Rollback multiple times consecutively → all no-ops.
 
-- **[NEW] Mid-transaction Rollback: writes preserved; deferred events discarded**
+- **[REVISED] Mid-transaction Rollback: writes REVERTED; deferred events discarded** (revised by Leveling System Story 007 — see Revision Note above)
   - Given: Entity with VIT=10; `StatEventRecorder`; subscribe `OnStatChanged` for VIT.
   - When: `BeginStatTransaction()`, `SetBaseStat(VIT, 54)`, `RollbackStatTransaction()`
-  - Then: `GetBaseStat(VIT)` = 54 (write preserved). `firedCount[VIT]==0` (deferred event discarded). Transaction closed.
+  - Then: `GetBaseStat(VIT)` = 10 (write REVERTED to its pre-transaction value). `firedCount[VIT]==0` (deferred event discarded). Transaction closed.
   - When: `EndStatTransaction()` after Rollback.
   - Then: `InvalidOperationException` (transaction is already closed).
-  - Edge cases: Rollback with multiple writes; all writes preserved; zero events fired.
+  - Edge cases: A stat written twice in one transaction still reverts to its TRUE pre-transaction value (not the intermediate write). Float-schema stats and CurrentHP/CurrentMP also revert (three different backing stores). Zero events fired in all cases.
 
 - **[NEW] GetBaseStat during open transaction returns updated value**
   - Given: Entity with VIT=10.
@@ -152,3 +152,5 @@
 - ADVISORY: Empty transaction (Begin → End with no writes) untested — harmless by inspection but unverified
 **Test Evidence**: Logic — `tests/EditMode/CharacterStats/CharacterStats_Transaction_tests.cs` (7 tests)
 **Code Review**: Approved with suggestions (lean mode; required change applied)
+
+**REVISED 2026-08-15 (Leveling System Story 007 — root-cause fix, not a reopen):** `RollbackStatTransaction()` semantics changed from "preserve writes, discard events" to real snapshot-and-restore, coordinated with Class System AC-CS-24. See the Revision Note in Implementation Notes above. `tests/EditMode/CharacterStats/CharacterStats_Transaction_tests.cs` now has 10 tests (1 renamed/flipped, 2 new: float-schema rollback, CurrentHP/CurrentMP rollback, 1 new: same-stat-written-twice reverts to true pre-transaction value). This story's Status remains Complete — this is a revision to already-shipped behavior, not a reopened story.

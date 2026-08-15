@@ -144,6 +144,21 @@ namespace IronGrind.CharacterStats
         private int  _deferredCount;
         private bool _transactionOpen;
 
+        // Revised by Leveling System Story 007 (root-cause fix, coordinated across the
+        // Leveling System and Class System GDDs — see RollbackStatTransaction's doc comment):
+        // snapshot of each (EntityID, StatID) pair's value immediately BEFORE its first write
+        // within the currently open transaction. A single float[] holds old values for all
+        // three backing stores (int-schema _statValues, float-schema FloatStatValues, and the
+        // CurrentHP/CurrentMP resource-pool dictionaries) — int values fit exactly in float at
+        // this scale. Classified by StatID at restore time to know which store and whether to
+        // cast back to int. Same capacity/dedup-by-linear-scan shape as the deferred-event
+        // arrays above; only the FIRST write per pair is snapshotted so a stat written twice in
+        // one transaction still rolls back to its true pre-transaction value.
+        private readonly StatID[]   _snapshotStatIds   = new StatID[TransactionDedupCapacity];
+        private readonly EntityID[] _snapshotEntityIds = new EntityID[TransactionDedupCapacity];
+        private readonly float[]    _snapshotOldValues = new float[TransactionDedupCapacity];
+        private int _snapshotCount;
+
         /// <summary>
         /// Initializes a new <see cref="CharacterStats"/> container.
         /// </summary>
@@ -192,6 +207,9 @@ namespace IronGrind.CharacterStats
                 _statValues[entityId] = statArray;
             }
 
+            if (_transactionOpen)
+                CaptureSnapshotBeforeWrite(entityId, statId, statArray[(int)statId]);
+
             // TODO: OQ-1 — enforce caller identity for Level write
             statArray[(int)statId] = value;
             if (_transactionOpen)
@@ -236,7 +254,11 @@ namespace IronGrind.CharacterStats
                 FloatStatValues[entityId] = arr;
             }
 
-            arr[StatSchema.FloatStatIndex(statId)] = value;
+            int floatIndex = StatSchema.FloatStatIndex(statId);
+            if (_transactionOpen)
+                CaptureSnapshotBeforeWrite(entityId, statId, arr[floatIndex]);
+
+            arr[floatIndex] = value;
             if (_transactionOpen)
                 AddToDeferredDedup(entityId, statId);
             else
@@ -771,6 +793,10 @@ namespace IronGrind.CharacterStats
             float maxHp = GetEffectiveStat(entityId, StatID.MaxHP);
             if (value < 0f) value = 0f;
             if (value > maxHp) value = maxHp;
+
+            if (_transactionOpen)
+                CaptureSnapshotBeforeWrite(entityId, StatID.CurrentHP, GetCurrentHP(entityId));
+
             _currentHp[entityId] = value;
             if (_transactionOpen)
                 AddToDeferredDedup(entityId, StatID.CurrentHP);
@@ -792,6 +818,10 @@ namespace IronGrind.CharacterStats
             float maxMp = GetEffectiveStat(entityId, StatID.MaxMP);
             if (value < 0f) value = 0f;
             if (value > maxMp) value = maxMp;
+
+            if (_transactionOpen)
+                CaptureSnapshotBeforeWrite(entityId, StatID.CurrentMP, GetCurrentMP(entityId));
+
             _currentMp[entityId] = value;
             if (_transactionOpen)
                 AddToDeferredDedup(entityId, StatID.CurrentMP);
@@ -992,6 +1022,9 @@ namespace IronGrind.CharacterStats
                     "[CharacterStats] EndStatTransaction: no transaction is open.");
             // Close first — if a handler throws, the transaction is not left stuck open.
             _transactionOpen = false;
+            // Clear the rollback snapshot too — a committed transaction has nothing to revert,
+            // and leftover entries here would corrupt the dedup scan for the NEXT transaction.
+            _snapshotCount = 0;
             int count = _deferredCount;
             _deferredCount = 0;
             for (int i = 0; i < count; i++)
@@ -999,16 +1032,72 @@ namespace IronGrind.CharacterStats
         }
 
         /// <summary>
-        /// Discards the deferred event queue without firing any <see cref="StatChangedHandler"/>
-        /// events. Base stat writes made during the transaction are <b>preserved</b> — only the
-        /// pending events are discarded. Safe to call when no transaction is open (no-op).
+        /// Reverts every base stat write made since the currently open transaction began, then
+        /// discards the deferred event queue without firing any <see cref="StatChangedHandler"/>
+        /// events. Safe to call when no transaction is open (no-op).
         /// </summary>
+        /// <remarks>
+        /// <para><b>Revised by Leveling System Story 007 (root-cause fix).</b> This method
+        /// previously discarded only the deferred event queue and left base stat writes in
+        /// place ("preserved"). Both the Leveling System (AC-LS-22 / EC-LS-22 / EC-LS-23 —
+        /// respec exception mid-transaction) and the Class System (AC-CS-24 — respec item
+        /// integrity) require real value-level rollback on exception, so this method now
+        /// performs snapshot-and-restore: the pre-transaction value of each touched
+        /// (EntityID, StatID) pair is captured on its FIRST write within the transaction (see
+        /// <see cref="CaptureSnapshotBeforeWrite"/>, called from <see cref="SetBaseStat"/>,
+        /// <see cref="SetBaseStatFloat"/>, <see cref="SetCurrentHP"/>, and
+        /// <see cref="SetCurrentMP"/>) and restored here via a direct backing-store write —
+        /// never through the public Set* methods, so no event or dedup machinery re-opens
+        /// during rollback. Restoration is silent: no <see cref="StatChangedHandler"/> fires,
+        /// matching the already-discarded deferred event queue.</para>
+        /// <para>Only the first write to a given (EntityID, StatID) pair within the transaction
+        /// is snapshotted — later writes to the same pair update the pending value but do not
+        /// disturb the stored snapshot, so a stat written multiple times in one transaction
+        /// still reverts to its true pre-transaction value, not an intermediate one.</para>
+        /// </remarks>
         public void RollbackStatTransaction()
         {
             if (IsFiringAndAssert("RollbackStatTransaction")) return;
             if (!_transactionOpen)
                 return;
-            _deferredCount = 0;
+
+            for (int i = 0; i < _snapshotCount; i++)
+            {
+                EntityID entityId = _snapshotEntityIds[i];
+                StatID   statId   = _snapshotStatIds[i];
+                float    oldValue = _snapshotOldValues[i];
+
+                // CurrentHP/CurrentMP are special-cased before the int-schema fallback (else)
+                // branch below. Their StatID values (8, 10) are already below FloatStatStart,
+                // so IsFloatStat would correctly return false for them regardless — the
+                // ordering that actually matters here is being checked before the plain
+                // int-schema fallback, since CurrentHP/CurrentMP are stored in their own
+                // dictionaries, never in _statValues or FloatStatValues.
+                if (statId == StatID.CurrentHP)
+                {
+                    _currentHp[entityId] = oldValue;
+                }
+                else if (statId == StatID.CurrentMP)
+                {
+                    _currentMp[entityId] = oldValue;
+                }
+                else if (StatSchema.IsFloatStat(statId))
+                {
+                    // The float[] is guaranteed to exist: SetBaseStatFloat always creates it
+                    // before capturing the snapshot that put this entry here.
+                    float[] arr = FloatStatValues[entityId];
+                    arr[StatSchema.FloatStatIndex(statId)] = oldValue;
+                }
+                else
+                {
+                    // The int[] is guaranteed to exist for the same reason (SetBaseStat).
+                    int[] statArray = _statValues[entityId];
+                    statArray[(int)statId] = (int)oldValue;
+                }
+            }
+
+            _snapshotCount  = 0;
+            _deferredCount  = 0;
             _transactionOpen = false;
         }
 
@@ -1026,6 +1115,50 @@ namespace IronGrind.CharacterStats
                 _deferredStatIds[_deferredCount]   = statId;
                 _deferredCount++;
             }
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            else
+            {
+                UnityEngine.Debug.LogError(
+                    $"[CharacterStats] AddToDeferredDedup: capacity ({TransactionDedupCapacity}) exceeded " +
+                    $"for entity {entityId} stat {statId} — OnStatChanged will not fire for this pair when " +
+                    "the transaction ends. Overflow is silently dropped in release builds (no release-build cost).");
+            }
+#endif
+        }
+
+        /// <summary>
+        /// Captures <paramref name="oldValue"/> for (<paramref name="entityId"/>,
+        /// <paramref name="statId"/>) the FIRST time it is written within the currently open
+        /// transaction — a no-op on any subsequent write to the same pair within the same
+        /// transaction (linear-scan dedup, mirroring <see cref="AddToDeferredDedup"/>'s shape).
+        /// Called only when <c>_transactionOpen</c> is true; callers pass the value read
+        /// directly from the correct backing store immediately before overwriting it.
+        /// </summary>
+        private void CaptureSnapshotBeforeWrite(EntityID entityId, StatID statId, float oldValue)
+        {
+            for (int i = 0; i < _snapshotCount; i++)
+            {
+                if (_snapshotEntityIds[i] == entityId && _snapshotStatIds[i] == statId)
+                    return;
+            }
+            // Overflow is silent in release — same capacity/shape as the deferred-event dedup array.
+            if (_snapshotCount < TransactionDedupCapacity)
+            {
+                _snapshotEntityIds[_snapshotCount] = entityId;
+                _snapshotStatIds[_snapshotCount]   = statId;
+                _snapshotOldValues[_snapshotCount] = oldValue;
+                _snapshotCount++;
+            }
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            else
+            {
+                UnityEngine.Debug.LogError(
+                    $"[CharacterStats] CaptureSnapshotBeforeWrite: capacity ({TransactionDedupCapacity}) " +
+                    $"exceeded for entity {entityId} stat {statId} — this write will NOT be reverted by " +
+                    "RollbackStatTransaction if the transaction is later rolled back. Overflow is silently " +
+                    "dropped in release builds (no release-build cost); this is a correctness risk in dev builds.");
+            }
+#endif
         }
     }
 }

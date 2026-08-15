@@ -629,30 +629,93 @@ namespace IronGrind.LevelingSystem
                         $"CR-4.3 floor {floor} at Level {level}.", nameof(newTotals));
             }
 
-            // CR-4.4 steps 2-6.
-            _stats.BeginStatTransaction();
-
-            for (int i = 0; i < AutoAllocOrder.Length; i++)
+            // CR-4.4 steps 2-6. Wrapped try/catch (Story 007): any exception here must leave no
+            // partial write behind and must never reach EndStatTransaction — see EC-LS-22/
+            // EC-LS-23/AC-LS-22 and the catch block below.
+            try
             {
-                var stat = AutoAllocOrder[i];
-                _stats.SetBaseStat(entityId, stat, newTotals[stat]);
+                _stats.BeginStatTransaction();
+
+                for (int i = 0; i < AutoAllocOrder.Length; i++)
+                {
+                    var stat = AutoAllocOrder[i];
+                    _stats.SetBaseStat(entityId, stat, newTotals[stat]);
+#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
+                    // AC-LS-22 test-only injection point — see field doc comment below. Never
+                    // set in production; this project has no naturally-throwing step in this
+                    // loop today, so this is this story's own seam for proving the exception
+                    // path, not a permanent production hook.
+                    TestOnly_ThrowDuringRespecStep2?.Invoke(entityId);
+#endif
+                }
+
+                // Level is invariant across this method (never written by TryApplyRespec) —
+                // reuse the value already read for the CR-4.3 floor check above rather than
+                // re-reading.
+                float tier = GetLevelTierMultiplier(level);
+                RecomputeDerivedStats(entityId, tier);
+#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
+                // EC-LS-23 test-only injection point — broadens AC-LS-22's step-2-only literal
+                // coverage to CR-4.4 step 3 (immediately after RecomputeDerivedStats, before the
+                // CurrentHP/CurrentMP reassertion). Same rationale/guard as
+                // TestOnly_ThrowDuringRespecStep2 above — never set in production.
+                TestOnly_ThrowAfterRecomputeDerivedStats?.Invoke(entityId);
+#endif
+
+                // Re-assert the CURRENT HP/MP value — SetCurrentHP/SetCurrentMP's own clamp
+                // does the real work if the recompute above just lowered MaxHP/MaxMP below it.
+                // Never raises the value.
+                _stats.SetCurrentHP(entityId, _stats.GetCurrentHP(entityId));
+                _stats.SetCurrentMP(entityId, _stats.GetCurrentMP(entityId));
+
+                // heldFreePoints intentionally untouched here — CR-4.2 / AC-LS-19.
+
+                _stats.EndStatTransaction();
             }
-
-            // Level is invariant across this method (never written by TryApplyRespec) — reuse
-            // the value already read for the CR-4.3 floor check above rather than re-reading.
-            float tier = GetLevelTierMultiplier(level);
-            RecomputeDerivedStats(entityId, tier);
-
-            // Re-assert the CURRENT HP/MP value — SetCurrentHP/SetCurrentMP's own clamp does
-            // the real work if the recompute above just lowered MaxHP/MaxMP below it. Never
-            // raises the value.
-            _stats.SetCurrentHP(entityId, _stats.GetCurrentHP(entityId));
-            _stats.SetCurrentMP(entityId, _stats.GetCurrentMP(entityId));
-
-            // heldFreePoints intentionally untouched here — CR-4.2 / AC-LS-19.
-
-            _stats.EndStatTransaction();
+            catch
+            {
+                // EC-LS-22 / EC-LS-23 / AC-LS-22 — unconditional rollback on any exception
+                // during CR-4.4 steps 2-6. Safe as a no-op if no transaction is open (Character
+                // Stats F-10) — do not re-guard this with an "is a transaction open" check.
+                // Now that Character Stats Story 007 was revised (see CharacterStats.
+                // RollbackStatTransaction's doc comment), this actually reverts every stat
+                // touched by the aborted transaction, not just the deferred event queue.
+                // EndStatTransaction() is never reached on this path. Re-thrown so the
+                // (test-double) Inventory-System-side caller can react — CR-4.1 two-phase
+                // commit: Release() on exception, Consume() on success.
+                _stats.RollbackStatTransaction();
+                throw;
+            }
         }
+
+#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
+        /// <summary>
+        /// Test-only injection point for AC-LS-22 exception-safety testing (Story 007). When
+        /// set, invoked once per <see cref="TryApplyRespec"/> call, immediately after each
+        /// CR-4.4 step 2 primary-attribute write — i.e. once per iteration of the write loop,
+        /// letting a test throw after N stats have been written (e.g. after the 2nd of 4, to
+        /// prove partial writes are rolled back and untouched stats were never disturbed).
+        /// Compiled out of release/Player builds (guarded by <c>UNITY_INCLUDE_TESTS</c> /
+        /// <c>DEVELOPMENT_BUILD</c>, matching this project's established fault-injection seam
+        /// pattern — see <c>TransportFaultInjector</c>/<c>ITransportFaultInjector</c> in the
+        /// Networking Core epic). Production code must never set this. Reset to
+        /// <see langword="null"/> between tests.
+        /// </summary>
+        internal Action<IronGrind.CharacterStats.EntityID> TestOnly_ThrowDuringRespecStep2;
+
+        /// <summary>
+        /// Test-only injection point for EC-LS-23 exception-safety testing (Story 007),
+        /// broadening <see cref="TestOnly_ThrowDuringRespecStep2"/>'s step-2-only coverage to
+        /// CR-4.4 step 3. When set, invoked once per <see cref="TryApplyRespec"/> call,
+        /// immediately after <c>RecomputeDerivedStats</c> has run (i.e. after MaxHP/MaxMP/
+        /// AttackPower/Defense/MagicDefense/CritChance/AttackSpeedMultiplier have already been
+        /// written to their new values) but before the CurrentHP/CurrentMP reassertion (step 4).
+        /// Same guard and "never set in production" rationale as
+        /// <see cref="TestOnly_ThrowDuringRespecStep2"/> — see its doc comment. Reset to
+        /// <see langword="null"/> between tests.
+        /// </summary>
+        internal Action<IronGrind.CharacterStats.EntityID> TestOnly_ThrowAfterRecomputeDerivedStats;
+#endif
 
         private static int GetAutoAllocIncrement(ClassDefinition def, IronGrind.CharacterStats.StatID stat)
         {
