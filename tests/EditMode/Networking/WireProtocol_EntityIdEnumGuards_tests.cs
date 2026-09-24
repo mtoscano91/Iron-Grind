@@ -282,32 +282,40 @@ namespace IronGrind.Tests.EditMode.Networking
             bool isValid = WireEnumCodec.TryValidateStatID(0xFF, SampleMessageTypeId, out StatID validated);
 
             // Assert — rejected, not substituted: caller must drop the message, apply no stat change.
-            Assert.IsFalse(isValid, "0xFF is outside StatID's declared range (0-16) and must be rejected, not substituted.");
+            Assert.IsFalse(isValid, "0xFF is outside StatID's declared range (0-17) and must be rejected, not substituted.");
         }
 
+        // The next two tests' boundary literals (17/18, not 16/17) reflect StatID's CURRENT max
+        // member, MovementSpeed=17 — shifted by +1 when MagicDefense was inserted mid-enum
+        // (Leveling System Story 002, Character Stats StatID.cs). WireEnumCodec.StatIdMaxValue
+        // itself is computed as (byte)StatID.MovementSpeed, not hardcoded, so the PRODUCTION guard
+        // tracked the shift automatically and was never broken — only these two tests' literal
+        // probe values were stale, first caught when this suite was actually run in a live Unity
+        // Editor for the first time this session.
+
         [Test]
-        public void TryValidateStatID_ValidMaxBoundaryByte16_ReturnsTrueWithMovementSpeed()
+        public void TryValidateStatID_ValidMaxBoundaryByte17_ReturnsTrueWithMovementSpeed()
         {
-            // Act — 16 (MovementSpeed) is the highest declared StatID member.
-            bool isValid = WireEnumCodec.TryValidateStatID(16, SampleMessageTypeId, out StatID validated);
+            // Act — 17 (MovementSpeed) is the highest declared StatID member.
+            bool isValid = WireEnumCodec.TryValidateStatID(17, SampleMessageTypeId, out StatID validated);
 
             // Assert
-            Assert.IsTrue(isValid, "16 (MovementSpeed) is the max valid StatID member and must be accepted.");
+            Assert.IsTrue(isValid, "17 (MovementSpeed) is the max valid StatID member and must be accepted.");
             Assert.AreEqual(StatID.MovementSpeed, validated);
             LogAssert.NoUnexpectedReceived();
         }
 
         [Test]
-        public void TryValidateStatID_AdjacentOutOfRangeByte17_ReturnsFalseAndLogsAnomaly()
+        public void TryValidateStatID_AdjacentOutOfRangeByte18_ReturnsFalseAndLogsAnomaly()
         {
-            // Arrange — one past the max declared value (16); proves the boundary check is exact.
-            LogAssert.Expect(LogType.Warning, new Regex(@"\[WireEnumCodec\] TryValidateStatID.*17"));
+            // Arrange — one past the max declared value (17); proves the boundary check is exact.
+            LogAssert.Expect(LogType.Warning, new Regex(@"\[WireEnumCodec\] TryValidateStatID.*18"));
 
             // Act
-            bool isValid = WireEnumCodec.TryValidateStatID(17, SampleMessageTypeId, out StatID validated);
+            bool isValid = WireEnumCodec.TryValidateStatID(18, SampleMessageTypeId, out StatID validated);
 
             // Assert
-            Assert.IsFalse(isValid, "17 is one past the max declared StatID value (16) and must be rejected.");
+            Assert.IsFalse(isValid, "18 is one past the max declared StatID value (17) and must be rejected.");
         }
 
         // -----------------------------------------------------------------------

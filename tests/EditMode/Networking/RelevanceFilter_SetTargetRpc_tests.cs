@@ -313,7 +313,11 @@ namespace IronGrind.Tests.EditMode.Networking
         {
             // The one field in the wire protocol where 0 is a legitimate value (deselect, RFR-3a) —
             // must NOT throw, unlike WireIdCodec.SerializeEntityId's zero-write guard.
-            Span<byte> buffer = new byte[SetTarget.WireSize];
+            // byte[] (not Span<byte>) — Span<T> is a ref struct and cannot be captured inside the
+            // Assert.DoesNotThrow lambda below; byte[] converts to Span<byte> implicitly at each
+            // call site without ever being captured itself (same fix already applied in
+            // WireProtocol_Envelope_Serialization_tests.cs).
+            byte[] buffer = new byte[SetTarget.WireSize];
 
             Assert.DoesNotThrow(() => SetTargetCodec.Write(buffer, sequenceNumber: 1u, tickNumber: 1u, senderEntityId: 501u, targetEntityId: 0u));
             Assert.IsTrue(SetTargetCodec.TryRead(buffer, out _, out uint targetEntityId));

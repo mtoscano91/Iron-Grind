@@ -154,6 +154,22 @@ namespace IronGrind.Networking
                            "once, in order, sent only to the attacker's own client (Story 027). Single-pillar R-OD — " +
                            "no MCR-3 conflict to resolve."));
 
+            Add(new MessageRoutingEntry(
+                messageTypeId: SetTarget.MessageTypeId,
+                messageName: nameof(SetTarget),
+                pillars: DesignPillar.Infrastructure,
+                channel: NetworkChannel.ReliableOrdered,
+                direction: MessageDirection.ClientToServer,
+                deliveryContext: MessageDeliveryContext.PriorityPath,
+                isMcr3Exception: false,
+                rationale: "Persistent server state change — updates the client's own EntityHealthUpdate " +
+                           "relevance set (RFR-3a, networking-relevance-filter.md, Story 029). A dropped SetTarget " +
+                           "leaves the target-slot EHU stale indefinitely; R-U channel drops are unacceptable for " +
+                           "this persistent state change (MCR-2/CCR-3, P1). Single-pillar R-OD — no MCR-3 conflict " +
+                           "to resolve. Row was missing from this registry despite being fully specified in both " +
+                           "GDDs since OQ-RFR-2's resolution — first caught by this file's own AC-MCR-04 test, " +
+                           "which had never actually been executed by the Unity Test Runner until this session."));
+
             return map;
         }
 

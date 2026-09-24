@@ -193,7 +193,11 @@ namespace IronGrind.Networking
         }
 
         // ---------------------------------------------------------------------------------------
-        // StatID — contiguous range 0..16, REJECT (not substitute) on out-of-range.
+        // StatID — contiguous range 0..17, REJECT (not substitute) on out-of-range. StatIdMaxValue
+        // below is computed from StatID.MovementSpeed, not a hardcoded literal, so this comment's
+        // upper bound tracks the enum automatically (it shifted from 16 to 17 when MagicDefense was
+        // inserted mid-enum, Leveling System Story 002) — update this comment's number if it ever
+        // shifts again, purely for a future reader's benefit, since the code itself doesn't need it.
         // ---------------------------------------------------------------------------------------
 
         /// <summary>
