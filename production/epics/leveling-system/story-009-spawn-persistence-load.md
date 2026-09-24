@@ -1,7 +1,7 @@
 # Story 009: Spawn Initialization & Persistence Load
 
 > **Epic**: Leveling System
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-06-28
@@ -29,11 +29,11 @@
 
 *From `design/gdd/leveling-system.md`, scoped to this story:*
 
-- [ ] **AC-LS-27** [BLOCKING]: `InitializeAtL1(entity, ClassType.Warrior)` → Level=1, all primary attributes=10, Experience=0, heldFreePoints=0, F-3–F-9 computed at ×1.0. Zero `OnLevelUp` and zero `OnExperienceThresholdCrossed` firings.
-- [ ] **AC-LS-28** [BLOCKING]: Load from persistence (`SetBaseStat` calls restoring a L35 Warrior) → zero `OnLevelUp`, zero `OnExperienceThresholdCrossed`, no F-3–F-9 recompute triggered.
-- [ ] **AC-LS-29** [BLOCKING]: `heldFreePoints` persistence round-trip is lossless — `GetLevelingState` (save) then `RestoreLevelingState` (load) preserves the exact value; not recoverable from `GetBaseStat` (no `StatID.heldFreePoints` exists).
-- [ ] **AC-LS-30** [BLOCKING]: Corrupted `heldFreePoints` on load — `500` (above L60 Warrior max of 59) clamps to `59`; `-5` clamps to `0`; error logged in each case.
-- [ ] **AC-LS-51** [BLOCKING]: Corrupted `Level` on load — `Level=0` clamps to `1`; `Level=70` clamps to `60`; error logged in each case; no `IndexOutOfRangeException`; `LevelTierMultiplier` and AtCap state derive correctly from the clamped value.
+- [x] **AC-LS-27** [BLOCKING]: `InitializeAtL1(entity, ClassType.Warrior)` → Level=1, all primary attributes=10, Experience=0, heldFreePoints=0, F-3–F-9 computed at ×1.0. Zero `OnLevelUp` and zero `OnExperienceThresholdCrossed` firings.
+- [x] **AC-LS-28** [BLOCKING]: Load from persistence (`SetBaseStat` calls restoring a L35 Warrior) → zero `OnLevelUp`, zero `OnExperienceThresholdCrossed`, no F-3–F-9 recompute triggered.
+- [x] **AC-LS-29** [BLOCKING]: `heldFreePoints` persistence round-trip is lossless — `GetLevelingState` (save) then `RestoreLevelingState` (load) preserves the exact value; not recoverable from `GetBaseStat` (no `StatID.heldFreePoints` exists).
+- [x] **AC-LS-30** [BLOCKING]: Corrupted `heldFreePoints` on load — `500` (above L60 Warrior max of 59) clamps to `59`; `-5` clamps to `0`; error logged in each case.
+- [x] **AC-LS-51** [BLOCKING]: Corrupted `Level` on load — `Level=0` clamps to `1`; `Level=70` clamps to `60`; error logged in each case; no `IndexOutOfRangeException`; `LevelTierMultiplier` and AtCap state derive correctly from the clamped value.
 
 ---
 
@@ -83,7 +83,7 @@
 **Story Type**: Integration
 **Required evidence**: `tests/EditMode/LevelingSystem/LevelingSystem_SpawnPersistenceLoad_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — `tests/EditMode/LevelingSystem/LevelingSystem_SpawnPersistenceLoad_tests.cs`, 11 tests. No live Unity Editor available this session — statically verified only (not executed by the Unity Test Runner).
 
 ---
 
@@ -91,3 +91,13 @@
 
 - Depends on: Story 002 (F-3–F-9 recompute at ×1.0, shared formula set), Character Stats Stories 001–007 (Complete)
 - Unlocks: All other stories implicitly rely on `InitializeAtL1` for their test fixtures' starting state
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-09-24
+**Criteria**: 5/5 passing
+**Deviations**: None. GDD-vs-reality note (not a deviation, an already-established fix applied consistently): CR-6.2 step 4's literal `SetBaseStat(CurrentHP, MaxHP)`/`SetBaseStat(CurrentMP, MaxMP)` text is implemented as `SetCurrentHP`/`SetCurrentMP` instead — `CurrentHP`/`CurrentMP` live in separate dictionaries, not the `SetBaseStat` int array, the same fix Story 002 already applied to `ExecuteLevelUpSequence`'s CR-2.7 block. Verified true by both code reviewers via direct `CharacterStats.cs` reading, not assumed.
+**Test Evidence**: Integration — `tests/EditMode/LevelingSystem/LevelingSystem_SpawnPersistenceLoad_tests.cs`, 11 tests (5 AC-mapped + 4 code-review-suggested boundary/fallback tests + 1 strengthened AC-LS-29 assertion). No live Unity Editor available this session — static verification only (hand-traced arithmetic, regex-vs-log-string checks), same disposition as every other story in this epic.
+**Code Review**: Complete — lean self-performed review (`unity-specialist` + `qa-tester`, parallel). Both APPROVED WITH SUGGESTIONS, 0 BLOCKING. unity-specialist's 1 Required Change (a doc-only precondition note on `RestoreLevelingState` about the classType cache needing re-registration before a persistence-load call in a fresh session) and all 4 of qa-tester's test-coverage suggestions were applied.

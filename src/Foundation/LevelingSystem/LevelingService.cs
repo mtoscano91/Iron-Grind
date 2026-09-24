@@ -13,18 +13,20 @@ namespace IronGrind.LevelingSystem
     /// </summary>
     /// <remarks>
     /// <para><b>Story 001 (XP Accumulation) + Story 002 (Level-Up Sequence Core) + Story 003
-    /// (Consecutive Level-Up &amp; Re-Entrancy Guards) + Story 005 (Free Point Allocation).</b>
+    /// (Consecutive Level-Up &amp; Re-Entrancy Guards) + Story 005 (Free Point Allocation) +
+    /// Story 009 (Spawn Initialization &amp; Persistence Load).</b>
     /// This class implements the three <see cref="IronGrind.CharacterStats.ILevelingService"/>
     /// methods plus the real CR-2.1–CR-2.7 level-up sequence (Story 002), the CR-2.9
     /// consecutive-level-up loop, the re-entrancy guard exposed via
     /// <see cref="IsLevelingUpInProgress"/>, the CR-2.10 <see cref="OnLevelUp"/> broadcast
-    /// (Story 003), and the real CR-3 <see cref="AllocateFreePoint"/> allocation semantics
+    /// (Story 003), the real CR-3 <see cref="AllocateFreePoint"/> allocation semantics
     /// (Story 005: <c>heldFreePoints==0</c> guard, invalid-stat guard, decrement, write, F-3–F-9
     /// derived-stat recompute via the same <c>RecomputeDerivedStats</c> helper
-    /// <see cref="ExecuteLevelUpSequence"/> uses — deliberately NOT the CR-2.7 HP/MP restore).
-    /// The full <c>heldFreePoints</c> grant/persistence machinery beyond the minimal counter is
-    /// still Story 009 — see the <see cref="GetHeldFreePoints"/> doc comment for the narrow
-    /// exception made for AC-LS-05.</para>
+    /// <see cref="ExecuteLevelUpSequence"/> uses — deliberately NOT the CR-2.7 HP/MP restore),
+    /// and the CR-6 spawn/load sequence (Story 009: <see cref="InitializeAtL1"/> for CR-6.1/
+    /// CR-6.2, <see cref="GetLevelingState"/>/<see cref="RestoreLevelingState"/> for CR-6.3's
+    /// <c>heldFreePoints</c> persistence round-trip and its EC-LS-38/EC-LS-36 tamper-defense
+    /// clamps).</para>
     /// <para><b>Placement note:</b> the Leveling System EPIC is marked "Layer: Core", but this
     /// class lives under <c>src/Foundation/</c> (single <c>IronGrind.Foundation.asmdef</c>),
     /// following the same precedent Networking Core established this session — no separate
@@ -36,8 +38,11 @@ namespace IronGrind.LevelingSystem
     /// caller-supplied test-local state idiom already established for not-yet-built subsystems
     /// (see <c>PartyDisbandCoordinator</c>, Networking Core Story 020).
     /// <see cref="RegisterPlayerClassType"/> extends the same idiom for the
-    /// per-entity <c>classType</c> CR-2.4 needs — the real cache point is Story 009's
-    /// <c>InitializeAtL1</c>, not yet implemented.</para>
+    /// per-entity <c>classType</c> CR-2.4 needs — <see cref="InitializeAtL1"/> (Story 009) is
+    /// the real cache point, reusing <see cref="RegisterPlayerClassType"/> rather than
+    /// duplicating the caching logic. <b>This cache is in-memory and per-instance</b> — see
+    /// <see cref="RestoreLevelingState"/>'s doc comment for the real caller-ordering contract
+    /// this implies for a future session-restart / persistence-load caller.</para>
     /// <para><b>Class data is a forward-dependency stand-in.</b> No Class System epic
     /// implementation exists yet (confirmed via full-repo grep). <see cref="IClassRegistry"/>/
     /// <see cref="ClassDefinition"/>/<see cref="ClassRegistry"/> (this namespace) are the
@@ -215,19 +220,96 @@ namespace IronGrind.LevelingSystem
             => _classTypes.TryGetValue(entityId, out byte classType) ? classType : (byte)0;
 
         /// <summary>
+        /// Implements CR-6.1 + CR-6.2 (spawn initialization, Story 009): brings a freshly
+        /// allocated <see cref="IronGrind.CharacterStats.CharacterStats"/> instance for
+        /// <paramref name="entityId"/> to a valid Level-1 starting state. NOT a level-up —
+        /// <see cref="OnLevelUp"/> is never fired and <see cref="NotifyExperienceCrossedThreshold"/>
+        /// is never called; every write here goes through <c>SetBaseStat</c>/<c>SetCurrentHP</c>/
+        /// <c>SetCurrentMP</c> directly, mirroring <see cref="ExecuteLevelUpSequence"/>'s own
+        /// writes without ever touching the threshold-crossed path.
+        /// </summary>
+        /// <remarks>
+        /// <para><b>Sequence (CR-6.2, fixed order):</b>
+        /// <list type="number">
+        /// <item>Cache <paramref name="classType"/> via <see cref="RegisterPlayerClassType"/> —
+        /// the canonical CR-6.1 caching path; reused unmodified, not duplicated here.</item>
+        /// <item><c>SetBaseStat(Level, 1)</c>.</item>
+        /// <item><c>SetBaseStat</c> STR=DEX=VIT=INT=10.</item>
+        /// <item><see cref="RecomputeDerivedStats"/> at a LITERAL tier of <c>1.0</c> (CR-6.2 step
+        /// 3 pins "&#215;1.0" explicitly rather than deriving it from
+        /// <see cref="GetLevelTierMultiplier"/> — the two are numerically equal at Level 1, but
+        /// the spec's wording is followed literally).</item>
+        /// <item><c>SetCurrentHP(entityId, MaxHP)</c>, <c>SetCurrentMP(entityId, MaxMP)</c> — the
+        /// same GDD-vs-reality fix Story 002 already applied to
+        /// <see cref="ExecuteLevelUpSequence"/>'s CR-2.7 block: the GDD's literal CR-6.2 step 4
+        /// text (<c>SetBaseStat(CurrentHP, MaxHP)</c>) is wrong — <c>CurrentHP</c>/<c>CurrentMP</c>
+        /// live in separate dictionaries, not the <c>SetBaseStat</c> int array.</item>
+        /// <item><c>heldFreePoints = 0</c> (direct field write, matching this field's existing
+        /// access pattern elsewhere in this class), <c>SetBaseStat(Experience, 0)</c>.</item>
+        /// </list>
+        /// </para>
+        /// <para><b>Transaction-safety.</b> Every primitive this method calls (<c>SetBaseStat</c>,
+        /// <c>SetBaseStatFloat</c> via <see cref="RecomputeDerivedStats"/>, <c>SetCurrentHP</c>/
+        /// <c>SetCurrentMP</c>) is already transaction-aware — this method is therefore naturally
+        /// safe to call inside a caller's own <c>BeginStatTransaction()</c>/<c>EndStatTransaction()</c>
+        /// pair. Opening that transaction is the Class System's responsibility (CR-6.2's
+        /// parenthetical, Class System SA-2), NOT this method's — no transaction handling is
+        /// added here.</para>
+        /// </remarks>
+        /// <param name="entityId">The freshly spawned entity to initialize.</param>
+        /// <param name="classType">
+        /// The entity's class, cached via <see cref="RegisterPlayerClassType"/> for all
+        /// subsequent auto-alloc reads (CR-6.1) — never re-queried at level-up.
+        /// </param>
+        /// <exception cref="InvalidOperationException">
+        /// <see cref="AttachCharacterStats"/> has not been called yet.
+        /// </exception>
+        public void InitializeAtL1(IronGrind.CharacterStats.EntityID entityId, byte classType)
+        {
+            if (_stats == null)
+                throw new InvalidOperationException(
+                    "[LevelingService] InitializeAtL1 called before AttachCharacterStats — startup wiring is incomplete.");
+
+            // CR-6.1 — cache classType via the canonical caching path; not duplicated here.
+            RegisterPlayerClassType(entityId, classType);
+
+            // CR-6.2 step 1.
+            _stats.SetBaseStat(entityId, IronGrind.CharacterStats.StatID.Level, 1);
+
+            // CR-6.2 step 2.
+            _stats.SetBaseStat(entityId, IronGrind.CharacterStats.StatID.Strength, 10);
+            _stats.SetBaseStat(entityId, IronGrind.CharacterStats.StatID.Dexterity, 10);
+            _stats.SetBaseStat(entityId, IronGrind.CharacterStats.StatID.Vitality, 10);
+            _stats.SetBaseStat(entityId, IronGrind.CharacterStats.StatID.Intelligence, 10);
+
+            // CR-6.2 step 3 — literal x1.0, not GetLevelTierMultiplier(1) (see remarks).
+            RecomputeDerivedStats(entityId, 1.0f);
+
+            // CR-6.2 step 4 — GDD-vs-reality fix (see remarks): SetCurrentHP/SetCurrentMP, not
+            // SetBaseStat(CurrentHP/CurrentMP, ...).
+            _stats.SetCurrentHP(entityId, _stats.GetBaseStat(entityId, IronGrind.CharacterStats.StatID.MaxHP));
+            _stats.SetCurrentMP(entityId, _stats.GetBaseStat(entityId, IronGrind.CharacterStats.StatID.MaxMP));
+
+            // CR-6.2 step 5.
+            _heldFreePoints[entityId] = 0;
+            _stats.SetBaseStat(entityId, IronGrind.CharacterStats.StatID.Experience, 0);
+        }
+
+        /// <summary>
         /// Returns the number of free (player-allocatable) stat points currently held for
         /// <paramref name="entityId"/>. Not stored in <c>CharacterStats</c> — owned entirely by
         /// the Leveling System (CR-3.1).
         /// </summary>
         /// <remarks>
-        /// <b>Scope note:</b> Full <c>heldFreePoints</c> ownership — the CR-2.8 grant/DB-atomicity
-        /// contract and persistence round-trip — is Story 009's scope. <c>AllocateFreePoint</c>'s
-        /// real CR-3 spend semantics (Story 005) decrement this same counter — see
-        /// <see cref="AllocateFreePoint"/>. This method itself has implemented the minimal
-        /// per-entity counter increment (<c>_heldFreePoints[entityId] += def.FreePointsPerLevel</c>
-        /// during CR-2.4) since Story 002 — needed to satisfy AC-LS-05/AC-LS-07's assertion that
-        /// it increments correctly per class (Warrior +1, Healer +2). No grant persistence, no
-        /// atomicity guarantee beyond the in-process counter.
+        /// <b>Scope note:</b> the CR-2.8 grant increment (<c>_heldFreePoints[entityId] +=
+        /// def.FreePointsPerLevel</c> during CR-2.4) has been implemented since Story 002 —
+        /// needed to satisfy AC-LS-05/AC-LS-07's assertion that it increments correctly per class
+        /// (Warrior +1, Healer +2). <c>AllocateFreePoint</c>'s real CR-3 spend semantics (Story
+        /// 005) decrement this same counter — see <see cref="AllocateFreePoint"/>. Full
+        /// <c>heldFreePoints</c> ownership — the CR-6.1/CR-6.2 spawn reset to 0 and the CR-6.3
+        /// persistence round-trip with its EC-LS-38/EC-LS-36 tamper-defense clamps — is Story
+        /// 009's scope: see <see cref="InitializeAtL1"/>, <see cref="GetLevelingState"/>, and
+        /// <see cref="RestoreLevelingState"/>.
         /// </remarks>
         public int GetHeldFreePoints(IronGrind.CharacterStats.EntityID entityId)
             => _heldFreePoints.TryGetValue(entityId, out int held) ? held : 0;
@@ -444,6 +526,135 @@ namespace IronGrind.LevelingSystem
             RecomputeDerivedStats(entityId, tier);
 
             return AllocateFreePointResult.Success;
+        }
+
+        /// <summary>
+        /// Serializes the Leveling-System-owned per-entity state that Character Persistence
+        /// cannot derive from <c>CharacterStats</c> alone (CR-6.3, Story 009) — currently just
+        /// <c>heldFreePoints</c>, which has no <c>StatID</c> and is not recoverable from
+        /// <see cref="IronGrind.CharacterStats.CharacterStats.GetBaseStat"/> (AC-LS-29). Pair with
+        /// <see cref="RestoreLevelingState"/> on load.
+        /// </summary>
+        public LevelingStateSnapshot GetLevelingState(IronGrind.CharacterStats.EntityID entityId)
+            => new LevelingStateSnapshot(GetHeldFreePoints(entityId));
+
+        /// <summary>
+        /// Implements CR-6.3's load path (Story 009): restores <paramref name="snapshot"/>'s
+        /// <c>heldFreePoints</c> for <paramref name="entityId"/>, after Character Persistence has
+        /// already restored all base stats via <c>SetBaseStat()</c> directly. Never calls
+        /// <see cref="NotifyExperienceCrossedThreshold"/> and never fires <see cref="OnLevelUp"/>
+        /// — load bypasses <c>AddExperience</c> entirely, the same discipline spawn uses.
+        /// </summary>
+        /// <remarks>
+        /// <para><b>Tamper defense (EC-LS-38, EC-LS-36, and the atomicity-recovery invariant note
+        /// immediately following EC-LS-36).</b> Required because this is a live MMORPG and save
+        /// data can be corrupted or tampered with. Step order below is load-bearing: the
+        /// <c>Level</c> clamp MUST run before the <c>heldFreePoints</c> clamp, because the
+        /// <c>heldFreePoints</c> maximum is computed FROM the already-clamped <c>Level</c> — this
+        /// is what makes the guard also catch the "partial-write crash recovery" case (Story
+        /// 003's CR-2.8 atomicity requirement): a crash between writing <c>Level</c> and writing
+        /// <c>heldFreePoints</c> can leave a pair where neither value individually exceeds its
+        /// own bound but the PAIR is inconsistent (e.g. <c>Level=5</c> but
+        /// <c>heldFreePoints=59</c>, a value only legal at Level 60). Re-deriving the max from
+        /// the clamped Level on every load catches this automatically, with no separate
+        /// detection logic needed. The inverse crash (<c>heldFreePoints</c> written, <c>Level</c>
+        /// not yet advanced) is accepted as a safe-fail undercount, not corrected further.</para>
+        /// <list type="number">
+        /// <item>Read <c>level = GetBaseStat(Level)</c>.</item>
+        /// <item>If outside <c>[1, 60]</c>: clamp to the nearest bound, log an error (EC-LS-38 /
+        /// AC-LS-51). Required because an unclamped <c>Level=70</c> would cause CR-2.9 to access
+        /// <c>XpThreshold[71]</c>, beyond the 62-entry array — <see cref="IndexOutOfRangeException"/>.</item>
+        /// <item>If clamping changed the value: write it back via <c>SetBaseStat</c>. This may
+        /// legitimately fire <c>OnStatChanged</c> outside a transaction — expected, and not
+        /// forbidden by any AC (only <c>OnLevelUp</c>/<c>OnExperienceThresholdCrossed</c> are
+        /// forbidden on this path).</item>
+        /// <item>Look up the entity's cached classType and its <see cref="ClassDefinition"/> —
+        /// unregistered defaults to a zero-valued struct (<c>FreePointsPerLevel == 0</c>), the
+        /// same fallback <see cref="ExecuteLevelUpSequence"/>/<see cref="TryApplyRespec"/> already
+        /// use.</item>
+        /// <item>Compute <c>maxHeld = (clampedLevel - 1) * def.FreePointsPerLevel</c>.</item>
+        /// <item>If <paramref name="snapshot"/>'s <c>HeldFreePoints</c> is outside
+        /// <c>[0, maxHeld]</c>: clamp, log an error (EC-LS-36 / AC-LS-30).</item>
+        /// <item>Write the (possibly clamped) value into the <c>heldFreePoints</c> store.</item>
+        /// </list>
+        /// <para>No transaction is opened here — unlike CR-6.2's spawn path, CR-6.3 does not
+        /// describe a <c>BeginStatTransaction</c>/<c>EndStatTransaction</c> pair for the load
+        /// path, so none is added.</para>
+        /// <para><b>Precondition (code review finding, Story 009): <see cref="RegisterPlayerClassType"/>
+        /// must already have been called for <paramref name="entityId"/> in this
+        /// <see cref="LevelingService"/> instance's lifetime before calling this method</b> — the
+        /// <c>heldFreePoints</c> clamp above reads the classType cache via <see cref="GetClassType"/>,
+        /// which silently defaults to <c>0</c> for an unregistered entity. On a real session restart
+        /// (e.g. a returning player logging back into a fresh server process, where this service's
+        /// in-memory classType cache starts empty), calling this method before the caller has
+        /// re-registered the entity's classType will resolve <c>def.FreePointsPerLevel</c> from
+        /// classType <c>0</c>'s registration (or the zero-valued fallback if unregistered), silently
+        /// clamping — and error-logging — the entity's legitimately-held free points down to
+        /// whatever that fallback allows, most commonly <c>0</c>. This is not a bug in this method;
+        /// it is a caller-ordering contract the not-yet-built Character Persistence load path must
+        /// honor: re-establish <see cref="RegisterPlayerClassType"/> (or call <see cref="InitializeAtL1"/>
+        /// where applicable) before <see cref="RestoreLevelingState"/> in every session.</para>
+        /// </remarks>
+        /// <param name="entityId">
+        /// The entity being restored from persistence. <see cref="RegisterPlayerClassType"/> must
+        /// already have been called for this entity in the current session — see the precondition
+        /// note above.
+        /// </param>
+        /// <param name="snapshot">The previously saved state, from <see cref="GetLevelingState"/>.</param>
+        /// <exception cref="InvalidOperationException">
+        /// <see cref="AttachCharacterStats"/> has not been called yet.
+        /// </exception>
+        public void RestoreLevelingState(IronGrind.CharacterStats.EntityID entityId, LevelingStateSnapshot snapshot)
+        {
+            if (_stats == null)
+                throw new InvalidOperationException(
+                    "[LevelingService] RestoreLevelingState called before AttachCharacterStats — startup wiring is incomplete.");
+
+            // EC-LS-38 / AC-LS-51 — Level clamp MUST happen first; the heldFreePoints max below
+            // is derived from the CLAMPED level (see method remarks for the partial-write crash
+            // recovery rationale this ordering satisfies).
+            int level = _stats.GetBaseStat(entityId, IronGrind.CharacterStats.StatID.Level);
+            int clampedLevel;
+            if (level < 1)
+            {
+                clampedLevel = 1;
+                Debug.LogError(
+                    $"[LevelingService] RestoreLevelingState: entity {entityId} restored Level={level}, below the valid [1,60] range — clamped to 1.");
+            }
+            else if (level > 60)
+            {
+                clampedLevel = 60;
+                Debug.LogError(
+                    $"[LevelingService] RestoreLevelingState: entity {entityId} restored Level={level}, above the valid [1,60] range — clamped to 60.");
+            }
+            else
+            {
+                clampedLevel = level;
+            }
+
+            if (clampedLevel != level)
+                _stats.SetBaseStat(entityId, IronGrind.CharacterStats.StatID.Level, clampedLevel);
+
+            // EC-LS-36 / AC-LS-30 — heldFreePoints clamp, using the ALREADY-CLAMPED level.
+            byte classType = GetClassType(entityId);
+            _classRegistry.TryGetClass(classType, out ClassDefinition def); // unregistered -> FreePointsPerLevel=0, same fallback as ExecuteLevelUpSequence/TryApplyRespec.
+            int maxHeld = (clampedLevel - 1) * def.FreePointsPerLevel;
+
+            int heldFreePoints = snapshot.HeldFreePoints;
+            if (heldFreePoints < 0)
+            {
+                Debug.LogError(
+                    $"[LevelingService] RestoreLevelingState: entity {entityId} restored heldFreePoints={heldFreePoints}, below 0 — clamped to 0.");
+                heldFreePoints = 0;
+            }
+            else if (heldFreePoints > maxHeld)
+            {
+                Debug.LogError(
+                    $"[LevelingService] RestoreLevelingState: entity {entityId} restored heldFreePoints={heldFreePoints}, exceeding the Level {clampedLevel} maximum of {maxHeld} — clamped to {maxHeld}.");
+                heldFreePoints = maxHeld;
+            }
+
+            _heldFreePoints[entityId] = heldFreePoints;
         }
 
         /// <summary>
@@ -729,8 +940,25 @@ namespace IronGrind.LevelingSystem
             }
         }
 
-        // CR-2.3: L1-19 x1.0, L20-39 x1.2, L40-59 x1.5, L60 x2.0 — based on the NEW level.
-        private static float GetLevelTierMultiplier(int level)
+        /// <summary>
+        /// CR-2.3 tier lookup: L1–19 → ×1.0, L20–39 → ×1.2, L40–59 → ×1.5, L60 → ×2.0, based on
+        /// the NEW level. Pure and stateless — every call reads only <paramref name="level"/> and
+        /// returns immediately; there is no field this value could be cached in, satisfying
+        /// AC-LS-16/AC-LS-34's "never a stored/cached multiplier" requirement structurally, not
+        /// just by convention.
+        /// </summary>
+        /// <remarks>
+        /// <c>internal</c> rather than <c>private</c> (Story 011 test-observability seam,
+        /// mirroring the <see cref="IsLevelingUpInProgress"/>/<c>TestOnly_...</c> idiom elsewhere
+        /// in this class) — lets
+        /// <c>LevelingSystem_TierAutoAllocFormulaVerification_tests.cs</c> (AC-LS-34) verify this
+        /// lookup table's boundary values directly, in isolation from any level-up sequence,
+        /// without adding any new public API surface. Unlike the <c>TestOnly_...</c> fields, this
+        /// method is a permanently-present, unguarded (no <c>#if</c>) seam — acceptable because it
+        /// is side-effect-free and stateless, so there is nothing for other code in this assembly
+        /// to misuse even in a release build. Logic unchanged by the visibility widening.
+        /// </remarks>
+        internal static float GetLevelTierMultiplier(int level)
         {
             if (level >= 60) return 2.0f;
             if (level >= 40) return 1.5f;

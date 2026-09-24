@@ -61,10 +61,10 @@ This epic is complete when:
 | 006 | [Respec Core Commit Sequence](story-006-respec-commit-sequence.md) | Logic | Complete | — |
 | 007 | [Respec Two-Phase Commit & Exception Safety](story-007-respec-two-phase-commit.md) | Integration | Complete (AC-LS-18b sub-case remains Blocked on OQ-LS-3) | — |
 | 008 | [Level Cap Behavior](story-008-level-cap-behavior.md) | Logic | Complete | — |
-| 009 | [Spawn Initialization & Persistence Load](story-009-spawn-persistence-load.md) | Integration | Ready | — |
+| 009 | [Spawn Initialization & Persistence Load](story-009-spawn-persistence-load.md) | Integration | Complete | — |
 | 010 | [XP Threshold Formula & Table](story-010-xp-threshold-formula-table.md) | Logic | Blocked (OQ-LS-7) | — |
-| 011 | [Tier Multiplier & Auto-Alloc Formula Verification](story-011-tier-autoalloc-formula-verification.md) | Logic | Ready | — |
-| 012 | [Party XP Detriment Integration](story-012-party-xp-detriment-integration.md) | Integration | Ready | — |
+| 011 | [Tier Multiplier & Auto-Alloc Formula Verification](story-011-tier-autoalloc-formula-verification.md) | Logic | Complete | — |
+| 012 | [Party XP Detriment Integration](story-012-party-xp-detriment-integration.md) | Integration | Complete | — |
 | 013 | [HUD/UI Display & Manual Verification](story-013-hud-ui-display.md) | Visual/Feel | Ready | — |
 
 ## Next Step
