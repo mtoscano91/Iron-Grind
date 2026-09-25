@@ -31,7 +31,7 @@ The fantasy is not surprise. It is **confirmation**. You knew this was coming. Y
 
 #### CR-1 — XP Accumulation Flow
 
-**CR-1.1** Damage Calculation calls `AddExperience(EntityID, amount)` on the killing player entity when a mob's `CurrentHP` reaches 0.0. This is the sole XP faucet at MVP.
+**CR-1.1** On a kill (`DamageResult.IsKill = true`), the killer's controller — Auto-Attack Combat or Skill System, never Damage Calculation itself (see `damage-calculation.md`'s Option B decision) — calls `LevelingSystem.GetXPAward(TargetID): int` to determine the XP amount, then calls `AddExperience(killerEntityID, amount)` on the killing player entity. This is the sole XP faucet at MVP. *(Corrected 2026-09-24, OQ-LS-7 resolution — this rule previously said "Damage Calculation calls AddExperience," which contradicted `damage-calculation.md`'s already-Approved Option B text. See OQ-LS-7 below for `GetXPAward`'s full specification.)*
 
 **CR-1.2** `AddExperience()` is owned by Character Stats. It adds `amount` to `StatID.Experience`, fires `OnStatChanged(EntityID, StatID.Experience)`, then calls `ILevelingSystemListener.OnExperienceThresholdCrossed(EntityID)` synchronously if the new total meets or exceeds the threshold for `Level + 1`. The Leveling System is the sole registered listener; only one system may register. Calling `RegisterListener()` when a listener is already registered throws `InvalidOperationException` in dev builds; logs an error and no-ops in release builds.
 
@@ -220,7 +220,7 @@ XP(L) = Mathf.RoundToInt(C × L^α × R^L)
 |-------|-------------|---------------|----------------|
 | L1 | 200 | 200 | < 1 min |
 | L10 | 2,452 | ~13,100 | ~11 min |
-| L20 | 12,172 | ~74,900 | ~62 min |
+| L20 | 11,961 | ~77,800 | ~62 min |
 | L30 | 50,751 | ~315,000 | ~4.4 h |
 | L40 | 194,534 | ~1,230,000 | ~17 h |
 | L50 | 711,610 | ~4,680,000 | ~65 h |
@@ -228,10 +228,14 @@ XP(L) = Mathf.RoundToInt(C × L^α × R^L)
 
 *Kill time assumes ~200 XP/min sustained combat (L1 mob rate baseline). This produces a **floor estimate** — the 205h total assumes grinding at L1 mob rates throughout, which no player would do. Tier-appropriate mobs award proportionally more XP, compressing the L40-59 bracket below the 185h floor figure above. Final per-tier pacing must be validated against mob XP award data from the zone-XP GDD before content investment is sized against these figures.*
 
+*Correction (2026-09-25): the L20 row's Per-Level XP (was `12,172`) and Cumulative XP (was `~74,900`) were stale hand-arithmetic figures left over from the 2026-09-24 correction pass — they were inconsistent with this same document's own corrected F-LS-1 worked example (`XP(20)=11,961`) directly below. Corrected here to match. The other rows (L1, L10, L30, L40, L50, L59) have not been independently re-verified and may carry the same class of imprecision — see TD-038, which already tracks a full economy-designer re-validation of this table.*
+
 **Example calculation (L20):**
 `XP(20) = Mathf.RoundToInt(178.6 × 20^0.648 × 1.1198^20)`
-`= Mathf.RoundToInt(178.6 × 7.246 × 9.410)`
-`= Mathf.RoundToInt(12,173)` → **12,173**
+`= Mathf.RoundToInt(178.6 × 6.967 × 9.612)`
+`= Mathf.RoundToInt(11,961)` → **11,961**
+
+*(Corrected 2026-09-24, Story 010 implementation: this example previously stated `20^0.648 = 7.246` and `1.1198^20 = 9.410`, giving `XP(20) = 12,173` — independently re-verified via two methods (direct exponentiation and the `exp(ln(x)×n)` identity) that the correct double-precision values are `6.967` and `9.612`, giving `11,961`. Hand-arithmetic slip in the original illustrative example, not a change to `C`/`α`/`R` — same class of error as TD-033.)*
 
 ---
 
@@ -475,8 +479,10 @@ Trigger: CR-2.9 at L60 accesses `XpThreshold[currentLevel + 1]` = `XpThreshold[6
 Behavior: Index 61 is a valid authored entry (`int.MaxValue`) — not an out-of-bounds access. The array must be declared with at least 62 entries (indices 0–61). The sentinel prevents the consecutive level-up loop from requiring a bounds-check branch at cap.
 
 **EC-LS-35 — F-LS-1 intermediate float precision**
-Trigger: Computing `178.6 × 59^0.648 × 1.1198^59`. Intermediate: `1.1198^59 ≈ 800` (ln(1.1198) ≈ 0.1131; 0.1131 × 59 ≈ 6.673; e^6.673 ≈ 800). Product ≈ 178.6 × 14.03 × 800 ≈ 2,004,600. (The F-LS-1 table uses "~2,000,000" as a rounded design target; the exact formula output is closer to ~2,004,600 when the intermediate approximations 14.03 and 800 are used — within float rounding tolerance and not gameplay-significant.)
-Behavior: Within `float`'s 7 significant digits. `Mathf.RoundToInt` converts to nearest int — no silent truncation from `(int)` cast. No overflow risk. Cumulative XP to L60 ≈ 14,800,000 — fits in `int`. Sentinel `int.MaxValue` is separately authored, not computed from F-LS-1.
+Trigger: Computing `178.6 × 59^0.648 × 1.1198^59`.
+Behavior: Within `float`'s 7 significant digits. `Mathf.RoundToInt` converts to nearest int — no silent truncation from `(int)` cast. No overflow risk. Sentinel `int.MaxValue` is separately authored, not computed from F-LS-1.
+
+*(Corrected 2026-09-24, Story 010 implementation: the illustrative intermediate values previously stated here (`1.1198^59 ≈ 800`, product `≈ 2,004,600`, cumulative-to-L60 `≈ 14,800,000`) were hand-arithmetic approximations, not independently verified. Precise double-precision computation (verified via `Math.pow`, confirmed via the `exp(ln(x)×n)` identity) gives: `59^0.648 = 14.045`, `1.1198^59 = 793.03`, `XP(59) = 1,989,211`; cumulative `XpThreshold[60] = 16,769,995` — about 13% above the prior illustrative estimate. Both are well within `int` range (no overflow risk either way); this correction affects only the documented illustrative numbers, not the formula, constants, or overflow-safety conclusion. Flagged as TD-038 for economy-designer attention, since the "~205h cap-time anchor" narrative estimate elsewhere in this document was built against the lower, imprecise total.)*
 
 **EC-LS-38 — Corrupted Level value on load: clamped to [1, 60]**
 Trigger: Character Persistence restores `GetBaseStat(Level)` with a value outside `[1, 60]` — e.g., `Level = 0` or `Level = 70` — due to save corruption or tamper.
@@ -523,8 +529,8 @@ Behavior: The level-up sequence does not use `BeginStatTransaction()`. Each `Set
 
 | Dependency | Owner | Gate |
 |---|---|---|
-| Economy-designer sign-off on full `XpThreshold` cumulative table (AC-LS-31) | Economy Designer | Must be obtained before sprint start — not an in-sprint deliverable. Requires XP faucet rate curve from `GetXPAward` (OQ-LS-7) to validate the 205h cap-time anchor and tier pacing. |
-| `GetXPAward(EntityID)` specification (OQ-LS-7) | Mob Definition / Economy System GDD author | Blocking AC-LS-31 sign-off and Damage Calculation implementation. |
+| Economy-designer sign-off on full `XpThreshold` cumulative table (AC-LS-31) | Economy Designer | Must be obtained before sprint start — not an in-sprint deliverable. `GetXPAward` (OQ-LS-7) is now resolved (2026-09-24) — economy-designer can validate the 205h cap-time anchor and tier pacing against real `MobDefinition.KillXP` ranges once Enemy AI's mob roster is authored. |
+| ~~`GetXPAward(EntityID)` specification (OQ-LS-7)~~ | — | **RESOLVED 2026-09-24** — see OQ-LS-7 in Open Questions. `GetXPAward` reads `MobDefinition.KillXP`/`EnragedKillXP` (already-Approved `enemy-ai.md` schema) via `IMobDefinitionRegistry`; no new sub-GDD needed. |
 | Network Architecture ADR | Network Programmer | Must cover: level-up packet protocol, client-side state machine for atomic stat+level application, `AllocateFreePoint` per-entity serialization, and respec stat replication approach. |
 | `networking-core.md` Approved status | Network Programmer | **Blocking implementation sprint gate.** The Leveling System's network integration (CR-2.10 atomicity contract, respec Phase 1/2 protocol, `AllocateFreePoint` rate-limiting) cannot be implemented until `networking-core.md` reaches Approved. This GDD may be approved before `networking-core.md` is; the implementation sprint's network integration work is gated on `networking-core.md` approval. |
 | Technical Director sign-off on server-authoritative combat gate (CR-4.6) | Technical Director | Security policy decision — required before respec implementation sprint. |
@@ -843,7 +849,8 @@ Type: Unit | Blocks: Implementation
 **AC-LS-31** — F-LS-1: spot-check XpThreshold cumulative values
 Given: `XpThreshold` array fully populated as a cumulative baseline (see F-LS-1 XpThreshold array note).
 When: Queried at key indices.
-Then: `XpThreshold[1] = 0` (start of L1, no XP accumulated). `XpThreshold[2] = 200` (XP to reach L2). `XpThreshold[20]` ≈ 62,728 (formula-derived: XpThreshold[21] ≈ 74,900 minus XP(20) ≈ 12,172 — **exact pre-computed int constant must be verified at implementation against a double-precision reference table**). `XpThreshold[61] = int.MaxValue` (sentinel). No value in `[1, 60]` exceeds `int.MaxValue`. **Sprint gate: Economy-designer co-sign required** on the full cumulative derivation table before sprint commitment. The exact XpThreshold integer constants must be pre-computed in double precision and stored as a reference table, with the runtime float formula output verified against that table at build time. The sign-off requires OQ-LS-7 (`GetXPAward` spec) to be resolved first, so the 205h cap-time anchor can be validated against realistic mob XP rates and a per-tier hours estimate produced and co-signed.
+Then: `XpThreshold[1] = 0` (start of L1, no XP accumulated). `XpThreshold[2] = 200` (XP to reach L2). `XpThreshold[20] = 65,824` (formula-derived, exact: XpThreshold[21] = 77,785 minus XP(20) = 11,961 — verified in double precision and implemented in Story 010; corrected 2026-09-25, see F-LS-1 worked example, EC-LS-35, and TD-038 — the original ≈62,728 figure was an imprecise hand-arithmetic approximation). `XpThreshold[61] = int.MaxValue` (sentinel). No value in `[1, 60]` exceeds `int.MaxValue`. The exact XpThreshold integer constants must be pre-computed in double precision and stored as a reference table, with the runtime float formula output verified against that table at build time — **shipped in Story 010** (`src/Foundation/LevelingSystem/XpThresholdTable.cs`), quadruple-verified across four independent computations, and **economy-designer sign-off granted (2026-09-25)** on the array/curve itself (pacing, hook strength, and curve shape confirmed sound for MVP).
+*Split out of this criterion (2026-09-25):* validating the "~205h cap-time anchor" against realistic per-tier mob XP rates and producing a co-signed per-tier-hours estimate is **not** satisfiable yet — it depends on `MobDefinition.KillXP` values and a zone-XP GDD, neither of which exist. That work is descoped to whichever future story populates real mob XP data; see TD-039 for the specific divergence found in the meantime (the GDD's own "Est. Kill Time" column does not currently reconcile with its stated methodology).
 Type: Unit | Blocks: Implementation
 
 **AC-LS-32** — F-LS-1: XpThreshold is monotonically increasing L1–L59
@@ -984,5 +991,15 @@ AC-LS-10 requires `_levelingUpInProgress` to be observable from a unit test. The
 **OQ-LS-6** — Design gap: zone social announcement on level-up
 CR-2.10 defers a zone-wide social announcement ("Player X reached Level N!") to post-MVP. This decision affects the Social Gravity pillar: the level badge updating silently on nearby players' screens is a different signal than a broadcast announcement. **Design intent:** A zone-wide announcement is planned for a post-MVP patch. At MVP, the only social signal is the level badge update on the observing client's entity view. The networking layer must not design around the assumption of a broadcast announcement at MVP. When the zone social system is designed, it must specify: (a) which level milestones trigger an announcement (all levels, tier walls only, or milestone levels only), (b) announcement range (zone-wide vs. AOI radius), and (c) whether the text is visible to the leveling player or only to observers.
 
-**OQ-LS-7** — BLOCKING: `GetXPAward(EntityID): int` is unspecified
-This function is referenced by the Leveling System (CR-1.1, AC-LS-31), the Damage Calculation GDD, and the Auto-Attack Combat GDD, but its specification exists nowhere. It is the sole XP faucet at MVP and the root cause of the unvalidatable 205h cap-time anchor. **Required before AC-LS-31 can be signed off:** (a) data source — mob XP ScriptableObject field, dynamic formula from mob level, or flat lookup table; (b) level-differential modifier — does the function take attacker level as a parameter? Is there an XP penalty for farming below-level mobs? (c) schema for mob XP data (field name, type, range); (d) who authors and maintains mob XP data. Carries to the Mob Definition sub-GDD or an Economy System XP Rate appendix. **This OQ must be resolved before the implementation sprint begins — the Leveling System cannot be fully validated without it.**
+**OQ-LS-7** — RESOLVED (2026-09-24): `GetXPAward(EntityID): int` specification
+
+`LevelingSystem.GetXPAward(EntityID targetId): int` looks up `targetId`'s `MobDefinition` via `IMobDefinitionRegistry.GetDefinition(MobTypeID)` (Enemy AI, already Approved) and returns `IsEnraged ? EnragedKillXP : KillXP` — both already-Approved flat `int` fields on `MobDefinition` (`enemy-ai.md`'s `MobDefinition` schema: `KillXP > 0`; `EnragedKillXP = Mathf.RoundToInt(KillXP × EnragedXPMultiplier)`, computed once at spawn per F-AI-E-1). Resolving the four sub-questions this OQ originally raised:
+
+(a) **Data source**: flat per-mob-type field on `MobDefinition` (`KillXP`) — not a dynamic formula from mob level, not a separate lookup table. Already authored and Approved in `enemy-ai.md`.
+(b) **Level-differential modifier**: none at MVP. `GetXPAward` does not take the attacker's level as a parameter, and there is no penalty for farming below-level mobs — killing any instance of a given mob type yields that mob type's flat `KillXP` (or `EnragedKillXP`) regardless of the killer's level. If a future milestone wants level-differential XP, that is a new, separately-scoped design change, not part of this resolution.
+(c) **Schema**: already specified — see `enemy-ai.md`'s `MobDefinition` schema (`KillXP: int, > 0`; `EnragedXPMultiplier: float`, default 1.5, range [1.0, 3.0]).
+(d) **Authoring/maintenance**: whoever authors `MobDefinition` assets (Enemy AI's existing content-authoring process) — the same owner as `MaxHP`/`AttackPower`/every other per-mob-type field, not a new "Mob Definition sub-GDD" or "Economy System XP Rate appendix" as originally speculated; no such separate document is needed since `MobDefinition` already exists and already owns this data.
+
+**Cross-document correction applied alongside this resolution**: `enemy-ai.md`'s `Dead`-state transition table and its "Character Persistence" interactions subsection incorrectly described Enemy AI awarding XP directly (`CharacterPersistence.AwardXP(killerEntityID, ...)`) on kill — this predated `damage-calculation.md`'s Option B decision and, if left as written, would have double-awarded XP (once via Enemy AI's own Dead-state entry, again via the killer's controller's CR-1.1 sequence, since `ApplyDamage` — which triggers the `Dead` transition — is the LAST step in that sequence, after XP has already been awarded). Corrected in `enemy-ai.md` to remove Enemy AI's own redundant XP-award claim; `MobDefinition.KillXP`/`EnragedKillXP` remain exactly where they were, now correctly documented as data `GetXPAward` reads rather than data Enemy AI acts on directly.
+
+This resolves the 205h cap-time anchor's dependency: `XpThreshold`'s cumulative derivation (Story 010, AC-LS-31) can now be validated against real `KillXP` ranges once Enemy AI's mob roster is authored, and economy-designer sign-off is unblocked to proceed.

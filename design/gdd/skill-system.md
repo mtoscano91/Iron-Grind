@@ -64,7 +64,7 @@ Skill damage is always additive — it resolves independently and never suppress
 
 **CR-SK-5 — Damage Calculation Delegation (damaging skills only).** Call `DamageCalculation(BaseDamage, casterEntityID, targetEntityID, damageContext)` where `damageContext = DamageContext.PhysicalSkill` for `PhysicalDamage` skills, and `DamageContext.MagicalSkill` for `MagicalDamage` skills. Returns `DamageResult { DamageDealt: int, IsCrit: bool, IsKill: bool }`.
 
-**CR-SK-6 — Kill Sequence.** On `DamageResult.IsKill == true`, execute in this exact order: `GetXPAward(casterEntityID, targetEntityID)` → `AddExperience(casterEntityID, xpAmount)` → `ApplyDamage(targetEntityID, DamageResult.DamageDealt)`.
+**CR-SK-6 — Kill Sequence.** On `DamageResult.IsKill == true`, execute in this exact order: `GetXPAward(targetEntityID): int` → `AddExperience(casterEntityID, xpAmount)` → `ApplyDamage(targetEntityID, DamageResult.DamageDealt)`. *(Corrected 2026-09-24, leveling-system.md OQ-LS-7 resolution: `GetXPAward` takes only the target entity — no caster/level-differential parameter. It reads a flat `KillXP`/`EnragedKillXP` value from the target's `MobDefinition`; there is no level-based XP modifier at MVP, so the caster's identity is never needed by this call.)*
 
 **CR-SK-7 — Effect Application.** After damage resolution (or instead of it, for non-damaging skills):
 - If `SkillEffectType` includes `ApplyBuff` or `ApplyDebuff`: assemble the target list (Skill System responsibility, per CR-SE-14), then call `StatusEffects.ApplyEffect(targetEntityID, casterEntityID, SkillDefinition.BuffDefinition)` once per target. Do not call `ApplyEffect` on any target confirmed dead this tick (`IsKill == true`).

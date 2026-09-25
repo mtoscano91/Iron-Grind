@@ -92,7 +92,7 @@ At the start of each mob's AI tick, if HP ≤ 0 and the mob is not already in `D
 | | | | → `Pursuing`: remaining ≤ 0 AND target valid AND outside `AttackRange` |
 | | | | → `Returning`: remaining ≤ 0 AND (target invalid OR `pendingReturn` was set); apply re-scan logic from CR-AI-10 if target died |
 | **Returning** | Target invalid; leash exceeded; `Recovering` exits with `pendingReturn` | `SetDestination(spawnPoint)` on entry; clear `TargetEntityID` | → `Dormant`: arrived within `RETURN_ARRIVAL_THRESHOLD` of spawn |
-| **Dead** | HP ≤ 0 (overrides any state) | Award XP; call `ILootTableSystem.ResolveMobDrop(mobEntityID, IsEnraged ? EnragedLootQualityBonusTier : 0)`; raise `MobEventBus.MobDied(ZoneID, EntityID)` (loot first, spawn lifecycle second — CR-MS-5); hold `DEATH_LINGER_TICKS`; despawn | → *(despawned)* |
+| **Dead** | HP ≤ 0 (overrides any state) | Call `ILootTableSystem.ResolveMobDrop(mobEntityID, IsEnraged ? EnragedLootQualityBonusTier : 0)`; raise `MobEventBus.MobDied(ZoneID, EntityID)` (loot first, spawn lifecycle second — CR-MS-5); hold `DEATH_LINGER_TICKS`; despawn. **XP is NOT awarded here** — it was already awarded by the killer's controller before `ApplyDamage` triggered this transition (Damage Calculation Option B / Leveling System CR-1.1 — see leveling-system.md OQ-LS-7 resolution, 2026-09-24) | → *(despawned)* |
 
 **Global override**: Any state → `Dead` when HP drops to ≤ 0.
 
@@ -129,7 +129,7 @@ Caller-side API contract is now defined (OQ-AI-1 partially resolved). The Loot T
 At spawn only: `SetBaseStat(MaxHP)` and `SetBaseStat(AttackPower)` for Enraged variants. No ongoing Stat System calls during combat — all base values are read from `MobDefinition` at spawn time.
 
 **Character Persistence**
-On kill: `CharacterPersistence.AwardXP(killerEntityID, IsEnraged ? EnragedKillXP : KillXP)`. Loot delivery via Character Persistence write path. No coupling during combat.
+No direct coupling — Enemy AI makes no calls to Character Persistence. *(Correction, 2026-09-24, leveling-system.md OQ-LS-7 resolution: this subsection previously claimed Enemy AI awards XP directly via `CharacterPersistence.AwardXP(killerEntityID, IsEnraged ? EnragedKillXP : KillXP)` and delivers loot via a "Character Persistence write path" — both were stale and incorrect, and the XP claim specifically would have double-awarded XP alongside the killer's controller's own CR-1.1 sequence. XP is awarded by the killer's controller (Auto-Attack Combat / Skill System) via `LevelingSystem.GetXPAward` + `AddExperience`, per `damage-calculation.md`'s Option B — reading the same `KillXP`/`EnragedKillXP` fields from this class's own `MobDefinition`, which Enemy AI already exposes read-only via `IMobDefinitionRegistry`. Loot delivery is via the Loot Table System — see the dedicated subsection above, unaffected by this correction.)*
 
 **Mob Spawning (MobEventBus)**
 Enemy AI and Mob Spawning interact exclusively through C# events on a per-zone-instance `MobEventBus`. Neither system holds a direct reference to the other.

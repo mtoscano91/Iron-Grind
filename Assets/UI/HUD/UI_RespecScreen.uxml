@@ -1,0 +1,80 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <Style src="USS_HUD_Theme.uss" />
+
+    <!--
+      Respec Screen (AC-LS-48). Full-screen modal, initially hidden (display:none set at
+      runtime by RespecScreenPresenter; see its Open()/Close()). Not part of any Layout
+      Zone in design/ux/hud.md (that doc explicitly has no respec-screen layout); this
+      structure is Story 013's own reasonable, clearly-commented placement.
+
+      Row structure per primary attribute is hand-authored (not generated) so each element
+      has a stable, queryable name for RespecScreenPresenter; UXML has no loop construct.
+    -->
+    <ui:VisualElement name="RespecScreenRoot" class="respec-screen-root" style="display: none;">
+        <ui:VisualElement name="RespecPanel" class="respec-panel">
+            <ui:Label name="RespecTitle" text="Respec -- Redistribute Attribute Points" class="respec-title" />
+
+            <ui:VisualElement name="RespecPoolRow" class="respec-pool-row">
+                <ui:Label name="RespecPoolLabel" text="Redistributable Points Remaining: 0" class="respec-pool-label" />
+                <ui:Label name="RespecHeldFreePointsLabel" text="Held Free Points (separate, not part of this pool): 0" class="respec-held-label" />
+            </ui:VisualElement>
+
+            <ui:VisualElement name="RespecAttributesColumn" class="respec-attributes-column">
+                <ui:VisualElement name="RespecRow_Strength" class="respec-attr-row">
+                    <ui:Label text="Strength" class="respec-attr-name" />
+                    <ui:Label name="Strength_FloorLabel" text="Floor: 10" class="respec-attr-floor" />
+                    <ui:Button name="Strength_MinusButton" text="-" class="respec-attr-button" />
+                    <ui:Label name="Strength_CurrentLabel" text="10" class="respec-attr-current" />
+                    <ui:Button name="Strength_PlusButton" text="+" class="respec-attr-button" />
+                </ui:VisualElement>
+                <ui:VisualElement name="RespecRow_Dexterity" class="respec-attr-row">
+                    <ui:Label text="Dexterity" class="respec-attr-name" />
+                    <ui:Label name="Dexterity_FloorLabel" text="Floor: 10" class="respec-attr-floor" />
+                    <ui:Button name="Dexterity_MinusButton" text="-" class="respec-attr-button" />
+                    <ui:Label name="Dexterity_CurrentLabel" text="10" class="respec-attr-current" />
+                    <ui:Button name="Dexterity_PlusButton" text="+" class="respec-attr-button" />
+                </ui:VisualElement>
+                <ui:VisualElement name="RespecRow_Vitality" class="respec-attr-row">
+                    <ui:Label text="Vitality" class="respec-attr-name" />
+                    <ui:Label name="Vitality_FloorLabel" text="Floor: 10" class="respec-attr-floor" />
+                    <ui:Button name="Vitality_MinusButton" text="-" class="respec-attr-button" />
+                    <ui:Label name="Vitality_CurrentLabel" text="10" class="respec-attr-current" />
+                    <ui:Button name="Vitality_PlusButton" text="+" class="respec-attr-button" />
+                </ui:VisualElement>
+                <ui:VisualElement name="RespecRow_Intelligence" class="respec-attr-row">
+                    <ui:Label text="Intelligence" class="respec-attr-name" />
+                    <ui:Label name="Intelligence_FloorLabel" text="Floor: 10" class="respec-attr-floor" />
+                    <ui:Button name="Intelligence_MinusButton" text="-" class="respec-attr-button" />
+                    <ui:Label name="Intelligence_CurrentLabel" text="10" class="respec-attr-current" />
+                    <ui:Button name="Intelligence_PlusButton" text="+" class="respec-attr-button" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+
+            <ui:VisualElement name="RespecPreviewColumn" class="respec-preview-column">
+                <ui:Label name="RespecPreviewTitle" text="Projected Stats" class="respec-preview-title" />
+                <ui:Label name="RespecPreviewMaxHP" text="MaxHP: --" class="respec-preview-line" />
+                <ui:Label name="RespecPreviewMaxMP" text="MaxMP: --" class="respec-preview-line" />
+                <ui:Label name="RespecPreviewAttackPower" text="AttackPower: --" class="respec-preview-line" />
+                <ui:Label name="RespecPreviewDefense" text="Defense: --" class="respec-preview-line" />
+                <ui:Label name="RespecPreviewMagicDefense" text="MagicDefense: --" class="respec-preview-line" />
+                <ui:Label name="RespecPreviewCritChance" text="CritChance: --" class="respec-preview-line" />
+                <ui:Label name="RespecPreviewAttackSpeed" text="AttackSpeedMultiplier: --" class="respec-preview-line" />
+            </ui:VisualElement>
+
+            <ui:Button name="RespecCommitButton" text="Confirm Respec" class="respec-commit-button" />
+        </ui:VisualElement>
+
+        <!--
+          Modal confirmation: Confirm only, deliberately no Cancel (GDD reservation/TTL
+          rationale, per Story 013's Implementation Notes). Hidden until RespecCommitButton
+          is first clicked (with the pool fully allocated); RespecConfirmButton performs the
+          actual TryApplyRespec commit.
+        -->
+        <ui:VisualElement name="RespecConfirmModal" class="respec-confirm-modal" style="display: none;">
+            <ui:VisualElement name="RespecConfirmPanel" class="respec-confirm-panel">
+                <ui:Label name="RespecConfirmTitle" text="Confirm this allocation? This cannot be undone." class="respec-confirm-title" />
+                <ui:Button name="RespecConfirmButton" text="Confirm" class="respec-confirm-button" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

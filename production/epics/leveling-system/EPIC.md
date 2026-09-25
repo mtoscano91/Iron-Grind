@@ -3,8 +3,8 @@
 > **Layer**: Core
 > **GDD**: design/gdd/leveling-system.md
 > **Architecture Module**: Leveling
-> **Status**: Ready
-> **Stories**: 13 stories created (001–013; Story 007 partially Blocked on AC-LS-18b/OQ-LS-3; Story 010 Blocked on OQ-LS-7)
+> **Status**: 13/13 Complete — Story 010 closed 2026-09-25 (economy-designer sign-off granted on the array/curve; the "205h/per-tier mob XP" sub-clause split out to TD-039 pending unpopulated mob-XP data)
+> **Stories**: 13 stories created (001–013; Story 007 Complete with AC-LS-18b sub-case partially Blocked on OQ-LS-3; Story 010 Complete 2026-09-25)
 
 ## Overview
 
@@ -62,11 +62,11 @@ This epic is complete when:
 | 007 | [Respec Two-Phase Commit & Exception Safety](story-007-respec-two-phase-commit.md) | Integration | Complete (AC-LS-18b sub-case remains Blocked on OQ-LS-3) | — |
 | 008 | [Level Cap Behavior](story-008-level-cap-behavior.md) | Logic | Complete | — |
 | 009 | [Spawn Initialization & Persistence Load](story-009-spawn-persistence-load.md) | Integration | Complete | — |
-| 010 | [XP Threshold Formula & Table](story-010-xp-threshold-formula-table.md) | Logic | Blocked (OQ-LS-7) | — |
+| 010 | [XP Threshold Formula & Table](story-010-xp-threshold-formula-table.md) | Logic | Complete | — |
 | 011 | [Tier Multiplier & Auto-Alloc Formula Verification](story-011-tier-autoalloc-formula-verification.md) | Logic | Complete | — |
 | 012 | [Party XP Detriment Integration](story-012-party-xp-detriment-integration.md) | Integration | Complete | — |
-| 013 | [HUD/UI Display & Manual Verification](story-013-hud-ui-display.md) | Visual/Feel | Ready | — |
+| 013 | [HUD/UI Display & Manual Verification](story-013-hud-ui-display.md) | Visual/Feel | Complete | ADR-005 |
 
 ## Next Step
 
-Run `/story-readiness [story-path]` per story, starting with Story 001. Story 010 is Blocked until OQ-LS-7 resolves — run `/architecture-decision` or route the `GetXPAward` spec question to whoever owns the Mob Definition / Economy System GDD first.
+All 13 stories are Complete. Two open items remain, tracked as tech debt rather than blocking the epic: OQ-LS-3 (Status Effects "combat-tagged" definition, blocking Story 007's AC-LS-18b sub-case) and TD-039 (the F-LS-1 "Est. Kill Time" column's divergence from its own stated methodology, resolvable once real mob-XP data exists). Character Stats Story 008 (Integration — Leveling ↔ Character Stats) should be confirmed unblocked and closed as this epic's final Definition-of-Done item.

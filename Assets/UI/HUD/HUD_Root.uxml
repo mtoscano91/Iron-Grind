@@ -1,0 +1,68 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <Style src="USS_HUD_Theme.uss" />
+    <ui:Template name="RespecScreenTemplate" src="UI_RespecScreen.uxml" />
+
+    <!--
+      HUD_Root: ADR-005 Architecture (HUD_Static / HUD_Dynamic / HUD_Overlay). First
+      UI Toolkit document in this project (Story 013, Leveling System). Scope: Player
+      Resource Cluster Row 1 (level badge) + Row 5 (XP bar) only; see USS_HUD_Theme.uss
+      header comment for the placeholder-slot rationale (Rows 2-4: HP/MP/Charge bars are
+      NOT this story's job, reserved not faked).
+
+      Safe-area margins on HUD_Root are applied at runtime by HudSafeAreaApplier; never
+      hardcoded in this file (ADR-005 CR-HUD-17).
+    -->
+    <ui:VisualElement name="HUD_Root" class="hud-root hud-display-only">
+
+        <ui:VisualElement name="HUD_Static" class="hud-static hud-display-only" />
+
+        <ui:VisualElement name="HUD_Dynamic" class="hud-dynamic hud-display-only">
+            <ui:VisualElement name="PlayerResourceCluster" class="player-resource-cluster hud-display-only">
+                <ui:VisualElement name="Row1_NameLevelGold" class="resource-row row-1 hud-display-only">
+                    <ui:VisualElement name="PlayerNameSlot" class="hud-placeholder-slot placeholder-name hud-display-only" />
+                    <ui:Label name="LevelBadge" text="Lv.1" class="level-badge" />
+                    <ui:VisualElement name="GoldSlot" class="hud-placeholder-slot placeholder-gold hud-display-only" />
+                </ui:VisualElement>
+
+                <ui:VisualElement name="Row2_HPBarSlot" class="hud-placeholder-slot placeholder-hp-bar hud-display-only" />
+                <ui:VisualElement name="Row3_MPBarSlot" class="hud-placeholder-slot placeholder-mp-bar hud-display-only" />
+                <ui:VisualElement name="Row4_ChargeBarSlot" class="hud-placeholder-slot placeholder-charge-bar hud-display-only" />
+
+                <ui:VisualElement name="Row5_XPBar" class="xp-bar-track hud-display-only">
+                    <ui:VisualElement name="XPBarFill" class="xp-bar-fill hud-display-only" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <ui:VisualElement name="HUD_Overlay" class="hud-overlay hud-display-only">
+            <ui:VisualElement name="LevelUpOverlay" class="level-up-overlay hud-display-only" style="display: none;">
+                <ui:Label name="LevelUpNumberLabel" text="1" class="level-up-number" />
+                <ui:Label name="LevelUpFloatingText" text="+Level 1!" class="level-up-floating-text" />
+            </ui:VisualElement>
+
+            <!--
+              class="fullscreen-instance" is required: <ui:Instance> wraps the template in a
+              TemplateContainer that follows normal flow by default (sized to its own content,
+              not stretched to fill HUD_Overlay). RespecScreenRoot's own
+              "position: absolute; inset: 0" inside UI_RespecScreen.uxml resolves relative to
+              THIS TemplateContainer, not the actual screen; without this class the container
+              was undersized, which was the root cause of the respec screen's internal layout
+              collapsing/overlapping and rendering off-center (found via manual verification,
+              Story 013). Named generically (not "respec-instance-...") since every future
+              full-screen <ui:Instance> in this project (Stat Screen, Inventory, ...) will need
+              the identical fix; reuse this class rather than duplicating it per screen.
+
+              hud-display-only is also required here: this wrapper spans the full screen once
+              sized by fullscreen-instance, and PickingMode.Ignore does not propagate to
+              children, so this only makes the WRAPPER itself non-interactive; the real
+              respec screen's buttons (nested inside, added by RespecScreenPresenter) keep
+              their own default interactive picking mode independently. Without this, every
+              screen point not covered by a more specific interactive element was resolving as
+              "over UI" against this full-screen wrapper (ADR-005 Validation Criteria #4 touch
+              isolation), found via code review.
+            -->
+            <ui:Instance template="RespecScreenTemplate" name="RespecScreenInstance" class="fullscreen-instance hud-display-only" />
+        </ui:VisualElement>
+
+    </ui:VisualElement>
+</ui:UXML>

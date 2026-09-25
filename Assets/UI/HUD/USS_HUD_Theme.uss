@@ -1,0 +1,352 @@
+/*
+ * USS_HUD_Theme.uss
+ *
+ * Global HUD theme, per ADR-005 (UI Toolkit for the HUD screen-space layer) and
+ * design/ux/hud.md's Color Decisions section. Story 013 (Leveling System) scope:
+ * Player Resource Cluster Row 1 (level badge) + Row 5 (XP bar) + the Level-Up overlay +
+ * the Respec Screen modal. Rows 2-4 (HP/MP/Charge bars) are reserved placeholder slots
+ * only -- their real visuals belong to future HUD stories (Character Stats / Auto-Attack
+ * Combat), not faked here.
+ *
+ * First UI Toolkit USS file in this project -- establishes the theme-variable convention
+ * (per ADR-005 "UI Toolkit Architecture" guidance: define a global theme applied at the
+ * PanelSettings root, use USS variables for themeable values). Future HUD stories should
+ * extend this file (or add sibling theme files for High Contrast / Colorblind-safe
+ * variants) rather than hardcoding new colors inline.
+ */
+
+:root {
+    --color-panel-dark: rgb(26, 28, 31);       /* #1A1C1F */
+    --color-panel-border: rgb(58, 61, 68);     /* #3A3D44 */
+    --color-primary-text: rgb(232, 230, 223);  /* #E8E6DF */
+    --color-secondary-text: rgb(154, 157, 166);/* #9A9DA6 -- used for muted/non-editable respec floor values */
+    --color-xp-fill: rgb(196, 145, 42);        /* #C4912A -- Muted Amber-Gold, resolves OQ-HUD-5 */
+    --color-danger-alert: rgb(232, 64, 64);    /* #E84040 -- reserved for future HP critical state, not used by this story */
+
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Non-interactive elements (ADR-005) -- PickingMode.Ignore equivalent.
+ * Applied to every display-only leaf; NEVER applied to buttons/tap targets.
+ * PickingMode.Ignore does not propagate to children -- every leaf sets this itself.
+ * ------------------------------------------------------------------------- */
+.hud-display-only {
+    -unity-picking-mode: ignore;
+}
+
+/* ---------------------------------------------------------------------------
+ * HUD_Root / HUD_Static / HUD_Dynamic / HUD_Overlay -- ADR-005 Architecture.
+ * Safe-area margins on HUD_Root are applied at runtime (HudSafeAreaApplier), never
+ * hardcoded here.
+ * ------------------------------------------------------------------------- */
+.hud-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+}
+
+.hud-static,
+.hud-dynamic {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+}
+
+.hud-overlay {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Required on the <ui:Instance> wrapping the respec screen template -- see HUD_Root.uxml's
+   comment on that element for why. Without this, the TemplateContainer <ui:Instance> creates
+   is not full-screen, and RespecScreenRoot's own absolute inset:0 resolves relative to that
+   undersized container instead of the real screen. Named generically -- reuse for every future
+   full-screen <ui:Instance> in this project, not just the respec screen. */
+.fullscreen-instance {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+}
+
+/* ---------------------------------------------------------------------------
+ * Player Resource Cluster (Zone A, top-left) -- design/ux/hud.md "Player Resource
+ * Cluster" section. Story 013 builds Row 1 (level badge only -- name/gold are
+ * reserved placeholders) and Row 5 (XP bar) only.
+ * ------------------------------------------------------------------------- */
+.player-resource-cluster {
+    position: absolute;
+    left: 0;
+    top: 0;
+    flex-direction: column;
+    background-color: var(--color-panel-dark);
+    border-width: 1px;
+    border-color: var(--color-panel-border);
+    border-radius: 4px; /* approximated "chamfered rectangle" -- Art Bible-accurate chamfer is a future cosmetic pass, not this story's scope */
+    padding: 6px 8px;
+}
+
+.resource-row {
+    flex-direction: row;
+    align-items: center;
+    height: 24px;
+}
+
+/* Row 1: name + level badge + gold. Only the level badge is real content this story. */
+.hud-placeholder-slot {
+    /* Reserved space for a not-yet-built HUD element (owned by a future story).
+       Intentionally undecorated -- no background/border/fake bar -- per Story 013 scope:
+       reserve the gap, do not fake the visual. */
+    background-color: rgba(0, 0, 0, 0);
+}
+
+.placeholder-name {
+    width: 70px;
+    height: 16px;
+}
+
+.level-badge {
+    -unity-font-style: bold;
+    font-size: 13px;
+    color: var(--color-primary-text);
+    margin-left: var(--spacing-xs);
+    -unity-text-align: middle-left;
+}
+
+.placeholder-gold {
+    width: 60px;
+    height: 16px;
+    margin-left: auto; /* right-aligns within Row 1, matching hud.md's gold-right-aligned spec */
+}
+
+.placeholder-hp-bar {
+    width: 160px;
+    height: 16px;
+    margin-top: var(--spacing-xs);
+}
+
+.placeholder-mp-bar {
+    width: 160px;
+    height: 12px;
+    margin-top: var(--spacing-xs);
+}
+
+.placeholder-charge-bar {
+    width: 160px;
+    height: 8px;
+    margin-top: var(--spacing-xs);
+}
+
+/* Row 5: XP bar (real, Story 013 / AC-LS-47). */
+.xp-bar-track {
+    width: 160px;
+    height: 4px;
+    margin-top: var(--spacing-xs);
+    background-color: var(--color-panel-border);
+    overflow: hidden;
+}
+
+.xp-bar-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: var(--color-xp-fill);
+    transform-origin: left center; /* ADR-005 scale-based fill pattern */
+    border-radius: 0; /* ADR-005 caveat: scale + border-radius produces incorrect corners at low fill */
+}
+
+/* ---------------------------------------------------------------------------
+ * Level-Up Overlay (AC-LS-46).
+ * ------------------------------------------------------------------------- */
+.level-up-overlay {
+    align-items: center;
+    justify-content: center;
+    padding: 24px 40px;
+    background-color: rgba(26, 28, 31, 0.55);
+    border-radius: 8px;
+}
+
+.level-up-number {
+    font-size: 48px;
+    -unity-font-style: bold;
+    color: var(--color-xp-fill);
+    -unity-text-align: middle-center;
+}
+
+.level-up-floating-text {
+    font-size: 18px;
+    -unity-font-style: bold;
+    color: var(--color-primary-text);
+    margin-top: var(--spacing-sm);
+    -unity-text-align: middle-center;
+}
+
+/* ---------------------------------------------------------------------------
+ * Respec Screen modal (AC-LS-48). Full-screen overlay, not part of the persistent
+ * HUD zones -- see hud.md note (no respec-screen zone is defined there); layout below
+ * is Story 013's own reasonable placement, revisable by a future Visual/Feel pass.
+ * ------------------------------------------------------------------------- */
+.respec-screen-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.6);
+}
+
+.respec-panel {
+    width: 420px;
+    background-color: var(--color-panel-dark);
+    border-width: 1px;
+    border-color: var(--color-panel-border);
+    border-radius: 6px;
+    padding: 16px;
+}
+
+.respec-title {
+    font-size: 16px;
+    -unity-font-style: bold;
+    color: var(--color-primary-text);
+    margin-bottom: var(--spacing-sm);
+}
+
+.respec-pool-row {
+    flex-direction: column;
+    margin-bottom: var(--spacing-sm);
+    min-height: 40px; /* see .respec-attributes-column comment -- same auto-height fix */
+}
+
+.respec-pool-label {
+    font-size: 13px;
+    -unity-font-style: bold;
+    color: var(--color-primary-text);
+}
+
+.respec-held-label {
+    font-size: 11px;
+    color: var(--color-secondary-text);
+    margin-top: 2px;
+}
+
+.respec-attributes-column {
+    margin-bottom: var(--spacing-sm);
+    /* Explicit min-height, confirmed necessary via manual verification (Story 013). This
+       container's own height was "auto" (undefined), relying purely on its 4 nested
+       .respec-attr-row children (themselves containers of Label/Button leaves) to establish
+       a size. Along with its siblings .respec-pool-row / .respec-preview-column (same "auto
+       height from nested children" shape), this collapsed toward zero height and rendered
+       fully overlapping in Unity 6.3's UI Toolkit until each was given an explicit min-height.
+       4 rows x (52px height + 4px margin-bottom) = 224px. */
+    min-height: 224px;
+}
+
+.respec-attr-row {
+    flex-direction: row;
+    align-items: center;
+    height: 52px; /* accommodates the 48px +/- touch targets below, plus a little breathing room */
+    margin-bottom: 4px;
+}
+
+.respec-attr-name {
+    width: 90px;
+    font-size: 13px;
+    color: var(--color-primary-text);
+}
+
+.respec-attr-floor {
+    width: 90px;
+    font-size: 11px;
+    color: var(--color-secondary-text); /* muted -- non-redistributable, never editable (AC-LS-48) */
+}
+
+.respec-attr-current {
+    width: 40px;
+    font-size: 13px;
+    -unity-font-style: bold;
+    color: var(--color-xp-fill);
+    -unity-text-align: middle-center;
+}
+
+.respec-attr-button {
+    width: 48px; /* project's mobile touch-target minimum -- was 28x24px, below standard (code review) */
+    height: 48px;
+    margin-left: 4px;
+}
+
+.respec-preview-column {
+    margin-bottom: var(--spacing-sm);
+    padding: 8px;
+    min-height: 150px; /* see .respec-attributes-column comment -- same auto-height fix */
+    background-color: rgba(58, 61, 68, 0.35);
+    border-radius: 4px;
+}
+
+.respec-preview-title {
+    font-size: 12px;
+    -unity-font-style: bold;
+    color: var(--color-primary-text);
+    margin-bottom: 4px;
+}
+
+.respec-preview-line {
+    font-size: 11px;
+    color: var(--color-secondary-text);
+}
+
+.respec-commit-button {
+    height: 44px; /* 44x44dp minimum touch target, Apple HIG per hud.md Accessibility */
+    font-size: 13px;
+    -unity-font-style: bold;
+}
+
+.respec-confirm-modal {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.7);
+}
+
+.respec-confirm-panel {
+    width: 320px;
+    background-color: var(--color-panel-dark);
+    border-width: 1px;
+    border-color: var(--color-panel-border);
+    border-radius: 6px;
+    padding: 16px;
+}
+
+.respec-confirm-title {
+    font-size: 14px;
+    -unity-font-style: bold;
+    color: var(--color-primary-text);
+    margin-bottom: var(--spacing-sm);
+    white-space: normal;
+}
+
+.respec-confirm-button {
+    height: 44px;
+    font-size: 13px;
+    -unity-font-style: bold;
+    margin-top: var(--spacing-sm);
+}

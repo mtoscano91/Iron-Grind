@@ -1,7 +1,7 @@
 # Story 013: HUD/UI Display & Manual Verification
 
 > **Epic**: Leveling System
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Visual/Feel
 > **Manifest Version**: 2026-06-28
@@ -32,9 +32,9 @@
 
 *From `design/gdd/leveling-system.md`, scoped to this story:*
 
-- [ ] **AC-LS-46** [ADVISORY]: Tier-transition level-up uses the SAME overlay intensity as a normal level-up — only the level-number hold duration differs (1.5s normal, 2.5s tier). Audio: same instrument/character, slightly longer sustain/reverb — never louder, no stinger, no ambient pause. Lead sign-off required; screenshot + audio review saved to `production/qa/evidence/`.
-- [ ] **AC-LS-47** [ADVISORY]: HUD XP bar at L60 — fill=1.0 static (formula bypassed via the explicit `Level==60` guard), "MAX" displayed instead of a number, no XP text. Screenshot saved to `production/qa/evidence/`.
-- [ ] **AC-LS-48** [ADVISORY]: Respec screen — auto-alloc floor values shown in muted color; commit button disabled while any redistributable point remains unallocated.
+- [x] **AC-LS-46** [ADVISORY]: Tier-transition level-up uses the SAME overlay intensity as a normal level-up — only the level-number hold duration differs (1.5s normal, 2.5s tier). Audio: same instrument/character, slightly longer sustain/reverb — never louder, no stinger, no ambient pause. Lead sign-off required; screenshot + audio review saved to `production/qa/evidence/`.
+- [x] **AC-LS-47** [ADVISORY]: HUD XP bar at L60 — fill=1.0 static (formula bypassed via the explicit `Level==60` guard), "MAX" displayed instead of a number, no XP text. Screenshot saved to `production/qa/evidence/`.
+- [x] **AC-LS-48** [ADVISORY]: Respec screen — auto-alloc floor values shown in muted color; commit button disabled while any redistributable point remains unallocated.
 
 ---
 
@@ -76,7 +76,7 @@
 **Story Type**: Visual/Feel
 **Required evidence**: `production/qa/evidence/leveling-system-hud-ui-evidence.md` — screenshots for AC-LS-46/47/48 plus lead sign-off
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — `production/qa/evidence/leveling-system-hud-ui-evidence.md`. Verified live in Unity Editor Play Mode (first Visual/Feel story this session verified via real execution, not static review alone).
 
 ---
 
@@ -84,3 +84,16 @@
 
 - Depends on: Story 001 (`OnStatChanged`), Story 003 (`OnLevelUp`), Story 005 (`AllocateFreePoint`), Story 007 (respec screen entry point, currently mock-backed), Story 008 (L60 "MAX" state)
 - Unlocks: None — last story in the epic
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-09-24
+**Criteria**: 3/3 passing
+**Deviations**:
+- Minimal UI Toolkit HUD scaffolding (`UIDocument`/`PanelSettings`/`HUD_Root` hierarchy) was built as part of this story rather than waiting for a separate HUD epic — no such scaffolding existed anywhere in the project yet, and the user explicitly approved building a minimal, self-contained version scoped to exactly this story's 3 elements before implementation began.
+- The Implementation Notes' "tap XP bar for tooltip (current XP / time-to-level)" feature was never built — not gated by AC-LS-46/47/48's literal text, flagged for the story owner to decide (implement in a follow-up, formally defer, or strike from the GDD).
+- Audio chimes (`_levelUpChime`/`_tierTransitionChime`) remain unassigned — no audio assets exist anywhere in this project yet; wired and ready for the audio team to assign real clips.
+**Test Evidence**: Visual/Feel — `production/qa/evidence/leveling-system-hud-ui-evidence.md`. Genuinely verified via live Unity Editor Play Mode testing across multiple iterations (not static review + deferred evidence, unlike every other story this session) — this was the first UI Toolkit code in the project, and real testing surfaced and fixed several genuine bugs static review missed (a `CharacterStats` namespace/class ambiguity, a `PanelSettings` scale-mode issue, a UI Toolkit nested-container auto-height layout bug, a `<ui:Instance>` full-screen sizing gap, and — twice — an invalid-XML-comment mistake in UXML files).
+**Code Review**: Complete — lean self-performed review (`unity-ui-specialist` + `qa-tester`, parallel). unity-ui-specialist returned CHANGES REQUIRED (first such verdict this session) for two genuine defects: a project-wide touch-input-blocking `PickingMode` gap on 3 full-screen elements, and a real button-handler leak in `RespecScreenPresenter` triggered by `LevelingHudController`'s own documented re-entrant `Initialize()` contract. qa-tester returned APPROVED WITH SUGGESTIONS. All required changes and suggestions applied, then re-verified working by the user via a final Play Mode pass.
