@@ -1549,3 +1549,41 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: TD-039 (new). Verdict: **COMPLETE**.
 - **Standing reminder carried forward**: plaintext GitHub PAT in `origin`'s remote URL (`.git/config`) still not rotated — keep flagging every session until the user confirms rotation. Nothing in this session's work has been committed to git yet — Story 013's full implementation, the 4-GDD OQ-LS-7 conflict resolution, and now Story 010's implementation + GDD propagation fixes are all uncommitted.
 - Next recommended: with the Leveling System epic now fully closed, confirm/close Character Stats Story 008 (Integration — Leveling ↔ Character Stats), then commit and push this session's accumulated work (subject to explicit user instruction, per this project's "no commits without user instruction" collaboration protocol).
+
+## Session Extract — /story-readiness 2026-09-25 (Character Stats Story 008 — NEEDS WORK → fixed → READY)
+
+- Story: `production/epics/character-stats/story-008-integration-leveling.md` — Integration: Leveling ↔ Character Stats. Readiness verdict NEEDS WORK (6 gaps); user said "fix all", all applied.
+- **Real design error found and fixed (GDD + story):** AC-27a/b/c attributed Warrior Tank's full +2 VIT/level to auto-alloc. Actual Warrior template = +1 VIT auto; "Tank" = +1 free point spent on VIT via `AllocateFreePoint` (which recomputes F-3–F-9 at current tier, `LevelingService.cs:494`). Rewrote each sub-case with two observation points: post-level-up (1368 / 2910 / 5480) and post-free-point (1392 / 2940 / 5520 — unchanged headline values). AC-27b's ordering-violation value was also wrong: 2790 → correct 2880 (`(200+86×20)×1.5`). Corrected in `design/gdd/character-stats.md` AC-27 (with a dated build note) and in the story.
+- Other story fixes: Status Blocked → Ready; dependencies marked satisfied; API names corrected (`InitializeEntity` → `InitializeAtL1`; constructor-injected `ICharacterStats` → `AttachCharacterStats`); test path moved to `tests/EditMode/Integration/CharacterStats/...` (top-level `tests/Integration/` has no asmdef); Estimate 2–3h added; overlap note vs AC-LS-27/38/53/54/43.
+- `production/epics/character-stats/EPIC.md`: Story 008 → Ready.
+- Registry: `design/registry/entities.yaml` has no AC-27 values — no change needed. Propagation check: clean (persistence AC-30's 2,940@VIT=88 remains consistent).
+- Uncommitted: GDD, story, EPIC.md, this file. Standing reminder: plaintext PAT in `origin` remote URL still unrotated; untracked `bash.exe.stackdump` in repo root.
+- Next: `/dev-story production/epics/character-stats/story-008-integration-leveling.md` (fresh session recommended — one job per session).
+
+## Session Extract — /dev-story 2026-09-25 (Character Stats Story 008)
+- Story: `production/epics/character-stats/story-008-integration-leveling.md` — Integration: Leveling ↔ Character Stats
+- Files changed: `tests/EditMode/Integration/CharacterStats/LevelingSystem_CharacterStats_integration_tests.cs` (new, 360 lines, 5 [Test] methods — AC-31, AC-27a, AC-27b, AC-27c, AC-34). No `src/` changes — all behavior already existed.
+- Implemented by `engine-programmer`; no story/code discrepancies found; FloorToInt float-precision checked (e.g. 1140*1.2f ≈ 1368.00005 → 1368).
+- Test design notes: AC-31 asserts MaxHP==0 pre-spawn (CharacterStats' unset sentinel); AC-27b seeds L39 MaxHP=2304 to show the tier spike; AC-34 seeds 3 held free points via `RestoreLevelingState` (Level pinned at 60, no level-up available) and walks INT 407→408 (9992)→409 (9999, raw 10016)→[set 499]→500 (9999, raw 12200), then direct SetBaseStat(MaxMP,10016) reads 10016.
+- Not yet executed — user must run the EditMode Test Runner (new folder will get .meta files from Unity; commit them).
+- Blockers: None
+- Next: user runs tests → `/code-review tests/EditMode/Integration/CharacterStats/LevelingSystem_CharacterStats_integration_tests.cs` → `/story-done production/epics/character-stats/story-008-integration-leveling.md`
+
+## Session Extract — /code-review 2026-09-25 (Character Stats Story 008)
+- User ran the new integration tests in the real Test Runner: 5/5 pass (pre-review).
+- `/code-review`: unity-specialist CLEAN; qa-tester TESTABLE, no blocking gaps. Verdict: APPROVED WITH SUGGESTIONS. User said "fix all":
+  1. Applied — held-free-point bookkeeping asserts: `GetHeldFreePoints` 1→0 around each AC-27a/b/c VIT spend; AC-34 asserts 3 seeded, 0 after 3 spends, and a 4th spend returns `RejectedNoFreePoints` with INT/MaxMP unchanged.
+  2. Logged as TD-040 instead of fixed — the duplicated `CreateClassRegistry`/class-type constants span 10 test files (not 2 as the reviewer assumed); consolidating would edit 9 out-of-scope Leveling test files.
+  3. Applied — removed the non-asserted STR/DEX seeds from the AC-27 tests and updated the comment.
+- File now 370 lines, still 5 [Test] methods. **Needs a re-run in the Test Runner** before `/story-done`.
+- Next: user re-runs EditMode tests → `/story-done production/epics/character-stats/story-008-integration-leveling.md`
+
+## Session Extract — /story-done 2026-09-25 (Character Stats Story 008)
+- Verdict: COMPLETE WITH NOTES
+- Story: `production/epics/character-stats/story-008-integration-leveling.md` — Integration: Leveling ↔ Character Stats. 5/5 ACs; user re-ran full EditMode suite after review fixes: **821/821 pass**.
+- **Character Stats epic now 8/8 Complete.** All 4 Foundation epics (Character Stats, Item Database, Currency, Networking Core) and the Leveling System (Core) epic are Complete.
+- Files updated: story (Status Complete, ACs checked, Completion Notes), `production/epics/character-stats/EPIC.md` (Complete; stale DoD test path fixed), `production/epics/leveling-system/EPIC.md` (Story 008 dependency lines closed), `production/epics/index.md` (Character Stats + Leveling rows → Complete; Leveling row said "Not yet created").
+- Tech debt logged: TD-040 (duplicated class-registry test setup across 10 files) — during code review.
+- No sprint plan / sprint-status.yaml exists — nothing to update there.
+- Uncommitted: all of this session's work (GDD AC-27 fix, story 008, test file + Unity .meta files, EPIC/index updates, TD register, active.md). PAT-in-remote reminder still open; `bash.exe.stackdump` still untracked.
+- Next recommended: remaining Core epics with no stories yet — Inventory System, Loot Table System, Status Effects (all "Ready"); Damage Calculation blocked on server/client assembly ADR; Authentication has a partial ADR gap. Run `/create-stories [epic-slug]` for the chosen one.

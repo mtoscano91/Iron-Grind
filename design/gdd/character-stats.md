@@ -864,18 +864,26 @@ Pass: Both return **3500**. `GetEffectiveStat(Experience)` must equal `GetBaseSt
 
 **AC-27 [BLOCKING]: LevelTierMultiplier step fires correctly at milestone level transitions**
 
-Sub-case (a) — L19→L20 transition: Entity with VIT=48. Leveling System processes level-up to L20.
-Action: `GetBaseStat(EntityID, StatID.MaxHP)` immediately after level-up.
-Pass: Returns **1,392** (`floor((200 + 48×20) × 1.2) = floor(1160 × 1.2) = 1392`). A return of 1,160 (tier ×1.0 still applied) is a failure.
+*Build note (corrected 2026-09-25):* "Warrior Tank" gains 2 VIT per level = **1 VIT auto-alloc** (Warrior template, applied inside the level-up sequence) **+ 1 free point spent on VIT** (a separate `AllocateFreePoint(VIT)` call after the level-up, which recomputes F-3–F-9 at the current tier). Each sub-case therefore has two observation points: immediately after the level-up (VIT +1) and after the free-point spend (VIT +2). An earlier revision of this AC attributed the full +2 to auto-alloc and listed an incorrect ordering-violation value (2,790; the correct figure for VIT=86 at ×1.5 is 2,880).
 
-Sub-case (b) — L39→L40 transition: Warrior Tank at L39 with VIT=86 (10 base + 38 level-ups × 2 VIT/level: 1 auto-alloc VIT + 1 free-point VIT per level for this build). Leveling System processes level-up to L40 (auto-alloc fires: VIT becomes 88).
-Ordering contract: The Leveling System MUST apply all auto-allocations via `SetBaseStat()` — including the VIT auto-alloc for this level-up — **before** triggering the F-3 MaxHP recomputation for the tier transition. This test verifies Ordering A (auto-alloc → recompute). If the F-3 recompute fires with VIT=86 (before auto-alloc), MaxHP will be `floor((200+86×20)×1.5)=2,790` — the wrong value. This AC is the regression detector for ordering violations.
-Action: `GetBaseStat(EntityID, StatID.MaxHP)` immediately after level-up.
-Pass: Returns **2,940** (`floor((200 + 88×20) × 1.5) = floor(1960 × 1.5) = 2940`). A return of 1,960 (tier ×1.0 still applied), 2,352 (VIT=88 × 1.2 instead of 1.5), or 2,790 (VIT=86 — auto-alloc fired after recompute) is a failure.
+Sub-case (a) — L19→L20 transition: Warrior Tank at L19 with VIT=46. Leveling System processes level-up to L20 (auto-alloc: VIT 46→47; tier ×1.0→×1.2; F-3 recomputed).
+Action 1: `GetBaseStat(EntityID, StatID.MaxHP)` immediately after level-up.
+Pass 1: Returns **1,368** (`floor((200 + 47×20) × 1.2) = floor(1140 × 1.2) = 1368`). A return of 1,140 (tier ×1.0 still applied) or 1,344 (VIT=46 — recompute fired before auto-alloc) is a failure.
+Action 2: `AllocateFreePoint(EntityID, StatID.Vitality)` (VIT 47→48), then `GetBaseStat(EntityID, StatID.MaxHP)`.
+Pass 2: Returns **1,392** (`floor((200 + 48×20) × 1.2) = floor(1160 × 1.2) = 1392`). A return of 1,160 (tier ×1.0 applied by the free-point recompute) is a failure.
 
-Sub-case (c) — L59→L60 transition: Warrior Tank at L59 with VIT=126. Leveling System processes level-up to L60 (VIT becomes 128).
-Action: `GetBaseStat(EntityID, StatID.MaxHP)` immediately after level-up.
-Pass: Returns **5,520** (`floor((200 + 128×20) × 2.0) = floor(2760 × 2.0) = 5520`). A return of 2,760 (tier ×1.0 applied) or 4,140 (tier ×1.5 still applied) is a failure.
+Sub-case (b) — L39→L40 transition: Warrior Tank at L39 with VIT=86 (10 base + 38 level-ups × 2 VIT/level). Leveling System processes level-up to L40 (auto-alloc: VIT 86→87; tier ×1.2→×1.5).
+Ordering contract: The Leveling System MUST apply all auto-allocations via `SetBaseStat()` — including the VIT auto-alloc for this level-up — **before** triggering the F-3 MaxHP recomputation for the tier transition. This test verifies Ordering A (auto-alloc → recompute). If the F-3 recompute fires with VIT=86 (before auto-alloc), MaxHP will be `floor((200+86×20)×1.5)=2,880` instead of 2,910. This AC is the regression detector for ordering violations.
+Action 1: `GetBaseStat(EntityID, StatID.MaxHP)` immediately after level-up.
+Pass 1: Returns **2,910** (`floor((200 + 87×20) × 1.5) = floor(1940 × 1.5) = 2910`). A return of 2,880 (VIT=86 — auto-alloc fired after recompute), 1,940 (tier ×1.0), or 2,328 (tier ×1.2 still applied) is a failure.
+Action 2: `AllocateFreePoint(EntityID, StatID.Vitality)` (VIT 87→88), then `GetBaseStat(EntityID, StatID.MaxHP)`.
+Pass 2: Returns **2,940** (`floor((200 + 88×20) × 1.5) = floor(1960 × 1.5) = 2940`). A return of 1,960 (tier ×1.0) or 2,352 (tier ×1.2) is a failure.
+
+Sub-case (c) — L59→L60 transition: Warrior Tank at L59 with VIT=126. Leveling System processes level-up to L60 (auto-alloc: VIT 126→127; tier→×2.0).
+Action 1: `GetBaseStat(EntityID, StatID.MaxHP)` immediately after level-up.
+Pass 1: Returns **5,480** (`floor((200 + 127×20) × 2.0) = floor(2740 × 2.0) = 5480`). A return of 5,440 (VIT=126 — recompute before auto-alloc) or 4,110 (tier ×1.5 still applied) is a failure.
+Action 2: `AllocateFreePoint(EntityID, StatID.Vitality)` (VIT 127→128), then `GetBaseStat(EntityID, StatID.MaxHP)`.
+Pass 2: Returns **5,520** (`floor((200 + 128×20) × 2.0) = floor(2760 × 2.0) = 5520`). A return of 2,760 (tier ×1.0 applied) or 4,140 (tier ×1.5 still applied) is a failure.
 
 **AC-28 [BLOCKING]: F-9 AttackSpeedMultiplier clamp enforced at [0.5, 2.0]**
 Setup (a): Entity at L60 (tier ×2.0), Warrior auto-alloc (DEX=69). Leveling System has written BaseStat(AttackSpeedMultiplier) = 1.414 via F-9: (1.0 + 69×0.003×2.0). Equipment modifier: +1.0 flat ASM bonus added via `AddEquipmentModifier()`. Pre-clamp intermediate: 1.414 + 1.0 = 2.414.

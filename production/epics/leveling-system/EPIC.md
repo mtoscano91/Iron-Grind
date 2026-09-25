@@ -10,7 +10,7 @@
 
 The Leveling System tracks character experience points and drives all stat growth that occurs when a player levels up. It owns the XP threshold table (L1–60), receives threshold-crossed notifications from Character Stats after each XP grant from Damage Calculation, and responds by writing updated primary attributes and derived base stats back to Character Stats via `SetBaseStat()`. At every level-up the player receives 5 attribute points (class-specific auto-allocation + free points). At milestone levels 20, 40, and 60 the `LevelTierMultiplier` advances, fully re-deriving dependent base stats. The MVP level cap is 60. The system also owns the respec mechanic — a transacted batch rewrite of previously spent free stat points.
 
-**This epic directly unblocks Character Stats Story 008** (`production/epics/character-stats/story-008-integration-leveling.md`, currently Blocked), which proves the Leveling ↔ Character Stats integration path (spawn, tier transitions, MaxMP ceiling) from the Character Stats side.
+**This epic directly unblocks Character Stats Story 008** (`production/epics/character-stats/story-008-integration-leveling.md` — now Complete, 2026-09-25), which proves the Leveling ↔ Character Stats integration path (spawn, tier transitions, MaxMP ceiling) from the Character Stats side.
 
 ## Governing ADRs
 
@@ -45,7 +45,7 @@ This epic is complete when:
 - All stories are implemented, reviewed, and closed via `/story-done`
 - All acceptance criteria from `design/gdd/leveling-system.md` are verified, including all 7 AC groups the GDD specifies (XP/level-up sequence, free points, respec, cap, spawn/load, formula verification, edge cases)
 - Logic stories have passing test files in `tests/EditMode/LevelingSystem/`
-- Character Stats Story 008 (Integration — Leveling ↔ Character Stats) is unblocked and closed as part of, or immediately after, this epic
+- [x] Character Stats Story 008 (Integration — Leveling ↔ Character Stats) is unblocked and closed as part of, or immediately after, this epic — closed 2026-09-25
 - OQ-LS-7 (`GetXPAward` spec) is resolved before Story 010 is implemented — this is a GDD-stated hard blocker, not a soft recommendation
 - OQ-LS-3 (Status Effects "combat-tagged" definition) is resolved before Story 007's AC-LS-18b sub-case is implemented
 

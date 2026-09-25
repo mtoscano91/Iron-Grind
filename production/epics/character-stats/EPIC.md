@@ -3,8 +3,8 @@
 > **Layer**: Foundation
 > **GDD**: design/gdd/character-stats.md
 > **Architecture Module**: Character Stats
-> **Status**: Ready (7/8 stories Complete; Story 008 Blocked on Leveling System epic, not yet created)
-> **Stories**: 8 stories created (001–007 Complete, 008 Blocked)
+> **Status**: Complete (8/8 stories Complete — Story 008 closed 2026-09-25)
+> **Stories**: 8 stories created (001–008 Complete)
 
 ## Overview
 
@@ -40,7 +40,7 @@ Character Stats is the authoritative data store for every numeric attribute that
 | 005 | [OnStatChanged/OnEntityDied events — named delegates, fixed subscriber array, re-entrance guard](story-005-events.md) | Logic | Complete | ADR-010 |
 | 006 | [Write ownership — ILevelingService injection, mob guard, write-locked stat rejection](story-006-write-ownership.md) | Logic | Complete | ADR-010 |
 | 007 | [Transaction API — BeginStatTransaction/EndStatTransaction/RollbackStatTransaction](story-007-transaction-api.md) | Logic | Complete | — |
-| 008 | [Integration — Leveling System ↔ Character Stats (spawn path, tier transitions, MaxMP ceiling)](story-008-integration-leveling.md) | Integration | Blocked | — |
+| 008 | [Integration — Leveling System ↔ Character Stats (spawn path, tier transitions, MaxMP ceiling)](story-008-integration-leveling.md) | Integration | Complete | — |
 
 > **Note:** Story 007's `RollbackStatTransaction()` semantics were revised 2026-08-15 by Leveling System Story 007 (root-cause fix: real snapshot-and-restore, not a reopen) — see the Revision Note in `story-007-transaction-api.md`.
 
@@ -50,7 +50,7 @@ This epic is complete when:
 - All stories are implemented, reviewed, and closed via `/story-done`
 - All acceptance criteria in `design/gdd/character-stats.md` (AC-01 through AC-34) are verified
 - All Logic stories (001–007) have passing test files in `tests/EditMode/CharacterStats/`
-- Integration story (008) has a passing test file in `tests/Integration/CharacterStats/` (unblocked after Leveling System epic is Done)
+- Integration story (008) has a passing test file in `tests/EditMode/Integration/CharacterStats/` — done 2026-09-25
 - Story 008 is unblocked when Leveling System epic stories are Done
 
 ## Next Step

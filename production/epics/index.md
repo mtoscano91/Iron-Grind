@@ -6,13 +6,13 @@ Control Manifest Version: 2026-06-28
 
 | Epic | Layer | System | GDD | Stories | Status |
 |------|-------|--------|-----|---------|--------|
-| [Character Stats](character-stats/EPIC.md) | Foundation | Character Stats | design/gdd/character-stats.md | 8 stories (001-007 Complete, 008 Blocked) | Ready |
+| [Character Stats](character-stats/EPIC.md) | Foundation | Character Stats | design/gdd/character-stats.md | 8 stories (001-008 Complete) | Complete |
 | [Item Database](item-database/EPIC.md) | Foundation | Item Database | design/gdd/item-database.md | 4 stories (001-004), all Complete | Complete |
 | [Currency System](currency-system/EPIC.md) | Foundation | Currency System | design/gdd/currency-system.md | 6 stories (001-006), all Complete | Complete |
 | [Networking Core](networking-core/EPIC.md) | Foundation | Networking Core (+ 10 sub-contracts) | design/gdd/networking-core.md | 29 stories (001-029), all Complete | Complete |
 | [Authentication](authentication/EPIC.md) | Core | Authentication | design/gdd/authentication.md | Not yet created | Ready |
 | [Damage Calculation](damage-calculation/EPIC.md) | Core | Damage Calculation | design/gdd/damage-calculation.md | Not yet created | Ready — **blocked on server/client assembly-boundary ADR before Story 001** |
-| [Leveling System](leveling-system/EPIC.md) | Core | Leveling System | design/gdd/leveling-system.md | Not yet created | Ready — unblocks Character Stats Story 008 |
+| [Leveling System](leveling-system/EPIC.md) | Core | Leveling System | design/gdd/leveling-system.md | 13 stories (001-013 Complete) | Complete |
 | [Inventory System](inventory-system/EPIC.md) | Core | Inventory System | design/gdd/inventory-system.md | Not yet created | Ready |
 | [Loot Table System](loot-table-system/EPIC.md) | Core | Loot Table System | design/gdd/loot-table-system.md | Not yet created | Ready |
 | [Status Effects / Buffs](status-effects/EPIC.md) | Core | Status Effects | design/gdd/status-effects.md | Not yet created | Ready |
