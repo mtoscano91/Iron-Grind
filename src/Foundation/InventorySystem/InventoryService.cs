@@ -1,0 +1,366 @@
+using System;
+using System.Collections.Generic;
+using IronGrind.CharacterStats;
+using IronGrind.Currency;
+using UnityEngine;
+
+namespace IronGrind.InventorySystem
+{
+    /// <summary>
+    /// In-memory, server-authoritative implementation of <see cref="IInventoryService"/> — the
+    /// character's personal 20-slot item bag (GDD Rule 1).
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Persistence scope note:</b> the GDD's <c>InventorySnapshot</c> save/load contract
+    /// belongs to Character Persistence (Story 009). That system does not exist yet in this
+    /// codebase, so — exactly like <c>CurrencySystem</c> and <c>CharacterStats</c> before their
+    /// respective persistence layers existed — this class holds all state in-memory.</para>
+    ///
+    /// <para><b>Lifecycle:</b> a <see cref="CharacterID"/> must be explicitly registered via
+    /// <see cref="RegisterCharacter"/> before any read API returns meaningful data for it — an
+    /// unregistered character is always a caller bug, never a player-facing condition, and is
+    /// reported via <see cref="Debug.LogError(object)"/> on every affected read API.</para>
+    ///
+    /// <para><b>Thread safety:</b> unlike <c>CurrencySystem</c> (which added per-character
+    /// locking in its Story 004), this story does not require concurrent-call safety — no AC or
+    /// Implementation Note in Story 001 calls for it. Storage uses plain
+    /// <see cref="Dictionary{TKey,TValue}"/>. Revisit if/when a future story requires concurrent
+    /// access, mirroring <c>CurrencySystem</c>'s precedent.</para>
+    ///
+    /// <para><b>Mutation seam contract:</b> every future mutation entry point (Story 002 Pickup,
+    /// Story 004 Lock/Unlock, Story 005 Discard, Story 006 Move/Merge/Swap, Story 007 Equipment
+    /// interface, Story 008 Sell/Consume) MUST call <see cref="ThrowIfDispatching"/> first, then
+    /// record its per-slot results via <see cref="RecordSlotChange"/>, then fire the broadcast via
+    /// <see cref="EmitInventoryChanged"/> — this story defines all three seams but does not itself
+    /// call them from any public mutation API (none exists yet). Record changes only once the
+    /// mutation is unconditionally committing (all validation done). If a mutation must abort
+    /// after recording, it MUST call <see cref="DiscardPendingChanges"/> — the change buffer is
+    /// service-wide, and leftover entries would otherwise be broadcast with a later dispatch.
+    /// Pending changes are bound to a single character: recording for, or emitting to, a
+    /// different character while changes are pending throws.</para>
+    /// </remarks>
+    public sealed class InventoryService : IInventoryService
+    {
+        private readonly Dictionary<CharacterID, InventorySlot[]> _inventories = new Dictionary<CharacterID, InventorySlot[]>();
+        private readonly Dictionary<CharacterID, bool[]> _locks = new Dictionary<CharacterID, bool[]>();
+
+        // Reused, service-owned change buffer backing every InventoryChangedEventArgs dispatch
+        // (ADR-010 Decision 3 — zero per-emit heap allocation). Capacity InventoryConstants.INVENTORY_SLOT_COUNT
+        // because a single atomic mutation can touch at most every slot once. The buffer is
+        // service-wide, so pending changes are bound to exactly one character at a time
+        // (_pendingCharacterId) — see RecordSlotChange / EmitInventoryChanged guards.
+        private readonly SlotChange[] _changeBuffer = new SlotChange[InventoryConstants.INVENTORY_SLOT_COUNT];
+        private int _changeCount;
+        private CharacterID _pendingCharacterId = CharacterID.Invalid;
+        private bool _isDispatching;
+
+        /// <inheritdoc/>
+        public event Action<InventoryChangedEventArgs> OnInventoryChanged;
+
+        /// <inheritdoc/>
+        /// <remarks>
+        /// Direct write — (re)initializes <paramref name="charId"/>'s inventory to
+        /// <see cref="InventoryConstants.INVENTORY_SLOT_COUNT"/> empty slots and clears all locks unconditionally.
+        /// A freshly allocated <see cref="InventorySlot"/> array already defaults to
+        /// <see cref="InventorySlot.Empty"/> per-element (<see langword="default"/>(<see cref="ItemID"/>)
+        /// equals <see cref="ItemID.Invalid"/>), so no explicit per-slot initialization loop is
+        /// needed. Does not call <see cref="ThrowIfDispatching"/> — this is a bootstrap/reset seam,
+        /// not a slot mutation subject to the re-entrancy contract, and it fires no
+        /// <see cref="OnInventoryChanged"/> event (mirrors <c>CurrencySystem.RegisterCharacter</c>,
+        /// which is likewise a silent direct write).
+        /// </remarks>
+        public void RegisterCharacter(CharacterID charId)
+        {
+            _inventories[charId] = new InventorySlot[InventoryConstants.INVENTORY_SLOT_COUNT];
+            _locks[charId] = new bool[InventoryConstants.INVENTORY_SLOT_COUNT];
+        }
+
+        /// <inheritdoc/>
+        public InventorySlot GetSlot(CharacterID charId, int slotIndex)
+        {
+            if (slotIndex < 0 || slotIndex >= InventoryConstants.INVENTORY_SLOT_COUNT)
+            {
+                Debug.LogError($"[InventoryService] GetSlot: slotIndex {slotIndex} is out of range [0, {InventoryConstants.INVENTORY_SLOT_COUNT}).");
+                return InventorySlot.Empty;
+            }
+
+            if (!_inventories.TryGetValue(charId, out var slots))
+            {
+                Debug.LogError($"[InventoryService] GetSlot: {charId} is not a registered character. Call RegisterCharacter before reading inventory.");
+                return InventorySlot.Empty;
+            }
+
+            return slots[slotIndex];
+        }
+
+        /// <inheritdoc/>
+        public bool IsFull(CharacterID charId)
+        {
+            if (!_inventories.TryGetValue(charId, out var slots))
+            {
+                Debug.LogError($"[InventoryService] IsFull: {charId} is not a registered character. Call RegisterCharacter before reading inventory.");
+                return false;
+            }
+
+            return CountFilledSlots(slots) >= InventoryConstants.INVENTORY_SLOT_COUNT;
+        }
+
+        /// <inheritdoc/>
+        public int FilledSlots(CharacterID charId)
+        {
+            if (!_inventories.TryGetValue(charId, out var slots))
+            {
+                Debug.LogError($"[InventoryService] FilledSlots: {charId} is not a registered character. Call RegisterCharacter before reading inventory.");
+                return 0;
+            }
+
+            return CountFilledSlots(slots);
+        }
+
+        private static int CountFilledSlots(InventorySlot[] slots)
+        {
+            int count = 0;
+            for (int i = 0; i < slots.Length; i++)
+            {
+                if (slots[i].Quantity > 0)
+                    count++;
+            }
+            return count;
+        }
+
+        /// <inheritdoc/>
+        public bool HasFreeSlot(CharacterID charId)
+        {
+            if (!_inventories.TryGetValue(charId, out var slots))
+            {
+                Debug.LogError($"[InventoryService] HasFreeSlot: {charId} is not a registered character. Call RegisterCharacter before reading inventory.");
+                return false;
+            }
+
+            for (int i = 0; i < slots.Length; i++)
+            {
+                if (slots[i].IsEmpty)
+                    return true;
+            }
+            return false;
+        }
+
+        /// <inheritdoc/>
+        public bool IsSlotLocked(CharacterID charId, int slotIndex)
+        {
+            if (slotIndex < 0 || slotIndex >= InventoryConstants.INVENTORY_SLOT_COUNT)
+            {
+                Debug.LogError($"[InventoryService] IsSlotLocked: slotIndex {slotIndex} is out of range [0, {InventoryConstants.INVENTORY_SLOT_COUNT}).");
+                return false;
+            }
+
+            if (!_locks.TryGetValue(charId, out var locks))
+            {
+                Debug.LogError($"[InventoryService] IsSlotLocked: {charId} is not a registered character. Call RegisterCharacter before reading inventory.");
+                return false;
+            }
+
+            return locks[slotIndex];
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>
+        /// Guard order (fail fast, first match wins): (1) <see cref="ItemID.Invalid"/> always
+        /// returns <see langword="false"/> with no log — this is a normal, expected query result,
+        /// not a caller bug. (2) an unregistered <paramref name="charId"/> logs a server error and
+        /// returns <see langword="false"/>.
+        /// </remarks>
+        public bool HasItem(CharacterID charId, ItemID itemId)
+        {
+            if (itemId == ItemID.Invalid)
+                return false;
+
+            if (!_inventories.TryGetValue(charId, out var slots))
+            {
+                Debug.LogError($"[InventoryService] HasItem: {charId} is not a registered character. Call RegisterCharacter before reading inventory.");
+                return false;
+            }
+
+            for (int i = 0; i < slots.Length; i++)
+            {
+                if (slots[i].Quantity > 0 && slots[i].ItemId == itemId)
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Guards against synchronous re-entrant mutation from inside an
+        /// <see cref="OnInventoryChanged"/> subscriber (ADR-010 Decision 3 re-entrancy contract).
+        /// Every mutation entry point — this story's <see cref="RecordSlotChange"/> and
+        /// <see cref="SeedSlotForTesting"/>, plus every future mutation entry point added by
+        /// Stories 002 and 004–008 (Pickup, Lock/Unlock, Discard, Move/Merge/Swap, Equipment
+        /// interop, Sell/Consume) — MUST call this first, before touching any slot state.
+        /// </summary>
+        /// <exception cref="InvalidOperationException">A dispatch of <see cref="OnInventoryChanged"/> is currently in progress.</exception>
+        private void ThrowIfDispatching()
+        {
+            if (_isDispatching)
+            {
+                throw new InvalidOperationException(
+                    "Inventory mutated synchronously from an OnInventoryChanged subscriber.");
+            }
+        }
+
+        /// <summary>
+        /// Test-only seam: directly sets the contents of a single slot, bypassing all mutation
+        /// rules (pickup/merge/lock checks) that real mutation stories will enforce. Required by
+        /// later stories' "seeded inventory state via test harness injection" acceptance criteria
+        /// (e.g. AC-INV-5/10/13).
+        /// </summary>
+        /// <remarks>
+        /// Enforces the no-phantom-slot invariant (GDD Edge Cases): <paramref name="itemId"/> and
+        /// <paramref name="quantity"/> must agree — both "empty" (<see cref="ItemID.Invalid"/>,
+        /// 0) or both "populated" (a valid <see cref="ItemID"/>, quantity &gt; 0). A mismatched
+        /// pair throws rather than silently correcting the caller's input, since a test seam
+        /// producing a phantom slot by accident would be a silent test-authoring bug.
+        /// </remarks>
+        /// <param name="charId">The character whose inventory to seed. Must already be registered.</param>
+        /// <param name="slotIndex">The slot index to set. Valid range: [0, <see cref="InventoryConstants.INVENTORY_SLOT_COUNT"/>).</param>
+        /// <param name="itemId">The item to place, or <see cref="ItemID.Invalid"/> to clear the slot.</param>
+        /// <param name="quantity">The quantity to place. Must be 0 iff <paramref name="itemId"/> is <see cref="ItemID.Invalid"/>.</param>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="slotIndex"/> is out of range, or <paramref name="quantity"/> is negative.</exception>
+        /// <exception cref="ArgumentException"><paramref name="itemId"/>/<paramref name="quantity"/> form a phantom slot, or <paramref name="charId"/> is not registered.</exception>
+        internal void SeedSlotForTesting(CharacterID charId, int slotIndex, ItemID itemId, int quantity)
+        {
+            ThrowIfDispatching();
+            ValidateSlotContents(nameof(SeedSlotForTesting), slotIndex, itemId, quantity);
+
+            if (!_inventories.TryGetValue(charId, out var slots))
+                throw new ArgumentException($"SeedSlotForTesting: {charId} is not a registered character. Call RegisterCharacter first.", nameof(charId));
+
+            slots[slotIndex] = new InventorySlot(itemId, quantity);
+        }
+
+        /// <summary>
+        /// Test/mutation-story seam: appends one slot's post-mutation state to the pending change
+        /// buffer for the next <see cref="EmitInventoryChanged"/> call. A single atomic mutation
+        /// (e.g. a pickup that fills a partial stack and opens a new slot) calls this once per
+        /// affected slot before calling <see cref="EmitInventoryChanged"/> once.
+        /// </summary>
+        /// <remarks>
+        /// The first recorded change binds the pending buffer to <paramref name="charId"/>; every
+        /// further change until the next emit/discard must be for the same character. Entries are
+        /// validated with the same no-phantom-slot invariant as <see cref="SeedSlotForTesting"/>.
+        /// </remarks>
+        /// <param name="charId">The character whose slot changed.</param>
+        /// <param name="slotIndex">The slot index that changed. Valid range: [0, <see cref="InventoryConstants.INVENTORY_SLOT_COUNT"/>).</param>
+        /// <param name="itemId">The slot's item after the mutation.</param>
+        /// <param name="quantity">The slot's quantity after the mutation. 0 means the slot became empty.</param>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="slotIndex"/> is out of range, or <paramref name="quantity"/> is negative.</exception>
+        /// <exception cref="ArgumentException"><paramref name="itemId"/>/<paramref name="quantity"/> form a phantom slot.</exception>
+        /// <exception cref="InvalidOperationException">A dispatch is currently in progress; changes for a different character are already pending; or more than <see cref="InventoryConstants.INVENTORY_SLOT_COUNT"/> changes have already been recorded for the pending dispatch (a programming error — no single atomic mutation can touch more than every slot once).</exception>
+        internal void RecordSlotChange(CharacterID charId, int slotIndex, ItemID itemId, int quantity)
+        {
+            ThrowIfDispatching();
+            ValidateSlotContents(nameof(RecordSlotChange), slotIndex, itemId, quantity);
+
+            if (_changeCount > 0 && charId != _pendingCharacterId)
+            {
+                throw new InvalidOperationException(
+                    $"RecordSlotChange: changes for {_pendingCharacterId} are still pending; cannot record a change for {charId}. Emit or discard the pending changes first.");
+            }
+
+            if (_changeCount >= InventoryConstants.INVENTORY_SLOT_COUNT)
+            {
+                throw new InvalidOperationException(
+                    $"RecordSlotChange overflow: attempted to record more than {InventoryConstants.INVENTORY_SLOT_COUNT} changes for a single dispatch.");
+            }
+
+            _pendingCharacterId = charId;
+            _changeBuffer[_changeCount] = new SlotChange(slotIndex, itemId, quantity);
+            _changeCount++;
+        }
+
+        /// <summary>
+        /// Drops every change recorded since the last dispatch without firing
+        /// <see cref="OnInventoryChanged"/>. Mutation paths that abort after calling
+        /// <see cref="RecordSlotChange"/> MUST call this so the stale entries are never broadcast
+        /// with a later, unrelated dispatch.
+        /// </summary>
+        /// <exception cref="InvalidOperationException">A dispatch is currently in progress.</exception>
+        internal void DiscardPendingChanges()
+        {
+            ThrowIfDispatching();
+            ResetPendingChanges();
+        }
+
+        private void ResetPendingChanges()
+        {
+            _changeCount = 0;
+            _pendingCharacterId = CharacterID.Invalid;
+        }
+
+        /// <summary>
+        /// Shared slot-contents validation for the internal write seams: slot index in range,
+        /// non-negative quantity, and the no-phantom-slot invariant (GDD Edge Cases) — a slot is
+        /// either fully empty (<see cref="ItemID.Invalid"/>, 0) or fully populated (valid
+        /// <see cref="ItemID"/>, quantity &gt; 0).
+        /// </summary>
+        private static void ValidateSlotContents(string caller, int slotIndex, ItemID itemId, int quantity)
+        {
+            if (slotIndex < 0 || slotIndex >= InventoryConstants.INVENTORY_SLOT_COUNT)
+                throw new ArgumentOutOfRangeException(nameof(slotIndex), slotIndex, $"{caller}: slotIndex must be within [0, {InventoryConstants.INVENTORY_SLOT_COUNT}).");
+
+            if (quantity < 0)
+                throw new ArgumentOutOfRangeException(nameof(quantity), quantity, $"{caller}: quantity must not be negative.");
+
+            if ((itemId != ItemID.Invalid) != (quantity > 0))
+            {
+                throw new ArgumentException(
+                    $"{caller} rejected a phantom slot: itemId={itemId}, quantity={quantity}. " +
+                    "A slot must be either fully empty (ItemID.Invalid, quantity 0) or fully populated (valid ItemID, quantity > 0).");
+            }
+        }
+
+        /// <summary>
+        /// Fires <see cref="OnInventoryChanged"/> with the entries accumulated via
+        /// <see cref="RecordSlotChange"/> since the last dispatch, then resets dispatch state.
+        /// </summary>
+        /// <remarks>
+        /// Internal (not private) so tests can drive the event directly (this story defines the
+        /// emit helper; mutation stories 002/004–008 are the ones that call it from real mutation
+        /// code paths). Sets <see cref="_isDispatching"/> for the duration of the
+        /// <see cref="OnInventoryChanged"/> invocation so a subscriber that attempts to mutate the
+        /// inventory synchronously trips <see cref="ThrowIfDispatching"/> and throws
+        /// <see cref="InvalidOperationException"/> to this method's caller. The <see langword="finally"/>
+        /// block always resets <see cref="_isDispatching"/> and the pending changes, even if a
+        /// subscriber throws — a later dispatch is never contaminated by a prior one's leftover
+        /// state. With no pending changes this is a no-op: no event fires (a mutation that changed
+        /// nothing broadcasts nothing).
+        /// </remarks>
+        /// <param name="charId">The character whose inventory changed. Must match the character the pending changes were recorded for.</param>
+        /// <exception cref="InvalidOperationException">A dispatch is already in progress (re-entrant call), or <paramref name="charId"/> does not match the pending changes' character — in which case the pending changes are discarded before throwing, so they can never leak into a later dispatch.</exception>
+        internal void EmitInventoryChanged(CharacterID charId)
+        {
+            ThrowIfDispatching();
+
+            if (_changeCount == 0)
+                return;
+
+            if (charId != _pendingCharacterId)
+            {
+                var pending = _pendingCharacterId;
+                ResetPendingChanges();
+                throw new InvalidOperationException(
+                    $"EmitInventoryChanged: pending changes were recorded for {pending} but emitted for {charId}. Pending changes discarded.");
+            }
+
+            _isDispatching = true;
+            try
+            {
+                OnInventoryChanged?.Invoke(new InventoryChangedEventArgs(charId, _changeBuffer, _changeCount));
+            }
+            finally
+            {
+                _isDispatching = false;
+                ResetPendingChanges();
+            }
+        }
+    }
+}

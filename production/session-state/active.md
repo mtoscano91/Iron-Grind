@@ -1603,3 +1603,41 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Payload DECIDED via unity-specialist consult: `SlotChange` readonly struct + `InventoryChangedEventArgs` readonly struct wrapping a reused service-owned 20-entry buffer + Count, struct enumerator (alloc-free foreach), `_isDispatching` guard throws `InvalidOperationException` on re-entrant mutation, `finally` resets flag+count. Valid-only-during-dispatch contract. Rejected: 20 inline entries, per-slot events, ReadOnlySpan member.
 - Story 001 updated: implementation note (sketch + contract), performance note, AC wording, new re-entrancy QA test case. EPIC.md open question (1) marked resolved.
 - Next: `/dev-story production/epics/inventory-system/story-001-slot-container-core-types.md`
+
+## Session Extract — /dev-story 2026-09-25 (Inventory System Story 001 — Slot Container, Core Types & Read API)
+- Story: production/epics/inventory-system/story-001-slot-container-core-types.md — Slot Container, Core Types & Read API
+- Files changed: src/Foundation/InventorySystem/{IInventoryService,InventorySystem,InventorySlot,SlotChange,InventoryChangedEventArgs}.cs (new), tests/EditMode/InventorySystem/InventorySystem_SlotContainer_tests.cs (new, 32 tests)
+- Test written: tests/EditMode/InventorySystem/InventorySystem_SlotContainer_tests.cs — NOT yet run in Test Runner (static review only)
+- Orchestrator decisions: RegisterCharacter(CharacterID) bootstrap seam (mirrors Currency); GetSlot returns InventorySlot (Empty + LogError on bad index/unregistered); internal seams SeedSlotForTesting / RecordSlotChange / EmitInventoryChanged; private ThrowIfDispatching guard that all future mutation entry points (Stories 002, 004-008) must call first.
+- gameplay-programmer hit its turn limit after writing all files; orchestrator reviewed and fixed tests directly: recorder now copies values out during dispatch (previously retained args past dispatch, violating the type's own validity contract); local-function seeding subscriber replaced with a named method.
+- RESOLVED (user decision 2026-09-25): concrete class renamed `InventorySystem` → `InventoryService` (file InventoryService.cs, log tag [InventoryService]) to avoid the class/namespace collision (TD-006 class). Namespace stays `IronGrind.InventorySystem`, matching the Leveling precedent (LevelingSystem ns / LevelingService class). Story 001 + Story 009 docs updated to the new name.
+- Blockers: None
+- Next: run EditMode Test Runner, then /code-review src/Foundation/InventorySystem tests/EditMode/InventorySystem then /story-done production/epics/inventory-system/story-001-slot-container-core-types.md
+
+## Session Extract — /code-review + "fix all" 2026-09-25 (Inventory Story 001)
+- Rename test-regex bug (space dropped after [InventoryService] tag, 9 failures) fixed; user then ran /code-review → CHANGES REQUIRED (unity-specialist + qa-tester).
+- Applied all required changes + suggestions:
+  - New `InventoryConstants.cs` — INVENTORY_SLOT_COUNT moved off the concrete class (interface-only consumers can read it).
+  - `RecordSlotChange(CharacterID, slot, item, qty)` — pending buffer now bound to one character (_pendingCharacterId); validates slot range / negative qty / phantom via shared `ValidateSlotContents` (also used by SeedSlotForTesting).
+  - New internal `DiscardPendingChanges()` — mutation stories 002/004-008 MUST call it when aborting after recording. Contract documented on class remarks.
+  - `EmitInventoryChanged`: no-op when nothing pending; character mismatch discards pending then throws.
+  - `Enumerator.Current` bounds-checked (InvalidOperationException).
+  - OnInventoryChanged docs: throwing subscriber skips later subscribers.
+  - Tests: removed dead TearDown; +13 test cases (45 total) — validation, cross-character binding, discard, zero-change emit, throwing subscriber reset, two subscribers, enumerator guard.
+- NOT yet run in Test Runner.
+- Next: user re-runs EditMode tests → /story-done production/epics/inventory-system/story-001-slot-container-core-types.md
+
+## Session Extract — /story-done 2026-09-25
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/inventory-system/story-001-slot-container-core-types.md — Slot Container, Core Types & Read API (45 tests passing, live Editor)
+- EPIC.md: row 001 → Complete; epic header Ready → In Progress
+- Tech debt logged: None (advisory deviations are design refinements, recorded in Completion Notes)
+- Next recommended: production/epics/inventory-system/story-002-atomic-pickup.md — must follow the Story 001 mutation-seam contract (ThrowIfDispatching → validate → RecordSlotChange → Emit; DiscardPendingChanges on abort)
+- Uncommitted: all Inventory Story 001 files + earlier uncommitted Leveling/Networking fixes; PAT-in-remote reminder still outstanding; bash.exe.stackdump still untracked in repo root
+
+## Session Extract — /story-readiness 2026-09-25 (Inventory Story 002)
+- Verdict: NEEDS WORK → gaps filled (user-approved) in production/epics/inventory-system/story-002-atomic-pickup.md
+- Decisions: PickupResult readonly struct + PickupFailReason {None, InventoryFull, InvalidQuantity, UnknownItem, CharacterNotRegistered} (Story 003 notifies only on InventoryFull); InventoryService(IItemDatabase) ctor, parameterless removed, Story 001 test SetUp update in scope; StubItemDatabase test helper; qty > 99 accepted; lock guard added in 002 (tested in 004); binds to Story 001 seam contract.
+- Next: /story-readiness re-check (expect READY) → /dev-story production/epics/inventory-system/story-002-atomic-pickup.md
+- /story-readiness re-check (Story 002): one further gap (missing performance note) + estimate advisory → both applied (user-approved): perf bullet added (zero-alloc plan buffer, ≤40 array reads), estimate 3–4h → 4–5h. Story 002 now READY.
+- Next: /dev-story production/epics/inventory-system/story-002-atomic-pickup.md

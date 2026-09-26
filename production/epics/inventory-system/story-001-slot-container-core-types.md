@@ -1,7 +1,7 @@
 # Story 001: Slot Container, Core Types & Read API
 
 > **Epic**: Inventory System
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-06-28
@@ -44,7 +44,7 @@
 ## Implementation Notes
 
 - Location: `src/Foundation/InventorySystem/` (same assembly as the Leveling System, also Core layer — see `production/epics/index.md` note on layer classification). Namespace `IronGrind.InventorySystem`.
-- Service shape: follow `CurrencySystem`'s pattern — one service (`InventorySystem : IInventoryService`) keyed by `CharacterID` (`src/Foundation/Currency/CharacterID.cs`), holding per-character slot state. Other systems depend on `IInventoryService` (Tier 1 injection), never the concrete class.
+- Service shape: follow `CurrencySystem`'s pattern — one service (`InventoryService : IInventoryService`) keyed by `CharacterID` (`src/Foundation/Currency/CharacterID.cs`), holding per-character slot state. Other systems depend on `IInventoryService` (Tier 1 injection), never the concrete class.
 - Empty slot = `ItemID.Invalid` (`src/Foundation/CharacterStats/ItemID.cs` — `None` and `Invalid` are aliases for `uint(0)`) with `Quantity = 0`. Never write a valid `ItemID` with `Quantity = 0` (phantom slot — GDD Edge Cases).
 - Test seam: an `internal` (InternalsVisibleTo `IronGrind.Foundation.EditModeTests`) seeding method to set arbitrary slot contents — required by AC-INV-5/10/13 in later stories ("seeded inventory state via test harness injection").
 - **Event payload shape — DECIDED 2026-09-25 (`/story-readiness`, `unity-specialist` consult):** a `readonly struct` wrapping a **reused, service-owned 20-entry buffer** + count, with a struct enumerator and an explicit re-entrancy guard. Satisfies ADR-010 Decision 3 (zero per-emit allocation, no boxing). Sketch:
@@ -62,7 +62,7 @@
   public readonly struct InventoryChangedEventArgs
   {
       public readonly CharacterID CharacterID;
-      private readonly SlotChange[] _buffer; // owned by InventorySystem, capacity INVENTORY_SLOT_COUNT
+      private readonly SlotChange[] _buffer; // owned by InventoryService, capacity INVENTORY_SLOT_COUNT
       public readonly int Count;
 
       internal InventoryChangedEventArgs(CharacterID characterId, SlotChange[] buffer, int count)
@@ -81,7 +81,7 @@
       }
   }
 
-  // InventorySystem side
+  // InventoryService side
   private readonly SlotChange[] _changeBuffer = new SlotChange[INVENTORY_SLOT_COUNT];
   private int _changeCount;
   private bool _isDispatching;
@@ -149,7 +149,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/InventorySystem/InventorySystem_SlotContainer_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 45 test cases passing (live Editor, 2026-09-25)
 
 ---
 
@@ -157,3 +157,17 @@
 
 - Depends on: Item Database epic (Complete) — `ItemID`, `IItemDatabase`; Currency epic (Complete) — `CharacterID`
 - Unlocks: Stories 002–009
+
+---
+
+## Completion Notes
+**Completed**: 2026-09-25
+**Criteria**: 7/7 passing (none deferred)
+**Deviations** (advisory, all accepted):
+- Concrete class named `InventoryService` (not `InventorySystem`) — user decision, avoids class/namespace collision (TD-006 class). Namespace remains `IronGrind.InventorySystem`.
+- `INVENTORY_SLOT_COUNT` lives in `InventoryConstants` (static class) so interface-only consumers can read it without the concrete type.
+- Event seams hardened beyond the Implementation Notes sketch (code review): `RecordSlotChange(CharacterID, ...)` binds the service-wide pending buffer to one character and validates slot range / phantom entries; new internal `DiscardPendingChanges()`; `EmitInventoryChanged` is a no-op with zero pending changes and throws (after discarding) on character mismatch; `Enumerator.Current` bounds-checked.
+- **Binding contract for Stories 002, 004–008:** call `ThrowIfDispatching()` first → validate fully → `RecordSlotChange` only once committing → `EmitInventoryChanged`; call `DiscardPendingChanges()` on any abort after recording.
+- TR registry has no `inv` entries yet; ACs verified against story + GDD.
+**Test Evidence**: Logic — `tests/EditMode/InventorySystem/InventorySystem_SlotContainer_tests.cs` (45 test cases, all passing)
+**Code Review**: Complete — /code-review (unity-specialist + qa-tester) → CHANGES REQUIRED → all required + suggested fixes applied

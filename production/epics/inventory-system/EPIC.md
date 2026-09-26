@@ -3,7 +3,7 @@
 > **Layer**: Core
 > **GDD**: design/gdd/inventory-system.md
 > **Architecture Module**: Inventory
-> **Status**: Ready
+> **Status**: In Progress
 > **Stories**: 9 stories created 2026-09-25 (all Ready)
 
 ## Overview
@@ -38,7 +38,7 @@ This epic is complete when:
 
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
-| 001 | [Slot Container, Core Types & Read API](story-001-slot-container-core-types.md) | Logic | Ready | ADR-010 (event) |
+| 001 | [Slot Container, Core Types & Read API](story-001-slot-container-core-types.md) | Logic | Complete | ADR-010 (event) |
 | 002 | [Atomic Pickup Resolution & Stack Limits](story-002-atomic-pickup.md) | Logic | Ready | ADR-010 (event) |
 | 003 | [Bag-Full Notification & 30s Dedup Window](story-003-bag-full-notification.md) | Logic | Ready | ADR-010 |
 | 004 | [Slot Locks & RemoveItem](story-004-slot-locks.md) | Logic | Ready | ADR-010 (event) |

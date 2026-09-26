@@ -59,7 +59,7 @@
 
 **File**: `tests/EditMode/InventorySystem/InventorySystem_SnapshotSaveLoad_tests.cs`
 
-- **AC-INV-3** — Given Bronze Sword ×1 in slot 0, HP Potion ×42 in slot 7, HP Potion ×99 in slot 19; When export → import into a new `InventorySystem`; Then slots 0/7/19 match exactly, the other 17 slots Invalid/0.
+- **AC-INV-3** — Given Bronze Sword ×1 in slot 0, HP Potion ×42 in slot 7, HP Potion ×99 in slot 19; When export → import into a new `InventoryService`; Then slots 0/7/19 match exactly, the other 17 slots Invalid/0.
 - **Non-empty only** — the exported snapshot from the case above has exactly 3 entries; an empty inventory exports 0 entries.
 - **Locks not persisted** — slot 7 locked at export → after import `IsSlotLocked(7)` false, item ×42 intact.
 - **Unknown ItemId** — entry `{3, 999999, 5}` → slot 3 empty, warning logged (`LogAssert.Expect` or an injected logger), other entries load.
