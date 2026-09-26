@@ -13,7 +13,7 @@ Control Manifest Version: 2026-06-28
 | [Authentication](authentication/EPIC.md) | Core | Authentication | design/gdd/authentication.md | Not yet created | Ready |
 | [Damage Calculation](damage-calculation/EPIC.md) | Core | Damage Calculation | design/gdd/damage-calculation.md | Not yet created | Ready — **blocked on server/client assembly-boundary ADR before Story 001** |
 | [Leveling System](leveling-system/EPIC.md) | Core | Leveling System | design/gdd/leveling-system.md | 13 stories (001-013 Complete) | Complete |
-| [Inventory System](inventory-system/EPIC.md) | Core | Inventory System | design/gdd/inventory-system.md | Not yet created | Ready |
+| [Inventory System](inventory-system/EPIC.md) | Core | Inventory System | design/gdd/inventory-system.md | 9 stories (001-009 Ready) | Ready |
 | [Loot Table System](loot-table-system/EPIC.md) | Core | Loot Table System | design/gdd/loot-table-system.md | Not yet created | Ready |
 | [Status Effects / Buffs](status-effects/EPIC.md) | Core | Status Effects | design/gdd/status-effects.md | Not yet created | Ready |
 

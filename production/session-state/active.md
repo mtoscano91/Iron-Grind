@@ -1587,3 +1587,19 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - No sprint plan / sprint-status.yaml exists — nothing to update there.
 - Uncommitted: all of this session's work (GDD AC-27 fix, story 008, test file + Unity .meta files, EPIC/index updates, TD register, active.md). PAT-in-remote reminder still open; `bash.exe.stackdump` still untracked.
 - Next recommended: remaining Core epics with no stories yet — Inventory System, Loot Table System, Status Effects (all "Ready"); Damage Calculation blocked on server/client assembly ADR; Authentication has a partial ADR gap. Run `/create-stories [epic-slug]` for the chosen one.
+
+## Session Extract — /create-stories 2026-09-25 (Inventory System epic)
+- Verdict: COMPLETE — 9 stories written to `production/epics/inventory-system/` (all Logic, all Ready): 001 slot container/core types/read API, 002 atomic pickup, 003 bag-full notification + 30s dedup, 004 slot locks + RemoveItem, 005 discard, 006 move/merge/swap, 007 Equipment interface, 008 sell + consume, 009 snapshot save/load.
+- Review mode lean → QL-STORY-READY skipped; QA test cases authored directly from GDD ACs.
+- Coverage: 17/18 GDD blocking ACs. AC-INV-11 (UI — tap consumable opens detail view) deferred to a future Inventory UI epic (GDD + `design/ux/inventory-screen.md` unauthored). AC-INV-10 covered inventory-side only.
+- Governing ADRs: ADR-010 cited for `OnInventoryChanged`/`OnInventoryFull` + Tier 1 calls; ADR-006 for Story 009 storage shape. Epic's own "no ADR" stands for slot logic.
+- Open questions parked for `/story-readiness`: Story 001 zero-alloc event payload shape vs ADR-010 (unity-specialist); Story 006 consumable-onto-different-item (default swap → GDD Rule 7.20 line); smaller confirmations in 004 (RemoveItem on unlocked), 007 (ForceInsert dedup), 008 (consume locked stacks), 009 (no events on load).
+- Code location: `src/Foundation/InventorySystem/`; tests `tests/EditMode/InventorySystem/InventorySystem_[feature]_tests.cs`.
+- Updated: `production/epics/inventory-system/EPIC.md` (story table, coverage/deferral notes), `production/epics/index.md`.
+- Next: `/story-readiness production/epics/inventory-system/story-001-slot-container-core-types.md`
+
+## Session Extract — /story-readiness 2026-09-25 (Inventory Story 001 — NEEDS WORK → fixed → READY)
+- 2 gaps: unresolved event-payload question + missing performance note. User said "fix all".
+- Payload DECIDED via unity-specialist consult: `SlotChange` readonly struct + `InventoryChangedEventArgs` readonly struct wrapping a reused service-owned 20-entry buffer + Count, struct enumerator (alloc-free foreach), `_isDispatching` guard throws `InvalidOperationException` on re-entrant mutation, `finally` resets flag+count. Valid-only-during-dispatch contract. Rejected: 20 inline entries, per-slot events, ReadOnlySpan member.
+- Story 001 updated: implementation note (sketch + contract), performance note, AC wording, new re-entrancy QA test case. EPIC.md open question (1) marked resolved.
+- Next: `/dev-story production/epics/inventory-system/story-001-slot-container-core-types.md`

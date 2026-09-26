@@ -4,7 +4,7 @@
 > **GDD**: design/gdd/inventory-system.md
 > **Architecture Module**: Inventory
 > **Status**: Ready
-> **Stories**: Not yet created — run `/create-stories inventory-system`
+> **Stories**: 9 stories created 2026-09-25 (all Ready)
 
 ## Overview
 
@@ -32,8 +32,28 @@ The Inventory System is the character's personal item bag — a fixed-capacity s
 This epic is complete when:
 - All stories are implemented, reviewed, and closed via `/story-done`
 - All acceptance criteria from `design/gdd/inventory-system.md` are verified
-- Logic stories (slot structure, stack limits, atomic pickup) have passing test files in `tests/EditMode/InventorySystem/`
+- Logic stories (all 9) have passing test files in `tests/EditMode/InventorySystem/`
+
+## Stories
+
+| # | Story | Type | Status | ADR |
+|---|-------|------|--------|-----|
+| 001 | [Slot Container, Core Types & Read API](story-001-slot-container-core-types.md) | Logic | Ready | ADR-010 (event) |
+| 002 | [Atomic Pickup Resolution & Stack Limits](story-002-atomic-pickup.md) | Logic | Ready | ADR-010 (event) |
+| 003 | [Bag-Full Notification & 30s Dedup Window](story-003-bag-full-notification.md) | Logic | Ready | ADR-010 |
+| 004 | [Slot Locks & RemoveItem](story-004-slot-locks.md) | Logic | Ready | ADR-010 (event) |
+| 005 | [Discard](story-005-discard.md) | Logic | Ready | ADR-010 (event) |
+| 006 | [Slot Move — Merge, Swap & Relocate](story-006-move-merge-swap.md) | Logic | Ready | ADR-010 (event) |
+| 007 | [Equipment System Interface](story-007-equipment-interface.md) | Logic | Ready | ADR-010 |
+| 008 | [NPC Shop Sell & Consumable Use](story-008-sell-and-consume.md) | Logic | Ready | ADR-010 |
+| 009 | [InventorySnapshot Save/Load & Load Validation](story-009-snapshot-save-load.md) | Logic | Ready | ADR-006, ADR-010 |
+
+**GDD AC coverage**: 17 of 18 blocking ACs. **AC-INV-11** (tapping a consumable opens the detail view without consuming) is pure UI — **deferred to a future Inventory UI epic** (Inventory UI GDD and `design/ux/inventory-screen.md` not yet authored). AC-INV-10 is covered on the inventory side only (Story 007); its "equipped item stays equipped" half belongs to the Equipment System epic.
+
+**Open questions to resolve at `/story-readiness`**: ~~(1) Story 001 — `InventoryChangedEvent` payload shape vs ADR-010~~ — RESOLVED 2026-09-25 (reused-buffer `readonly struct` + struct enumerator + re-entrancy guard, see Story 001); (2) Story 006 — moving a consumable onto a different item (proposed default: swap; would add a line to GDD Rule 7.20); plus smaller confirmations noted in Stories 004, 007, 008, 009.
+
+**Out of scope for this epic**: wire-protocol codecs for inventory messages (Networking), Equipment/Loot Table/Persistence/NPC Shop orchestration (their own epics).
 
 ## Next Step
 
-Run `/create-stories inventory-system` to break this epic into implementable stories.
+Run `/story-readiness production/epics/inventory-system/story-001-slot-container-core-types.md`, then `/dev-story`. Work through stories in order — each story's `Depends on:` field lists its prerequisites.
