@@ -1,7 +1,10 @@
+#nullable enable
+
 using System;
 using System.Collections.Generic;
 using IronGrind.CharacterStats;
 using IronGrind.Currency;
+using IronGrind.ItemDatabase;
 using UnityEngine;
 
 namespace IronGrind.InventorySystem
@@ -27,12 +30,12 @@ namespace IronGrind.InventorySystem
     /// <see cref="Dictionary{TKey,TValue}"/>. Revisit if/when a future story requires concurrent
     /// access, mirroring <c>CurrencySystem</c>'s precedent.</para>
     ///
-    /// <para><b>Mutation seam contract:</b> every future mutation entry point (Story 002 Pickup,
-    /// Story 004 Lock/Unlock, Story 005 Discard, Story 006 Move/Merge/Swap, Story 007 Equipment
-    /// interface, Story 008 Sell/Consume) MUST call <see cref="ThrowIfDispatching"/> first, then
-    /// record its per-slot results via <see cref="RecordSlotChange"/>, then fire the broadcast via
-    /// <see cref="EmitInventoryChanged"/> — this story defines all three seams but does not itself
-    /// call them from any public mutation API (none exists yet). Record changes only once the
+    /// <para><b>Mutation seam contract:</b> every mutation entry point (Story 002
+    /// <see cref="Pickup"/>, Story 004 Lock/Unlock, Story 005 Discard, Story 006 Move/Merge/Swap,
+    /// Story 007 Equipment interface, Story 008 Sell/Consume) MUST call
+    /// <see cref="ThrowIfDispatching"/> first, then record its per-slot results via
+    /// <see cref="RecordSlotChange"/>, then fire the broadcast via
+    /// <see cref="EmitInventoryChanged"/>. Record changes only once the
     /// mutation is unconditionally committing (all validation done). If a mutation must abort
     /// after recording, it MUST call <see cref="DiscardPendingChanges"/> — the change buffer is
     /// service-wide, and leftover entries would otherwise be broadcast with a later dispatch.
@@ -54,8 +57,22 @@ namespace IronGrind.InventorySystem
         private CharacterID _pendingCharacterId = CharacterID.Invalid;
         private bool _isDispatching;
 
+        private readonly IItemDatabase _itemDatabase;
+
+        // Reused, service-owned pickup plan (Story 002 performance note — zero heap allocation per
+        // pickup): _pickupPlan[i] is slot i's planned post-pickup quantity, 0 = slot untouched.
+        private readonly int[] _pickupPlan = new int[InventoryConstants.INVENTORY_SLOT_COUNT];
+
+        /// <summary>Creates an inventory service that reads item stack limits from <paramref name="itemDatabase"/>.</summary>
+        /// <param name="itemDatabase">Item Database used to look up <c>StackLimit</c> on pickup (Tier 1, ADR-010).</param>
+        /// <exception cref="ArgumentNullException"><paramref name="itemDatabase"/> is <see langword="null"/>.</exception>
+        public InventoryService(IItemDatabase itemDatabase)
+        {
+            _itemDatabase = itemDatabase ?? throw new ArgumentNullException(nameof(itemDatabase));
+        }
+
         /// <inheritdoc/>
-        public event Action<InventoryChangedEventArgs> OnInventoryChanged;
+        public event Action<InventoryChangedEventArgs>? OnInventoryChanged;
 
         /// <inheritdoc/>
         /// <remarks>
@@ -187,6 +204,134 @@ namespace IronGrind.InventorySystem
                     return true;
             }
             return false;
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>
+        /// Plan-then-commit: Steps 1–3 run against <see cref="_pickupPlan"/> without touching any
+        /// slot, so a failed pickup never writes and never records — no
+        /// <see cref="DiscardPendingChanges"/> call is needed on any path. Step 1 skips locked
+        /// slots (GDD Rule 5.12) and is skipped entirely for <c>StackLimit</c> = 1 items. An item
+        /// whose <c>StackLimit</c> is below 1 is a data error and is rejected as
+        /// <see cref="PickupFailReason.UnknownItem"/> rather than reported as a full bag.
+        /// </remarks>
+        public PickupResult Pickup(CharacterID characterId, ItemID itemId, int quantity)
+        {
+            ThrowIfDispatching();
+
+            if (quantity <= 0)
+                return PickupResult.Fail(PickupFailReason.InvalidQuantity);
+
+            if (!_inventories.TryGetValue(characterId, out var slots))
+            {
+                Debug.LogError($"[InventoryService] Pickup: {characterId} is not a registered character. Call RegisterCharacter before mutating inventory.");
+                return PickupResult.Fail(PickupFailReason.CharacterNotRegistered);
+            }
+
+            if (!TryGetStackLimit(itemId, out int stackLimit))
+                return PickupResult.Fail(PickupFailReason.UnknownItem);
+
+            Array.Clear(_pickupPlan, 0, _pickupPlan.Length);
+            int remainder = PlanPartialStacks(slots, _locks[characterId], itemId, stackLimit, quantity);
+            remainder = PlanEmptySlots(slots, stackLimit, remainder);
+
+            // Step 3 — atomic failure: nothing has been written or recorded.
+            if (remainder > 0)
+                return PickupResult.Fail(PickupFailReason.InventoryFull);
+
+            CommitPickupPlan(characterId, slots, itemId);
+            EmitInventoryChanged(characterId);
+            return PickupResult.Succeeded;
+        }
+
+        /// <summary>
+        /// Resolves <paramref name="itemId"/>'s <c>StackLimit</c> from the Item Database, logging a
+        /// server error when the item is invalid, unknown, the database is not ready, or the
+        /// definition's <c>StackLimit</c> is below 1 (a data error — never reported as a full bag).
+        /// </summary>
+        private bool TryGetStackLimit(ItemID itemId, out int stackLimit)
+        {
+            stackLimit = 0;
+            if (itemId == ItemID.Invalid || !_itemDatabase.IsReady
+                || !_itemDatabase.TryGetItem(itemId, out var definition) || definition == null)
+            {
+                Debug.LogError($"[InventoryService] Pickup: {itemId} is not a known item (or the Item Database is not ready).");
+                return false;
+            }
+
+            stackLimit = definition.StackLimit;
+            if (stackLimit < 1)
+            {
+                Debug.LogError($"[InventoryService] Pickup: {itemId} has invalid StackLimit {stackLimit}.");
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// GDD Rule 3 Step 1 (F-INV-2): plans top-ups of unlocked partial stacks of
+        /// <paramref name="itemId"/> in ascending slot order. Skipped for <c>StackLimit</c> = 1
+        /// items. Returns the units still unplaced.
+        /// </summary>
+        private int PlanPartialStacks(InventorySlot[] slots, bool[] locks, ItemID itemId, int stackLimit, int remainder)
+        {
+            if (stackLimit == 1)
+                return remainder;
+
+            for (int i = 0; i < slots.Length && remainder > 0; i++)
+            {
+                var slot = slots[i];
+                if (slot.ItemId != itemId || locks[i] || slot.Quantity >= stackLimit)
+                    continue;
+
+                int added = Math.Min(remainder, stackLimit - slot.Quantity);
+                _pickupPlan[i] = slot.Quantity + added;
+                remainder -= added;
+            }
+            return remainder;
+        }
+
+        /// <summary>
+        /// GDD Rule 3 Step 2: plans placement into empty slots in ascending order, up to
+        /// <paramref name="stackLimit"/> per slot. Returns the units still unplaced.
+        /// </summary>
+        private int PlanEmptySlots(InventorySlot[] slots, int stackLimit, int remainder)
+        {
+            for (int i = 0; i < slots.Length && remainder > 0; i++)
+            {
+                if (!slots[i].IsEmpty)
+                    continue;
+
+                int added = Math.Min(remainder, stackLimit);
+                _pickupPlan[i] = added;
+                remainder -= added;
+            }
+            return remainder;
+        }
+
+        /// <summary>
+        /// Writes every planned slot in ascending order, recording each change for the single
+        /// <see cref="EmitInventoryChanged"/> dispatch that follows.
+        /// </summary>
+        /// <remarks>
+        /// Each slot is recorded before it is written, so a seam-contract violation (stale pending
+        /// changes for another character) throws on the first slot, before any write. After the
+        /// first record, <see cref="RecordSlotChange"/> cannot throw under current invariants:
+        /// not dispatching, at most <see cref="InventoryConstants.INVENTORY_SLOT_COUNT"/> planned
+        /// slots, and every planned entry is a valid ItemID with quantity &gt; 0. If a future change
+        /// breaks any of these, a mid-loop throw would leave committed slots with no event —
+        /// keep them intact or switch to validate-all-then-write.
+        /// </remarks>
+        private void CommitPickupPlan(CharacterID characterId, InventorySlot[] slots, ItemID itemId)
+        {
+            for (int i = 0; i < slots.Length; i++)
+            {
+                if (_pickupPlan[i] == 0)
+                    continue;
+
+                RecordSlotChange(characterId, i, itemId, _pickupPlan[i]);
+                slots[i] = new InventorySlot(itemId, _pickupPlan[i]);
+            }
         }
 
         /// <summary>

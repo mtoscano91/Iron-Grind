@@ -57,7 +57,7 @@ namespace IronGrind.Tests.EditMode.InventorySystem
         [SetUp]
         public void SetUp()
         {
-            _inventory = new InventoryService();
+            _inventory = new InventoryService(new StubItemDatabase());
             _capturedEvents = new List<CapturedDispatch>();
             _secondRecorderEvents = new List<CapturedDispatch>();
         }

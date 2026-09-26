@@ -1641,3 +1641,34 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Next: /story-readiness re-check (expect READY) → /dev-story production/epics/inventory-system/story-002-atomic-pickup.md
 - /story-readiness re-check (Story 002): one further gap (missing performance note) + estimate advisory → both applied (user-approved): perf bullet added (zero-alloc plan buffer, ≤40 array reads), estimate 3–4h → 4–5h. Story 002 now READY.
 - Next: /dev-story production/epics/inventory-system/story-002-atomic-pickup.md
+
+## Session Extract — /dev-story 2026-09-26 (Inventory System Story 002 — Atomic Pickup)
+- Story: production/epics/inventory-system/story-002-atomic-pickup.md — Atomic Pickup Resolution & Stack Limits (Status → In Progress)
+- Files changed: src/Foundation/InventorySystem/{PickupFailReason,PickupResult}.cs (new), IInventoryService.cs (+Pickup), InventoryService.cs (ctor(IItemDatabase), reused _pickupPlan int[20], Pickup plan-then-commit), tests/EditMode/InventorySystem/StubItemDatabase.cs (new), InventorySystem_SlotContainer_tests.cs (SetUp passes stub), InventorySystem_AtomicPickup_tests.cs (new, 23 cases; reuses ItemDefinitionBuilder)
+- Implemented directly by orchestrator (no programmer subagent) — deviation from skill routing; noted.
+- Additions beyond spec: StackLimit < 1 → LogError + UnknownItem (so bad data never shows bag-full UI); per-slot RecordSlotChange before write so a seam violation throws before any mutation.
+- Lock guard (Rule 5.12) in Step 1 — untested until Story 004.
+- NOT yet run in Test Runner.
+- Next: user runs EditMode tests → /code-review src/Foundation/InventorySystem tests/EditMode/InventorySystem → /story-done production/epics/inventory-system/story-002-atomic-pickup.md
+- Compile fix: missing `using IronGrind.Currency;` (CharacterID) in the AtomicPickup test file → Safe Mode; fixed. User then ran EditMode Test Runner: ALL tests pass (23 new + Story 001 regression).
+- Next: /code-review src/Foundation/InventorySystem tests/EditMode/InventorySystem → /story-done production/epics/inventory-system/story-002-atomic-pickup.md
+
+## Session Extract — /code-review + "fix all" 2026-09-26 (Inventory Story 002)
+- /code-review: unity-specialist CLEAN, qa-tester TESTABLE (GAPS: suggestions only). Verdict APPROVED WITH SUGGESTIONS. User said "fix all"; applied:
+  1. Pickup() split into TryGetStackLimit / PlanPartialStacks / PlanEmptySlots / CommitPickupPlan (was ~75 lines, CC>10).
+  2. `#nullable enable` on InventoryService.cs; OnInventoryChanged declared `Action<...>?`.
+  3. CommitPickupPlan remarks document the no-mid-loop-throw invariants.
+  4. Story Implementation Notes: guard 3b (StackLimit < 1 → UnknownItem) recorded.
+  5. PickupResult.Fail: UnityEngine.Debug.Assert(reason != None).
+  6. +5 tests (28 total): two-character isolation (added _eventCharacterIds capture), StackLimit 0 → UnknownItem, two partial stacks + spill in one event, Step1+Step2 then remainder fail, seeded stack above limit skipped.
+- NOT yet re-run in Test Runner.
+- Next: user re-runs EditMode tests → /story-done production/epics/inventory-system/story-002-atomic-pickup.md
+- User re-ran EditMode suite after review fixes: ALL tests pass (28 pickup cases + Story 001 regression). Next: /story-done production/epics/inventory-system/story-002-atomic-pickup.md
+
+## Session Extract — /story-done 2026-09-26
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/inventory-system/story-002-atomic-pickup.md — Atomic Pickup Resolution & Stack Limits (10/10 ACs, 28 tests passing live)
+- EPIC.md: row 002 → Complete
+- Tech debt logged: None (advisory deviations recorded in Completion Notes)
+- Next recommended: production/epics/inventory-system/story-003-*.md — Bag-full notification + 30s dedup (Ready, 2h, depends only on 002; notify only on PickupFailReason.InventoryFull)
+- Uncommitted: Inventory Story 002 only (Story 001 and earlier work were committed in 66a6996 and before); PAT-in-remote reminder outstanding; bash.exe.stackdump untracked

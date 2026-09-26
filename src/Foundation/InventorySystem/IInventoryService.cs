@@ -15,9 +15,9 @@ namespace IronGrind.InventorySystem
     /// <see cref="IsFull"/>, <see cref="FilledSlots"/>, <see cref="HasFreeSlot"/>,
     /// <see cref="IsSlotLocked"/>, <see cref="HasItem"/>), the <see cref="RegisterCharacter"/>
     /// bootstrap seam, and the <see cref="OnInventoryChanged"/> Tier 2 broadcast event contract
-    /// (ADR-010 Decision 3). No mutation API exists yet — Story 002 (Pickup), Story 004 (Slot
-    /// Locks), Story 005 (Discard), Story 006 (Move/Merge/Swap), Story 007 (Equipment interface),
-    /// and Story 008 (Sell/Consume) each add their own mutator(s), all of which fire
+    /// (ADR-010 Decision 3). Story 002 adds the first mutator, <see cref="Pickup"/>; Story 004
+    /// (Slot Locks), Story 005 (Discard), Story 006 (Move/Merge/Swap), Story 007 (Equipment
+    /// interface), and Story 008 (Sell/Consume) each add their own mutator(s), all of which fire
     /// <see cref="OnInventoryChanged"/>.
     /// </remarks>
     public interface IInventoryService
@@ -118,5 +118,35 @@ namespace IronGrind.InventorySystem
         /// <param name="charId">The character whose inventory to check.</param>
         /// <param name="itemId">The item to look for.</param>
         bool HasItem(CharacterID charId, ItemID itemId);
+
+        /// <summary>
+        /// Atomically places <paramref name="quantity"/> units of <paramref name="itemId"/> into
+        /// <paramref name="characterId"/>'s inventory (GDD Rule 3): first topping up existing
+        /// unlocked partial stacks of the same item in ascending slot order (Step 1, F-INV-2),
+        /// then filling empty slots in ascending order, up to <c>StackLimit</c> each (Step 2).
+        /// If any units would remain, the pickup fails with nothing written (Step 3).
+        /// </summary>
+        /// <remarks>
+        /// <para>Tier 1 call (ADR-010) — Loot Table System calls this directly and acts on the
+        /// result. On success exactly one <see cref="OnInventoryChanged"/> event fires, listing
+        /// every changed slot in ascending slot order. On any failure no slot is mutated and no
+        /// event fires.</para>
+        ///
+        /// <para>Guard order (first match wins): <c>quantity &lt;= 0</c> →
+        /// <see cref="PickupFailReason.InvalidQuantity"/>; unregistered character →
+        /// <see cref="PickupFailReason.CharacterNotRegistered"/> (server error logged); invalid or
+        /// unknown item, or Item Database not ready → <see cref="PickupFailReason.UnknownItem"/>
+        /// (server error logged); remainder after Step 2 →
+        /// <see cref="PickupFailReason.InventoryFull"/>. Quantities above a single stack are
+        /// accepted and span slots.</para>
+        ///
+        /// <para>Calls are processed in the order received (GDD Rule 10) — there is no reordering.</para>
+        /// </remarks>
+        /// <param name="characterId">The character receiving the items.</param>
+        /// <param name="itemId">The item being picked up.</param>
+        /// <param name="quantity">Units to place. Must be &gt; 0.</param>
+        /// <returns>The outcome; check <see cref="PickupResult.Success"/> / <see cref="PickupResult.Reason"/>.</returns>
+        /// <exception cref="InvalidOperationException">Called synchronously from an <see cref="OnInventoryChanged"/> subscriber.</exception>
+        PickupResult Pickup(CharacterID characterId, ItemID itemId, int quantity);
     }
 }
