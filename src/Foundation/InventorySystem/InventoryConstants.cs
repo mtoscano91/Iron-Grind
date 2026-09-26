@@ -1,3 +1,5 @@
+using IronGrind.Networking;
+
 namespace IronGrind.InventorySystem
 {
     /// <summary>
@@ -14,5 +16,12 @@ namespace IronGrind.InventorySystem
         /// change buffer backing <see cref="InventoryChangedEventArgs"/>.
         /// </summary>
         public const int INVENTORY_SLOT_COUNT = 20;
+
+        /// <summary>
+        /// Bag-full notification deduplication window (GDD Rule 4.10: at most one
+        /// <see cref="IInventoryService.OnInventoryFull"/> per character per 30 seconds), in
+        /// server ticks: 30 s × <see cref="ServerTickLoop.TICK_RATE_HZ"/> = 600.
+        /// </summary>
+        public const uint BAG_FULL_DEDUP_WINDOW_TICKS = 30 * ServerTickLoop.TICK_RATE_HZ;
     }
 }

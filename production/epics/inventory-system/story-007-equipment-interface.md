@@ -39,7 +39,7 @@
 ## Implementation Notes
 
 - `MoveItemIn` and `ForceInsert` place equipment items (StackLimit = 1) — never merge into an existing slot, even with the same ItemID.
-- `MoveItemIn` vs `ForceInsert`: identical placement logic; the difference is the contract — `ForceInsert` is the auto-swap displacement path and signals full-bag via `OnInventoryFull`. **Dedup question (confirm at readiness):** does `ForceInsert`'s full-bag signal go through Story 003's 30s dedup window? Recommended: yes — one bag-full notification policy for the whole system.
+- `MoveItemIn` vs `ForceInsert`: identical placement logic; the difference is the contract — `ForceInsert` is the auto-swap displacement path and signals full-bag via `OnInventoryFull`. **Dedup — RESOLVED 2026-09-26 (Story 003 readiness):** yes — `ForceInsert`'s full-bag signal MUST go through Story 003's shared internal dedup helper (`NotifyInventoryFull`); one bag-full notification policy for the whole system.
 - Out-of-range `MoveItemOut` index → treat as `SlotEmpty`-equivalent failure with an error log, no exception (no dedicated result code exists in the GDD).
 - `MoveItemIn`/`ForceInsert` with `ItemID.Invalid` → reject (`false` / `-1`), no mutation.
 

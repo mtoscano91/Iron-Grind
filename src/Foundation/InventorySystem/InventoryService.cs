@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using IronGrind.CharacterStats;
 using IronGrind.Currency;
 using IronGrind.ItemDatabase;
+using IronGrind.Networking;
 using UnityEngine;
 
 namespace IronGrind.InventorySystem
@@ -63,16 +64,27 @@ namespace IronGrind.InventorySystem
         // pickup): _pickupPlan[i] is slot i's planned post-pickup quantity, 0 = slot untouched.
         private readonly int[] _pickupPlan = new int[InventoryConstants.INVENTORY_SLOT_COUNT];
 
-        /// <summary>Creates an inventory service that reads item stack limits from <paramref name="itemDatabase"/>.</summary>
+        private readonly Func<uint> _currentTick;
+
+        // Bag-full dedup (GDD Rule 4.10): per character, the server tick at which the current
+        // notification window expires. Absent = no active window (the next blocked pickup fires).
+        private readonly Dictionary<CharacterID, uint> _bagFullWindowExpiry = new Dictionary<CharacterID, uint>();
+
+        /// <summary>Creates an inventory service.</summary>
         /// <param name="itemDatabase">Item Database used to look up <c>StackLimit</c> on pickup (Tier 1, ADR-010).</param>
-        /// <exception cref="ArgumentNullException"><paramref name="itemDatabase"/> is <see langword="null"/>.</exception>
-        public InventoryService(IItemDatabase itemDatabase)
+        /// <param name="currentTick">Returns the current server tick (production: <c>() =&gt; serverTickLoop.ServerTickNumber</c>); used for the bag-full dedup window.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="itemDatabase"/> or <paramref name="currentTick"/> is <see langword="null"/>.</exception>
+        public InventoryService(IItemDatabase itemDatabase, Func<uint> currentTick)
         {
             _itemDatabase = itemDatabase ?? throw new ArgumentNullException(nameof(itemDatabase));
+            _currentTick = currentTick ?? throw new ArgumentNullException(nameof(currentTick));
         }
 
         /// <inheritdoc/>
         public event Action<InventoryChangedEventArgs>? OnInventoryChanged;
+
+        /// <inheritdoc/>
+        public event Action<InventoryFullEventArgs>? OnInventoryFull;
 
         /// <inheritdoc/>
         /// <remarks>
@@ -84,12 +96,14 @@ namespace IronGrind.InventorySystem
         /// needed. Does not call <see cref="ThrowIfDispatching"/> — this is a bootstrap/reset seam,
         /// not a slot mutation subject to the re-entrancy contract, and it fires no
         /// <see cref="OnInventoryChanged"/> event (mirrors <c>CurrencySystem.RegisterCharacter</c>,
-        /// which is likewise a silent direct write).
+        /// which is likewise a silent direct write). Also clears the character's bag-full dedup
+        /// window, so the next blocked pickup notifies immediately.
         /// </remarks>
         public void RegisterCharacter(CharacterID charId)
         {
             _inventories[charId] = new InventorySlot[InventoryConstants.INVENTORY_SLOT_COUNT];
             _locks[charId] = new bool[InventoryConstants.INVENTORY_SLOT_COUNT];
+            _bagFullWindowExpiry.Remove(charId);
         }
 
         /// <inheritdoc/>
@@ -235,13 +249,53 @@ namespace IronGrind.InventorySystem
             int remainder = PlanPartialStacks(slots, _locks[characterId], itemId, stackLimit, quantity);
             remainder = PlanEmptySlots(slots, stackLimit, remainder);
 
-            // Step 3 — atomic failure: nothing has been written or recorded.
+            // Step 3 — atomic failure: nothing has been written or recorded. A blocked drop.
             if (remainder > 0)
+            {
+                NotifyInventoryFull(characterId);
                 return PickupResult.Fail(PickupFailReason.InventoryFull);
+            }
 
             CommitPickupPlan(characterId, slots, itemId);
+            _bagFullWindowExpiry.Remove(characterId); // GDD Rule 4.10: a successful pickup resets the window.
             EmitInventoryChanged(characterId);
             return PickupResult.Succeeded;
+        }
+
+        /// <summary>
+        /// The single bag-full notification policy (GDD Rule 4.10): fires
+        /// <see cref="OnInventoryFull"/> for <paramref name="characterId"/> unless a dedup window
+        /// is active, then opens a new <see cref="InventoryConstants.BAG_FULL_DEDUP_WINDOW_TICKS"/>
+        /// window. Every blocked-for-space path MUST call this — Story 002 <see cref="Pickup"/>
+        /// and Story 007 <c>ForceInsert</c> — never fire <see cref="OnInventoryFull"/> directly.
+        /// </summary>
+        /// <remarks>
+        /// The window is <c>[t, t + window)</c>: expiry is checked with the wraparound-safe,
+        /// boundary-inclusive <see cref="StaleDiscardComparer.IsTickExpired"/>. The new window is
+        /// stored before dispatch, so a throwing subscriber still consumes it. Dispatch sets the
+        /// same re-entrancy guard as <see cref="EmitInventoryChanged"/>.
+        /// </remarks>
+        /// <exception cref="InvalidOperationException">Called during a dispatch, or a subscriber mutated the inventory synchronously.</exception>
+        internal void NotifyInventoryFull(CharacterID characterId)
+        {
+            ThrowIfDispatching();
+
+            uint now = _currentTick();
+            if (_bagFullWindowExpiry.TryGetValue(characterId, out uint expiry)
+                && !StaleDiscardComparer.IsTickExpired(now, expiry))
+                return;
+
+            _bagFullWindowExpiry[characterId] = unchecked(now + InventoryConstants.BAG_FULL_DEDUP_WINDOW_TICKS);
+
+            _isDispatching = true;
+            try
+            {
+                OnInventoryFull?.Invoke(new InventoryFullEventArgs(characterId));
+            }
+            finally
+            {
+                _isDispatching = false;
+            }
         }
 
         /// <summary>

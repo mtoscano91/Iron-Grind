@@ -60,7 +60,7 @@ namespace IronGrind.Tests.EditMode.InventorySystem
             foreach (var definition in _definitions)
                 _itemDatabase.Add(definition);
 
-            _inventory = new InventoryService(_itemDatabase);
+            _inventory = new InventoryService(_itemDatabase, () => 0u);
             _inventory.RegisterCharacter(Player);
 
             _events = new List<SlotChange[]>();
@@ -625,7 +625,7 @@ namespace IronGrind.Tests.EditMode.InventorySystem
         [Test]
         public void Constructor_NullItemDatabase_ThrowsArgumentNullException()
         {
-            Assert.Throws<ArgumentNullException>(() => new InventoryService(null));
+            Assert.Throws<ArgumentNullException>(() => new InventoryService(null, () => 0u));
         }
     }
 }

@@ -1672,3 +1672,38 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: None (advisory deviations recorded in Completion Notes)
 - Next recommended: production/epics/inventory-system/story-003-*.md — Bag-full notification + 30s dedup (Ready, 2h, depends only on 002; notify only on PickupFailReason.InventoryFull)
 - Uncommitted: Inventory Story 002 only (Story 001 and earlier work were committed in 66a6996 and before); PAT-in-remote reminder outstanding; bash.exe.stackdump untracked
+
+## Session Extract — /story-readiness 2026-09-26 (Inventory Story 003 — NEEDS WORK → fixed → READY)
+- 6 gaps found; user said "fix all, option A". Applied to production/epics/inventory-system/story-003-bag-full-notification.md:
+  1. Time source DECIDED (option A): server ticks via injected `Func<uint>` current-tick provider; `InventoryConstants.BAG_FULL_DEDUP_WINDOW_TICKS = 30 * ServerTickLoop.TICK_RATE_HZ` (600); expiry via `StaleDiscardComparer.IsTickExpired` (wraparound-safe, boundary-inclusive). QA cases rewritten in ticks (0/200/599/600) + wraparound case.
+  2. Event contract: `InventoryFullEventArgs` readonly struct { CharacterID } + `event Action<InventoryFullEventArgs> OnInventoryFull` on IInventoryService.
+  3. Ctor → `InventoryService(IItemDatabase, Func<uint>)`; Story 001 + 002 test SetUp updates in scope.
+  4. Semantics: OnInventoryFull dispatch uses the same _isDispatching guard; dedup state updated before dispatch; RegisterCharacter clears dedup; InvalidQuantity/UnknownItem/CharacterNotRegistered never fire (new ACs + tests).
+  5. Shared internal `NotifyInventoryFull(CharacterID)` helper — Story 007 ForceInsert MUST reuse it (Story 007 dedup question marked RESOLVED; EPIC.md open-questions line updated).
+  6. Performance note added. Estimate 2h → 3h.
+- Next: /dev-story production/epics/inventory-system/story-003-bag-full-notification.md (fresh session recommended)
+
+## Session Extract — /dev-story 2026-09-26 (Inventory Story 003 — Bag-Full Notification)
+- Story: production/epics/inventory-system/story-003-bag-full-notification.md (Status → In Progress)
+- Files changed: src/Foundation/InventorySystem/InventoryFullEventArgs.cs (new), InventoryConstants.cs (+BAG_FULL_DEDUP_WINDOW_TICKS = 30 * ServerTickLoop.TICK_RATE_HZ), IInventoryService.cs (+OnInventoryFull), InventoryService.cs (ctor(IItemDatabase, Func<uint>), _bagFullWindowExpiry dict, internal NotifyInventoryFull, Pickup calls it on InventoryFull + clears window on success, RegisterCharacter clears window); tests: InventorySystem_BagFullNotification_tests.cs (new, 13 tests), SlotContainer + AtomicPickup SetUp/ctor test updated for new ctor.
+- Implemented directly by orchestrator (same deviation as Story 002).
+- NOT yet run in Test Runner.
+- Next: user runs EditMode tests → /code-review src/Foundation/InventorySystem tests/EditMode/InventorySystem → /story-done production/epics/inventory-system/story-003-bag-full-notification.md
+- User ran EditMode suite: ALL tests pass (13 new bag-full tests + Story 001/002 suites with new ctor). Next: /code-review src/Foundation/InventorySystem tests/EditMode/InventorySystem → /story-done
+
+## Session Extract — /code-review + "fix all" 2026-09-26 (Inventory Story 003)
+- /code-review: unity-specialist CLEAN, qa-tester TESTABLE (suggestions only). Verdict APPROVED WITH SUGGESTIONS. User said "fix all":
+  1. +4 tests (17 total): multi-unit partial plan then no room fires; no-subscriber dispatch doesn't throw; different item inside window suppressed; successful pickup of a different item resets window.
+  2. TD-041 logged: Inventory → Networking dependency (StaleDiscardComparer, TICK_RATE_HZ) — move to a neutral shared namespace.
+  3. TD-042 logged: InventoryService never purges per-character dictionaries (no UnregisterCharacter) — resolve with Story 009 / persistence logout path.
+- NOT yet re-run in Test Runner.
+- Next: user re-runs EditMode tests → /story-done production/epics/inventory-system/story-003-bag-full-notification.md
+- User re-ran EditMode suite after review fixes: ALL tests pass (17 bag-full tests + Story 001/002 suites). Next: /story-done production/epics/inventory-system/story-003-bag-full-notification.md
+
+## Session Extract — /story-done 2026-09-26
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/inventory-system/story-003-bag-full-notification.md — Bag-Full Notification & 30-Second Dedup Window (7/7 ACs, 17 tests passing live)
+- EPIC.md: row 003 → Complete (epic 3/9)
+- Tech debt logged: 2 (TD-041, TD-042 — during code review)
+- Next recommended: production/epics/inventory-system/story-004-slot-locks.md — Slot Locks & RemoveItem (Ready, 2h; also owns the Story 002 locked-slot pickup-guard test)
+- Uncommitted: Inventory Story 003 (src, tests, .meta, story, EPIC.md, tech-debt register, active.md); PAT-in-remote reminder outstanding; bash.exe.stackdump untracked

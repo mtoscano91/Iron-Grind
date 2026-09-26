@@ -42,6 +42,22 @@ namespace IronGrind.InventorySystem
         event Action<InventoryChangedEventArgs> OnInventoryChanged;
 
         /// <summary>
+        /// Tier 2 broadcast event (ADR-010 Decision 3) fired when a pickup is blocked because the
+        /// bag has no room (GDD Rule 4.10) — the network layer turns it into the 0-byte
+        /// <c>InventoryFullNotification</c> wire message. Deduplicated: at most one per character
+        /// per <see cref="InventoryConstants.BAG_FULL_DEDUP_WINDOW_TICKS"/>; a successful pickup
+        /// or <see cref="RegisterCharacter"/> resets the window. Invalid requests (bad quantity,
+        /// unknown item, unregistered character) never fire it.
+        /// </summary>
+        /// <remarks>
+        /// Same subscriber rules as <see cref="OnInventoryChanged"/>: subscribers must not throw
+        /// and must not mutate the inventory synchronously (doing so throws
+        /// <see cref="InvalidOperationException"/> to the mutating caller). The dedup window is
+        /// consumed before dispatch, so a throwing subscriber does not cause a re-fire.
+        /// </remarks>
+        event Action<InventoryFullEventArgs> OnInventoryFull;
+
+        /// <summary>
         /// Registers <paramref name="charId"/> with a fresh, fully empty 20-slot inventory
         /// (GDD Rule 1.1) and clears all slot locks, making it a valid target for every read API
         /// on this interface and for future mutation APIs.
@@ -129,8 +145,10 @@ namespace IronGrind.InventorySystem
         /// <remarks>
         /// <para>Tier 1 call (ADR-010) — Loot Table System calls this directly and acts on the
         /// result. On success exactly one <see cref="OnInventoryChanged"/> event fires, listing
-        /// every changed slot in ascending slot order. On any failure no slot is mutated and no
-        /// event fires.</para>
+        /// every changed slot in ascending slot order, and the character's bag-full dedup window
+        /// is reset. On any failure no slot is mutated and <see cref="OnInventoryChanged"/> does
+        /// not fire; a <see cref="PickupFailReason.InventoryFull"/> failure fires
+        /// <see cref="OnInventoryFull"/> subject to the dedup window.</para>
         ///
         /// <para>Guard order (first match wins): <c>quantity &lt;= 0</c> →
         /// <see cref="PickupFailReason.InvalidQuantity"/>; unregistered character →
