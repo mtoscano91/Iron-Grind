@@ -32,16 +32,21 @@ namespace IronGrind.InventorySystem
     /// access, mirroring <c>CurrencySystem</c>'s precedent.</para>
     ///
     /// <para><b>Mutation seam contract:</b> every mutation entry point (Story 002
-    /// <see cref="Pickup"/>, Story 004 Lock/Unlock, Story 005 Discard, Story 006 Move/Merge/Swap,
-    /// Story 007 Equipment interface, Story 008 Sell/Consume) MUST call
-    /// <see cref="ThrowIfDispatching"/> first, then record its per-slot results via
-    /// <see cref="RecordSlotChange"/>, then fire the broadcast via
-    /// <see cref="EmitInventoryChanged"/>. Record changes only once the
-    /// mutation is unconditionally committing (all validation done). If a mutation must abort
-    /// after recording, it MUST call <see cref="DiscardPendingChanges"/> — the change buffer is
+    /// <see cref="Pickup"/>, Story 004 <see cref="LockSlot"/>/<see cref="UnlockSlot"/>/
+    /// <see cref="RemoveItem"/>, Story 005 Discard, Story 006 Move/Merge/Swap, Story 007
+    /// Equipment interface, Story 008 Sell/Consume) MUST call <see cref="ThrowIfDispatching"/>
+    /// first. Entry points that change slot <em>content</em> then record their per-slot results
+    /// via <see cref="RecordSlotChange"/> and fire the broadcast via
+    /// <see cref="EmitInventoryChanged"/> — record changes only once the mutation is
+    /// unconditionally committing (all validation done), and if a mutation must abort after
+    /// recording, it MUST call <see cref="DiscardPendingChanges"/> — the change buffer is
     /// service-wide, and leftover entries would otherwise be broadcast with a later dispatch.
     /// Pending changes are bound to a single character: recording for, or emitting to, a
-    /// different character while changes are pending throws.</para>
+    /// different character while changes are pending throws. <b>Exception:</b>
+    /// <see cref="LockSlot"/>/<see cref="UnlockSlot"/> only flip the per-slot lock flag — they
+    /// call <see cref="ThrowIfDispatching"/> for re-entrancy safety but never call
+    /// <see cref="RecordSlotChange"/>/<see cref="EmitInventoryChanged"/>, since a lock/unlock
+    /// alone is never broadcast (GDD Rule 5).</para>
     /// </remarks>
     public sealed class InventoryService : IInventoryService
     {
@@ -260,6 +265,101 @@ namespace IronGrind.InventorySystem
             _bagFullWindowExpiry.Remove(characterId); // GDD Rule 4.10: a successful pickup resets the window.
             EmitInventoryChanged(characterId);
             return PickupResult.Succeeded;
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>
+        /// Guard order mirrors <see cref="GetSlot"/>: out-of-range <paramref name="slotIndex"/>
+        /// first, then unregistered <paramref name="charId"/>, then the empty-slot warning (GDD
+        /// Lock State Edge Cases). Calls <see cref="ThrowIfDispatching"/> but never
+        /// <see cref="RecordSlotChange"/>/<see cref="EmitInventoryChanged"/> — see this class's
+        /// mutation seam contract remarks.
+        /// </remarks>
+        public void LockSlot(CharacterID charId, int slotIndex)
+        {
+            ThrowIfDispatching();
+
+            if (slotIndex < 0 || slotIndex >= InventoryConstants.INVENTORY_SLOT_COUNT)
+            {
+                Debug.LogError($"[InventoryService] LockSlot: slotIndex {slotIndex} is out of range [0, {InventoryConstants.INVENTORY_SLOT_COUNT}).");
+                return;
+            }
+
+            if (!_inventories.TryGetValue(charId, out var slots))
+            {
+                Debug.LogError($"[InventoryService] LockSlot: {charId} is not a registered character. Call RegisterCharacter before mutating inventory.");
+                return;
+            }
+
+            if (slots[slotIndex].IsEmpty)
+            {
+                Debug.LogWarning($"[InventoryService] LockSlot: slot {slotIndex} for {charId} is empty; no lock applied.");
+                return;
+            }
+
+            _locks[charId][slotIndex] = true;
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>
+        /// Guard order mirrors <see cref="GetSlot"/>: out-of-range <paramref name="slotIndex"/>
+        /// first, then unregistered <paramref name="charId"/>. Unlocking an already-unlocked slot
+        /// is a silent no-op — defensive double-unlock (Enhancement timeout paths) must never
+        /// throw or log. Calls <see cref="ThrowIfDispatching"/> but never
+        /// <see cref="RecordSlotChange"/>/<see cref="EmitInventoryChanged"/> — see this class's
+        /// mutation seam contract remarks.
+        /// </remarks>
+        public void UnlockSlot(CharacterID charId, int slotIndex)
+        {
+            ThrowIfDispatching();
+
+            if (slotIndex < 0 || slotIndex >= InventoryConstants.INVENTORY_SLOT_COUNT)
+            {
+                Debug.LogError($"[InventoryService] UnlockSlot: slotIndex {slotIndex} is out of range [0, {InventoryConstants.INVENTORY_SLOT_COUNT}).");
+                return;
+            }
+
+            if (!_inventories.TryGetValue(charId, out _))
+            {
+                Debug.LogError($"[InventoryService] UnlockSlot: {charId} is not a registered character. Call RegisterCharacter before mutating inventory.");
+                return;
+            }
+
+            _locks[charId][slotIndex] = false;
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>
+        /// Guard order mirrors <see cref="GetSlot"/>: out-of-range <paramref name="slotIndex"/>
+        /// first, then unregistered <paramref name="charId"/>. Works on any occupied slot, locked
+        /// or unlocked (Implementation Notes — resolved 2026-09-26 at /story-readiness): clears
+        /// the whole stack regardless of <see cref="InventorySlot.Quantity"/>, clears the lock
+        /// flag if held, and fires exactly one <see cref="OnInventoryChanged"/>. An empty in-range
+        /// slot is a silent no-op — no log, no event; removing nothing is not a caller bug.
+        /// </remarks>
+        public void RemoveItem(CharacterID charId, int slotIndex)
+        {
+            ThrowIfDispatching();
+
+            if (slotIndex < 0 || slotIndex >= InventoryConstants.INVENTORY_SLOT_COUNT)
+            {
+                Debug.LogError($"[InventoryService] RemoveItem: slotIndex {slotIndex} is out of range [0, {InventoryConstants.INVENTORY_SLOT_COUNT}).");
+                return;
+            }
+
+            if (!_inventories.TryGetValue(charId, out var slots))
+            {
+                Debug.LogError($"[InventoryService] RemoveItem: {charId} is not a registered character. Call RegisterCharacter before mutating inventory.");
+                return;
+            }
+
+            if (slots[slotIndex].IsEmpty)
+                return;
+
+            RecordSlotChange(charId, slotIndex, ItemID.Invalid, 0);
+            slots[slotIndex] = InventorySlot.Empty;
+            _locks[charId][slotIndex] = false;
+            EmitInventoryChanged(charId);
         }
 
         /// <summary>

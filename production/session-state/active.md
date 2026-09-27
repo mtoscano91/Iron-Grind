@@ -1707,3 +1707,29 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: 2 (TD-041, TD-042 — during code review)
 - Next recommended: production/epics/inventory-system/story-004-slot-locks.md — Slot Locks & RemoveItem (Ready, 2h; also owns the Story 002 locked-slot pickup-guard test)
 - Uncommitted: Inventory Story 003 (src, tests, .meta, story, EPIC.md, tech-debt register, active.md); PAT-in-remote reminder outstanding; bash.exe.stackdump untracked
+
+## Session Extract — /story-readiness 2026-09-26 (Inventory Story 004 — Slot Locks & RemoveItem)
+
+- Verdict NEEDS WORK → all gaps fixed in `production/epics/inventory-system/story-004-slot-locks.md` (user approved "fix all"): `RemoveItem` allowed on unlocked slots (Enhancement CR-ENH-15 step 4 needs it), `void` signatures, unregistered-charId guard, perf note, Story 002 lock guard noted as already implemented (test only). Added 2 ACs + 2 QA cases.
+- **Open cross-GDD conflict (owner: Enhancement GDD, not blocking Story 004):** scrolls are stackable Consumables but CR-ENH-15 step 4 consumes them via `RemoveItem`, which clears the whole stack. Proposed: `ConsumeItem(scrollId, 1)`. Resolve in a separate Enhancement GDD authoring session before the Enhancement epic.
+- Advisory (epic-wide): `TR-inv-*` IDs not in `tr-registry.yaml`.
+- Next: `/dev-story production/epics/inventory-system/story-004-slot-locks.md`.
+
+## Session Extract — /dev-story 2026-09-26
+- Story: production/epics/inventory-system/story-004-slot-locks.md — Slot Locks & RemoveItem
+- Files changed: src/Foundation/InventorySystem/IInventoryService.cs, src/Foundation/InventorySystem/InventoryService.cs
+- Test written: tests/EditMode/InventorySystem/InventorySystem_SlotLocks_tests.cs (18 tests) — static-verified only, NOT yet run in Unity Test Runner
+- Decision: RemoveItem on empty in-range slot is silent (no log, no event); Lock/Unlock call ThrowIfDispatching per the class's mutation-seam contract
+- Blockers: None
+- Next: run EditMode suite in Editor, then /code-review then /story-done
+
+## Session Extract — /code-review 2026-09-26 (Inventory Story 004)
+- Verdict APPROVED WITH SUGGESTIONS (unity-specialist CLEAN; qa-tester GAPS). User said "fix all" → applied all 5: added re-entrancy tests for LockSlot/UnlockSlot/RemoveItem, RemoveItem on locked multi-unit stack, RegisterCharacter re-registration clears locks, all-20-slots check in out-of-range RemoveItem tests, RemoveItem doc wording (scroll consumption).
+- SlotLocks test file now 23 tests — still static-verified only; needs a real EditMode Test Runner pass.
+- Next: run EditMode suite in Editor, then /story-done production/epics/inventory-system/story-004-slot-locks.md
+
+## Session Extract — /story-done 2026-09-26
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/inventory-system/story-004-slot-locks.md — Slot Locks & RemoveItem (23 tests passing in live Test Runner)
+- Tech debt logged: 1 item (TD-043 — scroll-stack vs RemoveItem cross-GDD conflict)
+- Next recommended: Inventory Story 005 — Discard (production/epics/inventory-system/story-005-discard.md); run /story-readiness first. Nothing committed yet.

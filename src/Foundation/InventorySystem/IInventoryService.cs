@@ -15,10 +15,12 @@ namespace IronGrind.InventorySystem
     /// <see cref="IsFull"/>, <see cref="FilledSlots"/>, <see cref="HasFreeSlot"/>,
     /// <see cref="IsSlotLocked"/>, <see cref="HasItem"/>), the <see cref="RegisterCharacter"/>
     /// bootstrap seam, and the <see cref="OnInventoryChanged"/> Tier 2 broadcast event contract
-    /// (ADR-010 Decision 3). Story 002 adds the first mutator, <see cref="Pickup"/>; Story 004
-    /// (Slot Locks), Story 005 (Discard), Story 006 (Move/Merge/Swap), Story 007 (Equipment
-    /// interface), and Story 008 (Sell/Consume) each add their own mutator(s), all of which fire
-    /// <see cref="OnInventoryChanged"/>.
+    /// (ADR-010 Decision 3). Story 002 adds the first mutator, <see cref="Pickup"/>. Story 004
+    /// (Slot Locks) adds <see cref="LockSlot"/>/<see cref="UnlockSlot"/> (flag-only — never fire
+    /// <see cref="OnInventoryChanged"/>) and <see cref="RemoveItem"/> (fires
+    /// <see cref="OnInventoryChanged"/>); Story 005 (Discard), Story 006 (Move/Merge/Swap),
+    /// Story 007 (Equipment interface), and Story 008 (Sell/Consume) each add their own
+    /// mutator(s), all of which fire <see cref="OnInventoryChanged"/>.
     /// </remarks>
     public interface IInventoryService
     {
@@ -113,8 +115,8 @@ namespace IronGrind.InventorySystem
 
         /// <summary>
         /// Returns whether the slot at <paramref name="slotIndex"/> is locked (GDD Rule 5.14).
-        /// Every slot of a freshly registered inventory is unlocked. No lock-mutation API exists
-        /// yet — Story 004 adds <c>LockSlot</c>/<c>UnlockSlot</c>.
+        /// Every slot of a freshly registered inventory is unlocked. See <see cref="LockSlot"/>
+        /// and <see cref="UnlockSlot"/> (Story 004) for the lock-mutation API.
         /// </summary>
         /// <remarks>
         /// Out-of-range <paramref name="slotIndex"/> and an unregistered <paramref name="charId"/>
@@ -166,5 +168,77 @@ namespace IronGrind.InventorySystem
         /// <returns>The outcome; check <see cref="PickupResult.Success"/> / <see cref="PickupResult.Reason"/>.</returns>
         /// <exception cref="InvalidOperationException">Called synchronously from an <see cref="OnInventoryChanged"/> subscriber.</exception>
         PickupResult Pickup(CharacterID characterId, ItemID itemId, int quantity);
+
+        /// <summary>
+        /// Locks the slot at <paramref name="slotIndex"/> so its item cannot be moved, equipped,
+        /// sold, or discarded until <see cref="UnlockSlot"/> is called (GDD Rule 5.12/5.13,
+        /// States and Transitions: Occupied-Available → Occupied-Locked). Only the Enhancement
+        /// System calls this, when an enhancement attempt begins (ADR-010 Tier 1).
+        /// </summary>
+        /// <remarks>
+        /// <para>Never mutates <see cref="InventorySlot.ItemId"/>/<see cref="InventorySlot.Quantity"/>
+        /// and never fires <see cref="OnInventoryChanged"/> — locking is a session-scoped flag
+        /// flip, not a slot-content mutation (GDD: lock flags are never persisted).</para>
+        ///
+        /// <para>Guard order (first match wins): out-of-range <paramref name="slotIndex"/>
+        /// (&lt; 0 or &gt;= <see cref="InventoryConstants.INVENTORY_SLOT_COUNT"/>) logs a server
+        /// error and no-ops (mirrors <see cref="GetSlot"/>'s guard); an unregistered
+        /// <paramref name="charId"/> logs a server error and no-ops; an empty slot logs a server
+        /// warning and no-ops without setting the lock flag (GDD Lock State Edge Cases — e.g. the
+        /// item was discarded in the same tick before this call arrived).</para>
+        /// </remarks>
+        /// <param name="charId">The character whose inventory to mutate.</param>
+        /// <param name="slotIndex">The slot index to lock. Valid range: [0, <see cref="InventoryConstants.INVENTORY_SLOT_COUNT"/>).</param>
+        /// <exception cref="InvalidOperationException">Called synchronously from an <see cref="OnInventoryChanged"/> subscriber.</exception>
+        void LockSlot(CharacterID charId, int slotIndex);
+
+        /// <summary>
+        /// Clears the lock on the slot at <paramref name="slotIndex"/> (GDD Rule 5.13, States and
+        /// Transitions: Occupied-Locked → Occupied-Available). Only the Enhancement System calls
+        /// this, when an enhancement attempt resolves — success, failure, or server timeout
+        /// (ADR-010 Tier 1).
+        /// </summary>
+        /// <remarks>
+        /// <para>Never mutates <see cref="InventorySlot.ItemId"/>/<see cref="InventorySlot.Quantity"/>
+        /// and never fires <see cref="OnInventoryChanged"/>. Calling this on a slot that is not
+        /// currently locked is a safe, silent no-op (GDD Lock State Edge Cases) — Enhancement
+        /// System timeout and failure paths call <see cref="UnlockSlot"/> defensively, and a
+        /// double-unlock must never throw or log.</para>
+        ///
+        /// <para>Guard order (first match wins): out-of-range <paramref name="slotIndex"/> logs a
+        /// server error and no-ops; an unregistered <paramref name="charId"/> logs a server error
+        /// and no-ops.</para>
+        /// </remarks>
+        /// <param name="charId">The character whose inventory to mutate.</param>
+        /// <param name="slotIndex">The slot index to unlock. Valid range: [0, <see cref="InventoryConstants.INVENTORY_SLOT_COUNT"/>).</param>
+        /// <exception cref="InvalidOperationException">Called synchronously from an <see cref="OnInventoryChanged"/> subscriber.</exception>
+        void UnlockSlot(CharacterID charId, int slotIndex);
+
+        /// <summary>
+        /// Destroys the item in the slot at <paramref name="slotIndex"/>, clearing it to
+        /// <see cref="ItemID.Invalid"/>/<c>Quantity = 0</c> and releasing its lock if held (GDD
+        /// Rule 5, States and Transitions: the only path from Occupied-Locked to Empty; also used
+        /// by the Enhancement System on an <i>unlocked</i> scroll slot per Enhancement GDD
+        /// CR-ENH-15 step 4). Only the Enhancement System calls this — on item destruction and on
+        /// scroll consumption (ADR-010 Tier 1).
+        /// </summary>
+        /// <remarks>
+        /// <para>Works on any occupied slot, locked or unlocked, and clears the entire stack
+        /// regardless of <see cref="InventorySlot.Quantity"/> — this is not a quantity-aware
+        /// removal (Implementation Notes: a cross-GDD conflict with stackable Enhancement Scrolls
+        /// is open and owned by the Enhancement System GDD; out of scope for this story). On
+        /// success, fires exactly one <see cref="OnInventoryChanged"/> with a single entry
+        /// <c>{ slotIndex, itemId: 0, quantity: 0 }</c>. On an empty in-range slot: no-op, no
+        /// event, no log (removing nothing is not a caller bug).</para>
+        ///
+        /// <para>Guard order (first match wins): out-of-range <paramref name="slotIndex"/>
+        /// (&lt; 0 or &gt;= <see cref="InventoryConstants.INVENTORY_SLOT_COUNT"/>) logs a server
+        /// error and no-ops, no exception (GDD Cross-System Interface Edge Cases); an unregistered
+        /// <paramref name="charId"/> logs a server error and no-ops.</para>
+        /// </remarks>
+        /// <param name="charId">The character whose inventory to mutate.</param>
+        /// <param name="slotIndex">The slot index to clear. Valid range: [0, <see cref="InventoryConstants.INVENTORY_SLOT_COUNT"/>).</param>
+        /// <exception cref="InvalidOperationException">Called synchronously from an <see cref="OnInventoryChanged"/> subscriber.</exception>
+        void RemoveItem(CharacterID charId, int slotIndex);
     }
 }

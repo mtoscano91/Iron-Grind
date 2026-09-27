@@ -41,7 +41,7 @@ This epic is complete when:
 | 001 | [Slot Container, Core Types & Read API](story-001-slot-container-core-types.md) | Logic | Complete | ADR-010 (event) |
 | 002 | [Atomic Pickup Resolution & Stack Limits](story-002-atomic-pickup.md) | Logic | Complete | ADR-010 (event) |
 | 003 | [Bag-Full Notification & 30s Dedup Window](story-003-bag-full-notification.md) | Logic | Complete | ADR-010 |
-| 004 | [Slot Locks & RemoveItem](story-004-slot-locks.md) | Logic | Ready | ADR-010 (event) |
+| 004 | [Slot Locks & RemoveItem](story-004-slot-locks.md) | Logic | Complete | ADR-010 (event) |
 | 005 | [Discard](story-005-discard.md) | Logic | Ready | ADR-010 (event) |
 | 006 | [Slot Move — Merge, Swap & Relocate](story-006-move-merge-swap.md) | Logic | Ready | ADR-010 (event) |
 | 007 | [Equipment System Interface](story-007-equipment-interface.md) | Logic | Ready | ADR-010 |
@@ -50,7 +50,7 @@ This epic is complete when:
 
 **GDD AC coverage**: 17 of 18 blocking ACs. **AC-INV-11** (tapping a consumable opens the detail view without consuming) is pure UI — **deferred to a future Inventory UI epic** (Inventory UI GDD and `design/ux/inventory-screen.md` not yet authored). AC-INV-10 is covered on the inventory side only (Story 007); its "equipped item stays equipped" half belongs to the Equipment System epic.
 
-**Open questions to resolve at `/story-readiness`**: ~~(1) Story 001 — `InventoryChangedEvent` payload shape vs ADR-010~~ — RESOLVED 2026-09-25 (reused-buffer `readonly struct` + struct enumerator + re-entrancy guard, see Story 001); (2) Story 006 — moving a consumable onto a different item (proposed default: swap; would add a line to GDD Rule 7.20); plus smaller confirmations noted in Stories 004, 007 (dedup — RESOLVED 2026-09-26 via Story 003: ForceInsert reuses the shared dedup helper), 008, 009. Story 003 time source DECIDED 2026-09-26: server ticks via injected `Func<uint>`, window = 600 ticks.
+**Open questions to resolve at `/story-readiness`**: ~~(1) Story 001 — `InventoryChangedEvent` payload shape vs ADR-010~~ — RESOLVED 2026-09-25 (reused-buffer `readonly struct` + struct enumerator + re-entrancy guard, see Story 001); (2) Story 006 — moving a consumable onto a different item (proposed default: swap; would add a line to GDD Rule 7.20); plus smaller confirmations noted in Stories 004 (RemoveItem on unlocked slots — RESOLVED 2026-09-26: allowed, required by Enhancement CR-ENH-15 step 4; scroll-stack conflict logged as TD-043), 007 (dedup — RESOLVED 2026-09-26 via Story 003: ForceInsert reuses the shared dedup helper), 008, 009. Story 003 time source DECIDED 2026-09-26: server ticks via injected `Func<uint>`, window = 600 ticks.
 
 **Out of scope for this epic**: wire-protocol codecs for inventory messages (Networking), Equipment/Loot Table/Persistence/NPC Shop orchestration (their own epics).
 
