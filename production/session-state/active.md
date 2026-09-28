@@ -1733,3 +1733,29 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Story: production/epics/inventory-system/story-004-slot-locks.md — Slot Locks & RemoveItem (23 tests passing in live Test Runner)
 - Tech debt logged: 1 item (TD-043 — scroll-stack vs RemoveItem cross-GDD conflict)
 - Next recommended: Inventory Story 005 — Discard (production/epics/inventory-system/story-005-discard.md); run /story-readiness first. Nothing committed yet.
+
+## Session Extract — /story-readiness 2026-09-27 (Inventory Story 005 — Discard)
+- Verdict NEEDS WORK → user said "fix all, option A"; all 7 gaps applied to production/epics/inventory-system/story-005-discard.md:
+  1. Signature `DiscardResult Discard(CharacterID charId, int slotIndex, int quantity)`; unregistered charId guard.
+  2. Option A: out-of-range slot + unregistered charId → `SlotEmpty` (wire enum has no InvalidSlot; no GDD change).
+  3. Validation order aligned to wire GDD: range → registered → empty → lock → quantity (lock/empty order observationally identical).
+  4. `DiscardResult` readonly struct mirrors PickupResult (Succeeded / Fail + Debug.Assert); `DiscardFailReason : byte {None, SlotLocked, InvalidQuantity, SlotEmpty}` mirrors wire enum 1:1. Future wire message must use a different name (e.g. DiscardResultMessage).
+  5. Mutation-seam contract + re-entrancy AC/test added.
+  6. Performance note (O(1)).
+  7. Logging: client-caused rejections silent; out-of-range → warning; unregistered → error.
+  - Estimate 2h → 2.5h; +2 ACs, +2 QA cases.
+- Next: /dev-story production/epics/inventory-system/story-005-discard.md
+
+## Session Extract — /dev-story 2026-09-27
+- Story: production/epics/inventory-system/story-005-discard.md — Discard (Server-Side Validation & Mutation)
+- Files changed: src/Foundation/InventorySystem/DiscardFailReason.cs (new), src/Foundation/InventorySystem/DiscardResult.cs (new), src/Foundation/InventorySystem/IInventoryService.cs (Discard + docs), src/Foundation/InventorySystem/InventoryService.cs (Discard impl + seam-contract remark)
+- Test written: tests/EditMode/InventorySystem/InventorySystem_Discard_tests.cs (19 tests after /code-review "fix all": +6 tests, +1 no-event assert, ADR-010 D5 doc wording fix in IInventoryService.Discard) — statically reviewed, NOT yet run in live Test Runner
+- Blockers: None. (gameplay-programmer agent hit its turn limit after writing all files but before reporting; orchestrator reviewed output directly.)
+- /code-review: APPROVED WITH SUGGESTIONS (Unity CLEAN, QA TESTABLE w/ gaps) — all suggestions applied.
+- Next: run EditMode Test Runner, then /story-done production/epics/inventory-system/story-005-discard.md
+
+## Session Extract — /story-done 2026-09-27
+- Verdict: COMPLETE
+- Story: production/epics/inventory-system/story-005-discard.md — Discard (Server-Side Validation & Mutation)
+- Tech debt logged: None
+- Next recommended: production/epics/inventory-system/story-006-move-merge-swap.md (Ready). Work not yet committed.

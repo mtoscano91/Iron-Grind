@@ -18,9 +18,10 @@ namespace IronGrind.InventorySystem
     /// (ADR-010 Decision 3). Story 002 adds the first mutator, <see cref="Pickup"/>. Story 004
     /// (Slot Locks) adds <see cref="LockSlot"/>/<see cref="UnlockSlot"/> (flag-only — never fire
     /// <see cref="OnInventoryChanged"/>) and <see cref="RemoveItem"/> (fires
-    /// <see cref="OnInventoryChanged"/>); Story 005 (Discard), Story 006 (Move/Merge/Swap),
-    /// Story 007 (Equipment interface), and Story 008 (Sell/Consume) each add their own
-    /// mutator(s), all of which fire <see cref="OnInventoryChanged"/>.
+    /// <see cref="OnInventoryChanged"/>); Story 005 (Discard) adds <see cref="Discard"/> (fires
+    /// <see cref="OnInventoryChanged"/> on success). Story 006 (Move/Merge/Swap), Story 007
+    /// (Equipment interface), and Story 008 (Sell/Consume) each add their own mutator(s), all of
+    /// which fire <see cref="OnInventoryChanged"/>.
     /// </remarks>
     public interface IInventoryService
     {
@@ -240,5 +241,41 @@ namespace IronGrind.InventorySystem
         /// <param name="slotIndex">The slot index to clear. Valid range: [0, <see cref="InventoryConstants.INVENTORY_SLOT_COUNT"/>).</param>
         /// <exception cref="InvalidOperationException">Called synchronously from an <see cref="OnInventoryChanged"/> subscriber.</exception>
         void RemoveItem(CharacterID charId, int slotIndex);
+
+        /// <summary>
+        /// Destroys <paramref name="quantity"/> units of the item in the slot at
+        /// <paramref name="slotIndex"/> for <paramref name="charId"/> (GDD Rule 6 — Discard). If
+        /// <paramref name="quantity"/> equals the slot's full <see cref="InventorySlot.Quantity"/>
+        /// the slot becomes fully empty (<see cref="ItemID.Invalid"/>, <c>Quantity = 0</c>);
+        /// otherwise the slot keeps the same item at the reduced quantity (GDD Rule 6.17/6.18).
+        /// The client's <c>DiscardRequest</c> is enqueued by its network handler and processed in
+        /// the zone tick loop (ADR-010 Decision 5), which calls this directly (Tier 1) and maps the
+        /// result to the wire <c>DiscardResult</c> message.
+        /// </summary>
+        /// <remarks>
+        /// <para>On success, fires exactly one <see cref="OnInventoryChanged"/> with a single
+        /// entry describing the slot's post-discard state. On any failure no slot is mutated and
+        /// <see cref="OnInventoryChanged"/> does not fire.</para>
+        ///
+        /// <para>Guard order (first match wins, matches the wire GDD's <c>DiscardRequest</c>
+        /// validation order): out-of-range <paramref name="slotIndex"/> (&lt; 0 or &gt;=
+        /// <see cref="InventoryConstants.INVENTORY_SLOT_COUNT"/>) logs a server warning and fails
+        /// with <see cref="DiscardFailReason.SlotEmpty"/>; an unregistered <paramref name="charId"/>
+        /// logs a server error and fails with <see cref="DiscardFailReason.SlotEmpty"/> (decided
+        /// 2026-09-27: the wire enum has no dedicated invalid-slot value — a slot that does not
+        /// exist holds no item); an empty in-range slot fails with
+        /// <see cref="DiscardFailReason.SlotEmpty"/>, no log (a client-triggerable condition, not a
+        /// caller bug); a locked slot fails with <see cref="DiscardFailReason.SlotLocked"/>, no log
+        /// (GDD Rule 5); <c>quantity &lt;= 0</c> or <c>quantity &gt;</c> the slot's current
+        /// <see cref="InventorySlot.Quantity"/> fails with <see cref="DiscardFailReason.InvalidQuantity"/>,
+        /// no log. None of these rejection paths throw, mutate state, or fire
+        /// <see cref="OnInventoryChanged"/>.</para>
+        /// </remarks>
+        /// <param name="charId">The character whose inventory to mutate.</param>
+        /// <param name="slotIndex">The slot index to discard from. Valid range: [0, <see cref="InventoryConstants.INVENTORY_SLOT_COUNT"/>).</param>
+        /// <param name="quantity">Units to destroy. Must satisfy <c>1 &lt;= quantity &lt;=</c> the slot's current <see cref="InventorySlot.Quantity"/>.</param>
+        /// <returns>The outcome; check <see cref="DiscardResult.Success"/> / <see cref="DiscardResult.Reason"/>.</returns>
+        /// <exception cref="InvalidOperationException">Called synchronously from an <see cref="OnInventoryChanged"/> subscriber.</exception>
+        DiscardResult Discard(CharacterID charId, int slotIndex, int quantity);
     }
 }

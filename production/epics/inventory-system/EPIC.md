@@ -42,7 +42,7 @@ This epic is complete when:
 | 002 | [Atomic Pickup Resolution & Stack Limits](story-002-atomic-pickup.md) | Logic | Complete | ADR-010 (event) |
 | 003 | [Bag-Full Notification & 30s Dedup Window](story-003-bag-full-notification.md) | Logic | Complete | ADR-010 |
 | 004 | [Slot Locks & RemoveItem](story-004-slot-locks.md) | Logic | Complete | ADR-010 (event) |
-| 005 | [Discard](story-005-discard.md) | Logic | Ready | ADR-010 (event) |
+| 005 | [Discard](story-005-discard.md) | Logic | Complete | ADR-010 (event) |
 | 006 | [Slot Move — Merge, Swap & Relocate](story-006-move-merge-swap.md) | Logic | Ready | ADR-010 (event) |
 | 007 | [Equipment System Interface](story-007-equipment-interface.md) | Logic | Ready | ADR-010 |
 | 008 | [NPC Shop Sell & Consumable Use](story-008-sell-and-consume.md) | Logic | Ready | ADR-010 |

@@ -33,8 +33,8 @@ namespace IronGrind.InventorySystem
     ///
     /// <para><b>Mutation seam contract:</b> every mutation entry point (Story 002
     /// <see cref="Pickup"/>, Story 004 <see cref="LockSlot"/>/<see cref="UnlockSlot"/>/
-    /// <see cref="RemoveItem"/>, Story 005 Discard, Story 006 Move/Merge/Swap, Story 007
-    /// Equipment interface, Story 008 Sell/Consume) MUST call <see cref="ThrowIfDispatching"/>
+    /// <see cref="RemoveItem"/>, Story 005 <see cref="Discard"/>, Story 006 Move/Merge/Swap,
+    /// Story 007 Equipment interface, Story 008 Sell/Consume) MUST call <see cref="ThrowIfDispatching"/>
     /// first. Entry points that change slot <em>content</em> then record their per-slot results
     /// via <see cref="RecordSlotChange"/> and fire the broadcast via
     /// <see cref="EmitInventoryChanged"/> — record changes only once the mutation is
@@ -360,6 +360,60 @@ namespace IronGrind.InventorySystem
             slots[slotIndex] = InventorySlot.Empty;
             _locks[charId][slotIndex] = false;
             EmitInventoryChanged(charId);
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>
+        /// Guard order mirrors the wire GDD's <c>DiscardRequest</c> validation order (also
+        /// mirrors <see cref="RemoveItem"/>'s guard structure): out-of-range
+        /// <paramref name="slotIndex"/> first — server warning, not error, since the wire
+        /// <c>slotIndex</c> is a <see langword="byte"/> and 20–255 is reachable by a
+        /// buggy/malicious client; then unregistered <paramref name="charId"/> — server error;
+        /// then an empty in-range slot — no log, a normal client-triggerable outcome; then a
+        /// locked slot — no log (GDD Rule 5); then an out-of-bounds <paramref name="quantity"/> —
+        /// no log. Every rejection path returns without mutating state or firing
+        /// <see cref="OnInventoryChanged"/> (decided 2026-09-27: out-of-range slot and
+        /// unregistered character both map to <see cref="DiscardFailReason.SlotEmpty"/> — the
+        /// wire enum has no dedicated invalid-slot value, and a slot that does not exist holds no
+        /// item). On success, discarding the full stack empties the slot
+        /// (<see cref="ItemID.Invalid"/>, <c>Quantity = 0</c>) exactly like
+        /// <see cref="RemoveItem"/>; discarding a partial quantity keeps the same item at the
+        /// reduced quantity. A locked slot is always rejected before this point, so the
+        /// "an empty slot is never locked" invariant never needs re-establishing here.
+        /// </remarks>
+        public DiscardResult Discard(CharacterID charId, int slotIndex, int quantity)
+        {
+            ThrowIfDispatching();
+
+            if (slotIndex < 0 || slotIndex >= InventoryConstants.INVENTORY_SLOT_COUNT)
+            {
+                Debug.LogWarning($"[InventoryService] Discard: slotIndex {slotIndex} is out of range [0, {InventoryConstants.INVENTORY_SLOT_COUNT}).");
+                return DiscardResult.Fail(DiscardFailReason.SlotEmpty);
+            }
+
+            if (!_inventories.TryGetValue(charId, out var slots))
+            {
+                Debug.LogError($"[InventoryService] Discard: {charId} is not a registered character. Call RegisterCharacter before mutating inventory.");
+                return DiscardResult.Fail(DiscardFailReason.SlotEmpty);
+            }
+
+            var slot = slots[slotIndex];
+            if (slot.IsEmpty)
+                return DiscardResult.Fail(DiscardFailReason.SlotEmpty);
+
+            if (_locks[charId][slotIndex])
+                return DiscardResult.Fail(DiscardFailReason.SlotLocked);
+
+            if (quantity <= 0 || quantity > slot.Quantity)
+                return DiscardResult.Fail(DiscardFailReason.InvalidQuantity);
+
+            int newQuantity = slot.Quantity - quantity;
+            ItemID newItemId = newQuantity == 0 ? ItemID.Invalid : slot.ItemId;
+
+            RecordSlotChange(charId, slotIndex, newItemId, newQuantity);
+            slots[slotIndex] = new InventorySlot(newItemId, newQuantity);
+            EmitInventoryChanged(charId);
+            return DiscardResult.Succeeded;
         }
 
         /// <summary>
