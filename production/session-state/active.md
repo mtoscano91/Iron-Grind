@@ -1772,10 +1772,30 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Test written: tests/EditMode/InventorySystem/InventorySystem_MoveMergeSwap_tests.cs (18 tests passing live; +6 after /code-review "fix all" = 24, not yet re-run)
 - /code-review: APPROVED WITH SUGGESTIONS — all applied: TryGetStackLimit now takes a caller name for its log prefix (Pickup/Move); +6 tests (both-locked, slot 19, two characters, post-no-op buffer, reverse merge, no OnInventoryFull).
 - Uncommitted from readiness: GDD Rule 7.20 + AC-INV-9, EPIC.md open question, story-006 rewrite.
-- Next: EditMode Test Runner → /code-review → /story-done
+- /code-review: CHANGES REQUIRED → all applied: swapped MoveItemOut/MoveItemIn doc summaries fixed; decision (user) MoveItemOut rejects qty>1 stacks with SlotEmpty + error; TryPlaceSingle → PlaceInLowestEmptySlot; MoveItemOutResult fully-qualifies UnityEngine.Debug; +7 tests.
+- Next: EditMode Test Runner → /story-done
 
 ## Session Extract — /story-done 2026-09-27 (Inventory Story 006)
 - Verdict: COMPLETE
 - Story: production/epics/inventory-system/story-006-move-merge-swap.md — Slot Move (Merge, Swap & Relocate)
 - Tech debt logged: None
 - Next recommended: production/epics/inventory-system/story-007-equipment-interface.md (readiness check next)
+
+## Session Extract — /story-readiness + /dev-story 2026-09-27 (Inventory Story 007)
+- Committed Story 006 as cddbcc7.
+- Story 007 readiness: NEEDS WORK → fixed → READY. Decisions (user, 2026-09-27): successful MoveItemIn/ForceInsert do NOT reset the bag-full dedup window (GDD Rule 4.10 literal); MoveItemIn/ForceInsert reject Invalid/unknown/DB-not-ready items with a server error, no category check. No GDD change needed. Informational flag for Equipment epic: CR-EQS-8 same-tick ForceInsert-after-MoveItemIn always fails too.
+- Files changed: production/epics/inventory-system/story-007-equipment-interface.md (rewritten ACs/notes/QA), src/Foundation/InventorySystem/MoveItemOutCode.cs, MoveItemOutResult.cs, MoveItemInResult.cs (new), IInventoryService.cs + InventoryService.cs (MoveItemOut, MoveItemIn, ForceInsert, private TryPlaceSingle)
+- Test written: tests/EditMode/InventorySystem/InventorySystem_EquipmentInterface_tests.cs (28 passing live after CS0246 using fix; +7 after /code-review "fix all" = 35, not yet re-run)
+- /code-review: CHANGES REQUIRED → all applied: swapped MoveItemOut/MoveItemIn doc summaries fixed; decision (user) MoveItemOut rejects qty>1 stacks with SlotEmpty + error; TryPlaceSingle → PlaceInLowestEmptySlot; MoveItemOutResult fully-qualifies UnityEngine.Debug; +7 tests.
+- Next: EditMode Test Runner → /story-done
+
+## Session Extract — /story-done 2026-09-27 (Inventory Story 007)
+- Verdict: COMPLETE
+- Story: production/epics/inventory-system/story-007-equipment-interface.md — Equipment System Interface
+- Tech debt logged: 1 (TD-044 — Equipment GDD CR-EQS-8 ForceInsert retry after same-tick MoveItemIn failure is unreachable)
+- Next recommended: production/epics/inventory-system/story-008-sell-and-consume.md (Ready; run /story-readiness)
+
+## Session End — 2026-09-27
+- Inventory Stories 005, 006, 007 complete and committed this session (005 ef0671d, 006 cddbcc7, 007 = this commit).
+- Resume with: /story-readiness production/epics/inventory-system/story-008-sell-and-consume.md, then Story 009 (resolve TD-042 alongside it).
+- Open reminders: rotate the plaintext GitHub PAT in .git/config `origin` before any push; TD-043 (scroll stack vs RemoveItem) and TD-044 (CR-EQS-8) must be resolved before the Enhancement / Equipment epics start.

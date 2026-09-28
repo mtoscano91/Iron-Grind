@@ -22,8 +22,9 @@ namespace IronGrind.InventorySystem
     /// <see cref="OnInventoryChanged"/> on success). Story 006 (Move/Merge/Swap) adds
     /// <see cref="Move"/> (fires <see cref="OnInventoryChanged"/> on any mutating success; a
     /// same-slot move and a full-destination merge are no-op successes that fire nothing).
-    /// Story 007 (Equipment interface) and Story 008 (Sell/Consume) each add their own
-    /// mutator(s), all of which fire <see cref="OnInventoryChanged"/>.
+    /// Story 007 (Equipment interface) adds <see cref="MoveItemOut"/>, <see cref="MoveItemIn"/>,
+    /// and <see cref="ForceInsert"/> (each fires <see cref="OnInventoryChanged"/> only on a
+    /// mutating success); Story 008 (Sell/Consume) adds its own mutator(s).
     /// </remarks>
     public interface IInventoryService
     {
@@ -325,5 +326,94 @@ namespace IronGrind.InventorySystem
         /// <returns>The outcome; check <see cref="MoveResult.Success"/> / <see cref="MoveResult.Reason"/> / <see cref="MoveResult.FromSlot"/> / <see cref="MoveResult.ToSlot"/>.</returns>
         /// <exception cref="InvalidOperationException">Called synchronously from an <see cref="OnInventoryChanged"/> subscriber.</exception>
         MoveResult Move(CharacterID charId, int fromSlot, int toSlot);
+
+        /// <summary>
+        /// Removes the single item from the slot at <paramref name="slotIndex"/> and empties it
+        /// (equip from bag — GDD Interactions table, Equipment System row). Only the Equipment
+        /// System calls this, to take an item out of the bag while equipping it (ADR-010 Tier 1).
+        /// </summary>
+        /// <remarks>
+        /// <para>On success, fires exactly one <see cref="OnInventoryChanged"/> with a single entry
+        /// <c>{ slotIndex, itemId: 0, quantity: 0 }</c>. On any failure no slot is mutated and
+        /// <see cref="OnInventoryChanged"/> does not fire.</para>
+        ///
+        /// <para>Guard order (first match wins): out-of-range <paramref name="slotIndex"/> (&lt; 0
+        /// or &gt;= <see cref="InventoryConstants.INVENTORY_SLOT_COUNT"/>) logs a server error and
+        /// fails with <see cref="MoveItemOutCode.SlotEmpty"/>; an unregistered
+        /// <paramref name="charId"/> logs a server error and fails the same way; an empty slot fails
+        /// with <see cref="MoveItemOutCode.SlotEmpty"/>, no log (a normal, caller-anticipated
+        /// outcome); a locked slot fails with <see cref="MoveItemOutCode.SlotLocked"/>, no log (the
+        /// Equipment System can legitimately hit a locked slot — GDD Rule 5); a slot holding more
+        /// than one unit (a consumable stack — never an equipment item) logs a server error and
+        /// fails with <see cref="MoveItemOutCode.SlotEmpty"/> with no mutation, so a stack is never
+        /// silently lost (decided 2026-09-27; caller bug — only equipment, StackLimit 1, may be
+        /// moved out). Every failure carries
+        /// <see cref="MoveItemOutResult.ItemId"/> equal to <see cref="ItemID.Invalid"/>.</para>
+        /// </remarks>
+        /// <param name="charId">The character whose inventory to mutate.</param>
+        /// <param name="slotIndex">The slot index to empty. Valid range: [0, <see cref="InventoryConstants.INVENTORY_SLOT_COUNT"/>).</param>
+        /// <returns>The outcome; check <see cref="MoveItemOutResult.Code"/> / <see cref="MoveItemOutResult.ItemId"/>.</returns>
+        /// <exception cref="InvalidOperationException">Called synchronously from an <see cref="OnInventoryChanged"/> subscriber.</exception>
+        MoveItemOutResult MoveItemOut(CharacterID charId, int slotIndex);
+
+        /// <summary>
+        /// Places one unit of <paramref name="itemId"/> into the lowest-index empty slot (GDD Rule
+        /// 8 — Unequip to Bag). Only the Equipment System calls this, to return a
+        /// previously-equipped item to the bag (ADR-010 Tier 1). Never merges into an existing stack of the same
+        /// item — equipment is always placed at quantity 1 into an empty slot.
+        /// </summary>
+        /// <remarks>
+        /// <para>On success, fires exactly one <see cref="OnInventoryChanged"/> with a single entry
+        /// <c>{ slotIndex, itemId, quantity: 1 }</c>. On any failure no slot is mutated,
+        /// <see cref="OnInventoryChanged"/> does not fire, and — unlike <see cref="ForceInsert"/> —
+        /// <see cref="OnInventoryFull"/> never fires either (the caller keeps the item and decides
+        /// how to react). A successful call does not reset the bag-full dedup window (GDD Rule
+        /// 4.10, literal) — only a successful <see cref="Pickup"/> does.</para>
+        ///
+        /// <para>Guard order (first match wins): an unregistered <paramref name="charId"/> logs a
+        /// server error and fails; an invalid or unknown <paramref name="itemId"/>, or Item Database
+        /// not ready, logs a server error and fails (these are caller bugs — this is a Tier 1,
+        /// never-wire-reachable call, so no category check is performed); no empty slot fails with
+        /// no mutation, no event, and no <see cref="OnInventoryFull"/>. The free-slot check happens
+        /// at call time, not at any earlier query time — a caller that checked
+        /// <see cref="HasFreeSlot"/> and then lost the race to another mutation must handle a
+        /// failure here rather than assume success.</para>
+        /// </remarks>
+        /// <param name="charId">The character whose inventory to mutate.</param>
+        /// <param name="itemId">The item to place. Must be a known item in the Item Database.</param>
+        /// <returns>The outcome; check <see cref="MoveItemInResult.Success"/> / <see cref="MoveItemInResult.SlotIndex"/>.</returns>
+        /// <exception cref="InvalidOperationException">Called synchronously from an <see cref="OnInventoryChanged"/> subscriber.</exception>
+        MoveItemInResult MoveItemIn(CharacterID charId, ItemID itemId);
+
+        /// <summary>
+        /// Places one unit of <paramref name="itemId"/> into the lowest-index empty slot, identical
+        /// to <see cref="MoveItemIn"/> except that a full bag reports the shared bag-full
+        /// notification (GDD Rule 4.10) instead of silently failing. Used by the Equipment System
+        /// to place a merge result, and (per equipment-system.md CR-EQS-8) as the fallback when a
+        /// plain <see cref="MoveItemIn"/> loses a same-tick race for the last free slot (ADR-010
+        /// Tier 1).
+        /// </summary>
+        /// <remarks>
+        /// <para>On success, fires exactly one <see cref="OnInventoryChanged"/> with a single entry
+        /// <c>{ slotIndex, itemId, quantity: 1 }</c>; never merges into an existing stack. On a full
+        /// bag, no slot is mutated, <see cref="OnInventoryChanged"/> does not fire, and the shared
+        /// bag-full notification policy runs — <see cref="OnInventoryFull"/> fires only outside the
+        /// active <see cref="InventoryConstants.BAG_FULL_DEDUP_WINDOW_TICKS"/> dedup window. On an
+        /// item-validation or character-registration failure, no slot is mutated, no event fires,
+        /// and <see cref="OnInventoryFull"/> never fires — only a full bag counts as "blocked for
+        /// space." Neither a successful call nor a full-bag call ever resets the bag-full dedup
+        /// window — only a successful <see cref="Pickup"/> does.</para>
+        ///
+        /// <para>Guard order (first match wins): an unregistered <paramref name="charId"/> logs a
+        /// server error and fails; an invalid or unknown <paramref name="itemId"/>, or Item Database
+        /// not ready, logs a server error and fails (no category check — this also places Equipment
+        /// merge results); no empty slot fails and fires the shared bag-full notification for
+        /// <paramref name="charId"/>.</para>
+        /// </remarks>
+        /// <param name="charId">The character whose inventory to mutate.</param>
+        /// <param name="itemId">The item to place. Must be a known item in the Item Database.</param>
+        /// <returns><see langword="true"/> iff the item was placed.</returns>
+        /// <exception cref="InvalidOperationException">Called synchronously from an <see cref="OnInventoryChanged"/> subscriber.</exception>
+        bool ForceInsert(CharacterID charId, ItemID itemId);
     }
 }

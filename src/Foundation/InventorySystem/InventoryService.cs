@@ -34,7 +34,8 @@ namespace IronGrind.InventorySystem
     /// <para><b>Mutation seam contract:</b> every mutation entry point (Story 002
     /// <see cref="Pickup"/>, Story 004 <see cref="LockSlot"/>/<see cref="UnlockSlot"/>/
     /// <see cref="RemoveItem"/>, Story 005 <see cref="Discard"/>, Story 006 <see cref="Move"/>,
-    /// Story 007 Equipment interface, Story 008 Sell/Consume) MUST call <see cref="ThrowIfDispatching"/>
+    /// Story 007 <see cref="MoveItemOut"/>/<see cref="MoveItemIn"/>/<see cref="ForceInsert"/>,
+    /// Story 008 Sell/Consume) MUST call <see cref="ThrowIfDispatching"/>
     /// first. Entry points that change slot <em>content</em> then record their per-slot results
     /// via <see cref="RecordSlotChange"/> and fire the broadcast via
     /// <see cref="EmitInventoryChanged"/> — record changes only once the mutation is
@@ -522,6 +523,140 @@ namespace IronGrind.InventorySystem
             slots[toSlot] = source;
             EmitInventoryChanged(charId);
             return MoveResult.Succeeded(dest, source);
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>
+        /// Guard order mirrors <see cref="RemoveItem"/>: out-of-range <paramref name="slotIndex"/>
+        /// first — server error (Tier 1, never wire-reachable — an out-of-range index here is
+        /// always a caller bug, unlike <see cref="Discard"/>'s wire-facing warning); then
+        /// unregistered <paramref name="charId"/> — server error; then an empty slot — no log
+        /// (GDD Rule 8, a normal outcome the Equipment System anticipates); then a locked slot — no
+        /// log (GDD Rule 5 — the Equipment System can legitimately hit a locked slot); then a
+        /// stack of more than one unit — server error, no mutation (decided 2026-09-27: the result
+        /// carries no quantity, so moving a stack out would silently lose it). A locked slot is
+        /// always rejected before this point, so its lock flag needs no clearing on success.
+        /// </remarks>
+        public MoveItemOutResult MoveItemOut(CharacterID charId, int slotIndex)
+        {
+            ThrowIfDispatching();
+
+            if (slotIndex < 0 || slotIndex >= InventoryConstants.INVENTORY_SLOT_COUNT)
+            {
+                Debug.LogError($"[InventoryService] MoveItemOut: slotIndex {slotIndex} is out of range [0, {InventoryConstants.INVENTORY_SLOT_COUNT}).");
+                return MoveItemOutResult.Fail(MoveItemOutCode.SlotEmpty);
+            }
+
+            if (!_inventories.TryGetValue(charId, out var slots))
+            {
+                Debug.LogError($"[InventoryService] MoveItemOut: {charId} is not a registered character. Call RegisterCharacter before mutating inventory.");
+                return MoveItemOutResult.Fail(MoveItemOutCode.SlotEmpty);
+            }
+
+            var slot = slots[slotIndex];
+            if (slot.IsEmpty)
+                return MoveItemOutResult.Fail(MoveItemOutCode.SlotEmpty);
+
+            if (_locks[charId][slotIndex])
+                return MoveItemOutResult.Fail(MoveItemOutCode.SlotLocked);
+
+            if (slot.Quantity > 1)
+            {
+                Debug.LogError($"[InventoryService] MoveItemOut: slot {slotIndex} for {charId} holds a stack of {slot.Quantity} {slot.ItemId}; only single equipment items can be moved out.");
+                return MoveItemOutResult.Fail(MoveItemOutCode.SlotEmpty);
+            }
+
+            ItemID removedItemId = slot.ItemId;
+            RecordSlotChange(charId, slotIndex, ItemID.Invalid, 0);
+            slots[slotIndex] = InventorySlot.Empty;
+            EmitInventoryChanged(charId);
+            return MoveItemOutResult.Succeeded(removedItemId);
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>
+        /// Guard order: unregistered <paramref name="charId"/> — server error; then item validity
+        /// via <see cref="TryGetStackLimit"/> (reused purely for its unknown-item / DB-not-ready
+        /// error log — the resolved stack limit is unused, since equipment is always placed at
+        /// quantity 1); then <see cref="PlaceInLowestEmptySlot"/>. Never calls
+        /// <see cref="NotifyInventoryFull"/> — a caller-visible full bag is reported only through
+        /// <see cref="MoveItemInResult.Failed"/>, not the broadcast event (see
+        /// <see cref="ForceInsert"/> for the variant that does notify).
+        /// </remarks>
+        public MoveItemInResult MoveItemIn(CharacterID charId, ItemID itemId)
+        {
+            ThrowIfDispatching();
+
+            if (!_inventories.TryGetValue(charId, out var slots))
+            {
+                Debug.LogError($"[InventoryService] MoveItemIn: {charId} is not a registered character. Call RegisterCharacter before mutating inventory.");
+                return MoveItemInResult.Failed;
+            }
+
+            if (!TryGetStackLimit(nameof(MoveItemIn), itemId, out _))
+                return MoveItemInResult.Failed;
+
+            if (PlaceInLowestEmptySlot(charId, slots, itemId, out int slotIndex))
+                return MoveItemInResult.Succeeded(slotIndex);
+
+            return MoveItemInResult.Failed;
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>
+        /// Identical guard order to <see cref="MoveItemIn"/> (unregistered character → item
+        /// validity via <see cref="TryGetStackLimit"/> → <see cref="PlaceInLowestEmptySlot"/>), differing
+        /// only in the no-free-slot path: this calls <see cref="NotifyInventoryFull"/> for
+        /// <paramref name="charId"/> (GDD Rule 4.10) rather than failing silently. Neither this nor
+        /// <see cref="MoveItemIn"/> touches the bag-full dedup window on a successful placement.
+        /// </remarks>
+        public bool ForceInsert(CharacterID charId, ItemID itemId)
+        {
+            ThrowIfDispatching();
+
+            if (!_inventories.TryGetValue(charId, out var slots))
+            {
+                Debug.LogError($"[InventoryService] ForceInsert: {charId} is not a registered character. Call RegisterCharacter before mutating inventory.");
+                return false;
+            }
+
+            if (!TryGetStackLimit(nameof(ForceInsert), itemId, out _))
+                return false;
+
+            if (PlaceInLowestEmptySlot(charId, slots, itemId, out _))
+                return true;
+
+            NotifyInventoryFull(charId);
+            return false;
+        }
+
+        /// <summary>
+        /// Shared placement helper for <see cref="MoveItemIn"/> and <see cref="ForceInsert"/>:
+        /// finds the lowest-index empty slot, places <paramref name="itemId"/> there at quantity 1
+        /// (never merges), records the change, writes the slot, and fires the single
+        /// <see cref="EmitInventoryChanged"/> dispatch. Returns <see langword="false"/> with
+        /// <paramref name="slotIndex"/> = -1 and no side effects if no slot is free — callers decide
+        /// how to report that (silently for <see cref="MoveItemIn"/>, via
+        /// <see cref="NotifyInventoryFull"/> for <see cref="ForceInsert"/>). Unlike the side-effect-free
+        /// <see cref="TryGetStackLimit"/>, this <em>is</em> the mutation when it returns
+        /// <see langword="true"/>.
+        /// </summary>
+        private bool PlaceInLowestEmptySlot(CharacterID charId, InventorySlot[] slots, ItemID itemId, out int slotIndex)
+        {
+            for (int i = 0; i < slots.Length; i++)
+            {
+                if (!slots[i].IsEmpty)
+                    continue;
+
+                RecordSlotChange(charId, i, itemId, 1);
+                slots[i] = new InventorySlot(itemId, 1);
+                EmitInventoryChanged(charId);
+                slotIndex = i;
+                return true;
+            }
+
+            slotIndex = -1;
+            return false;
         }
 
         /// <summary>
