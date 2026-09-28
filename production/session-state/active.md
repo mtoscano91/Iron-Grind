@@ -1759,3 +1759,23 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Story: production/epics/inventory-system/story-005-discard.md — Discard (Server-Side Validation & Mutation)
 - Tech debt logged: None
 - Next recommended: production/epics/inventory-system/story-006-move-merge-swap.md (Ready). Work not yet committed.
+
+## Session Extract — /story-readiness 2026-09-27 (Inventory Story 006)
+- Committed Story 005 as ef0671d.
+- Story 006 readiness: NEEDS WORK → fixed → READY. Decisions (user, 2026-09-27): different-item move = swap (any category); same-ItemID merge onto full dest = no-op success, no event; empty source / out-of-range / unregistered → MoveFailReason.InvalidSlot (warning / error / no log). AC-INV-9 reasons = SourceLocked / DestLocked (wire enum).
+- Files edited: production/epics/inventory-system/story-006-move-merge-swap.md (ACs, impl notes, QA cases, estimate 3h, ADR-010 D5 wording); design/gdd/inventory-system.md (Rule 7.20 clarification, AC-INV-9 reasons, Last Updated); production/epics/inventory-system/EPIC.md (open question 2 resolved). entities.yaml: no change (rule clarifications only). Not committed.
+- Next: /dev-story production/epics/inventory-system/story-006-move-merge-swap.md
+
+## Session Extract — /dev-story 2026-09-27 (Inventory Story 006)
+- Story: production/epics/inventory-system/story-006-move-merge-swap.md — Slot Move (Merge, Swap & Relocate)
+- Files changed: src/Foundation/InventorySystem/MoveFailReason.cs (new), src/Foundation/InventorySystem/MoveResult.cs (new), src/Foundation/InventorySystem/IInventoryService.cs (Move + docs), src/Foundation/InventorySystem/InventoryService.cs (Move + private ExecuteMove/SwapSlots; relocate = swap with Empty)
+- Test written: tests/EditMode/InventorySystem/InventorySystem_MoveMergeSwap_tests.cs (18 tests passing live; +6 after /code-review "fix all" = 24, not yet re-run)
+- /code-review: APPROVED WITH SUGGESTIONS — all applied: TryGetStackLimit now takes a caller name for its log prefix (Pickup/Move); +6 tests (both-locked, slot 19, two characters, post-no-op buffer, reverse merge, no OnInventoryFull).
+- Uncommitted from readiness: GDD Rule 7.20 + AC-INV-9, EPIC.md open question, story-006 rewrite.
+- Next: EditMode Test Runner → /code-review → /story-done
+
+## Session Extract — /story-done 2026-09-27 (Inventory Story 006)
+- Verdict: COMPLETE
+- Story: production/epics/inventory-system/story-006-move-merge-swap.md — Slot Move (Merge, Swap & Relocate)
+- Tech debt logged: None
+- Next recommended: production/epics/inventory-system/story-007-equipment-interface.md (readiness check next)

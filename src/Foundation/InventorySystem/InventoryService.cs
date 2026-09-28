@@ -33,7 +33,7 @@ namespace IronGrind.InventorySystem
     ///
     /// <para><b>Mutation seam contract:</b> every mutation entry point (Story 002
     /// <see cref="Pickup"/>, Story 004 <see cref="LockSlot"/>/<see cref="UnlockSlot"/>/
-    /// <see cref="RemoveItem"/>, Story 005 <see cref="Discard"/>, Story 006 Move/Merge/Swap,
+    /// <see cref="RemoveItem"/>, Story 005 <see cref="Discard"/>, Story 006 <see cref="Move"/>,
     /// Story 007 Equipment interface, Story 008 Sell/Consume) MUST call <see cref="ThrowIfDispatching"/>
     /// first. Entry points that change slot <em>content</em> then record their per-slot results
     /// via <see cref="RecordSlotChange"/> and fire the broadcast via
@@ -247,7 +247,7 @@ namespace IronGrind.InventorySystem
                 return PickupResult.Fail(PickupFailReason.CharacterNotRegistered);
             }
 
-            if (!TryGetStackLimit(itemId, out int stackLimit))
+            if (!TryGetStackLimit(nameof(Pickup), itemId, out int stackLimit))
                 return PickupResult.Fail(PickupFailReason.UnknownItem);
 
             Array.Clear(_pickupPlan, 0, _pickupPlan.Length);
@@ -416,6 +416,114 @@ namespace IronGrind.InventorySystem
             return DiscardResult.Succeeded;
         }
 
+        /// <inheritdoc/>
+        /// <remarks>
+        /// Guard order mirrors <see cref="Discard"/>'s wire-GDD-aligned validation order (range →
+        /// source lock → dest lock), extended with the same-slot no-op the wire GDD requires for
+        /// Move: out-of-range <paramref name="fromSlot"/>/<paramref name="toSlot"/> logs a server
+        /// warning naming the offending index and fails with <see cref="MoveFailReason.InvalidSlot"/>,
+        /// echoing <see cref="InventorySlot.Empty"/> for both slots; an unregistered
+        /// <paramref name="charId"/> logs a server error and fails the same way; <c>fromSlot ==
+        /// toSlot</c> is always a no-op success echoing that slot's current state as both
+        /// <see cref="MoveResult.FromSlot"/> and <see cref="MoveResult.ToSlot"/>, even if the slot
+        /// is empty or locked; an empty source fails with <see cref="MoveFailReason.InvalidSlot"/>,
+        /// no log; a locked source fails with <see cref="MoveFailReason.SourceLocked"/>; a locked
+        /// destination fails with <see cref="MoveFailReason.DestLocked"/>. Every rejection path
+        /// echoes both slots' unchanged current state (or <see cref="InventorySlot.Empty"/> for the
+        /// range/registration failures) and never records, mutates, or emits.
+        /// </remarks>
+        public MoveResult Move(CharacterID charId, int fromSlot, int toSlot)
+        {
+            ThrowIfDispatching();
+
+            if (fromSlot < 0 || fromSlot >= InventoryConstants.INVENTORY_SLOT_COUNT)
+            {
+                Debug.LogWarning($"[InventoryService] Move: slotIndex {fromSlot} is out of range [0, {InventoryConstants.INVENTORY_SLOT_COUNT}).");
+                return MoveResult.Fail(MoveFailReason.InvalidSlot, InventorySlot.Empty, InventorySlot.Empty);
+            }
+
+            if (toSlot < 0 || toSlot >= InventoryConstants.INVENTORY_SLOT_COUNT)
+            {
+                Debug.LogWarning($"[InventoryService] Move: slotIndex {toSlot} is out of range [0, {InventoryConstants.INVENTORY_SLOT_COUNT}).");
+                return MoveResult.Fail(MoveFailReason.InvalidSlot, InventorySlot.Empty, InventorySlot.Empty);
+            }
+
+            if (!_inventories.TryGetValue(charId, out var slots))
+            {
+                Debug.LogError($"[InventoryService] Move: {charId} is not a registered character. Call RegisterCharacter before mutating inventory.");
+                return MoveResult.Fail(MoveFailReason.InvalidSlot, InventorySlot.Empty, InventorySlot.Empty);
+            }
+
+            if (fromSlot == toSlot)
+            {
+                var unchanged = slots[fromSlot];
+                return MoveResult.Succeeded(unchanged, unchanged);
+            }
+
+            var source = slots[fromSlot];
+            var dest = slots[toSlot];
+            if (source.IsEmpty)
+                return MoveResult.Fail(MoveFailReason.InvalidSlot, source, dest);
+
+            var locks = _locks[charId];
+            if (locks[fromSlot])
+                return MoveResult.Fail(MoveFailReason.SourceLocked, source, dest);
+
+            if (locks[toSlot])
+                return MoveResult.Fail(MoveFailReason.DestLocked, source, dest);
+
+            return ExecuteMove(charId, slots, fromSlot, toSlot, source, dest);
+        }
+
+        /// <summary>
+        /// Performs the validated move (GDD Rule 7): the same <see cref="ItemID"/> in both slots
+        /// merges — overflow beyond <c>StackLimit</c> stays in <paramref name="fromSlot"/>, and a
+        /// full destination (nothing to transfer) is a no-op success with no event; anything else
+        /// (different items, or an empty destination) swaps the two slots' full contents, which is
+        /// exactly a relocate when the destination is empty. Records the source entry before the
+        /// destination entry, then fires one <see cref="EmitInventoryChanged"/>.
+        /// </summary>
+        private MoveResult ExecuteMove(CharacterID charId, InventorySlot[] slots, int fromSlot, int toSlot, InventorySlot source, InventorySlot dest)
+        {
+            if (source.ItemId == dest.ItemId)
+            {
+                if (!TryGetStackLimit(nameof(Move), source.ItemId, out int stackLimit))
+                    return SwapSlots(charId, slots, fromSlot, toSlot, source, dest);
+
+                int transfer = Math.Min(source.Quantity, stackLimit - dest.Quantity);
+                if (transfer <= 0)
+                    return MoveResult.Succeeded(source, dest);
+
+                int newSourceQuantity = source.Quantity - transfer;
+                var newSource = newSourceQuantity == 0 ? InventorySlot.Empty : new InventorySlot(source.ItemId, newSourceQuantity);
+                var newDest = new InventorySlot(dest.ItemId, dest.Quantity + transfer);
+
+                RecordSlotChange(charId, fromSlot, newSource.ItemId, newSource.Quantity);
+                RecordSlotChange(charId, toSlot, newDest.ItemId, newDest.Quantity);
+                slots[fromSlot] = newSource;
+                slots[toSlot] = newDest;
+                EmitInventoryChanged(charId);
+                return MoveResult.Succeeded(newSource, newDest);
+            }
+
+            return SwapSlots(charId, slots, fromSlot, toSlot, source, dest);
+        }
+
+        /// <summary>
+        /// Swaps <paramref name="fromSlot"/>'s and <paramref name="toSlot"/>'s full contents —
+        /// covers both the Rule 7.20 swap and relocate-to-empty, since relocating onto an empty
+        /// destination is a swap with <see cref="InventorySlot.Empty"/>.
+        /// </summary>
+        private MoveResult SwapSlots(CharacterID charId, InventorySlot[] slots, int fromSlot, int toSlot, InventorySlot source, InventorySlot dest)
+        {
+            RecordSlotChange(charId, fromSlot, dest.ItemId, dest.Quantity);
+            RecordSlotChange(charId, toSlot, source.ItemId, source.Quantity);
+            slots[fromSlot] = dest;
+            slots[toSlot] = source;
+            EmitInventoryChanged(charId);
+            return MoveResult.Succeeded(dest, source);
+        }
+
         /// <summary>
         /// The single bag-full notification policy (GDD Rule 4.10): fires
         /// <see cref="OnInventoryFull"/> for <paramref name="characterId"/> unless a dedup window
@@ -457,20 +565,21 @@ namespace IronGrind.InventorySystem
         /// server error when the item is invalid, unknown, the database is not ready, or the
         /// definition's <c>StackLimit</c> is below 1 (a data error — never reported as a full bag).
         /// </summary>
-        private bool TryGetStackLimit(ItemID itemId, out int stackLimit)
+        /// <param name="caller">The public entry point used as the log prefix (e.g. <c>nameof(Pickup)</c>), so a failure names the operation that hit it.</param>
+        private bool TryGetStackLimit(string caller, ItemID itemId, out int stackLimit)
         {
             stackLimit = 0;
             if (itemId == ItemID.Invalid || !_itemDatabase.IsReady
                 || !_itemDatabase.TryGetItem(itemId, out var definition) || definition == null)
             {
-                Debug.LogError($"[InventoryService] Pickup: {itemId} is not a known item (or the Item Database is not ready).");
+                Debug.LogError($"[InventoryService] {caller}: {itemId} is not a known item (or the Item Database is not ready).");
                 return false;
             }
 
             stackLimit = definition.StackLimit;
             if (stackLimit < 1)
             {
-                Debug.LogError($"[InventoryService] Pickup: {itemId} has invalid StackLimit {stackLimit}.");
+                Debug.LogError($"[InventoryService] {caller}: {itemId} has invalid StackLimit {stackLimit}.");
                 return false;
             }
             return true;

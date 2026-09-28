@@ -19,9 +19,11 @@ namespace IronGrind.InventorySystem
     /// (Slot Locks) adds <see cref="LockSlot"/>/<see cref="UnlockSlot"/> (flag-only — never fire
     /// <see cref="OnInventoryChanged"/>) and <see cref="RemoveItem"/> (fires
     /// <see cref="OnInventoryChanged"/>); Story 005 (Discard) adds <see cref="Discard"/> (fires
-    /// <see cref="OnInventoryChanged"/> on success). Story 006 (Move/Merge/Swap), Story 007
-    /// (Equipment interface), and Story 008 (Sell/Consume) each add their own mutator(s), all of
-    /// which fire <see cref="OnInventoryChanged"/>.
+    /// <see cref="OnInventoryChanged"/> on success). Story 006 (Move/Merge/Swap) adds
+    /// <see cref="Move"/> (fires <see cref="OnInventoryChanged"/> on any mutating success; a
+    /// same-slot move and a full-destination merge are no-op successes that fire nothing).
+    /// Story 007 (Equipment interface) and Story 008 (Sell/Consume) each add their own
+    /// mutator(s), all of which fire <see cref="OnInventoryChanged"/>.
     /// </remarks>
     public interface IInventoryService
     {
@@ -277,5 +279,51 @@ namespace IronGrind.InventorySystem
         /// <returns>The outcome; check <see cref="DiscardResult.Success"/> / <see cref="DiscardResult.Reason"/>.</returns>
         /// <exception cref="InvalidOperationException">Called synchronously from an <see cref="OnInventoryChanged"/> subscriber.</exception>
         DiscardResult Discard(CharacterID charId, int slotIndex, int quantity);
+
+        /// <summary>
+        /// Moves, merges, or swaps the contents of <paramref name="fromSlot"/> and
+        /// <paramref name="toSlot"/> for <paramref name="charId"/> (GDD Rule 7 — Slot Move). The
+        /// same <see cref="ItemID"/> in both slots merges (topping up <paramref name="toSlot"/>
+        /// from <paramref name="fromSlot"/>; overflow beyond <c>StackLimit</c> stays in
+        /// <paramref name="fromSlot"/>); an empty destination relocates the whole stack; anything
+        /// else (different items) swaps the two slots' full contents. The client's
+        /// <c>MoveRequest</c> is enqueued by its network handler and processed in the zone tick
+        /// loop (ADR-010 Decision 5), which calls this directly (Tier 1) and maps the result to
+        /// the wire <c>MoveResultMessage</c>.
+        /// </summary>
+        /// <remarks>
+        /// <para>On any mutating success, fires exactly one <see cref="OnInventoryChanged"/> with
+        /// both slots' post-operation states, recording the source slot's entry before the
+        /// destination's. A same-slot move and a full-destination merge (nothing to transfer) are
+        /// no-op successes: no <see cref="OnInventoryChanged"/> fires. On any failure no slot is
+        /// mutated and <see cref="OnInventoryChanged"/> does not fire.</para>
+        ///
+        /// <para>Guard order (first match wins, matches the wire GDD's validation order — range →
+        /// source lock → dest lock): out-of-range <paramref name="fromSlot"/>/<paramref name="toSlot"/>
+        /// (&lt; 0 or &gt;= <see cref="InventoryConstants.INVENTORY_SLOT_COUNT"/> — wire slot
+        /// fields are <see langword="byte"/>, so 20–255 is reachable) logs a server warning naming
+        /// the offending index and fails with <see cref="MoveFailReason.InvalidSlot"/>; an
+        /// unregistered <paramref name="charId"/> logs a server error and fails with
+        /// <see cref="MoveFailReason.InvalidSlot"/> (both cases echo <see cref="InventorySlot.Empty"/>
+        /// for both slots — decided 2026-09-27); <c>fromSlot == toSlot</c> is always a no-op
+        /// success echoing that slot's current state as both <see cref="MoveResult.FromSlot"/> and
+        /// <see cref="MoveResult.ToSlot"/>, even when the slot is empty or locked (an empty slot
+        /// can never be locked, but this check runs before either is inspected); an empty source
+        /// slot fails with <see cref="MoveFailReason.InvalidSlot"/>, no log (a normal
+        /// client-triggerable outcome); a locked source fails with
+        /// <see cref="MoveFailReason.SourceLocked"/>; a locked destination fails with
+        /// <see cref="MoveFailReason.DestLocked"/>. None of these rejection paths throw, mutate
+        /// state, or fire <see cref="OnInventoryChanged"/>.</para>
+        ///
+        /// <para>Merge <c>StackLimit</c> is resolved from the Item Database exactly like
+        /// <see cref="Pickup"/>; if it cannot be resolved (unreachable in production under the
+        /// <see cref="Pickup"/> guard), this logs a server error and falls back to a swap.</para>
+        /// </remarks>
+        /// <param name="charId">The character whose inventory to mutate.</param>
+        /// <param name="fromSlot">The source slot index. Valid range: [0, <see cref="InventoryConstants.INVENTORY_SLOT_COUNT"/>).</param>
+        /// <param name="toSlot">The destination slot index. Valid range: [0, <see cref="InventoryConstants.INVENTORY_SLOT_COUNT"/>).</param>
+        /// <returns>The outcome; check <see cref="MoveResult.Success"/> / <see cref="MoveResult.Reason"/> / <see cref="MoveResult.FromSlot"/> / <see cref="MoveResult.ToSlot"/>.</returns>
+        /// <exception cref="InvalidOperationException">Called synchronously from an <see cref="OnInventoryChanged"/> subscriber.</exception>
+        MoveResult Move(CharacterID charId, int fromSlot, int toSlot);
     }
 }

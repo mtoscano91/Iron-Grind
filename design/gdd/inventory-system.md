@@ -2,7 +2,7 @@
 
 > **Status**: Approved (lean re-review 2026-05-17 — B-INV-1 PickupRequest signature fixed; R-2 MoveItemIn return type added; OQ-INV-5 resolved; OQ-INV-6 added for wire schemas)
 > **Author**: Manuel Toscano + Claude Code agents
-> **Last Updated**: 2026-05-22 (Equipment System upstream contract: MoveItemOut return type extended to MoveItemOutResult; ForceInsert added — OQ-EQS-3)
+> **Last Updated**: 2026-09-27 (Story 006 readiness: Rule 7.20 clarified — different-item moves swap, full-destination merge is a no-op success; AC-INV-9 reasons aligned to wire `MoveFailReason`). Previous: 2026-05-22 (Equipment System upstream contract: MoveItemOut return type extended to MoveItemOutResult; ForceInsert added — OQ-EQS-3)
 > **Implements Pillar**: Earned Power (primary), Legendary Gear (secondary)
 
 ## Overview
@@ -59,7 +59,7 @@ The inventory is not the fantasy — it's where the fantasy is accounted for. Af
 **Rule 7 — Slot Move (Rearrange)**
 
 19. A player may move an item between any two unlocked slots in their own inventory.
-20. Moving a consumable stack over another slot holding the same `ItemID`: the two stacks merge, up to `StackLimit`; overflow remains in the source slot. Moving an equipment item over an occupied slot swaps the two items.
+20. Moving a consumable stack over another slot holding the same `ItemID`: the two stacks merge, up to `StackLimit`; overflow remains in the source slot. Moving an equipment item over an occupied slot swaps the two items. Moving any item over an occupied slot holding a different `ItemID` swaps the two items. Moving a stack onto a same-`ItemID` stack already at `StackLimit` is a no-op success (nothing transferred, no event). *(Clarified 2026-09-27, Story 006 readiness.)*
 21. Moves are server-authoritative: the client sends `MoveRequest(fromSlot, toSlot)`. The server validates both slots are unlocked and responds with the updated slot states.
 
 **Rule 8 — Unequip to Bag**
@@ -313,7 +313,7 @@ GIVEN a slot holding 45 HP Potions, WHEN the client sends `DiscardRequest(slotIn
 GIVEN slot A holds 50 HP Potions and slot B holds 30 HP Potions (same ItemID, StackLimit=99), WHEN the player moves slot A onto slot B, THEN slot B holds exactly 80 HP Potions and slot A is empty (`ItemID.Invalid, Quantity = 0`). Both changes appear in a single `InventoryChangedEvent`.
 
 **AC-INV-9** [BLOCKING]
-GIVEN slot A is locked by the Enhancement System and slot B is unlocked, WHEN the player attempts to swap them via `MoveRequest(A, B)`, THEN the swap is rejected with `MoveResult(fail, reason=LockedSlot)`, and both slots are unchanged.
+GIVEN slot A is locked by the Enhancement System and slot B is unlocked, WHEN the player attempts to swap them via `MoveRequest(A, B)`, THEN the swap is rejected with `MoveResult(fail, reason=SourceLocked)`, and both slots are unchanged. If instead slot B is locked and slot A is unlocked, the move is rejected with `reason=DestLocked`. *(Reason names aligned with `networking-wire-protocol.md` `MoveFailReason`, 2026-09-27.)*
 
 **AC-INV-10** [BLOCKING]
 GIVEN all 20 inventory slots are occupied and a character attempts to equip a new item into a slot that already holds an equipped item (forcing an unequip-to-bag), WHEN the Equipment System calls `HasFreeSlot()` and receives `false`, THEN: (a) the currently-equipped item remains in the equipment slot with unchanged ItemID, (b) no inventory slot is mutated (verified by reading all 20 slots before and after the attempt), (c) no `InventoryChangedEvent` fires.
