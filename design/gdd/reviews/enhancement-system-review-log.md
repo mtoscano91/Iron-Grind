@@ -2,6 +2,59 @@
 
 ---
 
+## Review — 2026-10-01 — Verdict: APPROVED
+Scope signal: L
+Specialists: None (lean — no specialist agents)
+Blocking items: 0 | Recommended: 4
+Summary: Lean re-review Pass 7 of Revision Pass 3. Both Pass 6 blockers verified closed: `RejectedItemEquipped` is gone from the enum and the repo and AC-ENH-4 is runnable (`RejectedItemNotFound`); AC-ENH-7 tests the Inventory lock directly and no longer overlaps AC-ENH-38. The 300s NPC session lifetime matches npc-shop.md CR-SHOP-3. Not creative-director reviewed (lean), and run in the same session as Revision Pass 3 (no fresh context) — every changed passage was re-read from disk and checked against the sibling GDDs. Main-review synthesis: the commit/rollback contract, result-code set and 39-AC suite are internally consistent and agree with Inventory, Equipment, Damage Calculation, Character Persistence and NPC Shop.
+Prior verdict resolved: Yes — NEEDS REVISION (Pass 6, 2026-10-01) → both blockers closed; no new blockers.
+
+Recommended items 1–2 applied in-session with approval (wording only): AC-ENH-7 uses the Inventory GDD's `MoveRequest` / `MoveResult(fail, SourceLocked)` (it named a non-existent `MoveItem`); AC-ENH-39 sends `CancelEnhancement` instead of undefined "selection messages".
+
+Still open:
+- No client → server selection request is defined although UI-ENH-1 / EC-ENH-5 assume one triggers `EnhancementStateUpdate` (pre-existing; fold into TD-046).
+- Client behaviour when the NPC session expires with the Enhancement UI open is unspecified (Enhancement UI GDD).
+- Other documents: npc-shop.md OQ-NS-6 and networking-wire-protocol.md line 980 still require a pre-emption callback; "destruction threshold" wording in item-database.md Rule 28 and the systems-index risk table; systems-index "Depends On" omits Character Persistence; `IsAttemptInProgress` not in entities.yaml.
+
+Pre-implementation gates (before `/create-epics`): OQ-ENH-7 (owner of the CR-ENH-18 request hold — AC-ENH-38 cannot run until it exists), Item Database amendment #4 (scroll records, `ScrollData.TargetGearTier`), wire-protocol Enhancement message set (TD-046).
+
+---
+
+## Revision Pass 3 — 2026-10-01
+Author: Manuel Toscano + Claude Code
+Scope: both blockers of the Pass 6 lean review + the recommended items inside enhancement-system.md. Lean re-review pending.
+
+**Design decisions (user):**
+- Blocker 1: `RejectedItemEquipped` dropped. `ConfirmEnhancement` carries bag slot indices only, so an equipped item is unaddressable; CR-ENH-4 says so, the code is removed from `EnhancementResultCode`, AC-ENH-4 now expects `RejectedItemNotFound` for the vacated bag slot.
+- Recommended 1: the Enhancement NPC session has the same 300s wall-clock lifetime from open as the shop session (`SESSION_TTL_SECONDS`, npc-shop.md CR-SHOP-3) — one shared flag, one lifetime. CR-ENH-17 close triggers updated; AC-ENH-39 added (39 ACs total).
+
+**Blocker 2:** AC-ENH-7 rewritten to call the Inventory `MoveItem` directly server-side during a held step 6b write; the client-request path (held by CR-ENH-18) stays in AC-ENH-38.
+
+**Recommended items applied:** Player Fantasy no longer refers to a destruction threshold (three phrases); `IsAttemptInProgress` true through `RESULT_*`, and a second `ConfirmEnhancement` is rejected, never held; `outcome` / `newLevel` ignored on a `Rejected*` code; OQ-ENH-7 covers server-originated mutations (Loot Table `PickupRequest`); Equipment row of the Interactions table matches the CR-ENH-12 contract mapping.
+
+**Registry:** no entities.yaml change — no registered entity, formula or constant changed (`RejectedItemEquipped` was never registered; no other file in the repo referenced it).
+
+**Not applied (other documents — still open):** npc-shop.md OQ-NS-6 and networking-wire-protocol.md line 980 still require a pre-emption callback that CR-ENH-17 says is not needed; "destruction threshold" wording in item-database.md Rule 28 and systems-index.md risk table; systems-index "Depends On" for this system omits Character Persistence; `IsAttemptInProgress` not in entities.yaml. Pre-implementation gates unchanged: Item Database amendment #4, wire-protocol Enhancement message set (TD-046), OQ-ENH-7.
+
+---
+
+## Review — 2026-10-01 — Verdict: NEEDS REVISION
+Scope signal: L
+Specialists: None (lean — no specialist agents)
+Blocking items: 2 | Recommended: 6
+Summary: Lean re-review Pass 6 of Revision Pass 2. All 5 Pass 5 blockers verified closed: apply-then-commit with caller-owned rollback is sound (slot arithmetic checked for every rollback case, including a quantity-1 scroll stack and a full bag), the `GetElementalBonus` signature agrees across five documents and the registry, and F-ENH-5 re-derives correctly. Not creative-director reviewed (lean); main-review synthesis: the two remaining blockers are AC-level inconsistencies, not structural — no escalation to full depth.
+Prior verdict resolved: Yes — NEEDS REVISION (Pass 5, 2026-10-01) → all 5 blockers closed; 2 new blockers found.
+
+Blocking items:
+1. `RejectedItemEquipped` is unreachable — `ConfirmEnhancement` addresses bag slots only and the CR-ENH-15 step 2 code list has no check producing it; AC-ENH-4 cannot be run as written. Pre-existing; exposed by the explicit code list added in Revision Pass 2.
+2. AC-ENH-7 expects a `MoveItem` during the attempt to be rejected, but CR-ENH-18 (new in Revision Pass 2) holds client requests until `IDLE`, after which the move succeeds on a success outcome.
+
+Primitive gaps (pre-implementation gates, not counted as blockers): OQ-ENH-7 / CR-ENH-18 has no enforcement owner and no reference outside this GDD, and must cover server-originated mutations; Item Database amendment #4 unapplied; wire-protocol Enhancement message set differs (TD-046).
+
+Recommended: NPC session 300s wall-clock lifetime disagrees with npc-shop.md on a shared flag; OQ-NS-6 not propagated to npc-shop.md / wire-protocol; stale "destruction threshold" wording (Player Fantasy, systems-index, item-database Rule 28); systems-index "Depends On" omits Character Persistence; `outcome` undefined on rejection; `IsAttemptInProgress` state coverage vs the CR-ENH-18 window.
+
+---
+
 ## Revision Pass 2 — 2026-10-01
 Author: Manuel Toscano + Claude Code
 Scope: all 5 blockers of the Pass 5 lean review + the recommended items inside enhancement-system.md. Lean re-review pending.

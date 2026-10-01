@@ -1,3 +1,15 @@
+## Session Extract — /design-review enhancement-system.md --depth lean 2026-10-01 (Pass 6 — NEEDS REVISION, then Revision Pass 3 applied)
+
+- **Review (Pass 6 lean):** all 5 Pass 5 blockers verified closed (apply-then-commit + caller-owned rollback, `GetElementalBonus` base parameter, result codes, AC-ENH-33..38). 2 new blockers: `RejectedItemEquipped` unreachable (AC-ENH-4 not runnable); AC-ENH-7 contradicted CR-ENH-18 (requests are held, not rejected).
+- **Revision Pass 3 (same session, user decisions):** `RejectedItemEquipped` dropped (CR-ENH-4, enum, AC-ENH-4 → `RejectedItemNotFound`); AC-ENH-7 tests the Inventory lock directly; Enhancement NPC session gets the shop's 300s wall-clock lifetime (CR-ENH-17, new AC-ENH-39 — 39 ACs); `IsAttemptInProgress` true through `RESULT_*`; `outcome`/`newLevel` ignored on rejection; OQ-ENH-7 covers server-originated mutations; Player Fantasy "destruction threshold" wording removed.
+- **Files modified:** `design/gdd/enhancement-system.md`, `design/gdd/reviews/enhancement-system-review-log.md`, `design/gdd/systems-index.md` (row 15 + summary line), this file. `design/registry/entities.yaml` — no change needed (no registered entity/formula/constant changed). Not committed.
+- **Pass 7 lean re-review (same session, no `/clear`): APPROVED** — both Pass 6 blockers verified closed, 0 new blockers. Two wording-only AC fixes applied with approval (AC-ENH-7 → `MoveRequest` / `SourceLocked`; AC-ENH-39 → `CancelEnhancement`). GDD header, systems-index (row 15, counts 38 approved / 0 in review, Approved list) and review log updated.
+- **Status:** Enhancement System = **Approved (Pass 7 lean, 2026-10-01)**. Not committed.
+- **New open items from Pass 7:** no client → server selection request is defined for `EnhancementStateUpdate` (fold into TD-046); client behaviour when the NPC session expires with the Enhancement UI open (Enhancement UI GDD).
+- **Still open — other documents (not edited):** npc-shop.md OQ-NS-6 (lines 57/146/583) + networking-wire-protocol.md line 980 still require a pre-emption callback that CR-ENH-17 says is not needed; "destruction threshold" wording in item-database.md Rule 28 and the systems-index risk table; systems-index "Depends On" for Enhancement omits Character Persistence; `IsAttemptInProgress` not in entities.yaml.
+- **Pre-implementation gates (unchanged):** OQ-ENH-7 (which layer holds requests during an attempt — no reference to CR-ENH-18 exists outside the Enhancement GDD), Item Database amendment #4 (scroll records, `ScrollData.TargetGearTier`), wire-protocol Enhancement message set (TD-046).
+- Reminder still outstanding: plaintext GitHub PAT in `origin`'s remote URL — rotate before any push.
+
 ## Session Extract — live Unity Editor session 2026-09-24 (Milestone: first successful compile)
 
 - User opened the project in Unity Editor and hit Safe Mode due to a compile error — **the first live Editor session this whole project**, ending the "no live Unity Editor available" caveat that had applied to every single story up to this point (all prior verification was static C# reading + hand-derived arithmetic only).
