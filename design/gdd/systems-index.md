@@ -28,7 +28,7 @@ Project Iron Grind is a focused mobile MMORPG built around four design pillars (
 | 9 | Class System | Core | MVP | Approved (2026-04-29) | design/gdd/class-system.md | Character Stats, Skill System, Leveling System |
 | 10 | Leveling System *(inferred)* | Progression | MVP | Approved (2026-05-05) | design/gdd/leveling-system.md | Character Stats |
 | 11 | Item Database *(inferred)* | Economy | MVP | Approved | design/gdd/item-database.md | — |
-| 12 | Inventory System *(inferred)* | Economy | MVP | Approved (2026-05-17) | design/gdd/inventory-system.md | Item Database |
+| 12 | Inventory System *(inferred)* | Economy | MVP | Approved (2026-05-17; revised and lean re-reviewed 2026-10-01 — per-slot EnhancementLevel, TD-045/TD-043) | design/gdd/inventory-system.md | Item Database; Enhancement System (`MAX_ENHANCEMENT_LEVEL` constant only — soft) |
 | 13 | Equipment System *(inferred)* | Economy | MVP | Approved (Pass 5 lean, 2026-05-22) | design/gdd/equipment-system.md | Item Database, Inventory System, Character Stats |
 | 14 | Loot Table System | Economy | MVP | Approved (2026-05-17) | design/gdd/loot-table-system.md | Item Database |
 | 15 | Enhancement System | Economy | MVP | Approved (Pass 4 lean, 2026-05-23) | design/gdd/enhancement-system.md | Item Database, Inventory System, Currency System |

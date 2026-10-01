@@ -891,7 +891,7 @@ constants:
       - design/gdd/networking-wire-protocol.md
     type: "readonly struct"
     fields: "{ItemId: ItemID, Quantity: int, EnhancementLevel: byte}"
-    note: "One of the 20 inventory slots (inventory-system.md Rule 1.1/1.4). Empty = {ItemID.Invalid, 0, 0}. EnhancementLevel in [0, MAX_ENHANCEMENT_LEVEL]; non-zero only when Quantity = 1; resets to 0 when the slot empties; items entering via pickup start at 0. Written only by the Enhancement System through SetEnhancementLevel(slotIndex, level) on a slot it holds locked (Rule 5.14a). Travels with the item on move/swap (Rule 7.20) and across the Equipment interface: MoveItemOutResult {ItemID, EnhancementLevel, Code}; MoveItemIn(ItemID, enhancementLevel); ForceInsert(ItemID, enhancementLevel) (Rule 8.24a). Implemented as IronGrind.InventorySystem.InventorySlot (EnhancementLevel field pending Inventory Story 010)."
+    note: "One of the 20 inventory slots (inventory-system.md Rule 1.1/1.4). Empty = {ItemID.Invalid, 0, 0}. EnhancementLevel in [0, MAX_ENHANCEMENT_LEVEL]; non-zero only for an item whose StackLimit = 1 (never for a stackable item, even at Quantity 1 — lean re-review 2026-10-01); resets to 0 when the slot empties; items entering via pickup start at 0. Written only by the Enhancement System through SetEnhancementLevel(slotIndex, level) on a slot it holds locked (Rule 5.14a). Travels with the item on move/swap (Rule 7.20) and across the Equipment interface: MoveItemOutResult {ItemID, EnhancementLevel, Code}; MoveItemIn(ItemID, enhancementLevel); ForceInsert(ItemID, enhancementLevel) (Rule 8.24a). Implemented as IronGrind.InventorySystem.InventorySlot (EnhancementLevel field pending Inventory Story 010)."
     added: "2026-10-01"
     revised: ""
 
@@ -903,7 +903,7 @@ constants:
       - design/gdd/character-persistence.md
     type: "save/load value (list of entries)"
     fields: "{Slots: [{SlotIndex: byte, ItemId: uint, Quantity: int, EnhancementLevel: byte}]} — non-empty slots only, ascending SlotIndex on export"
-    note: "Produced by ExportSnapshot(charId), consumed by ImportSnapshot(charId, snapshot): bool. Character Persistence translates to/from the dense 20-slot record (InventorySlots / InventoryItemCounts / InventoryEnhancementLevels) and the ADR-006 inventory_slots JSONB {item_id, count, enhancement_level}. Load is initial state (no events), is refused before the Item Database is ready, and validates each entry (inventory-system.md Persistence and Load Edge Cases): invalid EnhancementLevel is clamped to MAX_ENHANCEMENT_LEVEL or zeroed on a stack. EnhancementLevel added 2026-10-01 (TD-045); code pending Inventory Story 010."
+    note: "Produced by ExportSnapshot(charId), consumed by ImportSnapshot(charId, snapshot): bool. Character Persistence translates to/from the dense 20-slot record (InventorySlots / InventoryItemCounts / InventoryEnhancementLevels) and the ADR-006 inventory_slots JSONB {item_id, count, enhancement_level}. Load is initial state (no events), is refused before the Item Database is ready, and validates each entry (inventory-system.md Persistence and Load Edge Cases): invalid EnhancementLevel is clamped to MAX_ENHANCEMENT_LEVEL, or zeroed for a stackable item (StackLimit > 1) or a Quantity above 1. EnhancementLevel added 2026-10-01 (TD-045); code pending Inventory Story 010."
     added: "2026-10-01"
     revised: ""
 

@@ -303,7 +303,7 @@ If `ServerBroadcast_Enhancement9` cannot be delivered to all players (high load,
 | System | GDD Status | What Enhancement System Requires |
 |--------|-----------|----------------------------------|
 | **Item Database** | Approved | `IsUpgradeable: bool`, `GearTier`, `GearSlot`, `StatModifiers[].FlatBonus`, `ElementalDamage` per item; 4 Enhancement Scroll records (Bronze/Iron/Steel/Dark Steel) with `ScrollData.TargetGearTier` sub-schema |
-| **Inventory System** | Approved | `LockSlot(slotIndex)`, `UnlockSlot(slotIndex)`, `SetEnhancementLevel(slotIndex, level)`, `RemoveItem(slotIndex)`, `ConsumeItem(ItemID, quantity)`, `IsSlotLocked(slotIndex)`; slot record includes `EnhancementLevel: byte` (inventory-system.md Rule 1.4, added 2026-10-01) |
+| **Inventory System** | Approved | `LockSlot(slotIndex)`, `UnlockSlot(slotIndex)`, `SetEnhancementLevel(slotIndex, level)`, `RemoveItem(slotIndex)`, `ConsumeItem(ItemID, quantity)`, `IsSlotLocked(slotIndex)`; slot record includes `EnhancementLevel: byte` (inventory-system.md Rule 1.4, added 2026-10-01). Reverse reference: the Inventory System reads this GDD's `MAX_ENHANCEMENT_LEVEL` as the upper bound for a bag item's level and declares it as a soft upstream dependency. |
 | **Currency System** | Approved | `GoldTransactionReason.Enhancement = 5` (pre-allocated); scroll sale handled by NPC Shop; no direct Currency System dependency at MVP |
 
 ### Downstream Dependencies

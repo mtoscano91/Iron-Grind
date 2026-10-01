@@ -2,6 +2,16 @@
 
 ---
 
+## Review — 2026-10-01 — Verdict: NEEDS REVISION → APPROVED (Lean Re-Review, revised in-session)
+Scope signal: M
+Specialists: lean — single-session analysis (no specialist agents). Caveat: the reviewer authored the amendments under review earlier the same session; a full specialist pass would give an independent read.
+Blocking items: 2 resolved in-session | Recommended: 5 resolved in-session
+Prior verdict resolved: Yes — APPROVED (2026-05-17). Re-review triggered by amendments since then: Story 006/008/009 readiness clarifications (Rule 7.20, `SellItem` quantity, `ConsumeItem` lock skip, load edge cases) and the 2026-10-01 TD-045/TD-043 design session (per-slot `EnhancementLevel`).
+
+Summary: All 8 sections complete; all dependency GDDs exist except the Inventory UI GDD and `design/ux/inventory-screen.md` (both pre-existing gaps). Blocker 1: the level invariant was keyed on `Quantity = 1`, which let a stackable item at quantity 1 hold a level that a later pickup or merge would carry into a stack — re-keyed on `StackLimit = 1` across Rule 1.4, 5.14a, 8.24a and the load rule. Blocker 2: the new read of `MAX_ENHANCEMENT_LEVEL` (owned by the Enhancement System) was not declared — added as a soft upstream dependency and a cross-system knob, with the reverse reference in enhancement-system.md. Recommended items applied: Rule 7.20 no-op sentence scoped to stackable items; moving an item onto an identical one (same ItemID and level) decided as a no-op with no event (user decision); AC-INV-21/22 added for reset-on-empty, pickup-at-0 and the rejection paths (24 blocking ACs); `GetSlot` named as the read interface; header status refreshed. Primitive gaps still open: client delivery of slot changes (TD-046), `DISCARD_HOLD_DURATION` and sort order (UX). Story 010, entities.yaml and systems-index updated to match.
+
+---
+
 ## Review — 2026-05-17 — Verdict: APPROVED (Lean Re-Review)
 Scope signal: L
 Specialists: lean — single-session analysis (no specialist agents)
