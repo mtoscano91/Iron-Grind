@@ -2,7 +2,7 @@
 
 > **Status**: Approved
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-04-27
+> **Last Updated**: 2026-10-01 (corrected sell-back ownership wording: NPC Shop, not Inventory System, calls `AddGold(ItemSell)`). Previous: 2026-04-27
 > **Implements Pillar**: Social Gravity — gold scarcity powers the enhancement prestige loop
 
 ## Overview
@@ -50,7 +50,7 @@ The system itself is non-intrusive — it surfaces only when needed and never in
 **Gold faucets (MVP):**
 - **Monster drops** (primary and only): Loot Table System calls `AddGold(characterId, dropAmount, GoldTransactionReason.MonsterDrop)` on kill.
 
-*Item sell-back IS a gold faucet at MVP. Inventory System GDD (Approved 2026-05-15) introduced `SellItem` with `GoldTransactionReason.ItemSell=7` — OQ-CS-1 original resolution reversed. Sell price is `ItemDefinition.SellPriceGold` from the Item Database. Inventory System owns the `AddGold(CharacterID, sellPrice, GoldTransactionReason.ItemSell)` call; NPC Shop GDD must define the sell-back UX flow when authored. See OQ-CS-1.*
+*Item sell-back IS a gold faucet at MVP. Inventory System GDD (Approved 2026-05-15) introduced `SellItem` with `GoldTransactionReason.ItemSell=7` — OQ-CS-1 original resolution reversed. Sell price is `ItemDefinition.SellPriceGold` from the Item Database. NPC Shop owns the `AddGold(CharacterID, SellPriceGold × quantitySold, GoldTransactionReason.ItemSell)` call, made after Inventory's `SellItem` removes the items (npc-shop.md CR-SHOP-7 step 16) — the Inventory System never mutates gold. See OQ-CS-1.*
 
 **Gold sinks (MVP):**
 - **NPC Shop purchases**: NPC Shop calls `TrySpendGold(characterId, itemPrice, GoldTransactionReason.ScrollPurchase)` for scroll and consumable purchases.
@@ -179,7 +179,7 @@ Multiple `GoldSyncEvent` messages arrive out of order due to network reordering.
 
 | System | GDD Status | How it depends on Currency System | Bidirectionality required |
 |--------|-----------|-----------------------------------|--------------------------|
-| NPC Shop (#23) | Not Started | Calls `TrySpendGold` (purchases) and compensating `AddGold` (failed grants). Sell-back is MVP-scope (OQ-CS-1 reversed 2026-05-15) — NPC Shop GDD defines sell-back UX; Inventory System calls `AddGold(ItemSell)`. | NPC Shop GDD must list Currency System in its Dependencies |
+| NPC Shop (#23) | Not Started | Calls `TrySpendGold` (purchases) and compensating `AddGold` (failed grants). Sell-back is MVP-scope (OQ-CS-1 reversed 2026-05-15) — NPC Shop GDD defines sell-back UX and calls `AddGold(ItemSell)` after Inventory's `SellItem` (corrected 2026-10-01 — Inventory never mutates gold). | NPC Shop GDD must list Currency System in its Dependencies |
 | Loot Table System (#8) | Not Started | Calls `AddGold` on each monster kill; must define drop amounts as integer values only (no floats) | Loot Table GDD must list Currency System in its Dependencies |
 | Class/Leveling System (#10) | Not Started | Calls `TrySpendGold` for Respec costs; computes respec cost internally and passes as flat `uint` | Class/Leveling GDD must list Currency System in its Dependencies |
 | Character Persistence (#25) | Not Started | Calls `GetBalance` on save; pushes loaded `Balance + Version` on load; emits `GoldSyncEvent` to client after load | Character Persistence GDD must list Currency System in its Dependencies |
@@ -343,7 +343,7 @@ The Currency System has no gameplay logic for pricing or drop rates, but the hea
 
 **OQ-CS-1 — REVISED (2026-05-15): Sell-back restored to MVP**
 Original resolution (2026-04-26): Sell-back cut from MVP to eliminate competing-faucet risk.
-Revision: Inventory System design review (2026-05-15, Approved) reversed this decision — `SellItem` interface and AC-INV-16 added to Inventory System GDD; `GoldTransactionReason.ItemSell=7` restored to the wire enum. Sell yield is bounded by `ItemDefinition.SellPriceGold` (Item Database), keeping sell income well below monster drop yield for any farming session. The competing-faucet concern is mitigated by fixed sell prices (not auction-based). NPC Shop GDD must define the sell-back UX flow when authored; Inventory System owns the `AddGold(ItemSell)` call.
+Revision: Inventory System design review (2026-05-15, Approved) reversed this decision — `SellItem` interface and AC-INV-16 added to Inventory System GDD; `GoldTransactionReason.ItemSell=7` restored to the wire enum. Sell yield is bounded by `ItemDefinition.SellPriceGold` (Item Database), keeping sell income well below monster drop yield for any farming session. The competing-faucet concern is mitigated by fixed sell prices (not auction-based). The NPC Shop GDD defines the sell-back UX flow and owns the `AddGold(ItemSell)` call (corrected 2026-10-01 — the Inventory System only removes the items via `SellItem`).
 
 **OQ-CS-2 — Respec cost formula**
 Currency System receives respec cost as a flat `uint` debit from the Class/Leveling System. The formula that computes this cost is not defined here. Two candidate approaches were identified during design: (A) flat fee per gear tier bracket; (B) `BaseRespecCost × LevelTierMultiplier × CharacterLevel` — self-adjusting, always costs a few sessions' worth of farming. The Class/Leveling System GDD must define and own this formula.

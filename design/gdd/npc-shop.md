@@ -2,7 +2,7 @@
 
 > **Status**: Approved (2026-06-07 — 2 pre-implementation gates open before sprint: OQ-NS-4/6)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-06-07
+> **Last Updated**: 2026-10-01 (Inventory System `SellItem` `quantity` parameter confirmed — CR-SHOP-8 interface dependency resolved). Previous: 2026-06-07
 > **Implements Pillar**: Earned Power (primary), Legendary Gear (secondary)
 
 ## Overview
@@ -98,7 +98,7 @@ The shop does not sell equipment gear. Gear is earned from monster drops only �
 **CR-SHOP-8 — Sell Quantity Selector**
 
 18. The Sell tab includes a quantity selector for each selected slot. Default: the full stack count ("sell all" is the default; partial sell is opt-in). Minimum: 1. Maximum: the full stack count in the selected slot. Touch model: identical to the Buy tab quantity selector (CR-SHOP-6 rules 12–13).
-19. ⚠️ **Inventory System interface dependency**: Partial-stack sell requires `SellItem(slotIndex, itemId, quantity) → quantitySold` that removes only `quantity` units while leaving the remainder. The current Inventory System GDD defines `SellItem(slotIndex, itemId)` which removes the entire stack. A `quantity` parameter must be confirmed with the Inventory System GDD author before sprint commitment.
+19. ✅ **Inventory System interface dependency (RESOLVED 2026-10-01)**: Partial-stack sell requires `SellItem(slotIndex, itemId, quantity) → quantitySold` that removes only `quantity` units while leaving the remainder. The Inventory System GDD now defines exactly this signature (Interactions table, AC-INV-16; Inventory Story 008) — its earlier entire-stack-only `SellItem(slotIndex, itemId)` was superseded.
 
 **CR-SHOP-9 — Equipment Sell-Back**
 
@@ -140,7 +140,7 @@ No intermediate session states. Transactions require a durable in-flight record 
 | **Currency System** | ← calls | `AddGold(charId, totalCost, CompensatingRefund)` | Compensating refund on inventory fail (CR-SHOP-5 step 9e) |
 | **Currency System** | ← calls | `AddGold(charId, goldEarned, ItemSell)` | Sell-back (CR-SHOP-7 step 14) |
 | **Inventory System** | ← calls | `PickupRequest(charId, itemId, quantity) → PickupResult` | Purchase, after gold debit |
-| **Inventory System** | ← calls | `SellItem(slotIndex, itemId, quantity) → quantitySold` — partial-stack sell (CR-SHOP-8). ⚠️ Interface change required: current Inventory System GDD defines `SellItem(slotIndex, itemId)` removing the entire stack; `quantity` parameter must be added. | Sell-back |
+| **Inventory System** | ← calls | `SellItem(slotIndex, itemId, quantity) → quantitySold` — partial-stack sell (CR-SHOP-8). ✅ Matches the Inventory System GDD as of 2026-10-01 (`quantity` parameter added there). | Sell-back |
 | **Inventory System** | ← reads | `IsSlotLocked(slotIndex)` | Sell tab validation (CR-SHOP-7 step 13d) |
 | **Item Database** | ← reads | `GetItem(itemId).SellPriceGold`, `DisplayName` | Sell tab display, sell-back calculation, anti-arbitrage startup check |
 | **Enhancement System** | Shared flag + event | `NPCInteractionActive` — same per-player flag; opening shop clears any active Enhancement NPC session. ⚠️ OQ-NS-6: Enhancement System must expose a callback/event (e.g., `OnNPCSessionPreempted(charId)`) invoked before the flag is cleared, so in-flight `ConfirmEnhancement` can complete safely. | On `OpenNPCInteraction` |
@@ -283,7 +283,7 @@ Integer form: `(BuyPrice × 10) ≥ (SellPriceGold × 15)` — equivalent to `Bu
 | System | GDD Status | Dependency Type | Interface | Hard/Soft |
 |--------|-----------|----------------|-----------|-----------|
 | **Currency System** | Approved | Calls | `TrySpendGold(CharacterID, uint cost, GoldTransactionReason)` for purchases; `AddGold(CharacterID, uint amount, GoldTransactionReason)` for compensating refunds and sell-back credits | **Hard** — all gold transactions require Currency System |
-| **Inventory System** | Approved | Calls / reads | `PickupRequest(CharacterID, ItemID, quantity) → PickupResult` (purchase item delivery); `SellItem(slotIndex, itemId, quantity) → quantitySold` ⚠️ Interface change required — see Interactions table (sell-back removal); `IsSlotLocked(slotIndex): bool` (sell tab validation) | **Hard** — item delivery and sell-back require Inventory System |
+| **Inventory System** | Approved | Calls / reads | `PickupRequest(CharacterID, ItemID, quantity) → PickupResult` (purchase item delivery); `SellItem(slotIndex, itemId, quantity) → quantitySold` (sell-back removal — interface confirmed in the Inventory System GDD 2026-10-01); `IsSlotLocked(slotIndex): bool` (sell tab validation) | **Hard** — item delivery and sell-back require Inventory System |
 | **Item Database** | Approved | Reads | `GetItem(ItemID)` → `SellPriceGold`, `DisplayName`, `ItemCategory`; used for sell tab display, sell-back value calculation, and startup anti-arbitrage validation | **Hard** — sell prices and display data are authoritative from Item Database |
 
 ### Downstream Dependents (systems that depend on this GDD)
@@ -558,7 +558,7 @@ GIVEN a player has enhanced equipment (e.g., a +7 Iron Sword) in inventory, WHEN
 
 **BLOCKING: 37 | ADVISORY: 7 | Total: 44**
 
-*Infrastructure pre-conditions for sprint commitment: (1) AC-NS-05 requires time-injection or configurable TTL in test env. (2) AC-NS-36 requires test harness capable of injecting zone change mid-transaction. (3) AC-NS-28 requires catalog injection support in test env. (4) AC-NS-39/40 require client-side wire-capture to confirm no premature server request. Resolve all four with lead programmer before locking this GDD to a sprint. (5) AC-NS-19b/CR-SHOP-8 partial-stack sell requires Inventory System `SellItem` interface update — confirm before sprint (OQ-NS-7).*
+*Infrastructure pre-conditions for sprint commitment: (1) AC-NS-05 requires time-injection or configurable TTL in test env. (2) AC-NS-36 requires test harness capable of injecting zone change mid-transaction. (3) AC-NS-28 requires catalog injection support in test env. (4) AC-NS-39/40 require client-side wire-capture to confirm no premature server request. Resolve all four with lead programmer before locking this GDD to a sprint. (5) ✅ RESOLVED 2026-10-01 — AC-NS-19b/CR-SHOP-8 partial-stack sell: the Inventory System GDD's `SellItem` now takes `quantity` (Inventory Story 008).*
 
 ## Open Questions
 

@@ -24,7 +24,11 @@ namespace IronGrind.InventorySystem
     /// same-slot move and a full-destination merge are no-op successes that fire nothing).
     /// Story 007 (Equipment interface) adds <see cref="MoveItemOut"/>, <see cref="MoveItemIn"/>,
     /// and <see cref="ForceInsert"/> (each fires <see cref="OnInventoryChanged"/> only on a
-    /// mutating success); Story 008 (Sell/Consume) adds its own mutator(s).
+    /// mutating success); Story 008 (NPC Shop Sell &amp; Consumable Use) adds
+    /// <see cref="SellItem"/> (fires <see cref="OnInventoryChanged"/> on success) and
+    /// <see cref="ConsumeItem"/> (fires exactly one <see cref="OnInventoryChanged"/> listing every
+    /// changed slot on success). Neither fires <see cref="OnInventoryFull"/> or touches the
+    /// bag-full dedup window.
     /// </remarks>
     public interface IInventoryService
     {
@@ -415,5 +419,83 @@ namespace IronGrind.InventorySystem
         /// <returns><see langword="true"/> iff the item was placed.</returns>
         /// <exception cref="InvalidOperationException">Called synchronously from an <see cref="OnInventoryChanged"/> subscriber.</exception>
         bool ForceInsert(CharacterID charId, ItemID itemId);
+
+        /// <summary>
+        /// Sells <paramref name="quantity"/> units of <paramref name="itemId"/> out of the slot at
+        /// <paramref name="slotIndex"/> for <paramref name="charId"/> (GDD Interactions table, NPC
+        /// Shop row). Only the NPC Shop System calls this, after its own range/category/price
+        /// checks (ADR-010 Tier 1) — gold is never touched here; NPC Shop calls the Currency
+        /// System itself. Category-agnostic: equipment and consumables both sell the same way.
+        /// </summary>
+        /// <remarks>
+        /// <para>On success, fires exactly one <see cref="OnInventoryChanged"/> with a single
+        /// entry describing the slot's post-sell state — <c>{ slotIndex, itemId: 0, quantity: 0 }</c>
+        /// when the full stack sold, otherwise the same item at the reduced quantity. On any
+        /// failure no slot is mutated and <see cref="OnInventoryChanged"/> does not fire. Never
+        /// fires <see cref="OnInventoryFull"/> or touches the bag-full dedup window — only a
+        /// successful <see cref="Pickup"/> does.</para>
+        ///
+        /// <para>Guard order (first match wins, matches NPC Shop GDD CR-SHOP-7 step 15 b → c → d →
+        /// f): out-of-range <paramref name="slotIndex"/> (&lt; 0 or &gt;=
+        /// <see cref="InventoryConstants.INVENTORY_SLOT_COUNT"/>) logs a server error and fails
+        /// with <see cref="SellItemFailReason.InvalidSlot"/>; an unregistered
+        /// <paramref name="charId"/> logs a server error and fails the same way (both are Tier 1
+        /// caller bugs — NPC Shop range-validates before calling); <paramref name="itemId"/> ==
+        /// <see cref="ItemID.Invalid"/> or the slot's current <c>ItemID</c> does not match
+        /// <paramref name="itemId"/> (covers an empty slot) fails with
+        /// <see cref="SellItemFailReason.ItemMismatch"/>, no log; a locked slot fails with
+        /// <see cref="SellItemFailReason.SlotLocked"/>, no log (GDD Rule 5.12 — checked before
+        /// quantity bounds); <c>quantity &lt;= 0</c> or <c>quantity &gt;</c> the slot's current
+        /// <see cref="InventorySlot.Quantity"/> fails with
+        /// <see cref="SellItemFailReason.InvalidQuantity"/>, no log. None of these rejection paths
+        /// throw, mutate state, or fire <see cref="OnInventoryChanged"/>. Does not check
+        /// <c>SellPriceGold</c> or look up the Item Database — whether an item is sellable is NPC
+        /// Shop's rule (CR-SHOP-7 step 15e).</para>
+        /// </remarks>
+        /// <param name="charId">The character whose inventory to mutate.</param>
+        /// <param name="slotIndex">The slot index to sell from. Valid range: [0, <see cref="InventoryConstants.INVENTORY_SLOT_COUNT"/>).</param>
+        /// <param name="itemId">The item expected to occupy <paramref name="slotIndex"/>. Must match the slot's current item.</param>
+        /// <param name="quantity">Units to sell. Must satisfy <c>1 &lt;= quantity &lt;=</c> the slot's current <see cref="InventorySlot.Quantity"/>.</param>
+        /// <returns>The outcome; check <see cref="SellItemResult.Success"/> / <see cref="SellItemResult.Reason"/> / <see cref="SellItemResult.QuantitySold"/>.</returns>
+        /// <exception cref="InvalidOperationException">Called synchronously from an <see cref="OnInventoryChanged"/> subscriber.</exception>
+        SellItemResult SellItem(CharacterID charId, int slotIndex, ItemID itemId, int quantity);
+
+        /// <summary>
+        /// Destroys <paramref name="quantity"/> units of <paramref name="itemId"/> from
+        /// <paramref name="charId"/>'s inventory (GDD Interactions table, Consumable Use System
+        /// row), decrementing from the lowest-index unlocked slot holding the item first and
+        /// continuing into the next lowest-index unlocked stack if needed. Only the Consumable Use
+        /// System calls this (ADR-010 Tier 1). Category-agnostic — decrements whatever
+        /// <paramref name="itemId"/> it is given, with no Item Database lookup.
+        /// </summary>
+        /// <remarks>
+        /// <para>Plan-then-commit, mirroring <see cref="Pickup"/>: locked slots are neither
+        /// decremented nor counted toward the available total (GDD Rule 5.12) —
+        /// <see cref="HasItem"/> stays unchanged and can report <see langword="true"/> for a
+        /// locked-only stack that this call still rejects. On success, fires exactly one
+        /// <see cref="OnInventoryChanged"/> listing every changed slot in ascending slot order — a
+        /// stack reaching 0 reports <c>{ slotIndex, itemId: 0, quantity: 0 }</c>. On any failure no
+        /// slot is mutated and <see cref="OnInventoryChanged"/> does not fire. Never fires
+        /// <see cref="OnInventoryFull"/> or touches the bag-full dedup window.</para>
+        ///
+        /// <para>Guard order (first match wins, mirrors <see cref="Pickup"/>): <c>quantity &lt;=
+        /// 0</c> fails with <see cref="ConsumeItemFailReason.InvalidQuantity"/>, no log; an
+        /// unregistered <paramref name="charId"/> logs a server error and fails with
+        /// <see cref="ConsumeItemFailReason.CharacterNotRegistered"/>; <paramref name="itemId"/> ==
+        /// <see cref="ItemID.Invalid"/> fails with
+        /// <see cref="ConsumeItemFailReason.InsufficientQuantity"/>, no log (an invalid item can
+        /// never be held); otherwise the sum of <see cref="InventorySlot.Quantity"/> across
+        /// unlocked slots holding <paramref name="itemId"/> (slots 0→19) is compared against
+        /// <paramref name="quantity"/> — if the sum is less (including an item no longer in the
+        /// bag), this fails with <see cref="ConsumeItemFailReason.InsufficientQuantity"/>, no log,
+        /// with nothing written or recorded; otherwise the plan commits by decrementing in
+        /// ascending slot order.</para>
+        /// </remarks>
+        /// <param name="charId">The character whose inventory to mutate.</param>
+        /// <param name="itemId">The item to consume.</param>
+        /// <param name="quantity">Units to destroy. Must be &gt; 0.</param>
+        /// <returns>The outcome; check <see cref="ConsumeItemResult.Success"/> / <see cref="ConsumeItemResult.Reason"/>.</returns>
+        /// <exception cref="InvalidOperationException">Called synchronously from an <see cref="OnInventoryChanged"/> subscriber.</exception>
+        ConsumeItemResult ConsumeItem(CharacterID charId, ItemID itemId, int quantity);
     }
 }

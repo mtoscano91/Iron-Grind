@@ -2,7 +2,7 @@
 
 > **Status**: Approved (lean re-review 2026-05-17 — B-INV-1 PickupRequest signature fixed; R-2 MoveItemIn return type added; OQ-INV-5 resolved; OQ-INV-6 added for wire schemas)
 > **Author**: Manuel Toscano + Claude Code agents
-> **Last Updated**: 2026-09-27 (Story 006 readiness: Rule 7.20 clarified — different-item moves swap, full-destination merge is a no-op success; AC-INV-9 reasons aligned to wire `MoveFailReason`). Previous: 2026-05-22 (Equipment System upstream contract: MoveItemOut return type extended to MoveItemOutResult; ForceInsert added — OQ-EQS-3)
+> **Last Updated**: 2026-10-01 (Story 008 readiness: `SellItem` gains a `quantity` parameter — partial-stack sells supported, aligning with NPC Shop CR-SHOP-7/8 and the wire `SellRequest.quantity`; `ConsumeItem` skips locked slots — Rule 5.12; AC-INV-16 updated). Previous: 2026-09-27 (Story 006 readiness: Rule 7.20 clarified — different-item moves swap, full-destination merge is a no-op success; AC-INV-9 reasons aligned to wire `MoveFailReason`); 2026-05-22 (Equipment System upstream contract: MoveItemOut return type extended to MoveItemOutResult; ForceInsert added — OQ-EQS-3)
 > **Implements Pillar**: Earned Power (primary), Legendary Gear (secondary)
 
 ## Overview
@@ -45,7 +45,7 @@ The inventory is not the fantasy — it's where the fantasy is accounted for. Af
 
 **Rule 5 — Item Locks (Enhancement Reservation)**
 
-12. Any inventory slot can be locked. A locked slot's item cannot be moved, equipped, sold, or discarded until the lock is released.
+12. Any inventory slot can be locked. A locked slot's item cannot be moved, equipped, sold, discarded, or consumed until the lock is released. `ConsumeItem` skips locked slots: a locked stack is neither decremented nor counted toward the quantity available to consume.
 13. The Enhancement System is the only system that may lock slots. It calls `LockSlot(slotIndex)` when an enhancement attempt begins and `UnlockSlot(slotIndex)` when the attempt resolves (success or failure, including server timeout).
 14. The Inventory System exposes `IsSlotLocked(slotIndex): bool` so the Inventory UI can render the locked visual state.
 
@@ -98,10 +98,10 @@ No state is reachable from Occupied-Locked except through Enhancement System cal
 | **Loot Table System** | ← receives events | `PickupRequest(CharacterID, ItemID, quantity)` → `PickupResult(success/fail)` | On mob death; Loot Table System owns the drop roll; Inventory owns the bag mutation. `quantity=1` for all single-item loot drops at MVP. |
 | **Equipment System** | ↔ bidirectional | `HasFreeSlot(): bool` (queried before equip); `MoveItemOut(slotIndex): MoveItemOutResult { ItemID, Code: Success \| SlotEmpty \| SlotLocked }` (equip-from-bag empties the slot — returns item and status; SlotLocked when Enhancement System holds the slot); `MoveItemIn(ItemID): MoveItemInResult { success: bool, slotIndex: int }` (unequip-to-bag fills a free slot; slotIndex = -1 on failure); `ForceInsert(ItemID): bool` (inserts displaced item into any free slot when auto-swapping; returns false only if all 20 slots occupied — triggers `InventoryFullNotification` wire message; added 2026-05-22 per OQ-EQS-3) | On equip and unequip actions |
 | **Enhancement System** | ← lock requests | `LockSlot(slotIndex)`, `UnlockSlot(slotIndex)`, `RemoveItem(slotIndex)` (on item destruction) | On enhancement attempt begin, resolve, and destroy outcomes |
-| **NPC Shop** | ← sell requests | `SellItem(slotIndex, ItemID)` — Inventory validates the slot, removes the **entire stack**, returns quantity sold; NPC Shop adds gold via Currency System. Partial-stack sells are not supported at MVP. | On player sell action |
+| **NPC Shop** | ← sell requests | `SellItem(slotIndex, ItemID, quantity)` — Inventory validates the slot (index in range, slot holds `ItemID`, not locked, `1 ≤ quantity ≤` the slot's stack count), removes `quantity` units, returns quantity sold; a slot sold down to 0 becomes empty. NPC Shop adds gold via Currency System. Partial-stack sells are supported (NPC Shop CR-SHOP-8; "sell all" passes the full stack count). | On player sell action |
 | **Character Persistence** | ↔ save/load | `InventorySnapshot { Slots: [{ SlotIndex: byte, ItemId: uint, Quantity: int }] }` — non-empty slots only | On session end (save) and session start (load) |
 | **Inventory UI** | ← reads | Slot array (ItemID + Quantity per slot), `IsSlotLocked(slotIndex)`, `InventoryChangedEvent { changes: [{ slotIndex: int, itemId: uint, quantity: int }] }` (fired after any slot mutation — quantity = 0 means slot became empty) | On bag open, on any slot mutation |
-| **Consumable Use System** | ← reads | `HasItem(ItemID): bool`, `ConsumeItem(ItemID, quantity)` — when multiple stacks of the same ItemID exist, decrements from the lowest slot index first (0→19 FIFO, consistent with the pickup scan pattern) | On hotbar use or direct-from-bag Use action; Inventory decrements or removes the stack |
+| **Consumable Use System** | ← reads | `HasItem(ItemID): bool`, `ConsumeItem(ItemID, quantity)` — when multiple stacks of the same ItemID exist, decrements from the lowest slot index first (0→19 FIFO, consistent with the pickup scan pattern); locked slots are skipped (Rule 5.12); if the unlocked total is less than `quantity` the call fails with no mutation | On hotbar use or direct-from-bag Use action; Inventory decrements or removes the stack |
 
 ## Formulas
 
@@ -208,7 +208,11 @@ The Inventory System has no combat math. Its formulas define capacity boundaries
 
 - **If `ConsumeItem(ItemID, quantity)` is called but the slot has been discarded since the hotbar assignment**: `ConsumeItem` returns a failure result. The Consumable Use System handles the failure and owns the hotbar desync UI feedback.
 
-- **If `SellItem(slotIndex, ItemID)` is called by NPC Shop and the `ItemID` in the slot no longer matches the parameter**: Reject the sell and return an error. Both `slotIndex` and `ItemID` must match at execution time — guards against race conditions between UI render and server commit.
+- **If `SellItem(slotIndex, ItemID, quantity)` is called by NPC Shop and the `ItemID` in the slot no longer matches the parameter**: Reject the sell and return an error. Both `slotIndex` and `ItemID` must match at execution time — guards against race conditions between UI render and server commit.
+
+- **If `SellItem(slotIndex, ItemID, quantity)` is called with `quantity < 1` or `quantity` greater than the slot's current stack count**: Reject the sell with an invalid-quantity result; no units are removed. A sell never removes fewer units than requested.
+
+- **If `ConsumeItem(ItemID, quantity)` is called and the only stacks of that ItemID are in locked slots**: `ConsumeItem` returns a failure result with no mutation, even though `HasItem(ItemID)` is true. In practice the Enhancement System locks equipment, not consumables, so this is a defensive rule.
 
 - **If `RemoveItem(slotIndex)` is called by the Enhancement System with an out-of-range slot index** (`< 0` or `≥ 20`): Log a server error, no-op. No state mutation. Closes a crash path from stale slot indices after session reloads.
 
@@ -238,7 +242,7 @@ The Inventory System has no combat math. Its formulas define capacity boundaries
 |--------|----------------|----------------|-------------|
 | **Equipment System** | Reads / calls | `HasFreeSlot(): bool`, `MoveItemOut(slotIndex): MoveItemOutResult { ItemID, Code: Success \| SlotEmpty \| SlotLocked }`, `MoveItemIn(ItemID): MoveItemInResult { success: bool, slotIndex: int }`, `ForceInsert(ItemID): bool` | **Hard** — Equipment System cannot execute equip/unequip without the slot interface |
 | **Enhancement System** | Reads / calls | `LockSlot(slotIndex)`, `UnlockSlot(slotIndex)`, `RemoveItem(slotIndex)`, `IsSlotLocked(slotIndex)` | **Hard** — Enhancement System cannot safely manage item destruction without inventory lock/remove |
-| **NPC Shop** | Calls | `SellItem(slotIndex, ItemID)` → quantity removed; Currency System adds gold | **Hard** — Sell flow cannot execute without Inventory ownership of item removal |
+| **NPC Shop** | Calls | `SellItem(slotIndex, ItemID, quantity)` → quantity removed; Currency System adds gold | **Hard** — Sell flow cannot execute without Inventory ownership of item removal |
 | **Loot Table System** | Calls | `PickupRequest(CharacterID, ItemID, quantity)` → `PickupResult(success/fail)` | **Hard** — Loot Table cannot confirm whether a drop was received without Inventory's pickup result |
 | **Inventory UI** | Reads | Slot array (ItemID + Quantity), `IsSlotLocked(slotIndex)`, inventory change events | **Hard** for MVP — UI cannot render without slot data |
 | **Consumable Use System** | Calls | `HasItem(ItemID)`, `ConsumeItem(ItemID, quantity)` | **Hard** — Consumable use from hotbar cannot decrement inventory without this interface |
@@ -334,7 +338,7 @@ GIVEN slot A holds 70 HP Potions and slot B holds 60 HP Potions (same ItemID, St
 GIVEN all 20 inventory slots are occupied and a mob drops a Bronze Sword (Equipment, StackLimit=1), WHEN the pickup is attempted, THEN `PickupResult(fail)` is returned, no inventory slot is mutated, and the character receives an `InventoryFullNotification` (if not within the 30-second dedup window). The Bronze Sword fate is owned by the Loot Table System GDD.
 
 **AC-INV-16** [BLOCKING]
-GIVEN slot 4 holds 5 HP Potions (Consumable) with no lock applied, WHEN the NPC Shop calls `SellItem(4, HPPotionItemID)`, THEN the server returns `quantity=5`, slot 4 becomes `ItemID.Invalid, Quantity=0`, and `InventoryChangedEvent` containing one changes entry `{ slotIndex: 4, itemId: 0, quantity: 0 }` fires.
+GIVEN slot 4 holds 5 HP Potions (Consumable) with no lock applied, WHEN the NPC Shop calls `SellItem(4, HPPotionItemID, 5)`, THEN the server returns `quantity=5`, slot 4 becomes `ItemID.Invalid, Quantity=0`, and `InventoryChangedEvent` containing one changes entry `{ slotIndex: 4, itemId: 0, quantity: 0 }` fires. From the same starting state, WHEN the NPC Shop instead calls `SellItem(4, HPPotionItemID, 2)`, THEN the server returns `quantity=2`, slot 4 holds 3 HP Potions, and `InventoryChangedEvent` containing one changes entry `{ slotIndex: 4, itemId: HPPotionItemID, quantity: 3 }` fires.
 
 **BLOCKING: 18 | Total: 18**
 

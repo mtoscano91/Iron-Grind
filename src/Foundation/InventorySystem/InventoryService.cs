@@ -35,7 +35,7 @@ namespace IronGrind.InventorySystem
     /// <see cref="Pickup"/>, Story 004 <see cref="LockSlot"/>/<see cref="UnlockSlot"/>/
     /// <see cref="RemoveItem"/>, Story 005 <see cref="Discard"/>, Story 006 <see cref="Move"/>,
     /// Story 007 <see cref="MoveItemOut"/>/<see cref="MoveItemIn"/>/<see cref="ForceInsert"/>,
-    /// Story 008 Sell/Consume) MUST call <see cref="ThrowIfDispatching"/>
+    /// Story 008 <see cref="SellItem"/>/<see cref="ConsumeItem"/>) MUST call <see cref="ThrowIfDispatching"/>
     /// first. Entry points that change slot <em>content</em> then record their per-slot results
     /// via <see cref="RecordSlotChange"/> and fire the broadcast via
     /// <see cref="EmitInventoryChanged"/> — record changes only once the mutation is
@@ -657,6 +657,154 @@ namespace IronGrind.InventorySystem
 
             slotIndex = -1;
             return false;
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>
+        /// Guard order (first match wins, matches NPC Shop GDD CR-SHOP-7 step 15 b → c → d → f):
+        /// out-of-range <paramref name="slotIndex"/> — server error (Tier 1, never
+        /// wire-reachable — NPC Shop range-validates before calling, mirrors
+        /// <see cref="MoveItemOut"/>'s guard); then unregistered <paramref name="charId"/> —
+        /// server error; then <paramref name="itemId"/> == <see cref="ItemID.Invalid"/> or the
+        /// slot's current <c>ItemID</c> not matching <paramref name="itemId"/> (covers an empty
+        /// slot) — <see cref="SellItemFailReason.ItemMismatch"/>, no log; then a locked slot —
+        /// <see cref="SellItemFailReason.SlotLocked"/>, no log (GDD Rule 5.12, checked before
+        /// quantity bounds); then <c>quantity &lt;= 0</c> or <c>quantity &gt;</c> the slot's
+        /// current <see cref="InventorySlot.Quantity"/> — <see cref="SellItemFailReason.InvalidQuantity"/>,
+        /// no log. Category-agnostic: no Item Database lookup and no <c>SellPriceGold</c> check —
+        /// sellability is NPC Shop's own rule (CR-SHOP-7 step 15e), and gold is never touched here.
+        /// On success, selling the full stack empties the slot exactly like <see cref="Discard"/>;
+        /// selling a partial quantity keeps the same item at the reduced quantity.
+        /// </remarks>
+        public SellItemResult SellItem(CharacterID charId, int slotIndex, ItemID itemId, int quantity)
+        {
+            ThrowIfDispatching();
+
+            if (slotIndex < 0 || slotIndex >= InventoryConstants.INVENTORY_SLOT_COUNT)
+            {
+                Debug.LogError($"[InventoryService] SellItem: slotIndex {slotIndex} is out of range [0, {InventoryConstants.INVENTORY_SLOT_COUNT}).");
+                return SellItemResult.Fail(SellItemFailReason.InvalidSlot);
+            }
+
+            if (!_inventories.TryGetValue(charId, out var slots))
+            {
+                Debug.LogError($"[InventoryService] SellItem: {charId} is not a registered character. Call RegisterCharacter before mutating inventory.");
+                return SellItemResult.Fail(SellItemFailReason.InvalidSlot);
+            }
+
+            var slot = slots[slotIndex];
+            if (itemId == ItemID.Invalid || slot.ItemId != itemId)
+                return SellItemResult.Fail(SellItemFailReason.ItemMismatch);
+
+            if (_locks[charId][slotIndex])
+                return SellItemResult.Fail(SellItemFailReason.SlotLocked);
+
+            if (quantity <= 0 || quantity > slot.Quantity)
+                return SellItemResult.Fail(SellItemFailReason.InvalidQuantity);
+
+            int newQuantity = slot.Quantity - quantity;
+            ItemID newItemId = newQuantity == 0 ? ItemID.Invalid : slot.ItemId;
+
+            RecordSlotChange(charId, slotIndex, newItemId, newQuantity);
+            slots[slotIndex] = new InventorySlot(newItemId, newQuantity);
+            EmitInventoryChanged(charId);
+            return SellItemResult.Succeeded(quantity);
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>
+        /// Guard order mirrors <see cref="Pickup"/>: <c>quantity &lt;= 0</c> fails first with
+        /// <see cref="ConsumeItemFailReason.InvalidQuantity"/>, no log; then an unregistered
+        /// <paramref name="charId"/> — server error; then <paramref name="itemId"/> ==
+        /// <see cref="ItemID.Invalid"/> fails immediately with
+        /// <see cref="ConsumeItemFailReason.InsufficientQuantity"/>, no log (an invalid item can
+        /// never be "held"); then plan-then-commit via <see cref="HasSufficientUnlockedQuantity"/>
+        /// and <see cref="CommitConsume"/> — locked slots are neither decremented nor counted
+        /// toward the available total (GDD Rule 5.12), so <see cref="HasItem"/> can report
+        /// <see langword="true"/> for a locked-only stack that this still rejects. Nothing is
+        /// written or recorded unless the full requested quantity is confirmed available in
+        /// unlocked slots first — a failed call never needs <see cref="DiscardPendingChanges"/>.
+        /// No Item Database lookup and no category check (Story 007 precedent) — this decrements
+        /// whatever <paramref name="itemId"/> it is given.
+        /// </remarks>
+        public ConsumeItemResult ConsumeItem(CharacterID charId, ItemID itemId, int quantity)
+        {
+            ThrowIfDispatching();
+
+            if (quantity <= 0)
+                return ConsumeItemResult.Fail(ConsumeItemFailReason.InvalidQuantity);
+
+            if (!_inventories.TryGetValue(charId, out var slots))
+            {
+                Debug.LogError($"[InventoryService] ConsumeItem: {charId} is not a registered character. Call RegisterCharacter before mutating inventory.");
+                return ConsumeItemResult.Fail(ConsumeItemFailReason.CharacterNotRegistered);
+            }
+
+            if (itemId == ItemID.Invalid)
+                return ConsumeItemResult.Fail(ConsumeItemFailReason.InsufficientQuantity);
+
+            var locks = _locks[charId];
+            if (!HasSufficientUnlockedQuantity(slots, locks, itemId, quantity))
+                return ConsumeItemResult.Fail(ConsumeItemFailReason.InsufficientQuantity);
+
+            CommitConsume(charId, slots, locks, itemId, quantity);
+            EmitInventoryChanged(charId);
+            return ConsumeItemResult.Succeeded;
+        }
+
+        /// <summary>
+        /// <see cref="ConsumeItem"/>'s plan step: sums <see cref="InventorySlot.Quantity"/> across
+        /// every unlocked slot holding <paramref name="itemId"/> (ascending order, short-circuiting
+        /// once the running total reaches <paramref name="quantity"/>), without touching any slot.
+        /// </summary>
+        private static bool HasSufficientUnlockedQuantity(InventorySlot[] slots, bool[] locks, ItemID itemId, int quantity)
+        {
+            int total = 0;
+            for (int i = 0; i < slots.Length; i++)
+            {
+                if (locks[i] || slots[i].ItemId != itemId)
+                    continue;
+
+                total += slots[i].Quantity;
+                if (total >= quantity)
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// <see cref="ConsumeItem"/>'s commit step: decrements unlocked slots holding
+        /// <paramref name="itemId"/> in ascending order until <paramref name="remaining"/> reaches
+        /// 0, recording each changed slot. Only called once
+        /// <see cref="HasSufficientUnlockedQuantity"/> has confirmed enough is available, so this
+        /// never under-runs.
+        /// </summary>
+        /// <remarks>
+        /// Each slot is recorded before it is written, so a seam-contract violation (stale pending
+        /// changes for another character) throws on the first slot, before any write. After the
+        /// first record, <see cref="RecordSlotChange"/> cannot throw under current invariants:
+        /// not dispatching, at most <see cref="InventoryConstants.INVENTORY_SLOT_COUNT"/> changed
+        /// slots, and every entry is either a valid ItemID with quantity &gt; 0 or
+        /// <see cref="ItemID.Invalid"/> with quantity 0. If a future change breaks any of these, a
+        /// mid-loop throw would leave committed slots with no event — keep them intact or switch
+        /// to validate-all-then-write (same caveat as <see cref="CommitPickupPlan"/>).
+        /// </remarks>
+        private void CommitConsume(CharacterID charId, InventorySlot[] slots, bool[] locks, ItemID itemId, int remaining)
+        {
+            for (int i = 0; i < slots.Length && remaining > 0; i++)
+            {
+                if (locks[i] || slots[i].ItemId != itemId)
+                    continue;
+
+                var slot = slots[i];
+                int taken = Math.Min(remaining, slot.Quantity);
+                int newQuantity = slot.Quantity - taken;
+                ItemID newItemId = newQuantity == 0 ? ItemID.Invalid : slot.ItemId;
+
+                RecordSlotChange(charId, i, newItemId, newQuantity);
+                slots[i] = new InventorySlot(newItemId, newQuantity);
+                remaining -= taken;
+            }
         }
 
         /// <summary>

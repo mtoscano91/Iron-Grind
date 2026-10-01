@@ -1799,3 +1799,42 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Inventory Stories 005, 006, 007 complete and committed this session (005 ef0671d, 006 cddbcc7, 007 = this commit).
 - Resume with: /story-readiness production/epics/inventory-system/story-008-sell-and-consume.md, then Story 009 (resolve TD-042 alongside it).
 - Open reminders: rotate the plaintext GitHub PAT in .git/config `origin` before any push; TD-043 (scroll stack vs RemoveItem) and TD-044 (CR-EQS-8) must be resolved before the Enhancement / Equipment epics start.
+
+## Session Extract — /story-readiness 2026-10-01 (Inventory Story 008 — NEEDS WORK → fixed → READY)
+- Decisions (user, 2026-10-01): (1) `SellItem` gains a `quantity` parameter — partial-stack sells supported. Inventory GDD ("entire stack only") conflicted with Approved npc-shop.md CR-SHOP-7/8 and the wire `SellRequest.quantity`; Inventory GDD was the stale side. (2) `ConsumeItem` skips locked slots (not decremented, not counted).
+- Files edited: design/gdd/inventory-system.md (Last Updated, Rule 5.12, Interactions rows for NPC Shop + Consumable Use, 2 new cross-system edge cases, Dependencies row, AC-INV-16 full + partial); production/epics/inventory-system/story-008-sell-and-consume.md (rewritten: signatures with charId, `SellItemResult`/`SellItemFailReason`, `ConsumeItemResult`/`ConsumeItemFailReason`, guards, logging, re-entrancy AC, perf note, estimate 2h → 3h); EPIC.md (open question 008 resolved). entities.yaml: no change (interface signature only; no SellItem/ConsumeItem entries there).
+- Propagation check: networking-wire-protocol.md already has `SellRequest.quantity` (consistent). consumable-use-system.md calls `ConsumeItem(itemId, 1)` (consistent). NOT edited, needs user approval: npc-shop.md lines 101/143/286/561 still carry the "⚠️ Interface change required" warning, now stale; currency-system.md line 53 + OQ-CS-1 text says Inventory System owns the `AddGold(ItemSell)` call, contradicting Inventory + NPC Shop GDDs (NPC Shop calls it).
+- Not committed.
+- Next: /dev-story production/epics/inventory-system/story-008-sell-and-consume.md, then Story 009 (resolve TD-042 alongside it).
+- Open reminders: rotate the plaintext GitHub PAT in .git/config `origin` before any push; TD-043 and TD-044 before the Enhancement / Equipment epics.
+- Propagation follow-up (user approved 2026-10-01): npc-shop.md — 4 stale "Interface change required" notes on `SellItem(…, quantity)` marked resolved + Last Updated; currency-system.md — 3 spots (line 53 note, downstream-dependents row, OQ-CS-1 revision) corrected so NPC Shop, not Inventory, owns `AddGold(ItemSell)` + Last Updated. Wording only; no entities.yaml or systems-index change. Not committed.
+- Noticed, not changed: currency-system.md's dependents table still lists NPC Shop (#23) as "Not Started" (npc-shop.md is Approved), and its Interactions row for NPC Shop (line ~81) lists no ItemSell `AddGold` call.
+
+## Session Extract — /dev-story 2026-10-01 (Inventory Story 008 — NPC Shop Sell & Consumable Use)
+- Story: production/epics/inventory-system/story-008-sell-and-consume.md (Status → In Progress)
+- Files changed: src/Foundation/InventorySystem/SellItemFailReason.cs, SellItemResult.cs, ConsumeItemFailReason.cs, ConsumeItemResult.cs (new, + .meta); IInventoryService.cs (+SellItem, +ConsumeItem, docs); InventoryService.cs (SellItem, ConsumeItem, private HasSufficientUnlockedQuantity / CommitConsume)
+- Test written: tests/EditMode/InventorySystem/InventorySystem_SellAndConsume_tests.cs (32 tests, + .meta) — statically reviewed by orchestrator (diff, usings vs Discard suite, [Test] count, 5 new GUIDs unique repo-wide); NOT yet run in live Test Runner
+- Implemented by gameplay-programmer subagent (tight brief; clean first-pass report, no deviations from story).
+- Blockers: None
+- Uncommitted: Story 008 code + tests, plus the readiness edits (3 GDDs, story, EPIC.md).
+- Next: user runs EditMode Test Runner → /code-review src/Foundation/InventorySystem tests/EditMode/InventorySystem → /story-done production/epics/inventory-system/story-008-sell-and-consume.md
+
+## Session Extract — /code-review + "fix all" 2026-10-01 (Inventory Story 008)
+- User ran EditMode suite after /dev-story: ALL tests pass (32 new + existing inventory suites).
+- /code-review: unity-specialist CLEAN (0 required, 2 doc suggestions); qa-tester GAPS (1 required: "dedup window not reset" AC clause unverified; 7 test suggestions). Verdict CHANGES REQUIRED (test-only). User said "fix all"; applied all 10:
+  1. +2 tests: SellItem / ConsumeItem success does not reset the bag-full dedup window (full bag → blocked pickup → partial sell/consume → second blocked pickup → still 1 notification).
+  2–7. +7 tests: locked stack between two unlocked; exact total across two stacks; three stacks; ConsumeItem guard order ×2 (quantity before registration, registration before ItemID.Invalid); SellItem range-before-registration; partial sell then full sell of remainder.
+  8. Both re-entrancy tests now assert the exception message contains "mutated synchronously".
+  9. CommitConsume remarks: throw-safety reasoning (mirrors CommitPickupPlan).
+  10. IInventoryService.ConsumeItem remarks: ItemID.Invalid short-circuit stated explicitly, matching the implementation.
+- Test file now 41 tests — the 9 new tests and 2 strengthened ones are NOT yet run in the live Test Runner.
+- Next: user re-runs EditMode suite → /story-done production/epics/inventory-system/story-008-sell-and-consume.md
+
+## Session Extract — /story-done 2026-10-01 (Inventory Story 008)
+- User re-ran EditMode suite after review fixes: ALL tests pass (41 sell/consume tests + existing suites).
+- Verdict: COMPLETE
+- Story: production/epics/inventory-system/story-008-sell-and-consume.md — NPC Shop Sell & Consumable Use Interfaces (14/14 ACs)
+- EPIC.md: row 008 → Complete (epic 8/9)
+- Tech debt logged: None
+- Next recommended: production/epics/inventory-system/story-009-snapshot-save-load.md — InventorySnapshot Save/Load & Load Validation (Ready; run /story-readiness; resolve TD-042 alongside it)
+- Uncommitted: Story 008 (src, tests, .meta, story, EPIC.md), readiness GDD edits (inventory-system.md, npc-shop.md, currency-system.md), active.md. PAT-in-remote reminder outstanding before any push.
