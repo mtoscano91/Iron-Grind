@@ -2,7 +2,7 @@
 
 > **Status**: Approved (Pass 5 lean, 2026-05-22)
 > **Author**: Manuel Toscano + Claude Code agents
-> **Last Updated**: 2026-05-22 (Pass 4: MergeResult code gap resolved — RejectedMergeError added for clean-rollback path; CriticalRollbackFailed reserved for rollback-fails path; CR-EQS-14 precondition 1 and rollback block updated; CR-EQS-15 crash recovery language clarified; RejectedEquipped documented as defense-in-depth; AC-EQS-24 updated; AC-EQS-26–27 added)
+> **Last Updated**: 2026-10-01 (TD-045/TD-044 design session: `EquipmentSlotEntry` gains `EnhancementLevel: byte` — Enhancement System upstream amendment #2, previously unapplied in this body; the level is carried through equip, auto-swap and unequip via the Inventory interface; modifiers registered through `IEnhancementBonusProvider.GetFlatBonus`; `GetEquippedWeaponEnhancementLevel()` added; CR-EQS-4 guard compares ItemID and level; CR-EQS-8 rewritten — failed swap aborts and keeps the old item equipped, no `ForceInsert` retry, no Empty-slot outcome; AC-EQS-8/16/17 revised, AC-EQS-28–29 added; OQ-EQS-8 added. **Lean re-review pending.**) Previous: 2026-05-22 (Pass 4: MergeResult code gap resolved — RejectedMergeError added for clean-rollback path; CriticalRollbackFailed reserved for rollback-fails path; CR-EQS-14 precondition 1 and rollback block updated; CR-EQS-15 crash recovery language clarified; RejectedEquipped documented as defense-in-depth; AC-EQS-24 updated; AC-EQS-26–27 added)
 > **Implements Pillar**: Legendary Gear (primary), Earned Power (secondary)
 
 ## Overview
@@ -22,10 +22,13 @@ The Equipment System maintains an internal registry of 7 gear slots, one per Gea
 
 ```
 readonly struct EquipmentSlotEntry {
-    ItemID ItemId          // ItemID.Invalid = slot is empty
-    bool   IsTransitioning // true during mid-swap modifier sequence
+    ItemID ItemId           // ItemID.Invalid = slot is empty
+    bool   IsTransitioning  // true during mid-swap modifier sequence
+    byte   EnhancementLevel // [0, MAX_ENHANCEMENT_LEVEL]; 0 when the slot is empty
 }
 ```
+
+`EnhancementLevel` is the equipped item's enhancement level (Enhancement System CR-ENH-1). The Equipment System never changes it: it receives the level from the Inventory System when the item is equipped (`MoveItemOutResult.EnhancementLevel`), holds it while the item is equipped, and hands it back when the item returns to the bag (`MoveItemIn(ItemID, enhancementLevel)`). An item cannot be enhanced while equipped (Enhancement System operates on inventory slots only). *(Added 2026-10-01 — Enhancement System upstream amendment #2; TD-045.)*
 
 **CR-EQS-2: Slot Type Enforcement**
 Each item's GearSlot value (from Item Database) must match the target slot. Equipping a Helmet into the Weapon slot returns `EquipResult.SlotMismatch` and makes no state changes.
@@ -47,14 +50,16 @@ Stat gate by slot category:
 The check always uses `GetBaseStat()`. Effective stats, equipment bonuses, and buff/debuff modifiers are excluded. If a character's base stat drops below the threshold after equipping (hypothetical — base stats only fall at level reset, which is not designed), the item remains equipped; the gate is enforced only at equip time.
 
 **CR-EQS-4: Same-Item Guard**
-If the incoming ItemID is identical to the ItemID already occupying the target slot, short-circuit with `EquipResult.NoChange`. No Inventory calls, no Character Stats calls, no stat events.
+If the incoming item — identified by its inventory slot — has the same `ItemID` **and the same `EnhancementLevel`** as the item already occupying the target slot, short-circuit with `EquipResult.NoChange`. No Inventory calls, no Character Stats calls, no stat events. Two items with the same `ItemID` but different enhancement levels are different items: equipping a +5 Iron Sword over an equipped +0 Iron Sword is a normal auto-swap (CR-EQS-6). *(Level comparison added 2026-10-01, TD-045.)*
+
+**Enhanced modifier registration (applies to every `AddEquipmentModifier` call in CR-EQS-5/6/7/8):** the flat bonus passed to Character Stats is `IEnhancementBonusProvider.GetFlatBonus(enhancementLevel, modifier.FlatBonus, item.GearTier)`, not the raw Item Database `FlatBonus` (Enhancement System F-ENH-1; at level 0 the two are equal). `enhancementLevel` is the level of the item being registered. *(Added 2026-10-01 — Enhancement System upstream amendment #2.)*
 
 **CR-EQS-5: Equip Into Empty Slot**
 Steps, executed in order:
 1. Validate equip requirement (CR-EQS-3). Abort if not met.
-2. Call `Inventory.MoveItemOut(inventorySlotIndex)` → `MoveItemOutResult`. If `Code ≠ Success`, abort. No Character Stats calls.
-3. For each entry in `item.StatModifiers[]`: call `CharacterStats.AddEquipmentModifier(entityID, modifier.StatID, modifier.FlatBonus, modifier.PctBonus, itemID)`. If the modifier layer cap is reached (should never occur in correctly authored data): log CriticalError and halt.
-4. Write ItemID to `_slots[(int)slot]`.
+2. Call `Inventory.MoveItemOut(inventorySlotIndex)` → `MoveItemOutResult { ItemID, EnhancementLevel, Code }`. If `Code ≠ Success`, abort. No Character Stats calls.
+3. For each entry in `item.StatModifiers[]`: call `CharacterStats.AddEquipmentModifier(entityID, modifier.StatID, enhancedFlatBonus, modifier.PctBonus, itemID)` using the returned `EnhancementLevel`. If the modifier layer cap is reached (should never occur in correctly authored data): log CriticalError and halt.
+4. Write ItemID and `EnhancementLevel` to `_slots[(int)slot]`.
 5. Update `equipmentAppearanceFlags` (CR-EQS-11).
 
 **CR-EQS-6: Auto-Swap (Equip Into Occupied Slot)**
@@ -64,10 +69,10 @@ Steps, executed in order:
 3. Check `Inventory.HasFreeSlot()`. Abort with `EquipResult.InventoryFull` if false.
 4. Set `_slots[(int)slot].IsTransitioning = true`.
 5. For each entry in old item's `StatModifiers[]`: call `CharacterStats.RemoveEquipmentModifier(entityID, modifier.StatID, oldItemID)`. `OnStatChanged` fires here — slot state is Transitioning; HUD subscribers must check `IsSlotTransitioning(slot)` before reading equipment state.
-6. Call `Inventory.MoveItemIn(oldItemID)` → `MoveItemInResult`. If `success = false`: execute CR-EQS-8 failure recovery. Do not proceed to step 7. On success, store `MoveItemInResult.slotIndex` as `oldItemReturnedSlotIndex` for use in the step 7 rollback path.
-7. Call `Inventory.MoveItemOut(newItemInventorySlotIndex)` → `MoveItemOutResult`. If `Code ≠ Success`: call `MoveItemOut(oldItemReturnedSlotIndex)` to reclaim old item from inventory, re-apply old item's modifiers via `AddEquipmentModifier` for each, clear IsTransitioning, abort with `EquipResult.InventoryError`.
-8. For each entry in new item's `StatModifiers[]`: call `CharacterStats.AddEquipmentModifier(entityID, modifier.StatID, modifier.FlatBonus, modifier.PctBonus, newItemID)`.
-9. Write new ItemID to `_slots[(int)slot]`. Clear IsTransitioning.
+6. Call `Inventory.MoveItemIn(oldItemID, oldEnhancementLevel)` → `MoveItemInResult` (`oldEnhancementLevel` = the slot entry's `EnhancementLevel`). If `success = false`: execute CR-EQS-8 failure recovery. Do not proceed to step 7. On success, store `MoveItemInResult.slotIndex` as `oldItemReturnedSlotIndex` for use in the step 7 rollback path.
+7. Call `Inventory.MoveItemOut(newItemInventorySlotIndex)` → `MoveItemOutResult`. If `Code ≠ Success`: call `MoveItemOut(oldItemReturnedSlotIndex)` to reclaim old item from inventory (its returned `EnhancementLevel` equals `oldEnhancementLevel`), re-apply old item's modifiers via `AddEquipmentModifier` for each, clear IsTransitioning, abort with `EquipResult.InventoryError`. The slot entry is unchanged — old item and old level.
+8. For each entry in new item's `StatModifiers[]`: call `CharacterStats.AddEquipmentModifier(entityID, modifier.StatID, enhancedFlatBonus, modifier.PctBonus, newItemID)` using the new item's `MoveItemOutResult.EnhancementLevel`.
+9. Write new ItemID and its `EnhancementLevel` to `_slots[(int)slot]`. Clear IsTransitioning.
 10. Update `equipmentAppearanceFlags` (CR-EQS-11).
 
 **CR-EQS-7: Unequip (Occupied → Empty)**
@@ -76,15 +81,17 @@ Steps, executed in order:
 2. Call `ItemDatabase.GetItem(itemID)` → `EquipmentData`. If `GetItem()` returns null (item definition removed from database while equipped): log `CriticalError("Unequip GetItem null: {itemID}")`, skip modifier removal, clear slot (ItemID → Invalid, IsTransitioning → false), update appearance flags, return `EquipResult.Success`. Modifiers for an undefined item cannot be safely removed; clearing the slot is the least-corrupt outcome.
 3. Set `_slots[(int)slot].IsTransitioning = true`.
 4. For each entry in item's `StatModifiers[]`: call `RemoveEquipmentModifier`. `OnStatChanged` fires.
-5. Call `Inventory.MoveItemIn(itemID)` → `MoveItemInResult`. If `success = false`: restore modifiers via `AddEquipmentModifier` for each, clear IsTransitioning, return `EquipResult.InventoryError`.
-6. Clear `_slots[(int)slot]` (set ItemID to Invalid). Clear IsTransitioning.
+5. Call `Inventory.MoveItemIn(itemID, enhancementLevel)` → `MoveItemInResult` (`enhancementLevel` = the slot entry's `EnhancementLevel`). If `success = false`: restore modifiers via `AddEquipmentModifier` for each, clear IsTransitioning, return `EquipResult.InventoryError`.
+6. Clear `_slots[(int)slot]` (set ItemID to Invalid, `EnhancementLevel` to 0). Clear IsTransitioning.
 7. Update `equipmentAppearanceFlags`.
 
-**CR-EQS-8: MoveItemIn Failure Recovery (Auto-Swap)**
-Triggered when step 6 of CR-EQS-6 fails — modifiers have already been removed but the old item cannot enter inventory:
-1. Attempt `Inventory.ForceInsert(oldItemID)` — Inventory emergency path, bypasses `HasFreeSlot()` cap.
-2. If ForceInsert succeeds: re-apply old item's modifiers via `AddEquipmentModifier`, clear IsTransitioning, return `EquipResult.InventoryError`. Old item is back in inventory; slot unchanged.
-3. If ForceInsert fails: log `CriticalError("Item loss risk: {oldItemID} cannot return to inventory. Entity {entityID}.")`, alert monitoring, leave slot **Empty** (do not force-re-equip — persistence cannot track an item outside inventory or equipped slots), return `EquipResult.CriticalFailure`.
+**CR-EQS-8: MoveItemIn Failure Recovery (Auto-Swap)** *(rewritten 2026-10-01, TD-044)*
+Triggered when step 6 of CR-EQS-6 fails — modifiers have already been removed but the old item cannot enter inventory. At this point nothing has moved: the old item is still recorded in the gear slot (`ItemId` and `EnhancementLevel` unchanged) and the new item is still in its inventory slot. Recovery therefore aborts the swap in place:
+1. Re-apply the old item's modifiers via `AddEquipmentModifier` for each entry (using the slot entry's `EnhancementLevel`).
+2. Clear IsTransitioning. The slot entry is unchanged — the old item remains equipped.
+3. Log a server error (`"Auto-swap aborted: old item {oldItemID} could not return to inventory. Entity {entityID}."`) and return `EquipResult.InventoryError`.
+
+No item leaves the gear slot or the bag on this path, so there is no item-loss risk and no Empty-slot outcome. `ForceInsert` is **not** retried here: it uses the same lowest-empty-slot placement as `MoveItemIn`, so on a single-threaded server tick a retry can never succeed where `MoveItemIn` just failed (the previous step 1–2 was unreachable, and its step 3 destroyed the equipped item's slot state for no benefit). `ForceInsert` remains in use for accessory merge (CR-EQS-14) only.
 
 **CR-EQS-9: Transitioning Guard**
 `IsSlotTransitioning(GearSlot): bool` is a public read method on the Equipment System. During any Transitioning window, effective stats for the affected slot are in an intermediate state. Subscribers to `CharacterStats.OnStatChanged` that read equipment data must check this method and defer rendering if true.
@@ -104,10 +111,12 @@ The byte is written to `ZoneStateSnapshotEntityEntry.EquipmentAppearanceFlags` a
 
 `PRESTIGE_MID_THRESHOLD = 5`, `ENHANCEMENT_GLOW_THRESHOLD = 7`, `PRESTIGE_HIGH_THRESHOLD = 8` — constants owned by Enhancement System GDD (Approved 2026-05-23, CR-ENH-12). ArmorTier = 0 if no armor equipped.
 
+PrestigeBand source: the band is computed from the **Weapon slot's** `EquipmentSlotEntry.EnhancementLevel` (band NONE if no weapon is equipped), consistent with the WeaponTier and ElementType fields of the same byte. *(Working rule recorded 2026-10-01 — the source slot was previously unstated; see OQ-EQS-8.)*
+
 Encode: `flags = (byte)(((int)weaponTier & 0x03) << 6 | ((int)elementType & 0x07) << 3 | (prestigeBand & 0x03) << 1 | (armorBit & 0x01))`
 
 **CR-EQS-12: Elemental Weapon Data Flow**
-The Equipment System does not write elemental data to Character Stats. It exposes `GetEquippedWeaponItemID(): ItemID`, returning `ItemID.Invalid` if no weapon is equipped. Damage Calculation calls this method and reads `ElementType` and `ElementalDamage` directly from Item Database. `ItemID.Invalid` is treated as a non-elemental weapon with 0 elemental damage.
+The Equipment System does not write elemental data to Character Stats. It exposes `GetEquippedWeaponItemID(): ItemID`, returning `ItemID.Invalid` if no weapon is equipped. Damage Calculation calls this method and reads `ElementType` and `ElementalDamage` directly from Item Database. `ItemID.Invalid` is treated as a non-elemental weapon with 0 elemental damage. It also exposes `GetEquippedWeaponEnhancementLevel(): byte` — the Weapon slot entry's `EnhancementLevel`, 0 if no weapon is equipped — which Damage Calculation passes to `IEnhancementBonusProvider.GetElementalBonus(level, gearTier, isWeapon)` (Enhancement System F-ENH-2). *(Added 2026-10-01 — required by damage-calculation.md and the Enhancement System GDD; previously missing from this body.)*
 
 **CR-EQS-13: Input Validation**
 All public equip/unequip entry points validate:
@@ -120,7 +129,7 @@ All public equip/unequip entry points validate:
 
 `IsTransitioning` is a runtime in-memory flag only — it is not saved to disk as part of Character Persistence. If the server crashes or restarts mid-swap:
 
-1. On load, all `EquipmentSlotEntry` structs are reconstructed from the 7 saved `ItemID` values. `IsTransitioning` defaults to `false` (C# default struct initialization).
+1. On load, all `EquipmentSlotEntry` structs are reconstructed from the 7 saved `{ItemID, EnhancementLevel}` pairs (Character Persistence `GearSlots[7]`). `IsTransitioning` defaults to `false` (C# default struct initialization). Modifiers are re-registered using each slot's saved `EnhancementLevel`.
 2. Any orphaned mid-swap state resolves to: the slot holds whatever `ItemID` was saved at last checkpoint. The critical crash window is between step 7 of CR-EQS-6 (new item removed from inventory) and step 9 (slot write complete) — if the server crashes here, the new item is absent from both inventory and the equipment slot on reload and requires manual monitoring recovery. The old item moved to inventory in step 6 (before the crash) will conflict with the saved slot state; the saved `ItemID` is authoritative on load, so the Equipment System re-applies the old item's modifiers and the inventory copy is flagged as a duplicate requiring manual resolution.
 3. The Equipment System does not perform any startup cleanup pass — it trusts the saved `ItemID` as authoritative on load.
 
@@ -143,8 +152,8 @@ Preconditions (all must hold; reject with no state change if any fail):
 
 Merge execution (atomic — all or nothing):
 1. Remove three source items from inventory (`MoveItemOut` on each occupied slot).
-2. Insert one item of `MergeResultItemID` into inventory (`ForceInsert(MergeResultItemID)`).
-3. If `ForceInsert` returns false (inventory filled between check and execution): restore the three source items via `ForceInsert × 3` — step 1 freed 3 slots and step 2 consumed none, so all three rollback calls will succeed under normal conditions.
+2. Insert one item of `MergeResultItemID` into inventory (`ForceInsert(MergeResultItemID, 0)`). The merge result is a newly created item and always starts at `EnhancementLevel = 0`; accessories cannot be enhanced (Enhancement System: `GearSlot ≠ Ring/Necklace`), so the three source items are always level 0 as well.
+3. If `ForceInsert` returns false (inventory filled between check and execution): restore the three source items via `ForceInsert(sourceItemID, 0) × 3` — step 1 freed 3 slots and step 2 consumed none, so all three rollback calls will succeed under normal conditions.
    - If all rollback `ForceInsert` calls succeed: return `MergeResult.RejectedMergeError`. No CriticalError logged — all items are accounted for.
    - If any rollback `ForceInsert` unexpectedly fails (memory/hardware fault): log `CriticalError("Merge rollback incomplete — {count} source item(s) not restored for entity {entityID}")`, alert monitoring, return `MergeResult.CriticalRollbackFailed`.
 
@@ -167,8 +176,8 @@ The defense-in-depth equipped check (precondition 1) executes before any item re
 | Empty → Occupied | Player equips | Stat req met; MoveItemOut success | CR-EQS-5 |
 | Occupied → Occupied | Auto-swap | Stat req met; HasFreeSlot=true; MoveItemIn success | CR-EQS-6 |
 | Occupied → Empty | Player unequips | HasFreeSlot=true; MoveItemIn success | CR-EQS-7 |
-| Occupied → Empty | Swap critical failure | MoveItemIn + ForceInsert both fail | CR-EQS-8 step 3: Empty is less corrupt than phantom Occupied |
-| Any → unchanged | Same item | ItemID matches slot | CR-EQS-4: NoChange |
+| Occupied → Occupied (unchanged) | Swap aborted | MoveItemIn fails at CR-EQS-6 step 6 | CR-EQS-8: modifiers restored, old item stays equipped, `InventoryError` |
+| Any → unchanged | Same item | ItemID and EnhancementLevel match slot | CR-EQS-4: NoChange |
 | Any → unchanged | Stat req not met | BaseStat < EquipRequirementMin | CR-EQS-3: abort before any mutation |
 | Any → unchanged | Inventory full | HasFreeSlot=false | Abort before state mutation |
 
@@ -181,13 +190,16 @@ The defense-in-depth equipped check (precondition 1) executes before any item re
 | Item Database | Read | `GearSlot`, `GearTier`, `StatModifiers[]`, `EquipRequirementStat`, `EquipRequirementMin`, `ElementType`, `ElementalDamage` | `GetItem(ItemID): EquipmentData` |
 | Character Stats | Write | Modifier registration / removal | `AddEquipmentModifier(EntityID, StatID, flatBonus, pctBonus, ItemID)` / `RemoveEquipmentModifier(EntityID, StatID, ItemID)` |
 | Character Stats | Read | Base stat for equip gate | `GetBaseStat(EntityID, StatID): float` |
-| Inventory System | Read / Write | Item transfer, capacity check | `HasFreeSlot(): bool` / `MoveItemOut(slotIndex): MoveItemOutResult` / `MoveItemIn(ItemID): MoveItemInResult` / `ForceInsert(ItemID): bool` *(emergency)* |
+| Inventory System | Read / Write | Item transfer (ItemID + EnhancementLevel), capacity check | `HasFreeSlot(): bool` / `MoveItemOut(slotIndex): MoveItemOutResult { ItemID, EnhancementLevel, Code }` / `MoveItemIn(ItemID, enhancementLevel): MoveItemInResult` / `ForceInsert(ItemID, enhancementLevel): bool` *(accessory merge only)* |
+| Enhancement System | Read | Enhanced flat bonus for modifier registration | `IEnhancementBonusProvider.GetFlatBonus(level, baseFlatBonus, gearTier): int` |
 | Networking | Write | Zone appearance byte | `ZoneStateSnapshotEntityEntry.EquipmentAppearanceFlags` — written on every slot change |
-| Damage Calculation | Provides | Equipped weapon ItemID | `GetEquippedWeaponItemID(): ItemID` |
+| Damage Calculation | Provides | Equipped weapon ItemID and enhancement level | `GetEquippedWeaponItemID(): ItemID` / `GetEquippedWeaponEnhancementLevel(): byte` |
+| Character Persistence | Read / Write | 7 gear slots | `GearSlots[7]: {ItemID, EnhancementLevel: byte}` — saved and restored per slot |
 
 **Cross-document impacts from this section:**
 - *Item Database GDD*: Must add `EquipRequirementStat: StatID?` and `EquipRequirementMin: float` fields to `EquipmentData` schema (CR-EQS-3). Accessories: `EquipRequirementStat = null`.
-- *Inventory System GDD*: Must add `ForceInsert(ItemID): bool` emergency path (CR-EQS-8). `MoveItemOut` return type must be extended to `MoveItemOutResult` to distinguish empty vs. locked slot (current `ItemID` return is ambiguous).
+- *Inventory System GDD*: Must add `ForceInsert(ItemID): bool` emergency path (CR-EQS-8). `MoveItemOut` return type must be extended to `MoveItemOutResult` to distinguish empty vs. locked slot (current `ItemID` return is ambiguous). *(Both applied 2026-05-22. 2026-10-01: `MoveItemOutResult` gains `EnhancementLevel`, and `MoveItemIn`/`ForceInsert` gain an `enhancementLevel` parameter — applied to inventory-system.md Rule 8.24a the same day; `ForceInsert` is no longer used by CR-EQS-8.)*
+- *Networking Wire Protocol GDD*: `EquipRequest` must identify the item by **inventory slot index** — an `ItemID` alone cannot distinguish two items of the same type at different enhancement levels; `EquipResult` must carry the equipped slot's `EnhancementLevel`. *(Applied 2026-10-01.)*
 
 ## Formulas
 
@@ -372,7 +384,7 @@ Rule: Character Stats EC-18 handles this: when effective MaxHP drops below curre
 
 **EC-EQS-8: Equipping Identical Item to Same Slot (Race Condition)**
 Situation: UI sends an equip request for an item already in the target slot (e.g., double-tap race).
-Rule: CR-EQS-4 short-circuits immediately. `EquipResult.NoChange` returned. No Inventory calls, no stat events, no appearance flag recompute.
+Rule: CR-EQS-4 short-circuits immediately. `EquipResult.NoChange` returned. No Inventory calls, no stat events, no appearance flag recompute. The guard matches on `ItemID` **and** `EnhancementLevel`: a bag item with the same `ItemID` but a different level is a different item and proceeds as an auto-swap (CR-EQS-6).
 
 **EC-EQS-9: No Weapon Equipped — Elemental Data Flow**
 Situation: A character has no weapon equipped.
@@ -380,7 +392,7 @@ Rule: `GetEquippedWeaponItemID()` returns `ItemID.Invalid`. Damage Calculation t
 
 **EC-EQS-10: MoveItemIn Failure After Modifier Removal**
 Situation: `HasFreeSlot()` returned true but `MoveItemIn` fails at execution time (concurrent inventory write race).
-Rule: CR-EQS-8 executes. `ForceInsert` is attempted. If it succeeds, old modifiers are restored and the swap rolls back cleanly. If `ForceInsert` also fails, the slot is set to Empty, CriticalError is logged, and the player is notified. The orphaned item is a monitoring event requiring manual resolution — it must not manifest as a silent item loss.
+Rule: CR-EQS-8 executes. The swap is aborted in place: the old item's modifiers are restored, the old item stays equipped at its enhancement level, the new item stays in its inventory slot, a server error is logged, and `EquipResult.InventoryError` is returned. No item is lost or orphaned. *(Rewritten 2026-10-01, TD-044 — the former `ForceInsert` retry could never succeed and its failure branch emptied the gear slot.)*
 
 **EC-EQS-11: All Slots Empty — Appearance Flags**
 Situation: A fresh character with all slots empty.
@@ -393,7 +405,7 @@ Rule: `equipmentAppearanceFlags = 0x00`. Other players see the default unequippe
 | System | GDD status | What this GDD takes from it |
 |--------|-----------|----------------------------|
 | Item Database | Approved ✓ | `GearSlot` enum, `GearTier` enum, `EquipmentData` schema (`StatModifiers[]`, `ElementType`, `ElementalDamage`, `EquipRequirementStat: StatID?`, `EquipRequirementMin: float`, `MergeResultItemID: ItemID?`) — additions written 2026-05-22 |
-| Inventory System | Approved ✓ | `HasFreeSlot()`, `MoveItemOut(slotIndex): MoveItemOutResult`, `MoveItemIn(ItemID)`, `ForceInsert(ItemID): bool` — `MoveItemOutResult` extension and `ForceInsert` written 2026-05-22 |
+| Inventory System | Approved ✓ | `HasFreeSlot()`, `MoveItemOut(slotIndex): MoveItemOutResult { ItemID, EnhancementLevel, Code }`, `MoveItemIn(ItemID, enhancementLevel)`, `ForceInsert(ItemID, enhancementLevel): bool` — `MoveItemOutResult` extension and `ForceInsert` written 2026-05-22; enhancement-level fields and parameters written 2026-10-01 (TD-045) |
 | Character Stats | Approved ✓ | `AddEquipmentModifier(EntityID, StatID, flatBonus, pctBonus, ItemID)`, `RemoveEquipmentModifier(EntityID, StatID, ItemID)`, `GetBaseStat(EntityID, StatID)`; equipment modifier layer (16 entries); EC-18 MaxHP clamping |
 | Networking Core | Approved ✓ | `ZoneStateSnapshotEntityEntry.EquipmentAppearanceFlags: byte` wire field — Equipment System writes this field |
 | Networking Wire Protocol | Approved ✓ | `EquipRequest` (client → server), `EquipResult` (server → client), `AppearanceChangedEvent` (server → zone) — wire schemas added 2026-05-22 |
@@ -456,14 +468,14 @@ All UI surfaces are owned by the Inventory UI GDD. The Equipment System exposes 
   - `StatRequirementNotMet(StatID, required, actual)` — UI surfaces: "Requires {required} {statName} (you have {actual})". `actual` = `GetBaseStat(entityID, StatID)` — the base stat value only, not effective stat. Buffs that bring effective stat above `EquipRequirementMin` do not satisfy the gate (CR-EQS-3, AC-EQS-6). The UI must display base stat in the shortfall message, not the buffed value, to avoid misleading the player.
   - `SlotMismatch` — UI surfaces: item tooltip shows the correct slot type
   - `InventoryError` — UI surfaces a generic equip failure with retry option
-  - `CriticalFailure` — UI surfaces: "Equip failed — please try again. If the issue persists, contact support."
+  - `CriticalFailure` — UI surfaces: "Equip failed — please try again. If the issue persists, contact support." *(As of 2026-10-01 no equip, swap or unequip rule in this GDD returns `CriticalFailure` — CR-EQS-8 now returns `InventoryError`. The code is retained for wire-enum stability and future use.)*
 - `RequestMerge(int slotIdx1, int slotIdx2, int slotIdx3): MergeResult` — merge trigger; Inventory UI passes the three inventory slot indices of the selected source items. `MergeResult` codes:
   - `Success` — merge complete; 3 source items removed, 1 merged result item added to inventory
   - `RejectedEquipped` — defense-in-depth: a passed slot's item was detected simultaneously in an equipment slot (inconsistent server state; unreachable through normal gameplay). No state change.
   - `RejectedMaxLevel` — item is at `MAX_ACCESSORY_LEVEL` (`MergeResultItemID = null`); no state change
   - `RejectedInventoryFull` — no free inventory slot for merge result; no state change
-  - `RejectedMergeError` — `ForceInsert(MergeResultItemID)` failed; all 3 source items restored via rollback; no item loss; no CriticalError
-  - `CriticalRollbackFailed` — `ForceInsert(MergeResultItemID)` failed AND one or more rollback `ForceInsert` calls also failed; CriticalError logged; monitoring alert sent; one or more source items unrecovered
+  - `RejectedMergeError` — `ForceInsert(MergeResultItemID, 0)` failed; all 3 source items restored via rollback; no item loss; no CriticalError
+  - `CriticalRollbackFailed` — `ForceInsert(MergeResultItemID, 0)` failed AND one or more rollback `ForceInsert` calls also failed; CriticalError logged; monitoring alert sent; one or more source items unrecovered
 
 The equipment panel layout, slot visual design, tap/drag interaction model, and stat comparison overlays are specified in the Inventory UI GDD — not here.
 
@@ -507,7 +519,7 @@ Pass: `EquipResult.InventoryFull`. No modifiers removed. Slot state unchanged.
 **AC-EQS-8 [BLOCKING]: Same-item guard prevents redundant operations**
 Setup: Iron Sword (ItemA, known modifier value) equipped in Weapon slot. Record `GetEffectiveStat(STR)` before action.
 Action: Equip ItemA into Weapon slot again.
-Pass: `EquipResult.NoChange` returned. `GetEquipmentSlotState(GearSlot.Weapon)` = `(ItemA, Occupied)` — unchanged. `GetEffectiveStat(STR)` = same value as before action (no double-application). ItemA still in Weapon slot, not moved to inventory.
+Pass: `EquipResult.NoChange` returned. `GetEquipmentSlotState(GearSlot.Weapon)` = `(ItemA, Occupied)` — unchanged. `GetEffectiveStat(STR)` = same value as before action (no double-application). ItemA still in Weapon slot, not moved to inventory. "Again" means an inventory item with the same `ItemID` and the same `EnhancementLevel` as the equipped one; a same-`ItemID` item at a different level is covered by AC-EQS-28.
 
 **AC-EQS-9 [BLOCKING]: Slot type enforcement — mismatched slot rejected**
 Setup: A Helmet item (GearSlot=Helmet).
@@ -542,17 +554,16 @@ Setup: Character `GetBaseStat(MaxHP)` = 280. Iron Helmet (`EquipRequirementStat=
 Action: Attempt to equip.
 Pass: `EquipResult.StatRequirementNotMet`. Helmet stays in inventory.
 
-**AC-EQS-16 [BLOCKING]: Auto-swap MoveItemIn failure with ForceInsert success — slot rolls back cleanly**
-Note: Requires unit-test injection (stub `MoveItemIn` to return `success=false`, stub `ForceInsert` to return `true`).
-Setup: Weapon slot occupied (ItemA). ItemB in inventory.
-Action: Trigger auto-swap to ItemB (CR-EQS-6 path). `MoveItemIn` fails at step 6; `ForceInsert` succeeds.
-Pass: `EquipResult.InventoryError` returned. `GetEquipmentSlotState(GearSlot.Weapon)` = `(ItemA, Occupied)` — slot unchanged. `GetEffectiveStat` reflects ItemA's modifiers (re-applied). `IsSlotTransitioning(GearSlot.Weapon)` = false. No item lost.
+**AC-EQS-16 [BLOCKING]: Auto-swap MoveItemIn failure — swap aborted, old item stays equipped** *(rewritten 2026-10-01, TD-044)*
+Note: Requires unit-test injection (stub `MoveItemIn` to return `success=false`; `ForceInsert` is a spy).
+Setup: Weapon slot occupied by ItemA at `EnhancementLevel = 3`. ItemB in inventory slot S.
+Action: Trigger auto-swap to ItemB (CR-EQS-6 path). `MoveItemIn` fails at step 6.
+Pass: `EquipResult.InventoryError` returned. `GetEquipmentSlotState(GearSlot.Weapon)` = `(ItemA, Occupied)` with `EnhancementLevel = 3` — slot unchanged. `GetEffectiveStat` equals its pre-action value (ItemA's enhanced modifiers re-applied exactly once). `IsSlotTransitioning(GearSlot.Weapon)` = false. ItemB is still in inventory slot S. `ForceInsert` was called 0 times. A server error log entry exists containing oldItemID and entityID. No item lost.
 
-**AC-EQS-17 [BLOCKING]: Auto-swap MoveItemIn failure with ForceInsert failure — CriticalFailure and slot Empty**
-Note: Requires unit-test injection (stub both `MoveItemIn` and `ForceInsert` to fail).
-Setup: Weapon slot occupied (ItemA). ItemB in inventory.
-Action: Trigger auto-swap to ItemB. Both `MoveItemIn` and `ForceInsert` fail.
-Pass: `EquipResult.CriticalFailure` returned. `GetEquipmentSlotState(GearSlot.Weapon)` = `(ItemID.Invalid, Empty)` — slot set to Empty (CR-EQS-8 step 3). CriticalError log entry exists and contains oldItemID and entityID. `IsSlotTransitioning(GearSlot.Weapon)` = false.
+**AC-EQS-17 [BLOCKING]: Enhancement level survives equip and unequip** *(replaced 2026-10-01 — the former ForceInsert-failure / Empty-slot criterion no longer exists, TD-044/TD-045)*
+Setup: Weapon slot empty. Iron Sword at `EnhancementLevel = 5` in inventory slot S (stat requirement met). At least one other inventory slot free.
+Action: Equip from slot S; then unequip.
+Pass: After equip — `GetEquipmentSlotState(GearSlot.Weapon)` = Iron Sword with `EnhancementLevel = 5`; `GetEquippedWeaponEnhancementLevel()` = 5; inventory slot S empty. After unequip — the sword is in the lowest-index free inventory slot at `EnhancementLevel = 5` (verified by reading the slot); Weapon slot Empty with `EnhancementLevel = 0`; `GetEquippedWeaponEnhancementLevel()` = 0.
 
 **AC-EQS-18 [BLOCKING]: No on-equip trigger effects beyond stat registration at MVP**
 Setup: Any item with stat requirements met. Monitor for any game events beyond `OnStatChanged` and `equipmentAppearanceFlags` write.
@@ -585,20 +596,20 @@ Action: Call `RequestMerge(slotIdx1, slotIdx2, slotIdx3)`.
 Pass: Returns `MergeResult.RejectedInventoryFull`. No state change. Inventory still contains all 3 source items. Verify no `MoveItemOut` calls were made (precondition step 4 in CR-EQS-14 must run before any item removal).
 
 **AC-EQS-24 [BLOCKING]: Accessory merge — ForceInsert of result fails, rollback succeeds**
-Note: Requires unit-test injection (stub `ForceInsert(MergeResultItemID)` to return false; rollback `ForceInsert × 3` calls are NOT stubbed and succeed normally).
+Note: Requires unit-test injection (stub `ForceInsert(MergeResultItemID, 0)` to return false; rollback `ForceInsert × 3` calls are NOT stubbed and succeed normally).
 Setup: Player inventory contains 3 items of the same `ItemID` (Ring at +1, `MergeResultItemID` non-null). At least one free slot exists. All three not equipped, not locked.
-Action: Call `RequestMerge(slotIdx1, slotIdx2, slotIdx3)`. `MoveItemOut` × 3 succeeds; `ForceInsert(MergeResultItemID)` fails (injected); rollback `ForceInsert × 3` succeeds.
+Action: Call `RequestMerge(slotIdx1, slotIdx2, slotIdx3)`. `MoveItemOut` × 3 succeeds; `ForceInsert(MergeResultItemID, 0)` fails (injected); rollback `ForceInsert × 3` succeeds.
 Pass: Returns `MergeResult.RejectedMergeError`. All 3 source items restored to inventory. No CriticalError logged (rollback succeeded — all items accounted for). `IsSlotTransitioning` unaffected (merge does not touch equipment slots).
 
 **AC-EQS-25 [PLANNED — BLOCKED: needs Character Persistence GDD]: IsTransitioning defaults to false on persistence load**
 Setup: Simulate persistence load with valid ItemIDs in all 7 equipment slots (using test stub for persistence layer). No prior in-memory Equipment System state.
-Action: Initialize Equipment System from 7 saved ItemIDs.
+Action: Initialize Equipment System from 7 saved `{ItemID, EnhancementLevel}` pairs.
 Pass: `IsSlotTransitioning(slot)` = false for all 7 `GearSlot` values. Modifier stack reflects all 7 items' `StatModifiers[]` (re-registered from Item Database on load). No residual `IsTransitioning = true` from any prior mid-swap state.
 
 **AC-EQS-26 [BLOCKING]: Accessory merge — ForceInsert of result fails AND rollback also fails**
-Note: Requires unit-test injection (stub `ForceInsert(MergeResultItemID)` to return false; also stub one or more rollback `ForceInsert(sourceItemID)` calls to return false).
+Note: Requires unit-test injection (stub `ForceInsert(MergeResultItemID, 0)` to return false; also stub one or more rollback `ForceInsert(sourceItemID)` calls to return false).
 Setup: Player inventory contains 3 items of the same `ItemID` (Ring at +1, `MergeResultItemID` non-null). At least one free slot exists. All three not equipped, not locked.
-Action: Call `RequestMerge(slotIdx1, slotIdx2, slotIdx3)`. `MoveItemOut` × 3 succeeds; `ForceInsert(MergeResultItemID)` fails (injected); at least one rollback `ForceInsert` also fails (injected).
+Action: Call `RequestMerge(slotIdx1, slotIdx2, slotIdx3)`. `MoveItemOut` × 3 succeeds; `ForceInsert(MergeResultItemID, 0)` fails (injected); at least one rollback `ForceInsert` also fails (injected).
 Pass: Returns `MergeResult.CriticalRollbackFailed`. CriticalError log entry exists and contains `entityID` and count of unrestored source items (≥ 1). Monitoring alert sent. `IsSlotTransitioning` unaffected (merge does not touch equipment slots).
 
 **AC-EQS-27 [ADVISORY]: Accessory merge — defense-in-depth RejectedEquipped check**
@@ -607,7 +618,20 @@ Setup: Player inventory contains 3 items of the same `ItemID`. Inject: the consi
 Action: Call `RequestMerge(slotIdx1, slotIdx2, slotIdx3)`.
 Pass: Returns `MergeResult.RejectedEquipped`. No state change. No `MoveItemOut` calls made (precondition check fires before any item removal).
 
+**AC-EQS-28 [BLOCKING]: Same ItemID at a different enhancement level auto-swaps** *(added 2026-10-01, TD-045)*
+Setup: Weapon slot occupied by Iron Sword at `EnhancementLevel = 0`. A second Iron Sword at `EnhancementLevel = 5` in inventory slot S. At least one free inventory slot.
+Action: Equip from slot S.
+Pass: `EquipResult.Success` (not `NoChange`). Weapon slot holds Iron Sword at `EnhancementLevel = 5`. The level-0 sword is in inventory at `EnhancementLevel = 0`. `GetEffectiveStat` reflects the level-5 sword's enhanced modifiers only (no residue from the level-0 sword).
+
+**AC-EQS-29 [BLOCKING]: Modifiers are registered with the enhanced flat bonus** *(added 2026-10-01 — Enhancement System upstream amendment #2)*
+Note: Requires a stub `IEnhancementBonusProvider` whose `GetFlatBonus(level, base, tier)` returns a known value.
+Setup: Weapon slot empty. Bronze Sword with one modifier `{STR, FlatBonus = 10}` at `EnhancementLevel = 5` in inventory. Stub returns 28 for `GetFlatBonus(5, 10, GearTier.Bronze)`.
+Action: Equip the sword.
+Pass: `AddEquipmentModifier` was called with flat bonus 28 (not 10). `GetFlatBonus` was called with `(5, 10, GearTier.Bronze)`. The same sword at `EnhancementLevel = 0` (stub returns 10 for level 0) registers flat bonus 10.
+
 ## Open Questions
+
+**OQ-EQS-8 (added 2026-10-01):** Which gear slot's enhancement level drives the PrestigeBand bits of `equipmentAppearanceFlags`? CR-EQS-11 now records the Weapon slot as the working rule (consistent with WeaponTier/ElementType in the same byte), but neither this GDD nor Enhancement System CR-ENH-12 stated it before. Confirm at the lean re-review, or define an alternative (e.g. highest level across all slots). *Owner*: Game Designer. *Target*: lean re-review of this GDD.
 
 **OQ-EQS-1 (from Item Database GDD — resolved):** Flat bonus ranges by tier resolved in F-EQS-2. Provisional pending Enhancement System GDD validation.
 
@@ -621,4 +645,4 @@ Pass: Returns `MergeResult.RejectedEquipped`. No state change. No `MoveItemOut` 
 
 **OQ-EQS-6 (pending Networking Core GDD review):** Confirm that `ZoneStateSnapshotEntityEntry.EquipmentAppearanceFlags` is included in every zone snapshot (not only delta updates). If snapshot is delta-compressed, initial full-state snapshots must always include this field.
 
-**OQ-EQS-7 (pending Character Persistence GDD):** Equipment serialization contract assumed: save 7 `ItemID` values per character; on load, re-register modifiers from Item Database. Must be confirmed when Character Persistence GDD is authored.
+**OQ-EQS-7 (pending Character Persistence GDD):** Equipment serialization contract assumed: save 7 `{ItemID, EnhancementLevel}` pairs per character (character-persistence.md `GearSlots[7]`; level added 2026-10-01); on load, re-register modifiers from Item Database. Must be confirmed when Character Persistence GDD is authored.

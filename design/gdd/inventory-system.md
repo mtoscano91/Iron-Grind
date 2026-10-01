@@ -2,12 +2,12 @@
 
 > **Status**: Approved (lean re-review 2026-05-17 — B-INV-1 PickupRequest signature fixed; R-2 MoveItemIn return type added; OQ-INV-5 resolved; OQ-INV-6 added for wire schemas)
 > **Author**: Manuel Toscano + Claude Code agents
-> **Last Updated**: 2026-10-01 (Story 009: Persistence and Load Edge Cases extended — out-of-range `SlotIndex`, `ItemId = 0`, over-limit quantity loads as-is, load refused before Item Database ready, load fires no events; Story 008 readiness: `SellItem` gains a `quantity` parameter — partial-stack sells supported, aligning with NPC Shop CR-SHOP-7/8 and the wire `SellRequest.quantity`; `ConsumeItem` skips locked slots — Rule 5.12; AC-INV-16 updated). Previous: 2026-09-27 (Story 006 readiness: Rule 7.20 clarified — different-item moves swap, full-destination merge is a no-op success; AC-INV-9 reasons aligned to wire `MoveFailReason`); 2026-05-22 (Equipment System upstream contract: MoveItemOut return type extended to MoveItemOutResult; ForceInsert added — OQ-EQS-3)
+> **Last Updated**: 2026-10-01 (TD-045/TD-043 design session: slots gain a per-item `EnhancementLevel: byte` — Rule 1.1/1.4, `SetEnhancementLevel` (Rule 5.14a), level travels on move/swap (Rule 7.20) and across the Equipment interface (Rule 8.24a), `InventoryChangedEvent` and `InventorySnapshot` carry it, load rules for an invalid level, AC-INV-17–20 added; Enhancement scroll consumption uses `ConsumeItem`. **Lean re-review pending.**) Same day (Story 009: Persistence and Load Edge Cases extended — out-of-range `SlotIndex`, `ItemId = 0`, over-limit quantity loads as-is, load refused before Item Database ready, load fires no events; Story 008 readiness: `SellItem` gains a `quantity` parameter — partial-stack sells supported, aligning with NPC Shop CR-SHOP-7/8 and the wire `SellRequest.quantity`; `ConsumeItem` skips locked slots — Rule 5.12; AC-INV-16 updated). Previous: 2026-09-27 (Story 006 readiness: Rule 7.20 clarified — different-item moves swap, full-destination merge is a no-op success; AC-INV-9 reasons aligned to wire `MoveFailReason`); 2026-05-22 (Equipment System upstream contract: MoveItemOut return type extended to MoveItemOutResult; ForceInsert added — OQ-EQS-3)
 > **Implements Pillar**: Earned Power (primary), Legendary Gear (secondary)
 
 ## Overview
 
-The Inventory System is the character's personal item bag — a fixed-capacity slot grid that holds all items the character owns but has not equipped. Every item the character picks up from a monster drop, purchases from the NPC Shop, or removes from an equipment slot lands in inventory. The system owns the canonical list of what a character currently carries: slot assignment, item identity (`ItemID`), and stack quantity. It does not own equipped gear (Equipment System), gold (Currency System), or item property definitions (Item Database). The Inventory System enforces carry capacity — if the bag is full, new items cannot be picked up until space is freed. It provides the data interface that Equipment System, Enhancement System, and NPC Shop read when a player interacts with their items. At MVP, inventory capacity is a fixed integer per character with no expansion mechanic.
+The Inventory System is the character's personal item bag — a fixed-capacity slot grid that holds all items the character owns but has not equipped. Every item the character picks up from a monster drop, purchases from the NPC Shop, or removes from an equipment slot lands in inventory. The system owns the canonical list of what a character currently carries: slot assignment, item identity (`ItemID`), stack quantity, and — for an unequipped piece of gear — its enhancement level. It does not own equipped gear (Equipment System), gold (Currency System), or item property definitions (Item Database). The Inventory System enforces carry capacity — if the bag is full, new items cannot be picked up until space is freed. It provides the data interface that Equipment System, Enhancement System, and NPC Shop read when a player interacts with their items. At MVP, inventory capacity is a fixed integer per character with no expansion mechanic.
 
 ## Player Fantasy
 
@@ -19,9 +19,10 @@ The inventory is not the fantasy — it's where the fantasy is accounted for. Af
 
 **Rule 1 — Slot Structure**
 
-1. The inventory is a fixed-length array of 20 slots, indexed 0–19. Each slot holds exactly one `ItemID` and a `Quantity` integer. An empty slot is represented by `ItemID.Invalid` (`ItemID(0)`) with `Quantity = 0`.
+1. The inventory is a fixed-length array of 20 slots, indexed 0–19. Each slot holds exactly one `ItemID`, a `Quantity` integer, and an `EnhancementLevel: byte`. An empty slot is represented by `ItemID.Invalid` (`ItemID(0)`) with `Quantity = 0` and `EnhancementLevel = 0`.
 2. Slot indices are stable across sessions — the server does not repack or reorder slots on login. A player's item in slot 7 before logout is in slot 7 after login.
 3. Inventory capacity is fixed at 20 slots for MVP. No expansion mechanic exists.
+4. `EnhancementLevel` is a property of the single item occupying a slot (Enhancement System CR-ENH-1), in the range `[0, MAX_ENHANCEMENT_LEVEL]` (`MAX_ENHANCEMENT_LEVEL` is owned by the Enhancement System; the Inventory System reads it as an upper bound only). It can be non-zero only when `Quantity = 1`; a slot holding a stack (`Quantity > 1`) always has `EnhancementLevel = 0`. Every item that enters the bag through a pickup (Rule 3) starts at `EnhancementLevel = 0`. A slot's `EnhancementLevel` returns to 0 whenever the slot becomes empty (discard, sell, equip-from-bag, `RemoveItem`, consume). The Inventory System stores and transports the level; it never computes with it — the Enhancement System is the only writer (Rule 5.14a) and the Equipment System the only other carrier (Rule 8.24a). *(Added 2026-10-01, TD-045.)*
 
 **Rule 2 — Stack Limits**
 
@@ -48,6 +49,7 @@ The inventory is not the fantasy — it's where the fantasy is accounted for. Af
 12. Any inventory slot can be locked. A locked slot's item cannot be moved, equipped, sold, discarded, or consumed until the lock is released. `ConsumeItem` skips locked slots: a locked stack is neither decremented nor counted toward the quantity available to consume.
 13. The Enhancement System is the only system that may lock slots. It calls `LockSlot(slotIndex)` when an enhancement attempt begins and `UnlockSlot(slotIndex)` when the attempt resolves (success or failure, including server timeout).
 14. The Inventory System exposes `IsSlotLocked(slotIndex): bool` so the Inventory UI can render the locked visual state.
+14a. The Enhancement System is the only system that may change a bag item's enhancement level. It calls `SetEnhancementLevel(slotIndex, level): bool` while it holds the lock on that slot (between `LockSlot` and `UnlockSlot`). The call succeeds only if the slot is occupied, **locked**, holds `Quantity = 1`, and `level ≤ MAX_ENHANCEMENT_LEVEL`; on success the slot's `EnhancementLevel` becomes `level` and one `InventoryChangedEvent` fires for that slot. Setting the level the slot already has is a no-op success with no event. Any other call (unlocked slot, empty slot, a stack, level above the maximum, out-of-range index) is a caller bug: it returns `false`, logs a server error, and changes nothing. *(Added 2026-10-01, TD-045.)*
 
 **Rule 6 — Discard**
 
@@ -59,7 +61,7 @@ The inventory is not the fantasy — it's where the fantasy is accounted for. Af
 **Rule 7 — Slot Move (Rearrange)**
 
 19. A player may move an item between any two unlocked slots in their own inventory.
-20. Moving a consumable stack over another slot holding the same `ItemID`: the two stacks merge, up to `StackLimit`; overflow remains in the source slot. Moving an equipment item over an occupied slot swaps the two items. Moving any item over an occupied slot holding a different `ItemID` swaps the two items. Moving a stack onto a same-`ItemID` stack already at `StackLimit` is a no-op success (nothing transferred, no event). *(Clarified 2026-09-27, Story 006 readiness.)*
+20. Moving a consumable stack over another slot holding the same `ItemID`: the two stacks merge, up to `StackLimit`; overflow remains in the source slot. Moving an equipment item over an occupied slot swaps the two items. Moving any item over an occupied slot holding a different `ItemID` swaps the two items. Moving a stack onto a same-`ItemID` stack already at `StackLimit` is a no-op success (nothing transferred, no event). *(Clarified 2026-09-27, Story 006 readiness.)* Merging applies only to stackable items (`StackLimit > 1`), whose `EnhancementLevel` is always 0. Two items with `StackLimit = 1` **always swap**, including two items with the same `ItemID` — they are distinct items that may differ in `EnhancementLevel`. On every relocate and swap, each item's `EnhancementLevel` travels with it to its new slot. *(Clarified 2026-10-01, TD-045.)*
 21. Moves are server-authoritative: the client sends `MoveRequest(fromSlot, toSlot)`. The server validates both slots are unlocked and responds with the updated slot states.
 
 **Rule 8 — Unequip to Bag**
@@ -67,6 +69,7 @@ The inventory is not the fantasy — it's where the fantasy is accounted for. Af
 22. When the Equipment System equips a new item into a slot that is already occupied, the old item returns to the character's inventory.
 23. The Equipment System calls `HasFreeSlot(): bool` on Inventory before executing the equip. For equipment items (StackLimit = 1), a free slot means at least one slot with `ItemID.Invalid, Quantity = 0`.
 24. If `HasFreeSlot()` returns `false`, the equip is blocked. The Equipment System surfaces: "Inventory full — free a slot before equipping." The currently-equipped item remains equipped.
+24a. An item's `EnhancementLevel` crosses the Equipment boundary in both directions. `MoveItemOut(slotIndex)` returns the removed item's `EnhancementLevel` alongside its `ItemID`; the Equipment System stores it in the gear slot. `MoveItemIn(ItemID, enhancementLevel)` and `ForceInsert(ItemID, enhancementLevel)` place the item at quantity 1 with the given level (0 for a newly created item such as an accessory merge result). A level above `MAX_ENHANCEMENT_LEVEL` is a caller bug: the call fails with a server error and no mutation. *(Added 2026-10-01, TD-045.)*
 
 **Rule 9 — Consumable Assignment (No Direct Use from Bag)**
 
@@ -84,7 +87,7 @@ The inventory is not the fantasy — it's where the fantasy is accounted for. Af
 |------------|-----------|------------|
 | **Empty** | `ItemID.Invalid, Quantity = 0` | → Occupied-Available (Pickup, Unequip-to-bag) |
 | **Occupied — Available** | Valid `ItemID`, `Quantity > 0`, not locked | → Empty (Discard full quantity, Sell-all, Equip from slot); → Occupied-Locked (Enhancement System calls `LockSlot`); → Occupied-Available with updated qty (Pickup partial fill, Move merge, Discard partial quantity) |
-| **Occupied — Locked** | Valid `ItemID`, `Quantity > 0`, lock flag set | → Occupied-Available (`UnlockSlot` called by Enhancement System after attempt resolution); → Empty (`RemoveItem` called by Enhancement System on item destruction) |
+| **Occupied — Locked** | Valid `ItemID`, `Quantity > 0`, lock flag set | → Occupied-Available (`UnlockSlot` called by Enhancement System after attempt resolution); → Empty (`RemoveItem` called by Enhancement System on item destruction); → Occupied-Locked with updated `EnhancementLevel` (`SetEnhancementLevel` called by Enhancement System on success) |
 
 No state is reachable from Occupied-Locked except through Enhancement System calls. Any attempt to mutate a locked slot (equip, sell, move, discard) returns an error without modifying the slot.
 
@@ -96,11 +99,11 @@ No state is reachable from Occupied-Locked except through Enhancement System cal
 |--------|-----------|-----------|------|
 | **Item Database** | ← reads | `GetItem(ItemID)` → `StackLimit`, `ItemCategory`, `DisplayName`, `IconAddress`, `SellPriceGold` | On pickup (StackLimit check), on any UI display event |
 | **Loot Table System** | ← receives events | `PickupRequest(CharacterID, ItemID, quantity)` → `PickupResult(success/fail)` | On mob death; Loot Table System owns the drop roll; Inventory owns the bag mutation. `quantity=1` for all single-item loot drops at MVP. |
-| **Equipment System** | ↔ bidirectional | `HasFreeSlot(): bool` (queried before equip); `MoveItemOut(slotIndex): MoveItemOutResult { ItemID, Code: Success \| SlotEmpty \| SlotLocked }` (equip-from-bag empties the slot — returns item and status; SlotLocked when Enhancement System holds the slot); `MoveItemIn(ItemID): MoveItemInResult { success: bool, slotIndex: int }` (unequip-to-bag fills a free slot; slotIndex = -1 on failure); `ForceInsert(ItemID): bool` (inserts displaced item into any free slot when auto-swapping; returns false only if all 20 slots occupied — triggers `InventoryFullNotification` wire message; added 2026-05-22 per OQ-EQS-3) | On equip and unequip actions |
-| **Enhancement System** | ← lock requests | `LockSlot(slotIndex)`, `UnlockSlot(slotIndex)`, `RemoveItem(slotIndex)` (on item destruction) | On enhancement attempt begin, resolve, and destroy outcomes |
+| **Equipment System** | ↔ bidirectional | `HasFreeSlot(): bool` (queried before equip); `MoveItemOut(slotIndex): MoveItemOutResult { ItemID, EnhancementLevel: byte, Code: Success \| SlotEmpty \| SlotLocked }` (equip-from-bag empties the slot — returns item, its enhancement level, and status; SlotLocked when Enhancement System holds the slot); `MoveItemIn(ItemID, enhancementLevel: byte): MoveItemInResult { success: bool, slotIndex: int }` (unequip-to-bag fills a free slot at the given level; slotIndex = -1 on failure); `ForceInsert(ItemID, enhancementLevel: byte): bool` (places an accessory merge result, or restores merge source items on rollback, into any free slot; returns false only if all 20 slots occupied — triggers `InventoryFullNotification` wire message; added 2026-05-22 per OQ-EQS-3; level parameters added 2026-10-01, TD-045) | On equip, unequip and accessory-merge actions |
+| **Enhancement System** | ← lock requests, level writes | `LockSlot(slotIndex)`, `UnlockSlot(slotIndex)`, `SetEnhancementLevel(slotIndex, level): bool` (on success outcome — locked slot only, Rule 5.14a), `RemoveItem(slotIndex)` (on item destruction — clears the whole slot), `ConsumeItem(scrollItemID, 1)` (consumes exactly one Enhancement Scroll from the lowest-index unlocked stack — scrolls are stackable Consumables, so `RemoveItem` must not be used for them; 2026-10-01, TD-043). Reads the slot's `ItemID` and `EnhancementLevel` for validation. | On enhancement attempt begin, resolve, and destroy outcomes |
 | **NPC Shop** | ← sell requests | `SellItem(slotIndex, ItemID, quantity)` — Inventory validates the slot (index in range, slot holds `ItemID`, not locked, `1 ≤ quantity ≤` the slot's stack count), removes `quantity` units, returns quantity sold; a slot sold down to 0 becomes empty. NPC Shop adds gold via Currency System. Partial-stack sells are supported (NPC Shop CR-SHOP-8; "sell all" passes the full stack count). | On player sell action |
-| **Character Persistence** | ↔ save/load | `InventorySnapshot { Slots: [{ SlotIndex: byte, ItemId: uint, Quantity: int }] }` — non-empty slots only | On session end (save) and session start (load) |
-| **Inventory UI** | ← reads | Slot array (ItemID + Quantity per slot), `IsSlotLocked(slotIndex)`, `InventoryChangedEvent { changes: [{ slotIndex: int, itemId: uint, quantity: int }] }` (fired after any slot mutation — quantity = 0 means slot became empty) | On bag open, on any slot mutation |
+| **Character Persistence** | ↔ save/load | `InventorySnapshot { Slots: [{ SlotIndex: byte, ItemId: uint, Quantity: int, EnhancementLevel: byte }] }` — non-empty slots only | On session end (save) and session start (load) |
+| **Inventory UI** | ← reads | Slot array (ItemID + Quantity + EnhancementLevel per slot), `IsSlotLocked(slotIndex)`, `InventoryChangedEvent { changes: [{ slotIndex: int, itemId: uint, quantity: int, enhancementLevel: byte }] }` (fired after any slot mutation — quantity = 0 means slot became empty) | On bag open, on any slot mutation |
 | **Consumable Use System** | ← reads | `HasItem(ItemID): bool`, `ConsumeItem(ItemID, quantity)` — when multiple stacks of the same ItemID exist, decrements from the lowest slot index first (0→19 FIFO, consistent with the pickup scan pattern); locked slots are skipped (Rule 5.12); if the unlocked total is less than `quantity` the call fails with no mutation | On hotbar use or direct-from-bag Use action; Inventory decrements or removes the stack |
 
 ## Formulas
@@ -216,6 +219,14 @@ The Inventory System has no combat math. Its formulas define capacity boundaries
 
 - **If `RemoveItem(slotIndex)` is called by the Enhancement System with an out-of-range slot index** (`< 0` or `≥ 20`): Log a server error, no-op. No state mutation. Closes a crash path from stale slot indices after session reloads.
 
+- **If `SetEnhancementLevel(slotIndex, level)` is called on a slot that is not locked, is empty, holds a stack, or with `level > MAX_ENHANCEMENT_LEVEL` or an out-of-range index**: Return `false`, log a server error, no state mutation, no event. The lock requirement guarantees the item cannot have been moved, sold, equipped or discarded between the Enhancement System's validation and its write.
+
+- **If two items with the same `ItemID` but different `EnhancementLevel` are moved onto each other**: They swap (Rule 7.20) — both slots change and one `InventoryChangedEvent` carries both entries. If both have the same level the swap still executes; the result is indistinguishable to the player.
+
+- **If `MoveItemOut(slotIndex)` succeeds on an enhanced item**: The returned `EnhancementLevel` is the only copy of that item's level — the emptied slot resets to 0. The Equipment System must carry it into the gear slot, and must pass it back through `MoveItemIn` on any rollback, or the level is lost.
+
+- **If the Enhancement System's `ConsumeItem(scrollItemID, 1)` fails** (no unlocked scroll of that type remains — e.g. discarded in the same tick): The call returns a failure result with no mutation. The Enhancement System aborts the attempt and unlocks the item slot; no outcome is rolled.
+
 ---
 
 **Persistence and Load Edge Cases**
@@ -234,6 +245,10 @@ The Inventory System has no combat math. Its formulas define capacity boundaries
 
 - **If `InventorySnapshot` contains an entry whose `Quantity` exceeds the item's `StackLimit`** (e.g. a `StackLimit` was lowered after the save): Load the entry **as-is** with its full quantity; log a server warning. No units are destroyed. Pickup (Rule 3 Step 1) already skips stacks at or above `StackLimit`, so an over-limit stack is safe in memory.
 
+- **If `InventorySnapshot` contains an entry with `EnhancementLevel > MAX_ENHANCEMENT_LEVEL`** (e.g. the maximum was lowered after the save): Load the item with `EnhancementLevel = MAX_ENHANCEMENT_LEVEL`; log a server warning. The item is never destroyed.
+
+- **If `InventorySnapshot` contains an entry with `EnhancementLevel > 0` and `Quantity > 1`**: Structurally contradictory (Rule 1.4). Load the stack with `EnhancementLevel = 0`; log a server warning. The stack's quantity is kept.
+
 - **If a snapshot load is attempted before the Item Database is ready**: Refuse the load — log a server error and change nothing (existing contents, locks, and registration untouched). Without this guard every entry would fail the Item Database lookup and the whole bag would be cleared. Character Persistence must retry or fail the login; it must not treat a refused load as an empty inventory.
 
 - **A snapshot load is initial state, not a mutation**: it replaces the whole inventory (all slots empty and all locks cleared, then entries apply), resets the bag-full deduplication window, and fires no `InventoryChangedEvent` and no `InventoryFullNotification`. The Inventory UI reads full slot state on bag open.
@@ -250,8 +265,8 @@ The Inventory System has no combat math. Its formulas define capacity boundaries
 
 | System | Dependency Type | What They Need | Hard or Soft |
 |--------|----------------|----------------|-------------|
-| **Equipment System** | Reads / calls | `HasFreeSlot(): bool`, `MoveItemOut(slotIndex): MoveItemOutResult { ItemID, Code: Success \| SlotEmpty \| SlotLocked }`, `MoveItemIn(ItemID): MoveItemInResult { success: bool, slotIndex: int }`, `ForceInsert(ItemID): bool` | **Hard** — Equipment System cannot execute equip/unequip without the slot interface |
-| **Enhancement System** | Reads / calls | `LockSlot(slotIndex)`, `UnlockSlot(slotIndex)`, `RemoveItem(slotIndex)`, `IsSlotLocked(slotIndex)` | **Hard** — Enhancement System cannot safely manage item destruction without inventory lock/remove |
+| **Equipment System** | Reads / calls | `HasFreeSlot(): bool`, `MoveItemOut(slotIndex): MoveItemOutResult { ItemID, EnhancementLevel: byte, Code: Success \| SlotEmpty \| SlotLocked }`, `MoveItemIn(ItemID, enhancementLevel: byte): MoveItemInResult { success: bool, slotIndex: int }`, `ForceInsert(ItemID, enhancementLevel: byte): bool` | **Hard** — Equipment System cannot execute equip/unequip without the slot interface |
+| **Enhancement System** | Reads / calls | `LockSlot(slotIndex)`, `UnlockSlot(slotIndex)`, `SetEnhancementLevel(slotIndex, level)`, `RemoveItem(slotIndex)`, `ConsumeItem(scrollItemID, 1)`, `IsSlotLocked(slotIndex)`; slot `ItemID` + `EnhancementLevel` reads | **Hard** — Enhancement System cannot store its outcome or safely manage item destruction without the inventory lock/level/remove interface |
 | **NPC Shop** | Calls | `SellItem(slotIndex, ItemID, quantity)` → quantity removed; Currency System adds gold | **Hard** — Sell flow cannot execute without Inventory ownership of item removal |
 | **Loot Table System** | Calls | `PickupRequest(CharacterID, ItemID, quantity)` → `PickupResult(success/fail)` | **Hard** — Loot Table cannot confirm whether a drop was received without Inventory's pickup result |
 | **Inventory UI** | Reads | Slot array (ItemID + Quantity), `IsSlotLocked(slotIndex)`, inventory change events | **Hard** for MVP — UI cannot render without slot data |
@@ -284,7 +299,7 @@ N/A — The Inventory System has no direct audio or visual output. All inventory
 
 The Inventory System requires a player-facing screen with the following capabilities:
 
-1. A 20-slot grid displaying item icons and Quantity badges per slot.
+1. A 20-slot grid displaying item icons and Quantity badges per slot. A slot whose item has `EnhancementLevel > 0` shows the level (e.g. "+5") — badge style specified in `design/ux/inventory-screen.md`.
 2. Locked-slot visual indicator (greyed-out or chained icon) driven by `IsSlotLocked(slotIndex)`.
 3. Tap-to-select → context action model (no drag-and-drop — touch platform). The selection state machine (how selection is entered, exited, and what a second tap means) is specified in `design/ux/inventory-screen.md`. Long-press-hold is independent of tap-selection state: it always targets the pressed slot directly.
 4. Long-press-hold gesture to initiate discard. After hold completes, a quantity selector appears (omitted for equipment items — single unit always discarded). Player selects quantity (minimum 1, maximum current stack size), then confirms destruction.
@@ -350,7 +365,19 @@ GIVEN all 20 inventory slots are occupied and a mob drops a Bronze Sword (Equipm
 **AC-INV-16** [BLOCKING]
 GIVEN slot 4 holds 5 HP Potions (Consumable) with no lock applied, WHEN the NPC Shop calls `SellItem(4, HPPotionItemID, 5)`, THEN the server returns `quantity=5`, slot 4 becomes `ItemID.Invalid, Quantity=0`, and `InventoryChangedEvent` containing one changes entry `{ slotIndex: 4, itemId: 0, quantity: 0 }` fires. From the same starting state, WHEN the NPC Shop instead calls `SellItem(4, HPPotionItemID, 2)`, THEN the server returns `quantity=2`, slot 4 holds 3 HP Potions, and `InventoryChangedEvent` containing one changes entry `{ slotIndex: 4, itemId: HPPotionItemID, quantity: 3 }` fires.
 
-**BLOCKING: 18 | Total: 18**
+**AC-INV-17** [BLOCKING]
+GIVEN slot 3 holds one Iron Sword at `EnhancementLevel = 5` and the slot is locked by the Enhancement System, WHEN the Enhancement System calls `SetEnhancementLevel(3, 6)`, THEN the call returns `true`, slot 3 holds one Iron Sword at `EnhancementLevel = 6`, and `InventoryChangedEvent` containing one changes entry `{ slotIndex: 3, itemId: IronSwordItemID, quantity: 1, enhancementLevel: 6 }` fires. From the same starting state but with slot 3 **unlocked**, WHEN `SetEnhancementLevel(3, 6)` is called, THEN it returns `false`, the level stays 5, and no `InventoryChangedEvent` fires.
+
+**AC-INV-18** [BLOCKING]
+GIVEN slot 3 holds one Iron Sword at `EnhancementLevel = 5`, unlocked, and slot 0 is the lowest-index empty slot, WHEN the Equipment System calls `MoveItemOut(3)`, THEN the result is `{ ItemID: IronSwordItemID, EnhancementLevel: 5, Code: Success }` and slot 3 is empty with `EnhancementLevel = 0`. WHEN the Equipment System then calls `MoveItemIn(IronSwordItemID, 5)`, THEN slot 0 holds one Iron Sword at `EnhancementLevel = 5` and the `InventoryChangedEvent` entry is `{ slotIndex: 0, itemId: IronSwordItemID, quantity: 1, enhancementLevel: 5 }`.
+
+**AC-INV-19** [BLOCKING]
+GIVEN slot A holds one Iron Sword at `EnhancementLevel = 5` and slot B holds one Iron Sword at `EnhancementLevel = 0` (same `ItemID`, both unlocked), WHEN the player moves slot A onto slot B (`MoveRequest(A, B)`), THEN slot A holds the level-0 sword and slot B holds the level-5 sword, and a single `InventoryChangedEvent` carries both entries with their enhancement levels. The two items are swapped, not merged.
+
+**AC-INV-20** [BLOCKING]
+GIVEN slot 7 holds one Iron Sword at `EnhancementLevel = 5`, WHEN the character logs out and logs back in, THEN slot 7 holds one Iron Sword at `EnhancementLevel = 5`. GIVEN a snapshot entry `{ SlotIndex: 2, ItemId: IronSwordItemID, Quantity: 1, EnhancementLevel: 200 }`, WHEN it is loaded, THEN slot 2 holds the sword at `EnhancementLevel = MAX_ENHANCEMENT_LEVEL` and a server warning is logged. GIVEN a snapshot entry `{ SlotIndex: 4, ItemId: HPPotionItemID, Quantity: 42, EnhancementLevel: 3 }`, WHEN it is loaded, THEN slot 4 holds 42 HP Potions at `EnhancementLevel = 0` and a server warning is logged.
+
+**BLOCKING: 22 | Total: 22**
 
 ## Open Questions
 
@@ -375,4 +402,4 @@ This GDD states that locks do not survive a session boundary. But an in-session 
 *Resolution*: Loot Table System GDD CR-LT-13.1–13.3 defines bag-full fate: TTL pause while the app is backgrounded, explicit discard modal on first pickup attempt, and proactive expiry warning, all via the ground pool mechanism. The "item not created on server" language in AC-INV-1 and AC-INV-15 remains accurate — the item is held as a ground entity by the Loot Table System, not created in the character's inventory.
 
 **~~OQ-INV-6 — Wire schemas for inventory client messages~~** — **RESOLVED (2026-05-17)**
-`DiscardRequest` (5-byte body, C→S), `DiscardResult` (3-byte body, S→C), `MoveRequest` (2-byte body, C→S), `MoveResult` (20-byte body, S→C), and `InventoryFullNotification` (0-byte body, S→C) added to `networking-wire-protocol.md` Inventory System Messages section. `DiscardFailReason` and `MoveFailReason` enums added.
+`DiscardRequest` (5-byte body, C→S), `DiscardResult` (3-byte body, S→C), `MoveRequest` (2-byte body, C→S), `MoveResult` (22-byte body since 2026-10-01 — per-slot enhancement-level bytes added; originally 20, S→C), and `InventoryFullNotification` (0-byte body, S→C) added to `networking-wire-protocol.md` Inventory System Messages section. `DiscardFailReason` and `MoveFailReason` enums added.

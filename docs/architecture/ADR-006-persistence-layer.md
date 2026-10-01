@@ -1,7 +1,7 @@
 # ADR-006: Persistence Layer — PostgreSQL + Npgsql + Dapper
 
 ## Status
-Accepted (2026-06-27)
+Accepted (2026-06-27) — amended 2026-10-01 (Amendment 1: `inventory_slots` entry gains `enhancement_level`; see Amendments)
 
 ## Date
 2026-06-27
@@ -190,7 +190,7 @@ CREATE TABLE character_records (
 );
 ```
 
-> **Type mapping notes**: C# `uint` fields (CharacterID, AccountID, GoldBalance, GoldVersion, SaveVersion) map to `BIGINT` to hold the full unsigned 32-bit range without overflow. `int_stat` avoids the SQL reserved word `INT`. `gear_slots` JSONB encodes `[{"item_id": N, "enhancement_level": M}, null, ...]` (7 slots, null = empty). `inventory_slots` JSONB encodes `[{"item_id": N, "count": C}, null, ...]` (20 slots, combining the GDD's parallel `InventorySlots[]` + `InventoryItemCounts[]` arrays — Character Persistence translates at load/save boundaries per CR-CP-3 step 5 and CR-CP-10 step 4).
+> **Type mapping notes**: C# `uint` fields (CharacterID, AccountID, GoldBalance, GoldVersion, SaveVersion) map to `BIGINT` to hold the full unsigned 32-bit range without overflow. `int_stat` avoids the SQL reserved word `INT`. `gear_slots` JSONB encodes `[{"item_id": N, "enhancement_level": M}, null, ...]` (7 slots, null = empty). `inventory_slots` JSONB encodes `[{"item_id": N, "count": C, "enhancement_level": M}, null, ...]` (20 slots, combining the GDD's parallel `InventorySlots[]` + `InventoryItemCounts[]` + `InventoryEnhancementLevels[]` arrays; `enhancement_level` added by Amendment 1, 2026-10-01 — Character Persistence translates at load/save boundaries per CR-CP-3 step 5 and CR-CP-10 step 4).
 
 #### pending_purchases DDL
 
@@ -303,6 +303,20 @@ Migrations are applied manually before server deployment for MVP. Automated migr
 - **Write latency CI gate**: integration test asserts P95 `SaveIrreversibleOutcome` latency ≤ 50ms against a local PostgreSQL Docker container for 100 consecutive saves
 - **Concurrency CI gate**: AC-CP-21 confirms zero parallel writes for the same CharacterID across 50 concurrent Task invocations
 - **Rows-affected check**: AC-CP-19 / AC-CP-20 confirm `ConcurrencyConflict` is returned when a concurrent writer increments `save_version` between the read and the UPDATE
+
+## Amendments
+
+### Amendment 1 (2026-10-01) — `inventory_slots` entries carry `enhancement_level`
+
+**Change:** each non-null entry of the `inventory_slots` JSONB array is `{"item_id": N, "count": C, "enhancement_level": M}` (was `{"item_id": N, "count": C}`). `M` is the bag item's enhancement level, `0 ≤ M ≤ MAX_ENHANCEMENT_LEVEL`; it is 0 for stacks and for items that were never enhanced. The column type, DDL and default (`'[]'`) are unchanged, and `gear_slots` is unchanged (it already carried `enhancement_level`).
+
+**Why:** the Enhancement System GDD (CR-ENH-1) stores an item's enhancement level on its inventory slot and requires it in every save/load payload, but the original `inventory_slots` shape had no place for it — an enhanced item left in the bag would have lost its level on logout (tech-debt TD-045). `inventory-system.md` (Rule 1.4, `InventorySnapshot` entry `EnhancementLevel`) and `character-persistence.md` (`InventoryEnhancementLevels[20]`) were amended the same day.
+
+**Decision unchanged:** PostgreSQL + Npgsql + Dapper, single-row character record, JSONB for slot arrays, ≤50ms write budget. This amendment only widens one JSON object shape.
+
+**Compatibility / migration:** no production database exists yet, so no data migration is needed. The deserializer must treat a missing `enhancement_level` key as 0 so that any development rows written with the old shape still load. The Inventory System validates the loaded value (above the maximum → clamped; non-zero on a stack → 0; both with a warning).
+
+**Performance:** negligible — at most 20 small additional integers per character row; no effect on the Decision 4 latency budget.
 
 ## Related Decisions
 - ADR-001: Purchase Transaction Integrity — `PendingPurchase` record; OQ-ADR1-1 resolved by Decision 3

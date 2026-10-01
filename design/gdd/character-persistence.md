@@ -2,7 +2,7 @@
 
 > **Status**: In Review
 > **Author**: Manuel Toscano + Claude Code agents
-> **Last Updated**: 2026-05-29 (OQ-ZI-6: ZoneClosed added to SessionEndReason; SaveSession HP-override overload added)
+> **Last Updated**: 2026-10-01 (TD-045: `InventoryEnhancementLevels[20]` added — bag items persist their enhancement level; inventory restore/save go through the Inventory System's `ImportSnapshot`/`ExportSnapshot`; a refused inventory load fails the login; session release calls `UnregisterCharacter`. The logical field count stays 23 — the levels are stored inside the existing inventory-slots field / `inventory_slots` JSONB column.) Previous: 2026-05-29 (OQ-ZI-6: ZoneClosed added to SessionEndReason; SaveSession HP-override overload added)
 > **Implements Pillar**: Earned Power (every stat, every item, every enhancement level is permanently remembered — the world holds the record of what the player earned)
 
 ## Overview
@@ -122,7 +122,8 @@ The character record stores 23 logical fields. Fields marked *not persisted* exi
 | LastZoneID | uint | Zone the character was in when the session ended |
 | GearSlots[7] | {ItemID, EnhancementLevel: byte}[] | Fixed-capacity array (IL2CPP safe) |
 | InventorySlots[20] | ItemID[] | Fixed-capacity array |
-| InventoryItemCounts[20] | int[] | Parallel to InventorySlots. Typed as `int` to match Inventory System's in-memory `Quantity: int` representation. The character record uses a dense fixed-capacity layout; the Inventory System's sparse snapshot wire format `({SlotIndex, ItemId, Quantity})` is distinct — Character Persistence translates between them at load/save boundaries (see CR-CP-3 step 5, CR-CP-10 step 4). |
+| InventoryItemCounts[20] | int[] | Parallel to InventorySlots. Typed as `int` to match Inventory System's in-memory `Quantity: int` representation. The character record uses a dense fixed-capacity layout; the Inventory System's sparse snapshot format `({SlotIndex, ItemId, Quantity, EnhancementLevel})` is distinct — Character Persistence translates between them at load/save boundaries (see CR-CP-3 step 5, CR-CP-10 step 4). |
+| InventoryEnhancementLevels[20] | byte[] | Parallel to InventorySlots. Per-item enhancement level of each bag slot (`[0, MAX_ENHANCEMENT_LEVEL]`; 0 for empty slots and stacks) — required by Enhancement System CR-ENH-1 and inventory-system.md Rule 1.4. Maps to `InventorySnapshot` entry `EnhancementLevel`. Stored inside the same `inventory_slots` JSONB entry as the item and count (ADR-006 Amendment 1), so it does not add to the 23-logical-field count. *(Added 2026-10-01, TD-045.)* |
 | SaveVersion | uint | Incremented on every write; used for optimistic concurrency |
 | CreatedAtUtc | DateTime | |
 | LastSavedAtUtc | DateTime | |
@@ -143,7 +144,7 @@ Executed by `LoadCharacter` in this exact order. Step 3 (stat init) must complet
 | 2 | Fetch record; verify `AccountID` FK matches `ownerAccountID` | `CharacterNotFound` or `AccountMismatch` |
 | 3 | Pre-validate all persisted int/float fields against their schema ranges before calling `SetBaseStat()`: Level ∈ [1, 60]; Experience ≥ 0; HeldFreePoints ≥ 0; STR/DEX/VIT/INT ∈ [1, 999]; MaxHP/MaxMP ∈ [1, 99999]; AttackPower/Defense/MagicDefense ≥ 0; all float stats > 0. If any field violates its range → return `CorruptRecord` immediately without calling `SetBaseStat()`. Then call `SetBaseStat()` for all 20 fields. | `CorruptRecord` if range validation fails or any `SetBaseStat()` call rejects |
 | 4 | Re-register equipment modifiers: for each occupied GearSlot, validate `slot.EnhancementLevel ≤ MAX_ENHANCEMENT_LEVEL (10)` first — if violated, return `CorruptRecord` (out-of-range level must not reach IEnhancementBonusProvider). Then call `TryGetItem()` on Item Database, `GetFlatBonus()` / `GetElementalBonus()` on IEnhancementBonusProvider, `AddEquipmentModifier()`. On ItemDatabaseMiss: remove slot, log alert, set Code = `ItemDatabaseMiss`, continue. | `CorruptRecord` on invalid EnhancementLevel. ItemDatabaseMiss is non-blocking (load continues). |
-| 5 | Restore inventory: write all 20 slots and counts into Inventory System (dense-to-system translation: iterate slots 0–19, skip slots where ItemID = ItemID.Invalid) | |
+| 5 | Restore inventory: build an `InventorySnapshot` from the 20 slots, counts and enhancement levels (dense-to-sparse translation: iterate slots 0–19, skip slots where ItemID = ItemID.Invalid; each entry is `{SlotIndex, ItemId, Quantity, EnhancementLevel}`) and call `Inventory.ImportSnapshot(charId, snapshot)`. If it returns `false` (Item Database not ready) the load **fails** — retry or reject the login; a refused import must never be treated as an empty inventory (inventory-system.md Persistence and Load Edge Cases). | Updated 2026-10-01 |
 | 6 | Restore gold: write `GoldBalance` and `GoldVersion` directly into Currency System (state restore — not `AddGold()`). Both fields are required: `GoldBalance` for the correct balance; `GoldVersion` for the `GoldSyncEvent` sent in step 9. | |
 | 7 | AtCap check: if `Level == 60`, notify Leveling System (no formula re-evaluation, no level-up events) | |
 | 8 | **Dead-on-load correction (EC-DR-2, death-and-respawn.md):** If `savedCurrentHP <= 0`, set `RestoredHP = MaxHP` before applying the clamp — a player whose session TTL expired during a Death & Respawn DEAD state must load alive, not dead. Then clamp `CurrentHP` to `[0, MaxHP]`; clamp `CurrentMP` to `[0, MaxMP]` — after step 4 so MaxHP/MaxMP are final. | |
@@ -241,7 +242,7 @@ Executed by `SaveSession` in this exact order. Steps 1–6 gather in-memory stat
 | 1 | Acquire the per-`CharacterID` save slot (CR-CP-7 queue invariant — at-most-one write in flight) | Waits if a save is already in flight |
 | 2 | Read all 20 base stat values from Character Stats: `GetBaseStat()` for each field. **HP-override path:** if the HP-override overload was called, replace the `CurrentHP` value read from Character Stats with `hpOverride` before step 7. `CurrentMP` is read normally from Character Stats regardless. | — |
 | 3 | Read GearSlots: for each of the 7 slots, read `{ItemID, EnhancementLevel}` from Equipment System (explicitly excludes `IsTransitioning`) | — |
-| 4 | Read InventorySlots and InventoryItemCounts: iterate all 20 slots, read `{ItemID, Count}` for each; slots with `ItemID.Invalid` are written as empty (int count = 0) | — |
+| 4 | Read InventorySlots, InventoryItemCounts and InventoryEnhancementLevels: call `Inventory.ExportSnapshot(charId)` and expand its entries `{SlotIndex, ItemId, Quantity, EnhancementLevel}` into the 20-slot dense layout; slots absent from the snapshot are written as empty (`ItemID.Invalid`, count = 0, level = 0). When the session's resources are released after the save (clean logout or TTL expiry), call `Inventory.UnregisterCharacter(charId)`. | Updated 2026-10-01 |
 | 5 | Read `GoldBalance` and `GoldVersion` from Currency System via `GetBalance(CharacterID)` → `(Balance: uint, Version: uint)` | — |
 | 6 | Read `LastZoneID` from Zone Instancing for the character's current zone | — |
 | 7 | Write DB transaction: `UPDATE` character record with all 23 persisted fields; include `LastSavedAtUtc = UtcNow`, `SaveVersion = SaveVersion + 1`; predicate: `WHERE CharacterID = @id AND SaveVersion = @expected` | 0 rows affected → `ConcurrencyConflict` (CR-CP-6). DB error → `DatabaseError`. |
@@ -311,7 +312,7 @@ A character record passes through the following lifecycle states on the server:
 | **Equipment System** | Downstream | Load: calls `AddEquipmentModifier()` per occupied slot after stat init (step 4). Save: reads `GearSlots` directly from record — Equipment System does not provide a save API |
 | **Item Database** | Downstream | Load: calls `TryGetItem(ItemID)` to resolve each occupied gear slot for modifier re-registration |
 | **IEnhancementBonusProvider** | Downstream | Load: calls `GetFlatBonus(level, gearTier, isWeapon)` and `GetElementalBonus(level, gearTier, isWeapon)` per slot during equipment re-registration |
-| **Inventory System** | Downstream | Load: writes all 20 slots and counts directly (state restore). Save: reads slot contents directly |
+| **Inventory System** | Downstream | Load: `ImportSnapshot(charId, snapshot)` — item, count and enhancement level per slot (state restore; fires no events). Save: `ExportSnapshot(charId)`. Session release: `UnregisterCharacter(charId)` |
 | **Currency System** | Downstream | Load: writes `GoldBalance` directly (state restore, not `AddGold()`); emits `GoldSyncEvent`. Save: reads current balance |
 | **Leveling System** | Downstream | Load: notifies at-cap if `Level == 60` (step 7). Save trigger: `LevelUp` irreversible outcome fires after level is granted |
 | **Networking Core** | Upstream trigger | CR-NET-2: session TTL expiry triggers `SaveSession(SessionTTLExpiry)`. CR-NET-5: irreversible outcome events trigger `SaveIrreversibleOutcome` before any broadcast |
@@ -425,7 +426,7 @@ The DB write for an irreversible outcome fails or times out.
 | **Equipment System** | `AddEquipmentModifier()` on load | equipment-system.md |
 | **Item Database** | `TryGetItem(ItemID)` on load | item-database.md |
 | **IEnhancementBonusProvider** | `GetFlatBonus()`, `GetElementalBonus()` on load | enhancement-system.md |
-| **Inventory System** | Direct slot/count write on load; direct slot/count read on save | inventory-system.md |
+| **Inventory System** | `ImportSnapshot` on load; `ExportSnapshot` on save; `UnregisterCharacter` on session release — item, count and enhancement level per slot | inventory-system.md |
 | **Currency System** | Direct GoldBalance write on load; `GoldSyncEvent` emit; direct GoldBalance read on save | currency-system.md |
 | **Leveling System** | At-cap notification on load if `Level == 60` | leveling-system.md |
 
@@ -491,7 +492,7 @@ None. Character Persistence exposes no UI surface. The `CharacterLoadResult.Code
 |----|----------|---------------|
 | AC-CP-13 | Level-up event fires; `SaveIrreversibleOutcome(LevelUp)` succeeds | Level-up broadcast sent only after DB write confirms success. **Test requires**: `ISavePersistence` mock with controllable Task delay — hold write open, assert no LevelUpBroadcast received on `IEventBus` mock, release write, assert LevelUpBroadcast received within one server tick. |
 | AC-CP-14 | `SaveIrreversibleOutcome(LevelUp)` DB write fails (injected failure); character was at Level 10 pre-outcome | Outcome not broadcast. Caller (Leveling System) reverts: `GetBaseStat(Level)` = 10 (pre-outcome); `Experience` = pre-level-up value. `DisconnectReason.Other` sent to client. `ICriticalAlertService.AlertFired` count = 1. Session preserved in memory (not immediately torn down). `SaveSession(SessionTTLExpiry)` fires after TTL and writes rolled-back state. **Requires**: `IEventBus` mock, `ISavePersistence` fault injection, `ICriticalAlertService` spy, injectable TTL. |
-| AC-CP-15 | Clean logout then re-login | `LoadCharacter` returns all 23 persisted schema fields matching pre-logout values: all 20 base stats via `GetBaseStat()`, `GoldBalance`, `GoldVersion`, `LastZoneID`, all 7 `GearSlots` (`ItemID` + `EnhancementLevel`), all 20 `InventorySlots` (`ItemID` + `Count`), `CurrentHP`, `CurrentMP`. `SaveVersion` = N+1 (incremented by `SaveSession`). `CreatedAtUtc` unchanged. **Explicitly excluded from verification** (not persisted per CR-CP-2): buff modifier values, equipment modifier computed values, `PrestigeBand`, `IsTransitioning`. |
+| AC-CP-15 | Clean logout then re-login | `LoadCharacter` returns all 23 persisted schema fields matching pre-logout values: all 20 base stats via `GetBaseStat()`, `GoldBalance`, `GoldVersion`, `LastZoneID`, all 7 `GearSlots` (`ItemID` + `EnhancementLevel`), all 20 `InventorySlots` (`ItemID` + `Count` + `EnhancementLevel`), `CurrentHP`, `CurrentMP`. `SaveVersion` = N+1 (incremented by `SaveSession`). `CreatedAtUtc` unchanged. **Explicitly excluded from verification** (not persisted per CR-CP-2): buff modifier values, equipment modifier computed values, `PrestigeBand`, `IsTransitioning`. |
 | AC-CP-16 | Session TTL expires after disconnect | `SaveSession(SessionTTLExpiry)` called; DB record's `LastSavedAtUtc` updated; `SaveVersion` incremented. **Test requires**: injectable `SESSION_TTL_SECONDS` (set to 1s, not 300s real-time wait) via `ISessionConfiguration`; injectable system clock. |
 | AC-CP-17 | Two consecutive level-ups granted in one tick | One `SaveIrreversibleOutcome` call with final level; not two |
 | AC-CP-27 | Enhancement result fires; `SaveIrreversibleOutcome(EnhancementResult)` succeeds | Enhancement result broadcast sent only after DB write confirms success. Verified via `IEventBus` mock + `ISavePersistence` Task delay injection (same pattern as AC-CP-13). |

@@ -2,7 +2,7 @@
 
 > **Status**: In Design
 > **Author**: Manuel Toscano + Claude Code agents
-> **Last Updated**: 2026-05-23
+> **Last Updated**: 2026-10-01 (TD-045/TD-043 design session: CR-ENH-12/15 now name the Inventory API — level written via `Inventory.SetEnhancementLevel` on the locked slot, scroll consumed via `Inventory.ConsumeItem(scrollItemID, 1)` instead of `RemoveItem`, destruction via `Inventory.RemoveItem`; upstream amendments #2 and #3 applied to the Equipment and Inventory GDDs. **Lean re-review pending.** Note: this header's Status reads "In Design" while systems-index.md lists the GDD as Approved (Pass 4 lean, 2026-05-23) — reconcile at the re-review.) Previous: 2026-05-23
 > **Implements Pillar**: Legendary Gear (primary), Earned Power (secondary)
 
 ## Overview
@@ -81,6 +81,8 @@ The PrestigeBand is visible to other players at zone range. The exact enhancemen
 
 The Enhancement System writes `EnhancementLevel` to `InventorySlotRecord` only. The Equipment System reads `InventorySlotRecord.EnhancementLevel` when equipping an item; it sets `EquipmentSlotRecord.EnhancementLevel = InventorySlotRecord.EnhancementLevel` and updates `EquipmentSlotRecord.equipmentAppearanceFlags[2:1]` accordingly. The Enhancement System does not write directly to `EquipmentSlotRecord`.
 
+*Contract mapping (2026-10-01, TD-045):* `InventorySlotRecord` is the Inventory System's slot `{ItemID, Quantity, EnhancementLevel}` (inventory-system.md Rule 1.1/1.4). The write is `Inventory.SetEnhancementLevel(slotIndex, level)`, which the Inventory System accepts only on a slot this system currently holds locked (Rule 5.14a). The Equipment System does not read the inventory slot directly: it receives the level in `MoveItemOutResult.EnhancementLevel` when the item is equipped and returns it via `MoveItemIn(ItemID, enhancementLevel)` on unequip (equipment-system.md CR-EQS-1/5/6/7). `EquipmentSlotRecord` is the Equipment System's `EquipmentSlotEntry`.
+
 **CR-ENH-13: Prestige Glow**
 Items enhanced to `ENHANCEMENT_GLOW_THRESHOLD` (7) or above render with a visual glow when equipped. The VFX System renders a glow only when `EnhancementLevel ≥ ENHANCEMENT_GLOW_THRESHOLD`; it reads `equipmentAppearanceFlags[2:1]` to select the glow intensity variant (GLOW_LOW band = low glow; HIGH band = high glow).
 
@@ -96,14 +98,14 @@ Steps execute in this order; the server does not advance to the next step if the
 1. Server receives `ConfirmEnhancement(itemSlotIndex, scrollSlotIndex)`.
 2. Server validates: `NPCInteractionActive = true` for this player, item exists at `itemSlotIndex`, slot unlocked, `IsUpgradeable = true`, `GearSlot ≠ Ring/Necklace`, `EnhancementLevel < MAX_ENHANCEMENT_LEVEL`, scroll exists at `scrollSlotIndex`, scroll `TargetGearTier` matches item `GearTier`, no concurrent attempt for this player. If any check fails, return rejection code; no state changes.
 3. Server calls `Inventory.LockSlot(itemSlotIndex)`.
-4. Server removes scroll from `scrollSlotIndex` via `Inventory.RemoveItem(scrollSlotIndex)`.
+4. Server consumes exactly one scroll via `Inventory.ConsumeItem(scrollItemID, 1)`, where `scrollItemID` is the `ItemID` validated at `scrollSlotIndex` in step 2. Scrolls are stackable Consumables, so `RemoveItem` (which clears a whole slot) must not be used. `ConsumeItem` takes the unit from the lowest-index unlocked stack of that scroll type — normally `scrollSlotIndex`, but another stack of the same scroll if it sits at a lower index; scrolls of one type are interchangeable. If `ConsumeItem` fails (no scroll left — e.g. discarded earlier in the same tick), the server calls `Inventory.UnlockSlot(itemSlotIndex)`, returns a rejection code, and rolls no outcome. *(Changed 2026-10-01, TD-043.)*
 5. Server draws `r ∈ [0, 1)`, resolves outcome per CR-ENH-9.
-6. Server commits outcome to persistent storage: increment `EnhancementLevel` (success) or remove item (destruction).
+6. Server commits outcome to persistent storage and applies it to the bag: on success `Inventory.SetEnhancementLevel(itemSlotIndex, EnhancementLevel + 1)` (the slot is still locked from step 3); on destruction `Inventory.RemoveItem(itemSlotIndex)` (clears the slot and its lock); on a non-destructive failure the item slot is not written.
 7. Server calls `Inventory.UnlockSlot(itemSlotIndex)`.
 8. If `EnhancementLevel` reached 9, server sends `ServerBroadcast_Enhancement9 { playerName, itemName }` to all online players.
 9. Server sends `EnhancementAttemptResult { outcome, newLevel, resultCode }` to client.
 
-**Transaction boundary:** Steps 3–6 execute within a single atomic database transaction committing at step 6. A transaction failure at any point in steps 3–6 rolls back all changes in that range — slot is unlocked, scroll is present in inventory, item is unmodified. Steps 7–9 execute after commit.
+**Transaction boundary:** Steps 3–6 execute within a single atomic database transaction committing at step 6. A transaction failure at any point in steps 3–6 rolls back all changes in that range — slot is unlocked, scroll is present in inventory, item is unmodified. Steps 7–9 execute after commit. In-memory rollback is caller-owned (character-persistence.md CR-CP-5): this system restores the scroll with a `PickupRequest(scrollItemID, 1)` — which tops up the stack it was taken from or refills the slot it emptied, so it cannot fail for lack of space — reverts a level write with `SetEnhancementLevel(itemSlotIndex, previousLevel)` before unlocking, and treats a destroyed item as not yet removed (the `RemoveItem` call is issued only after the commit succeeds).
 
 **CR-ENH-16: Enhancement NPC — Location Requirement**
 Enhancement may only be initiated by interacting with the Enhancement NPC in the town hub. The Enhancement UI cannot be opened from the inventory screen or from any zone outside the town hub. This prevents enhancement during combat, in dungeons, or in the field.
@@ -136,7 +138,7 @@ Invalid transitions: no state may reach `LOCKED` or `RESOLVING` without passing 
 | System | Enhancement System Reads | Enhancement System Writes / Signals | Interface Owner |
 |--------|--------------------------|-------------------------------------|-----------------|
 | **Item Database** | `IsUpgradeable: bool`, `GearTier`, `GearSlot`, `StatModifiers[].FlatBonus`, `ElementalDamage`, display name | — (stateless; no mutations) | Item Database |
-| **Inventory System** | `InventorySlotRecord.EnhancementLevel`, `IsSlotLocked(slotIndex)`, item and scroll existence | `LockSlot(slotIndex)`, `UnlockSlot(slotIndex)`, `RemoveItem(scrollSlotIndex)`, mutates `EnhancementLevel` in item slot record on success, clears item slot on destruction | Inventory System owns `LockSlot`/`UnlockSlot`/`RemoveItem`; Enhancement System owns slot-record mutations |
+| **Inventory System** | Slot `ItemID` + `EnhancementLevel` (`InventorySlotRecord.EnhancementLevel`), `IsSlotLocked(slotIndex)`, item and scroll existence | `LockSlot(slotIndex)`, `UnlockSlot(slotIndex)`, `ConsumeItem(scrollItemID, 1)` (scroll — one unit), `SetEnhancementLevel(itemSlotIndex, level)` on success, `RemoveItem(itemSlotIndex)` on destruction | Inventory System owns all five methods and stores the level; Enhancement System is the only caller of `LockSlot`/`UnlockSlot`/`SetEnhancementLevel`/`RemoveItem` and decides the values written *(updated 2026-10-01, TD-043/TD-045)* |
 | **Equipment System** | — | Exposes `IEnhancementBonusProvider` (below) for Equipment System to consume. Does not write to `EquipmentSlotRecord` — item cannot be equipped during enhancement; Equipment System reads `InventorySlotRecord.EnhancementLevel` on equip to update `equipmentAppearanceFlags[2:1]` | Equipment System consumes `IEnhancementBonusProvider` and owns `equipmentAppearanceFlags` update on equip |
 | **Damage Calculation** | — | `IEnhancementBonusProvider.GetElementalBonus(level: int, gearTier: GearTier, isWeapon: bool): int` — flat elemental damage bonus for the given level and tier; returns 0 when `isWeapon` is false | Enhancement System owns and implements; Damage Calculation consumes |
 | **Character Persistence** | — | `EnhancementLevel` in `InventorySlotRecord` and `EquipmentSlotRecord` must be included in all save and load payloads | Character Persistence |
@@ -301,14 +303,14 @@ If `ServerBroadcast_Enhancement9` cannot be delivered to all players (high load,
 | System | GDD Status | What Enhancement System Requires |
 |--------|-----------|----------------------------------|
 | **Item Database** | Approved | `IsUpgradeable: bool`, `GearTier`, `GearSlot`, `StatModifiers[].FlatBonus`, `ElementalDamage` per item; 4 Enhancement Scroll records (Bronze/Iron/Steel/Dark Steel) with `ScrollData.TargetGearTier` sub-schema |
-| **Inventory System** | Approved | `LockSlot(slotIndex)`, `UnlockSlot(slotIndex)`, `RemoveItem(slotIndex)`, `IsSlotLocked(slotIndex)`; `InventorySlotRecord` must include `EnhancementLevel: byte` |
+| **Inventory System** | Approved | `LockSlot(slotIndex)`, `UnlockSlot(slotIndex)`, `SetEnhancementLevel(slotIndex, level)`, `RemoveItem(slotIndex)`, `ConsumeItem(ItemID, quantity)`, `IsSlotLocked(slotIndex)`; slot record includes `EnhancementLevel: byte` (inventory-system.md Rule 1.4, added 2026-10-01) |
 | **Currency System** | Approved | `GoldTransactionReason.Enhancement = 5` (pre-allocated); scroll sale handled by NPC Shop; no direct Currency System dependency at MVP |
 
 ### Downstream Dependencies
 
 | System | GDD Status | What They Require from Enhancement System |
 |--------|-----------|-------------------------------------------|
-| **Equipment System** | Approved | `IEnhancementBonusProvider.GetFlatBonus(level, baseFlatBonus)` in `AddEquipmentModifier`; `EquipmentSlotRecord.EnhancementLevel: byte`; `equipmentAppearanceFlags[2:1]` update on success; F-EQS-2 Iron range correction (see below) |
+| **Equipment System** | Approved | `IEnhancementBonusProvider.GetFlatBonus(level, baseFlatBonus, gearTier)` in `AddEquipmentModifier`; `EquipmentSlotRecord.EnhancementLevel: byte`; `equipmentAppearanceFlags[2:1]` update on success; F-EQS-2 Iron range correction (see below) |
 | **Damage Calculation** | Approved | `IEnhancementBonusProvider.GetElementalBonus(level)` for elemental damage in F-DC-2; `Equipment.GetEquippedWeaponEnhancementLevel(): byte` to supply the level |
 | **Character Persistence** | Not Started | `EnhancementLevel: byte` in `InventorySlotRecord` and `EquipmentSlotRecord` save/load payload |
 | **Enhancement UI** | Not Started | `EnhancementStateUpdate`, `EnhancementAttemptResult`, `ServerBroadcast_Enhancement9` message schemas; `ConfirmEnhancement` and `CancelEnhancement` request schemas |
@@ -319,9 +321,9 @@ If `ServerBroadcast_Enhancement9` cannot be delivered to all players (high load,
 
 Before implementation, these changes must be applied to already-approved documents:
 
-1. **Equipment System F-EQS-2**: Correct Iron flat bonus range 16–22 → **22–28** (F-ENH-3 parity constraint).
-2. **Equipment System CR-EQS-11 / EquipmentSlotRecord**: Add `EnhancementLevel: byte`; update `AddEquipmentModifier` to use `IEnhancementBonusProvider.GetFlatBonus`.
-3. **Inventory System InventorySlotRecord**: Add `EnhancementLevel: byte`.
+1. **Equipment System F-EQS-2**: Correct Iron flat bonus range 16–22 → **22–28** (F-ENH-3 parity constraint). ✅ Applied 2026-05-23.
+2. **Equipment System CR-EQS-11 / EquipmentSlotRecord**: Add `EnhancementLevel: byte`; update `AddEquipmentModifier` to use `IEnhancementBonusProvider.GetFlatBonus`. ✅ Applied 2026-10-01 (equipment-system.md CR-EQS-1, enhanced modifier registration rule, `GetEquippedWeaponEnhancementLevel()`; the registry entry was updated 2026-05-22 but the GDD body was not).
+3. **Inventory System InventorySlotRecord**: Add `EnhancementLevel: byte`. ✅ Applied 2026-10-01 (inventory-system.md Rule 1.1/1.4, 5.14a, 7.20, 8.24a; snapshot and change event carry the level). Code: Inventory Story 010.
 4. **Item Database**: Add 4 Enhancement Scroll records; add `ScrollData { TargetGearTier: GearTier }` sub-schema.
 
 ## Tuning Knobs

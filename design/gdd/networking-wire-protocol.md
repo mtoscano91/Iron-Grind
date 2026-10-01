@@ -2,7 +2,7 @@
 
 > **Status**: Approved (Pass 4 lean, 2026-05-12; ghost session amendment 2026-05-14; wire schema additions 2026-05-17; Zone Instancing amendment 2026-05-29; CSP amendment 2026-06-14)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-06-14 (CSP amendment: `SelfPositionUpdate` added to R-U batch — per-tick authoritative self-position delivery for client-side prediction reconciliation. Resolves CR-CSP-7 data-source gap. Channel: R-U (not U-U) — reconciliation most critical under packet loss. Body: 10B; batch: 14B; Scenario C R-U batch 332B (no overflow; 180B headroom). F-NET-1/F-NET-2 updated. Prior: Zone Instancing amendment 2026-05-29; OQ-CUS-1 amendment 2026-06-11.)
+> **Last Updated**: 2026-10-01 (TD-045 amendment: `MoveResult` gains per-slot enhancement-level bytes (22-byte body); `EquipRequest` gains `inventorySlot` (10-byte body) — an ItemID alone cannot distinguish same-type items at different enhancement levels; `EquipResult` gains `slotEnhancementLevel` (12-byte body); `EquipFailReason` comments aligned with the rewritten equipment-system.md CR-EQS-8.) Previous: 2026-06-14 (CSP amendment: `SelfPositionUpdate` added to R-U batch — per-tick authoritative self-position delivery for client-side prediction reconciliation. Resolves CR-CSP-7 data-source gap. Channel: R-U (not U-U) — reconciliation most critical under packet loss. Body: 10B; batch: 14B; Scenario C R-U batch 332B (no overflow; 180B headroom). F-NET-1/F-NET-2 updated. Prior: Zone Instancing amendment 2026-05-29; OQ-CUS-1 amendment 2026-06-11.)
 > **Parent**: networking-core.md
 
 ## Overview
@@ -881,7 +881,7 @@ MoveRequest {
 
 ---
 
-**MoveResult** (R-OD, server → client, 20-byte body; 30 bytes standalone):
+**MoveResult** (R-OD, server → client, 22-byte body; 32 bytes standalone):
 ```
 MoveResult {
     bool          success;           // 1 byte
@@ -889,12 +889,14 @@ MoveResult {
     byte          fromSlot;          // 1 byte — echoes the requested fromSlot index
     ItemID        fromSlotItemId;    // 4 bytes — authoritative post-operation state (ItemID.Invalid if empty)
     int           fromSlotQuantity;  // 4 bytes — 0 if slot is empty
+    byte          fromSlotEnhancementLevel; // 1 byte — the item's enhancement level (0 if empty or a stack)
     byte          toSlot;            // 1 byte — echoes the requested toSlot index
     ItemID        toSlotItemId;      // 4 bytes — authoritative post-operation state
     int           toSlotQuantity;    // 4 bytes — 0 if slot is empty
+    byte          toSlotEnhancementLevel;   // 1 byte — the item's enhancement level (0 if empty or a stack)
 }
 ```
-*Standalone: 10 + 20 = 30 bytes. Always carries authoritative post-operation slot states for both affected slots — on success (new states after merge/swap) and on failure (unchanged states, matching the pre-operation values). Client uses these to commit or roll back optimistic UI rendering without a separate re-fetch. On success: `InventoryChangedEvent` also fires server-internally.*
+*Standalone: 10 + 22 = 32 bytes (enhancement-level bytes added 2026-10-01, TD-045 — an item's level travels with it on a move or swap, inventory-system.md Rule 7.20). Always carries authoritative post-operation slot states for both affected slots — on success (new states after merge/swap) and on failure (unchanged states, matching the pre-operation values). Client uses these to commit or roll back optimistic UI rendering without a separate re-fetch. On success: `InventoryChangedEvent` also fires server-internally.*
 
 ---
 
@@ -918,7 +920,7 @@ All equipment messages are R-OD (priority path). Wire schemas are body-only; pre
 
 ---
 
-**EquipRequest** (R-OD, client → server, 9-byte body; 23 bytes standalone):
+**EquipRequest** (R-OD, client → server, 10-byte body; 24 bytes standalone):
 ```
 EquipRequest {
     uint requestId;  // 4 bytes — monotonically increasing per-client counter; server deduplicates
@@ -926,13 +928,16 @@ EquipRequest {
     byte gearSlot;   // 1 byte — GearSlot enum (0–6); range-checked server-side before array access
     uint itemId;     // 4 bytes — ItemID to equip (must be in player's inventory);
                      //   itemId=0 (ItemID.Invalid) = unequip the current occupant of gearSlot
+    byte inventorySlot; // 1 byte — inventory slot index (0–19) holding the item to equip; identifies
+                     //   WHICH item when several share an ItemID but differ in enhancement level.
+                     //   Ignored (send 0xFF) when itemId=0 (unequip). Added 2026-10-01, TD-045.
 }
 ```
-*Standalone: 10 (envelope) + 4 (SenderEntityID) + 9 (body) = 23 bytes. Server validates: (1) gearSlot in [0, 6]; (2) itemId present in the player's inventory (if ≠ 0); (3) item's GearSlot matches target slot; (4) stat gate met (GetBaseStat); (5) inventory has a free slot if a swap is required. Duplicate requests (transport-layer retransmit) detected by requestId + SenderEntityID — server returns EquipResult from the original processing, does not re-execute.*
+*Standalone: 10 (envelope) + 4 (SenderEntityID) + 10 (body) = 24 bytes. Server validates: (1) gearSlot in [0, 6]; (2) if itemId ≠ 0: inventorySlot in [0, 19] and that slot holds itemId (stale-render guard — else `ItemNotInInventory`); (3) item's GearSlot matches target slot; (4) stat gate met (GetBaseStat); (5) inventory has a free slot if a swap is required. Duplicate requests (transport-layer retransmit) detected by requestId + SenderEntityID — server returns EquipResult from the original processing, does not re-execute.*
 
 ---
 
-**EquipResult** (R-OD, server → client, 11-byte body; 21 bytes standalone):
+**EquipResult** (R-OD, server → client, 12-byte body; 22 bytes standalone):
 ```
 EquipResult {
     uint requestId;       // 4 bytes — correlates to the originating EquipRequest
@@ -941,9 +946,11 @@ EquipResult {
     byte affectedSlot;    // 1 byte  — GearSlot that was operated on
     uint slotItemId;      // 4 bytes — authoritative ItemID now occupying affectedSlot after the
                           //   operation (0 = slot is empty); client must apply this as ground truth
+    byte slotEnhancementLevel; // 1 byte — enhancement level of the item now in affectedSlot
+                          //   (0 if the slot is empty). Added 2026-10-01, TD-045.
 }
 ```
-*Standalone: 10 + 11 = 21 bytes. On success: `slotItemId` reflects the newly equipped item. On unequip success: `slotItemId = 0`. On failure: `slotItemId` reflects the unchanged slot state (old item remains). **Stat delivery:** On success, server also emits `StatSnapshotEvent` (defined in Leveling System GDD) to the equipping player. This is the authoritative stat delivery path per CR-NET-4 — `EquipResult` does not carry stat values. For `failReason = StatRequirementNotMet`: the client displays the shortfall using its locally cached stat values (base stat from last StatSnapshotEvent); the server does not echo required/actual stat values in this message. The `StatRequirementNotMet` error message must display base stat, not effective stat — document this in Inventory UI GDD.*
+*Standalone: 10 + 12 = 22 bytes. On success: `slotItemId` reflects the newly equipped item. On unequip success: `slotItemId = 0`. On failure: `slotItemId` reflects the unchanged slot state (old item remains). **Stat delivery:** On success, server also emits `StatSnapshotEvent` (defined in Leveling System GDD) to the equipping player. This is the authoritative stat delivery path per CR-NET-4 — `EquipResult` does not carry stat values. For `failReason = StatRequirementNotMet`: the client displays the shortfall using its locally cached stat values (base stat from last StatSnapshotEvent); the server does not echo required/actual stat values in this message. The `StatRequirementNotMet` error message must display base stat, not effective stat — document this in Inventory UI GDD.*
 
 ---
 
@@ -1400,11 +1407,11 @@ enum EquipFailReason : byte
 {
     None                  = 0,   // Success (reason field when success=true)
     StatRequirementNotMet = 1,   // GetBaseStat(entityID, item.EquipRequirementStat) < item.EquipRequirementMin; client displays shortfall from local stat cache (last StatSnapshotEvent)
-    InventoryFull         = 2,   // Slot occupied, no free inventory slot for displaced item (ForceInsert + MoveItemIn both failed)
+    InventoryFull         = 2,   // Slot occupied (or unequip requested) and no free inventory slot for the displaced item
     SlotMismatch          = 3,   // item.GearSlot != requested gearSlot
     ItemLocked            = 4,   // Item locked by Enhancement System
     ItemNotInInventory    = 5,   // itemId not found in player's inventory
-    CriticalFailure       = 255, // ForceInsert + MoveItemIn both failed; slot left Empty; server logs full context
+    CriticalFailure       = 255, // Reserved. No longer produced by equip/swap/unequip — equipment-system.md CR-EQS-8 (rewritten 2026-10-01) aborts a failed swap and keeps the old item equipped
 }
 ```
 *Unknown bytes: substitute `None = 0` and continue. Log anomaly.*

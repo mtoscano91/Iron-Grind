@@ -37,7 +37,7 @@
 #   Each entry: name, status, source, referenced_by[], attributes{}, added, revised
 
 version: 1
-last_updated: "2026-06-14"  # client-side-prediction.md designed: TICK_RATE_HZ referenced_by updated. Prior: npc-shop.md blockers applied.  # npc-shop.md design review blockers applied: CompensatingRefund=8 added to GoldTransactionReason; npc-shop.md added to referenced_by for GOLD_CAP, SESSION_TTL_SECONDS, INVENTORY_SLOT_COUNT, GoldTransactionReason. Prior: networking-wire-protocol.md Zone Instancing amendment: EntityState restructured as tagged union (EntityType, MobTypeID, isInDeadState, respawnTicksRemaining); EntityType + JoinRejectedReason enums added; ZoneFullResponse + ZoneSnapshotRequest messages added. OQ-ZI-1/2/3/7 resolved. Prior: zone-instancing.md design review: ZONE_OPEN_THRESHOLD, ZONE_DRAIN_GRACE_SECONDS, ZONE_LOAD_TIMEOUT_SECONDS, ZONE_ENTRY_STALL_TIMEOUT_SECONDS, ZoneSessionState added; EntityState characterName encoding clarified. Prior: skill-system.md Phase 5: SkillID, SkillEffectType, TargetConstraint, SkillCastRejectionCode, ISkillSystem, MANA_COST_MULTIPLIER, SKILL_READY_AUDIO_COOLDOWN_THRESHOLD_TICKS added.
+last_updated: "2026-10-01"  # TD-045/043/044 design session: InventorySlotRecord + InventorySnapshot added (per-slot EnhancementLevel); EquipmentSlotEntry, EquipResult, MAX_ENHANCEMENT_LEVEL revised. Prior (2026-06-14): client-side-prediction.md designed: TICK_RATE_HZ referenced_by updated. Prior: npc-shop.md blockers applied.  # npc-shop.md design review blockers applied: CompensatingRefund=8 added to GoldTransactionReason; npc-shop.md added to referenced_by for GOLD_CAP, SESSION_TTL_SECONDS, INVENTORY_SLOT_COUNT, GoldTransactionReason. Prior: networking-wire-protocol.md Zone Instancing amendment: EntityState restructured as tagged union (EntityType, MobTypeID, isInDeadState, respawnTicksRemaining); EntityType + JoinRejectedReason enums added; ZoneFullResponse + ZoneSnapshotRequest messages added. OQ-ZI-1/2/3/7 resolved. Prior: zone-instancing.md design review: ZONE_OPEN_THRESHOLD, ZONE_DRAIN_GRACE_SECONDS, ZONE_LOAD_TIMEOUT_SECONDS, ZONE_ENTRY_STALL_TIMEOUT_SECONDS, ZoneSessionState added; EntityState characterName encoding clarified. Prior: skill-system.md Phase 5: SkillID, SkillEffectType, TargetConstraint, SkillCastRejectionCode, ISkillSystem, MANA_COST_MULTIPLIER, SKILL_READY_AUDIO_COOLDOWN_THRESHOLD_TICKS added.
 
 # ─── ENTITIES ────────────────────────────────────────────────────────────────
 # Named game-world objects: enemies, NPCs, characters, factions, bosses.
@@ -880,6 +880,33 @@ constants:
     added: "2026-05-25"
     revised: ""
 
+  - name: InventorySlotRecord
+    status: active
+    source: design/gdd/inventory-system.md
+    referenced_by:
+      - design/gdd/inventory-system.md
+      - design/gdd/enhancement-system.md
+      - design/gdd/equipment-system.md
+      - design/gdd/character-persistence.md
+      - design/gdd/networking-wire-protocol.md
+    type: "readonly struct"
+    fields: "{ItemId: ItemID, Quantity: int, EnhancementLevel: byte}"
+    note: "One of the 20 inventory slots (inventory-system.md Rule 1.1/1.4). Empty = {ItemID.Invalid, 0, 0}. EnhancementLevel in [0, MAX_ENHANCEMENT_LEVEL]; non-zero only when Quantity = 1; resets to 0 when the slot empties; items entering via pickup start at 0. Written only by the Enhancement System through SetEnhancementLevel(slotIndex, level) on a slot it holds locked (Rule 5.14a). Travels with the item on move/swap (Rule 7.20) and across the Equipment interface: MoveItemOutResult {ItemID, EnhancementLevel, Code}; MoveItemIn(ItemID, enhancementLevel); ForceInsert(ItemID, enhancementLevel) (Rule 8.24a). Implemented as IronGrind.InventorySystem.InventorySlot (EnhancementLevel field pending Inventory Story 010)."
+    added: "2026-10-01"
+    revised: ""
+
+  - name: InventorySnapshot
+    status: active
+    source: design/gdd/inventory-system.md
+    referenced_by:
+      - design/gdd/inventory-system.md
+      - design/gdd/character-persistence.md
+    type: "save/load value (list of entries)"
+    fields: "{Slots: [{SlotIndex: byte, ItemId: uint, Quantity: int, EnhancementLevel: byte}]} — non-empty slots only, ascending SlotIndex on export"
+    note: "Produced by ExportSnapshot(charId), consumed by ImportSnapshot(charId, snapshot): bool. Character Persistence translates to/from the dense 20-slot record (InventorySlots / InventoryItemCounts / InventoryEnhancementLevels) and the ADR-006 inventory_slots JSONB {item_id, count, enhancement_level}. Load is initial state (no events), is refused before the Item Database is ready, and validates each entry (inventory-system.md Persistence and Load Edge Cases): invalid EnhancementLevel is clamped to MAX_ENHANCEMENT_LEVEL or zeroed on a stack. EnhancementLevel added 2026-10-01 (TD-045); code pending Inventory Story 010."
+    added: "2026-10-01"
+    revised: ""
+
   - name: EquipmentSlotEntry
     status: active
     source: design/gdd/equipment-system.md
@@ -887,12 +914,13 @@ constants:
       - design/gdd/equipment-system.md
       - design/gdd/enhancement-system.md
       - design/gdd/character-persistence.md
+      - design/gdd/inventory-system.md
     type: "readonly struct"
     fields: "{ItemId: ItemID, IsTransitioning: bool, EnhancementLevel: byte}"
     il2cpp_note: "readonly struct satisfies IL2CPP constraint from character-stats.md. Array indexed by (int)GearSlot — no IEqualityComparer needed. Registry length = 7 (GEAR_SLOT_COUNT)."
     note: "Internal slot registry entry for the Equipment System. ItemId=ItemID.Invalid → slot is Empty. IsTransitioning=true only during the modifier-removal → modifier-addition window of auto-swap or unequip. EnhancementLevel: byte added 2026-05-22 (Enhancement System upstream amendment #2) — Enhancement System must update equipmentAppearanceFlags[2:1] when a successfully enhanced item is equipped. Character Persistence saves the 7 ItemID values + 7 EnhancementLevel values and restores modifiers from Item Database on load."
     added: "2026-05-21"
-    revised: "2026-05-22"
+    revised: "2026-10-01"  # equipment-system.md body now carries the field (CR-EQS-1); level arrives via MoveItemOutResult and returns via MoveItemIn(ItemID, enhancementLevel)
 
   - name: EquipResult
     status: active
@@ -901,9 +929,9 @@ constants:
       - design/gdd/equipment-system.md
     type: "enum (result code)"
     values: "{NoChange, StatRequirementNotMet, SlotMismatch, InventoryFull, InventoryError, CriticalFailure}"
-    note: "StatRequirementNotMet carries associated data: (StatID required, float actual) for UI display. All failure codes are surfaced to Inventory UI via the EquipResult return from equip/unequip calls. CriticalFailure indicates a data integrity event requiring monitoring alert."
+    note: "StatRequirementNotMet carries associated data: (StatID required, float actual) for UI display. All failure codes are surfaced to Inventory UI via the EquipResult return from equip/unequip calls. CriticalFailure indicates a data integrity event requiring monitoring alert. As of 2026-10-01 no equip/swap/unequip rule returns CriticalFailure (CR-EQS-8 rewritten, TD-044: a failed auto-swap aborts, keeps the old item equipped and returns InventoryError); the value is retained for wire-enum stability."
     added: "2026-05-21"
-    revised: ""
+    revised: "2026-10-01"
 
   - name: MoveItemOutResult
     status: active
@@ -923,6 +951,7 @@ constants:
     referenced_by:
       - design/gdd/enhancement-system.md
       - design/gdd/equipment-system.md
+      - design/gdd/inventory-system.md
     type: "int constant (tuning knob)"
     value: 10
     unit: "maximum enhancement level per item"
