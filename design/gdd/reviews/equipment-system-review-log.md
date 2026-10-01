@@ -2,6 +2,31 @@
 
 ---
 
+## Review — 2026-10-01 — Verdict: APPROVED (Pass 7 lean)
+
+Scope signal: XL
+Specialists: Lean — single-session analysis, no specialist agent delegation
+Blocking items: 0 | Recommended: 6
+Prior verdict resolved: Yes — all 5 Pass 6 blockers verified closed (`GetSlot` read in CR-EQS-4/13 and both inventory-system.md interface rows; `GetSlotEnhancementLevel(GearSlot)`; `EquipResult` → wire mapping with `InventoryError = 6`; Dependencies and bidirectionality; OQ-EQS-8 Weapon-slot-only with AC-EQS-30)
+Summary: The TD-044/045 amendment is internally consistent and agrees with inventory-system.md, enhancement-system.md, networking-wire-protocol.md and the registry on every contract it touches. Arithmetic re-derived and correct for AC-EQS-2/11/29/30 and the F-EQS-4 table. Two stale registry entries were corrected at approval (`MoveItemOutResult` gains `EnhancementLevel`; `EquipResult` values gain `Success`).
+Pre-implementation gate: OQ-EQS-9 — CR-EQS-13's stale-render guard and CR-EQS-5 step 2 name no `EquipResult` code, and EC-EQS-4's "Item is locked" message conflicts with CR-EQS-6 step 7's `InventoryError`. Resolve before `/create-stories`, then add an AC for the stale-render guard.
+Recommended, not applied: AC-EQS-25 should assert the saved level is used on load; AC-EQS-8 setup should place the second ItemA in a named inventory slot; EC-EQS-4 note still says Inventory's `MoveItemOut` returns `ItemID`; EC-EQS-10 "concurrent write race" vs CR-EQS-8 single-threaded tick; cross-document drift unchanged since Pass 6 (character-persistence.md `GetFlatBonus` signature, "no save API" row, `CorruptRecord` vs clamp; damage-calculation.md method names; networking-wire-protocol.md `AppearanceChangedEvent` "future Enhancement outcome" sentence).
+
+---
+
+## Review — 2026-10-01 — Verdict: NEEDS REVISION (Pass 6 lean — TD-044/TD-045 amendments)
+
+Scope signal: XL
+Specialists: Lean — single-session analysis, no specialist agent delegation
+Blocking items: 5 | Recommended: 5
+Prior verdict resolved: N/A — prior verdict was APPROVED (Pass 5); this pass reviews the 2026-10-01 amendments (per-slot `EnhancementLevel`, CR-EQS-8 rewrite)
+Summary: The amendment's core is sound — the level is carried consistently through CR-EQS-1/5/6/7/8/15 and matches inventory-system.md Rule 8.24a; the CR-EQS-8 abort-in-place rewrite is correct. Five edge gaps blocked implementation: (1) CR-EQS-4's level comparison needed an inventory slot read the declared interface did not grant; (2) no read accessor for a non-weapon slot's level, though ACs, Character Persistence save and Inventory UI need it; (3) `EquipResult.InventoryError` had no wire `EquipFailReason` value and `NoChange` had no stated mapping; (4) Dependencies still said equipment is reconstructible "from ItemIDs alone" and listed two Approved GDDs as "Not yet mapped"; (5) OQ-EQS-8 (PrestigeBand source slot) open with no AC.
+Revised in-session (user chose "revise now"): `Inventory.GetSlot` added to CR-EQS-4/13 and to the interface rows here and in inventory-system.md; `GetSlotEnhancementLevel(GearSlot)` added; `EquipResult` → wire mapping table added and `InventoryError = 6` added to the wire enum; Dependencies and Bidirectionality refreshed; OQ-EQS-8 resolved by the user — Weapon slot only (CR-EQS-11, AC-EQS-30; enhancement-system.md CR-ENH-12 note and AC-ENH-15/16/17/32 wording aligned; registry ownership note corrected). Recommended applied: CR-EQS-7 null-item path resets the level; AC-EQS-31 added (step 7 rollback keeps the level); F-EQS-4 collapsed to the F-ENH-3 result; `Equip`/`Unequip` signatures stated; AC-EQS-2 value, AC-EQS-11 setup, AC-EQS-25 tag, AC-EQS-29 note, OQ-EQS-1/5/7 refreshed.
+Still open: OQ-EQS-9 (new — which layer produces wire `ItemLocked` / `ItemNotInInventory`; CR-EQS-5 step 2 names no result code); OQ-EQS-5 (F-EQS-3 calibration); cross-document drift not touched this pass — damage-calculation.md method names/entity parameter, character-persistence.md `GetFlatBonus` signature and over-max gear level handling (`CorruptRecord` vs Inventory's clamp).
+Next: lean re-review in a fresh session to verify these fixes.
+
+---
+
 ## Review — 2026-05-22 — Verdict: APPROVED (Pass 5 lean)
 
 Scope signal: XL

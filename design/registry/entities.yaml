@@ -918,9 +918,9 @@ constants:
     type: "readonly struct"
     fields: "{ItemId: ItemID, IsTransitioning: bool, EnhancementLevel: byte}"
     il2cpp_note: "readonly struct satisfies IL2CPP constraint from character-stats.md. Array indexed by (int)GearSlot — no IEqualityComparer needed. Registry length = 7 (GEAR_SLOT_COUNT)."
-    note: "Internal slot registry entry for the Equipment System. ItemId=ItemID.Invalid → slot is Empty. IsTransitioning=true only during the modifier-removal → modifier-addition window of auto-swap or unequip. EnhancementLevel: byte added 2026-05-22 (Enhancement System upstream amendment #2) — Enhancement System must update equipmentAppearanceFlags[2:1] when a successfully enhanced item is equipped. Character Persistence saves the 7 ItemID values + 7 EnhancementLevel values and restores modifiers from Item Database on load."
+    note: "Internal slot registry entry for the Equipment System. ItemId=ItemID.Invalid → slot is Empty. IsTransitioning=true only during the modifier-removal → modifier-addition window of auto-swap or unequip. EnhancementLevel: byte added 2026-05-22 (Enhancement System upstream amendment #2) — the Equipment System recomputes equipmentAppearanceFlags[2:1] from the Weapon slot's level on every slot change (CR-EQS-11); the Enhancement System never writes the byte. Read per slot via GetSlotEnhancementLevel(GearSlot): byte (0 if empty; GetEquippedWeaponEnhancementLevel() = the Weapon slot's value). Character Persistence saves the 7 ItemID values + 7 EnhancementLevel values and restores modifiers from Item Database on load."
     added: "2026-05-21"
-    revised: "2026-10-01"  # equipment-system.md body now carries the field (CR-EQS-1); level arrives via MoveItemOutResult and returns via MoveItemIn(ItemID, enhancementLevel)
+    revised: "2026-10-01"  # equipment-system.md body now carries the field (CR-EQS-1); level arrives via MoveItemOutResult and returns via MoveItemIn(ItemID, enhancementLevel); lean re-review 2026-10-01: GetSlotEnhancementLevel accessor added, appearance-flag ownership corrected
 
   - name: EquipResult
     status: active
@@ -928,8 +928,8 @@ constants:
     referenced_by:
       - design/gdd/equipment-system.md
     type: "enum (result code)"
-    values: "{NoChange, StatRequirementNotMet, SlotMismatch, InventoryFull, InventoryError, CriticalFailure}"
-    note: "StatRequirementNotMet carries associated data: (StatID required, float actual) for UI display. All failure codes are surfaced to Inventory UI via the EquipResult return from equip/unequip calls. CriticalFailure indicates a data integrity event requiring monitoring alert. As of 2026-10-01 no equip/swap/unequip rule returns CriticalFailure (CR-EQS-8 rewritten, TD-044: a failed auto-swap aborts, keeps the old item equipped and returns InventoryError); the value is retained for wire-enum stability."
+    values: "{Success, NoChange, StatRequirementNotMet, SlotMismatch, InventoryFull, InventoryError, CriticalFailure}"
+    note: "StatRequirementNotMet carries associated data: (StatID required, float actual) for UI display. All failure codes are surfaced to Inventory UI via the EquipResult return from equip/unequip calls. CriticalFailure indicates a data integrity event requiring monitoring alert. As of 2026-10-01 no equip/swap/unequip rule returns CriticalFailure (CR-EQS-8 rewritten, TD-044: a failed auto-swap aborts, keeps the old item equipped and returns InventoryError); the value is retained for wire-enum stability. Wire mapping (equipment-system.md Interactions, 2026-10-01): Success and NoChange → success=true / EquipFailReason.None; StatRequirementNotMet=1, InventoryFull=2, SlotMismatch=3, InventoryError=6 (added to the wire enum 2026-10-01), CriticalFailure=255. Wire reasons ItemLocked=4 and ItemNotInInventory=5 have no EquipResult member yet — OQ-EQS-9."
     added: "2026-05-21"
     revised: "2026-10-01"
 
@@ -939,11 +939,11 @@ constants:
     referenced_by:
       - design/gdd/equipment-system.md
       - design/gdd/inventory-system.md
-    type: "readonly struct (cross-document impact)"
-    fields: "{ItemId: ItemID, Code: MoveItemOutCode}"
-    note: "CROSS-DOCUMENT IMPACT: Inventory System GDD currently returns ItemID from MoveItemOut(slotIndex). Must be extended to MoveItemOutResult to distinguish SlotEmpty from SlotLocked (Enhancement lock) — both currently return ItemID.Invalid which is ambiguous. MoveItemOutCode: byte {Success=0, SlotEmpty=1, SlotLocked=2}. Required by Equipment System EC-EQS-4 and CR-EQS-5/CR-EQS-6."
+    type: "readonly struct"
+    fields: "{ItemId: ItemID, EnhancementLevel: byte, Code: MoveItemOutCode}"
+    note: "Return type of Inventory.MoveItemOut(slotIndex) (inventory-system.md Rule 8.24a and Equipment System interface row). Code distinguishes SlotEmpty from SlotLocked (Enhancement lock). MoveItemOutCode: byte {Success=0, SlotEmpty=1, SlotLocked=2}. EnhancementLevel is the removed item's level — the only copy once the slot empties; the Equipment System stores it in the gear slot and passes it back through MoveItemIn(ItemID, enhancementLevel) on unequip or rollback. Required by Equipment System EC-EQS-4 and CR-EQS-5/CR-EQS-6. Extension from a bare ItemID return applied to inventory-system.md 2026-05-22; EnhancementLevel added 2026-10-01 (TD-045)."
     added: "2026-05-21"
-    revised: ""
+    revised: "2026-10-01"  # EnhancementLevel field recorded; stale cross-document-impact note replaced (lean re-review Pass 7)
 
   - name: MAX_ENHANCEMENT_LEVEL
     status: active
@@ -980,10 +980,10 @@ constants:
       - design/gdd/damage-calculation.md
       - design/gdd/character-persistence.md
     type: "interface (cross-system contract)"
-    methods: "GetFlatBonus(level: int, baseFlatBonus: int, gearTier: GearTier): int | GetElementalBonus(level: int, gearTier: GearTier, isWeapon: bool): int"
-    note: "Owned and implemented by Enhancement System; consumed by Equipment System (AddEquipmentModifier stat computation) and Damage Calculation (F-DC-2 elemental bonus path). GearTier parameter required to look up the correct BonusPerLevel/ElementalBonusPerLevel table entry. isWeapon: bool required for GetElementalBonus — returns 0 when false. Equipment System upstream amendment required: AddEquipmentModifier must call GetFlatBonus rather than using raw Item Database FlatBonus. Damage Calculation must obtain weapon enhancement level via Equipment.GetEquippedWeaponEnhancementLevel(): byte before calling GetElementalBonus. Signatures updated 2026-05-23 (lean re-review Pass 2 R-4)."
+    methods: "GetFlatBonus(level: int, baseFlatBonus: int, gearTier: GearTier): int | GetElementalBonus(level: int, baseElementalDamage: int, gearTier: GearTier, isWeapon: bool): int"
+    note: "Owned and implemented by Enhancement System; consumed by Equipment System (AddEquipmentModifier stat computation) and Damage Calculation (F-DC-2 elemental bonus path). GearTier parameter required to look up the correct BonusPerLevel/ElementalBonusPerLevel table entry. isWeapon: bool required for GetElementalBonus — returns 0 when false. GetElementalBonus returns the full F-ENH-2 value (base + enhancement, clamped to 9999); baseElementalDamage is the weapon's Item Database ElementalDamage, supplied by the caller — at level 0 the result is the base. Equipment System upstream amendment required: AddEquipmentModifier must call GetFlatBonus rather than using raw Item Database FlatBonus. Damage Calculation must obtain weapon enhancement level via Equipment.GetEquippedWeaponEnhancementLevel(): byte before calling GetElementalBonus. Signatures updated 2026-05-23 (lean re-review Pass 2 R-4); baseElementalDamage added 2026-10-01 (Enhancement Revision Pass 2 — the three-parameter form could not return the F-ENH-2 value)."
     added: "2026-05-22"
-    revised: ""
+    revised: "2026-10-01"
 
   - name: PRESTIGE_MID_THRESHOLD
     status: active
@@ -1018,9 +1018,9 @@ constants:
     type: "byte encoding spec"
     bit_layout: "[7:6]=WeaponTier(2b: Bronze=0,Iron=1,Steel=2,DarkSteel=3), [5:3]=ElementType(3b: None=0,Fire=1,Cold=2,Lightning=3,Poison=4; 5-7 reserved), [2:1]=PrestigeBand(2b: NONE=0,VISIBLE_NO_GLOW=1,GLOW_LOW=2,HIGH=3), [0]=ArmorTier(1b: 0=Bronze/Iron silhouette, 1=Steel/DarkSteel silhouette)"
     encode: "flags = (byte)(((int)weaponTier & 0x03) << 6 | ((int)elementType & 0x07) << 3 | (prestigeBand & 0x03) << 1 | (armorBit & 0x01))"
-    note: "Encoding for ZoneStateSnapshotEntityEntry.EquipmentAppearanceFlags (already registered at line ~433). Equipment System owns write for equip/unequip; Enhancement System owns write for PrestigeBand bits [2:1] on successful enhancement. Rendering/Inventory UI owns read. PrestigeBand 4-state encoding: NONE=0 (levels 0–4), VISIBLE_NO_GLOW=1 (levels 5–6, badge color only, no glow), GLOW_LOW=2 (level 7, low glow), HIGH=3 (levels 8–10, high glow). All thresholds: PRESTIGE_MID_THRESHOLD=5, ENHANCEMENT_GLOW_THRESHOLD=7, PRESTIGE_HIGH_THRESHOLD=8. Default unequipped state = 0x00."
+    note: "Encoding for ZoneStateSnapshotEntityEntry.EquipmentAppearanceFlags (already registered at line ~433). Equipment System owns every write, including PrestigeBand bits [2:1], recomputed on each equip/unequip/swap; the Enhancement System never writes the byte (items cannot be enhanced while equipped — enhancement-system.md CR-ENH-12). PrestigeBand source = the Weapon slot's EnhancementLevel only (band NONE with no weapon); other slots' levels never affect it (OQ-EQS-8 resolved 2026-10-01, AC-EQS-30). Rendering/Inventory UI owns read. PrestigeBand 4-state encoding: NONE=0 (levels 0–4), VISIBLE_NO_GLOW=1 (levels 5–6, badge color only, no glow), GLOW_LOW=2 (level 7, low glow), HIGH=3 (levels 8–10, high glow). All thresholds: PRESTIGE_MID_THRESHOLD=5, ENHANCEMENT_GLOW_THRESHOLD=7, PRESTIGE_HIGH_THRESHOLD=8. Default unequipped state = 0x00."
     added: "2026-05-21"
-    revised: ""
+    revised: "2026-10-01"  # write ownership corrected; PrestigeBand source slot recorded (Weapon only)
 
   - name: CharacterLoadResult
     status: active
@@ -2083,15 +2083,15 @@ formulas:
     referenced_by:
       - design/gdd/enhancement-system.md
       - design/gdd/damage-calculation.md
-    expression: "EnhancedElementalDamage(level) = item.ElementalDamage + (level × ElementalBonusPerLevel[GearTier])"
+    expression: "EnhancedElementalDamage(level) = min(item.ElementalDamage + (level × ElementalBonusPerLevel[GearTier]), 9999)"
     variables:
       - "item.ElementalDamage: int, weapon's base elemental damage from Item Database, range [0, 9999]"
       - "level: int, current enhancement level, range [0, MAX_ENHANCEMENT_LEVEL=10]"
       - "ElementalBonusPerLevel: {Bronze=1, Iron=2, Steel=3, DarkSteel=5} for weapons; returns 0 for non-weapons"
     output_range: [0, 9999]
-    notes: "Output feeds IEnhancementBonusProvider.GetElementalBonus(). Damage Calculation F-DC-2 must use the enhanced value, not the raw Item Database ElementalDamage. Damage Calculation must obtain the level from Equipment.GetEquippedWeaponEnhancementLevel(): byte. Non-weapon items always return 0."
+    notes: "Returned by IEnhancementBonusProvider.GetElementalBonus(level, baseElementalDamage, gearTier, isWeapon); the caller passes item.ElementalDamage as baseElementalDamage. Damage Calculation F-DC-2 must use the enhanced value, not the raw Item Database ElementalDamage. Damage Calculation must obtain the level from Equipment.GetEquippedWeaponEnhancementLevel(): byte. Non-weapon items always return 0."
     added: "2026-05-22"
-    revised: ""
+    revised: "2026-10-01"
 
   - name: F-ENH-3_TierParityConstraint
     status: active

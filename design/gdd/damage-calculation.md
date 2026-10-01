@@ -2,7 +2,7 @@
 
 > **Status**: Approved (Pass 2 lean, 2026-05-15)
 > **Author**: Manuel Toscano + Claude Code agents
-> **Last Updated**: 2026-05-28 (Skill System amendment: DamageContext.MagicalSkill added — maps to DamageType.Magical wire value 1; Skill System downstream row updated; AC-DC-F-14b/14c added. Prior: 2026-05-15 — Pass 2 lean revision)
+> **Last Updated**: 2026-10-01 (Enhancement System Revision Pass 2 — contract correction: `GetElementalBonus` gains `baseElementalDamage`; Step 4 reads the weapon's base `ElementalDamage` and `GearTier` from the Item Database and passes them in. No formula or AC change.) Previous: 2026-05-28 (Skill System amendment: DamageContext.MagicalSkill added — maps to DamageType.Magical wire value 1; Skill System downstream row updated; AC-DC-F-14b/14c added. Prior: 2026-05-15 — Pass 2 lean revision)
 > **Implements Pillar**: Earned Power (primary), Rhythm Mastery (secondary)
 
 ## Overview
@@ -49,7 +49,7 @@ Steps execute in fixed order. No step may be reordered.
   ```
   `MIN_DAMAGE_FRACTION` is a tuning constant (default 0.05). At Defense = 0, the result equals `BaseDamage` exactly — unmitigated, not amplified.
 
-- **Step 4 — Read elemental weapon data.** Query the Equipment System for `AttackerID`'s currently equipped weapon `ItemID`. If the weapon has `ElementType != ElementType.None`, read `ElementalBonus` (int) from the Item Database for that `ItemID`. If the weapon has `ElementType.None` or no weapon is equipped (`ItemID.Invalid`), set `ElementalBonus = 0` and skip Steps 5–6 (elemental contribution is 0.0).
+- **Step 4 — Read elemental weapon data.** Query the Equipment System for `AttackerID`'s currently equipped weapon `ItemID`. If the weapon has `ElementType != ElementType.None`, read the weapon's base `ElementalDamage` and `GearTier` from the Item Database for that `ItemID` and its enhancement level from the Equipment System, then set `ElementalBonus = IEnhancementBonusProvider.GetElementalBonus(level, baseElementalDamage, gearTier, isWeapon: true)` (enhancement-system.md F-ENH-2 — base + enhancement, clamped to 9,999; at level 0 the result is the base value). If the weapon has `ElementType.None` or no weapon is equipped (`ItemID.Invalid`), set `ElementalBonus = 0` and skip Steps 5–6 (elemental contribution is 0.0).
 
 - **Step 5 — Read target magic defense.** Query `GetEffectiveStat(TargetID, MagicDefense)` (int).
 
@@ -113,8 +113,8 @@ The `DamageContext` enum (internal server-side call context; distinct from the w
 | Skill System | → Damage Calc | `(BaseDamage: int, AttackerID, TargetID, DamageContext.PhysicalSkill)` | Called per skill activation. Identical formula to PhysicalAuto. Skill System owns skill-specific BaseDamage computation. |
 | Character Stats | ← Damage Calc | Reads `Defense`, `MagicDefense`, `CritChance`, `CritMultiplier`, `CurrentHP` via `GetEffectiveStat()`. Does NOT call `AddExperience` or fire `OnEntityDied` — callers handle kill consequences. | Queried live per call. Kill detection (`IsKill`) is computed here; kill consequences are the caller's responsibility. `OnEntityDied` fires inside `CharacterStats.ApplyDamage` per EC-08 when the caller applies damage on a kill. |
 | Equipment System | ← Damage Calc | Reads attacker's equipped weapon `ItemID` via `EquipmentSystem.GetEquippedWeaponID(AttackerID): ItemID`; reads weapon enhancement level via `EquipmentSystem.GetEquippedWeaponEnhancementLevel(AttackerID): byte` | Required to resolve elemental bonus. If no weapon is equipped, returns `ItemID.Invalid` — Damage Calculation treats `Invalid` as `ElementType.None`. |
-| Item Database | ← Damage Calc | Reads `ElementType` for the equipped weapon's `ItemID` | Queried only when `ElementType != None`. The +0 base `ElementalBonus` is no longer read directly — the enhanced value is obtained via the Enhancement System (see Enhancement System row). |
-| Enhancement System | ← Damage Calc | `IEnhancementBonusProvider.GetElementalBonus(level, gearTier, isWeapon): int` — enhanced flat elemental damage for the equipped weapon (OQ-DC-1 resolved) | `ElementalBonus` input to F-DC-2 is the enhanced value (F-ENH-2), not the +0 base. Level supplied by `Equipment.GetEquippedWeaponEnhancementLevel()`. Returns 0 for non-weapons. |
+| Item Database | ← Damage Calc | Reads `ElementType`, base `ElementalDamage` and `GearTier` for the equipped weapon's `ItemID` | Base value and tier are read only when `ElementType != None`. The base `ElementalDamage` is not used as `ElementalBonus` directly — it is passed to the Enhancement System, which returns the enhanced value (see Enhancement System row). |
+| Enhancement System | ← Damage Calc | `IEnhancementBonusProvider.GetElementalBonus(level, baseElementalDamage, gearTier, isWeapon): int` — enhanced flat elemental damage for the equipped weapon (OQ-DC-1 resolved; base parameter added 2026-10-01) | `ElementalBonus` input to F-DC-2 is the enhanced value (F-ENH-2), not the +0 base. Damage Calculation passes the Item Database base `ElementalDamage` as `baseElementalDamage`; at level 0 the result equals the base. Level supplied by `Equipment.GetEquippedWeaponEnhancementLevel()`. Returns 0 for non-weapons. |
 | Leveling System | *Caller-owned* | `LevelingSystem.GetXPAward(EntityID): int` called by callers on kill | **Not called by Damage Calculation (Option B).** Callers call `GetXPAward(TargetID)` when `DamageResult.IsKill = true`. See OQ-DC-3. |
 | VFX System / Combat UI | ← (event) | Receives `DamageResult` broadcast over networking per hit | `IsCrit` drives crit visual treatment; `DamageContext` drives element color/audio category; `IsKill` triggers death VFX. Client reads server-authoritative results — no client-side prediction of damage values. |
 
@@ -122,7 +122,7 @@ The `DamageContext` enum (internal server-side call context; distinct from the w
 
 *Cross-document correction required: Auto-Attack Combat GDD Rule 10 Step 4 currently specifies the return type as `FinalDamage (float)`. After this GDD is complete, the Auto-Attack Combat GDD's dependency table and Step 4 text must be updated to reference `DamageResult`. Rule 18's provisional language must also be closed with the resolution above.*
 
-*OQ-DC-1 (RESOLVED 2026-05-23): `ElementalBonus` DOES scale with enhancement level. The Enhancement System GDD (Approved) F-ENH-2 defines `EnhancedElementalDamage(level)` as a flat additive bonus per level. Damage Calculation obtains the enhanced value via `IEnhancementBonusProvider.GetElementalBonus(level, gearTier, isWeapon)`, supplying the level from `Equipment.GetEquippedWeaponEnhancementLevel()`. The +0 base from Item Database is no longer read directly for the elemental path. See enhancement-system.md F-ENH-2.*
+*OQ-DC-1 (RESOLVED 2026-05-23): `ElementalBonus` DOES scale with enhancement level. The Enhancement System GDD (Approved) F-ENH-2 defines `EnhancedElementalDamage(level)` as a flat additive bonus per level. Damage Calculation obtains the enhanced value via `IEnhancementBonusProvider.GetElementalBonus(level, baseElementalDamage, gearTier, isWeapon)`, supplying the level from `Equipment.GetEquippedWeaponEnhancementLevel()` and the +0 base `ElementalDamage` from the Item Database (signature corrected 2026-10-01 — without the base parameter the method could not return the F-ENH-2 value). The base is never used as `ElementalBonus` on its own. See enhancement-system.md F-ENH-2.*
 
 ## Formulas
 
@@ -304,8 +304,8 @@ max(1, 422) = 422  →  DamageResult.FinalDamage = 422
 |--------|------|-----------|-------|
 | Character Stats | Hard | `GetEffectiveStat(EntityID, StatID)` for `Defense`, `MagicDefense`, `CritChance`, `CritMultiplier`, `CurrentHP` | Queried live per call. Does NOT call `AddExperience` or fire `OnEntityDied` — callers handle kill consequences. `OnEntityDied` fires inside `ApplyDamage` per EC-08. |
 | Equipment System | Hard | `EquipmentSystem.GetEquippedWeaponID(EntityID): ItemID`; `EquipmentSystem.GetEquippedWeaponEnhancementLevel(EntityID): byte` | Required to resolve elemental bonus and its enhancement level. `ItemID.Invalid` = no weapon equipped. |
-| Item Database | Hard | `IItemDatabase.GetItem(ItemID)` → `.ElementType` | Queried only when `ElementType != ElementType.None`. The +0 base `ElementalBonus` is not read directly — the enhanced value comes from the Enhancement System (OQ-DC-1 resolved). |
-| Enhancement System | Hard | `IEnhancementBonusProvider.GetElementalBonus(level, gearTier, isWeapon): int` | Supplies the enhanced flat elemental damage (F-ENH-2) used as the `ElementalBonus` input to F-DC-2. Level from `Equipment.GetEquippedWeaponEnhancementLevel()`. Returns 0 for non-weapons. |
+| Item Database | Hard | `IItemDatabase.GetItem(ItemID)` → `.ElementType`, `.ElementalDamage`, `.GearTier` | Base value and tier are read only when `ElementType != ElementType.None`. The base `ElementalDamage` is passed to the Enhancement System and never used as `ElementalBonus` on its own (OQ-DC-1 resolved). |
+| Enhancement System | Hard | `IEnhancementBonusProvider.GetElementalBonus(level, baseElementalDamage, gearTier, isWeapon): int` | Supplies the enhanced flat elemental damage (F-ENH-2) used as the `ElementalBonus` input to F-DC-2. Base from the Item Database `ElementalDamage`; level from `Equipment.GetEquippedWeaponEnhancementLevel()`. Returns 0 for non-weapons. |
 | Leveling System | *Caller-owned* | `LevelingSystem.GetXPAward(EntityID): int` | **Not a Damage Calculation dependency (Option B).** Callers award XP when `DamageResult.IsKill = true`. OQ-DC-3 (interface contract) is now a Leveling System / caller concern. |
 
 **Downstream (systems that depend on this one):**

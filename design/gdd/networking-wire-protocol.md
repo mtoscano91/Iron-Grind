@@ -950,7 +950,7 @@ EquipResult {
                           //   (0 if the slot is empty). Added 2026-10-01, TD-045.
 }
 ```
-*Standalone: 10 + 12 = 22 bytes. On success: `slotItemId` reflects the newly equipped item. On unequip success: `slotItemId = 0`. On failure: `slotItemId` reflects the unchanged slot state (old item remains). **Stat delivery:** On success, server also emits `StatSnapshotEvent` (defined in Leveling System GDD) to the equipping player. This is the authoritative stat delivery path per CR-NET-4 — `EquipResult` does not carry stat values. For `failReason = StatRequirementNotMet`: the client displays the shortfall using its locally cached stat values (base stat from last StatSnapshotEvent); the server does not echo required/actual stat values in this message. The `StatRequirementNotMet` error message must display base stat, not effective stat — document this in Inventory UI GDD.*
+*Standalone: 10 + 12 = 22 bytes. On success: `slotItemId` reflects the newly equipped item. On unequip success: `slotItemId = 0`. On failure: `slotItemId` reflects the unchanged slot state (old item remains). On `EquipResult.NoChange` (same-item guard, equipment-system.md CR-EQS-4): `success = true`, `failReason = None`, slot fields echo the unchanged slot, and no `StatSnapshotEvent` or `AppearanceChangedEvent` is emitted. The full `EquipResult` → `EquipFailReason` mapping is tabulated in equipment-system.md (Interactions). **Stat delivery:** On success, server also emits `StatSnapshotEvent` (defined in Leveling System GDD) to the equipping player. This is the authoritative stat delivery path per CR-NET-4 — `EquipResult` does not carry stat values. For `failReason = StatRequirementNotMet`: the client displays the shortfall using its locally cached stat values (base stat from last StatSnapshotEvent); the server does not echo required/actual stat values in this message. The `StatRequirementNotMet` error message must display base stat, not effective stat — document this in Inventory UI GDD.*
 
 ---
 
@@ -1411,6 +1411,7 @@ enum EquipFailReason : byte
     SlotMismatch          = 3,   // item.GearSlot != requested gearSlot
     ItemLocked            = 4,   // Item locked by Enhancement System
     ItemNotInInventory    = 5,   // itemId not found in player's inventory
+    InventoryError        = 6,   // Inventory refused a transfer mid-operation; the operation was rolled back and the old item is still equipped (equipment-system.md CR-EQS-6 step 7, CR-EQS-7 step 5, CR-EQS-8). Client shows a generic equip failure with retry. Added 2026-10-01.
     CriticalFailure       = 255, // Reserved. No longer produced by equip/swap/unequip — equipment-system.md CR-EQS-8 (rewritten 2026-10-01) aborts a failed swap and keeps the old item equipped
 }
 ```

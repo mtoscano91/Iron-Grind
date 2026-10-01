@@ -175,7 +175,7 @@ If `SaveIrreversibleOutcome` returns any non-Success code:
 1. Do **not** broadcast the outcome to the client.
 2. Signal the calling system to revert its in-memory mutations (**caller-owns rollback**):
    - **Leveling System**: reverts `Level`, `Experience`, and any derived stat changes back to pre-level-up values.
-   - **Enhancement System**: reverts `GearSlot.EnhancementLevel` (or restores the item slot on a destruction outcome).
+   - **Enhancement System**: restores the bag (enhancement-system.md CR-ENH-15 Rollback) — reverts the bag item's `EnhancementLevel` after a success outcome, or re-inserts the destroyed item at its previous level after a destruction outcome, and restores the consumed scroll.
    - **Item Consumption System**: reverts inventory slot changes.
    - **Respec System (RespecCommit)**: reverts stat changes AND issues a compensating `AddGold(amount, GoldTransactionReason.RespecRefund)` to refund the gold debit. The compensating `AddGold()` call must occur before the disconnect is issued.
 3. Disconnect the client (`DisconnectReason.Other` — see OQ-CP-1 to promote to `PersistenceFailure`).
@@ -311,7 +311,7 @@ A character record passes through the following lifecycle states on the server:
 | **Character Stats** | Downstream | Load: calls `SetBaseStat()` for all 20 base-stat fields (step 3). Save: calls `GetBaseStat()` to read current values. Must not call `GetEffectiveStat()` — persists base values only |
 | **Equipment System** | Downstream | Load: calls `AddEquipmentModifier()` per occupied slot after stat init (step 4). Save: reads `GearSlots` directly from record — Equipment System does not provide a save API |
 | **Item Database** | Downstream | Load: calls `TryGetItem(ItemID)` to resolve each occupied gear slot for modifier re-registration |
-| **IEnhancementBonusProvider** | Downstream | Load: calls `GetFlatBonus(level, gearTier, isWeapon)` and `GetElementalBonus(level, gearTier, isWeapon)` per slot during equipment re-registration |
+| **IEnhancementBonusProvider** | Downstream | Load: calls `GetFlatBonus(level, baseFlatBonus, gearTier)` and `GetElementalBonus(level, baseElementalDamage, gearTier, isWeapon)` per slot during equipment re-registration (signatures per enhancement-system.md, corrected 2026-10-01) |
 | **Inventory System** | Downstream | Load: `ImportSnapshot(charId, snapshot)` — item, count and enhancement level per slot (state restore; fires no events). Save: `ExportSnapshot(charId)`. Session release: `UnregisterCharacter(charId)` |
 | **Currency System** | Downstream | Load: writes `GoldBalance` directly (state restore, not `AddGold()`); emits `GoldSyncEvent`. Save: reads current balance |
 | **Leveling System** | Downstream | Load: notifies at-cap if `Level == 60` (step 7). Save trigger: `LevelUp` irreversible outcome fires after level is granted |

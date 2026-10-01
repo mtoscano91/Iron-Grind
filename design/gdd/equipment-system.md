@@ -1,6 +1,7 @@
 # Equipment System
 
-> **Status**: Approved (Pass 5 lean, 2026-05-22)
+> **Status**: Approved (Pass 7 lean, 2026-10-01 — all 5 Pass 6 blockers verified closed; 1 pre-implementation gate open before `/create-stories`: OQ-EQS-9). Previous: NEEDS REVISION (Pass 6 lean, 2026-10-01 — TD-044/045 amendments); Approved (Pass 5 lean, 2026-05-22)
+> **Revision 2026-10-01 (post-review)**: `Inventory.GetSlot` read added for CR-EQS-4/13; `GetSlotEnhancementLevel(GearSlot)` added; `EquipResult` → wire mapping stated (`InventoryError = 6`); OQ-EQS-8 resolved (PrestigeBand = Weapon slot only); Dependencies refreshed; F-EQS-4 collapsed to the F-ENH-3 result; AC-EQS-2/11/16/29 revised, AC-EQS-30–31 added; OQ-EQS-9 added. Same day, after approval (Enhancement System Revision Pass 2): the `GetElementalBonus` signature quoted in the elemental-weapon rule gains `baseElementalDamage` — reference update only, no rule change.
 > **Author**: Manuel Toscano + Claude Code agents
 > **Last Updated**: 2026-10-01 (TD-045/TD-044 design session: `EquipmentSlotEntry` gains `EnhancementLevel: byte` — Enhancement System upstream amendment #2, previously unapplied in this body; the level is carried through equip, auto-swap and unequip via the Inventory interface; modifiers registered through `IEnhancementBonusProvider.GetFlatBonus`; `GetEquippedWeaponEnhancementLevel()` added; CR-EQS-4 guard compares ItemID and level; CR-EQS-8 rewritten — failed swap aborts and keeps the old item equipped, no `ForceInsert` retry, no Empty-slot outcome; AC-EQS-8/16/17 revised, AC-EQS-28–29 added; OQ-EQS-8 added. **Lean re-review pending.**) Previous: 2026-05-22 (Pass 4: MergeResult code gap resolved — RejectedMergeError added for clean-rollback path; CriticalRollbackFailed reserved for rollback-fails path; CR-EQS-14 precondition 1 and rollback block updated; CR-EQS-15 crash recovery language clarified; RejectedEquipped documented as defense-in-depth; AC-EQS-24 updated; AC-EQS-26–27 added)
 > **Implements Pillar**: Legendary Gear (primary), Earned Power (secondary)
@@ -50,7 +51,7 @@ Stat gate by slot category:
 The check always uses `GetBaseStat()`. Effective stats, equipment bonuses, and buff/debuff modifiers are excluded. If a character's base stat drops below the threshold after equipping (hypothetical — base stats only fall at level reset, which is not designed), the item remains equipped; the gate is enforced only at equip time.
 
 **CR-EQS-4: Same-Item Guard**
-If the incoming item — identified by its inventory slot — has the same `ItemID` **and the same `EnhancementLevel`** as the item already occupying the target slot, short-circuit with `EquipResult.NoChange`. No Inventory calls, no Character Stats calls, no stat events. Two items with the same `ItemID` but different enhancement levels are different items: equipping a +5 Iron Sword over an equipped +0 Iron Sword is a normal auto-swap (CR-EQS-6). *(Level comparison added 2026-10-01, TD-045.)*
+The incoming item is read with `Inventory.GetSlot(inventorySlotIndex)` — a read-only peek that mutates nothing. If it has the same `ItemID` **and the same `EnhancementLevel`** as the item already occupying the target slot, short-circuit with `EquipResult.NoChange`. No Inventory mutations (`MoveItemOut` / `MoveItemIn` are not called), no Character Stats calls, no stat events. *(`GetSlot` read named 2026-10-01 at the lean re-review — the level comparison cannot be made without it.)* Two items with the same `ItemID` but different enhancement levels are different items: equipping a +5 Iron Sword over an equipped +0 Iron Sword is a normal auto-swap (CR-EQS-6). *(Level comparison added 2026-10-01, TD-045.)*
 
 **Enhanced modifier registration (applies to every `AddEquipmentModifier` call in CR-EQS-5/6/7/8):** the flat bonus passed to Character Stats is `IEnhancementBonusProvider.GetFlatBonus(enhancementLevel, modifier.FlatBonus, item.GearTier)`, not the raw Item Database `FlatBonus` (Enhancement System F-ENH-1; at level 0 the two are equal). `enhancementLevel` is the level of the item being registered. *(Added 2026-10-01 — Enhancement System upstream amendment #2.)*
 
@@ -78,7 +79,7 @@ Steps, executed in order:
 **CR-EQS-7: Unequip (Occupied → Empty)**
 Steps, executed in order:
 1. Check `Inventory.HasFreeSlot()`. Abort with `EquipResult.InventoryFull` if false.
-2. Call `ItemDatabase.GetItem(itemID)` → `EquipmentData`. If `GetItem()` returns null (item definition removed from database while equipped): log `CriticalError("Unequip GetItem null: {itemID}")`, skip modifier removal, clear slot (ItemID → Invalid, IsTransitioning → false), update appearance flags, return `EquipResult.Success`. Modifiers for an undefined item cannot be safely removed; clearing the slot is the least-corrupt outcome.
+2. Call `ItemDatabase.GetItem(itemID)` → `EquipmentData`. If `GetItem()` returns null (item definition removed from database while equipped): log `CriticalError("Unequip GetItem null: {itemID}")`, skip modifier removal, clear slot (ItemID → Invalid, `EnhancementLevel` → 0, IsTransitioning → false), update appearance flags, return `EquipResult.Success`. Modifiers for an undefined item cannot be safely removed; clearing the slot is the least-corrupt outcome.
 3. Set `_slots[(int)slot].IsTransitioning = true`.
 4. For each entry in item's `StatModifiers[]`: call `RemoveEquipmentModifier`. `OnStatChanged` fires.
 5. Call `Inventory.MoveItemIn(itemID, enhancementLevel)` → `MoveItemInResult` (`enhancementLevel` = the slot entry's `EnhancementLevel`). If `success = false`: restore modifiers via `AddEquipmentModifier` for each, clear IsTransitioning, return `EquipResult.InventoryError`.
@@ -111,17 +112,20 @@ The byte is written to `ZoneStateSnapshotEntityEntry.EquipmentAppearanceFlags` a
 
 `PRESTIGE_MID_THRESHOLD = 5`, `ENHANCEMENT_GLOW_THRESHOLD = 7`, `PRESTIGE_HIGH_THRESHOLD = 8` — constants owned by Enhancement System GDD (Approved 2026-05-23, CR-ENH-12). ArmorTier = 0 if no armor equipped.
 
-PrestigeBand source: the band is computed from the **Weapon slot's** `EquipmentSlotEntry.EnhancementLevel` (band NONE if no weapon is equipped), consistent with the WeaponTier and ElementType fields of the same byte. *(Working rule recorded 2026-10-01 — the source slot was previously unstated; see OQ-EQS-8.)*
+PrestigeBand source: the band is computed from the **Weapon slot's** `EquipmentSlotEntry.EnhancementLevel` only (band NONE if no weapon is equipped), consistent with the WeaponTier and ElementType fields of the same byte. The enhancement level of any other gear slot never affects the byte — enhanced armor shows its level on inspect only. *(Confirmed at the 2026-10-01 lean re-review — OQ-EQS-8 resolved; matches the registry rule "non-weapon items never glow" and Enhancement System CR-ENH-12/13.)*
 
 Encode: `flags = (byte)(((int)weaponTier & 0x03) << 6 | ((int)elementType & 0x07) << 3 | (prestigeBand & 0x03) << 1 | (armorBit & 0x01))`
 
 **CR-EQS-12: Elemental Weapon Data Flow**
-The Equipment System does not write elemental data to Character Stats. It exposes `GetEquippedWeaponItemID(): ItemID`, returning `ItemID.Invalid` if no weapon is equipped. Damage Calculation calls this method and reads `ElementType` and `ElementalDamage` directly from Item Database. `ItemID.Invalid` is treated as a non-elemental weapon with 0 elemental damage. It also exposes `GetEquippedWeaponEnhancementLevel(): byte` — the Weapon slot entry's `EnhancementLevel`, 0 if no weapon is equipped — which Damage Calculation passes to `IEnhancementBonusProvider.GetElementalBonus(level, gearTier, isWeapon)` (Enhancement System F-ENH-2). *(Added 2026-10-01 — required by damage-calculation.md and the Enhancement System GDD; previously missing from this body.)*
+The Equipment System does not write elemental data to Character Stats. It exposes `GetEquippedWeaponItemID(): ItemID`, returning `ItemID.Invalid` if no weapon is equipped. Damage Calculation calls this method and reads `ElementType` and `ElementalDamage` directly from Item Database. `ItemID.Invalid` is treated as a non-elemental weapon with 0 elemental damage. It also exposes `GetEquippedWeaponEnhancementLevel(): byte` — the Weapon slot entry's `EnhancementLevel`, 0 if no weapon is equipped — which Damage Calculation passes, together with the weapon's base `ElementalDamage` from the Item Database, to `IEnhancementBonusProvider.GetElementalBonus(level, baseElementalDamage, gearTier, isWeapon)` (Enhancement System F-ENH-2; signature updated 2026-10-01). *(Added 2026-10-01 — required by damage-calculation.md and the Enhancement System GDD; previously missing from this body.)*
 
 **CR-EQS-13: Input Validation**
+Entry points: `Equip(GearSlot slot, ItemID itemID, int inventorySlotIndex): EquipResult` and `Unequip(GearSlot slot): EquipResult` — the same three values the wire `EquipRequest` carries (`gearSlot`, `itemId`, `inventorySlot`; `itemId = 0` routes to `Unequip`). *(Signature stated 2026-10-01; previously implied.)*
+
 All public equip/unequip entry points validate:
 - `itemID != ItemID.Invalid` — reject silently in release builds; dev builds throw `InvalidOperationException`
 - `(int)slot < 7` — reject before indexing `_slots`; IL2CPP does not bounds-check enum casts
+- `inventorySlotIndex` in `[0, 19]` and `Inventory.GetSlot(inventorySlotIndex).ItemID == itemID` — the stale-render guard of the `EquipRequest` validation (networking-wire-protocol.md). A mismatch makes no state change and is answered on the wire with `EquipFailReason.ItemNotInInventory` (see OQ-EQS-9 for which layer owns that code).
 
 ---
 
@@ -167,7 +171,7 @@ The defense-in-depth equipped check (precondition 1) executes before any item re
 
 | State | `ItemId` | `IsTransitioning` | Modifier status in Character Stats |
 |-------|----------|-------------------|-------------------------------------|
-| **Empty** | `ItemID.Invalid` | false | None registered for this slot |
+| **Empty** | `ItemID.Invalid` (`EnhancementLevel` = 0) | false | None registered for this slot |
 | **Occupied** | valid ItemID | false | Fully applied |
 | **Transitioning** | valid ItemID (old item — slot not yet updated) | true | Partially applied (mid-operation) |
 
@@ -190,16 +194,32 @@ The defense-in-depth equipped check (precondition 1) executes before any item re
 | Item Database | Read | `GearSlot`, `GearTier`, `StatModifiers[]`, `EquipRequirementStat`, `EquipRequirementMin`, `ElementType`, `ElementalDamage` | `GetItem(ItemID): EquipmentData` |
 | Character Stats | Write | Modifier registration / removal | `AddEquipmentModifier(EntityID, StatID, flatBonus, pctBonus, ItemID)` / `RemoveEquipmentModifier(EntityID, StatID, ItemID)` |
 | Character Stats | Read | Base stat for equip gate | `GetBaseStat(EntityID, StatID): float` |
-| Inventory System | Read / Write | Item transfer (ItemID + EnhancementLevel), capacity check | `HasFreeSlot(): bool` / `MoveItemOut(slotIndex): MoveItemOutResult { ItemID, EnhancementLevel, Code }` / `MoveItemIn(ItemID, enhancementLevel): MoveItemInResult` / `ForceInsert(ItemID, enhancementLevel): bool` *(accessory merge only)* |
+| Inventory System | Read / Write | Item transfer (ItemID + EnhancementLevel), capacity check, slot peek | `HasFreeSlot(): bool` / `GetSlot(slotIndex): { ItemID, Quantity, EnhancementLevel }` *(read-only — CR-EQS-4 guard and CR-EQS-13 validation)* / `MoveItemOut(slotIndex): MoveItemOutResult { ItemID, EnhancementLevel, Code }` / `MoveItemIn(ItemID, enhancementLevel): MoveItemInResult` / `ForceInsert(ItemID, enhancementLevel): bool` *(accessory merge only)* |
 | Enhancement System | Read | Enhanced flat bonus for modifier registration | `IEnhancementBonusProvider.GetFlatBonus(level, baseFlatBonus, gearTier): int` |
 | Networking | Write | Zone appearance byte | `ZoneStateSnapshotEntityEntry.EquipmentAppearanceFlags` — written on every slot change |
 | Damage Calculation | Provides | Equipped weapon ItemID and enhancement level | `GetEquippedWeaponItemID(): ItemID` / `GetEquippedWeaponEnhancementLevel(): byte` |
-| Character Persistence | Read / Write | 7 gear slots | `GearSlots[7]: {ItemID, EnhancementLevel: byte}` — saved and restored per slot |
+| Character Persistence | Read / Write | 7 gear slots | `GearSlots[7]: {ItemID, EnhancementLevel: byte}` — saved and restored per slot; read per slot via `GetEquipmentSlotState(slot)` + `GetSlotEnhancementLevel(slot)` |
+| Inventory UI | Provides | Per-slot contents, state and enhancement level | `GetEquipmentSlotState(GearSlot)` / `GetSlotEnhancementLevel(GearSlot): byte` / `IsSlotTransitioning(GearSlot)` |
 
 **Cross-document impacts from this section:**
 - *Item Database GDD*: Must add `EquipRequirementStat: StatID?` and `EquipRequirementMin: float` fields to `EquipmentData` schema (CR-EQS-3). Accessories: `EquipRequirementStat = null`.
 - *Inventory System GDD*: Must add `ForceInsert(ItemID): bool` emergency path (CR-EQS-8). `MoveItemOut` return type must be extended to `MoveItemOutResult` to distinguish empty vs. locked slot (current `ItemID` return is ambiguous). *(Both applied 2026-05-22. 2026-10-01: `MoveItemOutResult` gains `EnhancementLevel`, and `MoveItemIn`/`ForceInsert` gain an `enhancementLevel` parameter — applied to inventory-system.md Rule 8.24a the same day; `ForceInsert` is no longer used by CR-EQS-8.)*
-- *Networking Wire Protocol GDD*: `EquipRequest` must identify the item by **inventory slot index** — an `ItemID` alone cannot distinguish two items of the same type at different enhancement levels; `EquipResult` must carry the equipped slot's `EnhancementLevel`. *(Applied 2026-10-01.)*
+- *Networking Wire Protocol GDD*: `EquipRequest` must identify the item by **inventory slot index** — an `ItemID` alone cannot distinguish two items of the same type at different enhancement levels; `EquipResult` must carry the equipped slot's `EnhancementLevel`. *(Applied 2026-10-01.)* `EquipFailReason` must carry `InventoryError` — see the mapping below. *(Applied 2026-10-01, lean re-review: `InventoryError = 6`.)*
+- *Inventory System GDD (2026-10-01 lean re-review)*: `GetSlot(slotIndex)` added to the Equipment System's interface rows (read-only; already defined for the Enhancement System). The historical `ForceInsert(ItemID)` note above predates the `enhancementLevel` parameter and CR-EQS-8's rewrite — `ForceInsert(ItemID, enhancementLevel)` is now used by CR-EQS-14 only.
+
+**`EquipResult` → wire `EquipResult` message mapping** *(added 2026-10-01, lean re-review)*:
+
+| `EquipResult` (this system) | wire `success` | wire `failReason` (`EquipFailReason`) | Slot fields in the message |
+|-----------------------------|----------------|---------------------------------------|----------------------------|
+| `Success` | true | `None` (0) | New slot contents |
+| `NoChange` | true | `None` (0) | Unchanged slot contents (same ItemID and level as before) |
+| `StatRequirementNotMet` | false | `StatRequirementNotMet` (1) | Unchanged |
+| `InventoryFull` | false | `InventoryFull` (2) | Unchanged |
+| `SlotMismatch` | false | `SlotMismatch` (3) | Unchanged |
+| `InventoryError` | false | `InventoryError` (6) | Unchanged (old item still equipped — CR-EQS-6 step 7, CR-EQS-7 step 5, CR-EQS-8) |
+| `CriticalFailure` | false | `CriticalFailure` (255) | Reserved — not produced by any rule in this GDD |
+
+Wire reasons `ItemLocked` (4) and `ItemNotInInventory` (5) have no `EquipResult` member yet — see OQ-EQS-9.
 
 ## Formulas
 
@@ -283,40 +303,28 @@ Example: Dark Steel Sword requires `GetBaseStat(StatID.STR) >= 85`. A Warrior at
 
 ### F-EQS-4: Prestige Constraint (Enhancement System Anchor)
 
-The enhancement prestige principle: **+5 Bronze ≈ +0 Iron** in effective stats. Constraint on the relationship between flat bonus tiers and the Enhancement System bonus curve:
+The enhancement prestige principle: **a +5 item of tier T ≈ a +0 item of tier T+1** in effective stats (+5 Bronze ≈ +0 Iron). The constraint is owned and verified by Enhancement System F-ENH-3; it is restated here because it bounds the F-EQS-2 ranges. *(Rewritten 2026-10-01 — the original estimate-based derivation, written before the Enhancement System GDD existed, was superseded on 2026-05-23.)*
 
 ```
-(TierBonus_Iron × 2) ≈ (TierBonus_Bronze × 2) + (EnhancementBonus × MAX_ENHANCE_PER_TIER)
+midpoint(T) + PRESTIGE_MID_THRESHOLD × BonusPerLevel[T] ≈ midpoint(T+1)
 ```
 
-Rearranged:
-```
-EnhancementBonus ≈ (TierBonus_Iron − TierBonus_Bronze) × (2 / MAX_ENHANCE_PER_TIER)
-```
+Variables:
+- `midpoint(T)` — midpoint of tier T's Attack-class flat bonus range in F-EQS-2 (per modifier)
+- `BonusPerLevel[T]` — flat bonus added per modifier per enhancement level (Enhancement System F-ENH-1): Bronze 3, Iron 4, Steel 6, Dark Steel 10
+- `PRESTIGE_MID_THRESHOLD` = 5 (Enhancement System)
 
-Using Attack-class midpoints (Bronze=10, Iron=19), assuming `MAX_ENHANCE_PER_TIER` = 5 (unconfirmed — owned by Enhancement System GDD):
-```
-EnhancementBonus ≈ (19 − 10) × (2 / 5) = 3.6 flat Attack per enhancement level
-```
+| Tier T | Range (F-EQS-2) | midpoint(T) | + 5 × BonusPerLevel[T] | midpoint(T+1) | Δ |
+|--------|-----------------|-------------|------------------------|---------------|---|
+| Bronze | 8 – 12 | 10 | 10 + 15 = 25 | Iron: 25 | 0 |
+| Iron | 22 – 28 | 25 | 25 + 20 = 45 | Steel: 37 | +8 |
+| Steel | 32 – 42 | 37 | 37 + 30 = 67 | Dark Steel: 63 | +4 |
 
-The Enhancement System GDD must confirm `MAX_ENHANCE_PER_TIER` and the bonus curve. If confirmed values differ from these estimates, F-EQS-2 flat bonus ranges and/or the enhancement curve must be revised together — these two GDDs are co-constrained.
+Example: a Bronze Sword Attack modifier of 10 at +5 registers `10 + (5 × 3) = 25` — the Iron midpoint.
 
-**Boundary constraint (must hold at all valid item values, not just midpoints):**
+**Boundary behavior:** the constraint holds at midpoints, not at range extremes. A max-roll +5 item of tier T can exceed a min-roll +0 item of tier T+1 (e.g. Bronze 12 + 15 = 27 > Iron 22). This overlap is an explicit, accepted design decision recorded in Enhancement System F-ENH-3 ("Worst-case overlap") — higher tiers keep their advantage through a higher ceiling, not a guaranteed floor.
 
-```
-Bronze_max_per_item + EnhancementBonus × MAX_ENHANCE_PER_TIER < Iron_min_per_item
-```
-
-Where `X_per_item = X_per_modifier × modifiers_per_item`. Using current F-EQS-2 values (Bronze_max=12, Iron_min=16, 2 modifiers, estimated EnhancementBonus=3.6, MAX_ENHANCE_PER_TIER=5 assumed):
-
-`12×2 + 3.6×5 = 24 + 18 = 42` vs `Iron_min_per_item = 16×2 = 32`
-
-**This fails at the boundary.** Current F-EQS-2 ranges violate the prestige constraint at Bronze_max + full enhancement vs Iron_min combinations. Resolution options when Enhancement System GDD is authored:
-
-- **Option A (narrow ranges):** Raise `Iron_min` to ≥ `Bronze_max + ceil(EnhancementBonus × MAX_ENHANCE_PER_TIER / 2)` per modifier. With estimated values: Iron_min ≥ 12 + ceil(18/2) = 21 per modifier. Iron range would become ≈ 22–28.
-- **Option B (cap enhancement):** Constrain `MAX_ENHANCE_PER_TIER × EnhancementBonus < (Iron_min − Bronze_max) × 2`. With current ranges (gap = 4): max total enhancement = 8. At MAX_ENHANCE_PER_TIER=5: EnhancementBonus ≤ 1.6 per level.
-
-**This constraint is BLOCKING for Enhancement System GDD authoring.** Tag this document as a dependency of the Enhancement System GDD.
+**Co-constraint:** any change to an F-EQS-2 Attack-class range or to `BonusPerLevel` requires re-verifying this table in both GDDs.
 
 ---
 
@@ -405,7 +413,7 @@ Rule: `equipmentAppearanceFlags = 0x00`. Other players see the default unequippe
 | System | GDD status | What this GDD takes from it |
 |--------|-----------|----------------------------|
 | Item Database | Approved ✓ | `GearSlot` enum, `GearTier` enum, `EquipmentData` schema (`StatModifiers[]`, `ElementType`, `ElementalDamage`, `EquipRequirementStat: StatID?`, `EquipRequirementMin: float`, `MergeResultItemID: ItemID?`) — additions written 2026-05-22 |
-| Inventory System | Approved ✓ | `HasFreeSlot()`, `MoveItemOut(slotIndex): MoveItemOutResult { ItemID, EnhancementLevel, Code }`, `MoveItemIn(ItemID, enhancementLevel)`, `ForceInsert(ItemID, enhancementLevel): bool` — `MoveItemOutResult` extension and `ForceInsert` written 2026-05-22; enhancement-level fields and parameters written 2026-10-01 (TD-045) |
+| Inventory System | Approved ✓ | `HasFreeSlot()`, `GetSlot(slotIndex)` (read-only peek — CR-EQS-4/13), `MoveItemOut(slotIndex): MoveItemOutResult { ItemID, EnhancementLevel, Code }`, `MoveItemIn(ItemID, enhancementLevel)`, `ForceInsert(ItemID, enhancementLevel): bool` — `MoveItemOutResult` extension and `ForceInsert` written 2026-05-22; enhancement-level fields and parameters written 2026-10-01 (TD-045) |
 | Character Stats | Approved ✓ | `AddEquipmentModifier(EntityID, StatID, flatBonus, pctBonus, ItemID)`, `RemoveEquipmentModifier(EntityID, StatID, ItemID)`, `GetBaseStat(EntityID, StatID)`; equipment modifier layer (16 entries); EC-18 MaxHP clamping |
 | Networking Core | Approved ✓ | `ZoneStateSnapshotEntityEntry.EquipmentAppearanceFlags: byte` wire field — Equipment System writes this field |
 | Networking Wire Protocol | Approved ✓ | `EquipRequest` (client → server), `EquipResult` (server → client), `AppearanceChangedEvent` (server → zone) — wire schemas added 2026-05-22 |
@@ -415,14 +423,18 @@ Rule: `equipmentAppearanceFlags = 0x00`. Other players see the default unequippe
 
 | System | GDD status | What it takes from this GDD |
 |--------|-----------|------------------------------|
-| Inventory UI | Not Started (#30) | `IsSlotTransitioning(GearSlot): bool`, `GetEquipmentSlotState(GearSlot)`, equip/unequip result codes (`EquipResult`) — needed to render the equipment panel and react to swap events. Player fantasy (Section B) social-visibility anchor depends on appearance rendering landing on iOS. |
-| Damage Calculation | Not yet mapped | `GetEquippedWeaponItemID(): ItemID` — reads weapon item from Item Database for elemental damage resolution |
-| Character Persistence | Not yet mapped | Saves `_slots[(int)slot].ItemID` for all 7 slots. On load, Equipment System re-registers modifiers from Item Database. Equipment state must be fully reconstructible from ItemIDs alone. |
+| Inventory UI | Not Started (#30) | `IsSlotTransitioning(GearSlot): bool`, `GetEquipmentSlotState(GearSlot)`, `GetSlotEnhancementLevel(GearSlot): byte` (the "+N" shown on an equipped item), equip/unequip result codes (`EquipResult`) — needed to render the equipment panel and react to swap events. Player fantasy (Section B) social-visibility anchor depends on appearance rendering landing on iOS. |
+| Damage Calculation | Approved ✓ | `GetEquippedWeaponItemID(): ItemID` — reads weapon item from Item Database for elemental damage resolution; `GetEquippedWeaponEnhancementLevel(): byte` — the level passed to `IEnhancementBonusProvider.GetElementalBonus` (CR-EQS-12). *Known naming drift:* damage-calculation.md calls these `GetEquippedWeaponID(AttackerID)` / `GetEquippedWeaponEnhancementLevel(EntityID)` — to be reconciled in that GDD. |
+| Character Persistence | Approved ✓ | Saves `{ItemID, EnhancementLevel}` for all 7 slots (`GearSlots[7]`; `IsTransitioning` is never saved — CR-EQS-15). On load, modifiers are re-registered from Item Database using each slot's saved level (`IEnhancementBonusProvider.GetFlatBonus`). Equipment state must be fully reconstructible from the 7 `{ItemID, EnhancementLevel}` pairs alone. *(Corrected 2026-10-01 — previously "from ItemIDs alone", which the per-slot level made false.)* |
+| Enhancement System | Approved ✓ | `EquipmentSlotEntry.EnhancementLevel` storage while an item is equipped; the PrestigeBand bits of `equipmentAppearanceFlags` (CR-EQS-11); the "equipped items cannot be enhanced" boundary (CR-EQS-1). Also an upstream dependency (table above) — the two GDDs are mutually dependent. |
 
 **Bidirectionality:**
 - Item Database GDD references Equipment System as a consumer of `EquipmentData` ✓
 - Character Stats GDD references Equipment System as the owner of the equipment modifier layer (line 188) ✓
-- Inventory System GDD references Equipment System as the caller of `MoveItemOut`/`MoveItemIn`/`ForceInsert` — updated 2026-05-22 ✓
+- Inventory System GDD references Equipment System as the caller of `HasFreeSlot`/`GetSlot`/`MoveItemOut`/`MoveItemIn`/`ForceInsert` — updated 2026-05-22; `GetSlot` added 2026-10-01 ✓
+- Enhancement System GDD references Equipment System as the consumer of `IEnhancementBonusProvider` and owner of `equipmentAppearanceFlags` (Interactions and Dependencies tables) ✓
+- Damage Calculation GDD references Equipment System as the source of the equipped weapon and its enhancement level ✓ (method-name drift noted above)
+- Character Persistence GDD references Equipment System for `GearSlots[7]` save/load ✓
 
 ## Tuning Knobs
 
@@ -461,6 +473,7 @@ Visual requirements are primarily owned by the Inventory UI GDD. The Equipment S
 All UI surfaces are owned by the Inventory UI GDD. The Equipment System exposes the following data surface for UI consumption:
 
 - `GetEquipmentSlotState(GearSlot): (ItemID, SlotState)` — slot contents and current state (Empty / Occupied / Transitioning)
+- `GetSlotEnhancementLevel(GearSlot): byte` — the slot entry's `EnhancementLevel`; 0 if the slot is empty. Valid for all 7 slots. `GetEquippedWeaponEnhancementLevel()` (CR-EQS-12) is equivalent to `GetSlotEnhancementLevel(GearSlot.Weapon)`. *(Added 2026-10-01, lean re-review — no per-slot level read existed for non-weapon slots.)*
 - `IsSlotTransitioning(GearSlot): bool` — HUD subscribers defer rendering while true
 - `EquipResult` codes and associated data:
   - `NoChange` — no-op; UI does nothing
@@ -487,9 +500,9 @@ Action: Equip Item X into Weapon slot.
 Pass: `GetEffectiveStat(STR)` = 60, `GetEffectiveStat(DEF)` = 38. `GetEquipmentSlotState(GearSlot.Weapon)` = `(ItemX, Occupied)`. Inventory no longer contains Item X.
 
 **AC-EQS-2 [BLOCKING]: Auto-swap moves old item to inventory and registers new item's modifiers**
-Setup: Iron Sword (ItemA, +18 STR) equipped in Weapon slot. Steel Sword (ItemB, +35 STR, `EquipRequirementMin=55 STR`) in inventory. Character `GetBaseStat(STR)` = 60.
+Setup: Iron Sword (ItemA, +25 STR) equipped in Weapon slot. Steel Sword (ItemB, +35 STR, `EquipRequirementMin=55 STR`) in inventory. Both at `EnhancementLevel = 0`. Character `GetBaseStat(STR)` = 60.
 Action: Equip ItemB into Weapon slot.
-Pass: Net `GetEffectiveStat(STR)` change = +17 (+35 − 18). ItemA in inventory. `GetEquipmentSlotState(GearSlot.Weapon)` = `(ItemB, Occupied)`. ItemB no longer in inventory.
+Pass: Net `GetEffectiveStat(STR)` change = +10 (+35 − 25). ItemA in inventory. `GetEquipmentSlotState(GearSlot.Weapon)` = `(ItemB, Occupied)`. ItemB no longer in inventory.
 
 **AC-EQS-3 [BLOCKING]: Unequip returns item to inventory and removes modifiers**
 Setup: Item Y (`StatModifiers: +12 MaxHP`) equipped in Helmet slot. `GetEffectiveStat(MaxHP)` = 512. Inventory has a free slot.
@@ -533,7 +546,7 @@ Pass: `EquipResult.Success`. `IsSlotTransitioning(GearSlot.Weapon)` = false afte
 Unit-test note: The intermediate true state (between `RemoveEquipmentModifier` and `AddEquipmentModifier`) requires test-stub instrumentation. Inject a spy on `AddEquipmentModifier` and assert `IsSlotTransitioning` = true inside the callback; assert false after the equip call returns.
 
 **AC-EQS-11 [BLOCKING]: equipmentAppearanceFlags encodes correctly**
-Setup: Equip a Dark Steel sword (WeaponTier=3, ElementType=Fire=1, PrestigeBand=None=0). Steel or DarkSteel armor equipped (ArmorTier=1).
+Setup: Equip a Dark Steel sword (WeaponTier=3, ElementType=Fire=1) at `EnhancementLevel = 0` (PrestigeBand=None=0). Steel or DarkSteel armor equipped (ArmorTier=1).
 Pass: `equipmentAppearanceFlags = 0b11_001_00_1 = 0xC9`. Verify decode: WeaponTier=DarkSteel, ElementType=Fire, PrestigeBand=None, ArmorTier=upper.
 
 **AC-EQS-12 [BLOCKING]: GetEquippedWeaponItemID returns Invalid when no weapon equipped**
@@ -558,7 +571,7 @@ Pass: `EquipResult.StatRequirementNotMet`. Helmet stays in inventory.
 Note: Requires unit-test injection (stub `MoveItemIn` to return `success=false`; `ForceInsert` is a spy).
 Setup: Weapon slot occupied by ItemA at `EnhancementLevel = 3`. ItemB in inventory slot S.
 Action: Trigger auto-swap to ItemB (CR-EQS-6 path). `MoveItemIn` fails at step 6.
-Pass: `EquipResult.InventoryError` returned. `GetEquipmentSlotState(GearSlot.Weapon)` = `(ItemA, Occupied)` with `EnhancementLevel = 3` — slot unchanged. `GetEffectiveStat` equals its pre-action value (ItemA's enhanced modifiers re-applied exactly once). `IsSlotTransitioning(GearSlot.Weapon)` = false. ItemB is still in inventory slot S. `ForceInsert` was called 0 times. A server error log entry exists containing oldItemID and entityID. No item lost.
+Pass: `EquipResult.InventoryError` returned. `GetEquipmentSlotState(GearSlot.Weapon)` = `(ItemA, Occupied)` and `GetSlotEnhancementLevel(GearSlot.Weapon)` = 3 — slot unchanged. `GetEffectiveStat` equals its pre-action value (ItemA's enhanced modifiers re-applied exactly once). `IsSlotTransitioning(GearSlot.Weapon)` = false. ItemB is still in inventory slot S. `ForceInsert` was called 0 times. A server error log entry exists containing oldItemID and entityID. No item lost.
 
 **AC-EQS-17 [BLOCKING]: Enhancement level survives equip and unequip** *(replaced 2026-10-01 — the former ForceInsert-failure / Empty-slot criterion no longer exists, TD-044/TD-045)*
 Setup: Weapon slot empty. Iron Sword at `EnhancementLevel = 5` in inventory slot S (stat requirement met). At least one other inventory slot free.
@@ -601,7 +614,7 @@ Setup: Player inventory contains 3 items of the same `ItemID` (Ring at +1, `Merg
 Action: Call `RequestMerge(slotIdx1, slotIdx2, slotIdx3)`. `MoveItemOut` × 3 succeeds; `ForceInsert(MergeResultItemID, 0)` fails (injected); rollback `ForceInsert × 3` succeeds.
 Pass: Returns `MergeResult.RejectedMergeError`. All 3 source items restored to inventory. No CriticalError logged (rollback succeeded — all items accounted for). `IsSlotTransitioning` unaffected (merge does not touch equipment slots).
 
-**AC-EQS-25 [PLANNED — BLOCKED: needs Character Persistence GDD]: IsTransitioning defaults to false on persistence load**
+**AC-EQS-25 [BLOCKING]: IsTransitioning defaults to false on persistence load** *(unblocked 2026-10-01 — character-persistence.md is Approved; was PLANNED — BLOCKED)*
 Setup: Simulate persistence load with valid ItemIDs in all 7 equipment slots (using test stub for persistence layer). No prior in-memory Equipment System state.
 Action: Initialize Equipment System from 7 saved `{ItemID, EnhancementLevel}` pairs.
 Pass: `IsSlotTransitioning(slot)` = false for all 7 `GearSlot` values. Modifier stack reflects all 7 items' `StatModifiers[]` (re-registered from Item Database on load). No residual `IsTransitioning = true` from any prior mid-swap state.
@@ -628,12 +641,29 @@ Note: Requires a stub `IEnhancementBonusProvider` whose `GetFlatBonus(level, bas
 Setup: Weapon slot empty. Bronze Sword with one modifier `{STR, FlatBonus = 10}` at `EnhancementLevel = 5` in inventory. Stub returns 28 for `GetFlatBonus(5, 10, GearTier.Bronze)`.
 Action: Equip the sword.
 Pass: `AddEquipmentModifier` was called with flat bonus 28 (not 10). `GetFlatBonus` was called with `(5, 10, GearTier.Bronze)`. The same sword at `EnhancementLevel = 0` (stub returns 10 for level 0) registers flat bonus 10.
+Note: 28 is deliberately not the real F-ENH-1 value (25) — the test proves the Equipment System registers whatever the provider returns rather than recomputing the formula itself.
+
+**AC-EQS-30 [BLOCKING]: PrestigeBand is driven by the Weapon slot only** *(added 2026-10-01, lean re-review — OQ-EQS-8)*
+Setup: All slots empty. Items in inventory (stat requirements met): Iron Sword (`ElementType = None`) at `EnhancementLevel = 7`; a second Iron Sword (`ElementType = None`) at `EnhancementLevel = 0`; Bronze Chest at `EnhancementLevel = 9`. At least one free inventory slot.
+Action / Pass (in order):
+(a) Equip the Bronze Chest only → `equipmentAppearanceFlags = 0x00` (no weapon: band NONE despite the +9 chest). `GetSlotEnhancementLevel(GearSlot.Chest)` = 9.
+(b) Equip the +0 Iron Sword → `equipmentAppearanceFlags = 0b01_000_00_0 = 0x40` (WeaponTier=Iron, band NONE — the +9 chest does not raise the band).
+(c) Equip the +7 Iron Sword over it (auto-swap) → `equipmentAppearanceFlags = 0b01_000_10_0 = 0x44` (band GLOW_LOW).
+(d) Unequip the weapon → `equipmentAppearanceFlags = 0x00`.
+
+**AC-EQS-31 [BLOCKING]: Auto-swap MoveItemOut failure — old item reclaimed at its enhancement level** *(added 2026-10-01, lean re-review — CR-EQS-6 step 7 had no criterion)*
+Note: Requires unit-test injection (stub `MoveItemOut(S)` to return `Code = SlotLocked`; `GetSlot`, `MoveItemIn` and the reclaiming `MoveItemOut` are not stubbed).
+Setup: Weapon slot occupied by ItemA at `EnhancementLevel = 3`. ItemB (different `ItemID`, stat requirement met) in inventory slot S. Exactly one free inventory slot F.
+Action: Trigger auto-swap to ItemB. Step 6 succeeds (ItemA placed in F at level 3); step 7 `MoveItemOut(S)` fails.
+Pass: `EquipResult.InventoryError` returned. `GetEquipmentSlotState(GearSlot.Weapon)` = `(ItemA, Occupied)` and `GetSlotEnhancementLevel(GearSlot.Weapon)` = 3. `GetEffectiveStat` equals its pre-action value (ItemA's enhanced modifiers re-applied exactly once). `IsSlotTransitioning(GearSlot.Weapon)` = false. Inventory slot F is empty again (ItemA is not duplicated in the bag). ItemB is still in slot S.
 
 ## Open Questions
 
-**OQ-EQS-8 (added 2026-10-01):** Which gear slot's enhancement level drives the PrestigeBand bits of `equipmentAppearanceFlags`? CR-EQS-11 now records the Weapon slot as the working rule (consistent with WeaponTier/ElementType in the same byte), but neither this GDD nor Enhancement System CR-ENH-12 stated it before. Confirm at the lean re-review, or define an alternative (e.g. highest level across all slots). *Owner*: Game Designer. *Target*: lean re-review of this GDD.
+**OQ-EQS-9 (added 2026-10-01, lean re-review):** The wire `EquipFailReason` enum has `ItemLocked` (4) and `ItemNotInInventory` (5), but `EquipResult` has no matching members, and CR-EQS-5 step 2 aborts on a failed `MoveItemOut` without naming a result code (CR-EQS-6 step 7 returns `InventoryError`; EC-EQS-4 expects the UI to say "Item is locked"). Decide which layer produces the two wire reasons: (a) add `ItemLocked` and `ItemNotInInventory` to `EquipResult` and have CR-EQS-13 / CR-EQS-5 step 2 / CR-EQS-6 step 7 return them, or (b) keep `EquipResult` as-is and have the request handler derive them (`GetSlot` mismatch → `ItemNotInInventory`; `IsSlotLocked` → `ItemLocked`) before calling `Equip`. *Owner*: Game Designer + Network Programmer. *Target*: before `/create-stories` for the Equipment System epic.
 
-**OQ-EQS-1 (from Item Database GDD — resolved):** Flat bonus ranges by tier resolved in F-EQS-2. Provisional pending Enhancement System GDD validation.
+**OQ-EQS-8 (RESOLVED 2026-10-01, lean re-review):** The PrestigeBand bits of `equipmentAppearanceFlags` are driven by the **Weapon slot's** enhancement level only (CR-EQS-11, AC-EQS-30). The "highest level across all slots" alternative was rejected: it contradicts the registry rule that non-weapon items never glow and would decouple the halo from the weapon it is drawn on.
+
+**OQ-EQS-1 (from Item Database GDD — RESOLVED 2026-05-23):** Flat bonus ranges by tier resolved in F-EQS-2 and validated against Enhancement System F-ENH-3 (see OQ-EQS-4).
 
 **OQ-EQS-2 (RESOLVED 2026-05-22):** Item Database GDD now includes `EquipRequirementStat: StatID?`, `EquipRequirementMin: float`, and `MergeResultItemID: ItemID?` fields on `EquipmentData`. See item-database.md.
 
@@ -641,8 +671,8 @@ Pass: `AddEquipmentModifier` was called with flat bonus 28 (not 10). `GetFlatBon
 
 **OQ-EQS-4 (RESOLVED 2026-05-23):** Enhancement System GDD (Approved) confirmed: `PRESTIGE_MID_THRESHOLD = 5`, `ENHANCEMENT_GLOW_THRESHOLD = 7`, `PRESTIGE_HIGH_THRESHOLD = 8`, `MAX_ENHANCEMENT_LEVEL = 10`. F-EQS-2 Iron flat bonus range corrected to 22–28 (F-ENH-3 parity constraint validated: Bronze→Iron Δ=0 ✓, Iron→Steel Δ=+8 ✓, Steel→DarkSteel Δ=+4 ✓). See enhancement-system.md F-ENH-3.
 
-**OQ-EQS-5 (pending Character Progression GDD):** Stat requirement thresholds in F-EQS-3 must be calibrated against the Character Progression GDD. Target: L45 character reaches ≥85 base STR through natural play without gear contributions.
+**OQ-EQS-5 (open — calibration not yet performed):** Stat requirement thresholds in F-EQS-3 must be calibrated against the Character Progression GDD. Target: L45 character reaches ≥85 base STR through natural play without gear contributions. *(2026-10-01: no GDD named "Character Progression" exists; base-stat growth is specified in leveling-system.md (Approved), which is the likely source for this calibration.)*
 
 **OQ-EQS-6 (pending Networking Core GDD review):** Confirm that `ZoneStateSnapshotEntityEntry.EquipmentAppearanceFlags` is included in every zone snapshot (not only delta updates). If snapshot is delta-compressed, initial full-state snapshots must always include this field.
 
-**OQ-EQS-7 (pending Character Persistence GDD):** Equipment serialization contract assumed: save 7 `{ItemID, EnhancementLevel}` pairs per character (character-persistence.md `GearSlots[7]`; level added 2026-10-01); on load, re-register modifiers from Item Database. Must be confirmed when Character Persistence GDD is authored.
+**OQ-EQS-7 (RESOLVED 2026-10-01):** Equipment serialization contract confirmed by character-persistence.md (Approved): 7 `{ItemID, EnhancementLevel}` pairs per character (`GearSlots[7]`); `IsTransitioning` is not saved; on load, modifiers are re-registered from Item Database using each slot's saved level (load step 4). AC-EQS-25 is no longer blocked on that GDD being authored.

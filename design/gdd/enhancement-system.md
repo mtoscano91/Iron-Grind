@@ -1,8 +1,8 @@
 # Enhancement System
 
-> **Status**: In Design
+> **Status**: Needs Revision — revised 2026-10-01 (Pass 5 lean-review blockers addressed), lean re-review pending. Previously Approved (Pass 4 lean, 2026-05-23)
 > **Author**: Manuel Toscano + Claude Code agents
-> **Last Updated**: 2026-10-01 (TD-045/TD-043 design session: CR-ENH-12/15 now name the Inventory API — level written via `Inventory.SetEnhancementLevel` on the locked slot, scroll consumed via `Inventory.ConsumeItem(scrollItemID, 1)` instead of `RemoveItem`, destruction via `Inventory.RemoveItem`; upstream amendments #2 and #3 applied to the Equipment and Inventory GDDs. **Lean re-review pending.** Note: this header's Status reads "In Design" while systems-index.md lists the GDD as Approved (Pass 4 lean, 2026-05-23) — reconcile at the re-review.) Previous: 2026-05-23
+> **Last Updated**: 2026-10-01 (Revision Pass 2 — Pass 5 lean-review blockers: the outcome is applied to the bag before the commit (CR-ENH-15 step 6a/6b) with a caller-owned rollback via `ForceInsert` / `SetEnhancementLevel` / `PickupRequest`; `GetElementalBonus` gains `baseElementalDamage`; `RejectedScrollNotFound` and `RejectedNotUpgradeable` added; CR-ENH-18 attempt exclusivity added; a client disconnect no longer rolls an attempt back; AC-ENH-33..38 added.) Earlier the same day (TD-045/TD-043 design session: CR-ENH-12/15 now name the Inventory API — level written via `Inventory.SetEnhancementLevel` on the locked slot, scroll consumed via `Inventory.ConsumeItem(scrollItemID, 1)` instead of `RemoveItem`, destruction via `Inventory.RemoveItem`; upstream amendments #2 and #3 applied to the Equipment and Inventory GDDs.) Previous: 2026-05-23
 > **Implements Pillar**: Legendary Gear (primary), Earned Power (secondary)
 
 ## Overview
@@ -49,7 +49,9 @@ Items with `GearSlot.Ring` or `GearSlot.Necklace` cannot be targeted. Targeting 
 Item and scroll selection in the UI do not constitute commitment. The server locks the target slot and consumes the scroll only upon receipt of an explicit `ConfirmEnhancement(itemSlotIndex, scrollSlotIndex)` request. Before that request is sent, the player may send `CancelEnhancement` at any time with no penalty. Once `ConfirmEnhancement` is sent, the attempt is irrevocable.
 
 **CR-ENH-7: Slot Lock Duration**
-Upon receipt of `ConfirmEnhancement`, the server calls `Inventory.LockSlot(slotIndex)` before any other operation. The slot remains locked for the entire attempt lifecycle. The server calls `Inventory.UnlockSlot(slotIndex)` exactly once, after the outcome is committed to persistent storage and the slot is cleared or updated.
+Upon receipt of `ConfirmEnhancement`, the server calls `Inventory.LockSlot(slotIndex)` before any other operation. The slot remains locked for the entire attempt lifecycle. The server calls `Inventory.UnlockSlot(slotIndex)` exactly once, after the outcome is committed to persistent storage and the slot is cleared or updated (or, on a failed commit, after the rollback — CR-ENH-15).
+
+*Lock lifetime:* steps 3–6a run within one server tick and step 6b ends when Character Persistence returns a result (a timed-out write returns a non-Success code — character-persistence.md EC-CP-5), so a lock never outlives its attempt: every exit path (success, destruction, step 4 failure, commit failure) ends in `UnlockSlot` or `RemoveItem`. Locks are in-memory only and are never saved; a server crash clears them. No separate lock timeout exists (answers inventory-system.md OQ-INV-4).
 
 **CR-ENH-8: Concurrent Attempt Prevention**
 A player may have at most one active enhancement attempt at a time. Submitting `ConfirmEnhancement` while another attempt is in progress for this player (state VALIDATING, LOCKED, or RESOLVING) returns `RejectedConcurrentAttempt`.
@@ -65,10 +67,12 @@ There is no partial-failure (Fail-Safe) outcome. Every failed attempt destroys t
 Fail-Destruction is possible at every enhancement level, including +0. Every failed attempt permanently destroys the item. There is no safe floor. The probability of destruction at each level is defined in F-ENH-4.
 
 **CR-ENH-11: Commit-Then-Deliver**
-Steps 3–6 of the attempt sequence (CR-ENH-15) execute within a single atomic database transaction. The transaction commits at step 6. The server sends result messages only after the transaction commits. If the server crashes or the connection drops before the transaction commits, the entire sequence is rolled back: the scroll remains in inventory, the slot is unlocked, and the item is unmodified. On reconnect, the client reads the committed state; if no commit occurred, state is unchanged. No client-side recovery flow is required. This prevents deliberate disconnect to avoid destruction — a successful disconnect-before-commit leaves the player with their scroll and item intact, but does not protect against destruction once the commit succeeds.
+Steps 3–6 of the attempt sequence (CR-ENH-15) form one atomic unit: the in-memory changes of steps 3–6a become durable through a single database write at step 6b (`SaveIrreversibleOutcome` — one transaction, character-persistence.md CR-CP-6). The server sends result messages only after that write succeeds. If the write fails, this system rolls back every in-memory change (CR-ENH-15 Rollback): the scroll is back in inventory, the item is present at its previous level, and the slot is unlocked. If the server crashes before the write completes, the saved record still holds the pre-attempt state and the player loads with scroll and item intact. A client disconnect does not abort an attempt: once step 3 has run, the server completes the sequence regardless of the connection (EC-ENH-1), so disconnecting cannot avoid a destruction. On reconnect, the client reads the committed state. No client-side recovery flow is required.
+
+*Pre-commit events:* `ConsumeItem`, `SetEnhancementLevel` and `RemoveItem` each raise the Inventory System's `InventoryChangedEvent` at steps 4 and 6a — before the commit. These are server-side events. Any client-facing inventory message derived from them for this character must be held until step 6b succeeds and dropped if it fails; the future client inventory-sync message (TD-046) must honor this.
 
 **CR-ENH-12: Prestige Band Encoding**
-The enhancement level maps to a PrestigeBand encoded in `EquipmentSlotRecord.equipmentAppearanceFlags[2:1]`. Four states occupy all 2-bit values in monotonically increasing order:
+The enhancement level maps to a PrestigeBand encoded in the character's `equipmentAppearanceFlags[2:1]` (one byte per character — see the contract mapping below). Four states occupy all 2-bit values in monotonically increasing order:
 
 | Band | Level Range | Bits [2:1] | Glow visible at range |
 |------|------------|------------|----------------------|
@@ -79,9 +83,9 @@ The enhancement level maps to a PrestigeBand encoded in `EquipmentSlotRecord.equ
 
 The PrestigeBand is visible to other players at zone range. The exact enhancement level is not visible at range; it is revealed only on deliberate inspect.
 
-The Enhancement System writes `EnhancementLevel` to `InventorySlotRecord` only. The Equipment System reads `InventorySlotRecord.EnhancementLevel` when equipping an item; it sets `EquipmentSlotRecord.EnhancementLevel = InventorySlotRecord.EnhancementLevel` and updates `EquipmentSlotRecord.equipmentAppearanceFlags[2:1]` accordingly. The Enhancement System does not write directly to `EquipmentSlotRecord`.
+The Enhancement System writes `EnhancementLevel` to `InventorySlotRecord` only. The Equipment System reads `InventorySlotRecord.EnhancementLevel` when equipping an item; it sets `EquipmentSlotRecord.EnhancementLevel = InventorySlotRecord.EnhancementLevel` and recomputes the character's `equipmentAppearanceFlags[2:1]` from the Weapon slot's level. The Enhancement System does not write directly to `EquipmentSlotRecord`.
 
-*Contract mapping (2026-10-01, TD-045):* `InventorySlotRecord` is the Inventory System's slot `{ItemID, Quantity, EnhancementLevel}` (inventory-system.md Rule 1.1/1.4). The write is `Inventory.SetEnhancementLevel(slotIndex, level)`, which the Inventory System accepts only on a slot this system currently holds locked (Rule 5.14a). The Equipment System does not read the inventory slot directly: it receives the level in `MoveItemOutResult.EnhancementLevel` when the item is equipped and returns it via `MoveItemIn(ItemID, enhancementLevel)` on unequip (equipment-system.md CR-EQS-1/5/6/7). `EquipmentSlotRecord` is the Equipment System's `EquipmentSlotEntry`.
+*Contract mapping (2026-10-01, TD-045):* `InventorySlotRecord` is the Inventory System's slot `{ItemID, Quantity, EnhancementLevel}` (inventory-system.md Rule 1.1/1.4). The write is `Inventory.SetEnhancementLevel(slotIndex, level)`, which the Inventory System accepts only on a slot this system currently holds locked (Rule 5.14a). The Equipment System never writes an inventory slot's level: it receives the level in `MoveItemOutResult.EnhancementLevel` when the item is equipped and returns it via `MoveItemIn(ItemID, enhancementLevel)` on unequip (equipment-system.md CR-EQS-1/5/6/7). Its only direct slot read is the read-only `GetSlot(slotIndex)` peek used by its same-item guard and request validation (CR-EQS-4/13). `EquipmentSlotRecord` is the Equipment System's `EquipmentSlotEntry`. `equipmentAppearanceFlags` is one byte per character (`ZoneStateSnapshotEntityEntry.EquipmentAppearanceFlags`), not per slot; its PrestigeBand bits are computed from the **Weapon slot's** level only — the level of any other equipped item never affects them (equipment-system.md CR-EQS-11; OQ-EQS-8 resolved 2026-10-01).
 
 **CR-ENH-13: Prestige Glow**
 Items enhanced to `ENHANCEMENT_GLOW_THRESHOLD` (7) or above render with a visual glow when equipped. The VFX System renders a glow only when `EnhancementLevel ≥ ENHANCEMENT_GLOW_THRESHOLD`; it reads `equipmentAppearanceFlags[2:1]` to select the glow intensity variant (GLOW_LOW band = low glow; HIGH band = high glow).
@@ -96,25 +100,39 @@ The broadcast fires once per successful +9 transition. `ItemName` is the Item Da
 Steps execute in this order; the server does not advance to the next step if the current step fails:
 
 1. Server receives `ConfirmEnhancement(itemSlotIndex, scrollSlotIndex)`.
-2. Server validates: `NPCInteractionActive = true` for this player, item exists at `itemSlotIndex`, slot unlocked, `IsUpgradeable = true`, `GearSlot ≠ Ring/Necklace`, `EnhancementLevel < MAX_ENHANCEMENT_LEVEL`, scroll exists at `scrollSlotIndex`, scroll `TargetGearTier` matches item `GearTier`, no concurrent attempt for this player. If any check fails, return rejection code; no state changes.
+2. Server validates: `NPCInteractionActive = true` for this player, item exists at `itemSlotIndex`, slot unlocked, `IsUpgradeable = true`, `GearSlot ≠ Ring/Necklace`, `EnhancementLevel < MAX_ENHANCEMENT_LEVEL`, scroll exists at `scrollSlotIndex`, scroll `TargetGearTier` matches item `GearTier`, no concurrent attempt for this player. If any check fails, return its rejection code; no state changes. Codes: no NPC session → `RejectedNoNPCSession`; item absent → `RejectedItemNotFound`; slot locked or another attempt in progress → `RejectedConcurrentAttempt`; `IsUpgradeable = false` → `RejectedNotUpgradeable`; accessory → `RejectedAccessoryType`; at maximum level → `RejectedAtMaxLevel`; scroll slot empty or not holding an Enhancement Scroll → `RejectedScrollNotFound`; tier mismatch → `RejectedTierMismatch`.
 3. Server calls `Inventory.LockSlot(itemSlotIndex)`.
-4. Server consumes exactly one scroll via `Inventory.ConsumeItem(scrollItemID, 1)`, where `scrollItemID` is the `ItemID` validated at `scrollSlotIndex` in step 2. Scrolls are stackable Consumables, so `RemoveItem` (which clears a whole slot) must not be used. `ConsumeItem` takes the unit from the lowest-index unlocked stack of that scroll type — normally `scrollSlotIndex`, but another stack of the same scroll if it sits at a lower index; scrolls of one type are interchangeable. If `ConsumeItem` fails (no scroll left — e.g. discarded earlier in the same tick), the server calls `Inventory.UnlockSlot(itemSlotIndex)`, returns a rejection code, and rolls no outcome. *(Changed 2026-10-01, TD-043.)*
+4. Server consumes exactly one scroll via `Inventory.ConsumeItem(scrollItemID, 1)`, where `scrollItemID` is the `ItemID` validated at `scrollSlotIndex` in step 2. Scrolls are stackable Consumables, so `RemoveItem` (which clears a whole slot) must not be used. `ConsumeItem` takes the unit from the lowest-index unlocked stack of that scroll type — normally `scrollSlotIndex`, but another stack of the same scroll if it sits at a lower index; scrolls of one type are interchangeable. If `ConsumeItem` fails (no scroll left — e.g. discarded earlier in the same tick), the server calls `Inventory.UnlockSlot(itemSlotIndex)`, returns `RejectedScrollNotFound`, and rolls no outcome. *(Changed 2026-10-01, TD-043.)*
 5. Server draws `r ∈ [0, 1)`, resolves outcome per CR-ENH-9.
-6. Server commits outcome to persistent storage and applies it to the bag: on success `Inventory.SetEnhancementLevel(itemSlotIndex, EnhancementLevel + 1)` (the slot is still locked from step 3); on destruction `Inventory.RemoveItem(itemSlotIndex)` (clears the slot and its lock); on a non-destructive failure the item slot is not written.
-7. Server calls `Inventory.UnlockSlot(itemSlotIndex)`.
+6. Server applies the outcome, then commits it — in this order:
+   - **6a. Apply to the bag.** On success: `Inventory.SetEnhancementLevel(itemSlotIndex, EnhancementLevel + 1)` (the slot is still locked from step 3). On destruction: `Inventory.RemoveItem(itemSlotIndex)` (clears the slot and its lock).
+   - **6b. Commit.** `CharacterPersistence.SaveIrreversibleOutcome(CharacterID, IrreversibleOutcomeTrigger.EnhancementResult)`. The save reads the live bag (`Inventory.ExportSnapshot`), so the committed record holds the scroll consumed and the item at its new level or absent. On any non-Success result the server performs the Rollback below and does not continue.
+7. Server calls `Inventory.UnlockSlot(itemSlotIndex)` (a no-op after a destruction — `RemoveItem` already cleared the lock).
 8. If `EnhancementLevel` reached 9, server sends `ServerBroadcast_Enhancement9 { playerName, itemName }` to all online players.
 9. Server sends `EnhancementAttemptResult { outcome, newLevel, resultCode }` to client.
 
-**Transaction boundary:** Steps 3–6 execute within a single atomic database transaction committing at step 6. A transaction failure at any point in steps 3–6 rolls back all changes in that range — slot is unlocked, scroll is present in inventory, item is unmodified. Steps 7–9 execute after commit. In-memory rollback is caller-owned (character-persistence.md CR-CP-5): this system restores the scroll with a `PickupRequest(scrollItemID, 1)` — which tops up the stack it was taken from or refills the slot it emptied, so it cannot fail for lack of space — reverts a level write with `SetEnhancementLevel(itemSlotIndex, previousLevel)` before unlocking, and treats a destroyed item as not yet removed (the `RemoveItem` call is issued only after the commit succeeds).
+**Transaction boundary:** Steps 3–6a are in-memory changes made within a single server tick. Step 6b is the only database write — one transaction (character-persistence.md CR-CP-6). Steps 7–9 execute only after step 6b returns `Success`.
+
+**Rollback (step 6b returns any non-Success code):** rollback is caller-owned (character-persistence.md CR-CP-5). This system restores the bag in this order; steps 8–9 do not run:
+1. *Item.* After a success outcome: `Inventory.SetEnhancementLevel(itemSlotIndex, previousLevel)` (the slot is still locked). After a destruction outcome: `Inventory.ForceInsert(itemID, previousLevel)` — the item returns to a free slot at quantity 1, which may be a different slot from `itemSlotIndex`. The slot it vacated is still free (CR-ENH-18), so the call cannot fail for lack of space.
+2. *Scroll.* `Inventory.PickupRequest(CharacterID, scrollItemID, 1)` — tops up the stack the unit was taken from, or refills the slot it emptied.
+3. `Inventory.UnlockSlot(itemSlotIndex)` (a no-op if the slot was cleared), then log `CriticalEnhancementWriteFailed`.
+4. Character Persistence disconnects the client and preserves the rolled-back session for `SESSION_TTL_SECONDS` (CR-CP-5). No `EnhancementAttemptResult` and no +9 broadcast are sent.
+
+If a rollback call itself fails — a caller bug; CR-ENH-18 makes it unreachable — the server logs `CriticalEnhancementRollbackFailed` with the character, the item's `ItemID` and level, and the scroll's `ItemID` for manual restoration, and continues with the remaining rollback steps.
 
 **CR-ENH-16: Enhancement NPC — Location Requirement**
 Enhancement may only be initiated by interacting with the Enhancement NPC in the town hub. The Enhancement UI cannot be opened from the inventory screen or from any zone outside the town hub. This prevents enhancement during combat, in dungeons, or in the field.
 
 **CR-ENH-17: NPC Interaction Session**
 The server tracks an `NPCInteractionActive: bool` flag per player session. Flag lifecycle:
-- **Open**: Client sends `OpenNPCInteraction(npcId)` when the player taps the Enhancement NPC. Server validates player is in the town hub zone; if valid, sets `NPCInteractionActive = true` and returns `NPCInteractionOpened`. The client opens the Enhancement UI on success.
-- **Close**: Client sends `CloseNPCInteraction()` when closing the UI or walking away. Server sets `NPCInteractionActive = false`. Zone transition or session end also clears the flag server-side. Closing has no penalty.
+- **Open**: Client sends `OpenNPCInteraction(npcId)` when the player taps the Enhancement NPC. Server validates player is in the town hub zone; if valid, sets `NPCInteractionActive = true` and returns `NPCInteractionOpened`. If the player is not in the town hub, the server returns `RejectedNotInTownHub` and the flag stays false. The client opens the Enhancement UI on success.
+- **Close**: Client sends `CloseNPCInteraction()` when closing the UI or walking away. Server sets `NPCInteractionActive = false`. The server also clears the flag on: zone transition; session end (logout, or `SESSION_TTL_SECONDS` expiry after a disconnect); and pre-emption — an `OpenNPCInteraction` for another NPC (e.g. the NPC Shop, npc-shop.md CR-SHOP-3) clears this session before the new one opens. Closing has no penalty.
 - **Enforcement**: `ConfirmEnhancement` validation (CR-ENH-15 step 2) checks `NPCInteractionActive = true`; if false, returns `RejectedNoNPCSession` with no state changes.
+- **In-flight attempts**: the flag is read only at step 2. Clearing it (close, pre-emption, zone transition, disconnect) never cancels an attempt that has passed step 2; the attempt runs to step 9 and `EnhancementAttemptResult` is delivered on the player's session regardless of the flag. No pre-emption callback is needed (answers npc-shop.md OQ-NS-6 from this side).
+
+**CR-ENH-18: Attempt Exclusivity**
+From step 3 until the attempt returns to `IDLE`, the server processes no other inventory-mutating request for that character — move, equip, unequip, discard, sell, buy, consumable use, pickup, accessory merge. Requests that arrive in that window are held and processed in arrival order once the attempt is `IDLE`. This matters only while the step 6b write is in flight (steps 3–6a complete within one tick). It guarantees that the bag the Rollback restores is the bag the attempt left, so the rollback calls cannot fail for lack of space. The Enhancement System exposes `IsAttemptInProgress(CharacterID): bool` (true in `LOCKED` and `RESOLVING`). The layer that holds the requests is OQ-ENH-7.
 
 ---
 
@@ -124,8 +142,8 @@ The server tracks an `NPCInteractionActive: bool` flag per player session. Flag 
 |-------|-------------|-----------------|------------------|
 | `IDLE` | No active attempt; selection UI is non-binding | Session start; previous attempt complete | Player sends `ConfirmEnhancement` → `VALIDATING` |
 | `VALIDATING` | Server checking all preconditions (step 2) | `ConfirmEnhancement` received | Validation fails → `IDLE` (rejection code returned, no state change); validation passes → `LOCKED` |
-| `LOCKED` | Slot locked; scroll consumed; RNG resolved (steps 3–5) | All preconditions pass | RNG resolved → `RESOLVING` |
-| `RESOLVING` | Outcome committed to persistent storage (step 6) | RNG outcome known | Commit complete → `RESULT_SUCCESS` or `RESULT_DESTRUCTION` |
+| `LOCKED` | Slot locked; scroll consumed; RNG resolved (steps 3–5) | All preconditions pass | RNG resolved → `RESOLVING`; step 4 `ConsumeItem` fails → `IDLE` (slot unlocked, `RejectedScrollNotFound` returned, no outcome rolled) |
+| `RESOLVING` | Outcome applied to the bag and committed to persistent storage (steps 6a–6b) | RNG outcome known | Commit succeeds → `RESULT_SUCCESS` or `RESULT_DESTRUCTION`; commit fails → `IDLE` (Rollback per CR-ENH-15; no result sent; client disconnected per CR-CP-5) |
 | `RESULT_SUCCESS` | Level incremented; slot unlocked; result sent (steps 7–9) | Commit: success | Server sends `EnhancementAttemptResult` → `IDLE` |
 | `RESULT_DESTRUCTION` | Item removed; slot cleared and unlocked; result sent (steps 7–9) | Commit: destruction | Server sends `EnhancementAttemptResult` → `IDLE` |
 
@@ -138,19 +156,19 @@ Invalid transitions: no state may reach `LOCKED` or `RESOLVING` without passing 
 | System | Enhancement System Reads | Enhancement System Writes / Signals | Interface Owner |
 |--------|--------------------------|-------------------------------------|-----------------|
 | **Item Database** | `IsUpgradeable: bool`, `GearTier`, `GearSlot`, `StatModifiers[].FlatBonus`, `ElementalDamage`, display name | — (stateless; no mutations) | Item Database |
-| **Inventory System** | Slot `ItemID` + `EnhancementLevel` (`InventorySlotRecord.EnhancementLevel`), `IsSlotLocked(slotIndex)`, item and scroll existence | `LockSlot(slotIndex)`, `UnlockSlot(slotIndex)`, `ConsumeItem(scrollItemID, 1)` (scroll — one unit), `SetEnhancementLevel(itemSlotIndex, level)` on success, `RemoveItem(itemSlotIndex)` on destruction | Inventory System owns all five methods and stores the level; Enhancement System is the only caller of `LockSlot`/`UnlockSlot`/`SetEnhancementLevel`/`RemoveItem` and decides the values written *(updated 2026-10-01, TD-043/TD-045)* |
+| **Inventory System** | Slot `ItemID` + `EnhancementLevel` (`InventorySlotRecord.EnhancementLevel`), `IsSlotLocked(slotIndex)`, item and scroll existence | `LockSlot(slotIndex)`, `UnlockSlot(slotIndex)`, `ConsumeItem(scrollItemID, 1)` (scroll — one unit), `SetEnhancementLevel(itemSlotIndex, level)` on success, `RemoveItem(itemSlotIndex)` on destruction. On a failed commit only (CR-ENH-15 Rollback): `ForceInsert(itemID, previousLevel)` to put a destroyed item back, `PickupRequest(CharacterID, scrollItemID, 1)` to put the scroll back | Inventory System owns all methods and stores the level; Enhancement System is the only caller of `LockSlot`/`UnlockSlot`/`SetEnhancementLevel`/`RemoveItem` and decides the values written *(updated 2026-10-01, TD-043/TD-045; rollback calls added in Revision Pass 2)* |
 | **Equipment System** | — | Exposes `IEnhancementBonusProvider` (below) for Equipment System to consume. Does not write to `EquipmentSlotRecord` — item cannot be equipped during enhancement; Equipment System reads `InventorySlotRecord.EnhancementLevel` on equip to update `equipmentAppearanceFlags[2:1]` | Equipment System consumes `IEnhancementBonusProvider` and owns `equipmentAppearanceFlags` update on equip |
-| **Damage Calculation** | — | `IEnhancementBonusProvider.GetElementalBonus(level: int, gearTier: GearTier, isWeapon: bool): int` — flat elemental damage bonus for the given level and tier; returns 0 when `isWeapon` is false | Enhancement System owns and implements; Damage Calculation consumes |
-| **Character Persistence** | — | `EnhancementLevel` in `InventorySlotRecord` and `EquipmentSlotRecord` must be included in all save and load payloads | Character Persistence |
+| **Damage Calculation** | — | `IEnhancementBonusProvider.GetElementalBonus(level: int, baseElementalDamage: int, gearTier: GearTier, isWeapon: bool): int` — the weapon's enhanced elemental damage (F-ENH-2: base + enhancement, clamped); returns 0 when `isWeapon` is false. Damage Calculation supplies `baseElementalDamage` from the Item Database | Enhancement System owns and implements; Damage Calculation consumes |
+| **Character Persistence** | — | Calls `SaveIrreversibleOutcome(CharacterID, IrreversibleOutcomeTrigger.EnhancementResult)` at CR-ENH-15 step 6b; on a non-Success result performs the caller-owned rollback (CR-CP-5). `EnhancementLevel` in `InventorySlotRecord` and `EquipmentSlotRecord` must be included in all save and load payloads | Character Persistence |
 | **Networking** | Client → Server: `OpenNPCInteraction(npcId)`, `CloseNPCInteraction()`, `ConfirmEnhancement(itemSlotIndex, scrollSlotIndex)`, `CancelEnhancement` | Server → Client: `NPCInteractionOpened`, `EnhancementAttemptResult { outcome, newLevel, resultCode }`; Server → All: `ServerBroadcast_Enhancement9 { playerName, itemName }` | Enhancement System authors all server-originated messages |
 | **Enhancement UI** | Player input: item selection, scroll selection, confirm, cancel | `EnhancementStateUpdate { currentLevel, P_s, P_d }` on selection; `EnhancementAttemptResult` on attempt completion | Enhancement UI consumes Enhancement System messages |
 | **VFX System** | — | `OnEnhancementSuccess(newLevel)`, `OnEnhancementDestruction()`, `OnPrestigeBandChange(newBand)` | VFX System subscribes |
 | **Audio System** | — | `OnEnhancementSuccess(newLevel)`, `OnEnhancementDestruction()` | Audio System subscribes |
-| **NPC Shop** | — | — (scroll purchase handled by NPC Shop; Enhancement System has no Currency System dependency at MVP) | NPC Shop |
+| **NPC Shop** | — | — (scroll purchase handled by NPC Shop; both systems share the `NPCInteractionActive` flag — opening the shop pre-empts an Enhancement NPC session, CR-ENH-17; Enhancement System has no Currency System dependency at MVP) | NPC Shop |
 
 **IEnhancementBonusProvider interface** (owned by Enhancement System, consumed by Equipment System and Damage Calculation):
 - `GetFlatBonus(level: int, baseFlatBonus: int, gearTier: GearTier): int` — enhanced flat stat value for a given level, base modifier, and gear tier (selects the correct `BonusPerLevel[tier]`)
-- `GetElementalBonus(level: int, gearTier: GearTier, isWeapon: bool): int` — flat elemental damage bonus for the given level and tier; returns 0 if `isWeapon` is false
+- `GetElementalBonus(level: int, baseElementalDamage: int, gearTier: GearTier, isWeapon: bool): int` — enhanced elemental damage per F-ENH-2 for the given level, base value (the weapon's Item Database `ElementalDamage`) and tier, clamped to `ElementalDamage_ceiling`; returns 0 if `isWeapon` is false *(base parameter added 2026-10-01 — without it the method could not return the F-ENH-2 value)*
 
 ## Formulas
 
@@ -195,7 +213,7 @@ Where `ElementalDamage_ceiling = 9,999`. The unclamped maximum (Dark Steel weapo
 | Steel | 3 |
 | Dark Steel | 5 |
 
-Non-weapon items do not gain elemental bonuses. `IEnhancementBonusProvider.GetElementalBonus(level)` returns 0 for non-weapon items.
+`IEnhancementBonusProvider.GetElementalBonus(level, baseElementalDamage, gearTier, isWeapon)` returns this value; the caller supplies `baseElementalDamage` = `item.ElementalDamage` from the Item Database. At level 0 the result is the base value — a +0 elemental weapon deals its base elemental damage. Non-weapon items do not gain elemental bonuses: the method returns 0 when `isWeapon` is false.
 
 **Example** (Dark Steel Sword, base ElementalDamage = 15, level = +7):
 > `EnhancedElementalDamage = 15 + (7 × 5) = 50`
@@ -275,8 +293,8 @@ T[k] = T[k-1] + A[k-1]
 **EC-ENH-1: Mid-Attempt Disconnect**
 If the client disconnects after sending `ConfirmEnhancement` but before receiving `EnhancementAttemptResult`, the server continues processing. Per CR-ENH-11, the outcome is committed to persistent storage before the result message is sent. On reconnect, the client reads the committed state from `InventorySlotRecord` or `EquipmentSlotRecord`. The item is either present at its new enhancement level (success) or absent (destruction). No rollback and no recovery flow are triggered. The server does not re-send the result message on reconnect.
 
-**EC-ENH-2: Disconnect While LOCKED or RESOLVING**
-Steps 3–6 execute within a single atomic database transaction (CR-ENH-11). If the server loses the client connection during states LOCKED or RESOLVING — before the transaction commits at step 6 — the transaction is rolled back: the slot lock expires with the session, the scroll remains in inventory, and the item is unmodified. On reconnect, the server detects no in-progress attempt. Both scroll and item are intact. The scroll is only irrevocably consumed when the step 6 transaction commits successfully.
+**EC-ENH-2: Disconnect or Server Crash While LOCKED or RESOLVING**
+A client disconnect in `LOCKED` or `RESOLVING` does not abort the attempt: steps 3–6a complete within one server tick and the step 6b write runs to completion (CR-ENH-11, EC-ENH-1). The outcome stands if the write succeeds. If the server process crashes before the step 6b write completes, every in-memory change is lost with the process and the saved record holds the pre-attempt state: on the next login both scroll and item are present, the item at its previous level, and no slot is locked (locks are never saved). The scroll is irrevocably consumed only when the step 6b write succeeds.
 
 **EC-ENH-3: Attempt at MAX_ENHANCEMENT_LEVEL**
 A player submits `ConfirmEnhancement` for an item already at `MAX_ENHANCEMENT_LEVEL` (10). The server rejects at CR-ENH-15 step 2 and returns `RejectedAtMaxLevel`. No scroll is consumed, no slot is locked, no state changes.
@@ -287,8 +305,8 @@ Between client item selection and `ConfirmEnhancement` send, another operation r
 **EC-ENH-5: App Backgrounded Mid-Selection (Pre-Confirm)**
 The player backgrounds the app between item/scroll selection and the Confirm tap. No server request has been sent; no slot is locked; no scroll is consumed. On foreground return, the UI restores its local selection state (item, scroll, displayed probabilities) and re-requests `EnhancementStateUpdate` for the saved selection to detect any state changes that occurred while backgrounded (e.g., the selected item was moved or removed by another operation). No server action is required if the selection is still valid.
 
-**EC-ENH-6: Scroll Consumed, Item Destroyed in Same Transaction**
-On a Fail-Destruction outcome, both the scroll and the item are consumed in a single atomic commit (CR-ENH-15 step 6). There is no state where the scroll survives a destruction, nor where the item survives scroll consumption. If the atomic write fails (database error), the entire operation is rolled back: scroll remains in inventory, item is unmodified. The server calls `Inventory.UnlockSlot(slotIndex)` to release the slot, then logs a `CriticalEnhancementWriteFailed` event for monitoring.
+**EC-ENH-6: Commit Failure — Outcome Rolled Back**
+The step 6b write saves the scroll consumption and the outcome (the new level, or the item's absence) in one record, so no saved state exists in which the scroll survives a destruction, or in which the item holds its new level with the scroll unspent. If `SaveIrreversibleOutcome(EnhancementResult)` returns any non-Success code, this system performs the CR-ENH-15 Rollback: the item is restored at its previous level (in a free slot, after a destruction), the scroll is restored, the slot is unlocked, and `CriticalEnhancementWriteFailed` is logged. Per character-persistence.md CR-CP-5 the client is then disconnected, a critical alert fires, and the rolled-back session is preserved for `SESSION_TTL_SECONDS`. No result message and no +9 broadcast are sent.
 
 **EC-ENH-7: Tier-Mismatched Scroll Selected**
 A player submits `ConfirmEnhancement` with a scroll whose `TargetGearTier` does not match the item's `GearTier`. The server rejects at step 2 and returns `RejectedTierMismatch`. No scroll is consumed. The UI should filter the scroll list by the selected item's tier client-side, but server enforcement is authoritative.
@@ -303,16 +321,18 @@ If `ServerBroadcast_Enhancement9` cannot be delivered to all players (high load,
 | System | GDD Status | What Enhancement System Requires |
 |--------|-----------|----------------------------------|
 | **Item Database** | Approved | `IsUpgradeable: bool`, `GearTier`, `GearSlot`, `StatModifiers[].FlatBonus`, `ElementalDamage` per item; 4 Enhancement Scroll records (Bronze/Iron/Steel/Dark Steel) with `ScrollData.TargetGearTier` sub-schema |
-| **Inventory System** | Approved | `LockSlot(slotIndex)`, `UnlockSlot(slotIndex)`, `SetEnhancementLevel(slotIndex, level)`, `RemoveItem(slotIndex)`, `ConsumeItem(ItemID, quantity)`, `IsSlotLocked(slotIndex)`; slot record includes `EnhancementLevel: byte` (inventory-system.md Rule 1.4, added 2026-10-01). Reverse reference: the Inventory System reads this GDD's `MAX_ENHANCEMENT_LEVEL` as the upper bound for a bag item's level and declares it as a soft upstream dependency. |
+| **Inventory System** | Approved | `LockSlot(slotIndex)`, `UnlockSlot(slotIndex)`, `SetEnhancementLevel(slotIndex, level)`, `RemoveItem(slotIndex)`, `ConsumeItem(ItemID, quantity)`, `IsSlotLocked(slotIndex)`, `GetSlot(slotIndex)`; for the failed-commit Rollback only, `ForceInsert(ItemID, enhancementLevel)` and `PickupRequest(CharacterID, ItemID, quantity)`; slot record includes `EnhancementLevel: byte` (inventory-system.md Rule 1.4, added 2026-10-01). Reverse reference: the Inventory System reads this GDD's `MAX_ENHANCEMENT_LEVEL` as the upper bound for a bag item's level and declares it as a soft upstream dependency. |
 | **Currency System** | Approved | `GoldTransactionReason.Enhancement = 5` (pre-allocated); scroll sale handled by NPC Shop; no direct Currency System dependency at MVP |
+| **Character Persistence** | Approved | `SaveIrreversibleOutcome(CharacterID, IrreversibleOutcomeTrigger.EnhancementResult): Task<CharacterSaveResult>` — the step 6b commit; the CR-CP-5 failure protocol (caller-owned rollback, client disconnect, session preserved) |
 
 ### Downstream Dependencies
 
 | System | GDD Status | What They Require from Enhancement System |
 |--------|-----------|-------------------------------------------|
-| **Equipment System** | Approved | `IEnhancementBonusProvider.GetFlatBonus(level, baseFlatBonus, gearTier)` in `AddEquipmentModifier`; `EquipmentSlotRecord.EnhancementLevel: byte`; `equipmentAppearanceFlags[2:1]` update on success; F-EQS-2 Iron range correction (see below) |
-| **Damage Calculation** | Approved | `IEnhancementBonusProvider.GetElementalBonus(level)` for elemental damage in F-DC-2; `Equipment.GetEquippedWeaponEnhancementLevel(): byte` to supply the level |
-| **Character Persistence** | Not Started | `EnhancementLevel: byte` in `InventorySlotRecord` and `EquipmentSlotRecord` save/load payload |
+| **Equipment System** | Approved | `IEnhancementBonusProvider.GetFlatBonus(level, baseFlatBonus, gearTier)` in `AddEquipmentModifier`; `EquipmentSlotRecord.EnhancementLevel: byte`; `equipmentAppearanceFlags[2:1]` recomputed by the Equipment System from the Weapon slot's level on every equip / unequip (CR-ENH-12) — never written at enhancement time; F-EQS-2 Iron range correction (see below) |
+| **Damage Calculation** | Approved | `IEnhancementBonusProvider.GetElementalBonus(level, baseElementalDamage, gearTier, isWeapon)` for the `ElementalBonus` input of F-DC-2 — Damage Calculation passes the weapon's base `ElementalDamage` from the Item Database and the level from `Equipment.GetEquippedWeaponEnhancementLevel(): byte` |
+| **Character Persistence** | Approved | `EnhancementLevel: byte` per bag slot and per gear slot in the save/load payload; `IEnhancementBonusProvider` on load (equipment re-registration). Also an upstream dependency (above) |
+| **NPC Shop** | Approved | Shares the `NPCInteractionActive` flag (CR-ENH-17 — opening the shop pre-empts an Enhancement NPC session; no callback, see OQ-NS-6 there); sells the four Enhancement Scrolls at the TK-ENH-9 prices; no direct API dependency |
 | **Enhancement UI** | Not Started | `EnhancementStateUpdate`, `EnhancementAttemptResult`, `ServerBroadcast_Enhancement9` message schemas; `ConfirmEnhancement` and `CancelEnhancement` request schemas |
 | **VFX System** | Not Started | `OnEnhancementSuccess(newLevel)`, `OnEnhancementDestruction()`, `OnPrestigeBandChange(band)` signals; `ENHANCEMENT_GLOW_THRESHOLD = 7` |
 | **Audio System** | Not Started | `OnEnhancementSuccess(newLevel)`, `OnEnhancementDestruction()` signals |
@@ -445,7 +465,7 @@ EnhancementResultCode:
   Success | Destruction
   RejectedAtMaxLevel | RejectedTierMismatch | RejectedItemEquipped
   RejectedAccessoryType | RejectedItemNotFound | RejectedConcurrentAttempt
-  RejectedNoNPCSession
+  RejectedNoNPCSession | RejectedScrollNotFound | RejectedNotUpgradeable
 ```
 All `Rejected*` codes return the player to IDLE with an appropriate message. No result animation plays on rejection.
 
@@ -467,7 +487,7 @@ CloseNPCInteraction {}
 ConfirmEnhancement  { itemSlotIndex: byte, scrollSlotIndex: byte }
 CancelEnhancement   {}
 ```
-`OpenNPCInteraction` is sent when the player taps the Enhancement NPC; server responds with `NPCInteractionOpened` or a rejection if the player is not in the town hub. Confirm requires an explicit separate tap from item/scroll selection — not auto-submitted.
+`OpenNPCInteraction` is sent when the player taps the Enhancement NPC; server responds with `NPCInteractionOpened`, or `RejectedNotInTownHub` if the player is not in the town hub. Confirm requires an explicit separate tap from item/scroll selection — not auto-submitted.
 
 ### UI Behavior Rules
 
@@ -529,17 +549,17 @@ While an attempt is in progress (Confirm sent, result not yet received), the ite
 *Pass*: Returns `RejectedConcurrentAttempt`. First attempt unaffected.
 
 **AC-ENH-9: Success — Level Increments, Scroll Consumed**
-*Setup*: Bronze item at +2, Bronze Enhancement Scroll. RNG injected: `r = 0.00`.
+*Setup*: Bronze item at +2, exactly one Bronze Enhancement Scroll (a stack of quantity 1). RNG injected: `r = 0.00`.
 *Action*: `ConfirmEnhancement`.
 *Pass*: `outcome = SUCCESS`, `InventorySlotRecord.EnhancementLevel = 3`. Scroll absent. Slot unlocked.
 
 **AC-ENH-10: Fail-Destruction at Low Level — Item Removed, Scroll Consumed**
-*Setup*: Bronze item at +2, Bronze Enhancement Scroll. RNG injected: `r = 0.90` (above P_s[2] = 0.85).
+*Setup*: Bronze item at +2, exactly one Bronze Enhancement Scroll (a stack of quantity 1). RNG injected: `r = 0.90` (above P_s[2] = 0.85).
 *Action*: `ConfirmEnhancement`.
 *Pass*: `outcome = DESTRUCTION`. Item slot empty. Scroll absent. Slot unlocked.
 
 **AC-ENH-11: Fail-Destruction — Item Removed, Scroll Consumed**
-*Setup*: Bronze item at +4, Bronze Enhancement Scroll. RNG injected: `r = 0.99` (above P_s[4] = 0.65).
+*Setup*: Bronze item at +4, exactly one Bronze Enhancement Scroll (a stack of quantity 1). RNG injected: `r = 0.99` (above P_s[4] = 0.65).
 *Action*: `ConfirmEnhancement`.
 *Pass*: `outcome = DESTRUCTION`. Item slot empty. Scroll absent. Slot unlocked.
 
@@ -559,18 +579,18 @@ While an attempt is in progress (Confirm sent, result not yet received), the ite
 *Pass*: Returns `RejectedAtMaxLevel`. Scroll remains. Item at level 10.
 
 **AC-ENH-15: PrestigeBand Bits — NONE Below Level 5**
-*Setup*: Item at +4, equipped.
-*Action*: Read `EquipmentSlotRecord.equipmentAppearanceFlags[2:1]`.
+*Setup*: Weapon at +4, equipped in the Weapon slot.
+*Action*: Read the character's `equipmentAppearanceFlags[2:1]`.
 *Pass*: Bits = `00`.
 
 **AC-ENH-16: PrestigeBand Bits — VISIBLE_NO_GLOW at Level 5**
-*Setup*: Item advanced to +5 (injected), equipped.
-*Action*: Read `EquipmentSlotRecord.equipmentAppearanceFlags[2:1]`.
+*Setup*: Weapon advanced to +5 (injected), equipped in the Weapon slot.
+*Action*: Read the character's `equipmentAppearanceFlags[2:1]`.
 *Pass*: Bits = `01`.
 
 **AC-ENH-17: PrestigeBand Bits — HIGH at Level 8**
-*Setup*: Item at +8 (injected), equipped.
-*Action*: Read `EquipmentSlotRecord.equipmentAppearanceFlags[2:1]`.
+*Setup*: Weapon at +8 (injected), equipped in the Weapon slot.
+*Action*: Read the character's `equipmentAppearanceFlags[2:1]`.
 *Pass*: Bits = `11`.
 
 **AC-ENH-18: Server Broadcast at +9 — Content Correct, Not Fired for Other Levels**
@@ -585,12 +605,12 @@ While an attempt is in progress (Confirm sent, result not yet received), the ite
 
 **AC-ENH-20: Elemental Bonus Formula (F-ENH-2)**
 *Setup*: Dark Steel Sword, `ElementalDamage = 15`, at +7.
-*Action*: `IEnhancementBonusProvider.GetElementalBonus(7, GearTier.DarkSteel, true)`.
-*Pass*: Returns 50.
+*Action*: `IEnhancementBonusProvider.GetElementalBonus(7, 15, GearTier.DarkSteel, true)`; then `GetElementalBonus(0, 15, GearTier.DarkSteel, true)`; then `GetElementalBonus(10, 9990, GearTier.DarkSteel, true)`.
+*Pass*: Returns 50 (`15 + 7 × 5`); 15 (the base value at +0); 9,999 (`9990 + 50` clamped to `ElementalDamage_ceiling`).
 
 **AC-ENH-21: Non-Weapon Elemental Bonus Returns 0**
 *Setup*: Bronze Armor (non-weapon) at +5.
-*Action*: `IEnhancementBonusProvider.GetElementalBonus(5, GearTier.Bronze, false)`.
+*Action*: `IEnhancementBonusProvider.GetElementalBonus(5, 0, GearTier.Bronze, false)`.
 *Pass*: Returns 0.
 
 **AC-ENH-22: Item Removed During Selection — Rejection**
@@ -598,10 +618,10 @@ While an attempt is in progress (Confirm sent, result not yet received), the ite
 *Action*: `ConfirmEnhancement(3, scrollSlot)`.
 *Pass*: Returns `RejectedItemNotFound`. Scroll remains.
 
-**AC-ENH-23: Atomic Commit — Write Failure Rolls Back**
-*Setup*: Item at +4 (destruction possible). RNG injected for destruction. Inject database write failure at step 6.
-*Action*: `ConfirmEnhancement`.
-*Pass*: Scroll remains in inventory. Item unmodified. Server logs `CriticalEnhancementWriteFailed`. Slot is unlocked after rollback detection.
+**AC-ENH-23: Commit Failure After Destruction — Rolled Back**
+*Setup*: Bronze item at +4 in slot 0; 3 Bronze Enhancement Scrolls in slot 1; all other slots empty. RNG injected for destruction (`r = 0.99`). `SaveIrreversibleOutcome` injected to return `DatabaseError` at step 6b.
+*Action*: `ConfirmEnhancement(0, 1)`.
+*Pass*: The bag holds the item exactly once, at level 4, in an unlocked slot. Slot 1 holds 3 scrolls. No `EnhancementAttemptResult` is sent. Server logs `CriticalEnhancementWriteFailed`. The client is disconnected (CR-CP-5).
 
 **AC-ENH-24: Scroll Source Restriction — No Monster Loot Table Entry**
 *Setup*: All monster loot table entries in Item Database (automated scan).
@@ -644,9 +664,39 @@ While an attempt is in progress (Confirm sent, result not yet received), the ite
 *Pass*: Confirm button is not tappable / disabled until the player performs the required acknowledgment action. Confirm becomes tappable only after acknowledgment.
 
 **AC-ENH-32: PrestigeBand Bits — GLOW_LOW at Level 7**
-*Setup*: Item advanced to +7 (injected), equipped.
-*Action*: Read `EquipmentSlotRecord.equipmentAppearanceFlags[2:1]`.
+*Setup*: Weapon advanced to +7 (injected), equipped in the Weapon slot.
+*Action*: Read the character's `equipmentAppearanceFlags[2:1]`.
 *Pass*: Bits = `10`.
+
+**AC-ENH-33: One Scroll Consumed From a Stack**
+*Setup*: Bronze item at +2 in slot 0; 5 Bronze Enhancement Scrolls in slot 3. Run twice: RNG `r = 0.00` (success) and `r = 0.90` (destruction).
+*Action*: `ConfirmEnhancement(0, 3)`.
+*Pass*: In both runs slot 3 holds 4 scrolls afterwards. Success run: slot 0 item at level 3. Destruction run: slot 0 empty.
+
+**AC-ENH-34: Commit Failure After Success — Rolled Back**
+*Setup*: Bronze item at +2 in slot 0; 3 Bronze Enhancement Scrolls in slot 1. RNG injected: `r = 0.00`. `SaveIrreversibleOutcome` injected to return `DatabaseError` at step 6b.
+*Action*: `ConfirmEnhancement(0, 1)`.
+*Pass*: Slot 0 holds the item at level 2, unlocked. Slot 1 holds 3 scrolls. No `EnhancementAttemptResult` and no `ServerBroadcast_Enhancement9` are sent. Server logs `CriticalEnhancementWriteFailed`. The client is disconnected (CR-CP-5).
+
+**AC-ENH-35: Committed Record Contains the Outcome**
+*Setup*: Bronze item at +2 in slot 0; 2 Bronze Enhancement Scrolls in slot 1. A persistence spy captures the inventory snapshot read by `SaveIrreversibleOutcome`. Run twice: RNG `r = 0.00` (success) and `r = 0.90` (destruction).
+*Action*: `ConfirmEnhancement(0, 1)`.
+*Pass*: `SaveIrreversibleOutcome` is called exactly once, with trigger `EnhancementResult`. Captured snapshot — success run: slot 0 at level 3, slot 1 quantity 1; destruction run: no entry for slot 0, slot 1 quantity 1. `EnhancementAttemptResult` is sent only after the call returns `Success`.
+
+**AC-ENH-36: Scroll Gone at Step 4 — Attempt Aborted**
+*Setup*: Valid Bronze item at +2 in slot 0 and a Bronze Enhancement Scroll in slot 1 (step 2 passes). The Inventory test double makes `ConsumeItem(scrollItemID, 1)` return failure. RNG spy and persistence spy attached.
+*Action*: `ConfirmEnhancement(0, 1)`.
+*Pass*: Returns `RejectedScrollNotFound`. Slot 0 is unlocked and the item is still at level 2. The RNG is never drawn. `SaveIrreversibleOutcome` is not called. `IsAttemptInProgress` is false, and a following valid `ConfirmEnhancement` is accepted.
+
+**AC-ENH-37: Non-Upgradeable Item Rejected**
+*Setup*: A test item record with `IsUpgradeable = false` in slot 0; a scroll of the matching tier in slot 1.
+*Action*: `ConfirmEnhancement(0, 1)`.
+*Pass*: Returns `RejectedNotUpgradeable`. Scroll remains. Slot 0 was never locked.
+
+**AC-ENH-38: Inventory Requests Held During an In-Flight Commit**
+*Setup*: Bronze item at +4 in slot 0; one Bronze Enhancement Scroll stack in slot 1 (quantity 2); slots 2–19 occupied; a Bronze Helmet equipped. RNG injected for destruction. The step 6b write is held open (injected Task delay), then made to return `DatabaseError`.
+*Action*: `ConfirmEnhancement(0, 1)`. While the write is held open, the client sends an unequip request for the Helmet (which would take the freed slot 0).
+*Pass*: While the write is in flight, `IsAttemptInProgress` is true and the Helmet is still equipped (the request is held, not processed). After the write fails, the Rollback restores the item at level 4 and the scroll stack to quantity 2 with no `CriticalEnhancementRollbackFailed` logged. The held unequip request is processed only after that and fails for lack of bag space.
 
 ## Open Questions
 
@@ -656,8 +706,8 @@ Recommended prices (TK-ENH-9) are provisional. Requires playtest validation once
 **OQ-ENH-2: Enhancement UI entry point — RESOLVED**
 Enhancement UI is accessed exclusively by interacting with the Enhancement NPC in the town hub. No inline inventory access. Travel to town is required. See CR-ENH-16.
 
-**OQ-ENH-3: Lock timeout for LOCKED/RESOLVING state on server crash**
-CR-ENH-7 specifies that slot locks are session-scoped and expire on session end (EC-ENH-2). If the server (not the client) crashes mid-attempt after scroll consumption, does the scroll refund on recovery? Current spec: no refund (scroll consumed at step 4, before crash window). Requires confirmation from server recovery architecture.
+**OQ-ENH-3: Lock timeout for LOCKED/RESOLVING state on server crash — RESOLVED (2026-10-01)**
+No refund logic and no lock timeout are needed. Scroll consumption at step 4 is an in-memory change until the step 6b write succeeds; a server crash before that leaves the saved record in its pre-attempt state, so the player loads with scroll and item intact (CR-ENH-11, EC-ENH-2). Locks are in-memory only, never saved, and bounded by the attempt (CR-ENH-7).
 
 **OQ-ENH-4: +9 broadcast for items obtained at +9 via trade**
 CR-ENH-14 fires the broadcast at the moment of the successful +9 transition. If a +9 item is traded, no new broadcast fires. Is a transfer announcement needed? Deferred to social systems design.
@@ -665,5 +715,12 @@ CR-ENH-14 fires the broadcast at the moment of the successful +9 transition. If 
 **OQ-ENH-5: Enhancement level display in zone (third-person view)**
 VR-ENH-4 specifies PrestigeBand glow is visible at range. Should the enhancement level number be visible in the name tag above the player in zone? Currently: number revealed only on inspect. Requires input from UX and art direction.
 
-**OQ-ENH-6: Character Persistence GDD scope**
-Section F lists Character Persistence (Not Started) as a downstream dependency. The `EnhancementLevel` field must be included in the persistence payload. This must be specified before the Character Persistence GDD is authored.
+**OQ-ENH-6: Character Persistence GDD scope — RESOLVED**
+character-persistence.md (Approved) persists `EnhancementLevel` for every bag slot (`InventoryEnhancementLevels`, added 2026-10-01) and every gear slot, and defines the `SaveIrreversibleOutcome(EnhancementResult)` commit used at CR-ENH-15 step 6b.
+
+**OQ-ENH-7: Which layer holds requests during an attempt (CR-ENH-18)**
+CR-ENH-18 requires that a character's other inventory-mutating requests are held while `IsAttemptInProgress(CharacterID)` is true. Two candidates: the session's request dispatcher checks the flag once for every inbound request (one enforcement point; needs a Networking Core rule), or each mutating system (Inventory, Equipment, NPC Shop, Consumable Use) checks it. The same question applies to any other caller-owned rollback behind `SaveIrreversibleOutcome` (level-up, respec, item consumption).
+*Owner*: Lead Programmer / Networking Core. *Target*: before `/create-epics` for the Enhancement System — pre-implementation gate.
+
+**OQ-ENH-8: Replaying a missed result on next login**
+character-persistence.md OQ-CP-2 assigns this here: if the client closes between the step 6b commit and delivery of `EnhancementAttemptResult`, the player logs back in with the outcome applied but never saw the result screen. Should the server record an unacknowledged result and replay it at login? Current spec: no replay (EC-ENH-1). Deferred to Enhancement UI design.

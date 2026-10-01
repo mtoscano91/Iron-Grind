@@ -2,6 +2,46 @@
 
 ---
 
+## Revision Pass 2 — 2026-10-01
+Author: Manuel Toscano + Claude Code
+Scope: all 5 blockers of the Pass 5 lean review + the recommended items inside enhancement-system.md. Lean re-review pending.
+
+**Design decisions (user):**
+- Blocker 1: the outcome is applied to the bag before the commit. CR-ENH-15 step 6 is now 6a (`SetEnhancementLevel` on success / `RemoveItem` on destruction) then 6b (`SaveIrreversibleOutcome(EnhancementResult)`), so the saved record contains the outcome. On a failed commit the caller-owned rollback puts a destroyed item back with the existing `ForceInsert(itemID, previousLevel)` (it may land in a different free slot), reverts a level write with `SetEnhancementLevel`, and restores the scroll with `PickupRequest(CharacterID, scrollItemID, 1)`. No new Inventory method.
+- Blocker 2: `GetElementalBonus(level, baseElementalDamage, gearTier, isWeapon)` returns the full clamped F-ENH-2 value; Damage Calculation passes the Item Database base.
+- A client disconnect never aborts an attempt once step 3 has run (CR-ENH-11, EC-ENH-2 rewritten); rollback happens only on a failed commit; a server crash before the commit leaves the pre-attempt record.
+- New CR-ENH-18 (attempt exclusivity): other inventory-mutating requests for the character are held while an attempt is in progress, so the rollback cannot fail for lack of space. `IsAttemptInProgress(CharacterID)` exposed. Enforcement layer = OQ-ENH-7 (pre-implementation gate).
+
+**Blockers 3–5:** non-destructive-failure clause removed from step 6; `RejectedScrollNotFound` named for step 2 / step 4 and `LOCKED → IDLE`, `RESOLVING → IDLE` transitions added; AC-ENH-33 (stack N → N−1), AC-ENH-34 (success-path rollback), AC-ENH-35 (committed record contains the outcome), AC-ENH-36 (step 4 failure), AC-ENH-37 (`RejectedNotUpgradeable`), AC-ENH-38 (requests held during an in-flight commit) added; AC-ENH-23 rewritten; AC-ENH-9/10/11 setups state a single scroll; AC-ENH-20/21 use the new signature (38 ACs total).
+
+**Recommended items applied:** rollback calls declared in the Inventory interface rows (both GDDs); pre-commit `InventoryChangedEvent` rule (CR-ENH-11); EC-ENH-6 names the CR-CP-5 disconnect; OQ-ENH-3 and OQ-ENH-6 resolved, lock lifetime stated in CR-ENH-7 (answers inventory OQ-INV-4); CR-ENH-17 gains `RejectedNotInTownHub`, session-end and pre-emption close triggers and the in-flight rule; step 2 lists the rejection code per check, `RejectedNotUpgradeable` added; Dependencies refreshed (Equipment, Damage Calculation, Character Persistence up- and downstream, NPC Shop); AC-ENH-15/16/17/32 read the character's flags byte; header status corrected; OQ-ENH-8 added (result replay, from character-persistence OQ-CP-2).
+
+**Propagated to:** inventory-system.md (interface rows, OQ-INV-4), damage-calculation.md (Step 4, interface rows, OQ-DC-1 note), character-persistence.md (CR-CP-5 rollback sentence, `IEnhancementBonusProvider` signatures), item-database.md (Rule 19), entities.yaml (`IEnhancementBonusProvider`, F-ENH-2).
+
+**Still open (pre-implementation gates, unchanged):** Item Database amendment #4 (scroll records, `ScrollData.TargetGearTier`); wire-protocol Enhancement message set (TD-046); npc-shop.md OQ-NS-6 (now answerable from CR-ENH-17 — not edited there); OQ-ENH-7.
+
+---
+
+## Review — 2026-10-01 — Verdict: NEEDS REVISION
+Scope signal: L
+Specialists: None (lean — no specialist agents)
+Blocking items: 5 | Recommended: 9
+Summary: Lean re-review Pass 5 of the 2026-10-01 TD-043/TD-045 amendments (CR-ENH-12 contract mapping, CR-ENH-15 steps 4/6, transaction boundary, Interactions/Dependencies rows, AC-ENH-15/16/17/32). The Inventory and Equipment contracts agree in both directions and all formula arithmetic re-derives correctly (F-ENH-3, F-ENH-5). Not creative-director reviewed (lean); main-review synthesis: remaining issues are contract fixes, not structural — no escalation to full depth.
+Prior verdict resolved: N/A — prior verdict was APPROVED (Pass 4, 2026-05-23); this pass reviews the 2026-10-01 amendments.
+
+Blocking items:
+1. Destruction is not in the committed record — the transaction-boundary paragraph issues `RemoveItem` only after the commit, but `SaveIrreversibleOutcome(CharacterID, trigger)` has no payload and saves the live bag (`Inventory.ExportSnapshot`), so the commit persists the item as present with the scroll gone; step 6 and the boundary paragraph also disagree on apply-at-commit vs apply-after-commit. Needs a design decision (remove-before-commit + an Inventory restore call, or an explicit outcome passed to Character Persistence).
+2. `IEnhancementBonusProvider.GetElementalBonus(level, gearTier, isWeapon)` has no base parameter, so it cannot return F-ENH-2's value; AC-ENH-20 (expects 50) is unsatisfiable (max 35), and damage-calculation.md treats the return as base + enhancement while no longer reading the base — an elemental weapon at +0 would deal 0 elemental damage. Pre-existing (missed in Passes 2–4). Propagates to damage-calculation.md, character-persistence.md, item-database.md Rule 19, entities.yaml.
+3. CR-ENH-15 step 6 "on a non-destructive failure the item slot is not written" contradicts CR-ENH-9/10 (no such outcome).
+4. CR-ENH-15 step 4 failure returns an unnamed rejection code absent from `EnhancementResultCode`; state table has no `LOCKED → IDLE` transition.
+5. No AC for the TD-043 behaviour (stack of N scrolls → N−1) and none for success-path rollback (level reverted, scroll restored); AC-ENH-9/10/11 would pass under the old whole-stack `RemoveItem` bug.
+
+Primitive gaps (pre-implementation gates, not counted as blockers): Item Database amendment #4 unapplied (no scroll records, no `ScrollData.TargetGearTier`, no scroll `StackLimit`; item-database.md still asserts 34 records); wire-protocol message set differs from this GDD's (`EnhancementAttemptRequest`/`EnhancementRequestReceived`/`EnhancementOutcomeBroadcast` vs `ConfirmEnhancement`/`EnhancementAttemptResult`/`EnhancementStateUpdate`/`CancelEnhancement`/`ServerBroadcast_Enhancement9`); npc-shop OQ-NS-6 pre-emption callback undefined here.
+
+Recommended (not applied — review session): declare the rollback `PickupRequest` in both interface rows (signature takes `CharacterID`) and state the no-interleaving guarantee; `InventoryChangedEvent` from `SetEnhancementLevel` fires before commit (CR-ENH-11); EC-ENH-6/AC-ENH-23 omit the CR-CP-5 disconnect and `SaveIrreversibleOutcome(EnhancementResult)` (CR-CP-5 itself still says `GearSlot.EnhancementLevel`); OQ-ENH-3 stale and Inventory's lock-lifetime question unanswered; CR-ENH-17 omits `SESSION_TTL` / pre-emption close triggers and `RejectedNotInTownHub`; stale Dependencies rows (Equipment "on success", Damage Calc and F-ENH-2 old `GetElementalBonus(level)` signature, Character Persistence "Not Started" + OQ-ENH-6, NPC Shop missing); AC-ENH-15/16/17/32 read the flags from `EquipmentSlotRecord` (byte is per character); no result code for `IsUpgradeable = false`; header Status "In Design" vs index.
+
+---
+
 ## Review — 2026-05-23 — Verdict: APPROVED
 Scope signal: M
 Specialists: None (lean — no specialist agents)
