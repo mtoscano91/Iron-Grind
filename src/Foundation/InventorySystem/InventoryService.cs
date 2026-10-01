@@ -15,15 +15,22 @@ namespace IronGrind.InventorySystem
     /// character's personal 20-slot item bag (GDD Rule 1).
     /// </summary>
     /// <remarks>
-    /// <para><b>Persistence scope note:</b> the GDD's <c>InventorySnapshot</c> save/load contract
-    /// belongs to Character Persistence (Story 009). That system does not exist yet in this
-    /// codebase, so — exactly like <c>CurrencySystem</c> and <c>CharacterStats</c> before their
-    /// respective persistence layers existed — this class holds all state in-memory.</para>
+    /// <para><b>Persistence scope note:</b> Story 009 adds the GDD's <see cref="InventorySnapshot"/>
+    /// save/load contract (<see cref="ExportSnapshot"/>/<see cref="ImportSnapshot"/>) as an
+    /// in-memory value type — this class still holds all live state in-memory, exactly like
+    /// <c>CurrencySystem</c> and <c>CharacterStats</c> before their respective persistence layers
+    /// existed. Character Persistence (a system that does not exist yet in this codebase) owns
+    /// mapping <see cref="InventorySnapshot"/> to/from the <c>character_records.inventory_slots</c>
+    /// JSONB column (ADR-006) and the SQL/<c>SaveSession</c> orchestration — this class exposes
+    /// only the snapshot type and its export/import.</para>
     ///
-    /// <para><b>Lifecycle:</b> a <see cref="CharacterID"/> must be explicitly registered via
-    /// <see cref="RegisterCharacter"/> before any read API returns meaningful data for it — an
-    /// unregistered character is always a caller bug, never a player-facing condition, and is
-    /// reported via <see cref="Debug.LogError(object)"/> on every affected read API.</para>
+    /// <para><b>Lifecycle:</b> a <see cref="CharacterID"/> must be explicitly registered — via
+    /// <see cref="RegisterCharacter"/> (fresh empty inventory) or <see cref="ImportSnapshot"/>
+    /// (registers and seeds from a saved snapshot in one call) — before any read API returns
+    /// meaningful data for it; an unregistered character is always a caller bug, never a
+    /// player-facing condition, and is reported via <see cref="Debug.LogError(object)"/> on every
+    /// affected read API. <see cref="UnregisterCharacter"/> is the counterpart that releases a
+    /// character's inventory state entirely (e.g. on logout), after which it is unregistered again.</para>
     ///
     /// <para><b>Thread safety:</b> unlike <c>CurrencySystem</c> (which added per-character
     /// locking in its Story 004), this story does not require concurrent-call safety — no AC or
@@ -47,7 +54,11 @@ namespace IronGrind.InventorySystem
     /// <see cref="LockSlot"/>/<see cref="UnlockSlot"/> only flip the per-slot lock flag — they
     /// call <see cref="ThrowIfDispatching"/> for re-entrancy safety but never call
     /// <see cref="RecordSlotChange"/>/<see cref="EmitInventoryChanged"/>, since a lock/unlock
-    /// alone is never broadcast (GDD Rule 5).</para>
+    /// alone is never broadcast (GDD Rule 5). Story 009's <see cref="ImportSnapshot"/> and
+    /// <see cref="UnregisterCharacter"/> extend this same exception: both call
+    /// <see cref="ThrowIfDispatching"/> first, but write slots/release state directly and never
+    /// call <see cref="RecordSlotChange"/>/<see cref="EmitInventoryChanged"/> — a load or an
+    /// unregister is never broadcast as a mutation.</para>
     /// </remarks>
     public sealed class InventoryService : IInventoryService
     {
@@ -750,6 +761,143 @@ namespace IronGrind.InventorySystem
             CommitConsume(charId, slots, locks, itemId, quantity);
             EmitInventoryChanged(charId);
             return ConsumeItemResult.Succeeded;
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>
+        /// A read: does not call <see cref="ThrowIfDispatching"/>, mutates nothing, and fires no
+        /// event — mirrors <see cref="GetSlot"/>'s guard. An unregistered <paramref name="charId"/>
+        /// logs a server error and returns <see cref="InventorySnapshot.Empty"/>.
+        /// </remarks>
+        public InventorySnapshot ExportSnapshot(CharacterID charId)
+        {
+            if (!_inventories.TryGetValue(charId, out var slots))
+            {
+                Debug.LogError($"[InventoryService] ExportSnapshot: {charId} is not a registered character. Call RegisterCharacter before reading inventory.");
+                return InventorySnapshot.Empty;
+            }
+
+            var entries = new List<InventorySnapshotEntry>();
+            for (int i = 0; i < slots.Length; i++)
+            {
+                var slot = slots[i];
+                if (slot.IsEmpty)
+                    continue;
+
+                entries.Add(new InventorySnapshotEntry((byte)i, slot.ItemId.RawValue, slot.Quantity));
+            }
+            return new InventorySnapshot(entries);
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>
+        /// Guard order (first match wins): <see cref="ThrowIfDispatching"/>; a null
+        /// <paramref name="snapshot"/>; the Item Database not being ready — checked before the
+        /// reset below so a too-early import can never wipe an existing bag. Otherwise resets
+        /// <paramref name="charId"/> exactly like <see cref="RegisterCharacter"/> (registers if
+        /// new) and applies every entry via <see cref="ApplySnapshotEntry"/>. Never calls
+        /// <see cref="RecordSlotChange"/>/<see cref="EmitInventoryChanged"/> — see this class's
+        /// mutation seam contract remarks.
+        /// </remarks>
+        public bool ImportSnapshot(CharacterID charId, InventorySnapshot? snapshot)
+        {
+            ThrowIfDispatching();
+
+            if (snapshot == null)
+            {
+                Debug.LogError($"[InventoryService] ImportSnapshot: snapshot is null for {charId}; nothing changed.");
+                return false;
+            }
+
+            if (!_itemDatabase.IsReady)
+            {
+                Debug.LogError($"[InventoryService] ImportSnapshot: Item Database is not ready; aborting import for {charId} with nothing changed.");
+                return false;
+            }
+
+            RegisterCharacter(charId);
+            var slots = _inventories[charId];
+
+            var claimed = new bool[InventoryConstants.INVENTORY_SLOT_COUNT];
+            for (int i = 0; i < snapshot.Slots.Count; i++)
+                ApplySnapshotEntry(charId, slots, claimed, snapshot.Slots[i]);
+
+            return true;
+        }
+
+        /// <summary>
+        /// <see cref="ImportSnapshot"/>'s per-entry validation and write (Implementation Notes —
+        /// first match wins, every rejection is a <see cref="Debug.LogWarning(object)"/> naming
+        /// <paramref name="charId"/> and the offending entry, none throw): an out-of-range
+        /// <see cref="InventorySnapshotEntry.SlotIndex"/>; a slot already claimed by an earlier
+        /// in-range entry in this same snapshot (<paramref name="claimed"/> is set as soon as an
+        /// in-range entry is seen, even one later cleared by a rule below); <c>ItemId == 0</c>;
+        /// <c>Quantity &lt;= 0</c>; an unknown item (<see cref="IItemDatabase.TryGetItem"/> fails —
+        /// called directly, never <c>TryGetStackLimit</c>, which logs its own error). A quantity
+        /// above the item's <c>StackLimit</c> still loads as-is, at the full quantity, after a
+        /// warning (Implementation Notes — clamping would destroy player items). Writes
+        /// <paramref name="slots"/> directly.
+        /// </summary>
+        private void ApplySnapshotEntry(CharacterID charId, InventorySlot[] slots, bool[] claimed, InventorySnapshotEntry entry)
+        {
+            if (entry.SlotIndex >= InventoryConstants.INVENTORY_SLOT_COUNT)
+            {
+                Debug.LogWarning($"[InventoryService] ImportSnapshot: entry slotIndex {entry.SlotIndex} for {charId} is out of range [0, {InventoryConstants.INVENTORY_SLOT_COUNT}); entry rejected.");
+                return;
+            }
+
+            int slotIndex = entry.SlotIndex;
+            if (claimed[slotIndex])
+            {
+                Debug.LogWarning($"[InventoryService] ImportSnapshot: duplicate entry for slot {slotIndex} for {charId}; entry rejected.");
+                return;
+            }
+            claimed[slotIndex] = true;
+
+            if (entry.ItemId == 0)
+            {
+                Debug.LogWarning($"[InventoryService] ImportSnapshot: entry for slot {slotIndex} for {charId} has ItemId 0; slot left empty.");
+                return;
+            }
+
+            if (entry.Quantity <= 0)
+            {
+                Debug.LogWarning($"[InventoryService] ImportSnapshot: entry for slot {slotIndex} for {charId} has non-positive Quantity {entry.Quantity}; slot left empty.");
+                return;
+            }
+
+            var itemId = new ItemID(entry.ItemId);
+            if (!_itemDatabase.TryGetItem(itemId, out var definition) || definition == null)
+            {
+                Debug.LogWarning($"[InventoryService] ImportSnapshot: entry for slot {slotIndex} for {charId} references unknown item {itemId}; slot left empty.");
+                return;
+            }
+
+            if (entry.Quantity > definition.StackLimit)
+            {
+                Debug.LogWarning($"[InventoryService] ImportSnapshot: entry for slot {slotIndex} for {charId} has Quantity {entry.Quantity} above StackLimit {definition.StackLimit} for {itemId}; loading as-is.");
+            }
+
+            slots[slotIndex] = new InventorySlot(itemId, entry.Quantity);
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>
+        /// <see cref="ThrowIfDispatching"/> runs first. Removes <paramref name="charId"/> from
+        /// every backing dictionary (<see cref="_inventories"/>, <see cref="_locks"/>,
+        /// <see cref="_bagFullWindowExpiry"/>) — after this call <paramref name="charId"/> is
+        /// unregistered for every API, exactly as if <see cref="RegisterCharacter"/> had never
+        /// been called for it. A character that is not currently registered is a silent no-op
+        /// (idempotent) — <see cref="Dictionary{TKey,TValue}.Remove(TKey)"/> returning
+        /// <see langword="false"/> for an absent key is not a caller bug. Fires no event.
+        /// </remarks>
+        public void UnregisterCharacter(CharacterID charId)
+        {
+            ThrowIfDispatching();
+
+            _inventories.Remove(charId);
+            _locks.Remove(charId);
+            _bagFullWindowExpiry.Remove(charId);
         }
 
         /// <summary>

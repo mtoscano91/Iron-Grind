@@ -2,7 +2,7 @@
 
 > **Status**: Approved (lean re-review 2026-05-17 — B-INV-1 PickupRequest signature fixed; R-2 MoveItemIn return type added; OQ-INV-5 resolved; OQ-INV-6 added for wire schemas)
 > **Author**: Manuel Toscano + Claude Code agents
-> **Last Updated**: 2026-10-01 (Story 008 readiness: `SellItem` gains a `quantity` parameter — partial-stack sells supported, aligning with NPC Shop CR-SHOP-7/8 and the wire `SellRequest.quantity`; `ConsumeItem` skips locked slots — Rule 5.12; AC-INV-16 updated). Previous: 2026-09-27 (Story 006 readiness: Rule 7.20 clarified — different-item moves swap, full-destination merge is a no-op success; AC-INV-9 reasons aligned to wire `MoveFailReason`); 2026-05-22 (Equipment System upstream contract: MoveItemOut return type extended to MoveItemOutResult; ForceInsert added — OQ-EQS-3)
+> **Last Updated**: 2026-10-01 (Story 009: Persistence and Load Edge Cases extended — out-of-range `SlotIndex`, `ItemId = 0`, over-limit quantity loads as-is, load refused before Item Database ready, load fires no events; Story 008 readiness: `SellItem` gains a `quantity` parameter — partial-stack sells supported, aligning with NPC Shop CR-SHOP-7/8 and the wire `SellRequest.quantity`; `ConsumeItem` skips locked slots — Rule 5.12; AC-INV-16 updated). Previous: 2026-09-27 (Story 006 readiness: Rule 7.20 clarified — different-item moves swap, full-destination merge is a no-op success; AC-INV-9 reasons aligned to wire `MoveFailReason`); 2026-05-22 (Equipment System upstream contract: MoveItemOut return type extended to MoveItemOutResult; ForceInsert added — OQ-EQS-3)
 > **Implements Pillar**: Earned Power (primary), Legendary Gear (secondary)
 
 ## Overview
@@ -227,6 +227,16 @@ The Inventory System has no combat math. Its formulas define capacity boundaries
 - **If `InventorySnapshot` contains an entry with `ItemId != ItemID.Invalid` and `Quantity = 0`**: Structurally contradictory. Clear the slot on load; log a server warning. Without this correction, F-INV-3's `FilledSlots` count would be inconsistent depending on which field is used as the predicate.
 
 - **If `InventorySnapshot` contains an entry with `Quantity < 0`**: Structurally invalid. Clear the slot to `ItemID.Invalid, Quantity = 0` on load; log a server warning. Closes a load-corruption path where a negative quantity would make F-INV-3's `FilledSlots` count unreliable.
+
+- **If `InventorySnapshot` contains an entry with `SlotIndex ≥ 20`**: Out of range. Reject the entry; log a server warning. No exception; the remaining entries still load.
+
+- **If `InventorySnapshot` contains an entry with `ItemId = 0` (`ItemID.Invalid`)**: A snapshot holds non-empty slots only. Leave the slot empty; log a server warning. The entry still claims its `SlotIndex` for the duplicate rule above — the first-encountered entry for a slot claims it even when that entry is itself cleared by validation.
+
+- **If `InventorySnapshot` contains an entry whose `Quantity` exceeds the item's `StackLimit`** (e.g. a `StackLimit` was lowered after the save): Load the entry **as-is** with its full quantity; log a server warning. No units are destroyed. Pickup (Rule 3 Step 1) already skips stacks at or above `StackLimit`, so an over-limit stack is safe in memory.
+
+- **If a snapshot load is attempted before the Item Database is ready**: Refuse the load — log a server error and change nothing (existing contents, locks, and registration untouched). Without this guard every entry would fail the Item Database lookup and the whole bag would be cleared. Character Persistence must retry or fail the login; it must not treat a refused load as an empty inventory.
+
+- **A snapshot load is initial state, not a mutation**: it replaces the whole inventory (all slots empty and all locks cleared, then entries apply), resets the bag-full deduplication window, and fires no `InventoryChangedEvent` and no `InventoryFullNotification`. The Inventory UI reads full slot state on bag open.
 
 ## Dependencies
 

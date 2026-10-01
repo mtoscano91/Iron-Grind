@@ -1838,3 +1838,41 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: None
 - Next recommended: production/epics/inventory-system/story-009-snapshot-save-load.md — InventorySnapshot Save/Load & Load Validation (Ready; run /story-readiness; resolve TD-042 alongside it)
 - Uncommitted: Story 008 (src, tests, .meta, story, EPIC.md), readiness GDD edits (inventory-system.md, npc-shop.md, currency-system.md), active.md. PAT-in-remote reminder outstanding before any push.
+
+## Session Extract — /story-readiness 2026-10-01 (Inventory Story 009 — NEEDS WORK → fixed → READY)
+- Story 008 committed as 5d5d60b (not pushed).
+- Decisions (user, 2026-10-01): (1) implement the snapshot per the Approved Inventory GDD ({SlotIndex, ItemId, Quantity}); the missing per-item EnhancementLevel (Enhancement GDD expects it on inventory slots + in save/load; never propagated to Inventory GDD / ADR-006 / character-persistence.md / code) logged as TD-045 — dedicated design session before the Enhancement and Equipment epics. (2) Story 009 includes `UnregisterCharacter` (closes TD-042 at /story-done). (3) Quantity > StackLimit loads as-is with a warning. (4) Import fires no events (confirmed).
+- Story rewritten: `InventorySnapshot` (sealed class, IReadOnlyList) + `InventorySnapshotEntry` (readonly struct); `ExportSnapshot` (read; unregistered → error + empty); `bool ImportSnapshot` (dispatch guard; null / Item DB not ready → error, false, nothing changed; otherwise reset-like-RegisterCharacter then apply; per-entry warnings); `UnregisterCharacter` (idempotent, dispatch guard). 19 ACs, 22 QA bullets, estimate 3.5h, +Story 003 dependency.
+- Files edited: production/epics/inventory-system/story-009-snapshot-save-load.md, EPIC.md (open question 009 resolved), docs/tech-debt-register.md (+TD-045, 43 items). No GDD or entities.yaml change (implementation-defined load edge cases recorded in the story only — candidate follow-up: add SlotIndex ≥ 20, ItemId 0, over-limit and DB-not-ready rules to the Inventory GDD's Persistence and Load Edge Cases). Not committed.
+- Next: /dev-story production/epics/inventory-system/story-009-snapshot-save-load.md
+
+## Session Extract — /dev-story 2026-10-01 (Inventory Story 009 — InventorySnapshot Save/Load & Load-Time Validation)
+- Story: production/epics/inventory-system/story-009-snapshot-save-load.md (Status → In Progress)
+- Files changed: src/Foundation/InventorySystem/InventorySnapshot.cs, InventorySnapshotEntry.cs (new, + .meta); IInventoryService.cs (+ExportSnapshot, +ImportSnapshot, +UnregisterCharacter, RegisterCharacter docs); InventoryService.cs (the three methods + private ApplySnapshotEntry; class remarks: persistence scope, lifecycle, mutation-seam exception)
+- Test written: tests/EditMode/InventorySystem/InventorySystem_SnapshotSaveLoad_tests.cs (29 tests, + .meta) — statically reviewed by orchestrator (diff, usings, [Test] count, 3 new GUIDs unique, log regexes vs ItemID.ToString format); NOT yet run in live Test Runner
+- Implemented by gameplay-programmer subagent (tight brief; clean first-pass report). ImportSnapshot reuses RegisterCharacter for its reset.
+- Blockers: None
+- Uncommitted: Story 009 code + tests, readiness edits (story, EPIC.md, tech-debt register TD-045).
+- Next: user runs EditMode Test Runner → /code-review src/Foundation/InventorySystem tests/EditMode/InventorySystem → /story-done production/epics/inventory-system/story-009-snapshot-save-load.md (close TD-042 there)
+
+## Session Extract — /code-review + "fix all" 2026-10-01 (Inventory Story 009)
+- User ran EditMode suite after /dev-story: ALL tests pass (29 new snapshot tests + existing suites).
+- /code-review: unity-specialist CLEAN (0 required, 2 suggestions); qa-tester GAPS (0 tautologies; 10 uncovered sub-clauses + warning-strictness gap). Verdict APPROVED WITH SUGGESTIONS. User said "fix all" (given before the reports arrived; treated as standing approval); applied:
+  1. +10 tests (39 total): null snapshot + DB not ready → null error only; ItemId 0 + Quantity 0 → ItemId-0 warning only; unknown item + Quantity 0 → quantity warning only; refused import leaves locks + dedup window untouched; empty snapshot import returns true and clears bag + locks; second character unaffected by import; over-limit quantity exported as-is; exported snapshot not a live view; post-unregister IsSlotLocked/HasItem/Pickup all report unregistered; unregister → register gives clean bag.
+  2. `LogAssert.NoUnexpectedReceived()` added to the 9 existing warning-expectation tests (exactly the expected warnings, nothing else).
+  3. `ImportSnapshot` parameter annotated `InventorySnapshot?` in InventoryService.cs and (scoped `#nullable enable`/`restore`) in IInventoryService.cs; param doc notes null is tolerated defensively.
+  4. Snapshot type docs now cref `IInventoryService.Export/ImportSnapshot` (7 crefs) instead of the concrete class; UnregisterCharacter interface remarks reflowed.
+- Not testable via public API (noted, not a gap in behaviour): UnregisterCharacter's removal of the dedup window alone — RegisterCharacter/ImportSnapshot also clear it on re-registration.
+- Source changed (annotation + docs only, no behaviour) → needs recompile; the 10 new tests are NOT yet run in the live Test Runner.
+- Next: user re-runs EditMode suite → /story-done production/epics/inventory-system/story-009-snapshot-save-load.md (close TD-042)
+
+## Session Extract — /story-done 2026-10-01 (Inventory Story 009 — INVENTORY SYSTEM EPIC COMPLETE, 9/9)
+- User re-ran EditMode suite after review fixes: ALL tests pass (39 snapshot tests + existing suites).
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/inventory-system/story-009-snapshot-save-load.md — InventorySnapshot Save/Load & Load-Time Validation (19/19 ACs)
+- EPIC.md: row 009 → Complete; epic Status → Complete (9/9); Next Step rewritten (TD-043/044/045 before Enhancement + Equipment epics; AC-INV-11 deferred to Inventory UI epic).
+- Tech debt: TD-042 RESOLVED (UnregisterCharacter); TD-045 open (per-item EnhancementLevel; wording corrected — Enhancement GDD is Approved per systems-index, its own header still says "In Design").
+- GDD (user approved): inventory-system.md Persistence and Load Edge Cases +5 rules (SlotIndex ≥ 20, ItemId 0, over-limit loads as-is, load refused before Item DB ready, load fires no events) + Last Updated. entities.yaml: no change. Propagation note, NOT edited: character-persistence.md (In Review) should state that a refused inventory load must retry/fail the login, never be treated as an empty bag; and that logout calls `UnregisterCharacter`.
+- Noticed, not changed: GDD header statuses stale vs systems-index for enhancement-system.md ("In Design" vs Approved) and consumable-use-system.md ("Designed — In Review" vs Approved).
+- Committed with this entry (Story 009). Not pushed. PAT-in-remote reminder outstanding before any push.
+- Next: no stories left in this epic. Options: design session for TD-045 (+TD-043/044) before the Enhancement/Equipment epics; or /create-stories for the next Core-layer epic; or /sprint-plan (the session hook keeps flagging no production planning).

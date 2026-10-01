@@ -28,7 +28,11 @@ namespace IronGrind.InventorySystem
     /// <see cref="SellItem"/> (fires <see cref="OnInventoryChanged"/> on success) and
     /// <see cref="ConsumeItem"/> (fires exactly one <see cref="OnInventoryChanged"/> listing every
     /// changed slot on success). Neither fires <see cref="OnInventoryFull"/> or touches the
-    /// bag-full dedup window.
+    /// bag-full dedup window. Story 009 (Snapshot Save/Load &amp; Load-Time Validation) adds the
+    /// <see cref="InventorySnapshot"/> save/load contract (<see cref="ExportSnapshot"/>,
+    /// <see cref="ImportSnapshot"/>) and <see cref="UnregisterCharacter"/>; neither
+    /// <see cref="ImportSnapshot"/> nor <see cref="UnregisterCharacter"/> fires
+    /// <see cref="OnInventoryChanged"/> or <see cref="OnInventoryFull"/>.
     /// </remarks>
     public interface IInventoryService
     {
@@ -74,11 +78,14 @@ namespace IronGrind.InventorySystem
         /// </summary>
         /// <remarks>
         /// This is a bootstrap seam analogous to <see cref="ICurrencyService.RegisterCharacter"/>
-        /// — in production this is called by Character Persistence on character spawn/login (real
-        /// content seeding from a saved <c>InventorySnapshot</c> is Story 009's responsibility, not
-        /// this story's). Calling it again on an already-registered character unconditionally
-        /// resets that character's inventory to empty and all locks to unlocked — callers must not
-        /// rely on this preserving prior contents; it is a reset, not a merge.
+        /// — in production this is called by Character Persistence on character spawn/login for a
+        /// character with no saved inventory; real content seeding from a saved
+        /// <see cref="InventorySnapshot"/> is <see cref="ImportSnapshot"/>'s responsibility (Story
+        /// 009), not this method's. Calling it again on an already-registered character
+        /// unconditionally resets that character's inventory to empty and all locks to unlocked —
+        /// callers must not rely on this preserving prior contents; it is a reset, not a merge.
+        /// <see cref="UnregisterCharacter"/> is this method's counterpart, releasing a character's
+        /// inventory state entirely (e.g. on logout) rather than resetting it to empty.
         /// </remarks>
         /// <param name="charId">The character to register.</param>
         void RegisterCharacter(CharacterID charId);
@@ -497,5 +504,80 @@ namespace IronGrind.InventorySystem
         /// <returns>The outcome; check <see cref="ConsumeItemResult.Success"/> / <see cref="ConsumeItemResult.Reason"/>.</returns>
         /// <exception cref="InvalidOperationException">Called synchronously from an <see cref="OnInventoryChanged"/> subscriber.</exception>
         ConsumeItemResult ConsumeItem(CharacterID charId, ItemID itemId, int quantity);
+
+        /// <summary>
+        /// Exports <paramref name="charId"/>'s current inventory contents as an
+        /// <see cref="InventorySnapshot"/> (Story 009 — GDD Rule 1.2, Interactions table Character
+        /// Persistence row, AC-INV-3). Called by Character Persistence on save/logout.
+        /// </summary>
+        /// <remarks>
+        /// A read: mutates no slot, no lock, and no dedup window, and never fires
+        /// <see cref="OnInventoryChanged"/> or <see cref="OnInventoryFull"/> — does not require
+        /// re-entrancy guarding, mirroring <see cref="GetSlot"/>. The returned snapshot
+        /// contains one entry per non-empty slot, in ascending slot order, carrying the slot's raw
+        /// <see cref="IronGrind.CharacterStats.ItemID.RawValue"/> and current
+        /// <see cref="InventorySlot.Quantity"/> (an over-limit quantity is exported as-is). Lock
+        /// flags are never part of the snapshot (GDD Lock State Edge Case — locks are
+        /// session-scoped, not persisted). An unregistered <paramref name="charId"/> logs a server
+        /// error and returns a snapshot with 0 entries.
+        /// </remarks>
+        /// <param name="charId">The character whose inventory to export.</param>
+        /// <returns>A snapshot of every non-empty slot, in ascending slot order.</returns>
+        InventorySnapshot ExportSnapshot(CharacterID charId);
+
+#nullable enable
+        /// <summary>
+        /// Loads <paramref name="snapshot"/> into <paramref name="charId"/>'s inventory (Story 009
+        /// — GDD Rule 1.2, Persistence and Load Edge Cases, AC-INV-3). Called by Character
+        /// Persistence on character spawn/login to restore a saved bag.
+        /// </summary>
+        /// <remarks>
+        /// <para>Guard order (first match wins):
+        /// <paramref name="snapshot"/> == <see langword="null"/> logs a server error and returns
+        /// <see langword="false"/> with nothing changed; then the Item Database not being ready
+        /// logs a server error and returns <see langword="false"/> with nothing changed — checked
+        /// before the reset below, so a too-early import can never wipe an existing bag and a
+        /// never-registered character stays unregistered. Otherwise this performs the same reset
+        /// as <see cref="RegisterCharacter"/> (registers <paramref name="charId"/> if new; clears
+        /// all slots, all locks, and the bag-full dedup window) and then applies
+        /// <paramref name="snapshot"/>'s entries in list order.</para>
+        ///
+        /// <para>Per-entry validation (first match wins; every rejection logs a server warning
+        /// naming <paramref name="charId"/> and the offending entry; none throw): an out-of-range
+        /// <see cref="InventorySnapshotEntry.SlotIndex"/> (&gt;= <see cref="InventoryConstants.INVENTORY_SLOT_COUNT"/>)
+        /// is rejected; a slot already claimed by an earlier in-range entry in this same snapshot
+        /// is rejected (the first in-range entry for a slot claims it, even if that entry is itself
+        /// then cleared by a later rule); <see cref="InventorySnapshotEntry.ItemId"/> == 0 leaves
+        /// the slot empty; <see cref="InventorySnapshotEntry.Quantity"/> &lt;= 0 leaves the slot
+        /// empty; an unknown item (not found in the Item Database) leaves the slot empty; a
+        /// quantity above the item's <c>StackLimit</c> still loads as-is, at the full quantity (no
+        /// units are destroyed — Implementation Notes). Otherwise the entry loads.</para>
+        ///
+        /// <para>Writes slots directly and never calls <see cref="OnInventoryChanged"/> or
+        /// <see cref="OnInventoryFull"/> — this is initial state, not a mutation. Returns
+        /// <see langword="true"/> whenever the import was applied, including when individual
+        /// entries were rejected or cleared.</para>
+        /// </remarks>
+        /// <param name="charId">The character to load the snapshot into. Registered if not already registered.</param>
+        /// <param name="snapshot">The snapshot to load. <see langword="null"/> is tolerated defensively: it is reported as a caller bug (server error) and nothing changes.</param>
+        /// <returns><see langword="true"/> iff the import was applied; <see langword="false"/> iff <paramref name="snapshot"/> is <see langword="null"/> or the Item Database is not ready.</returns>
+        /// <exception cref="InvalidOperationException">Called synchronously from an <see cref="OnInventoryChanged"/> subscriber.</exception>
+        bool ImportSnapshot(CharacterID charId, InventorySnapshot? snapshot);
+#nullable restore
+
+        /// <summary>
+        /// Releases <paramref name="charId"/>'s inventory state entirely — slots, locks, and the
+        /// bag-full dedup window (Story 009, resolves TD-042). After this call
+        /// <paramref name="charId"/> is unregistered for every API on this interface, exactly as if
+        /// <see cref="RegisterCharacter"/> had never been called for it. Called by Character
+        /// Persistence on logout.
+        /// </summary>
+        /// <remarks>
+        /// A character that is not currently registered is a silent no-op — no log, no exception
+        /// (idempotent). Fires no event. Other characters' inventories are unaffected.
+        /// </remarks>
+        /// <param name="charId">The character whose inventory state to release.</param>
+        /// <exception cref="InvalidOperationException">Called synchronously from an <see cref="OnInventoryChanged"/> subscriber.</exception>
+        void UnregisterCharacter(CharacterID charId);
     }
 }
