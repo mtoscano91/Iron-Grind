@@ -1,13 +1,13 @@
 # Item Database
 
-> **Status**: Approved (Review Passes 1–4 complete — 2026-04-25)
+> **Status**: Approved (Review Passes 1–4 complete — 2026-04-25). Amendment #4 applied 2026-10-02 (Enhancement Scroll records, `ScrollData` sub-schema) — lean re-review Pass 5 Approved 2026-10-02
 > **Author**: Manuel Toscano + Claude Code agents
-> **Last Updated**: 2026-06-07 (F-2 invariant superseded; OQ-9 resolved — SmallBasePrice = 2g per NPC Shop authoring session)
+> **Last Updated**: 2026-10-02 (Amendment #4 — Rule 13 Enhancement Scrolls, `ScrollData { TargetGearTier }` sub-schema, 4 scroll records (38 records total), validator rules and AC-42–47; a Consumable record now carries exactly one of `ConsumableData` / `ScrollData`. Wording only: Overview item count, AC-7 slot list, OQ-4 and OQ-5 marked resolved.) Previous: 2026-06-07 (F-2 invariant superseded; OQ-9 resolved — SmallBasePrice = 2g per NPC Shop authoring session)
 > **Implements Pillar**: Legendary Gear (primary), Earned Power (secondary)
 
 ## Overview
 
-The Item Database is the centralized, read-only data store for every collectible and equippable item in Project Iron Grind. It owns the authoritative definition of all items — their names, categories, gear slot assignments, stat modifiers, elemental damage values, upgrade parameters, shop prices, and display metadata. Every system that needs to know anything about an item — what it does, what it costs, how far it can be upgraded — queries the Item Database. The database itself holds no runtime state: it does not track what any player owns (that is the Inventory System), which items are equipped (Equipment System), or what enhancement level an item has reached (Enhancement System). It is a pure, stateless data layer. The unit of reference across all systems is `ItemID`, a `readonly struct` wrapping `uint`, formally defined here. In MVP, the Item Database contains exactly 30 base items: one weapon type (Sword) in four gear tiers, five armor and accessory slots in four gear tiers, and six consumable potions. All items of the same name have identical stats for all players — there is no per-player or quality-tier variation within an item name.
+The Item Database is the centralized, read-only data store for every collectible and equippable item in Project Iron Grind. It owns the authoritative definition of all items — their names, categories, gear slot assignments, stat modifiers, elemental damage values, upgrade parameters, shop prices, and display metadata. Every system that needs to know anything about an item — what it does, what it costs, how far it can be upgraded — queries the Item Database. The database itself holds no runtime state: it does not track what any player owns (that is the Inventory System), which items are equipped (Equipment System), or what enhancement level an item has reached (Enhancement System). It is a pure, stateless data layer. The unit of reference across all systems is `ItemID`, a `readonly struct` wrapping `uint`, formally defined here. In MVP, the Item Database contains exactly 38 item records: one weapon type (Sword) in four gear tiers, six armor and accessory slots in four gear tiers, six consumable potions, and four Enhancement Scrolls (one per gear tier). All items of the same name have identical stats for all players — there is no per-player or quality-tier variation within an item name.
 
 ## Player Fantasy
 
@@ -31,7 +31,7 @@ A +9 weapon is a server event because everyone on the server agrees on what a +9
 
 4. Every item belongs to exactly one `ItemCategory`: `Equipment` or `Consumable`.
 5. **Equipment** items occupy a gear slot and can be equipped to a character. Equipment always has `StackLimit = 1`.
-6. **Consumables** are single-use items with an immediate effect. They do not occupy gear slots.
+6. **Consumables** are single-use items that are consumed when used. They do not occupy gear slots. A Consumable is either a potion with an immediate effect (`ConsumableData` — Rule 8) or an Enhancement Scroll (`ScrollData` — Rule 13). *(Amended 2026-10-02.)*
 7. No item belongs to both categories.
 
 **Rule 3 — Gear Slots (Equipment only)**
@@ -41,7 +41,7 @@ A +9 weapon is a server event because everyone on the server agrees on what a +9
 
 **Rule 4 — Gear Tiers (Equipment only)**
 
-10. All equipment items belong to exactly one of four `GearTier` values: `Bronze`, `Iron`, `Steel`, or `DarkSteel`. Consumables have `GearTier.None`.
+10. All equipment items belong to exactly one of four `GearTier` values: `Bronze`, `Iron`, `Steel`, or `DarkSteel`. Consumables have `GearTier.None`. (An Enhancement Scroll's `ScrollData.TargetGearTier` is the tier of gear the scroll is used on, not a tier of the scroll itself — Rule 13.)
 11. Gear tiers represent categorical power levels, not a continuous scale. An Iron Sword is categorically stronger than a Bronze Sword in base stats. Tier advancement is one of the primary equipment progression axes.
 12. MVP contains exactly four tiers. Additional tiers are a Vertical Slice or later addition — they require new item records, not schema changes.
 
@@ -67,13 +67,13 @@ A +9 weapon is a server event because everyone on the server agrees on what a +9
 
 **Rule 8 — Consumables**
 
-25. Each consumable record defines: `EffectType` (`RestoreHP` or `RestoreMP` in MVP), `EffectMagnitude: float` (amount restored), `CooldownSeconds: float` (per-type cooldown duration), and `StackLimit: int` (max quantity per inventory slot).
+25. Each consumable record other than an Enhancement Scroll (Rule 13) defines: `EffectType` (`RestoreHP` or `RestoreMP` in MVP), `EffectMagnitude: float` (amount restored), `CooldownSeconds: float` (per-type cooldown duration), and `StackLimit: int` (max quantity per inventory slot).
 26. HP Potions and MP Potions have independent per-type cooldown timers. Using an HP Potion starts the HP Potion cooldown only — the MP Potion cooldown is unaffected. Cooldown enforcement is runtime state owned by the Consumable Use System (not yet GDD'd); `CooldownSeconds` is the authored duration that system reads.
-27. MVP consumable types: HP Potion (Small / Medium / Large) and MP Potion (Small / Medium / Large) — 6 consumable records total.
+27. MVP potion types: HP Potion (Small / Medium / Large) and MP Potion (Small / Medium / Large) — 6 potion records. With the 4 Enhancement Scrolls (Rule 13), MVP has 10 Consumable records in total.
 
 **Rule 9 — Upgrade Eligibility**
 
-28. `IsUpgradeable: bool` is stored on each item record. All equipment items are `IsUpgradeable = true` in MVP — every piece of equipment can be put through the Enhancement System. All consumables are `IsUpgradeable = false`. The Enhancement System GDD owns `MAX_ENHANCEMENT_LEVEL` (a universal constant), the destruction threshold, enhancement cost curves, and success probability tables.
+28. `IsUpgradeable: bool` is stored on each item record. All equipment items are `IsUpgradeable = true` in MVP — every piece of equipment can be put through the Enhancement System. All consumables are `IsUpgradeable = false`. The Enhancement System GDD owns `MAX_ENHANCEMENT_LEVEL` (a universal constant), the destruction rule (CR-ENH-10 — every failed attempt destroys the item; there is no threshold), enhancement cost curves, and success probability tables.
 
 **Rule 10 — Economy**
 
@@ -87,7 +87,7 @@ A +9 weapon is a server event because everyone on the server agrees on what a +9
 
 **Rule 12 — MVP Item Count**
 
-33. MVP Item Database contains exactly 34 authored item records:
+33. MVP Item Database contains exactly 38 authored item records (28 Equipment, 10 Consumable):
 
 | Category | Count | Breakdown |
 |----------|-------|-----------|
@@ -100,9 +100,28 @@ A +9 weapon is a server event because everyone on the server agrees on what a +9
 | Necklaces | 4 | 1 type × 4 tiers *(OQ-3 resolved 2026-05-15)* |
 | HP Potions | 3 | Small / Medium / Large |
 | MP Potions | 3 | Small / Medium / Large |
-| **Total** | **34** | |
+| Enhancement Scrolls | 4 | 1 per gear tier *(Amendment #4, 2026-10-02 — Rule 13)* |
+| **Total** | **38** | |
 
 Additional weapon sub-types (Axe, Mace, etc.) are Vertical Slice additions, designed after the Class System GDD resolves weapon-class differentiation (OQ-2 — now closed for MVP).
+
+**Rule 13 — Enhancement Scrolls** *(added 2026-10-02 — Amendment #4; closes enhancement-system.md upstream amendment 4 and npc-shop.md OQ-NS-4)*
+
+34. An Enhancement Scroll is an `ItemCategory.Consumable` record whose `ScrollData` is set and whose `ConsumableData` and `EquipmentData` are `null`. `ScrollData` has one field, `TargetGearTier: GearTier` — the gear tier the scroll can be used on. It is one of `Bronze`, `Iron`, `Steel`, or `DarkSteel`; never `None`.
+35. Every Consumable record carries exactly one of `ConsumableData` or `ScrollData`. The validator rejects a Consumable record that has neither, or both. An Equipment record never carries `ScrollData`.
+36. `ScrollData != null` is the test for "this item is an Enhancement Scroll". The Enhancement System uses it to validate the scroll slot and compares `ScrollData.TargetGearTier` with the target item's `EquipmentData.GearTier` (enhancement-system.md CR-ENH-3, CR-ENH-15 step 2). The Item Database stores the tier; it does not apply the match.
+37. MVP has exactly four scroll records, one per gear tier:
+
+| `DisplayName` | `ScrollData.TargetGearTier` | `StackLimit` | `SellPriceGold` | `IsUpgradeable` |
+|---------------|-----------------------------|--------------|-----------------|-----------------|
+| Bronze Enhancement Scroll | `Bronze` | 99 | 0 | `false` |
+| Iron Enhancement Scroll | `Iron` | 99 | 0 | `false` |
+| Steel Enhancement Scroll | `Steel` | 99 | 0 | `false` |
+| Dark Steel Enhancement Scroll | `DarkSteel` | 99 | 0 | `false` |
+
+   `StackLimit = 99` is the Inventory System's per-slot maximum and equals the NPC Shop quantity selector cap, so the largest single purchase fills at most one bag slot. The four records take the next unassigned `ItemID` values after the existing 34 records — 35–38 in the current seed data (Rule 11: IDs are never reused).
+38. A scroll has no effect of its own: it has no `EffectType`, `EffectMagnitude`, or `CooldownSeconds`. The Consumable Use System cannot use a scroll or assign it to the hotbar. A scroll leaves the bag only through the Enhancement System's `ConsumeItem(scrollItemID, 1)` call or a player discard.
+39. `SellPriceGold = 0` on every scroll record: scrolls cannot be sold to an NPC, and a scroll purchase is non-refundable (npc-shop.md CR-SHOP-11). Scroll sell prices are outside F-1 and F-2. Scroll buy prices are owned by the NPC Shop GDD (enhancement-system.md TK-ENH-9), per Rule 10.
 
 ---
 
@@ -126,8 +145,8 @@ No further state transitions occur during a gameplay session. The database does 
 | **Inventory System** | ← reads | `GetItem(ItemID)` → `DisplayName`, `IconAddress`, `StackLimit`, `SellPriceGold`, `ItemCategory` | On pickup, inventory open, sell action |
 | **Equipment System** | ← reads | `GetItem(ItemID)` → `ItemCategory`, `EquipmentData.GearSlot`, `EquipmentData.StatModifiers[]`, `EquipmentData.ElementType`, `EquipmentData.ElementalDamage` | On equip/unequip; confirms `ItemCategory == Equipment`, then passes `StatModifiers[]` to Character Stats |
 | **Loot Table System** | ← reads | `GetItemsByCategory(ItemCategory.Equipment)` at startup | Pre-indexes drop pools at init; not called per-drop |
-| **Enhancement System** | ← reads | `GetItem(ItemID)` → `IsUpgradeable`, `EquipmentData.StatModifiers[]` (base stat reference for scaling) | On enhancement attempt |
-| **NPC Shop** | ← reads | `GetItem(ItemID)` → `DisplayName`, `SellPriceGold` | On shop open, on sell |
+| **Enhancement System** | ← reads | `GetItem(ItemID)` → `IsUpgradeable`, `EquipmentData.GearTier`, `EquipmentData.GearSlot`, `EquipmentData.StatModifiers[]` (base stat reference for scaling), `DisplayName` (+9 broadcast); for the scroll: `ScrollData` (non-null = Enhancement Scroll) and `ScrollData.TargetGearTier` (Rule 13) | On enhancement attempt |
+| **NPC Shop** | ← reads | `GetItem(ItemID)` → `DisplayName`, `SellPriceGold`, `ItemCategory` | On shop open, on sell, at startup catalog validation (the four scroll records must exist — Rule 13) |
 | **Damage Calculation** | ← reads | `GetItem(ItemID)` → `EquipmentData.ElementType`, `EquipmentData.ElementalDamage` (equipped weapon only, ID provided by Equipment System) | Per damage event when elemental component is present |
 | **VFX System** | ← reads | `GetItem(ItemID)` → `EquipmentData.ElementType` | On weapon enhancement reaching ≥+7; determines glow color |
 | **Inventory UI / Equipment UI** | ← reads | `GetItem(ItemID)` → `DisplayName`, `Description`, `IconAddress` | On tooltip, item inspect screen |
@@ -154,7 +173,8 @@ Canonical field list for all types. This table is authoritative — it supersede
 | `IsUpgradeable` | `bool` | `true` for all MVP equipment; `false` for all consumables |
 | `StackLimit` | `int` | Equipment: always 1 (validator enforces); Consumables: authored ≥ 1 |
 | `EquipmentData` | `EquipmentData?` | `null` when `ItemCategory == Consumable`. **Implementation note**: must use `[SerializeReference]` in Unity to preserve null semantics — Unity's serializer creates a default instance for class fields without it, causing silent null-check passes on Consumable items. |
-| `ConsumableData` | `ConsumableData?` | `null` when `ItemCategory == Equipment`. Same `[SerializeReference]` requirement as `EquipmentData`. |
+| `ConsumableData` | `ConsumableData?` | `null` when `ItemCategory == Equipment`, and `null` on Enhancement Scroll records (Rule 13). Same `[SerializeReference]` requirement as `EquipmentData`. |
+| `ScrollData` | `ScrollData?` | Non-null only on Enhancement Scroll records (Rule 13); `null` on every Equipment record and every potion record. Same `[SerializeReference]` requirement as `EquipmentData`. Added 2026-10-02 (Amendment #4). |
 
 **`EquipmentData`** (C# `class`, nullable sub-schema)
 
@@ -176,6 +196,12 @@ Canonical field list for all types. This table is authoritative — it supersede
 | `EffectType` | `EffectType` | `RestoreHP` or `RestoreMP` at MVP |
 | `EffectMagnitude` | `float` | > 0. **Flat HP or MP restored** (e.g., `150.0` restores 150 HP for `RestoreHP`, or 150 MP for `RestoreMP`). Not a percentage of `MaxHP` / `MaxMP`. |
 | `CooldownSeconds` | `float` | ≥ 0.0; zero is valid but emits a validation warning |
+
+**`ScrollData`** (C# `class`, nullable sub-schema — added 2026-10-02, Amendment #4)
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `TargetGearTier` | `GearTier` | `Bronze`, `Iron`, `Steel`, or `DarkSteel` — never `None`. The gear tier this scroll can be used on. Read by the Enhancement System (CR-ENH-3). |
 
 **`StatModifierEntry`** (C# `[Serializable]` struct — NOT a ValueTuple)
 
@@ -255,6 +281,8 @@ Consumable sell prices are fixed authored values, not derived from F-1. They sca
 
 **Rounding:** Output rounded via `Mathf.RoundToInt`. Tolerance specification: 5% of the formula output, rounded the same way; threshold is exclusive (strictly > 5% is flagged).
 
+**Scope:** F-2 applies to potion records only. Enhancement Scrolls have `SellPriceGold = 0` (Rule 13) and are outside both F-1 and F-2.
+
 ---
 
 **F-3: ElementalDamage Valid Range**
@@ -321,17 +349,27 @@ Consumable sell prices are fixed authored values, not derived from F-1. They sca
 
 - **If an equipment record has any `ConsumableData` fields set** (`EffectType`, `EffectMagnitude`, `CooldownSeconds`) **or `StackLimit > 1`**: data validation error — reject the record. Equipment is not consumable; `StackLimit = 1` is mandatory for all equipment.
 
+- **If an equipment record has `ScrollData` set**: data validation error — reject the record. The Enhancement System identifies a scroll by `ScrollData != null`; an equipment item carrying it would pass as a scroll.
+
+- **If a consumable record has neither `ConsumableData` nor `ScrollData`**: data validation error — reject the record. The record has no effect and is not a scroll, so no system can consume it.
+
+- **If a consumable record has both `ConsumableData` and `ScrollData`**: data validation error — reject the record. A record carrying both would be usable as a potion and as a scroll (Rule 13).
+
+- **If `ScrollData.TargetGearTier` is `None` or not a defined `GearTier` value**: data validation error — reject the record. No equipment item has that tier, so the scroll could be bought but never used.
+
 **Economy fields**
 
 - **If `SellPriceGold` does not match the F-1 / F-2 authoring guide by more than ±5%**: validation warning. F-1 is an authoring guide, not a runtime formula. Small deviations from `Mathf.RoundToInt` are acceptable; deviations beyond ±5% require designer acknowledgment before import clears.
 
 - **If `SellPriceGold` substantially exceeds 270g** (the F-1 maximum for DarkSteel — e.g., values above 300g not covered by the ±5% tolerance): validation warning. A higher value implies a magnitude authoring error (e.g., typing `2700` instead of `270`) or an unapproved future tier.
 
+- **If an Enhancement Scroll record has `SellPriceGold = 0`**: valid, and the validator emits no warning. Zero is the designed value for scrolls (Rule 13). The zero-price warning applies to equipment records only (AC-35), and the F-1 / F-2 deviation warning does not apply to scrolls.
+
 **Consumable rules**
 
-- **If a consumable has `StackLimit = 0`**: data validation error — reject the record. A stack limit of zero makes the item impossible to carry.
+- **If a consumable has `StackLimit = 0`**: data validation error — reject the record. A stack limit of zero makes the item impossible to carry. This applies to potions and scrolls alike.
 
-- **If a consumable has `EffectMagnitude ≤ 0`**: data validation error — reject the record. A zero-magnitude restoration is a no-op; a negative value would drain the resource on use, a behavior the Consumable Use System does not support in MVP.
+- **If a consumable with `ConsumableData` has `EffectMagnitude ≤ 0`**: data validation error — reject the record. A zero-magnitude restoration is a no-op; a negative value would drain the resource on use, a behavior the Consumable Use System does not support in MVP.
 
 - **If a consumable has `CooldownSeconds = 0.0`**: validation warning, not a hard error. A zero cooldown allows per-frame use, effectively removing resource management from consumables. The designer must acknowledge the warning. Minimum recommended value: 0.5 seconds.
 
@@ -358,12 +396,12 @@ Consumable sell prices are fixed authored values, not derived from F-1. They sca
 | **Inventory System** | Reads | `GetItem(ItemID)` → `DisplayName`, `IconAddress`, `StackLimit`, `SellPriceGold`, `ItemCategory` | **Hard** — Inventory cannot represent items without item definitions |
 | **Equipment System** | Reads | `GetItem(ItemID)` → `ItemCategory`, `EquipmentData.GearSlot`, `EquipmentData.StatModifiers[]`, `EquipmentData.ElementType`, `EquipmentData.ElementalDamage` | **Hard** — Equipment System cannot call `AddEquipmentModifier()` without stat modifier data |
 | **Loot Table System** | Reads | `GetItemsByCategory(ItemCategory.Equipment)` at startup; `ItemID` references in loot entries | **Hard** — Drop pools cannot be built without item records |
-| **Enhancement System** | Reads | `GetItem(ItemID)` → `IsUpgradeable`, `EquipmentData.StatModifiers[]` | **Hard** — Enhancement System must verify `IsUpgradeable` before any enhancement attempt |
-| **NPC Shop** | Reads | `GetItem(ItemID)` → `DisplayName`, `SellPriceGold` | **Hard** — Shop cannot display or value items without item definitions |
+| **Enhancement System** | Reads | `GetItem(ItemID)` → `IsUpgradeable`, `EquipmentData.GearTier`, `EquipmentData.GearSlot`, `EquipmentData.StatModifiers[]`, `DisplayName`, `ScrollData.TargetGearTier` | **Hard** — Enhancement System must verify `IsUpgradeable` and the scroll tier match before any enhancement attempt; the four scroll records (Rule 13) must exist |
+| **NPC Shop** | Reads | `GetItem(ItemID)` → `DisplayName`, `SellPriceGold`, `ItemCategory` | **Hard** — Shop cannot display or value items without item definitions; its Buy catalog references the four scroll records (Rule 13) |
 | **Mob Spawning** | Reads | `ItemID` references in mob data tables (drop configurations) | **Hard** — Mobs reference items by `ItemID`; undefined IDs produce null on pickup |
 | **Damage Calculation** | Reads | `GetItem(ItemID)` → `ElementType`, `ElementalDamage` (equipped weapon only) | **Hard** for elemental weapons; physical damage is unaffected by Item Database |
 | **VFX System** | Reads | `GetItem(ItemID)` → `ElementType` | **Soft** — Enhancement visual glow is absent if Item Database is unavailable; gameplay continues |
-| **Consumable Use System** | Reads | `GetItem(ItemID)` → `ConsumableData.CooldownSeconds`, `ConsumableData.EffectType`, `ConsumableData.EffectMagnitude` | **Hard** — Consumable Use System cannot apply effects or enforce cooldowns without authored parameters |
+| **Consumable Use System** | Reads | `GetItem(ItemID)` → `ConsumableData.CooldownSeconds`, `ConsumableData.EffectType`, `ConsumableData.EffectMagnitude` | **Hard** — Consumable Use System cannot apply effects or enforce cooldowns without authored parameters. `ConsumableData` is `null` on Enhancement Scroll records (Rule 13) — that system must treat such an item as not usable |
 | **Inventory UI** | Reads | `GetItem(ItemID)` → `DisplayName`, `Description`, `IconAddress` | **Hard** for MVP — UI cannot render item entries without display data |
 | **Equipment UI** | Reads | `GetItem(ItemID)` → `DisplayName`, `Description`, `IconAddress` | **Hard** for MVP — Equipment screen cannot render without item definitions |
 
@@ -437,6 +475,17 @@ With `ΣPctEquip = 0` from equipment: `EffectiveAP = floor(BaseStat + ΣFlatEqui
 | Weapon sub-types per tier | 1 (Sword) at MVP | — | Additional weapon types (Axe, Mace) are VS additions after the Class System GDD resolves weapon-class differentiation. The single-type MVP eliminates retroactive player investment risk from undefined differentiation. |
 | Armor types per slot | 1 | [1, 2] | Increasing to 2 doubles the armor authoring burden and requires the Class System GDD to distinguish which armor types are class-locked vs. universal. |
 | Consumable size tiers | 3 (Small/Medium/Large) | [2, 3] | Reducing to 2 (Small/Large only) simplifies economy but removes the mid-game currency sink. |
+| Enhancement Scroll records per gear tier | 1 | — | One scroll per tier is what CR-ENH-3 matches against. A new gear tier requires a new scroll record (no schema change). |
+
+---
+
+**Enhancement Scrolls (Rule 13)**
+
+| Knob | Default | Safe Range | What Breaks |
+|------|---------|-----------|-------------|
+| Enhancement Scroll `StackLimit` (all four records) | 99 | [1, 99] | Upper bound is the Inventory System's per-slot maximum (99). Lower values make scrolls take more of the 20-slot bag: at 20, a 99-scroll purchase needs 5 slots; at 1, each scroll takes a slot and a long enhancement session cannot be stocked in one shop visit. Source: equals the NPC Shop quantity selector cap (npc-shop.md F-NS-4), so one maximum purchase fits in one slot. |
+
+*Scroll buy prices are not Item Database knobs — see npc-shop.md Tuning Knobs and enhancement-system.md TK-ENH-9.*
 
 ## Visual/Audio Requirements
 
@@ -466,7 +515,7 @@ GIVEN the import validator receives a consumable record with `GearSlot ≠ None`
 **AC-6** [REMOVED — Pass 1: duplicate of AC-34 with conflicting severity label. BLOCKING version retained as AC-34.]
 
 **AC-7** [BLOCKING]
-GIVEN the import validator receives an equipment record with `GearSlot` outside `{Weapon, Helmet, Chest, Legs, Boots, Accessory}`, WHEN the validator runs, THEN it returns an error and rejects the record.
+GIVEN the import validator receives an equipment record with `GearSlot` outside `{Weapon, Helmet, Chest, Legs, Boots, Ring, Necklace}`, WHEN the validator runs, THEN it returns an error and rejects the record.
 
 **AC-8** [BLOCKING]
 GIVEN the import validator receives a non-weapon equipment record with `ElementType ≠ None` or `ElementalDamage > 0`, WHEN the validator runs, THEN it returns an error and rejects the record.
@@ -497,7 +546,7 @@ GIVEN the import validator receives an equipment record with 3 or more `StatModi
 GIVEN the import validator receives an equipment `StatModifierEntry` with `FlatBonus < 0.0`, WHEN the validator runs, THEN it emits a warning naming the item and the `StatId`, and accepts the record (does not reject it). *(Negative flat bonuses are valid penalty modifiers.)*
 
 **AC-18** [BLOCKING]
-GIVEN the database has completed initialization with exactly 34 MVP item records, WHEN `GetItemsByCategory(ItemCategory.Equipment)` is called, THEN the return value is an `IReadOnlyList<ItemDefinition>` with `Count == 28`, every element has `ItemCategory == Equipment`, and no element has `ItemCategory == Consumable`. *(Count updated 2026-05-15: OQ-3 resolution adds 4 Ring + 4 Necklace records.)*
+GIVEN the database has completed initialization with exactly 38 MVP item records, WHEN `GetItemsByCategory(ItemCategory.Equipment)` is called, THEN the return value is an `IReadOnlyList<ItemDefinition>` with `Count == 28`, every element has `ItemCategory == Equipment`, and no element has `ItemCategory == Consumable`. *(Count updated 2026-05-15: OQ-3 resolution adds 4 Ring + 4 Necklace records. Record total updated 2026-10-02: 4 Enhancement Scroll records are Consumables — the Equipment count is unchanged.)*
 
 **AC-19** [BLOCKING]
 GIVEN the database has completed initialization, WHEN `GetItemsByCategory` is called with an integer cast to `ItemCategory` that falls outside `{Equipment, Consumable}`, THEN the return value is an empty `IReadOnlyList<ItemDefinition>`, a dev-build error is logged, and no exception is thrown.
@@ -514,7 +563,7 @@ GIVEN the import validator receives a consumable record with `StackLimit = 0`, W
 GIVEN the Consumable Use System holds independent per-type cooldown state for one entity, WHEN an HP Potion is used (starting the HP Potion cooldown), THEN checking whether an MP Potion is on cooldown for that entity returns `false`. *(Integration test — untestable until Consumable Use System GDD is authored and implemented. Carry to that implementation sprint.)*
 
 **AC-24** [BLOCKING]
-GIVEN the database has completed initialization, WHEN all 34 MVP item records are enumerated, THEN every Equipment record has `IsUpgradeable = true` and every Consumable record has `IsUpgradeable = false` with no exceptions.
+GIVEN the database has completed initialization, WHEN all 38 MVP item records are enumerated, THEN every Equipment record has `IsUpgradeable = true` and every Consumable record (potions and Enhancement Scrolls) has `IsUpgradeable = false` with no exceptions.
 
 **AC-25** [BLOCKING]
 GIVEN the import validator receives any item record with `SellPriceGold < 0`, WHEN the validator runs, THEN it returns an error and rejects the record.
@@ -550,7 +599,7 @@ GIVEN the import validator receives an equipment record where `SellPriceGold` de
 GIVEN HP Potion (Small), (Medium), and (Large) records are in the initialized database with `SmallBasePrice = 2`, WHEN `SellPriceGold` is read from each, THEN Small = 2g, Medium = 6g, Large = 18g.
 
 **AC-34** [BLOCKING]
-GIVEN the database has completed initialization, WHEN all 34 MVP item records are enumerated, THEN exactly 28 are `ItemCategory.Equipment` and exactly 6 are `ItemCategory.Consumable`, with no record holding both categories. *(Updated 2026-05-15: OQ-3 resolution adds Ring and Necklace slots, each 1 type × 4 tiers.)*
+GIVEN the database has completed initialization, WHEN all 38 MVP item records are enumerated, THEN exactly 28 are `ItemCategory.Equipment` and exactly 10 are `ItemCategory.Consumable` (6 with `ConsumableData`, 4 with `ScrollData`), with no record holding both categories. *(Updated 2026-05-15: OQ-3 resolution adds Ring and Necklace slots, each 1 type × 4 tiers. Updated 2026-10-02: 4 Enhancement Scroll records added.)*
 
 **AC-35** [ADVISORY]
 GIVEN the import validator receives an equipment record where `SellPriceGold = 0`, WHEN the validator runs, THEN it emits a warning (not a blocking error) naming the item, since F-1 defines a minimum of 10g for the lowest equipment tier and zero is likely a data authoring error.
@@ -572,7 +621,25 @@ GIVEN the database has been constructed but `Initialize()` has not been called, 
 **AC-41** [BLOCKING]
 GIVEN the import validator receives an equipment record with a `StatModifierEntry` whose `StatId` does not match any defined value in the `StatID` enum, WHEN the validator runs, THEN it returns an error and rejects the record. *(Character Stats silently drops unrecognized `StatID` values in release builds, producing invisible stat loss with no runtime signal.)*
 
-**BLOCKING: 33 | ADVISORY: 5 | Total: 38**
+**AC-42** [BLOCKING] *(added 2026-10-02 — Amendment #4)*
+GIVEN the import validator receives a consumable record with `ConsumableData == null` and `ScrollData == null`, WHEN the validator runs, THEN it returns an error and rejects the record.
+
+**AC-43** [BLOCKING] *(added 2026-10-02 — Amendment #4)*
+GIVEN the import validator receives a consumable record with both `ConsumableData` and `ScrollData` set, WHEN the validator runs, THEN it returns an error and rejects the record.
+
+**AC-44** [BLOCKING] *(added 2026-10-02 — Amendment #4)*
+GIVEN the import validator receives an equipment record that is otherwise valid but has `ScrollData` set, WHEN the validator runs, THEN it returns an error and rejects the record.
+
+**AC-45** [BLOCKING] *(added 2026-10-02 — Amendment #4)*
+GIVEN the import validator receives a scroll record with `ScrollData.TargetGearTier = GearTier.None`, WHEN the validator runs, THEN it returns an error and rejects the record. *(Test also with an integer cast to `GearTier` that is outside the defined values.)*
+
+**AC-46** [BLOCKING] *(added 2026-10-02 — Amendment #4)*
+GIVEN the import validator receives a scroll record with `ItemCategory = Consumable`, `ScrollData.TargetGearTier = Bronze`, `ConsumableData == null`, `EquipmentData == null`, `StackLimit = 99`, `SellPriceGold = 0`, and `IsUpgradeable = false`, WHEN the validator runs, THEN the result is valid and contains zero issues — no error and no warning. *(Confirms the zero-sell-price warning of AC-35 is not raised for scrolls.)*
+
+**AC-47** [BLOCKING] *(added 2026-10-02 — Amendment #4)*
+GIVEN the database has completed initialization, WHEN all 38 MVP item records are enumerated, THEN exactly 4 have `ScrollData != null`; their `TargetGearTier` values are `Bronze`, `Iron`, `Steel`, and `DarkSteel`, each exactly once; and each of the 4 has `ItemCategory == Consumable`, `ConsumableData == null`, `EquipmentData == null`, `StackLimit == 99`, `SellPriceGold == 0`, and `IsUpgradeable == false`.
+
+**BLOCKING: 39 | ADVISORY: 5 | Total: 44**
 
 *QA lead flag: AC-29a–29c require `OnDatabaseReady` be a standard C# `event Action` (not `UnityEvent`) so the test harness can subscribe counter delegates without editor dependency. AC-29c (late-subscriber guarantee) must be tested by subscribing after `Initialize()` returns and verifying immediate invocation — specifically: set a `bool` flag in the handler and assert it `true` on the next line after the `+=` expression ("synchronously before the assignment returns").*
 
@@ -589,13 +656,11 @@ MVP ships one weapon type (Sword). Axe and Mace are deferred to Vertical Slice, 
 **OQ-3 — Accessory sub-type definition** *(CLOSED 2026-05-15)*
 *Resolution*: Split into two distinct slots — `Ring=5` and `Necklace=6` — replacing the former single `Accessory=5`. GearSlot enum now has 7 values. MVP ships 1 Ring type × 4 tiers + 1 Necklace type × 4 tiers = 8 accessory records (34 total items, 28 equipment). Modifier count: 2 × 7 = 14 entries, within the 16-entry Character Stats cap. Equipment System GDD must enforce one item per Ring slot and one item per Necklace slot independently.
 
-**OQ-4 — Enhancement System scaling of elemental damage**
-EC-5 permits weapons with `ElementType != None` and `ElementalDamage = 0` (for weapons whose elemental damage scales from the Enhancement System). Whether and how the Enhancement System scales elemental damage is unresolved — does each enhancement level add a flat elemental bonus? Is the scaling independent of physical stat scaling? This must be answered in the Enhancement System GDD.
-*Owner*: Systems Designer. *Target*: Enhancement System GDD (design order #18).
+**OQ-4 — Enhancement System scaling of elemental damage** *(RESOLVED — Enhancement System GDD; marked here 2026-10-02)*
+*Resolution*: enhancement-system.md F-ENH-2. Each enhancement level adds a flat per-tier elemental bonus (TK-ENH-8 `ElementalBonusPerLevel`), for weapons only, independent of the physical flat-bonus scaling. `IEnhancementBonusProvider.GetElementalBonus(level, baseElementalDamage, gearTier, isWeapon)` returns the enhanced value from this database's `ElementalDamage` base (Rule 19).
 
-**OQ-5 — Consumable cooldown values (CooldownSeconds)**
-The schema stores `CooldownSeconds` as a per-item authored field, but the actual values have not been tuned (e.g., HP Potion Small cooldown = 30s?). This needs to be locked before playtesting.
-*Owner*: Game Designer. *Target*: First item authoring pass / Consumable Use System GDD.
+**OQ-5 — Consumable cooldown values (CooldownSeconds)** *(RESOLVED 2026-06-09 — Consumable Use System GDD; marked here 2026-10-02)*
+*Resolution*: consumable-use-system.md "CooldownSeconds — Authored Constants" sets the authored defaults: Small 20s, Medium 30s, Large 45s, for both HP and MP potions. The item records must carry these values.
 
 **OQ-6 — ItemID authoring process**
 Who assigns `ItemID` values and how is uniqueness enforced? Options include: sequential counter in a spreadsheet, auto-assigned by a ScriptableObject editor tool, or UUID-style random values. The duplicate-ID validation (AC-3) catches violations at import but does not prevent them. An explicit authoring process is needed before the first item record is created.

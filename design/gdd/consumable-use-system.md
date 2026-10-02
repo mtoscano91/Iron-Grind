@@ -2,7 +2,7 @@
 
 > **Status**: Designed — In Review
 > **Author**: Manuel Toscano + Claude Code agents
-> **Last Updated**: 2026-06-09
+> **Last Updated**: 2026-10-02 (note under Rule 4: items with `null` `ConsumableData` — Enhancement Scrolls, item-database.md Rule 13 — are not usable through this system; no rule or value change for potions). Previous: 2026-06-09
 > **Implements Pillar**: Earned Power (primary), Rhythm Mastery (secondary), Social Gravity (tertiary)
 
 ## Overview
@@ -53,6 +53,8 @@ The two-slot hotbar reflects this: you choose your plan before the session, and 
 
 9. From the Inventory screen, tapping a consumable → item detail view → "Use" action. The Use button is disabled (greyed) if the corresponding EffectType cooldown is active; tapping a disabled Use button shows a toast ("On cooldown") without sending UseItemRequest. If cooldown is 0, the action proceeds with the same UseItemRequest flow as Rule 3 starting at Step 2.
 10. Hotbar assignment is not required to use from bag. Any potion type in possession may be used at any time, subject only to the per-EffectType cooldown.
+
+> **Items without `ConsumableData` (added 2026-10-02 — item-database.md Rule 13):** Enhancement Scrolls are `ItemCategory.Consumable` records that carry `ScrollData` and a `null` `ConsumableData`. This system cannot use them. Every read of `ConsumableData` in this GDD must first check it is non-null: an item with `ConsumableData == null` fails assignment validation (Rule 1.3), does not appear in the hotbar quick-picker (Rule 2.5), has no "Use" or "Assign to Hotbar" action in its item detail view (Rules 2.4 and 4.9), fails server validation Step 4(d) with nothing consumed, and fails the EC-10 load check.
 
 **Rule 5 — Per-EffectType Cooldown**
 

@@ -985,6 +985,17 @@ constants:
     added: "2026-05-22"
     revised: "2026-10-01"
 
+  - name: IsAttemptInProgress
+    status: active
+    source: design/gdd/enhancement-system.md
+    referenced_by:
+      - design/gdd/enhancement-system.md
+    type: "query method (cross-system contract)"
+    methods: "IsAttemptInProgress(characterId: CharacterID): bool"
+    note: "Owned and exposed by Enhancement System (CR-ENH-18 Attempt Exclusivity). True from CR-ENH-15 step 3 until the attempt returns to IDLE — states LOCKED, RESOLVING and RESULT_*. While true, the character's other inventory-mutating requests (move, equip, unequip, discard, sell, buy, consumable use, pickup, accessory merge) are held and processed in arrival order afterwards; a second ConfirmEnhancement is rejected, never held (CR-ENH-8). Which layer reads this and holds the requests is undecided — OQ-ENH-7 (pre-implementation gate); no consumer GDD references it yet."
+    added: "2026-10-02"
+    revised: ""
+
   - name: PRESTIGE_MID_THRESHOLD
     status: active
     source: design/gdd/enhancement-system.md
@@ -1739,12 +1750,13 @@ items:
     value_gold: 90
     sell_price_gold: 0
     stackable: true
+    stack_limit: 99
     category: consumable
     target_gear_tier: Bronze
     scroll_data: "ScrollData { TargetGearTier: GearTier.Bronze }"
-    note: "Purchased from NPC Shop only — must not appear in any monster loot table (Enhancement System CR-ENH-3). Buy price CONFIRMED 90g (NPC Shop GDD 2026-06-06; TK-ENH-9 range [75, 125]). SellPriceGold=0 — cannot be sold to any NPC. Consumed on ConfirmEnhancement; not refunded on rejection."
+    note: "Purchased from NPC Shop only — must not appear in any monster loot table (Enhancement System CR-ENH-3). Buy price CONFIRMED 90g (NPC Shop GDD 2026-06-06; TK-ENH-9 range [75, 125]). SellPriceGold=0 — cannot be sold to any NPC. Consumed on ConfirmEnhancement; not refunded on rejection. Item record defined by item-database.md Rule 13 (2026-10-02): ItemCategory.Consumable, ConsumableData null, StackLimit 99."
     added: "2026-05-22"
-    revised: "2026-06-06"
+    revised: "2026-10-02"
 
   - name: Iron Enhancement Scroll
     status: active
@@ -1756,12 +1768,13 @@ items:
     value_gold: 150
     sell_price_gold: 0
     stackable: true
+    stack_limit: 99
     category: consumable
     target_gear_tier: Iron
     scroll_data: "ScrollData { TargetGearTier: GearTier.Iron }"
-    note: "NPC Shop only. Buy price CONFIRMED 150g (NPC Shop GDD 2026-06-06; TK-ENH-9 range [125, 210]). SellPriceGold=0 — cannot be sold. Consumed on ConfirmEnhancement."
+    note: "NPC Shop only. Buy price CONFIRMED 150g (NPC Shop GDD 2026-06-06; TK-ENH-9 range [125, 210]). SellPriceGold=0 — cannot be sold. Consumed on ConfirmEnhancement. Item record defined by item-database.md Rule 13 (2026-10-02): ItemCategory.Consumable, ConsumableData null, StackLimit 99."
     added: "2026-05-22"
-    revised: "2026-06-06"
+    revised: "2026-10-02"
 
   - name: Steel Enhancement Scroll
     status: active
@@ -1773,12 +1786,13 @@ items:
     value_gold: 230
     sell_price_gold: 0
     stackable: true
+    stack_limit: 99
     category: consumable
     target_gear_tier: Steel
     scroll_data: "ScrollData { TargetGearTier: GearTier.Steel }"
-    note: "NPC Shop only. Buy price CONFIRMED 230g (NPC Shop GDD 2026-06-06; TK-ENH-9 range [190, 320]). SellPriceGold=0 — cannot be sold. Consumed on ConfirmEnhancement."
+    note: "NPC Shop only. Buy price CONFIRMED 230g (NPC Shop GDD 2026-06-06; TK-ENH-9 range [190, 320]). SellPriceGold=0 — cannot be sold. Consumed on ConfirmEnhancement. Item record defined by item-database.md Rule 13 (2026-10-02): ItemCategory.Consumable, ConsumableData null, StackLimit 99."
     added: "2026-05-22"
-    revised: "2026-06-06"
+    revised: "2026-10-02"
 
   - name: Dark Steel Enhancement Scroll
     status: active
@@ -1790,12 +1804,13 @@ items:
     value_gold: 350
     sell_price_gold: 0
     stackable: true
+    stack_limit: 99
     category: consumable
     target_gear_tier: DarkSteel
     scroll_data: "ScrollData { TargetGearTier: GearTier.DarkSteel }"
-    note: "NPC Shop only. Buy price CONFIRMED 350g (NPC Shop GDD 2026-06-06; TK-ENH-9 range [270, 450]). SellPriceGold=0 — cannot be sold. Economy validation: expected 2,727 scrolls × 350g ≈ 955K gold to reach +9 from +0 (F-ENH-5, two-outcome model post revision)."
+    note: "NPC Shop only. Buy price CONFIRMED 350g (NPC Shop GDD 2026-06-06; TK-ENH-9 range [270, 450]). SellPriceGold=0 — cannot be sold. Economy validation: expected 2,727 scrolls × 350g ≈ 955K gold to reach +9 from +0 (F-ENH-5, two-outcome model post revision). Item record defined by item-database.md Rule 13 (2026-10-02): ItemCategory.Consumable, ConsumableData null, StackLimit 99."
     added: "2026-05-22"
-    revised: "2026-06-06"
+    revised: "2026-10-02"
 
   - name: HP Potion (Small)
     status: active

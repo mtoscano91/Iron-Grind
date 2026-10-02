@@ -1,6 +1,6 @@
 # NPC Shop
 
-> **Status**: Approved (2026-06-07 — 2 pre-implementation gates open before sprint: OQ-NS-4/6)
+> **Status**: Approved (2026-06-07 — no design gate open: OQ-NS-4 and OQ-NS-6 resolved 2026-10-02; the scroll records still need to be implemented in code before this system can be)
 > **Author**: Manuel Toscano + agents
 > **Last Updated**: 2026-10-01 (Inventory System `SellItem` `quantity` parameter confirmed — CR-SHOP-8 interface dependency resolved). Previous: 2026-06-07
 > **Implements Pillar**: Earned Power (primary), Legendary Gear (secondary)
@@ -54,7 +54,7 @@ The shop does not sell equipment gear. Gear is earned from monster drops only �
 
 1. Player taps the Shop NPC. Client sends `OpenNPCInteraction(shopNpcId)`.
 2. Server validates: character is in the town hub zone. If not → `RejectedNotInTownHub`; no state change.
-3. If `NPCInteractionActive = true` already exists for this player (from any NPC), the server clears it silently before continuing. No notification is sent to the client for the cleared session. ⚠️ **OQ-NS-6**: If an Enhancement session is preempted, the Enhancement System must be notified before the flag is cleared so in-flight `ConfirmEnhancement` operations can resolve safely — an enhancement completing after the session flag is cleared must not silently destroy the item with no client notification.
+3. If `NPCInteractionActive = true` already exists for this player (from any NPC), the server clears it silently before continuing. No notification is sent to the client for the cleared session. No notification to the Enhancement System is needed either (OQ-NS-6, resolved): enhancement-system.md CR-ENH-17 reads the flag only at `ConfirmEnhancement` validation, so an attempt that has passed validation runs to completion and its `EnhancementAttemptResult` is delivered on the player's session regardless of the flag.
 4. Server sets `NPCInteractionActive = true` and returns `NPCInteractionOpened`. Client opens the shop window to the Sell tab by default. (Dominant player flow for this genre is sell-accumulated-loot → buy-scrolls; sell-first reduces tap count for the majority case. Final tab order to be validated via `/ux-design npc-shop`.)
 
 **CR-SHOP-4 — Shop Session Lifetime**
@@ -143,7 +143,7 @@ No intermediate session states. Transactions require a durable in-flight record 
 | **Inventory System** | ← calls | `SellItem(slotIndex, itemId, quantity) → quantitySold` — partial-stack sell (CR-SHOP-8). ✅ Matches the Inventory System GDD as of 2026-10-01 (`quantity` parameter added there). | Sell-back |
 | **Inventory System** | ← reads | `IsSlotLocked(slotIndex)` | Sell tab validation (CR-SHOP-7 step 13d) |
 | **Item Database** | ← reads | `GetItem(itemId).SellPriceGold`, `DisplayName` | Sell tab display, sell-back calculation, anti-arbitrage startup check |
-| **Enhancement System** | Shared flag + event | `NPCInteractionActive` — same per-player flag; opening shop clears any active Enhancement NPC session. ⚠️ OQ-NS-6: Enhancement System must expose a callback/event (e.g., `OnNPCSessionPreempted(charId)`) invoked before the flag is cleared, so in-flight `ConfirmEnhancement` can complete safely. | On `OpenNPCInteraction` |
+| **Enhancement System** | Shared flag | `NPCInteractionActive` — same per-player flag; opening shop clears any active Enhancement NPC session. No callback or event: the Enhancement System reads the flag only at `ConfirmEnhancement` validation, and an in-flight attempt completes regardless of the flag (enhancement-system.md CR-ENH-17; OQ-NS-6 resolved). | On `OpenNPCInteraction` |
 | **HUD** | Consumer | `GoldSyncEvent` (via Currency System) — gold display updates after each transaction | After each buy or sell |
 | **Networking / Session Layer** | Wire | `OpenNPCInteraction`, `CloseNPCInteraction`, `BuyRequest`, `BuyResult`, `SellRequest`, `SellResult` | Per transaction |
 
@@ -573,16 +573,16 @@ Two candidate orders: (A) inventory slot index 0–19 (mirrors the bag, familiar
 **OQ-NS-3 — Item Database F-2 constraint amendment** ✅ **RESOLVED 2026-06-07**
 Item Database GDD amended (F-2 Amendment, 2026-06-07): F-2 invariant removed, concrete sell prices filled in (Small=2g, Medium=6g, Large=18g). Large Potion sell = 18g is the authoritative value. Cross-document consistency confirmed.
 
-**OQ-NS-4 — Enhancement Scroll item records in Item Database**
-The 4 Enhancement Scroll types must be formally authored in the Item Database with `SellPriceGold = 0`, `ItemCategory = Consumable`, and `IsUpgradeable = false`. No Item Database records exist yet; `GetItem(scrollId)` returns null in startup validation (F-NS-3), causing a null-dereference before any session begins. Scroll records must be added before this GDD can be implemented.
-*Owner: Game Designer / Item Database authoring. Target: First item authoring pass — blocking for NPC Shop implementation.*
+**OQ-NS-4 — Enhancement Scroll item records in Item Database** ✅ **RESOLVED 2026-10-02 (design)**
+item-database.md Rule 13 (Amendment #4) defines the 4 Enhancement Scroll records: `ItemCategory = Consumable`, `ScrollData.TargetGearTier` set, `ConsumableData = null`, `SellPriceGold = 0`, `IsUpgradeable = false`, `StackLimit = 99`. The records are not in the implemented Item Database yet — a follow-up Item Database story must add them before this system is implemented; until then `GetItem(scrollId)` returns null in startup validation (F-NS-3).
+*Owner: Game Designer / Item Database authoring. Resolved: 2026-10-02.*
 
 **OQ-NS-5 — Purchase Transaction Integrity ADR** ✅ **RESOLVED 2026-06-07**
 See `docs/architecture/ADR-001-purchase-transaction-integrity.md` (Accepted 2026-06-07). Key decisions accepted: `requestId: uint` idempotency key on BuyRequest/SellRequest; `PendingPurchase` durable record created before TrySpendGold; reconnect reconciliation refunds all `state=GoldDebited` records on SessionHandshake. Systems requiring updates before implementation: networking-wire-protocol.md, networking-channel-contract.md, networking-message-criticality.md, character-persistence.md, networking-session.md (see ADR Consequences table).
 
-**OQ-NS-6 — Enhancement System session preemption callback**
-When `OpenNPCInteraction(shopNpcId)` clears an active Enhancement session, the Enhancement System must be notified before the flag is cleared (e.g., `OnNPCSessionPreempted(charId)` callback), so in-flight `ConfirmEnhancement` can complete safely. Without this, an enhancement that completes after the session flag is cleared has no delivery path for `EnhancementAttemptResult` — the item may be destroyed with no client notification. Requires coordination between NPC Shop and Enhancement System GDD authors.
-*Owner: Enhancement System GDD author + NPC Shop author. Target: Before NPC Shop implementation sprint. Blocking.*
+**OQ-NS-6 — Enhancement System session preemption callback** ✅ **RESOLVED 2026-10-02**
+No callback is needed. enhancement-system.md CR-ENH-17 (Approved 2026-10-01) reads `NPCInteractionActive` only at `ConfirmEnhancement` validation (CR-ENH-15 step 2). Clearing the flag — by pre-emption, close, expiry, zone transition or disconnect — never cancels an attempt that has passed validation; the attempt runs to completion and `EnhancementAttemptResult` is delivered on the player's session regardless of the flag. CR-SHOP-3 step 3 therefore clears the flag with no notification to the Enhancement System.
+*Owner: Enhancement System GDD author + NPC Shop author. Resolved: 2026-10-02.*
 
 **OQ-NS-7 — Wire message registration in networking stack** ✅ RESOLVED 2026-06-07
 All 18 NPC Shop wire messages registered across all three networking documents (actual count is 18 — `NPCInteractionOpened` was omitted from the original shorthand list of 17). Registrations applied:

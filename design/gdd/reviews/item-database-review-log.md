@@ -1,5 +1,15 @@
 # Item Database — Design Review Log
 
+## Review — 2026-10-02 — Verdict: APPROVED (Review Pass 5 — lean, Amendment #4)
+
+Scope signal: S for the amendment's code follow-up (one sub-schema, validator rules, 4 records, test counts 34 → 38; no new ADR)
+Specialists: None — lean re-review
+Blocking items: 0 | Recommended: 4
+Summary: Amendment #4 (Rule 13 Enhancement Scrolls, `ScrollData { TargetGearTier }`, 38 records, AC-42–47) is internally consistent: counts agree across Overview, Rule 8, Rule 12 and AC-18/24/34/47, the AC tally (39 blocking / 5 advisory / 44) recounts correctly, and every Rule 13 item has a validator edge case and an AC. It matches enhancement-system.md (CR-ENH-3, CR-ENH-15 steps 2 and 4), npc-shop.md (OQ-NS-4, CR-SHOP-11, selector cap 99), consumable-use-system.md (note under Rule 4), inventory-system.md (discard, 99 per-slot maximum) and the four entities.yaml scroll entries. Recommended, not blocking: (1) scroll `StackLimit` safe range [1, 99] conflicts with inventory-system.md's [10, 99]; (2) "2 × 6 slots = 12 entries" is stale in five places — 7 slots since OQ-3, so 14; (3) OQ-8 can be marked resolved now that Enhancement is Approved (registry: ~955K expected DarkSteel +9 cost vs 270g sell price); (4) stale wording — Rule 8 item 26 and AC-23 call the Consumable Use System "not yet GDD'd", Tuning Knobs intro cites the removed F-4. Nice-to-have: AC-47 "at default tuning"; no AC for `GetItemsByCategory(Consumable)` count 10; Rule 13 item 37 "at most one additional slot"; no explicit validator rule for a Consumable with non-null `EquipmentData`.
+Prior verdict resolved: Yes — prior verdict was APPROVED (Pass 4); this pass reviewed the amendment only.
+
+---
+
 ## Review — 2026-04-25 — Verdict: APPROVED (Review Pass 4)
 
 Scope signal: M (moderate complexity, 3 formulas, 11 downstream dependencies)

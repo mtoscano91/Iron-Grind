@@ -977,7 +977,7 @@ OpenNPCInteraction {
     uint npcId; // 4 bytes — server validates npcId is a shop NPC present in the town hub zone
 }
 ```
-*Standalone: 10 (envelope) + 4 (SenderEntityID) + 4 (body) = 18 bytes. Server responds with `NPCInteractionOpened` (success) or `RejectedNotInTownHub` (failure). If an existing NPC session is active (any NPC type), the server clears it before setting the new session — Enhancement System is notified before clearing (OQ-NS-6 / CR-SHOP-3 step 3).*
+*Standalone: 10 (envelope) + 4 (SenderEntityID) + 4 (body) = 18 bytes. Server responds with `NPCInteractionOpened` (success) or `RejectedNotInTownHub` (failure). If an existing NPC session is active (any NPC type), the server clears it before setting the new session — no Enhancement System notification is needed (enhancement-system.md CR-ENH-17; npc-shop.md CR-SHOP-3 step 3, OQ-NS-6 resolved).*
 
 ---
 
