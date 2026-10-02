@@ -1,7 +1,7 @@
 # Story 002: Drop Roll, Equipment Cache and Tier Classification
 
 > **Epic**: Loot Table System
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-06-28
@@ -18,6 +18,7 @@
 
 **Engine**: Unity 6.3 LTS | **Risk**: LOW
 **Engine Notes**: Plain C# (`System.Random`). No post-cutoff API. `Dictionary<ItemID, …>` uses the default comparer, as existing code does (`ItemID` implements `IEquatable<ItemID>`); the codebase has no explicit ID comparer classes.
+**Performance**: No performance impact expected — one PRNG draw per table entry per kill, and kills are far rarer than ticks. The result list is the only allocation per kill. Server tick target is under 30 ms (ADR-004). *(Added at readiness, 2026-10-02.)*
 
 **Control Manifest Rules (Core layer)**:
 - Required: dependency injection over singletons — the PRNG and `IItemDatabase` are injected
@@ -29,11 +30,11 @@
 
 *From GDD `design/gdd/loot-table-system.md`, scoped to this story:*
 
-- [ ] **AC-LT-1** [BLOCKING]: given a loot table with three entries at `DropChance = 1.0`, `0.0`, `1.0`, the drop roll returns exactly the two `1.0` items; all three entries were evaluated (confirmed by a roll-count instrument); no entry is skipped because of an earlier entry's result.
-- [ ] **AC-LT-2** [BLOCKING]: at initialization `GetItemsByCategory(ItemCategory.Equipment)` is called exactly once; a subsequent drop roll and classification do not call it again (call count stays 1).
-- [ ] **AC-LT-6** [BLOCKING]: given a pending drop list with Bronze, Iron, None (Consumable), Steel and DarkSteel items, Bronze / Iron / None classify as Common and Steel / DarkSteel as Rare; classification uses the pre-indexed cache — no `GetItem` call is made.
-- [ ] **CR-LT-1 seeding** (TR-loot-001): the process-level PRNG is seeded from system entropy and its seed is written to the server log; tests inject their own seeded `System.Random`.
-- [ ] **Zero-drop result** (CR-LT-1; Edge Cases "If the drop roll produces zero items"): a table whose entries all miss returns an empty list — not `null`, no error.
+- [x] **AC-LT-1** [BLOCKING]: given a loot table with three entries at `DropChance = 1.0`, `0.0`, `1.0`, the drop roll returns exactly the two `1.0` items; all three entries were evaluated (confirmed by a roll-count instrument); no entry is skipped because of an earlier entry's result.
+- [x] **AC-LT-2** [BLOCKING]: at initialization `GetItemsByCategory(ItemCategory.Equipment)` is called exactly once; a subsequent drop roll and classification do not call it again (call count stays 1).
+- [x] **AC-LT-6** [BLOCKING]: given a pending drop list with Bronze, Iron, None (Consumable), Steel and DarkSteel items, Bronze / Iron / None classify as Common and Steel / DarkSteel as Rare; classification uses the pre-indexed cache — no `GetItem` call is made.
+- [x] **CR-LT-1 seeding** (TR-loot-001): the process-level PRNG is seeded from system entropy and its seed is written to the server log; tests inject their own seeded `System.Random`.
+- [x] **Zero-drop result** (CR-LT-1; Edge Cases "If the drop roll produces zero items"): a table whose entries all miss returns an empty list — not `null`, no error.
 
 ---
 
@@ -116,7 +117,7 @@ Expose classification as a small enum (`DropTier.Common` / `DropTier.Rare`).
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/LootTableSystem/LootTable_DropRoll_tests.cs` — must exist and pass.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 15 test methods (15 NUnit cases), all 5 criteria covered
 
 ---
 
@@ -124,3 +125,11 @@ Expose classification as a small enum (`DropTier.Common` / `DropTier.Rare`).
 
 - Depends on: Story 001 (table definitions).
 - Unlocks: Story 004.
+
+## Completion Notes
+**Completed**: 2026-10-02
+**Criteria**: 5/5 passing (0 deferred)
+**Deviations**: Advisory only — TR-loot-001/002/005 are not in `tr-registry.yaml` (registry is empty; checked against the GDD directly); seeding generates a seed from system entropy, logs it and constructs `new System.Random(seed)` instead of the GDD's literal "default seeding", which has no readable seed (user-confirmed at readiness); an item not in the equipment cache classifies as Common with no database lookup (user-confirmed at readiness); `LootEquipmentCache` throws `InvalidOperationException` when the Item Database is not ready (added at code review, not a GDD rule) — **Story 004 must construct the cache only after the Item Database is ready**
+**Test Evidence**: Logic — `tests/EditMode/LootTableSystem/LootTable_DropRoll_tests.cs` (15 test methods, 15 NUnit cases). Full EditMode suite 1168/1168 passed in Unity 6000.3.10f1 batch mode, 0 compile errors
+**Code Review**: Complete — `/code-review` on `LootDropRoller.cs` and siblings returned CHANGES REQUIRED (roller clean; cache built before the database is ready stayed silently empty); the required change and all 5 suggestions applied (scripted-draw comparison tests, `TryGetEquipment` test, null-argument tests, stronger AC-LT-2 test, `LootRandomFactory` remarks); suite re-run green; fixes not re-reviewed
+**Tech debt logged**: None

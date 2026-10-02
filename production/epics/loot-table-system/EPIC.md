@@ -3,8 +3,8 @@
 > **Layer**: Core
 > **GDD**: design/gdd/loot-table-system.md
 > **Architecture Module**: Loot Table
-> **Status**: In Progress (1/12 — Story 001 Complete 2026-10-02)
-> **Stories**: 12 stories created (001–012) on 2026-10-02 — 1 Complete, 10 Ready, 1 Blocked (011: needs a new `GoldTransactionReason` value)
+> **Status**: In Progress (10/12 — Stories 001–010 Complete 2026-10-02; the last two wait on a currency-system.md amendment)
+> **Stories**: 12 stories created (001–012) on 2026-10-02 — 10 Complete, 1 Ready but dependent on 011 (012), 1 Blocked (011: needs a new `GoldTransactionReason` value)
 
 ## Overview
 
@@ -49,15 +49,15 @@ This epic is complete when:
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
 | 001 | Loot Table Definitions and Startup Validation | Logic | Complete | None (design-only) |
-| 002 | Drop Roll, Equipment Cache and Tier Classification | Logic | Ready | None (design-only) |
-| 003 | Party Tag — Damage Record, Threshold Lock, Fallback | Integration | Ready | None (design-only) |
-| 004 | Kill Resolution and Gold Distribution | Integration | Ready | None (design-only) |
-| 005 | Ground Item Lifecycle and TTL Despawn | Logic | Ready | ADR-010 |
-| 006 | Common Drop Round-Robin Assignment | Integration | Ready | None (design-only) |
-| 007 | Proximity Pickup and Bag-Full Drop Fate | Integration | Ready | None (design-only) |
-| 008 | Bag-Full Recovery — Blocked Notice, In-Radius Retry, Expiry Warning | Integration | Ready | ADR-010 |
-| 009 | TTL Pause on App Background | Integration | Ready | ADR-010 |
-| 010 | Rare Drop Auction — Open, Bid Validation, Broadcast | Integration | Ready | ADR-010 |
+| 002 | Drop Roll, Equipment Cache and Tier Classification | Logic | Complete | None (design-only) |
+| 003 | Party Tag — Damage Record, Threshold Lock, Fallback | Integration | Complete | None (design-only) |
+| 004 | Kill Resolution and Gold Distribution | Integration | Complete | None (design-only) |
+| 005 | Ground Item Lifecycle and TTL Despawn | Logic | Complete | ADR-010 |
+| 006 | Common Drop Round-Robin Assignment | Integration | Complete | None (design-only) |
+| 007 | Proximity Pickup and Bag-Full Drop Fate | Integration | Complete | None (design-only) |
+| 008 | Bag-Full Recovery — Blocked Notice, In-Radius Retry, Expiry Warning | Integration | Complete | ADR-010 |
+| 009 | TTL Pause on App Background | Integration | Complete | ADR-010 |
+| 010 | Rare Drop Auction — Open, Bid Validation, Broadcast | Integration | Complete | ADR-010 |
 | 011 | Auction Resolution and Gold Pool | Integration | Blocked | ADR-010 |
 | 012 | Zone Teardown Loot Flush | Integration | Ready | ADR-010 |
 
@@ -65,7 +65,7 @@ Work through stories in order — each story's `Depends on:` field tells you wha
 
 **Open items recorded at story creation (2026-10-02):**
 - **Story 011 is Blocked**: `TrySpendGold` needs a `GoldTransactionReason` and none exists for an auction debit. Amend currency-system.md (plus the wire enum and entities.yaml) to add one.
-- **F-LT-3 arithmetic**: `Mathf.CeilToInt(300 × 0.33f)` is 100 in single precision, but AC-LT-4 expects 99. Story 003 computes the threshold in `double`; the GDD formula wording needs a fix.
+- **F-LT-3 arithmetic**: `Mathf.CeilToInt(300 × 0.33f)` is 100 in single precision, but AC-LT-4 expects 99. Story 003 computes the threshold in exact integer arithmetic from a per-mille constant (`TAG_THRESHOLD_PERMILLE = 330`); the GDD formula wording and the registry's float `TAG_THRESHOLD_FRACTION` entry need a fix.
 - **`tierShift`**: `ResolveMobDrop` accepts it and does not apply it (enemy-ai.md OQ-AI-1 — the loot GDD has no tier-shift rule).
 - **Round-robin cursor**: party-system.md exposes no getter for `rrNextIndex`; Story 006 declares one on its consumer-side `IPartyService`.
 - **CR-LT-13.1**: undefined what happens when `expiryTick` passes while the client is still backgrounded (Story 009).
