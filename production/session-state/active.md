@@ -1,5 +1,45 @@
 > **Commit status 2026-10-02:** everything in the 2026-10-02 extracts below is committed on `main` — `429cb28` (design: Item Database Amendment #4, Pass 5 review, Enhancement cross-document cleanup) and `939de49` (Stories 005–006, code, assets, TD-047 fix). The "nothing committed" notes in those extracts are superseded. Not pushed: `main` is ahead of `origin`, and the plaintext GitHub PAT in `origin`'s remote URL must be rotated before any push.
 
+## Session Extract — /story-done 2026-10-02 (Loot Table Story 001)
+- Verdict: COMPLETE WITH NOTES
+- Story: `production/epics/loot-table-system/story-001-loot-table-definitions-and-validation.md` — Loot Table Definitions and Startup Validation. Status: Complete; loot `EPIC.md` row 001 Complete, epic In Progress (1/12).
+- Criteria 7/7. Evidence: `LootTable_DefinitionValidation_tests.cs`, 19 methods / 24 cases; EditMode 1153/1153.
+- Tech debt logged: None
+- Next recommended: Story 002 — `production/epics/loot-table-system/story-002-drop-roll-cache-and-tier-classification.md` (depends on 001, now Complete), or Story 003 — `story-003-party-tag.md` (no dependency). Both must be done before Story 004.
+- **Committed 2026-10-02** in the commit titled "Loot Table System: stories 001-012 + Story 001 (definitions and validation)" (the one after `1cc511b`): the 12 loot story files, loot `EPIC.md`, `src/Foundation/LootTableSystem/`, `tests/EditMode/LootTableSystem/`, `CurrencySystem.cs` (`GOLD_CAP` public), this file. The "not committed" notes in the three loot extracts below are superseded. Not pushed.
+- Reminder still outstanding: plaintext GitHub PAT in `origin`'s remote URL — rotate before any push.
+
+## Session Extract — /dev-story 2026-10-02 (Loot Table Story 001 — implemented, tests green, code-reviewed, not committed)
+
+- Story: `production/epics/loot-table-system/story-001-loot-table-definitions-and-validation.md` — Loot Table Definitions and Startup Validation. Story file Status still `Ready`.
+- Readiness: NEEDS WORK on one item only — `TR-loot-002` not in the (empty) `tr-registry.yaml`; accepted as before. Stories 001 and 002 corrected at readiness: the codebase has no explicit ID comparer classes (dictionaries use the default comparer).
+- Files changed: new `src/Foundation/LootTableSystem/` — `MobTypeID.cs`, `LootTableEntry.cs`, `LootTableDefinition.cs`, `LootTableValidationIssue.cs`, `LootTableValidator.cs`, `LootTableRegistry.cs` (+ Unity `.meta` files); `src/Foundation/Currency/CurrencySystem.cs` (`GOLD_CAP` private → public const, doc comment only otherwise).
+- Test written: `tests/EditMode/LootTableSystem/LootTable_DefinitionValidation_tests.cs` — 15 methods, 17 NUnit cases.
+- Test run (Unity 6000.3.10f1 batch mode, EditMode): 1146/1146 passed, 0 compile errors.
+- Agent: `gameplay-programmer` — success. Diff reviewed; `LootTableValidator.Validate` split into `ValidateGoldRange` / `ValidateEntries` helpers to stay under the complexity and length limits (no behaviour change, suite re-run after).
+- **/code-review `LootTableValidator.cs` (2026-10-02): CHANGES REQUIRED → all fixed ("fix all").** unity-specialist: validator CLEAN; qa-tester: GAPS. Required: (1) `LootTableDefinition.Entries` exposed the backing array (castable and writable) → now a `ReadOnlyCollection` wrapper + test; (2) `MobTypeId` asserted in the gold-cap, empty-range and `DropChance` tests; (3) the two-errors case now goes through `LootTableRegistry.TryCreate`. Suggestions applied: NaN / ±Infinity `DropChance` cases, null-definition test, null-table-set test, pair-list-mutation test, order-independent assertions, `Validate` returns `IReadOnlyList`.
+- Re-run after fixes (Unity 6000.3.10f1 batch mode, EditMode): 1153/1153 passed, 0 compile errors. `LootTable_DefinitionValidation_Tests`: 19 methods, 24 cases.
+- Not re-reviewed after the fixes.
+- Blockers: None.
+- Next: `/story-done` for Story 001; then Story 002 or 003 (003 has no dependency).
+
+## Session Extract — /create-stories loot-table-system 2026-10-02 (12 stories written, not committed)
+
+- **Written (user approved "Yes — write all 12"):** `production/epics/loot-table-system/story-001` … `story-012` and `EPIC.md` (stories table, TR-loot-006..011 placeholder rows, open-items list). Review mode lean — QL-STORY-READY skipped; QA cases written from the GDD ACs. All 24 ACs assigned.
+- **Stories:** 001 definitions + validation (Logic) · 002 roll, cache, classification (Logic) · 003 party tag (Integration) · 004 kill resolution + gold (Integration) · 005 ground item lifecycle (Logic) · 006 round-robin (Integration) · 007 proximity pickup + drop fate · 008 bag-full recovery · 009 TTL pause · 010 auction open + bids · 011 auction resolution (**Blocked**) · 012 zone teardown.
+- **User decisions:** (1) Story 011 Blocked until a new `GoldTransactionReason` value exists for the auction debit (currency-system.md + wire enum + entities.yaml amendment). (2) `ResolveMobDrop` accepts `tierShift` and does not apply it (enemy-ai.md OQ-AI-1 open).
+- **Found while decomposing (recorded in EPIC.md and the stories, GDDs not edited):**
+  - F-LT-3: `Mathf.CeilToInt(300 × 0.33f)` = 100 in single precision; AC-LT-4 expects 99. Verified numerically. Story 003 computes in `double` — loot GDD formula wording needs a fix.
+  - CR-LT-1: default-seeded `System.Random` has no readable seed, yet the GDD wants the seed logged — Story 002 generates and logs a seed, then constructs `new System.Random(seed)`.
+  - party-system.md has no getter for `rrNextIndex` (Story 006 declares one consumer-side).
+  - CR-LT-13.1: behaviour undefined when `expiryTick` passes while still backgrounded (Story 009 — raise at readiness).
+  - Story 011: three points the GDD leaves open (bid from a member who left; non-`InsufficientFunds` errors; lifetime of an item reassigned at `expiryTick`).
+  - `IZoneScopedService` (required by the control manifest) does not exist in code.
+- **No code exists for** Party System, Enemy AI / mob data, character positions, zone lifecycle, loot wire codecs — stories use consumer-side interfaces (`IPartyService`, `IMobInfoProvider`, `ICharacterPositionProvider`) and stubs.
+- **Next:** `/story-readiness production/epics/loot-table-system/story-001-loot-table-definitions-and-validation.md` → `/dev-story`. Separately: amend currency-system.md for the auction reason (unblocks 011); fix F-LT-3 wording in loot-table-system.md.
+- Epics still without stories: authentication, damage-calculation, status-effects.
+- Reminder still outstanding: plaintext GitHub PAT in `origin`'s remote URL — rotate before any push.
+
 ## Session Extract — TD-047 fix 2026-10-02 (ItemID serialization — fixed, tests green, assets re-seeded)
 
 - **Goal:** user request "fix TD-047" — `_itemId` was not serialized into item `.asset` files.

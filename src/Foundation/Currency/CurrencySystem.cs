@@ -39,7 +39,11 @@ namespace IronGrind.Currency
     /// </remarks>
     public sealed class CurrencySystem : ICurrencyService
     {
-        private const uint GOLD_CAP = 9_999_999u;
+        /// <summary>
+        /// Maximum gold balance per character. Public so other systems (e.g. Loot Table
+        /// validation of <c>GoldMax</c>) read this value instead of duplicating the literal.
+        /// </summary>
+        public const uint GOLD_CAP = 9_999_999u;
 
         private readonly ConcurrentDictionary<CharacterID, uint> _balances = new ConcurrentDictionary<CharacterID, uint>();
         private readonly ConcurrentDictionary<CharacterID, uint> _versions = new ConcurrentDictionary<CharacterID, uint>();
