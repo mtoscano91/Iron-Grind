@@ -12,6 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 915867187b864c54b96671b7f0710c6c, type: 3}
   m_Name: ItemID(11)_SteelChestplate
   m_EditorClassIdentifier: IronGrind.Foundation::IronGrind.ItemDatabase.ItemDefinition
+  _itemId: 11
   _displayName: Steel Chestplate
   _description: Steel-tier chestplate. Placeholder flavour text (OQ-1 pending).
   _iconAddress: icons/items/chestplate_steel
@@ -20,15 +21,17 @@ MonoBehaviour:
   _isUpgradeable: 1
   _stackLimit: 1
   _equipmentData:
-    rid: 2614314403735535691
+    rid: 5475308479809323018
   _consumableData:
+    rid: -2
+  _scrollData:
     rid: -2
   references:
     version: 2
     RefIds:
     - rid: -2
       type: {class: , ns: , asm: }
-    - rid: 2614314403735535691
+    - rid: 5475308479809323018
       type: {class: EquipmentData, ns: IronGrind.ItemDatabase, asm: IronGrind.Foundation}
       data:
         _gearSlot: 2
@@ -44,3 +47,4 @@ MonoBehaviour:
         _equipRequirementStat: 0
         _equipRequirementMin: 30
         _hasMergeResultItemID: 0
+        _mergeResultItemID: 0

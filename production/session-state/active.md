@@ -1,4 +1,120 @@
+## Session Extract — TD-047 fix 2026-10-02 (ItemID serialization — fixed, tests green, assets re-seeded, nothing committed)
+
+- **Goal:** user request "fix TD-047" — `_itemId` was not serialized into item `.asset` files.
+- **Fix:** `ItemDefinition._itemId` and `EquipmentData._mergeResultItemID` (same defect, found while fixing) changed from `ItemID` to raw `uint`; the `ItemId` / `MergeResultItemID` properties wrap them. `ItemID` unchanged (still a `readonly struct`, per the GDD); no public API change.
+- **Test:** new `tests/EditMode/ItemDatabase/ItemDatabase_Serialization_tests.cs` (4 tests; `Object.Instantiate` clone = serializer round-trip, no file I/O). Red before the fix (the 2 ID tests failed, 1127/1129), green after.
+- **Runs (Unity 6000.3.10f1 batch mode):** EditMode 1129/1129, 0 compile errors. Seeder re-run: 38 records, validation 0/0/0; all 38 assets have `_itemId` matching their file name; no `.meta` changed.
+- **Docs:** TD-047 marked RESOLVED in `docs/tech-debt-register.md`; addendum in `production/qa/smoke-2026-10-02-item-database.md`.
+- **Not done:** no code review of this fix; no test reads the real `.asset` files from disk (add with the first asset loader).
+- **Next:** commit this session's work (rotate the GitHub PAT in `origin`'s remote URL first), or `/create-stories` for authentication / damage-calculation / loot-table-system / status-effects.
+
+## Session Extract — /story-done 2026-10-02 (Story 006 — Item Database epic Complete again)
+- Verdict: COMPLETE WITH NOTES
+- Story: `production/epics/item-database/story-006-scroll-records-and-potion-value-alignment.md` — MVP Item Records: Scroll Records 35–38 and Potion Value Alignment. Status: Complete. `EPIC.md`: Status Complete, all 6 stories Complete, Overview count 34 → 38.
+- Criteria 10/10. Evidence: `production/qa/smoke-2026-10-02-item-database.md`; EditMode 1125/1125 (re-run after the last seeder comment edit).
+- Tech debt logged: 1 item — TD-047 (`_itemId` not serialized into item `.asset` files; fix before any asset-loading story).
+- Amendment #4 code follow-up is done: Enhancement pre-implementation gate "Item Database amendment #4" and NPC Shop's scroll-record dependency are now satisfied in code. Still open for Enhancement: OQ-ENH-7, wire-protocol message set (TD-046).
+- Stale wording left in design docs (not edited): systems-index.md row 11 "code follow-up story needed"; npc-shop.md line 577 "records are not in the implemented Item Database yet".
+- Next recommended: None identified in this epic. Epics without stories: authentication, damage-calculation, loot-table-system, status-effects.
+- Nothing committed. Reminder still outstanding: plaintext GitHub PAT in `origin`'s remote URL — rotate before any push.
+
+## Session Extract — /dev-story 2026-10-02 (Item Database Story 006 — implemented, seeded, smoke PASS, nothing committed)
+
+- Story: `production/epics/item-database/story-006-scroll-records-and-potion-value-alignment.md` — MVP Item Records: Scroll Records 35–38 and Potion Value Alignment. Config/Data — no agent; edits made directly. Story file Status still `Ready`.
+- Readiness: NEEDS WORK on one item only — `TR-itemdb-005` not in the (empty) `tr-registry.yaml`; accepted, same as Story 005.
+- Files changed: `src/Foundation/ItemDatabase/MvpItemRecordData.cs` (scrolls 35–38 via `BuildScroll`; potions via `BuildPotionFamily` — magnitude 150/400/1000 and 100/280/700 → 80/220/500, cooldown 30 → 20/30/45, StackLimit 20/10/5 → 99; sell prices unchanged), `src/Foundation/ItemDatabase/ItemDatabaseSeeder.cs` (menu label, doc comment, failure log line — no logic change), `tests/EditMode/ItemDatabase/ItemDatabase_MvpRecords_tests.cs` (9 → 25 cases), `Assets/data/items/ITEM_ID_REGISTRY.txt`, all 34 existing `.asset` files (new `_scrollData` entry + reference IDs; potion values), 4 new scroll `.asset` + `.meta`.
+- Test written: `ItemDatabase_MvpRecords_tests.cs` updated (Config/Data — smoke check is the required evidence).
+- Runs (Unity 6000.3.10f1 batch mode): EditMode 1125/1125 passed, 0 compile errors; seeder via `-executeMethod` — 38 records created, validation 0 fatal / 0 errors / 0 warnings. One comment-only edit to the seeder was made after these runs.
+- Evidence: `production/qa/smoke-2026-10-02-item-database.md` — PASS.
+- GUIDs: pre-check found no references; after re-seed no tracked `.meta` under `Assets/data/items/` changed — the story's "new GUIDs" engine note did not materialize.
+- **Found, not fixed (pre-existing since Story 004):** `_itemId` is not serialized into any item `.asset` (`ItemID` is a `readonly struct`, not `[Serializable]`). No loader reads the assets yet; the first one will get `ItemID(0)` on every record. Not in `docs/tech-debt-register.md`. Needs its own story / tech-debt entry before any asset-loading code.
+- Blockers: None.
+- Next: `/story-done` for Story 006 (no `/code-review` gate for Config/Data, though `MvpItemRecordData.cs` gained two small helpers). Then decide how to handle the `_itemId` serialization gap.
+
+## Session Extract — /story-done 2026-10-02
+- Verdict: COMPLETE WITH NOTES
+- Story: `production/epics/item-database/story-005-scroll-data-and-validator-scroll-rules.md` — ScrollData Sub-Schema and Validator Scroll Rules. Story file Status: Complete; `EPIC.md` row 005 Complete (epic stays In Progress — 006 Ready).
+- Criteria 6/6 (AC-42–46 + regression). Evidence: `ItemDatabase_Validator_Scroll_tests.cs`, 12 methods / 15 cases; EditMode 1109/1109.
+- Notes: `TR-itemdb-006` unregistered (empty registry); code-review fixes not re-reviewed; Warning and Error test files touched outside the story's file table.
+- Tech debt logged: None
+- Next recommended: Story 006 — `production/epics/item-database/story-006-scroll-records-and-potion-value-alignment.md` (`/story-readiness` → `/dev-story`). Config/Data: needs the seeder re-run and a smoke report.
+- Nothing committed. Reminder still outstanding: plaintext GitHub PAT in `origin`'s remote URL — rotate before any push.
+
+## Session Extract — /dev-story 2026-10-02 (Item Database Story 005 — implemented, tests green, code-reviewed, nothing committed)
+
+- Story: `production/epics/item-database/story-005-scroll-data-and-validator-scroll-rules.md` — ScrollData Sub-Schema and Validator Scroll Rules. Story file Status still `Ready` (not closed).
+- Readiness: NEEDS WORK on one item only — `TR-itemdb-006` not in the (empty) `tr-registry.yaml`; accepted, same condition as stories 001–004.
+- Files changed: `src/Foundation/ItemDatabase/ScrollData.cs` (new, + `.meta`), `src/Foundation/ItemDatabase/ItemDefinition.cs`, `src/Foundation/ItemDatabase/ItemDefinitionValidator.cs`, `tests/EditMode/ItemDatabase/TestHelpers/ItemDefinitionBuilder.cs`.
+- Test written: `tests/EditMode/ItemDatabase/ItemDatabase_Validator_Scroll_tests.cs` (+ `.meta`) — 11 methods, 14 NUnit cases, AC-42–46.
+- Test run (Unity 6000.3.10f1 batch mode, EditMode, 2026-10-02): 1106/1106 passed, 0 compile errors. ItemDatabase fixtures: Core 12, MvpRecords 9, Validator_Error 25, Validator_Scroll 14, Validator_Warning 11 — all passed.
+- Agent: `engine-programmer` — success. Diff reviewed; corrected two rule-number comments in the validator (AC-44 → Rule 13 item 35, AC-45 → item 34) and removed an unused `using` in the new test file.
+- **/code-review `ItemDefinitionValidator.cs` (2026-10-02): CHANGES REQUIRED → all fixed ("fix all").** unity-specialist: no blocking logic issue; qa-tester: TESTABLE. Required: `ValidateConsumable` complexity ~12 and `ValidateEquipment` ~44 lines → extracted `ValidateEquipmentRecordShape`, `ValidateConsumableSubSchemaChoice`, `ValidateScrollData` (no behaviour change). Suggestions applied: class remark on `Enum.IsDefined` for `GearSlot`/`GearTier`; `ItemDefinition.cs` doc example no longer uses `?.`; stale AC-35 comment in the Warning tests corrected; 3 tests added — `PotionSellPriceGoldZero_NoWarning` (Warning suite), `UndefinedItemCategory_ReturnsError` (Error suite), `ConsumableWithThreeFaults_ReturnsThreeErrors` (Scroll suite).
+- Re-run after fixes (Unity 6000.3.10f1 batch mode, EditMode): 1109/1109 passed, 0 compile errors. ItemDatabase fixtures: Core 12, MvpRecords 9, Validator_Error 26, Validator_Scroll 15, Validator_Warning 12.
+- Not re-reviewed after the fixes.
+- Blockers: None.
+- Next: `/story-done` for Story 005 (optionally re-run `/code-review` first); then `/story-readiness` → `/dev-story` for Story 006.
+
+## Session Extract — /create-stories item-database 2026-10-02 (Amendment #4 follow-up — 2 stories written, nothing committed)
+
+- **Goal:** break the Amendment #4 code follow-up into stories. Epic had 001–004 Complete; only AC-42–47 and the 34 → 38 count changes (AC-18/24/34) were uncovered.
+- **Written (user approved "Yes — write both"):**
+  - `production/epics/item-database/story-005-scroll-data-and-validator-scroll-rules.md` — Logic, Ready. AC-42–46. `ScrollData.cs`, `ItemDefinition._scrollData` (`[SerializeReference]`), validator: exactly-one rule, `ScrollData` on equipment, `TargetGearTier` None/undefined, zero-price warning scoped to equipment; `StackLimit = 0` and `EquipmentData != null` checks must also run for scrolls (today's early return skips them).
+  - `production/epics/item-database/story-006-scroll-records-and-potion-value-alignment.md` — Config/Data, Ready, depends on 005. AC-47 + updated AC-18/24/34; records 35–38; potion values → magnitude 80/220/500, cooldown 20/30/45, `StackLimit` 99 (sources: consumable-use-system.md, entities.yaml); tests 34 → 38; seeder labels; `ITEM_ID_REGISTRY.txt`; re-seed + smoke check.
+  - `EPIC.md` — Status Complete → In Progress; stories table rows 005/006; `TR-itemdb-005` revised to 38; `TR-itemdb-006` added (placeholder — tr-registry.yaml still empty); Definition of Done AC range → AC-47, 38 records. Overview paragraph still says 34 (not edited).
+- **Review mode lean:** QL-STORY-READY skipped; QA test cases written from the GDD ACs.
+- **Flagged in Story 006:** the seeder deletes and recreates assets, so re-seeding changes all item asset GUIDs — no references found in `src/`, `tests/`, `Assets/` today; re-check before re-seeding.
+- **Found, not changed:** the GDD's `CooldownSeconds = 0` warning (Edge Cases) has no AC and is not implemented in `ItemDefinitionValidator`.
+- **Next:** `/story-readiness production/epics/item-database/story-005-scroll-data-and-validator-scroll-rules.md` → `/dev-story`. Then Story 006.
+- **Not committed.** Working tree also holds the Pass 5 review, the Amendment #4 authoring changes and the cross-document cleanup below.
+- Reminder still outstanding: plaintext GitHub PAT in `origin`'s remote URL — rotate before any push.
+
+## Session Extract — Item Database lean re-review Pass 5 2026-10-02 (review session — APPROVED, nothing committed)
+
+- **Goal:** `/design-review design/gdd/item-database.md --depth lean` on Amendment #4. **Verdict: APPROVED** — 0 blocking, 4 recommended.
+- **Written:** review log entry (Pass 5) in `design/gdd/reviews/item-database-review-log.md`; "lean re-review pending" → "lean re-review Pass 5 Approved 2026-10-02" in the item-database.md header and systems-index.md row 11. No rule, value or registry change.
+- **Recommended, not applied (item-database.md, wording / range only):**
+  1. Scroll `StackLimit` knob safe range [1, 99] vs inventory-system.md `StackLimit` knob [10, 99] — align.
+  2. "2 × 6 slots = 12 entries" stale in Rule 7 item 21, `EquipmentData` schema, the 3-entries edge case, AC-15, Authoring Budget knob — 7 slots, so 14 (still ≤ 16).
+  3. OQ-8 still "provisional pending Enhancement System GDD" — resolvable (registry: ~955K expected DarkSteel +9 cost vs 270g); verify against F-ENH-5 before marking.
+  4. Rule 8 item 26 and AC-23 say Consumable Use System is "not yet GDD'd"; Tuning Knobs intro cites removed F-4.
+- **Nice-to-have:** AC-47 "at default tuning"; AC for `GetItemsByCategory(Consumable)` `Count == 10`; Rule 13 item 37 "at most one additional slot"; explicit validator rule for a Consumable with non-null `EquipmentData`.
+- **Next:** code follow-up story in the item-database epic (see the authoring extract below — `ScrollData.cs`, validator rules, records 35–38, test counts 34 → 38, potion record values). Optionally a short authoring session for the 4 recommended wording fixes first.
+- **Not committed.** Working tree holds this review, the Amendment #4 authoring changes and the cross-document cleanup below.
+- Reminder still outstanding: plaintext GitHub PAT in `origin`'s remote URL — rotate before any push.
+
+## Session Extract — Item Database amendment #4 2026-10-02 (authoring session — AUTHORING COMPLETE, nothing committed)
+
+- **Goal:** apply Item Database amendment #4 (Enhancement Scroll records, `ScrollData.TargetGearTier`) — an Enhancement pre-implementation gate and NPC Shop's OQ-NS-4.
+- **Decisions (user):** (1) scroll = `ItemCategory.Consumable` with `ScrollData` set and `ConsumableData = null` (not a new category, not a new `EffectType`); (2) scroll `StackLimit = 99`; (3) stale-wording fixes in item-database.md included; (4) full changeset approved ("Apply with my answers").
+- **item-database.md:** new Rule 13 (items 34–39: scroll definition, exactly one of `ConsumableData` / `ScrollData` per Consumable, `ScrollData != null` identifies a scroll, 4 records table, no effect / not usable by Consumable Use, `SellPriceGold = 0`); `ScrollData` schema table + `ItemDefinition.ScrollData` row; Rule 2/4/8/12 wording; 34 → 38 records (28 Equipment + 10 Consumable); 4 validator edge cases + scroll zero-price note; F-2 scope line; Interactions and Dependencies rows (Enhancement, NPC Shop, Consumable Use); Tuning Knobs (scroll `StackLimit`); AC-18/24/34 counts, AC-42–47 added (39 blocking / 5 advisory / 44 total); header. Wording only: Overview count (was "30"), AC-7 slot list (Ring, Necklace), OQ-4 and OQ-5 marked resolved.
+- **Propagation:** enhancement-system.md (header gates 3 → 2, upstream amendment 4 ✅, dependency row, CR-ENH-15 step 2 names `ScrollData == null`); npc-shop.md (OQ-NS-4 resolved, header: no design gate open); consumable-use-system.md (note under Rule 4: items with null `ConsumableData` are not usable; Last Updated); systems-index.md (rows 11, 15, 23); entities.yaml (4 scroll entries: `stack_limit: 99`, note, revised date — not parser-validated, no Python on this machine).
+- **Propagation check:** no stale "34 records" / "amendment #4 open" / "OQ-NS-4 open" reference left in design/ or docs/. `production/epics/item-database/` (EPIC TR-itemdb-005, stories 003/004) still says 34 — implementation history, to be superseded by the follow-up story, not edited.
+- **Not committed.** Working tree also still holds the uncommitted cross-document cleanup below.
+- **Next:** `/clear` → `/design-review design/gdd/item-database.md --depth lean` (targeted amendment, same structure). Then a code follow-up story in the item-database epic: `ScrollData.cs`, `ItemDefinition._scrollData` (`[SerializeReference]`), validator (exactly-one rule, `ScrollData` on equipment, `TargetGearTier` None, zero-price warning currently fires for every category — must not fire for scrolls), records 35–38 in `MvpItemRecordData`, test counts 34 → 38.
+- **Found, not changed:**
+  - Coded potion records disagree with the design: `MvpItemRecordData` has StackLimit 20/10/5, HP Small 150 HP, all cooldowns 30s; registry / Consumable Use GDD say StackLimit 99, HP Small 80, cooldowns 20/30/45s. Fold into the same follow-up story.
+  - consumable-use-system.md Step 4(d) names no rejection reason, and wire-protocol `UseItemRejectedReason` lacks `RejectedInvalidTarget` (Step 4(e)).
+  - consumable-use-system.md header still says "Designed — In Review" (index: Approved); its Item Database dependency row lists `StackLimit` inside `ConsumableData` (it is top-level).
+  - entities.yaml Bronze scroll note says "not refunded on rejection" and cites CR-ENH-3 for the loot-table exclusion; CR-ENH-3 says a rejected attempt does not consume the scroll and does not mention loot tables.
+- **Still open — Enhancement pre-implementation gates:** OQ-ENH-7, wire-protocol Enhancement message set (TD-046).
+- Reminder still outstanding: plaintext GitHub PAT in `origin`'s remote URL — rotate before any push.
+
+## Session Extract — Enhancement cross-document cleanup 2026-10-02 (authoring session — wording only)
+
+- **Goal:** close the "Still open — other documents" list left by the Enhancement System Pass 7 approval. User approved the full changeset ("Apply all"). No rule, formula or value changed.
+- **npc-shop.md:** OQ-NS-6 marked RESOLVED 2026-10-02 (no pre-emption callback — CR-ENH-17 reads `NPCInteractionActive` only at `ConfirmEnhancement` validation); CR-SHOP-3 step 3 and the Enhancement System interactions row rewritten to match ("Shared flag", no event); status header now 1 pre-implementation gate (OQ-NS-4).
+- **networking-wire-protocol.md:** `OpenNPCInteraction` note (line 980) no longer says the Enhancement System is notified before the flag is cleared.
+- **item-database.md:** Rule 28 "destruction threshold" → destruction rule (CR-ENH-10, no threshold).
+- **systems-index.md:** row 15 "Depends On" adds Character Persistence; row 23 (NPC Shop) gate count 2 → 1; risk-table row for Enhancement reworded from "destruction threshold" to success-rate tuning (F-ENH-4).
+- **entities.yaml:** `IsAttemptInProgress` registered (source CR-ENH-18; consumer undecided — OQ-ENH-7). Not parser-validated (no Python on this machine); entry copies the `IEnhancementBonusProvider` layout.
+- **Propagation check:** no remaining `OnNPCSessionPreempted` / "notified before" / `OQ-NS-4/6` references outside review logs (history, not edited). `game-concept.md` lines 231/254 still say "destruction threshold" — left as the original concept wording.
+- **Not committed.** `main` is 13 commits ahead of `origin` (last push 2026-09-24).
+- **Still open — Enhancement pre-implementation gates (each its own session):** OQ-ENH-7 (which layer holds requests during an attempt), Item Database amendment #4 (scroll records, `ScrollData.TargetGearTier` — also NPC Shop's remaining gate OQ-NS-4), wire-protocol Enhancement message set (TD-046, including the missing client → server selection request for `EnhancementStateUpdate`).
+- Reminder still outstanding: plaintext GitHub PAT in `origin`'s remote URL — rotate before any push.
+
 ## Session Extract — /design-review enhancement-system.md --depth lean 2026-10-01 (Pass 6 — NEEDS REVISION, then Revision Pass 3 applied)
+
+- *(Correction 2026-10-02: everything in this extract was committed as `9464290`; the "Not committed" notes below are stale.)*
 
 - **Review (Pass 6 lean):** all 5 Pass 5 blockers verified closed (apply-then-commit + caller-owned rollback, `GetElementalBonus` base parameter, result codes, AC-ENH-33..38). 2 new blockers: `RejectedItemEquipped` unreachable (AC-ENH-4 not runnable); AC-ENH-7 contradicted CR-ENH-18 (requests are held, not rejected).
 - **Revision Pass 3 (same session, user decisions):** `RejectedItemEquipped` dropped (CR-ENH-4, enum, AC-ENH-4 → `RejectedItemNotFound`); AC-ENH-7 tests the Inventory lock directly; Enhancement NPC session gets the shop's 300s wall-clock lifetime (CR-ENH-17, new AC-ENH-39 — 39 ACs); `IsAttemptInProgress` true through `RESULT_*`; `outcome`/`newLevel` ignored on rejection; OQ-ENH-7 covers server-originated mutations; Player Fantasy "destruction threshold" wording removed.

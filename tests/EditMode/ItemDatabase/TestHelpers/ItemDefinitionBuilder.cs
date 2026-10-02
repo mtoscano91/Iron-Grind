@@ -28,6 +28,7 @@ namespace IronGrind.Tests.EditMode.ItemDatabase
         /// <param name="stackLimit">Max items per inventory slot (default 1).</param>
         /// <param name="equipmentData">Optional equipment sub-schema; null for consumables.</param>
         /// <param name="consumableData">Optional consumable sub-schema; null for equipment.</param>
+        /// <param name="scrollData">Optional Enhancement Scroll sub-schema; null for equipment and potions.</param>
         /// <returns>
         /// A new <see cref="ItemDefinition"/> Unity object. The caller must call
         /// <c>Object.DestroyImmediate</c> on it in <c>[TearDown]</c>.
@@ -40,7 +41,8 @@ namespace IronGrind.Tests.EditMode.ItemDatabase
             bool isUpgradeable   = false,
             int stackLimit       = 1,
             EquipmentData equipmentData   = null,
-            ConsumableData consumableData = null)
+            ConsumableData consumableData = null,
+            ScrollData scrollData         = null)
         {
             var def = ScriptableObject.CreateInstance<ItemDefinition>();
             def.SetForTesting(
@@ -51,7 +53,8 @@ namespace IronGrind.Tests.EditMode.ItemDatabase
                 isUpgradeable,
                 stackLimit,
                 equipmentData,
-                consumableData);
+                consumableData,
+                scrollData: scrollData);
             return def;
         }
     }

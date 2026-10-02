@@ -249,7 +249,8 @@ namespace IronGrind.Tests.EditMode.ItemDatabase
         }
 
         // -----------------------------------------------------------------------
-        // AC-35: SellPriceGold = 0 — warning, accepted. Applies to any category.
+        // AC-35: SellPriceGold = 0 — warning, accepted. Applies to equipment records only
+        // (GDD Edge Cases, "Economy fields"); consumables raise no zero-price warning.
         // -----------------------------------------------------------------------
 
         [Test]
@@ -296,6 +297,25 @@ namespace IronGrind.Tests.EditMode.ItemDatabase
             Assert.IsFalse(
                 result.Issues.Any(i => i.Message.Contains("SellPriceGold=0")),
                 "SellPriceGold=1 must not trigger the AC-35-specific zero-price message.");
+        }
+
+        [Test]
+        public void ItemDefinitionValidator_PotionSellPriceGoldZero_NoWarning()
+        {
+            // Arrange — a potion is a Consumable, so the equipment-only zero-price rule and
+            // the equipment-only F-1 deviation rule must both stay silent.
+            var item = MakeItem(1u, "Free Potion", ItemCategory.Consumable,
+                sellPriceGold: 0,
+                stackLimit: 99,
+                consumableData: ConsumableData.CreateForTesting(EffectType.RestoreHP, 80f, 20f));
+
+            // Act
+            var result = ItemDefinitionValidator.ValidateRecord(item);
+
+            // Assert
+            Assert.IsTrue(result.IsValid);
+            Assert.AreEqual(0, result.Issues.Count,
+                "SellPriceGold=0 on a consumable must raise no warning — AC-35 is equipment-only.");
         }
     }
 }

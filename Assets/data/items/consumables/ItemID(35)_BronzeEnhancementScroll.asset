@@ -10,30 +10,28 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 915867187b864c54b96671b7f0710c6c, type: 3}
-  m_Name: ItemID(30)_HPPotionMedium
+  m_Name: ItemID(35)_BronzeEnhancementScroll
   m_EditorClassIdentifier: IronGrind.Foundation::IronGrind.ItemDatabase.ItemDefinition
-  _itemId: 30
-  _displayName: HP Potion (Medium)
-  _description: HP Potion (Medium). Placeholder flavour text.
-  _iconAddress: icons/items/hp_potion_medium
+  _itemId: 35
+  _displayName: Bronze Enhancement Scroll
+  _description: Bronze Enhancement Scroll. Placeholder flavour text.
+  _iconAddress: icons/items/bronze_enhancement_scroll
   _itemCategory: 1
-  _sellPriceGold: 6
+  _sellPriceGold: 0
   _isUpgradeable: 0
   _stackLimit: 99
   _equipmentData:
     rid: -2
   _consumableData:
-    rid: 5475308479809323037
-  _scrollData:
     rid: -2
+  _scrollData:
+    rid: 5475308479809323042
   references:
     version: 2
     RefIds:
     - rid: -2
       type: {class: , ns: , asm: }
-    - rid: 5475308479809323037
-      type: {class: ConsumableData, ns: IronGrind.ItemDatabase, asm: IronGrind.Foundation}
+    - rid: 5475308479809323042
+      type: {class: ScrollData, ns: IronGrind.ItemDatabase, asm: IronGrind.Foundation}
       data:
-        _effectType: 0
-        _effectMagnitude: 220
-        _cooldownSeconds: 30
+        _targetGearTier: 1

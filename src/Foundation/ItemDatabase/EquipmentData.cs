@@ -17,7 +17,9 @@ namespace IronGrind.ItemDatabase
     ///
     /// <para>Nullable-workaround fields: Unity's serializer cannot serialize <c>StatID?</c>
     /// or <c>ItemID?</c> directly. A companion <c>bool _hasX</c> field gates each optional
-    /// value, exposed as a <c>Nullable&lt;T&gt;</c> property.</para>
+    /// value, exposed as a <c>Nullable&lt;T&gt;</c> property. The merge-result ID is stored
+    /// as a raw <c>uint</c> because <see cref="ItemID"/> is a <c>readonly struct</c>, which
+    /// the serializer skips as well.</para>
     ///
     /// <para>Usage example:</para>
     /// <code>
@@ -39,9 +41,10 @@ namespace IronGrind.ItemDatabase
         [SerializeField] private StatID _equipRequirementStat;
         [SerializeField] private float _equipRequirementMin;
 
-        // Nullable ItemID workaround — serializer cannot store Nullable<ItemID>.
+        // Nullable ItemID workaround — serializer cannot store Nullable<ItemID>, nor ItemID
+        // itself (a readonly struct), so the raw uint is stored.
         [SerializeField] private bool _hasMergeResultItemID;
-        [SerializeField] private ItemID _mergeResultItemID;
+        [SerializeField] private uint _mergeResultItemID;
 
         /// <summary>Body slot this item occupies when equipped.</summary>
         public GearSlot GearSlot => _gearSlot;
@@ -79,7 +82,7 @@ namespace IronGrind.ItemDatabase
         /// of this item are merged. <c>null</c> when the item is not mergeable.
         /// </summary>
         public ItemID? MergeResultItemID =>
-            _hasMergeResultItemID ? _mergeResultItemID : (ItemID?)null;
+            _hasMergeResultItemID ? new ItemID(_mergeResultItemID) : (ItemID?)null;
 
 #if UNITY_EDITOR
         /// <summary>
@@ -116,7 +119,7 @@ namespace IronGrind.ItemDatabase
                 _equipRequirementStat = equipRequirementStat ?? default,
                 _equipRequirementMin = equipRequirementMin,
                 _hasMergeResultItemID = mergeResultItemID.HasValue,
-                _mergeResultItemID = mergeResultItemID ?? default
+                _mergeResultItemID = mergeResultItemID.HasValue ? mergeResultItemID.Value.RawValue : 0u
             };
         }
 #endif

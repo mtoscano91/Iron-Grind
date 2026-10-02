@@ -13,25 +13,30 @@ namespace IronGrind.ItemDatabase
     /// <list type="bullet">
     ///   <item><c>[SerializeField]</c> is applied to private fields only — applying it to
     ///   properties is a compile error in Unity 6.3.</item>
-    ///   <item><see cref="_equipmentData"/> and <see cref="_consumableData"/> use
+    ///   <item><see cref="_equipmentData"/>, <see cref="_consumableData"/> and
+    ///   <see cref="_scrollData"/> use
     ///   <c>[SerializeReference]</c> (not <c>[SerializeField]</c>) so the Unity serializer
     ///   preserves a true <c>null</c> reference for the inapplicable sub-schema. Without
     ///   <c>[SerializeReference]</c> the serializer instantiates a default object, causing
     ///   null-checks to silently pass on the wrong category.</item>
+    ///   <item><see cref="ItemID"/> is a <c>readonly struct</c>, which the Unity serializer
+    ///   does not write. <see cref="_itemId"/> is therefore stored as its raw <c>uint</c> and
+    ///   wrapped by the <see cref="ItemId"/> property.</item>
     /// </list>
     /// </para>
     ///
     /// <para>Usage example:</para>
     /// <code>
     /// var def = itemDatabase.GetItem(new ItemID(42u));
-    /// if (def?.EquipmentData != null)
+    /// if (def != null &amp;&amp; def.EquipmentData != null)
     ///     ApplyEquipmentBonuses(entity, def.EquipmentData);
     /// </code>
     /// </remarks>
     [CreateAssetMenu(fileName = "NewItem", menuName = "IronGrind/Item Definition")]
     public class ItemDefinition : ScriptableObject
     {
-        [SerializeField] private ItemID _itemId;
+        // Stored as the raw uint: ItemID is a readonly struct, which Unity's serializer skips.
+        [SerializeField] private uint _itemId;
         [SerializeField] private string _displayName;
         [SerializeField] private string _description;
         [SerializeField] private string _iconAddress;
@@ -44,9 +49,10 @@ namespace IronGrind.ItemDatabase
         // DO NOT change to [SerializeField]; see class remarks.
         [SerializeReference] private EquipmentData _equipmentData;
         [SerializeReference] private ConsumableData _consumableData;
+        [SerializeReference] private ScrollData _scrollData;
 
         /// <summary>Unique identifier for this item type. Must match the key registered in the Item Database.</summary>
-        public ItemID ItemId => _itemId;
+        public ItemID ItemId => new ItemID(_itemId);
 
         /// <summary>Localisation-ready display name shown in the player's inventory UI.</summary>
         public string DisplayName => _displayName;
@@ -83,9 +89,18 @@ namespace IronGrind.ItemDatabase
 
         /// <summary>
         /// Consumable-specific data. <c>null</c> when <see cref="ItemCategory"/> is not
-        /// <see cref="ItemCategory.Consumable"/>. Always check for <c>null</c> before use.
+        /// <see cref="ItemCategory.Consumable"/>, and also <c>null</c> on Enhancement Scroll
+        /// records (which carry <see cref="ScrollData"/> instead). Always check for <c>null</c>
+        /// before use.
         /// </summary>
         public ConsumableData ConsumableData => _consumableData;
+
+        /// <summary>
+        /// Enhancement Scroll data. Non-<c>null</c> only on Enhancement Scroll records
+        /// (<see cref="ItemCategory.Consumable"/> with no <see cref="ConsumableData"/>);
+        /// <c>null</c> on equipment and potions. <c>ScrollData != null</c> is the scroll test.
+        /// </summary>
+        public ScrollData ScrollData => _scrollData;
 
 #if UNITY_EDITOR
         /// <summary>
@@ -104,6 +119,7 @@ namespace IronGrind.ItemDatabase
         /// <param name="consumableData">Consumable sub-schema; null for equipment.</param>
         /// <param name="description">Flavour text shown in the item tooltip. Defaults to empty for tests that don't exercise it.</param>
         /// <param name="iconAddress">Addressables address of the item's icon sprite. Defaults to empty for tests that don't exercise it.</param>
+        /// <param name="scrollData">Enhancement Scroll sub-schema; null for equipment and potions.</param>
         internal void SetForTesting(
             ItemID itemId,
             string displayName,
@@ -114,9 +130,10 @@ namespace IronGrind.ItemDatabase
             EquipmentData equipmentData = null,
             ConsumableData consumableData = null,
             string description = "",
-            string iconAddress = "")
+            string iconAddress = "",
+            ScrollData scrollData = null)
         {
-            _itemId          = itemId;
+            _itemId          = itemId.RawValue;
             _displayName     = displayName;
             _itemCategory    = category;
             _sellPriceGold   = sellPriceGold;
@@ -126,6 +143,7 @@ namespace IronGrind.ItemDatabase
             _consumableData  = consumableData;
             _description     = description;
             _iconAddress     = iconAddress;
+            _scrollData      = scrollData;
         }
 #endif
     }

@@ -118,6 +118,10 @@ namespace IronGrind.ItemDatabase
     /// exists yet in this project to confirm the pinned IL2CPP scripting runtime's exact BCL
     /// surface, so the always-available non-generic overload is used instead of a guess.</para>
     ///
+    /// <para><see cref="GearSlot"/> and <see cref="GearTier"/> membership is checked with
+    /// <c>Enum.IsDefined</c> on purpose: the schema reference's IL2CPP note covers
+    /// <see cref="StatID"/> only, and this validator never runs in a player build.</para>
+    ///
     /// <para>Usage example:</para>
     /// <code>
     /// var result = ItemDefinitionValidator.ValidateBatch(allImportedRecords);
@@ -257,9 +261,10 @@ namespace IronGrind.ItemDatabase
                     $"Item '{item.DisplayName}' (ID {item.ItemId}) has SellPriceGold={item.SellPriceGold}; SellPriceGold must be >= 0.");
             }
 
-            // AC-35: a zero sell price is valid but likely a data authoring error for any
-            // non-gift item — advisory only, does not reject the record.
-            if (item.SellPriceGold == 0)
+            // AC-35: a zero sell price is valid but likely a data authoring error for an
+            // equipment record — advisory only, does not reject the record. Scoped to equipment
+            // only: Enhancement Scrolls are intentionally unsellable (SellPriceGold = 0).
+            if (item.ItemCategory == ItemCategory.Equipment && item.SellPriceGold == 0)
             {
                 result.AddWarning(
                     $"[ItemDatabase] '{item.DisplayName}': SellPriceGold=0 — item cannot be sold to NPCs. Confirm this is intentional.");
@@ -276,19 +281,7 @@ namespace IronGrind.ItemDatabase
                 return;
             }
 
-            // AC-4 / Rule 5: equipment StackLimit must always be exactly 1.
-            if (item.StackLimit != 1)
-            {
-                result.AddError(
-                    $"Equipment item '{item.DisplayName}' (ID {item.ItemId}) has StackLimit={item.StackLimit}; equipment must always have StackLimit=1.");
-            }
-
-            // Rule 8 / Edge Cases: equipment must not carry consumable-only fields.
-            if (item.ConsumableData != null)
-            {
-                result.AddError(
-                    $"Equipment item '{item.DisplayName}' (ID {item.ItemId}) has ConsumableData set; equipment records must not populate consumable fields.");
-            }
+            ValidateEquipmentRecordShape(item, result);
 
             // AC-7 / Rule 3: GearSlot must be one of the defined values.
             if (!Enum.IsDefined(typeof(GearSlot), data.GearSlot))
@@ -319,6 +312,32 @@ namespace IronGrind.ItemDatabase
 
             ValidateElementalFields(item, data, result);
             ValidateStatModifiers(item, data, result);
+        }
+
+        // Top-level fields of an equipment record that sit outside EquipmentData: the stack
+        // limit and the two sub-schemas that must stay null.
+        private static void ValidateEquipmentRecordShape(ItemDefinition item, ValidationResult result)
+        {
+            // AC-4 / Rule 5: equipment StackLimit must always be exactly 1.
+            if (item.StackLimit != 1)
+            {
+                result.AddError(
+                    $"Equipment item '{item.DisplayName}' (ID {item.ItemId}) has StackLimit={item.StackLimit}; equipment must always have StackLimit=1.");
+            }
+
+            // Rule 8 / Edge Cases: equipment must not carry consumable-only fields.
+            if (item.ConsumableData != null)
+            {
+                result.AddError(
+                    $"Equipment item '{item.DisplayName}' (ID {item.ItemId}) has ConsumableData set; equipment records must not populate consumable fields.");
+            }
+
+            // AC-44 / Rule 13 item 35: equipment must not carry the Enhancement Scroll sub-schema.
+            if (item.ScrollData != null)
+            {
+                result.AddError(
+                    $"Equipment item '{item.DisplayName}' (ID {item.ItemId}) has ScrollData set; equipment records must not populate scroll fields.");
+            }
         }
 
         private static void ValidateElementalFields(ItemDefinition item, EquipmentData data, ValidationResult result)
@@ -393,12 +412,9 @@ namespace IronGrind.ItemDatabase
         private static void ValidateConsumable(ItemDefinition item, ValidationResult result)
         {
             var data = item.ConsumableData;
-            if (data == null)
-            {
-                result.AddError(
-                    $"Consumable item '{item.DisplayName}' (ID {item.ItemId}) has ItemCategory.Consumable but no ConsumableData.");
-                return;
-            }
+            var scroll = item.ScrollData;
+
+            ValidateConsumableSubSchemaChoice(item, result);
 
             // AC-5 / Rule 8, Edge Cases: a consumable must not populate equipment fields at all.
             // GearSlot has no explicit "None" member — the presence of EquipmentData at all on
@@ -420,10 +436,47 @@ namespace IronGrind.ItemDatabase
             }
 
             // AC-21 / Rule 8, Edge Cases: a non-positive magnitude is a no-op or unsupported drain.
-            if (data.EffectMagnitude <= 0f)
+            // Potion-only check — scrolls have no EffectMagnitude.
+            if (data != null && data.EffectMagnitude <= 0f)
             {
                 result.AddError(
                     $"Consumable item '{item.DisplayName}' (ID {item.ItemId}) has EffectMagnitude={data.EffectMagnitude}; EffectMagnitude must be > 0.");
+            }
+
+            if (scroll != null)
+            {
+                ValidateScrollData(item, scroll, result);
+            }
+        }
+
+        private static void ValidateConsumableSubSchemaChoice(ItemDefinition item, ValidationResult result)
+        {
+            bool hasConsumableData = item.ConsumableData != null;
+            bool hasScrollData = item.ScrollData != null;
+
+            // AC-42 / Rule 13 item 35: a consumable record must carry exactly one sub-schema.
+            if (!hasConsumableData && !hasScrollData)
+            {
+                result.AddError(
+                    $"Consumable item '{item.DisplayName}' (ID {item.ItemId}) has ItemCategory.Consumable but neither ConsumableData nor ScrollData.");
+            }
+
+            // AC-43 / Rule 13 item 35: ConsumableData (potion) and ScrollData are mutually exclusive.
+            if (hasConsumableData && hasScrollData)
+            {
+                result.AddError(
+                    $"Consumable item '{item.DisplayName}' (ID {item.ItemId}) has both ConsumableData and ScrollData set; exactly one is allowed.");
+            }
+        }
+
+        private static void ValidateScrollData(ItemDefinition item, ScrollData scroll, ValidationResult result)
+        {
+            // AC-45 / Rule 13 item 34: a scroll must target one real, defined GearTier.
+            // GearTier.None is a defined member, so it needs its own test.
+            if (scroll.TargetGearTier == GearTier.None || !Enum.IsDefined(typeof(GearTier), scroll.TargetGearTier))
+            {
+                result.AddError(
+                    $"Consumable item '{item.DisplayName}' (ID {item.ItemId}) has ScrollData.TargetGearTier={(int)scroll.TargetGearTier}; a scroll must target one of Bronze, Iron, Steel, or DarkSteel.");
             }
         }
     }

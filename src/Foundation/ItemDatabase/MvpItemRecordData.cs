@@ -8,16 +8,18 @@ using UnityEngine;
 namespace IronGrind.ItemDatabase
 {
     /// <summary>
-    /// Single source of truth for the 34 MVP item records (Story 004). Shared by
+    /// Single source of truth for the 38 MVP item records (Stories 004 and 006). Shared by
     /// <see cref="ItemDatabaseSeeder"/> (creates the real <c>.asset</c> files in the
     /// Unity Editor) and the EditMode test suite (builds the same records in-memory to
     /// verify acceptance criteria without requiring the <c>.asset</c> files to exist).
     /// </summary>
     /// <remarks>
-    /// Values here mirror <c>production/epics/item-database/story-004-mvp-item-records.md</c>
-    /// exactly, including its placeholder flat-bonus values (OQ-1 unresolved) and
-    /// placeholder consumable cooldowns (OQ-5 unresolved). These are known-provisional
-    /// MVP values, not final game balance — see the story's Out of Scope section.
+    /// Equipment values mirror <c>production/epics/item-database/story-004-mvp-item-records.md</c>,
+    /// including its placeholder flat-bonus values (OQ-1 unresolved) — known-provisional MVP
+    /// values, not final game balance. Potion and Enhancement Scroll values mirror
+    /// <c>story-006-scroll-records-and-potion-value-alignment.md</c>: potion magnitudes and
+    /// cooldowns from the Consumable Use System GDD, scroll records from Item Database
+    /// GDD Rule 13.
     /// </remarks>
     internal static class MvpItemRecordData
     {
@@ -39,16 +41,29 @@ namespace IronGrind.ItemDatabase
         private static readonly float[] RingIntBonus       = { 3f, 8f, 18f, 32f };
         private static readonly float[] NecklaceMaxHpBonus = { 20f, 50f, 110f, 200f };
 
+        // Potions (Small / Medium / Large) — consumable-use-system.md F-CUS-3 table and
+        // "CooldownSeconds — Authored Constants"; sell prices from Item Database F-2.
+        private static readonly string[] PotionSizeNames = { "Small", "Medium", "Large" };
+        private static readonly float[] PotionMagnitude  = { 80f, 220f, 500f };
+        private static readonly float[] PotionCooldown   = { 20f, 30f, 45f };
+        private static readonly int[] PotionSellPrice    = { 2, 6, 18 };
+
+        // Inventory System per-slot maximum; authored on every potion and scroll record.
+        private const int CONSUMABLE_STACK_LIMIT = 99;
+
+        // Enhancement Scroll display names (Item Database GDD Rule 13 item 37), in Tiers order.
+        private static readonly string[] ScrollTierNames = { "Bronze", "Iron", "Steel", "Dark Steel" };
+
         /// <summary>
-        /// Builds all 34 MVP <see cref="ItemDefinition"/> records as in-memory
-        /// <see cref="ScriptableObject"/> instances, in ItemID order 1–34. Callers are
+        /// Builds all 38 MVP <see cref="ItemDefinition"/> records as in-memory
+        /// <see cref="ScriptableObject"/> instances, in ItemID order 1–38. Callers are
         /// responsible for either persisting them via
         /// <c>UnityEditor.AssetDatabase.CreateAsset</c> (the seeder) or destroying them
         /// via <see cref="Object.DestroyImmediate(Object)"/> (EditMode tests) once finished.
         /// </summary>
         internal static List<ItemDefinition> BuildAll()
         {
-            var records = new List<ItemDefinition>(34);
+            var records = new List<ItemDefinition>(38);
             uint nextId = 1;
 
             records.AddRange(BuildEquipmentFamily(ref nextId, "Sword", GearSlot.Weapon,
@@ -74,14 +89,29 @@ namespace IronGrind.ItemDatabase
             records.AddRange(BuildAccessoryFamily(ref nextId, "Necklace", GearSlot.Necklace,
                 t => new[] { StatModifierEntry.CreateForTesting(StatID.MaxHP, NecklaceMaxHpBonus[t]) }));
 
-            records.Add(BuildConsumable(nextId++, "HP Potion (Small)", EffectType.RestoreHP, 150f, 30f, 20, 2));
-            records.Add(BuildConsumable(nextId++, "HP Potion (Medium)", EffectType.RestoreHP, 400f, 30f, 10, 6));
-            records.Add(BuildConsumable(nextId++, "HP Potion (Large)", EffectType.RestoreHP, 1000f, 30f, 5, 18));
-            records.Add(BuildConsumable(nextId++, "MP Potion (Small)", EffectType.RestoreMP, 100f, 30f, 20, 2));
-            records.Add(BuildConsumable(nextId++, "MP Potion (Medium)", EffectType.RestoreMP, 280f, 30f, 10, 6));
-            records.Add(BuildConsumable(nextId, "MP Potion (Large)", EffectType.RestoreMP, 700f, 30f, 5, 18));
+            records.AddRange(BuildPotionFamily(ref nextId, "HP Potion", EffectType.RestoreHP));
+            records.AddRange(BuildPotionFamily(ref nextId, "MP Potion", EffectType.RestoreMP));
+
+            for (int t = 0; t < 4; t++)
+            {
+                records.Add(BuildScroll(nextId, $"{ScrollTierNames[t]} Enhancement Scroll", Tiers[t]));
+                nextId++;
+            }
 
             return records;
+        }
+
+        // HP / MP potions share magnitude, cooldown and sell price per size (Small, Medium, Large).
+        private static List<ItemDefinition> BuildPotionFamily(ref uint nextId, string typeName, EffectType effect)
+        {
+            var list = new List<ItemDefinition>(3);
+            for (int s = 0; s < 3; s++)
+            {
+                list.Add(BuildConsumable(nextId, $"{typeName} ({PotionSizeNames[s]})", effect,
+                    PotionMagnitude[s], PotionCooldown[s], CONSUMABLE_STACK_LIMIT, PotionSellPrice[s]));
+                nextId++;
+            }
+            return list;
         }
 
         // Sword..Boots: STR-gated at Iron+ (never on Ring/Necklace — see BuildAccessoryFamily).
@@ -148,6 +178,22 @@ namespace IronGrind.ItemDatabase
                 consumableData: consumableData,
                 description: $"{displayName}. Placeholder flavour text.",
                 iconAddress: $"icons/items/{slug}");
+            return def;
+        }
+
+        // Enhancement Scroll: a Consumable with ScrollData set and no ConsumableData. Unsellable
+        // (SellPriceGold = 0) — the buy price is owned by the NPC Shop, not stored here.
+        private static ItemDefinition BuildScroll(uint id, string displayName, GearTier targetGearTier)
+        {
+            string slug = displayName.ToLowerInvariant().Replace(" ", "_");
+
+            var def = ScriptableObject.CreateInstance<ItemDefinition>();
+            def.SetForTesting(
+                new ItemID(id), displayName, ItemCategory.Consumable,
+                sellPriceGold: 0, isUpgradeable: false, stackLimit: CONSUMABLE_STACK_LIMIT,
+                description: $"{displayName}. Placeholder flavour text.",
+                iconAddress: $"icons/items/{slug}",
+                scrollData: ScrollData.CreateForTesting(targetGearTier));
             return def;
         }
     }

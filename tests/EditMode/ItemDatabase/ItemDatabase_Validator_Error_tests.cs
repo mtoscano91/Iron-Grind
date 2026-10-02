@@ -543,5 +543,25 @@ namespace IronGrind.Tests.EditMode.ItemDatabase
             Assert.IsFalse(result.IsValid, "An undefined StatID on a StatModifierEntry must reject the record.");
             Assert.IsTrue(HasSeverity(result, ValidationSeverity.Error));
         }
+
+        // -----------------------------------------------------------------------
+        // Rule 2: ItemCategory outside {Equipment, Consumable} — error, reject.
+        // -----------------------------------------------------------------------
+
+        [Test]
+        public void ItemDefinitionValidator_UndefinedItemCategory_ReturnsError()
+        {
+            // Arrange — ItemCategory has no member with this value.
+            var item = MakeItem(1u, "Categoryless Item", (ItemCategory)255);
+
+            // Act
+            var result = ItemDefinitionValidator.ValidateRecord(item);
+
+            // Assert
+            Assert.IsFalse(result.IsValid, "An undefined ItemCategory must reject the record.");
+            var errors = result.Issues.Where(i => i.Severity == ValidationSeverity.Error).ToList();
+            Assert.AreEqual(1, errors.Count, "Only the category error is expected.");
+            StringAssert.Contains("ItemCategory", errors[0].Message);
+        }
     }
 }

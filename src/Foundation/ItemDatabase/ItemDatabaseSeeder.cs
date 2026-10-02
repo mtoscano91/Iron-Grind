@@ -7,8 +7,8 @@ using UnityEngine;
 namespace IronGrind.ItemDatabase
 {
     /// <summary>
-    /// Editor-only tool that authors the 34 MVP <see cref="ItemDefinition"/> assets
-    /// (Story 004) from <see cref="MvpItemRecordData"/> into <c>Assets/data/items/</c>.
+    /// Editor-only tool that authors the MVP <see cref="ItemDefinition"/> assets
+    /// from <see cref="MvpItemRecordData"/> into <c>Assets/data/items/</c>.
     /// </summary>
     /// <remarks>
     /// <para>Deliberately kept out of a folder literally named "Editor" — this file
@@ -19,7 +19,7 @@ namespace IronGrind.ItemDatabase
     /// entire file, exactly like <see cref="ItemDefinition.SetForTesting"/> itself.</para>
     ///
     /// <para>Run via the Unity Editor menu: <c>IronGrind &gt; Item Database &gt; Seed MVP
-    /// Item Records (Story 004)</c>. Existing assets at the target paths are overwritten
+    /// Item Records</c>. Existing assets at the target paths are overwritten
     /// on re-run, so this is safe to run again after editing <see cref="MvpItemRecordData"/>.</para>
     /// </remarks>
     internal static class ItemDatabaseSeeder
@@ -27,7 +27,7 @@ namespace IronGrind.ItemDatabase
         private const string EquipmentFolder = "Assets/data/items/equipment";
         private const string ConsumableFolder = "Assets/data/items/consumables";
 
-        [MenuItem("IronGrind/Item Database/Seed MVP Item Records (Story 004)")]
+        [MenuItem("IronGrind/Item Database/Seed MVP Item Records")]
         private static void SeedMvpItemRecords()
         {
             EnsureFolderExists(EquipmentFolder);
@@ -100,7 +100,7 @@ namespace IronGrind.ItemDatabase
             else
             {
                 Debug.LogError($"[ItemDatabaseSeeder] Validation FAILED — {fatals} fatal, {errors} error(s), {warnings} warning(s). " +
-                                "Do not mark Story 004 Done until this is 0/0.");
+                                "Do not mark Story 006 Done until this is 0/0.");
             }
         }
     }
