@@ -1,4 +1,6 @@
-## Session Extract — TD-047 fix 2026-10-02 (ItemID serialization — fixed, tests green, assets re-seeded, nothing committed)
+> **Commit status 2026-10-02:** everything in the 2026-10-02 extracts below is committed on `main` — `429cb28` (design: Item Database Amendment #4, Pass 5 review, Enhancement cross-document cleanup) and `939de49` (Stories 005–006, code, assets, TD-047 fix). The "nothing committed" notes in those extracts are superseded. Not pushed: `main` is ahead of `origin`, and the plaintext GitHub PAT in `origin`'s remote URL must be rotated before any push.
+
+## Session Extract — TD-047 fix 2026-10-02 (ItemID serialization — fixed, tests green, assets re-seeded)
 
 - **Goal:** user request "fix TD-047" — `_itemId` was not serialized into item `.asset` files.
 - **Fix:** `ItemDefinition._itemId` and `EquipmentData._mergeResultItemID` (same defect, found while fixing) changed from `ItemID` to raw `uint`; the `ItemId` / `MergeResultItemID` properties wrap them. `ItemID` unchanged (still a `readonly struct`, per the GDD); no public API change.
