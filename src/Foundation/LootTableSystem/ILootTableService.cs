@@ -40,5 +40,11 @@ namespace IronGrind.LootTableSystem
         /// (enemy-ai.md OQ-AI-1); a non-zero value logs one warning.
         /// </param>
         void ResolveMobDrop(EntityID mobEntityID, int tierShift);
+
+        /// <summary>
+        /// Drops every mob damage record, so nothing survives a zone teardown (Story 012). Called
+        /// by <see cref="LootTeardownCoordinator.FlushForZoneTeardown"/>. With no records it does nothing.
+        /// </summary>
+        void Clear();
     }
 }

@@ -113,6 +113,8 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
             public int GetRrNextIndex(PartyID partyId) => 0;
 
             public void AdvanceRrNextIndex(PartyID partyId) { }
+
+            public bool IsMemberConnected(CharacterID characterId) => true;
         }
 
         private sealed class StubMobInfoProvider : IMobInfoProvider

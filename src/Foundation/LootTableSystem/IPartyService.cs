@@ -63,5 +63,14 @@ namespace IronGrind.LootTableSystem
         /// </summary>
         /// <param name="partyId">The party whose cursor advances.</param>
         void AdvanceRrNextIndex(PartyID partyId);
+
+        /// <summary>
+        /// Returns false when the member's party status is Ghost (disconnected for longer than the
+        /// 5-second reconnect window, design/gdd/party-system.md CR-PS-11); true otherwise. The
+        /// auction uses it to skip a top bidder who has a full bag and cannot be waited for
+        /// (design/gdd/loot-table-system.md CR-LT-9.1).
+        /// </summary>
+        /// <param name="characterId">The party member to check.</param>
+        bool IsMemberConnected(CharacterID characterId);
     }
 }

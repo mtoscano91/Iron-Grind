@@ -81,9 +81,9 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
         private const int SECOND_MEMBER_CURSOR = 1;
         private const int EMPTY_SLOT_CURSOR = 9;
         private const long PARTY_OF_FOUR = 4L;
-        private const string ROUND_ROBIN_FAILURE = "round-robin failure";
-        private const string MEMBERS_FAILURE = "members failure";
-        private const string POOL_FAILURE = "pool failure";
+        private const string ROUND_ROBIN_FAILURE = MutablePartyService.ROUND_ROBIN_FAILURE_MESSAGE;
+        private const string MEMBERS_FAILURE = MutablePartyService.MEMBERS_FAILURE_MESSAGE;
+        private const string POOL_FAILURE = RecordingCurrencyService.ADD_FAILURE_MESSAGE;
         private const string PICKUP_FAILURE = "pickup failure";
 
         private static readonly PartyID Party = new PartyID(RAW_PARTY);
@@ -124,144 +124,9 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
             _created.Clear();
         }
 
-        // -----------------------------------------------------------------------
-        // Fakes
-        // -----------------------------------------------------------------------
-
-        private sealed class FakeItemDatabase : IItemDatabase
-        {
-            private readonly List<ItemDefinition> _equipment;
-
-            public FakeItemDatabase(List<ItemDefinition> equipment)
-            {
-                _equipment = equipment;
-            }
-
-            public bool IsReady => true;
-
-            public event Action OnDatabaseReady
-            {
-                add { }
-                remove { }
-            }
-
-            public ItemDefinition GetItem(ItemID id) => null;
-
-            public bool TryGetItem(ItemID id, out ItemDefinition item)
-            {
-                item = null;
-                return false;
-            }
-
-            public IReadOnlyList<ItemDefinition> GetItemsByCategory(ItemCategory category)
-            {
-                return category == ItemCategory.Equipment ? _equipment : new List<ItemDefinition>();
-            }
-        }
-
-        // One party whose member list the test can change (a member leaving before the close).
-        private sealed class StubPartyService : IPartyService
-        {
-            public readonly List<CharacterID> Members = new List<CharacterID>();
-            public int Cursor;
-            public int AdvanceCalls;
-            public bool ThrowOnCursorRead;
-            public bool ThrowOnMembersRead;
-
-            public PartyID GetPartyID(CharacterID characterId)
-            {
-                return Members.Contains(characterId) ? Party : PartyID.Uninitialized;
-            }
-
-            public IReadOnlyList<CharacterID> GetPartyMembers(PartyID partyId)
-            {
-                if (ThrowOnMembersRead)
-                {
-                    throw new InvalidOperationException(MEMBERS_FAILURE);
-                }
-                return new List<CharacterID>(Members);
-            }
-
-            public CharacterID GetMemberAtIndex(PartyID partyId, int index)
-            {
-                return index >= 0 && index < Members.Count ? Members[index] : CharacterID.Invalid;
-            }
-
-            public int GetRrNextIndex(PartyID partyId)
-            {
-                if (ThrowOnCursorRead)
-                {
-                    throw new InvalidOperationException(ROUND_ROBIN_FAILURE);
-                }
-                return Cursor;
-            }
-
-            public void AdvanceRrNextIndex(PartyID partyId)
-            {
-                AdvanceCalls++;
-                Cursor = (Cursor + 1) % Members.Count;
-            }
-        }
-
-        private readonly struct GoldCall
-        {
-            public readonly CharacterID Character;
-            public readonly uint Amount;
-            public readonly GoldTransactionReason Reason;
-
-            public GoldCall(CharacterID character, uint amount, GoldTransactionReason reason)
-            {
-                Character = character;
-                Amount = amount;
-                Reason = reason;
-            }
-        }
-
-        // Records TrySpendGold and AddGold calls and delegates everything to the real currency system.
-        private sealed class RecordingCurrencyService : ICurrencyService
-        {
-            private readonly ICurrencyService _inner;
-            public readonly List<GoldCall> Spends = new List<GoldCall>();
-            public readonly List<GoldCall> Adds = new List<GoldCall>();
-            public bool ThrowOnAdd;
-
-            public RecordingCurrencyService(ICurrencyService inner)
-            {
-                _inner = inner;
-            }
-
-            public event Action<GoldSyncEventArgs> OnGoldSync
-            {
-                add { _inner.OnGoldSync += value; }
-                remove { _inner.OnGoldSync -= value; }
-            }
-
-            public void RegisterCharacter(CharacterID charId, uint initialBalance) => _inner.RegisterCharacter(charId, initialBalance);
-
-            public GoldMutationResult AddGold(CharacterID charId, uint amount, GoldTransactionReason reason)
-            {
-                Adds.Add(new GoldCall(charId, amount, reason));
-                if (ThrowOnAdd)
-                {
-                    throw new InvalidOperationException(POOL_FAILURE);
-                }
-                return _inner.AddGold(charId, amount, reason);
-            }
-
-            public uint GetBalance(CharacterID charId) => _inner.GetBalance(charId);
-
-            public GoldMutationResult TrySpendGold(CharacterID charId, uint cost, GoldTransactionReason reason)
-            {
-                Spends.Add(new GoldCall(charId, cost, reason));
-                return _inner.TrySpendGold(charId, cost, reason);
-            }
-
-            public GoldMutationResult TransferGold(CharacterID fromId, CharacterID toId, uint amount) => _inner.TransferGold(fromId, toId, amount);
-        }
-
         private sealed class Rig
         {
-            public StubPartyService Parties;
+            public MutablePartyService Parties;
             public RecordingInventoryService Inventory;
             public SettablePositionProvider Positions;
             public GroundItemService Ground;
@@ -311,14 +176,15 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
                 BuildEquipment(DARK_STEEL_ID, GearTier.DarkSteel, DARK_STEEL_PRICE),
             };
             var rig = new Rig();
-            rig.Parties = new StubPartyService();
+            rig.Parties = new MutablePartyService(Party);
             rig.Parties.Members.Add(CharA);
             rig.Parties.Members.Add(CharB);
             rig.Parties.Members.Add(CharC);
             rig.Parties.Members.Add(CharD);
             rig.Inventory = new RecordingInventoryService();
+            rig.Inventory.FreeSlot = true;
             rig.Positions = new SettablePositionProvider();
-            rig.Cache = new LootEquipmentCache(new FakeItemDatabase(equipment));
+            rig.Cache = new LootEquipmentCache(new FakeEquipmentItemDatabase(equipment));
             rig.Currency = new CurrencySystem();
             if (registerCharA)
             {
@@ -334,7 +200,7 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
             rig.Ground.OnGroundItemAssigned += rig.RecordAssigned;
             rig.Ground.OnBagFullPickupBlocked += rig.RecordBlocked;
             rig.Distributor = new LootDropDistributor(rig.Parties, rig.Cache, rig.Ground, rig.ReadTick);
-            rig.Auction = new LootAuctionService(rig.Ground, rig.Parties, rig.Cache, rig.Gold);
+            rig.Auction = new LootAuctionService(rig.Ground, rig.Parties, rig.Cache, rig.Gold, rig.Inventory);
             rig.Auction.OnAuctionResolved += rig.RecordResolved;
             _rig = rig;
             return rig;
@@ -427,12 +293,14 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
         }
 
         [Test]
-        public void Tick_DarkSteelAuctionWinnerBagFull_ItemStaysAssignedToWinnerAndPoolIsStillSplit()
+        public void Tick_DarkSteelWinnerHadAFreeSlotButPickupFindsTheBagFull_ItemStaysAssignedToWinnerAndPoolIsStillSplit()
         {
-            // Arrange
+            // Arrange: HasFreeSlot answers true (rig default) but the pickup reports a full bag,
+            // as if the slot was taken between the check and the pickup (the invariant path)
             Rig rig = BuildRig();
             rig.Inventory.DefaultResult = PickupResult.Fail(PickupFailReason.InventoryFull);
             GroundItemID id = OpenDarkSteelAuctionWithThreeBids(rig);
+            LogAssert.Expect(LogType.Error, new Regex("had a free slot but the pickup failed"));
 
             // Act
             RunTick(rig, WINDOW_CLOSE_TICK);
@@ -453,13 +321,14 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
         }
 
         [Test]
-        public void Tick_WinnerWithFullBagStandsOnTheItem_BlockedNoticeIsRaisedOnceAcrossTwoTicks()
+        public void Tick_WinnerHadAFreeSlotButPickupFindsTheBagFullAndStandsOnTheItem_BlockedNoticeIsRaisedOnceAcrossTwoTicks()
         {
-            // Arrange: A stands on the item with a full bag
+            // Arrange: A stands on the item; HasFreeSlot answers true but the pickup finds the bag full (invariant path)
             Rig rig = BuildRig();
             rig.Inventory.DefaultResult = PickupResult.Fail(PickupFailReason.InventoryFull);
             rig.Positions.Set(CharA, MobPosition);
             GroundItemID id = OpenDarkSteelAuctionWithThreeBids(rig);
+            LogAssert.Expect(LogType.Error, new Regex("had a free slot but the pickup failed"));
 
             // Act: the award, then one more tick with A still standing there
             RunTick(rig, WINDOW_CLOSE_TICK);
@@ -737,16 +606,19 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
             Assert.AreEqual(GroundItemState.Assigned, item.State);
             Assert.AreEqual(CharA, item.AssignedTo);
             Assert.AreEqual(EXPIRY_TICK + (uint)LootTableConstants.GROUND_ITEM_TTL_TICKS, item.ExpiryTick);
+            Assert.AreEqual(ONE_EVENT, rig.Assigned.Count);
+            Assert.AreEqual(item.ExpiryTick, rig.Assigned[0].ExpiryTick);
         }
 
         [Test]
-        public void Tick_AuctionClosesAtExpiryTickWithWinnerBagFull_ItemIsAssignedToWinnerWithAFreshExpiryTick()
+        public void Tick_AuctionClosesAtExpiryTickWinnerHadAFreeSlotButPickupFindsTheBagFull_ItemIsAssignedToWinnerWithAFreshExpiryTick()
         {
-            // Arrange: one valid bid, the winner's bag is full
+            // Arrange: one valid bid; HasFreeSlot answers true but the pickup finds the bag full (invariant path)
             Rig rig = BuildRig();
             rig.Inventory.DefaultResult = PickupResult.Fail(PickupFailReason.InventoryFull);
             GroundItemID id = OpenLateAuction(rig, Steel);
             Bid(rig, id, CharA, BID_SINGLE, LATE_OPEN_TICK);
+            LogAssert.Expect(LogType.Error, new Regex("had a free slot but the pickup failed"));
 
             // Act
             RunTick(rig, EXPIRY_TICK);

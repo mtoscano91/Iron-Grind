@@ -217,6 +217,8 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
                 Calls.Add(CALL_ADVANCE);
                 Cursor = (Cursor + 1) % Members.Count;
             }
+
+            public bool IsMemberConnected(CharacterID characterId) => true;
         }
 
         private sealed class StubMobInfoProvider : IMobInfoProvider

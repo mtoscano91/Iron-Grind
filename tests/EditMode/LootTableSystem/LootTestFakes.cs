@@ -59,6 +59,12 @@ namespace IronGrind.Tests.EditMode.LootTableSystem
         /// </summary>
         public bool? FreeSlot;
 
+        /// <summary>
+        /// Per-character answer of <see cref="HasFreeSlot"/>. A character with an entry gets that
+        /// answer; every other character falls back to <see cref="FreeSlot"/>.
+        /// </summary>
+        public readonly Dictionary<CharacterID, bool> FreeSlotByCharacter = new Dictionary<CharacterID, bool>();
+
         /// <summary>Every character <see cref="HasFreeSlot"/> was asked about, in order.</summary>
         public readonly List<CharacterID> HasFreeSlotCalls = new List<CharacterID>();
 
@@ -104,12 +110,13 @@ namespace IronGrind.Tests.EditMode.LootTableSystem
 
         public bool HasFreeSlot(CharacterID charId)
         {
-            if (!FreeSlot.HasValue)
+            bool hasOverride = FreeSlotByCharacter.TryGetValue(charId, out bool overrideAnswer);
+            if (!hasOverride && !FreeSlot.HasValue)
             {
                 throw Unsupported();
             }
             HasFreeSlotCalls.Add(charId);
-            return FreeSlot.Value;
+            return hasOverride ? overrideAnswer : FreeSlot.Value;
         }
 
         public bool IsSlotLocked(CharacterID charId, int slotIndex) => throw Unsupported();
@@ -168,6 +175,200 @@ namespace IronGrind.Tests.EditMode.LootTableSystem
         public IReadOnlyList<ItemDefinition> GetItemsByCategory(ItemCategory category)
         {
             return new List<ItemDefinition>();
+        }
+    }
+
+    /// <summary>
+    /// <see cref="IItemDatabase"/> fake whose equipment category returns a list the test supplies;
+    /// every other category is empty and no item is known by id. Feeds a <see cref="LootEquipmentCache"/>.
+    /// </summary>
+    internal sealed class FakeEquipmentItemDatabase : IItemDatabase
+    {
+        private readonly List<ItemDefinition> _equipment;
+
+        public FakeEquipmentItemDatabase(List<ItemDefinition> equipment)
+        {
+            _equipment = equipment;
+        }
+
+        public bool IsReady => true;
+
+        public event Action OnDatabaseReady
+        {
+            add { }
+            remove { }
+        }
+
+        public ItemDefinition GetItem(ItemID id) => null;
+
+        public bool TryGetItem(ItemID id, out ItemDefinition item)
+        {
+            item = null;
+            return false;
+        }
+
+        public IReadOnlyList<ItemDefinition> GetItemsByCategory(ItemCategory category)
+        {
+            return category == ItemCategory.Equipment ? _equipment : new List<ItemDefinition>();
+        }
+    }
+
+    /// <summary>One gold call recorded by <see cref="RecordingCurrencyService"/>.</summary>
+    internal readonly struct GoldCall
+    {
+        public readonly CharacterID Character;
+        public readonly uint Amount;
+        public readonly GoldTransactionReason Reason;
+
+        public GoldCall(CharacterID character, uint amount, GoldTransactionReason reason)
+        {
+            Character = character;
+            Amount = amount;
+            Reason = reason;
+        }
+    }
+
+    /// <summary>
+    /// <see cref="ICurrencyService"/> wrapper that records every <see cref="TrySpendGold"/> and
+    /// <see cref="AddGold"/> call and delegates everything to the wrapped service.
+    /// </summary>
+    /// <remarks>
+    /// When <see cref="ThrowOnAdd"/> is set, <see cref="AddGold"/> records the call and then throws
+    /// <see cref="InvalidOperationException"/> with <see cref="ADD_FAILURE_MESSAGE"/> instead of delegating.
+    /// </remarks>
+    internal sealed class RecordingCurrencyService : ICurrencyService
+    {
+        /// <summary>Message of the exception thrown by <see cref="AddGold"/> while <see cref="ThrowOnAdd"/> is set.</summary>
+        public const string ADD_FAILURE_MESSAGE = "pool failure";
+
+        private readonly ICurrencyService _inner;
+
+        /// <summary>Every <see cref="TrySpendGold"/> call, in order.</summary>
+        public readonly List<GoldCall> Spends = new List<GoldCall>();
+
+        /// <summary>Every <see cref="AddGold"/> call, in order.</summary>
+        public readonly List<GoldCall> Adds = new List<GoldCall>();
+
+        /// <summary>When set, <see cref="AddGold"/> throws after recording the call.</summary>
+        public bool ThrowOnAdd;
+
+        public RecordingCurrencyService(ICurrencyService inner)
+        {
+            _inner = inner;
+        }
+
+        public event Action<GoldSyncEventArgs> OnGoldSync
+        {
+            add { _inner.OnGoldSync += value; }
+            remove { _inner.OnGoldSync -= value; }
+        }
+
+        public void RegisterCharacter(CharacterID charId, uint initialBalance) => _inner.RegisterCharacter(charId, initialBalance);
+
+        public GoldMutationResult AddGold(CharacterID charId, uint amount, GoldTransactionReason reason)
+        {
+            Adds.Add(new GoldCall(charId, amount, reason));
+            if (ThrowOnAdd)
+            {
+                throw new InvalidOperationException(ADD_FAILURE_MESSAGE);
+            }
+            return _inner.AddGold(charId, amount, reason);
+        }
+
+        public uint GetBalance(CharacterID charId) => _inner.GetBalance(charId);
+
+        public GoldMutationResult TrySpendGold(CharacterID charId, uint cost, GoldTransactionReason reason)
+        {
+            Spends.Add(new GoldCall(charId, cost, reason));
+            return _inner.TrySpendGold(charId, cost, reason);
+        }
+
+        public GoldMutationResult TransferGold(CharacterID fromId, CharacterID toId, uint amount) => _inner.TransferGold(fromId, toId, amount);
+    }
+
+    /// <summary>
+    /// <see cref="IPartyService"/> fake for one party whose member list, connection state and
+    /// round-robin cursor the test can change. A character is in the party while it is in
+    /// <see cref="Members"/>; <see cref="IsMemberConnected"/> is true unless the character is in
+    /// <see cref="NotConnected"/>.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="ThrowOnMembersRead"/> and <see cref="ThrowOnCursorRead"/> make
+    /// <see cref="GetPartyMembers"/> and <see cref="GetRrNextIndex"/> throw
+    /// <see cref="InvalidOperationException"/> with <see cref="MEMBERS_FAILURE_MESSAGE"/> and
+    /// <see cref="ROUND_ROBIN_FAILURE_MESSAGE"/>, so a test can expect the logged exception.
+    /// <see cref="AdvanceCalls"/> counts <see cref="AdvanceRrNextIndex"/> calls.
+    /// </remarks>
+    internal sealed class MutablePartyService : IPartyService
+    {
+        /// <summary>Message thrown by <see cref="GetPartyMembers"/> while <see cref="ThrowOnMembersRead"/> is set.</summary>
+        public const string MEMBERS_FAILURE_MESSAGE = "members failure";
+
+        /// <summary>Message thrown by <see cref="GetRrNextIndex"/> while <see cref="ThrowOnCursorRead"/> is set.</summary>
+        public const string ROUND_ROBIN_FAILURE_MESSAGE = "round-robin failure";
+
+        private readonly PartyID _party;
+
+        /// <summary>The party's members, in round-robin order.</summary>
+        public readonly List<CharacterID> Members = new List<CharacterID>();
+
+        /// <summary>Members for whom <see cref="IsMemberConnected"/> answers false.</summary>
+        public readonly HashSet<CharacterID> NotConnected = new HashSet<CharacterID>();
+
+        /// <summary>Round-robin cursor returned by <see cref="GetRrNextIndex"/>.</summary>
+        public int Cursor;
+
+        /// <summary>Number of <see cref="AdvanceRrNextIndex"/> calls.</summary>
+        public int AdvanceCalls;
+
+        /// <summary>When set, <see cref="GetRrNextIndex"/> throws.</summary>
+        public bool ThrowOnCursorRead;
+
+        /// <summary>When set, <see cref="GetPartyMembers"/> throws.</summary>
+        public bool ThrowOnMembersRead;
+
+        public MutablePartyService(PartyID party)
+        {
+            _party = party;
+        }
+
+        public PartyID GetPartyID(CharacterID characterId)
+        {
+            return Members.Contains(characterId) ? _party : PartyID.Uninitialized;
+        }
+
+        public IReadOnlyList<CharacterID> GetPartyMembers(PartyID partyId)
+        {
+            if (ThrowOnMembersRead)
+            {
+                throw new InvalidOperationException(MEMBERS_FAILURE_MESSAGE);
+            }
+            return new List<CharacterID>(Members);
+        }
+
+        public CharacterID GetMemberAtIndex(PartyID partyId, int index)
+        {
+            return index >= 0 && index < Members.Count ? Members[index] : CharacterID.Invalid;
+        }
+
+        public int GetRrNextIndex(PartyID partyId)
+        {
+            if (ThrowOnCursorRead)
+            {
+                throw new InvalidOperationException(ROUND_ROBIN_FAILURE_MESSAGE);
+            }
+            return Cursor;
+        }
+
+        public void AdvanceRrNextIndex(PartyID partyId)
+        {
+            AdvanceCalls++;
+            Cursor = (Cursor + 1) % Members.Count;
+        }
+
+        public bool IsMemberConnected(CharacterID characterId)
+        {
+            return !NotConnected.Contains(characterId);
         }
     }
 

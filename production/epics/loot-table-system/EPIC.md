@@ -3,8 +3,8 @@
 > **Layer**: Core
 > **GDD**: design/gdd/loot-table-system.md
 > **Architecture Module**: Loot Table
-> **Status**: In Progress (11/12 — Stories 001–010 Complete 2026-10-02, Story 011 Complete 2026-10-03)
-> **Stories**: 12 stories created (001–012) on 2026-10-02 — 11 Complete, 1 Ready (012 — its dependency 011 is Complete)
+> **Status**: Complete (13/13 — Stories 001–010 Complete 2026-10-02, Stories 011, 012 and 013 Complete 2026-10-03)
+> **Stories**: 12 stories created (001–012) on 2026-10-02, Story 013 added 2026-10-03 (winner grace, CR-LT-9.1) — 13 Complete (012 and 013 Complete 2026-10-03).
 
 ## Overview
 
@@ -33,6 +33,7 @@ The Loot Table System is the server-authoritative probability engine that determ
 | TR-loot-009 | Proximity auto-pickup for the assigned character; bag-full drop fate: item stays assigned, retry on re-entry or in-radius after a slot frees, blocked notice, expiry warning, TTL pause on app background with a per-assignment budget (CR-LT-7, CR-LT-13, CR-LT-13.1–13.3) *(added 2026-10-02)* | ADR-010 (events) |
 | TR-loot-010 | Rare drop gold-bid auction for parties of 2+: 600-tick window, floor = `SellPriceGold`, transparent bids, resolution by highest bid then earliest tick, `TrySpendGold` with disqualification, pool split `floor(bid / N)`, zero-bid fallback to round-robin (CR-LT-8, CR-LT-9, CR-LT-10, F-LT-2) *(added 2026-10-02)* | ADR-010 (events) |
 | TR-loot-011 | Zone teardown: open auctions resolve immediately, remaining ground items despawn, no double award (Edge Cases) *(added 2026-10-02)* | ADR-010 (zone-scoped disposal) |
+| TR-loot-012 | Auction winner grace: a bidder whose bag is full is not charged and has `AUCTION_WINNER_GRACE_TICKS` (600) to free a slot; otherwise the next bid is tried; all disqualified → round-robin with a fresh TTL; no grace at zone teardown, for a bidder who cannot afford their bid, or for a disconnected bidder (CR-LT-9.1, CR-LT-12, AC-LT-25) *(added 2026-10-03, revised the same day)* | ADR-010 (events) |
 
 > **TR registry note**: All TR-IDs above are placeholders — `docs/architecture/tr-registry.yaml` is empty. Populate the registry before running `/story-readiness` checks.
 
@@ -59,7 +60,8 @@ This epic is complete when:
 | 009 | TTL Pause on App Background | Integration | Complete | ADR-010 |
 | 010 | Rare Drop Auction — Open, Bid Validation, Broadcast | Integration | Complete | ADR-010 |
 | 011 | Auction Resolution and Gold Pool | Integration | Complete | ADR-010 |
-| 012 | Zone Teardown Loot Flush | Integration | Ready | ADR-010 |
+| 012 | Zone Teardown Loot Flush | Integration | Complete (2026-10-03) | ADR-010 |
+| 013 | Auction Winner Grace | Integration | Complete (2026-10-03) | ADR-010 |
 
 Work through stories in order — each story's `Depends on:` field tells you what must be Done before you can start it.
 

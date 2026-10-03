@@ -63,5 +63,12 @@ namespace IronGrind.LootTableSystem
         /// before the item expires.
         /// </summary>
         public const int AUCTION_WINDOW_TICKS = 600;
+
+        /// <summary>
+        /// Length of the winner grace in server ticks (CR-LT-9.1): 30 seconds at 20 Hz. A top bidder who
+        /// can afford the bid but has a full bag is held for this long, from the tick the auction
+        /// would otherwise have paid them, to make room. Tuning knob; safe range [200, 1200].
+        /// </summary>
+        public const int AUCTION_WINNER_GRACE_TICKS = 600;
     }
 }

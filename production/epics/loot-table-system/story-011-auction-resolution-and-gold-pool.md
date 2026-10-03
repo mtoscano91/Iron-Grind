@@ -149,6 +149,8 @@
 ---
 
 ## Completion Notes
+> **Superseded in part (2026-10-03, after completion):** the bag-full-winner behaviour of this story (bid spent, item `Assigned` to the winner, fresh TTL on an expiry close) is replaced by the winner grace of CR-LT-9.1 — Story 013. Everything else stands.
+
 **Completed**: 2026-10-03
 **Criteria**: 6/6 passing (AC-LT-12, AC-LT-13, AC-LT-14, AC-LT-16 auction half, exhausted bidders, party size at close) — each covered by a passing test in `LootTable_AuctionResolution_integration_tests.cs`.
 **Test Evidence**: Integration — `tests/EditMode/Integration/LootTableSystem/LootTable_AuctionResolution_integration_tests.cs`, 23 tests. Real Unity Test Runner run (6000.3.10f1, batch mode, EditMode): 1405/1405 passed, including the edited Story 010 file and the byte-9 `AuctionBid` `TestCase`.

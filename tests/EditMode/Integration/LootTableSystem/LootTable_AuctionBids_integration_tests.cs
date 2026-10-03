@@ -201,6 +201,8 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
                 AdvanceCalls++;
                 Cursor = (Cursor + 1) % Members.Count;
             }
+
+            public bool IsMemberConnected(CharacterID characterId) => true;
         }
 
         private sealed class Rig
@@ -258,6 +260,7 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
             rig.Parties.Members.Add(CharB);
             rig.Parties.Outsiders.Add(CharC);
             rig.Inventory = new RecordingInventoryService();
+            rig.Inventory.FreeSlot = true;
             rig.Positions = new SettablePositionProvider();
             rig.Cache = new LootEquipmentCache(new FakeItemDatabase(equipment));
             rig.Ground = new GroundItemService(rig.Cache, rig.Inventory, rig.Positions, new EmptyItemDatabase());
@@ -268,7 +271,7 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
             rig.Currency = new CurrencySystem();
             rig.Currency.RegisterCharacter(CharA, STARTING_GOLD);
             rig.Currency.RegisterCharacter(CharB, STARTING_GOLD);
-            rig.Auction = new LootAuctionService(rig.Ground, rig.Parties, rig.Cache, rig.Currency);
+            rig.Auction = new LootAuctionService(rig.Ground, rig.Parties, rig.Cache, rig.Currency, rig.Inventory);
             rig.Auction.OnLootBidUpdate += rig.RecordUpdate;
             _rig = rig;
             return rig;
@@ -551,7 +554,7 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
             // Arrange: a second auction service over an empty cache
             Rig rig = BuildRig();
             GroundItemID id = OpenAuction(rig, Steel);
-            using (var blind = new LootAuctionService(rig.Ground, rig.Parties, new LootEquipmentCache(new EmptyItemDatabase()), rig.Currency))
+            using (var blind = new LootAuctionService(rig.Ground, rig.Parties, new LootEquipmentCache(new EmptyItemDatabase()), rig.Currency, rig.Inventory))
             {
                 LogAssert.Expect(LogType.Error, new Regex(@"\[LootAuctionService\] SubmitBid.*equipment cache"));
 
@@ -745,10 +748,11 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
             Rig rig = BuildRig();
 
             // Act / Assert
-            Assert.Throws<ArgumentNullException>(() => new LootAuctionService(null, rig.Parties, rig.Cache, rig.Currency));
-            Assert.Throws<ArgumentNullException>(() => new LootAuctionService(rig.Ground, null, rig.Cache, rig.Currency));
-            Assert.Throws<ArgumentNullException>(() => new LootAuctionService(rig.Ground, rig.Parties, null, rig.Currency));
-            Assert.Throws<ArgumentNullException>(() => new LootAuctionService(rig.Ground, rig.Parties, rig.Cache, null));
+            Assert.Throws<ArgumentNullException>(() => new LootAuctionService(null, rig.Parties, rig.Cache, rig.Currency, rig.Inventory));
+            Assert.Throws<ArgumentNullException>(() => new LootAuctionService(rig.Ground, null, rig.Cache, rig.Currency, rig.Inventory));
+            Assert.Throws<ArgumentNullException>(() => new LootAuctionService(rig.Ground, rig.Parties, null, rig.Currency, rig.Inventory));
+            Assert.Throws<ArgumentNullException>(() => new LootAuctionService(rig.Ground, rig.Parties, rig.Cache, null, rig.Inventory));
+            Assert.Throws<ArgumentNullException>(() => new LootAuctionService(rig.Ground, rig.Parties, rig.Cache, rig.Currency, null));
         }
 
         [Test]

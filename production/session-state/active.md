@@ -4,6 +4,128 @@
 
 > **Push status 2026-10-02:** the user pushed `main` to `origin` (`108db3a..125e98f`) — `origin/main` is at `125e98f`. Notes below saying "not pushed" or "`main` is ahead of `origin`" are superseded. PAT rotation is still unconfirmed.
 
+> **Commit status 2026-10-03:** Story 011 and the Currency amendment are committed on `main` — `c2acf60` (design: `AuctionBid = 9`, Story 011 readiness decisions) and `c789a05` (Story 011 code, tests, `.meta` files, story, EPIC, tech debt). The "Uncommitted" notes in the 2026-10-03 extracts below are superseded. Not pushed: `main` is 3 ahead of `origin`. PAT rotation still unconfirmed. **Uncommitted since `c789a05`:** the winner-grace amendment and story changes listed in the extract directly below.
+
+## Session Extract — /story-done 2026-10-03 (Story 012 — COMPLETE WITH NOTES; Loot Table epic 13/13; not committed)
+
+- Verdict: COMPLETE WITH NOTES. Story: `production/epics/loot-table-system/story-012-zone-teardown-loot-flush.md` — Zone Teardown Loot Flush. 6/6 criteria; teardown test file 14 tests; EditMode 1441/1441.
+- `EPIC.md`: Status Complete (13/13).
+- Tech debt (user chose all three): TD-054 narrowed (partly done), TD-056 extended (teardown wording), TD-057 added (disposed auction service's unsubscription is not observable). Register: 52 items.
+- **Uncommitted since `c789a05`:** the winner-grace design changes (GDDs, registry, review log, systems index); Stories 012 and 013 and `EPIC.md`; `docs/tech-debt-register.md`; `src/Foundation/LootTableSystem/` (8 modified files, new `LootTeardownCoordinator.cs` + `.meta`); loot tests (8 modified files, new AuctionWinnerGrace and ZoneTeardown test files + `.meta`); this file.
+- Next recommended: commit when the user asks (PAT in the `origin` URL still unrotated — do not push before that). Then: the Loot Table epic is done; open items are TD-056 (one GDD authoring pass + lean re-review) and the next epic or `/design-system` for Inventory UI (#30).
+
+## Session Extract — /code-review 2026-10-03 (Story 012 — APPROVED WITH SUGGESTIONS → "fix all" applied, 1441/1441 EditMode, not committed)
+
+- Lean self-review in the dev-story session (no specialists spawned). No required changes; suggestions 1–4 applied. This supersedes the "For `/code-review`" list in the extract below.
+- **Applied:** (S1) a party read that throws at teardown → item despawned and the fallback `OnAuctionResolved` raised once (`AbandonAuctionAtTeardown`); (S2) test for "every payment failed → round-robin, then despawn"; (S3) test that a throwing auction step does not stop `DespawnAll` / `Clear()`; (S4) `ResolveAllForTeardown` logs one warning when skipped on re-entry. Teardown test file: 14 tests.
+- **Left for `/story-done`:** S5 — TD-054 is only partly done (four other loot test files keep their own `StubPartyService`; `KillResolution` keeps its own `GoldCall` / `RecordingCurrencyService`): narrow the register entry, do not close it.
+- The teardown "nobody wins" split (full-bag pass-over → direct despawn; otherwise round-robin first) was the assistant's rule. **User decisions 2026-10-03 (after an explanation):** in normal play keep the current rule (per-bidder 30-second graces, then rotation member with a fresh 120 seconds); at zone shutdown resolve at once as Story 012 implements it — no waiting, no change. The user's stated intent: no bids → the rare item follows normal drop logic (CR-LT-10, already the rule). The split is therefore accepted as implemented and pinned by tests.
+- Next: `/story-done production/epics/loot-table-system/story-012-zone-teardown-loot-flush.md` — closes the Loot Table epic (13/13).
+
+## Session Extract — /dev-story 2026-10-03 (Story 012 implemented — 1438/1438 EditMode, not reviewed, not committed)
+
+- Story: `production/epics/loot-table-system/story-012-zone-teardown-loot-flush.md` — Zone Teardown Loot Flush. Status still Ready (`/story-done` not run).
+- Three `gameplay-programmer` agents: source and fixture move in parallel (suite 1427/1427 on that), then the teardown tests against the real code.
+- Files changed (src/Foundation/LootTableSystem): new `LootTeardownCoordinator.cs` (+ `.meta`); `ILootAuctionService.cs` + `LootAuctionService.cs` (`ResolveAllForTeardown`); `IGroundItemService.cs` + `GroundItemService.cs` (`DespawnAll`); `ILootTableService.cs` (`Clear()` on the interface).
+- Tests: new `tests/EditMode/Integration/LootTableSystem/LootTable_ZoneTeardown_integration_tests.cs` (11 tests, + `.meta`). TD-054 done: `FakeEquipmentItemDatabase`, `GoldCall`, `RecordingCurrencyService`, `MutablePartyService` moved to `LootTestFakes.cs`; the AuctionResolution (23) and AuctionWinnerGrace (22) files use them — the register entry is not yet marked resolved.
+- Test run: Unity 6000.3.10f1 batch mode, EditMode 1438/1438 (was 1427).
+- Rule set by the assistant in the brief, not confirmed by the user: at teardown, nobody wins + at least one bidder passed over for a full bag → item despawned directly, no round-robin; nobody wins otherwise (zero valid bids, or every spend failed) → CR-LT-10 round-robin first, then `DespawnAll`.
+- For `/code-review`: a party read that throws during the flush leaves that auction unresolved with no `OnAuctionResolved` (`DespawnAll` still removes the item) — mirrors `Tick`; the disposal-edge test asserts only that the disposed auction service resolves nothing; `Clear()` is verified through a counting stub, not the real `LootTableService`.
+- Next: `/code-review` on the changed files, then `/story-done` — the last story of the Loot Table epic.
+
+## Session Extract — /story-readiness 2026-10-03 (Story 012 — READY after fixes, not committed)
+
+- First verdict NEEDS WORK: `ILootTableService.Clear()` does not exist on the interface (class only); the reserved-bidder-has-room case at teardown was unspecified; the dependency line still called Story 013 "Ready".
+- **User decisions:** at teardown the reserved grace bidder is tried first (`HasFreeSlot` read again: room → charged and wins; full → skipped); Story 012 first moves the shared auction test rig and fakes into `LootTestFakes.cs` (closes TD-054); estimate raised from 2 to 4 hours.
+- **Applied to Story 012:** the three fixes, both decisions, one new QA edge case (grace bidder with a freed slot at teardown wins).
+- Tech debt TD-054 / TD-055 / TD-056 were added to `docs/tech-debt-register.md` at the user's request (51 items).
+- Next: `/clear`, then `/dev-story production/epics/loot-table-system/story-012-zone-teardown-loot-flush.md` — the last story of the Loot Table epic.
+
+## Session Extract — /story-done 2026-10-03 (Story 013 — COMPLETE WITH NOTES, 1427/1427 EditMode, not committed)
+
+- Verdict: COMPLETE WITH NOTES. Story: `production/epics/loot-table-system/story-013-auction-winner-grace.md` — Auction Winner Grace. 10/10 criteria; grace test file 22 tests. `EPIC.md`: 12 Complete, 1 Ready (012).
+- **User decision:** a bidder who frees a slot on the deadline tick itself is disqualified (deadline checked first) — pinned by `Tick_ASlotFreesOnTheDeadlineTick_AIsStillDisqualifiedAndBWins`. This closes the open S4 item in the extract below.
+- Tech debt logged: TD-054 (duplicated auction test rig), TD-055 (unregistered bidder gets a grace), TD-056 (GDD wording items) — added at the user's request after the report.
+- **Uncommitted since `c789a05`:** the winner-grace design changes (GDDs, registry, review log, systems index), Story 013 (new file) and Story 012 edits, `EPIC.md`, 7 files in `src/Foundation/LootTableSystem/`, 7 modified test files, the new grace test file and its `.meta`.
+- Next recommended: Story 012 — Zone Teardown Loot Flush (`production/epics/loot-table-system/story-012-zone-teardown-loot-flush.md`), Ready; run `/story-readiness` first — it needs a way to end a running grace (pending state is private to `LootAuctionService`).
+
+## Session Extract — /code-review 2026-10-03 (Story 013 — CHANGES REQUIRED → "fix all" applied, 1426/1426 EditMode, not committed)
+
+- Lean self-review in the dev-story session (no `unity-specialist` / `qa-tester` spawned). One required change, eight suggestions. This supersedes the "For `/code-review`" list in the extract below.
+- **Applied:** (R1) `SubmitBid_AuctionWaitingInAGrace_ReturnsWindowClosed` now uses a received tick inside the bid window; (S1) invariant error text is "had a free slot but the pickup failed" (service + three resolution tests); (S2) `LootAuctionService.Tick` reads the due list in place — no per-tick array — and a re-entered `Tick` returns at once (`_ticking`); (S3) `PendingResolution.SlotCheckDue` keeps an inventory change until `HasFreeSlot` is read, new test `Tick_PartyReadThrowsOnTheTickAfterASlotFrees_AStillWinsOnTheNextTick`; (S7) unused test constants removed. Grace test file: 21 tests.
+- **Open — needs the user's answer:** S4 — a bidder who frees a slot on the deadline tick itself is disqualified (expiry is checked first); the GDD does not say which wins and no test pins it.
+- **Left:** S5 (unregistered bidder gets a grace — real `HasFreeSlot` returns false + error); S6 (≈230 lines of rig and fakes duplicated between the two auction test files — tech debt candidate); S8 (Story 012 needs a way to end a running grace; the pending state is private).
+- Next: `/story-done production/epics/loot-table-system/story-013-auction-winner-grace.md`, then Story 012.
+
+## Session Extract — /dev-story 2026-10-03 (Story 013 implemented — 1425/1425 EditMode, not reviewed, not committed)
+
+- Story: `production/epics/loot-table-system/story-013-auction-winner-grace.md` — Auction Winner Grace. Status still Ready (`/story-done` not run).
+- Two `gameplay-programmer` agents in parallel against one API contract (src / tests). One fix by the orchestrator: the `StubPartyService` in the AuctionResolution test file lacked `IsMemberConnected` (compile error on the first run).
+- Files changed (src/Foundation/LootTableSystem): `LootAuctionService.cs` (resumable resolution, `PendingResolution`, fifth ctor arg `IInventoryService`), `ILootAuctionService.cs` (docs), `IGroundItemService.cs` + `GroundItemService.cs` (`freshPickupWindow` on `AssignAuctionItem` / `AwardAuctionItem`, new `RaiseAuctionGraceBlocked`), `GroundItemAssignedEventArgs.cs` (`ExpiryTick`), `IPartyService.cs` (`IsMemberConnected`), `LootTableConstants.cs` (`AUCTION_WINNER_GRACE_TICKS`).
+- Tests: new `tests/EditMode/Integration/LootTableSystem/LootTable_AuctionWinnerGrace_integration_tests.cs` (20 tests, + `.meta` generated by the run); `LootTestFakes.cs` (`FreeSlotByCharacter`); six `StubPartyService` copies; AuctionBids and AuctionResolution rigs (fifth ctor arg, `FreeSlot = true`); three Story 011 bag-full-winner tests renamed to the invariant path.
+- Test run: Unity 6000.3.10f1 batch mode, EditMode 1425/1425 passed (was 1405).
+- Deviation from the story text: the "had a free slot but the pickup found the bag full" case logs `Debug.LogError` (GDD States table) — the story's Implementation Notes say "one warning". Assistant's choice, not confirmed by the user.
+- For `/code-review`: the invariant error also fires when the award fails for a reason other than a full bag (message would be inaccurate); `TryGetBid` returns false once an auction has closed into a grace; an exception during a grace removes the item (existing recovery rule); real `InventoryService.HasFreeSlot` returns false + logs an error for an unregistered character, so such a bidder with enough gold would get a grace.
+- Next: `/code-review` on the changed files, then `/story-done`; then Story 012 (teardown must end a running grace — the pending state is private to `LootAuctionService`).
+
+## Session Extract — /story-readiness 2026-10-03 (Story 013 — READY after two text fixes, not committed)
+
+- Run in the same session as the review extract below (no `/clear`). First verdict NEEDS WORK: unconfirmed party query; stale "wait for the third re-review" header note.
+- **User decision:** `bool IsMemberConnected(CharacterID characterId)` on the loot module's `IPartyService` — false when the member's status is `Ghost`. Estimate stays 4 hours (the assistant thinks 5–6 is more likely).
+- **Applied to Story 013:** header note; query confirmed; `Ghost` wording in the disconnected AC and close sequence; new "Test fixtures" note (six `StubPartyService` copies gain the method; `RecordingInventoryService.FreeSlot` needs a per-character override; `LootAuctionService` gains an `IInventoryService` constructor argument).
+- **Next:** `/clear`, then `/dev-story production/epics/loot-table-system/story-013-auction-winner-grace.md`, then Story 012. The GDD wording fixes R1–R4 of re-review #3 are still open.
+
+## Session Extract — /design-review 2026-10-03 (Loot Table, lean re-review #3 — APPROVED, 0 blocking, not committed)
+
+- Fresh session after `/clear`. Both blockers of re-review #2 confirmed closed ("disconnected" source and bid-time-only check; `GroundItemAssigned.expiryTick`). No primitive gaps.
+- **Written:** `systems-index.md` row 14 → Approved; `loot-table-system.md` header Status → Approved; review log entry appended. No rule text changed, no registry change.
+- **This supersedes** the "Next: third lean pass" notes in the extracts below. Story 013's "do not start until that re-review passes" condition is now met.
+- **Recommended, for a later authoring pass (none blocking):** R1 — `Disconnected` is not a `PartyMemberStatus` value (enum is `Online, Ghost, OutOfZone, Dead`; inside the 5-second window a member is `Online`), so CR-LT-9.1, the disconnect edge case, the Interactions row and AC-LT-25 should say `Ghost` only — this corrects the "party-system.md `MemberStatus` comment omits `Disconnected`" note below; R2 — no edge case for a party disband during an open auction or a grace (Story 011 code not checked); R3 — `GroundItemAssigned` recipients differ across the wire protocol, the channel contract and the Loot Interactions row; R4 — the paid-winner invariant path should state that `GroundItemAssigned` is sent; R5 — hud.md CR-HUD-15 / Loot HUD row use `GroundItemAssigned` for common drops; R6 — party-facing grace signal (deferred by the user).
+- **Next:** `/story-readiness` then `/dev-story` for Story 013, then Story 012. The design changes since `c789a05` are still uncommitted.
+
+## Session Extract — /design-review 2026-10-03 (Loot Table, lean re-review #2 — NEEDS REVISION, 2 blocking → both revised in-session, not re-reviewed, not committed)
+
+- Run in the same session as the authoring extract below (no `/clear`). The 3 prior blockers were confirmed closed. Two new blockers: (1) "disconnected" had no defined source and a network blip during a grace cost the item; (2) the client could not learn the fresh `expiryTick` — `GroundItemAssigned` did not carry it.
+- **User decision:** disconnected = party member status `Disconnected` / `Ghost`, checked only when a full-bag bid is tried; a running grace is not ended by a disconnect. This **supersedes** the two "assistant additions, NOT confirmed" in the extract below (mid-grace disconnect rule and the `NotifyClientDisconnected` push — both withdrawn).
+- **Applied:** both blockers and R1–R5 — `loot-table-system.md` (CR-LT-9.1, CR-LT-12, CR-LT-15, `Claiming` row, Interactions, Dependencies, F-LT-2 `N` ∈ [1, 4], two edge cases, bid window trigger, AC-LT-25, header); `networking-wire-protocol.md` (`GroundItemAssigned` + `uint expiryTick`, body 12 bytes / 22 standalone); `networking-channel-contract.md`; `inventory-system.md` and `currency-system.md` headers; `entities.yaml` grace note; Story 013 (party status query `IsMemberConnected` — name is the assistant's; `ExpiryTick` on `GroundItemAssignedEventArgs`); review log (review entry + amendment entry); `systems-index.md` note (still Needs Revision).
+- Propagation check done: no stale mid-grace disconnect wording, no `AuctionOpen`, no other reference to the old `GroundItemAssigned` size; no serializer for that message exists in `src/` yet (only the event args).
+- **Left for a later pass (other documents):** party-system.md `MemberStatus` comment omits `Disconnected`; party-system.md does not list the Loot Table status read; hud.md CR-HUD-15 expects `GroundItemAssigned` for common drops, which only get `GroundItemSpawned`. Deferred by the user: party-facing grace signal.
+- **Next:** `/clear`, then `/design-review design/gdd/loot-table-system.md --depth lean` (third pass on the amendment). On a pass: `/story-readiness` and `/dev-story` for Story 013, then Story 012.
+
+## Session Extract — authoring 2026-10-03 (Loot Table winner-grace revision — blockers 1–3 and R2–R8 applied, not re-reviewed, not committed)
+
+- This supersedes the "Next" and "user decision needed" notes in the review extract directly below.
+- **User decisions:** balance read (`GetBalance`) before a grace — below the bid → disqualified at once; `N` = party size on the paying tick; no wire change — the client picks the discard modal mode from the item state (`Auctioning` → grace mode); a disconnected full-bag bidder gets no grace; a fallback after any grace gets a fresh TTL; R1 (party-facing grace signal) deferred. The four earlier assistant additions are confirmed (range [200, 1200], leaver disqualified, CR-LT-13.1 does not extend a grace, no new state).
+- **Files edited (uncommitted):** `design/gdd/loot-table-system.md` (CR-LT-9, CR-LT-9.1, CR-LT-12, state table, Interactions, F-LT-2, edge cases, Dependencies, discard modal ×2, AC-LT-25, footer 20/5/25, header → Needs Revision), `networking-channel-contract.md` (line 71), `networking-wire-protocol.md` (`BagFullPickupBlocked` and `AuctionResolved` notes), `inventory-system.md`, `currency-system.md`, `design/registry/entities.yaml` (grace knob note), `story-013-auction-winner-grace.md` (new ACs and QA cases: cannot afford, disconnected, pool on the paying tick, fresh TTL; close sequence; connection-state note), loot `EPIC.md` (TR-loot-012), the review log (new amendment entry), this file. `systems-index.md` unchanged (still Needs Revision).
+- **Assistant additions, NOT confirmed:** a bidder who disconnects during a grace is disqualified on the next tick; Story 013 adds `NotifyClientDisconnected` / `NotifyClientConnected` to `ILootAuctionService` (no connection query exists in the loot services today).
+- Propagation check done: `N` wording, tick wording, the `BagFullPickupBlocked` meaning and the fresh-TTL rule are consistent across the loot GDD, the wire protocol, the channel contract, entities.yaml and Story 013. hud.md, party-system.md and the message-criticality doc need no change. Not touched: the stale "None of the above GDDs exist yet" footnote and other "Not Started" rows in `currency-system.md` Downstream Dependents (outside this pass).
+- Story 013 stays Ready but carries a "do not start until the re-review passes" note. Story 012 depends on 013.
+- **Next:** `/clear`, then `/design-review design/gdd/loot-table-system.md --depth lean`; on a pass: `/story-readiness` and `/dev-story` for Story 013, then Story 012.
+
+## Session Extract — /design-review 2026-10-03 (Loot Table System, lean — NEEDS REVISION, 3 blocking)
+
+- Lean re-review of both 2026-10-03 amendments. Story 011 amendment: no findings. CR-LT-9.1 winner grace: **3 blockers, 8 recommended** — full list in `design/gdd/reviews/loot-table-system-review-log.md` (top entry).
+- **Blockers:** (1) a grace is granted before affordability is known — a full-bag bidder who cannot pay discards an item and is then disqualified with `InsufficientFunds`; proposed `GetBalance` check before the grace — **user decision needed**; (2) `N` for the pool split: CR-LT-9.1 says paying tick, the leaver edge case and F-LT-2 say `windowCloseTick` — **user confirmation needed**; (3) `BagFullPickupBlocked` has two meanings with no written client rule (V/A discard modal still dismisses on radius exit; `networking-channel-contract.md` line 71 says "explicit pickup attempts only").
+- The five unconfirmed assistant additions are still unconfirmed; the reviewer's view on each is in the log.
+- Files written this session (uncommitted): the review log entry, `design/gdd/systems-index.md` (Loot Table → Needs Revision), this file. The GDD itself was not edited — its header still reads `Status: Approved (2026-05-17)`.
+- **Story 013 is marked Ready but should not start until blocker 1 is decided** (it would implement the slot-check-before-spend order as written). Story 012 depends on 013.
+- **Next:** authoring session — decide blockers 1 and 2, apply 1–3 (GDD + `networking-channel-contract.md` + Story 013 if the rule changes), triad + propagation check; then `/clear` and `/design-review design/gdd/loot-table-system.md --depth lean`.
+
+## Session Extract — /story-readiness 2026-10-03 (Loot Table Story 012 — NEEDS WORK → gaps drafted and applied; new design rule CR-LT-9.1; new Story 013)
+
+- Story 012 verdict: NEEDS WORK (written before Story 011's code existed): no owner for the flush across the three loot services, no public entry for teardown resolution, an untestable Disposal criterion, incomplete dispose notes, stale dependency line, and an undecided full-bag-winner case at teardown.
+- **User decision:** a winner whose bag is full gets a short time to free a slot; if not, the next bid wins. Confirmed: applies to every auction close; grace = **600 ticks**; no grace at zone teardown (full-bag bidder skipped at once); the bid is debited only when delivery is possible (no refund path).
+- **Applied (authoring, not re-reviewed, not committed):**
+  - `design/gdd/loot-table-system.md`: new **CR-LT-9.1** (winner grace); CR-LT-9 last sentence; CR-LT-12 (fresh TTL no longer names a bag-full winner); `Auctioning` state row; teardown edge case; AC-LT-12 clause → new **AC-LT-25**; AC-LT-19 teardown lines; tuning knob `AUCTION_WINNER_GRACE_TICKS`; discard modal; header.
+  - `design/registry/entities.yaml`: `AUCTION_WINNER_GRACE_TICKS = 600`, range [200, 1200].
+  - `design/gdd/networking-wire-protocol.md`: `BagFullPickupBlocked` is also sent for a grace (`remainingTicks` = grace remaining); no schema change.
+  - `design/gdd/reviews/loot-table-system-review-log.md`: amendment entry.
+  - New `production/epics/loot-table-system/story-013-auction-winner-grace.md` (Ready, `TR-loot-012` placeholder, 4 h). Story 012 revised: `LootTeardownCoordinator`, `ILootAuctionService.ResolveAllForTeardown`, `IGroundItemService.DespawnAll`, dispose order, two new ACs and QA cases, Disposal criterion reworded, depends on 013. `EPIC.md`: 11/13, order 013 then 012. Story 011 completion notes: superseded-in-part note. TD-051 narrowed.
+- **Assistant's additions, NOT confirmed by the user** (listed in the review log): safe range [200, 1200]; a bidder who leaves the party during their grace is disqualified at once; `N` for the pool is the party size on the paying tick; CR-LT-13.1 does not extend a grace; the item stays `Auctioning` (no new state). Also the fresh-TTL-for-a-bag-full-winner decision confirmed earlier today is now moot.
+- Propagation check: `CR-LT-9` / bag-full-winner wording is cited only in loot-table-system.md, the wire protocol (updated) and currency-system.md (names the debit only — still correct). hud.md and inventory-system.md do not describe the auction winner's bag-full case.
+- Not done: `systems-index.md` untouched (loot GDD status unchanged — Approved, amendments pending re-review). Story 013 code does not exist; Story 011's code still has the old bag-full-winner behaviour.
+- Next: `/clear`, then `/design-review design/gdd/loot-table-system.md --depth lean` (two pending amendments); then `/story-readiness` and `/dev-story` for Story 013; then Story 012.
+
 ## Session Extract — /story-done 2026-10-03 (Loot Table Story 011 — COMPLETE WITH NOTES)
 
 - Verdict: COMPLETE WITH NOTES. Story: `production/epics/loot-table-system/story-011-auction-resolution-and-gold-pool.md` — Auction Resolution and Gold Pool. 6/6 criteria covered by passing tests.

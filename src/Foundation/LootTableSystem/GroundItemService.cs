@@ -485,7 +485,7 @@ namespace IronGrind.LootTableSystem
         }
 
         /// <inheritdoc/>
-        public bool AssignAuctionItem(GroundItemID id, CharacterID assignee, uint currentTick)
+        public bool AssignAuctionItem(GroundItemID id, CharacterID assignee, uint currentTick, bool freshPickupWindow)
         {
             if (!_items.TryGetValue(id, out Record record) || record.State != GroundItemState.Auctioning)
             {
@@ -500,13 +500,32 @@ namespace IronGrind.LootTableSystem
                 return false;
             }
 
-            ReassignAuctionRecord(record, assignee, currentTick);
-            RaiseAssigned(new GroundItemAssignedEventArgs(id, assignee));
+            ReassignAuctionRecord(record, assignee, currentTick, freshPickupWindow);
+            RaiseAssigned(new GroundItemAssignedEventArgs(id, assignee, record.ExpiryTick));
             return true;
         }
 
         /// <inheritdoc/>
-        public bool AwardAuctionItem(GroundItemID id, CharacterID winner, uint currentTick)
+        public bool RaiseAuctionGraceBlocked(GroundItemID id, CharacterID bidder, uint remainingTicks)
+        {
+            if (bidder == CharacterID.Invalid
+                || !_items.TryGetValue(id, out Record record)
+                || record.State != GroundItemState.Auctioning)
+            {
+                return false;
+            }
+
+            RaiseBagFullBlocked(new BagFullPickupBlockedEventArgs(
+                record.Id,
+                record.ItemId,
+                LookUpDisplayName(record.ItemId),
+                remainingTicks,
+                bidder));
+            return true;
+        }
+
+        /// <inheritdoc/>
+        public bool AwardAuctionItem(GroundItemID id, CharacterID winner, uint currentTick, bool freshPickupWindow)
         {
             if (winner == CharacterID.Invalid
                 || !_items.TryGetValue(id, out Record record)
@@ -515,7 +534,7 @@ namespace IronGrind.LootTableSystem
                 return false;
             }
 
-            ReassignAuctionRecord(record, winner, currentTick);
+            ReassignAuctionRecord(record, winner, currentTick, freshPickupWindow);
 
             // The delivery below is this assignee's pickup attempt. Without the real "inside" flag a
             // winner standing on the item would count as newly entered on the next Tick and, with a
@@ -538,9 +557,35 @@ namespace IronGrind.LootTableSystem
             return true;
         }
 
+        /// <inheritdoc/>
+        public void DespawnAll()
+        {
+            if (_items.Count == 0)
+            {
+                return;
+            }
+
+            // Pickup is synchronous, so no item is ever left in Claiming between calls: every record
+            // here is in a state that can simply be removed. The IDs are collected first and every
+            // record is removed before any event is raised, so no enumeration is open while
+            // subscribers run (a subscriber may call back into this service).
+            var ids = new GroundItemID[_items.Count];
+            _items.Keys.CopyTo(ids, 0);
+            for (int i = 0; i < ids.Length; i++)
+            {
+                _items[ids[i]].State = GroundItemState.Despawned;
+                _items.Remove(ids[i]);
+            }
+            for (int i = 0; i < ids.Length; i++)
+            {
+                RaiseDespawned(new GroundItemDespawnedEventArgs(ids[i]));
+            }
+        }
+
         // Auctioning -> Assigned. Resets the per-assignment data, and gives the new assignee a full
-        // pickup window when the stored expiry tick has already been reached (CR-LT-12).
-        private static void ReassignAuctionRecord(Record record, CharacterID assignee, uint currentTick)
+        // pickup window when the auction ran a winner grace (CR-LT-9.1) or the stored expiry tick
+        // has already been reached (CR-LT-12).
+        private static void ReassignAuctionRecord(Record record, CharacterID assignee, uint currentTick, bool freshPickupWindow)
         {
             record.State = GroundItemState.Assigned;
             record.AssignedTo = assignee;
@@ -549,7 +594,7 @@ namespace IronGrind.LootTableSystem
             record.Blocked = false;
             record.BagFull = false;
             record.PauseBudgetRemaining = LootTableConstants.GROUND_ITEM_TTL_PAUSE_CAP_TICKS;
-            if (StaleDiscardComparer.IsTickExpired(currentTick, record.ExpiryTick))
+            if (freshPickupWindow || StaleDiscardComparer.IsTickExpired(currentTick, record.ExpiryTick))
             {
                 record.ExpiryTick = unchecked(currentTick + (uint)LootTableConstants.GROUND_ITEM_TTL_TICKS);
             }
