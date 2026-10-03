@@ -1,13 +1,17 @@
 # Story 011: Auction Resolution and Gold Pool
 
 > **Epic**: Loot Table System
-> **Status**: Blocked
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-06-28
 > **Estimate**: 4 hours
 
 > **BLOCKED (decided 2026-10-02):** `ICurrencyService.TrySpendGold(charId, cost, reason)` requires a `GoldTransactionReason`, CR-LT-9 names none, and the enum has no auction value (`MonsterDrop=0 … CompensatingRefund=8, Other=255`). A new value must be added first so auction debits are distinguishable in audit logs — amend `design/gdd/currency-system.md` (Rule owning `GoldTransactionReason`), the wire enum in `design/gdd/networking-wire-protocol.md`, and `design/registry/entities.yaml`, then add the value in `src/Foundation/Currency/GoldTransactionReason.cs`. Use `/quick-design` or a short authoring session. Once the value exists, set this story to Ready.
+>
+> **Design done 2026-10-03:** the value is `GoldTransactionReason.AuctionBid = 9` (currency-system.md, loot-table-system.md CR-LT-9 / AC-LT-13, the wire enum, entities.yaml). The pool share stays `MonsterDrop`. **Still Blocked on code:** add `AuctionBid = 9` to `src/Foundation/Currency/GoldTransactionReason.cs`, move `WireEnumCodec.GoldTransactionReasonMaxNamedValue` to it (valid set `{0..9, 255}`), and add a round-trip test case for byte 9. Then set this story to Ready. In step 2 of the resolution below, `<new auction reason>` is `GoldTransactionReason.AuctionBid`.
+>
+> **Unblocked 2026-10-03:** `AuctionBid = 9` is in `GoldTransactionReason.cs`; `WireEnumCodec.GoldTransactionReasonMaxNamedValue` points at it (valid set `{0..9, 255}`); a byte-9 `TestCase` is added to `WireEnumCodec_DecodeGoldTransactionReason_ValidByte_PassesThroughUnchanged`. Not yet executed in the Unity Test Runner. The two notes above are history. Currency lean re-review of the amendment: APPROVED (2026-10-03).
 
 ## Context
 
@@ -50,19 +54,19 @@
 
 **Resolution:**
 1. Order the stored bids by amount descending, then by `receivedTick` ascending (earlier wins a tie).
-2. For each bid in order: `TrySpendGold(bidder, amount, <new auction reason>)`.
+2. For each bid in order: `TrySpendGold(bidder, amount, GoldTransactionReason.AuctionBid)`.
    - `Success` → this bidder wins; go to step 3.
-   - `InsufficientFunds` → disqualified; try the next bid.
+   - Any other result → disqualified; try the next bid.
 3. Winner found: `N` = current member count of the party; `goldPerMember = winnerBid / N` (integer division = `floor`); remainder discarded. For every current member, including the winner, `AddGold(member, goldPerMember, GoldTransactionReason.MonsterDrop)` — skip the call if `goldPerMember` is 0. Then call `Pickup(winner, itemId, 1)`: success → `Inventory`; bag full → the item becomes `Assigned` to the winner and Stories 007–009 apply. The gold split happens either way.
 4. No winner (zero bids, or every bidder failed): assign by round-robin (Story 006 path), state `Assigned`, raise `OnGroundItemAssigned`; no gold moves.
 5. Raise `OnAuctionResolved` — `groundItemId`, `winnerCharacterId`, `goldPerMember`, `isRoundRobinFallback` (payload of the `AuctionResolved` wire schema; winner is `CharacterID` invalid and `goldPerMember` 0 on fallback).
 
 **Disconnected members** keep their bids and can win; `Pickup` and `AddGold` run against their server-side records regardless of connection state (Edge Cases).
 
-**Points the GDD leaves open — settle at `/story-readiness`, do not guess:**
-- A bid placed by a member who has **left the party** before close: the Edge Cases say such a member "is not eligible to bid and receives no pool share" but not whether a bid already placed is dropped. The natural reading is to exclude it at resolution.
-- `TrySpendGold` errors other than `InsufficientFunds` (`CharacterNotFound`, `ConcurrencyConflict`): the GDD names only `InsufficientFunds`. Treating any non-success as disqualification, with a server error logged, is the conservative reading.
-- When the auction closes at `expiryTick` and falls back to round-robin, the item's TTL has already run out. The GDD says CR-LT-10 "applies" but not what lifetime the reassigned item has.
+**Settled at `/story-readiness` 2026-10-03 (user decisions, now in the GDD — CR-LT-9, CR-LT-12, Edge Cases):**
+- A bid placed by a character who has **left the party** before close is skipped at resolution — filter the stored bids against current membership before step 1.
+- Any `TrySpendGold` result other than `Success` (`InsufficientFunds`, `CharacterNotFound`, `ConcurrencyConflict`) disqualifies that bidder; for the two unexpected errors also log a server error. Resolution moves to the next bid.
+- When the auction closes at `expiryTick` and the item becomes `Assigned` (round-robin fallback, or a winner whose bag is full), set `expiryTick = resolutionTick + GROUND_ITEM_TTL_TICKS` so the assignee has a full pickup window. *(The bag-full-winner half was the assistant's extension of the fallback decision; confirmed by the user at `/story-done` 2026-10-03.)*
 
 ---
 
@@ -113,7 +117,18 @@
 - **Party size at close**
   - Given: party of 4 at kill time; D leaves before close; A wins with 400
   - Then: N = 3; 3 `AddGold(_, 133, MonsterDrop)` calls; D receives nothing
+  - Edge cases: D had the highest bid before leaving → D's bid is skipped, no `TrySpendGold(D, …)`; the next-highest member wins
+
+- **Unexpected spend error** *(added at readiness 2026-10-03)*
+  - Given: bids A 400 and B 350; `TrySpendGold(A, …)` returns `CharacterNotFound` (A not registered in the currency service)
+  - Then: A is disqualified, a server error is logged, B wins with 350
   - Edge cases: none
+
+- **Fresh TTL on an `expiryTick` close** *(added at readiness 2026-10-03)*
+  - Given: an auction whose `expiryTick` is earlier than its `windowCloseTick`, zero bids
+  - When: `Tick` reaches `expiryTick`
+  - Then: the item is `Assigned` with `expiryTick = that tick + GROUND_ITEM_TTL_TICKS`; no `OnGroundItemDespawned` at that tick
+  - Edge cases: one valid bid, winner's bag full → item `Assigned` to the winner with the same fresh `expiryTick`
 
 ---
 
@@ -122,11 +137,26 @@
 **Story Type**: Integration
 **Required evidence**: `tests/EditMode/Integration/LootTableSystem/LootTable_AuctionResolution_integration_tests.cs` — must exist and pass.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 23 tests, all passing (Unity 6000.3.10f1 batch-mode EditMode run, 2026-10-03: 1405/1405)
 
 ---
 
 ## Dependencies
 
-- Depends on: Story 010 (auction state and bids), Story 007 (drop fate for a winner with a full bag), Story 006 (round-robin fallback). **Blocked on** a new `GoldTransactionReason` value (see the note at the top).
+- Depends on: Story 010 (auction state and bids), Story 007 (drop fate for a winner with a full bag), Story 006 (round-robin fallback). All Complete. The `GoldTransactionReason.AuctionBid` value it was blocked on is in code (2026-10-03).
 - Unlocks: Story 012.
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-03
+**Criteria**: 6/6 passing (AC-LT-12, AC-LT-13, AC-LT-14, AC-LT-16 auction half, exhausted bidders, party size at close) — each covered by a passing test in `LootTable_AuctionResolution_integration_tests.cs`.
+**Test Evidence**: Integration — `tests/EditMode/Integration/LootTableSystem/LootTable_AuctionResolution_integration_tests.cs`, 23 tests. Real Unity Test Runner run (6000.3.10f1, batch mode, EditMode): 1405/1405 passed, including the edited Story 010 file and the byte-9 `AuctionBid` `TestCase`.
+**Code Review**: Complete — `/code-review` twice on 2026-10-03 (unity-specialist + qa-tester each time): CHANGES REQUIRED → fixed → APPROVED WITH SUGGESTIONS → suggestions applied. QL-TEST-COVERAGE and LP-CODE-REVIEW gates skipped (lean mode).
+**Implementation**: resolution runs in `LootAuctionService.Tick` (new `ICurrencyService` dependency, `OnAuctionResolved`); `GroundItemService` no longer despawns an `Auctioning` item and gains `AssignAuctionItem`, `AwardAuctionItem`, `DespawnAuctionItem` and `OnGroundItemAssigned`; new `AuctionResolvedEventArgs`, `GroundItemAssignedEventArgs`.
+**Deviations** (advisory, none blocking):
+- Additions beyond the story text: `PartyId` on `AuctionResolvedEventArgs` (routing); `IGroundItemService.DespawnAuctionItem`; a fallback with no member at the round-robin cursor, or a failure before assignment, removes the item and still raises `OnAuctionResolved` as a fallback; a failure after the winner paid delivers the item to the winner.
+- An `Auctioning` item is cleaned up only by `LootAuctionService.Tick`, and the service must exist before any auction spawns. Story 012 must flush `Auctioning` items at teardown (`DespawnAuctionItem` is available).
+- No refund when a paying winner gets no item — TD-051. Lost pool share of a party member not registered in the currency service — TD-052. Untested paths — TD-053.
+- The bag-full winner's fresh TTL on an `expiryTick` close: confirmed by the user 2026-10-03.
+- `TR-loot-010` is still a placeholder (`tr-registry.yaml` is empty, TD-014 pattern). `LootTable_AuctionBids_integration_tests.cs` (Story 010) was edited: 4-argument constructor, two expiry tests rewritten, one test added, one renamed.

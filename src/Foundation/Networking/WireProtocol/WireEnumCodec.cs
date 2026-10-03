@@ -156,17 +156,17 @@ namespace IronGrind.Networking
         }
 
         // ---------------------------------------------------------------------------------------
-        // GoldTransactionReason — non-contiguous valid set {0..8, 255}, substitute Other=255.
+        // GoldTransactionReason — non-contiguous valid set {0..9, 255}, substitute Other=255.
         // Added by Networking Core Story 007 (GoldSyncEvent.Reason decode) — see class remarks
         // for why this enum (not explicitly listed in CR-NET-7.9) still gets a guarded decoder.
         // ---------------------------------------------------------------------------------------
 
-        private const byte GoldTransactionReasonMaxNamedValue = (byte)GoldTransactionReason.CompensatingRefund;
+        private const byte GoldTransactionReasonMaxNamedValue = (byte)GoldTransactionReason.AuctionBid;
 
         /// <summary>
         /// Validates <paramref name="rawByte"/> against the non-contiguous
-        /// <see cref="GoldTransactionReason"/> valid set <c>{0..8, 255}</c> (a contiguous range
-        /// check for <c>0..8</c> plus an explicit outlier check for <c>255</c> — <c>255</c> is not
+        /// <see cref="GoldTransactionReason"/> valid set <c>{0..9, 255}</c> (a contiguous range
+        /// check for <c>0..9</c> plus an explicit outlier check for <c>255</c> — <c>255</c> is not
         /// the top of the contiguous range, matching the shape used by
         /// <see cref="DecodeDisconnectReason"/>) and casts. A byte outside this set substitutes
         /// <see cref="GoldTransactionReason.Other"/> and logs an anomaly — the message is

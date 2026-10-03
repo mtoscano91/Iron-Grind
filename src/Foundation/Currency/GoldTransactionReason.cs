@@ -39,6 +39,9 @@ namespace IronGrind.Currency
         /// <summary>Compensating refund after a downstream failure following a successful debit (ADR-001 Decision 3). Distinguishable from <see cref="AdminAdjust"/> in audit logs.</summary>
         CompensatingRefund = 8,
 
+        /// <summary>Rare-drop auction winner's bid debit (Loot Table System CR-LT-9). The pool share paid back to party members uses <see cref="MonsterDrop"/>.</summary>
+        AuctionBid = 9,
+
         /// <summary>Fallback for any reason not covered by a named value above.</summary>
         Other = 255,
     }

@@ -8,12 +8,13 @@ using IronGrind.Networking;
 namespace IronGrind.LootTableSystem
 {
     /// <summary>
-    /// Rare drop auction bids (design/gdd/loot-table-system.md CR-LT-8, CR-LT-15 server authority;
-    /// Story 010). Owns the bids and <see cref="SubmitBid"/>; the item's state, party and window close
-    /// tick belong to <see cref="IGroundItemService"/>. Drops an auction's bids when its item despawns,
-    /// so it subscribes to <see cref="IGroundItemService.OnGroundItemDespawned"/> and is
-    /// <see cref="IDisposable"/> (ADR-010). Called from the tick loop only. Closing the window and
-    /// choosing a winner are Story 011.
+    /// Rare drop auction bids and resolution (design/gdd/loot-table-system.md CR-LT-8, CR-LT-9, CR-LT-10,
+    /// CR-LT-12, CR-LT-15 server authority; Stories 010 and 011). Owns the bids, <see cref="SubmitBid"/>
+    /// and the resolution in <see cref="Tick"/>; the item's state, party, window close tick and
+    /// delivery belong to <see cref="IGroundItemService"/>. It subscribes to
+    /// <see cref="IGroundItemService.OnGroundItemSpawned"/> (to know every open auction, also one with no
+    /// bids) and <see cref="IGroundItemService.OnGroundItemDespawned"/>, so it is
+    /// <see cref="IDisposable"/> (ADR-010). Called from the tick loop only.
     /// </summary>
     public sealed class LootAuctionService : ILootAuctionService
     {
@@ -30,29 +31,47 @@ namespace IronGrind.LootTableSystem
         private readonly IGroundItemService _groundItems;
         private readonly IPartyService _partyService;
         private readonly LootEquipmentCache _equipmentCache;
+        private readonly ICurrencyService _currencyService;
         private readonly Dictionary<GroundItemID, List<Bid>> _bids = new Dictionary<GroundItemID, List<Bid>>();
+        private readonly HashSet<GroundItemID> _openAuctions = new HashSet<GroundItemID>();
+        private readonly List<GroundItemID> _dueScratch = new List<GroundItemID>();
         private bool _disposed;
 
         /// <inheritdoc/>
         public event Action<LootBidUpdateEventArgs> OnLootBidUpdate;
 
-        /// <summary>Creates the service and subscribes to the ground item despawn event.</summary>
-        /// <param name="groundItems">Supplies the auction item's state, party and window close tick.</param>
-        /// <param name="partyService">Answers which party a bidder belongs to.</param>
+        /// <inheritdoc/>
+        public event Action<AuctionResolvedEventArgs> OnAuctionResolved;
+
+        /// <summary>
+        /// Creates the service and subscribes to the ground item spawn and despawn events. Create it
+        /// before any auction is spawned: an auction that already exists is not tracked, so it would
+        /// never be resolved.
+        /// </summary>
+        /// <param name="groundItems">Supplies the auction item's state, party and ticks, and delivers the item.</param>
+        /// <param name="partyService">Answers which party a bidder belongs to, its members and its round-robin.</param>
         /// <param name="equipmentCache">Supplies the item's <c>SellPriceGold</c> (the bid floor).</param>
+        /// <param name="currencyService">Debits the winning bid and pays the pool share to the members.</param>
         /// <exception cref="ArgumentNullException">Any argument is null.</exception>
-        public LootAuctionService(IGroundItemService groundItems, IPartyService partyService, LootEquipmentCache equipmentCache)
+        public LootAuctionService(
+            IGroundItemService groundItems,
+            IPartyService partyService,
+            LootEquipmentCache equipmentCache,
+            ICurrencyService currencyService)
         {
             _groundItems = groundItems ?? throw new ArgumentNullException(nameof(groundItems));
             _partyService = partyService ?? throw new ArgumentNullException(nameof(partyService));
             _equipmentCache = equipmentCache ?? throw new ArgumentNullException(nameof(equipmentCache));
+            _currencyService = currencyService ?? throw new ArgumentNullException(nameof(currencyService));
+            _groundItems.OnGroundItemSpawned += HandleGroundItemSpawned;
             _groundItems.OnGroundItemDespawned += HandleGroundItemDespawned;
         }
 
         /// <summary>
-        /// Unsubscribes from the despawn event and drops every stored bid. Safe to call more than
-        /// once. After it, <see cref="SubmitBid"/> rejects every bid as
-        /// <see cref="LootBidResult.NotAuctioning"/>: nothing would clean a bid up any more.
+        /// Unsubscribes from the ground item events and drops every stored bid and open auction. Safe
+        /// to call more than once. After it, <see cref="SubmitBid"/> rejects every bid as
+        /// <see cref="LootBidResult.NotAuctioning"/> and <see cref="Tick"/> does nothing: nothing
+        /// would clean a bid up any more.
         /// </summary>
         public void Dispose()
         {
@@ -61,14 +80,26 @@ namespace IronGrind.LootTableSystem
                 return;
             }
             _disposed = true;
+            _groundItems.OnGroundItemSpawned -= HandleGroundItemSpawned;
             _groundItems.OnGroundItemDespawned -= HandleGroundItemDespawned;
             _bids.Clear();
+            _openAuctions.Clear();
+        }
+
+        // Must never throw: it runs inside the ground item service's spawn announcement.
+        private void HandleGroundItemSpawned(GroundItemSpawnedEventArgs args)
+        {
+            if (args.IsAuction)
+            {
+                _openAuctions.Add(args.GroundItemId);
+            }
         }
 
         // Must never throw: it runs inside the ground item service's despawn announcement.
         private void HandleGroundItemDespawned(GroundItemDespawnedEventArgs args)
         {
             _bids.Remove(args.GroundItemId);
+            _openAuctions.Remove(args.GroundItemId);
         }
 
         /// <inheritdoc/>
@@ -125,7 +156,7 @@ namespace IronGrind.LootTableSystem
             }
 
             // A raise moves the bidder to the end, so the list stays in arrival order of each
-            // member's current bid. Story 011 breaks a tie on the received tick first; arrival
+            // member's current bid. Resolution breaks a tie on the received tick first; arrival
             // order is what is left when two bids share an amount and a tick.
             if (existing >= 0)
             {
@@ -155,6 +186,262 @@ namespace IronGrind.LootTableSystem
             return false;
         }
 
+        /// <inheritdoc/>
+        public void Tick(uint currentTick)
+        {
+            if (_disposed || _openAuctions.Count == 0)
+            {
+                return;
+            }
+
+            // Only IDs are collected here; resolution raises events and calls other systems, so no
+            // enumeration may be open while it runs.
+            _dueScratch.Clear();
+            foreach (GroundItemID id in _openAuctions)
+            {
+                if (!_groundItems.TryGetGroundItem(id, out GroundItem item))
+                {
+                    _dueScratch.Add(id);
+                }
+                else if (item.State == GroundItemState.Auctioning
+                    && (StaleDiscardComparer.IsTickExpired(currentTick, item.WindowCloseTick)
+                        || StaleDiscardComparer.IsTickExpired(currentTick, item.ExpiryTick)))
+                {
+                    _dueScratch.Add(id);
+                }
+            }
+            if (_dueScratch.Count == 0)
+            {
+                return;
+            }
+
+            GroundItemID[] due = _dueScratch.ToArray();
+            _dueScratch.Clear();
+            for (int i = 0; i < due.Length; i++)
+            {
+                try
+                {
+                    ResolveAuction(due[i], currentTick);
+                }
+                catch (Exception exception)
+                {
+                    // One auction's failure must not stop the others.
+                    UnityEngine.Debug.LogException(exception);
+                }
+            }
+        }
+
+        // CR-LT-9 / CR-LT-10. The party is read first: if that throws, nothing has changed and the
+        // auction is tried again on the next tick. Once the bids are taken, the auction is final:
+        // whatever fails after that, the item leaves Auctioning and the outcome is announced.
+        private void ResolveAuction(GroundItemID id, uint currentTick)
+        {
+            if (!_groundItems.TryGetGroundItem(id, out GroundItem item) || item.State != GroundItemState.Auctioning)
+            {
+                ForgetAuction(id);
+                return;
+            }
+
+            IReadOnlyList<CharacterID> members = _partyService.GetPartyMembers(item.PartyId);
+            int memberCount = members == null ? 0 : members.Count;
+
+            List<Bid> ordered = TakeValidBidsInOrder(id, members, memberCount);
+            ForgetAuction(id);
+
+            CharacterID winner = CharacterID.Invalid;
+            uint goldPerMember = 0u;
+            try
+            {
+                winner = FindWinner(ordered, out uint winningBid);
+                if (winner == CharacterID.Invalid)
+                {
+                    AssignByRoundRobin(id, item.PartyId, currentTick);
+                }
+                else
+                {
+                    // Integer division is floor; the remainder is discarded. The winner is a
+                    // current member, so memberCount is at least 1.
+                    goldPerMember = winningBid / (uint)memberCount;
+                    PayPool(members, memberCount, goldPerMember);
+                    DeliverToWinner(id, winner, winningBid, currentTick);
+                }
+            }
+            catch (Exception exception)
+            {
+                UnityEngine.Debug.LogException(exception);
+                RecoverFailedResolution(id, winner, currentTick);
+            }
+
+            bool isFallback = winner == CharacterID.Invalid;
+            RaiseResolved(new AuctionResolvedEventArgs(id, winner, goldPerMember, isFallback, item.PartyId));
+        }
+
+        // The first bid, in order, whose gold debit succeeds.
+        private CharacterID FindWinner(List<Bid> ordered, out uint winningBid)
+        {
+            for (int i = 0; i < ordered.Count; i++)
+            {
+                if (TrySpend(ordered[i]))
+                {
+                    winningBid = ordered[i].Amount;
+                    return ordered[i].Bidder;
+                }
+            }
+            winningBid = 0u;
+            return CharacterID.Invalid;
+        }
+
+        // A full bag is not a failure: the item stays assigned to the winner (CR-LT-13). The item
+        // being gone without a delivery means the pickup threw and the ground item service removed it.
+        private void DeliverToWinner(GroundItemID id, CharacterID winner, uint winningBid, uint currentTick)
+        {
+            if (!_groundItems.AwardAuctionItem(id, winner, currentTick) && !_groundItems.TryGetGroundItem(id, out _))
+            {
+                UnityEngine.Debug.LogError(
+                    $"[LootAuctionService] Resolve: {id} was not delivered to winner {winner}, who paid {winningBid}; the item was removed and the bid is not refunded.");
+            }
+        }
+
+        // A step threw after the bids were taken. The item must not stay Auctioning: nothing would
+        // ever resolve or despawn it. A winner who has already paid gets it; otherwise it is removed.
+        // Never throws: the caller still has to announce the outcome.
+        private void RecoverFailedResolution(GroundItemID id, CharacterID winner, uint currentTick)
+        {
+            try
+            {
+                if (!_groundItems.TryGetGroundItem(id, out GroundItem item) || item.State != GroundItemState.Auctioning)
+                {
+                    return;
+                }
+
+                if (winner != CharacterID.Invalid)
+                {
+                    UnityEngine.Debug.LogError(
+                        $"[LootAuctionService] Resolve: {id} failed after winner {winner} paid; the item goes to the winner.");
+                    _groundItems.AwardAuctionItem(id, winner, currentTick);
+                }
+                else
+                {
+                    UnityEngine.Debug.LogError(
+                        $"[LootAuctionService] Resolve: {id} failed before it could be assigned; the item is removed.");
+                    _groundItems.DespawnAuctionItem(id);
+                }
+            }
+            catch (Exception exception)
+            {
+                UnityEngine.Debug.LogException(exception);
+            }
+        }
+
+        // Drops bids of characters who left the party, then orders by amount (highest first), received
+        // tick (earliest first) and arrival (the list order). A stable insertion sort keeps the arrival order.
+        private List<Bid> TakeValidBidsInOrder(GroundItemID id, IReadOnlyList<CharacterID> members, int memberCount)
+        {
+            var ordered = new List<Bid>();
+            if (!_bids.TryGetValue(id, out List<Bid> stored))
+            {
+                return ordered;
+            }
+
+            for (int i = 0; i < stored.Count; i++)
+            {
+                if (!IsMember(members, memberCount, stored[i].Bidder))
+                {
+                    continue;
+                }
+                Bid bid = stored[i];
+                int position = ordered.Count;
+                while (position > 0 && ComesBefore(bid, ordered[position - 1]))
+                {
+                    position--;
+                }
+                ordered.Insert(position, bid);
+            }
+            return ordered;
+        }
+
+        private static bool ComesBefore(Bid candidate, Bid other)
+        {
+            if (candidate.Amount != other.Amount)
+            {
+                return candidate.Amount > other.Amount;
+            }
+            // Earlier means the other bid's tick is newer (wraparound-safe; equal ticks are not earlier).
+            return StaleDiscardComparer.IsNewerVersion(candidate.ReceivedTick, other.ReceivedTick);
+        }
+
+        private static bool IsMember(IReadOnlyList<CharacterID> members, int memberCount, CharacterID character)
+        {
+            for (int i = 0; i < memberCount; i++)
+            {
+                if (members[i] == character)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // Success wins; anything else disqualifies the bidder. Only an InsufficientFunds is expected.
+        private bool TrySpend(Bid bid)
+        {
+            GoldMutationResult result = _currencyService.TrySpendGold(bid.Bidder, bid.Amount, GoldTransactionReason.AuctionBid);
+            if (result.Success)
+            {
+                return true;
+            }
+            if (result.Error != GoldMutationError.InsufficientFunds)
+            {
+                UnityEngine.Debug.LogError(
+                    $"[LootAuctionService] Resolve: TrySpendGold({bid.Bidder}, {bid.Amount}) failed with {result.Error}; the bidder is disqualified.");
+            }
+            return false;
+        }
+
+        // Every current member, the winner included, gets the share. A failed credit is logged and
+        // the rest are still paid. Pays exactly the memberCount the share was divided by.
+        private void PayPool(IReadOnlyList<CharacterID> members, int memberCount, uint goldPerMember)
+        {
+            if (goldPerMember == 0u)
+            {
+                return;
+            }
+            for (int i = 0; i < memberCount; i++)
+            {
+                GoldMutationResult result = _currencyService.AddGold(members[i], goldPerMember, GoldTransactionReason.MonsterDrop);
+                if (!result.Success)
+                {
+                    UnityEngine.Debug.LogError(
+                        $"[LootAuctionService] Resolve: AddGold({members[i]}, {goldPerMember}) failed with {result.Error}.");
+                }
+            }
+        }
+
+        // CR-LT-10, as LootDropDistributor.AssignByRoundRobin: read the cursor, resolve the member,
+        // assign, then advance the cursor exactly once (also for an invalid slot, so the rotation never stalls).
+        private void AssignByRoundRobin(GroundItemID id, PartyID party, uint currentTick)
+        {
+            int cursor = _partyService.GetRrNextIndex(party);
+            CharacterID assignee = _partyService.GetMemberAtIndex(party, cursor);
+            if (assignee == CharacterID.Invalid)
+            {
+                UnityEngine.Debug.LogError(
+                    $"[LootAuctionService] Resolve: no member at round-robin cursor {cursor} of {party} for {id}; the item is removed.");
+                _groundItems.DespawnAuctionItem(id);
+            }
+            else
+            {
+                _groundItems.AssignAuctionItem(id, assignee, currentTick);
+            }
+            _partyService.AdvanceRrNextIndex(party);
+        }
+
+        private void ForgetAuction(GroundItemID id)
+        {
+            _bids.Remove(id);
+            _openAuctions.Remove(id);
+        }
+
         private static int IndexOfBidder(List<Bid> bids, CharacterID bidder)
         {
             for (int i = 0; i < bids.Count; i++)
@@ -173,6 +460,19 @@ namespace IronGrind.LootTableSystem
             try
             {
                 OnLootBidUpdate?.Invoke(args);
+            }
+            catch (Exception exception)
+            {
+                UnityEngine.Debug.LogException(exception);
+            }
+        }
+
+        // A subscriber failure must not undo the resolution or stop the other due auctions.
+        private void RaiseResolved(AuctionResolvedEventArgs args)
+        {
+            try
+            {
+                OnAuctionResolved?.Invoke(args);
             }
             catch (Exception exception)
             {

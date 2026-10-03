@@ -628,6 +628,7 @@ namespace IronGrind.Tests.EditMode.Networking
 
         [TestCase((byte)GoldTransactionReason.MonsterDrop, GoldTransactionReason.MonsterDrop)]
         [TestCase((byte)GoldTransactionReason.CompensatingRefund, GoldTransactionReason.CompensatingRefund)]
+        [TestCase((byte)GoldTransactionReason.AuctionBid, GoldTransactionReason.AuctionBid)]
         [TestCase((byte)GoldTransactionReason.Other, GoldTransactionReason.Other)]
         public void WireEnumCodec_DecodeGoldTransactionReason_ValidByte_PassesThroughUnchanged(byte rawByte, GoldTransactionReason expected)
         {

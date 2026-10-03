@@ -3,8 +3,8 @@
 > **Layer**: Core
 > **GDD**: design/gdd/loot-table-system.md
 > **Architecture Module**: Loot Table
-> **Status**: In Progress (10/12 — Stories 001–010 Complete 2026-10-02; the last two wait on a currency-system.md amendment)
-> **Stories**: 12 stories created (001–012) on 2026-10-02 — 10 Complete, 1 Ready but dependent on 011 (012), 1 Blocked (011: needs a new `GoldTransactionReason` value)
+> **Status**: In Progress (11/12 — Stories 001–010 Complete 2026-10-02, Story 011 Complete 2026-10-03)
+> **Stories**: 12 stories created (001–012) on 2026-10-02 — 11 Complete, 1 Ready (012 — its dependency 011 is Complete)
 
 ## Overview
 
@@ -58,13 +58,13 @@ This epic is complete when:
 | 008 | Bag-Full Recovery — Blocked Notice, In-Radius Retry, Expiry Warning | Integration | Complete | ADR-010 |
 | 009 | TTL Pause on App Background | Integration | Complete | ADR-010 |
 | 010 | Rare Drop Auction — Open, Bid Validation, Broadcast | Integration | Complete | ADR-010 |
-| 011 | Auction Resolution and Gold Pool | Integration | Blocked | ADR-010 |
+| 011 | Auction Resolution and Gold Pool | Integration | Complete | ADR-010 |
 | 012 | Zone Teardown Loot Flush | Integration | Ready | ADR-010 |
 
 Work through stories in order — each story's `Depends on:` field tells you what must be Done before you can start it.
 
 **Open items recorded at story creation (2026-10-02):**
-- **Story 011 is Blocked**: `TrySpendGold` needs a `GoldTransactionReason` and none exists for an auction debit. Amend currency-system.md (plus the wire enum and entities.yaml) to add one.
+- **Story 011 is Blocked**: `TrySpendGold` needs a `GoldTransactionReason` and none exists for an auction debit. Amend currency-system.md (plus the wire enum and entities.yaml) to add one. **Design done 2026-10-03** — `GoldTransactionReason.AuctionBid = 9`; the story stays Blocked until the value is added in code (`GoldTransactionReason.cs`, `WireEnumCodec` range, one test case). **Unblocked 2026-10-03** — the value, the codec range and the test case are in; story 011 is Ready (the new test case has not yet been run in the Unity Test Runner).
 - **F-LT-3 arithmetic**: `Mathf.CeilToInt(300 × 0.33f)` is 100 in single precision, but AC-LT-4 expects 99. Story 003 computes the threshold in exact integer arithmetic from a per-mille constant (`TAG_THRESHOLD_PERMILLE = 330`); the GDD formula wording and the registry's float `TAG_THRESHOLD_FRACTION` entry need a fix.
 - **`tierShift`**: `ResolveMobDrop` accepts it and does not apply it (enemy-ai.md OQ-AI-1 — the loot GDD has no tier-shift rule).
 - **Round-robin cursor**: party-system.md exposes no getter for `rrNextIndex`; Story 006 declares one on its consumer-side `IPartyService`.

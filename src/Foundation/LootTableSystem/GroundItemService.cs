@@ -101,6 +101,9 @@ namespace IronGrind.LootTableSystem
         /// <inheritdoc/>
         public event Action<GroundItemExpiryWarningEventArgs> OnGroundItemExpiryWarning;
 
+        /// <inheritdoc/>
+        public event Action<GroundItemAssignedEventArgs> OnGroundItemAssigned;
+
         /// <summary>Creates the ground item service and subscribes to the inventory change event.</summary>
         /// <param name="equipmentCache">Supplies the gear tier reported in the spawn event.</param>
         /// <param name="inventoryService">Receives the automatic pickup calls (CR-LT-7) and the change event.</param>
@@ -453,18 +456,19 @@ namespace IronGrind.LootTableSystem
 
         // Assigned -> Claiming -> Inventory on success; back to Assigned (same assignee, same
         // ExpiryTick) on a failed result. Pickup is synchronous, so Claiming never outlives this call.
-        private void TryClaim(GroundItemID id, uint currentTick, bool isRetry)
+        // Returns true only when the item reached the inventory.
+        private bool TryClaim(GroundItemID id, uint currentTick, bool isRetry)
         {
             if (!_items.TryGetValue(id, out Record record) || record.State != GroundItemState.Assigned)
             {
-                return;
+                return false;
             }
 
             record.State = GroundItemState.Claiming;
             if (!TryInvokePickup(record, out PickupResult result))
             {
                 RemoveAfterThrownPickup(record);
-                return;
+                return false;
             }
 
             if (result.Success)
@@ -472,11 +476,96 @@ namespace IronGrind.LootTableSystem
                 record.State = GroundItemState.Inventory;
                 record.Blocked = false;
                 _items.Remove(id);
-                return;
+                return true;
             }
 
             record.State = GroundItemState.Assigned;
             HandlePickupFailure(record, result.Reason, currentTick, isRetry);
+            return false;
+        }
+
+        /// <inheritdoc/>
+        public bool AssignAuctionItem(GroundItemID id, CharacterID assignee, uint currentTick)
+        {
+            if (!_items.TryGetValue(id, out Record record) || record.State != GroundItemState.Auctioning)
+            {
+                return false;
+            }
+
+            if (assignee == CharacterID.Invalid)
+            {
+                UnityEngine.Debug.LogError(
+                    $"[GroundItemService] AssignAuctionItem: assignee is invalid (0) for {id}; nobody could claim it, so it is removed.");
+                DespawnAuctionItem(id);
+                return false;
+            }
+
+            ReassignAuctionRecord(record, assignee, currentTick);
+            RaiseAssigned(new GroundItemAssignedEventArgs(id, assignee));
+            return true;
+        }
+
+        /// <inheritdoc/>
+        public bool AwardAuctionItem(GroundItemID id, CharacterID winner, uint currentTick)
+        {
+            if (winner == CharacterID.Invalid
+                || !_items.TryGetValue(id, out Record record)
+                || record.State != GroundItemState.Auctioning)
+            {
+                return false;
+            }
+
+            ReassignAuctionRecord(record, winner, currentTick);
+
+            // The delivery below is this assignee's pickup attempt. Without the real "inside" flag a
+            // winner standing on the item would count as newly entered on the next Tick and, with a
+            // full bag, get the blocked notice a second time.
+            record.AssigneeInside = IsAssigneeInsideRadius(record);
+            return TryClaim(id, currentTick, false);
+        }
+
+        /// <inheritdoc/>
+        public bool DespawnAuctionItem(GroundItemID id)
+        {
+            if (!_items.TryGetValue(id, out Record record) || record.State != GroundItemState.Auctioning)
+            {
+                return false;
+            }
+
+            record.State = GroundItemState.Despawned;
+            _items.Remove(id);
+            RaiseDespawned(new GroundItemDespawnedEventArgs(id));
+            return true;
+        }
+
+        // Auctioning -> Assigned. Resets the per-assignment data, and gives the new assignee a full
+        // pickup window when the stored expiry tick has already been reached (CR-LT-12).
+        private static void ReassignAuctionRecord(Record record, CharacterID assignee, uint currentTick)
+        {
+            record.State = GroundItemState.Assigned;
+            record.AssignedTo = assignee;
+            record.WindowCloseTick = 0u;
+            record.AssigneeInside = false;
+            record.Blocked = false;
+            record.BagFull = false;
+            record.PauseBudgetRemaining = LootTableConstants.GROUND_ITEM_TTL_PAUSE_CAP_TICKS;
+            if (StaleDiscardComparer.IsTickExpired(currentTick, record.ExpiryTick))
+            {
+                record.ExpiryTick = unchecked(currentTick + (uint)LootTableConstants.GROUND_ITEM_TTL_TICKS);
+            }
+        }
+
+        // A subscriber failure must not undo the assignment.
+        private void RaiseAssigned(GroundItemAssignedEventArgs args)
+        {
+            try
+            {
+                OnGroundItemAssigned?.Invoke(args);
+            }
+            catch (Exception exception)
+            {
+                UnityEngine.Debug.LogException(exception);
+            }
         }
 
         private bool TryInvokePickup(Record record, out PickupResult result)
@@ -594,14 +683,17 @@ namespace IronGrind.LootTableSystem
         }
 
         // Expiry uses IsTickExpired: wraparound-safe, and equality means "expired". A claim in
-        // flight (only visible to a re-entrant Tick) is not destroyed.
+        // flight (only visible to a re-entrant Tick) is not destroyed. An auction is never despawned
+        // here (AC-LT-16): the auction service resolves it, so it never disappears silently.
         private void ExpireItems(uint currentTick)
         {
             _expiredScratch.Clear();
             foreach (KeyValuePair<GroundItemID, Record> pair in _items)
             {
                 Record record = pair.Value;
-                if (record.State != GroundItemState.Claiming && IsExpired(record, currentTick))
+                if (record.State != GroundItemState.Claiming
+                    && record.State != GroundItemState.Auctioning
+                    && IsExpired(record, currentTick))
                 {
                     record.State = GroundItemState.Despawned;
                     _expiredScratch.Add(record.Id);

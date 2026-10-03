@@ -60,8 +60,10 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
         private const uint RAISE_TICK = OPEN_TICK + 10u;
         private const uint WRAP_SPAWN_TICK = uint.MaxValue - 300u;
 
+        private const uint STARTING_GOLD = 1000u;
         private const int NO_LOGS = 0;
         private const int ONE_EVENT = 1;
+        private const int ONE_CALL = 1;
         private const int NO_CALLS = 0;
         private const int ONE_UPDATE = 1;
         private const int TWO_UPDATES = 2;
@@ -210,6 +212,7 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
             public LootEquipmentCache Cache;
             public LootDropDistributor Distributor;
             public LootAuctionService Auction;
+            public CurrencySystem Currency;
             public readonly List<GroundItemSpawnedEventArgs> Spawned = new List<GroundItemSpawnedEventArgs>();
             public readonly List<GroundItemExpiryWarningEventArgs> Warnings = new List<GroundItemExpiryWarningEventArgs>();
             public readonly List<LootBidUpdateEventArgs> Updates = new List<LootBidUpdateEventArgs>();
@@ -262,7 +265,10 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
             rig.Ground.OnGroundItemExpiryWarning += rig.RecordWarning;
             rig.Ground.OnGroundItemDespawned += rig.RecordDespawn;
             rig.Distributor = new LootDropDistributor(rig.Parties, rig.Cache, rig.Ground, rig.ReadTick);
-            rig.Auction = new LootAuctionService(rig.Ground, rig.Parties, rig.Cache);
+            rig.Currency = new CurrencySystem();
+            rig.Currency.RegisterCharacter(CharA, STARTING_GOLD);
+            rig.Currency.RegisterCharacter(CharB, STARTING_GOLD);
+            rig.Auction = new LootAuctionService(rig.Ground, rig.Parties, rig.Cache, rig.Currency);
             rig.Auction.OnLootBidUpdate += rig.RecordUpdate;
             _rig = rig;
             return rig;
@@ -420,9 +426,9 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
         }
 
         [Test]
-        public void Tick_AfterTheWindowClosed_AuctionStaysAuctioningUntilItsExpiryTick()
+        public void Tick_AfterTheWindowClosedWithoutAnAuctionTick_AuctionStaysAuctioning()
         {
-            // Arrange: until Story 011 nothing resolves a closed auction
+            // Arrange: only the auction service's Tick resolves a closed auction; it is not called here
             Rig rig = BuildRig();
             GroundItemID id = OpenAuction(rig, Steel);
 
@@ -545,7 +551,7 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
             // Arrange: a second auction service over an empty cache
             Rig rig = BuildRig();
             GroundItemID id = OpenAuction(rig, Steel);
-            using (var blind = new LootAuctionService(rig.Ground, rig.Parties, new LootEquipmentCache(new EmptyItemDatabase())))
+            using (var blind = new LootAuctionService(rig.Ground, rig.Parties, new LootEquipmentCache(new EmptyItemDatabase()), rig.Currency))
             {
                 LogAssert.Expect(LogType.Error, new Regex(@"\[LootAuctionService\] SubmitBid.*equipment cache"));
 
@@ -739,9 +745,10 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
             Rig rig = BuildRig();
 
             // Act / Assert
-            Assert.Throws<ArgumentNullException>(() => new LootAuctionService(null, rig.Parties, rig.Cache));
-            Assert.Throws<ArgumentNullException>(() => new LootAuctionService(rig.Ground, null, rig.Cache));
-            Assert.Throws<ArgumentNullException>(() => new LootAuctionService(rig.Ground, rig.Parties, null));
+            Assert.Throws<ArgumentNullException>(() => new LootAuctionService(null, rig.Parties, rig.Cache, rig.Currency));
+            Assert.Throws<ArgumentNullException>(() => new LootAuctionService(rig.Ground, null, rig.Cache, rig.Currency));
+            Assert.Throws<ArgumentNullException>(() => new LootAuctionService(rig.Ground, rig.Parties, null, rig.Currency));
+            Assert.Throws<ArgumentNullException>(() => new LootAuctionService(rig.Ground, rig.Parties, rig.Cache, null));
         }
 
         [Test]
@@ -781,7 +788,28 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
         }
 
         [Test]
-        public void Tick_AuctionItemReachesExpiry_DropsItsBidsAndLaterBidsAreRejected()
+        public void Tick_AuctionItemReachesExpiry_ResolvesItDropsItsBidsAndLaterBidsAreRejected()
+        {
+            // Arrange: since Story 011 the ground item service never despawns an auction; the
+            // auction service resolves it (A, who has the gold, wins and the item is delivered)
+            Rig rig = BuildRig();
+            GroundItemID id = OpenAuction(rig, Steel);
+            Assert.AreEqual(LootBidResult.Accepted, rig.Auction.SubmitBid(CharA, id, BID_A_FIRST, OPEN_TICK));
+
+            // Act
+            rig.Ground.Tick(EXPIRY_TICK);
+            rig.Auction.Tick(EXPIRY_TICK);
+
+            // Assert: no despawn event, the item is delivered, the bids are gone, the auction no longer exists
+            Assert.AreEqual(NO_ITEMS, rig.Despawned.Count);
+            Assert.AreEqual(ONE_CALL, rig.Inventory.Calls.Count);
+            Assert.IsFalse(rig.Ground.TryGetGroundItem(id, out _));
+            Assert.IsFalse(rig.Auction.TryGetBid(id, CharA, out _, out _));
+            Assert.AreEqual(LootBidResult.NotAuctioning, rig.Auction.SubmitBid(CharA, id, BID_A_RAISED, EXPIRY_TICK));
+        }
+
+        [Test]
+        public void DespawnAuctionItem_AuctionWithABid_DropsItsBidsAndLaterBidsAreRejected()
         {
             // Arrange
             Rig rig = BuildRig();
@@ -789,17 +817,18 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
             Assert.AreEqual(LootBidResult.Accepted, rig.Auction.SubmitBid(CharA, id, BID_A_FIRST, OPEN_TICK));
 
             // Act
-            rig.Ground.Tick(EXPIRY_TICK);
+            bool removed = rig.Ground.DespawnAuctionItem(id);
 
-            // Assert: one despawn event, the bids are gone, and the auction no longer exists
+            // Assert: the despawn event cleans the auction service's bids up
+            Assert.IsTrue(removed);
             Assert.AreEqual(ONE_EVENT, rig.Despawned.Count);
             Assert.AreEqual(id, rig.Despawned[0].GroundItemId);
             Assert.IsFalse(rig.Auction.TryGetBid(id, CharA, out _, out _));
-            Assert.AreEqual(LootBidResult.NotAuctioning, rig.Auction.SubmitBid(CharA, id, BID_A_RAISED, EXPIRY_TICK));
+            Assert.AreEqual(LootBidResult.NotAuctioning, rig.Auction.SubmitBid(CharA, id, BID_A_RAISED, OPEN_TICK));
         }
 
         [Test]
-        public void Tick_OneOfTwoAuctionsExpires_TheOtherKeepsItsBids()
+        public void Tick_OneOfTwoAuctionsResolves_TheOtherKeepsItsBids()
         {
             // Arrange: a second auction opened later, so it expires later
             Rig rig = BuildRig();
@@ -810,8 +839,9 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
             Assert.AreEqual(LootBidResult.Accepted, rig.Auction.SubmitBid(CharA, first, BID_A_FIRST, OPEN_TICK + 1u));
             Assert.AreEqual(LootBidResult.Accepted, rig.Auction.SubmitBid(CharB, second, (uint)DARK_STEEL_PRICE, OPEN_TICK + 1u));
 
-            // Act: only the first reaches its expiry tick
-            rig.Ground.Tick(EXPIRY_TICK);
+            // Act: only the first reaches its window close tick (the second closes one tick later)
+            rig.Ground.Tick(WINDOW_CLOSE_TICK);
+            rig.Auction.Tick(WINDOW_CLOSE_TICK);
 
             // Assert
             Assert.IsFalse(rig.Auction.TryGetBid(first, CharA, out _, out _));

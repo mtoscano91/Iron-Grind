@@ -18,7 +18,12 @@ namespace IronGrind.LootTableSystem
         /// <summary>Raised synchronously inside <see cref="Spawn"/> or <see cref="SpawnAuction"/>, once per item, after the record is stored.</summary>
         event Action<GroundItemSpawnedEventArgs> OnGroundItemSpawned;
 
-        /// <summary>Raised once per item from <see cref="Tick"/>, after the expired record has been removed.</summary>
+        /// <summary>
+        /// Raised once per item, after its record has been removed: from <see cref="Tick"/> for an
+        /// expired item or one whose pickup threw, from <see cref="DespawnAuctionItem"/>, from
+        /// <see cref="AssignAuctionItem"/> with an invalid assignee, and from
+        /// <see cref="AwardAuctionItem"/> when the pickup throws.
+        /// </summary>
         event Action<GroundItemDespawnedEventArgs> OnGroundItemDespawned;
 
         /// <summary>
@@ -34,6 +39,14 @@ namespace IronGrind.LootTableSystem
         /// after the pickup step. An item that was picked up, or is in another state, gets none.
         /// </summary>
         event Action<GroundItemExpiryWarningEventArgs> OnGroundItemExpiryWarning;
+
+        /// <summary>
+        /// Raised synchronously inside <see cref="AssignAuctionItem"/> after the item has been assigned
+        /// (the CR-LT-10 round-robin fallback of an auction with no valid bid). The network layer turns
+        /// it into <c>GroundItemAssigned</c>. Not raised by <see cref="AwardAuctionItem"/>: the winner
+        /// is announced by the auction's own resolution event.
+        /// </summary>
+        event Action<GroundItemAssignedEventArgs> OnGroundItemAssigned;
 
         /// <summary>
         /// Spawns a ground item in <see cref="GroundItemState.Spawning"/> with
@@ -84,7 +97,8 @@ namespace IronGrind.LootTableSystem
         /// during a tick is kept for the next one. (3) An
         /// <see cref="GroundItemState.Assigned"/> item whose remaining ticks equal
         /// <c>EXPIRY_WARNING_TICKS</c> raises <see cref="OnGroundItemExpiryWarning"/> once.
-        /// (4) Every remaining item whose expiry tick is reached is removed and then announced once
+        /// (4) Every remaining item whose expiry tick is reached, except an
+        /// <see cref="GroundItemState.Auctioning"/> one, is removed and then announced once
         /// through <see cref="OnGroundItemDespawned"/>. A pickup on the expiry tick is therefore
         /// attempted before the item despawns. Allocates nothing on a tick where no pickup
         /// triggers, no retry is due, no warning is raised and nothing expires.
@@ -110,13 +124,15 @@ namespace IronGrind.LootTableSystem
         /// Every other non-terminal state expires in step 4.
         /// </para>
         /// <para>
-        /// An <see cref="GroundItemState.Auctioning"/> item is never picked up, warned about or
-        /// paused. For now it simply despawns at its expiry tick like any other item, also after
-        /// its bid window has closed; Story 011 must branch on the state in step 4 so that an
-        /// auction is resolved instead of despawned.
-        /// A story that reassigns an item must reset its per-assignment data — the "assignee was
-        /// inside" flag (or the new assignee's first entry is missed), the bag-full flag, and the
-        /// pause budget.
+        /// An <see cref="GroundItemState.Auctioning"/> item is never picked up, warned about, paused or
+        /// despawned by this method, also after its bid window has closed or its expiry tick has
+        /// passed (AC-LT-16: no silent despawn). <see cref="ILootAuctionService.Tick"/> resolves it
+        /// and moves it on through <see cref="AssignAuctionItem"/> or <see cref="AwardAuctionItem"/>.
+        /// Both reset the item's bag-full flag and pause budget. <see cref="AssignAuctionItem"/> clears
+        /// the "assignee was inside" flag, so the new assignee's first entry triggers a pickup;
+        /// <see cref="AwardAuctionItem"/> sets it from the winner's actual position, because the
+        /// delivery is that entry's pickup attempt. Any later story that reassigns an item must
+        /// handle the same three pieces of per-assignment data.
         /// </para>
         /// <para>
         /// The order of the despawn events of items that expire on the same tick is unspecified. An
@@ -163,6 +179,48 @@ namespace IronGrind.LootTableSystem
         /// <param name="characterId">The character whose client disconnected or left the zone.</param>
         /// <param name="tick">The server tick of the disconnect.</param>
         void NotifyClientDisconnected(CharacterID characterId, uint tick);
+
+        /// <summary>
+        /// The CR-LT-10 fallback: assigns an <see cref="GroundItemState.Auctioning"/> item to
+        /// <paramref name="assignee"/> (state <see cref="GroundItemState.Assigned"/>), resets its
+        /// per-assignment data, gives it a fresh <c>GROUND_ITEM_TTL_TICKS</c> from
+        /// <paramref name="currentTick"/> when its stored expiry tick has been reached, and raises
+        /// <see cref="OnGroundItemAssigned"/>. Any other item (unknown, or not auctioning) returns false
+        /// and changes nothing. An invalid <paramref name="assignee"/> logs one error, removes the item
+        /// (nobody could claim it), raises <see cref="OnGroundItemDespawned"/> and returns false.
+        /// </summary>
+        /// <param name="id">The auctioned ground item.</param>
+        /// <param name="assignee">The member the round-robin picked.</param>
+        /// <param name="currentTick">The current server tick.</param>
+        /// <returns>True when the item was assigned.</returns>
+        bool AssignAuctionItem(GroundItemID id, CharacterID assignee, uint currentTick);
+
+        /// <summary>
+        /// The CR-LT-9 winner delivery: assigns an <see cref="GroundItemState.Auctioning"/> item to
+        /// <paramref name="winner"/> exactly as <see cref="AssignAuctionItem"/> does (same resets, same
+        /// fresh expiry rule) without raising <see cref="OnGroundItemAssigned"/>, then attempts the pickup
+        /// at once, with no proximity requirement. Success removes the item and returns true. A full
+        /// bag leaves it <see cref="GroundItemState.Assigned"/> to the winner with the bag-full
+        /// handling of CR-LT-13 and returns false; a winner standing inside the pickup radius is
+        /// recorded as inside, so the next <see cref="Tick"/> does not count them as newly entered.
+        /// If the pickup throws, the item is removed and announced through
+        /// <see cref="OnGroundItemDespawned"/> (see <see cref="Tick"/>) and the call returns false.
+        /// Any other item, or an invalid winner, returns false and changes nothing.
+        /// </summary>
+        /// <param name="id">The auctioned ground item.</param>
+        /// <param name="winner">The winning bidder.</param>
+        /// <param name="currentTick">The current server tick.</param>
+        /// <returns>True when the item reached the winner's inventory.</returns>
+        bool AwardAuctionItem(GroundItemID id, CharacterID winner, uint currentTick);
+
+        /// <summary>
+        /// Removes an <see cref="GroundItemState.Auctioning"/> item and raises
+        /// <see cref="OnGroundItemDespawned"/>: the way out for an auction that cannot be resolved.
+        /// Any other item (unknown, or not auctioning) returns false and changes nothing.
+        /// </summary>
+        /// <param name="id">The auctioned ground item.</param>
+        /// <returns>True when the item was removed.</returns>
+        bool DespawnAuctionItem(GroundItemID id);
 
         /// <summary>Looks up a live ground item. A despawned (removed) item returns false.</summary>
         /// <param name="id">The ground item ID.</param>
