@@ -2,7 +2,7 @@
 
 > **Status**: Approved
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-10-01 (corrected sell-back ownership wording: NPC Shop, not Inventory System, calls `AddGold(ItemSell)`). Previous: 2026-04-27
+> **Last Updated**: 2026-10-03 (amendment: `GoldTransactionReason.AuctionBid = 9` — rare-drop auction bid added to the gold sinks, the Loot Table rows of the Interactions and Downstream Dependents tables, and the `GoldSyncEvent` `Reason` list replaced by a pointer to the enum; lean re-review pending). Previous: 2026-10-01 (corrected sell-back ownership wording: NPC Shop, not Inventory System, calls `AddGold(ItemSell)`). Previous: 2026-04-27
 > **Implements Pillar**: Social Gravity — gold scarcity powers the enhancement prestige loop
 
 ## Overview
@@ -56,6 +56,7 @@ The system itself is non-intrusive — it surfaces only when needed and never in
 - **NPC Shop purchases**: NPC Shop calls `TrySpendGold(characterId, itemPrice, GoldTransactionReason.ScrollPurchase)` for scroll and consumable purchases.
 - **Respec costs (stat)**: Class/Leveling System calls `TrySpendGold(characterId, respecCost, GoldTransactionReason.RespecStat)` for stat resets.
 - **Respec costs (skill)**: Class/Leveling System calls `TrySpendGold(characterId, respecCost, GoldTransactionReason.RespecSkill)` for skill resets. Currency System has no knowledge of the respec cost formula.
+- **Rare-drop auction bid** *(added 2026-10-03)*: Loot Table System calls `TrySpendGold(winnerId, winnerBid, GoldTransactionReason.AuctionBid)` on the auction winner at resolution (loot-table-system.md CR-LT-9). The bid is then redistributed to the party as `AddGold(member, floor(winnerBid / N), GoldTransactionReason.MonsterDrop)`, so only the discarded remainder (`winnerBid mod N`, at most `N − 1` gold) leaves the economy — a transfer between players more than a sink. Currency System has no knowledge of the auction rules.
 
 ---
 
@@ -67,7 +68,7 @@ The system itself is non-intrusive — it surfaces only when needed and never in
 | `Normal` | 0 < Balance < 9,999,999 | Increases balance; may → `AtCap` | Decreases balance; may → `Empty` |
 | `AtCap` | Balance == 9,999,999 | Clamps to GOLD_CAP; returns `Success`, `NewBalance=GOLD_CAP`, `Error=None`; callers detect cap from `result.NewBalance == GOLD_CAP`; no state change | Decreases balance → `Normal` |
 
-**Client sync:** After every successful balance mutation, the server emits `GoldSyncEvent` to the owning client connection. Fields: `CharacterID`, `NewBalance`, `Version`, `Reason` (`MonsterDrop`, `ScrollPurchase`, `RespecStat`, `RespecSkill`, `AdminAdjust`). The client updates its displayed balance only on receiving this event — never speculatively on user action (no optimistic UI updates). **`NewBalance` MUST be transmitted as an absolute balance — never a delta.** Delta encoding would break EC-CS-7's stale-discard correctness under lossy mobile transport (this is a constraint on the Networking Core GDD's serialization format).
+**Client sync:** After every successful balance mutation, the server emits `GoldSyncEvent` to the owning client connection. Fields: `CharacterID`, `NewBalance`, `Version`, `Reason` (a `GoldTransactionReason` — the full value list is the enum in `networking-wire-protocol.md` § Enum Types, mirrored in `design/registry/entities.yaml`). The client updates its displayed balance only on receiving this event — never speculatively on user action (no optimistic UI updates). **`NewBalance` MUST be transmitted as an absolute balance — never a delta.** Delta encoding would break EC-CS-7's stale-discard correctness under lossy mobile transport (this is a constraint on the Networking Core GDD's serialization format).
 
 **Reconnect behavior:** On session establishment (including reconnect), the server MUST include the current `CharacterID`, `Balance`, and `Version` in the session handshake (requirement on Networking Core GDD). The client seeds its cached `Version` from the handshake. If the cached `Version` is behind the server's, it calls `GetBalance(CharacterID) → (Balance: uint, Version: uint)` to confirm current state. It does not interpolate the delta from session history.
 
@@ -77,7 +78,7 @@ The system itself is non-intrusive — it surfaces only when needed and never in
 
 | System | Direction | Currency System provides | Other system provides |
 |--------|-----------|------------------------|----------------------|
-| Loot Table System | Caller → Currency | `AddGold(CharacterID, uint amount, GoldTransactionReason.MonsterDrop) → GoldMutationResult` | Monster kill event + integer drop amount |
+| Loot Table System | Caller → Currency | `AddGold(CharacterID, uint amount, GoldTransactionReason.MonsterDrop) → GoldMutationResult` for kill gold and the auction pool share; `TrySpendGold(CharacterID, uint winnerBid, GoldTransactionReason.AuctionBid) → GoldMutationResult` for the rare-drop auction winner's debit (CR-LT-9) | Monster kill event + integer drop amount; auction winner and winning bid |
 | NPC Shop | Caller → Currency | `TrySpendGold(CharacterID, uint itemPrice, GoldTransactionReason.ScrollPurchase) → GoldMutationResult` for purchases; compensating `AddGold(CharacterID, itemPrice, GoldTransactionReason.AdminAdjust)` on failed item grants (EC-CS-5). Sell-back is MVP-scope (OQ-CS-1 reversed 2026-05-15) — NPC Shop GDD owns sell-back UX; Inventory System calls `AddGold(CharacterID, sellPrice, GoldTransactionReason.ItemSell)`. | Item price and sell-back price from NPC Shop / Item Database |
 | Class/Leveling System (Respec) | Caller → Currency | `TrySpendGold(CharacterID, uint respecCost, GoldTransactionReason.RespecStat / RespecSkill) → GoldMutationResult` | Respec cost value (computed internally; flat `uint` debit) |
 | Character Persistence | Bidirectional | `GetBalance(CharacterID) → (Balance: uint, Version: uint)` on save; accepts loaded `Balance + Version` on load; emits `GoldSyncEvent` to client after load | Saved `Balance + Version` from character record |
@@ -180,7 +181,7 @@ Multiple `GoldSyncEvent` messages arrive out of order due to network reordering.
 | System | GDD Status | How it depends on Currency System | Bidirectionality required |
 |--------|-----------|-----------------------------------|--------------------------|
 | NPC Shop (#23) | Not Started | Calls `TrySpendGold` (purchases) and compensating `AddGold` (failed grants). Sell-back is MVP-scope (OQ-CS-1 reversed 2026-05-15) — NPC Shop GDD defines sell-back UX and calls `AddGold(ItemSell)` after Inventory's `SellItem` (corrected 2026-10-01 — Inventory never mutates gold). | NPC Shop GDD must list Currency System in its Dependencies |
-| Loot Table System (#8) | Not Started | Calls `AddGold` on each monster kill; must define drop amounts as integer values only (no floats) | Loot Table GDD must list Currency System in its Dependencies |
+| Loot Table System (#8) | Not Started | Calls `AddGold` on each monster kill and for the auction pool share; calls `TrySpendGold(…, AuctionBid)` on the rare-drop auction winner (CR-LT-9); must define drop amounts as integer values only (no floats) | Loot Table GDD must list Currency System in its Dependencies |
 | Class/Leveling System (#10) | Not Started | Calls `TrySpendGold` for Respec costs; computes respec cost internally and passes as flat `uint` | Class/Leveling GDD must list Currency System in its Dependencies |
 | Character Persistence (#25) | Not Started | Calls `GetBalance` on save; pushes loaded `Balance + Version` on load; emits `GoldSyncEvent` to client after load | Character Persistence GDD must list Currency System in its Dependencies |
 | Enhancement System (#15) | Approved (2026-05-23) | No direct API dependency — interacts with Currency System indirectly through NPC Shop scroll purchases (`GoldTransactionReason.Enhancement = 5` pre-allocated). If Enhancement ever adds a direct gold cost (attempt surcharge), it will call `TrySpendGold` and must list this dependency at that time. | |

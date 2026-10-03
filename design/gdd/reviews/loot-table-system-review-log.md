@@ -2,6 +2,16 @@
 
 ---
 
+## Amendment — 2026-10-03 — Story 011 readiness decisions + `AuctionBid` reason — not yet re-reviewed
+Scope signal: S
+Specialists: None (user decisions taken at `/story-readiness` for Story 011)
+Changes: (1) CR-LT-9, the Currency rows of the Interactions and Dependencies tables and AC-LT-13 name `GoldTransactionReason.AuctionBid` for the winner's `TrySpendGold` (Currency amendment, re-reviewed and Approved in the Currency log). (2) CR-LT-9: any non-`Success` `TrySpendGold` result (`CharacterNotFound`, `ConcurrencyConflict`) disqualifies the bidder and logs a server error. (3) CR-LT-9 and the Edge Cases leaver line: a bid placed by a character who has left the party is skipped at resolution. (4) CR-LT-12: an item that becomes `Assigned` out of an auction closed at `expiryTick` gets `expiryTick = resolutionTick + GROUND_ITEM_TTL_TICKS`.
+Decisions (user): (2), (3), and the fresh pickup window for the round-robin fallback in (4). The extension of (4) to a winner whose bag is full was added by the assistant on the same reasoning and is not yet confirmed by the user.
+No new ACs were added for (2)–(4); Story 011 carries test cases for them. No registry change (no new constant or entity).
+Next: `/design-review design/gdd/loot-table-system.md --depth lean` in a separate session.
+
+---
+
 ## Review — 2026-05-17 — Verdict: APPROVED (Lean Re-Review Pass 2)
 Scope signal: L
 Specialists: lean — single-session analysis (no specialist agents)

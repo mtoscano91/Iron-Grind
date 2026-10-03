@@ -2,7 +2,7 @@
 
 > **Status**: Approved (Pass 4 lean, 2026-05-12; ghost session amendment 2026-05-14; wire schema additions 2026-05-17; Zone Instancing amendment 2026-05-29; CSP amendment 2026-06-14)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-10-01 (TD-045 amendment: `MoveResult` gains per-slot enhancement-level bytes (22-byte body); `EquipRequest` gains `inventorySlot` (10-byte body) — an ItemID alone cannot distinguish same-type items at different enhancement levels; `EquipResult` gains `slotEnhancementLevel` (12-byte body); `EquipFailReason` comments aligned with the rewritten equipment-system.md CR-EQS-8.) Previous: 2026-06-14 (CSP amendment: `SelfPositionUpdate` added to R-U batch — per-tick authoritative self-position delivery for client-side prediction reconciliation. Resolves CR-CSP-7 data-source gap. Channel: R-U (not U-U) — reconciliation most critical under packet loss. Body: 10B; batch: 14B; Scenario C R-U batch 332B (no overflow; 180B headroom). F-NET-1/F-NET-2 updated. Prior: Zone Instancing amendment 2026-05-29; OQ-CUS-1 amendment 2026-06-11.)
+> **Last Updated**: 2026-10-03 (`GoldTransactionReason` enum block: `AuctionBid = 9` added; `CompensatingRefund = 8` listed — it was in the registry and the code but missing here; no schema or size change); 2026-10-01 (TD-045 amendment: `MoveResult` gains per-slot enhancement-level bytes (22-byte body); `EquipRequest` gains `inventorySlot` (10-byte body) — an ItemID alone cannot distinguish same-type items at different enhancement levels; `EquipResult` gains `slotEnhancementLevel` (12-byte body); `EquipFailReason` comments aligned with the rewritten equipment-system.md CR-EQS-8.) Previous: 2026-06-14 (CSP amendment: `SelfPositionUpdate` added to R-U batch — per-tick authoritative self-position delivery for client-side prediction reconciliation. Resolves CR-CSP-7 data-source gap. Channel: R-U (not U-U) — reconciliation most critical under packet loss. Body: 10B; batch: 14B; Scenario C R-U batch 332B (no overflow; 180B headroom). F-NET-1/F-NET-2 updated. Prior: Zone Instancing amendment 2026-05-29; OQ-CUS-1 amendment 2026-06-11.)
 > **Parent**: networking-core.md
 
 ## Overview
@@ -1360,6 +1360,8 @@ enum GoldTransactionReason : byte
     Enhancement    = 5,
     ItemPurchase   = 6,
     ItemSell       = 7,   // re-added 2026-05-15 per inventory-system.md design review
+    CompensatingRefund = 8,   // added 2026-06-07 per npc-shop.md review / ADR-001 (listed here 2026-10-03 — was missing from this block)
+    AuctionBid     = 9,   // added 2026-10-03 — rare-drop auction winner's debit (loot-table-system.md CR-LT-9)
     Other          = 255,
 }
 ```

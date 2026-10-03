@@ -243,11 +243,12 @@ constants:
       - design/gdd/character-persistence.md
       - design/gdd/npc-shop.md
     type: "enum : byte"
-    values: "{MonsterDrop=0, ScrollPurchase=1, RespecStat=2, RespecSkill=3, AdminAdjust=4, Enhancement=5, ItemPurchase=6, ItemSell=7, CompensatingRefund=8, Other=255}"
+    values: "{MonsterDrop=0, ScrollPurchase=1, RespecStat=2, RespecSkill=3, AdminAdjust=4, Enhancement=5, ItemPurchase=6, ItemSell=7, CompensatingRefund=8, AuctionBid=9, Other=255}"
+    # AuctionBid=9 added 2026-10-03 (Currency amendment, unblocks Loot Table Story 011): the rare-drop auction winner's TrySpendGold (loot-table-system.md CR-LT-9) must be distinguishable in audit logs. The pool share paid to party members stays MonsterDrop.
     # CompensatingRefund=8 added 2026-06-07 (npc-shop.md review): compensating AddGold on failed PickupRequest after gold debit must be distinguishable from admin adjustments in audit logs. Prior values: Other=255 was used for this case.
     note: "Wire format for the Reason field in GoldSyncEvent. Enum declared in networking-core.md CR-NET-7 (wire format authority). ItemSell RE-ADDED (2026-05-15) — sell-back is in MVP scope per Inventory System design review; was incorrectly removed (2026-04-26). NPC Shop sells the entire stack at MVP (no partial-stack sell). Enhancement(5), ItemPurchase(6), and ItemSell(7) must be assigned before Enhancement System GDD, NPC Shop GDD, and Inventory System GDD go live respectively. Receivers must treat unknown byte values as Other=255 and still apply the balance update — do not drop the event on unknown reason. Enhancement(5) confirmed in use: Enhancement System F-ENH-5 economy validation cites this reason code."
     added: "2026-05-06"
-    revised: "2026-05-22"
+    revised: "2026-10-03"
 
   - name: LEVEL_CAP
     status: active
