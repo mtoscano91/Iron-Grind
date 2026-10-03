@@ -529,6 +529,19 @@ constants:
     added: "2026-05-16"
     revised: ""
 
+  - name: AUCTION_WINNER_GRACE_TICKS
+    status: active
+    source: design/gdd/loot-table-system.md
+    referenced_by:
+      - design/gdd/loot-table-system.md
+      - design/gdd/networking-wire-protocol.md
+    type: "int constant (tuning knob)"
+    value: 600
+    unit: "server ticks (30 seconds at TICK_RATE_HZ=20)"
+    note: "How long an auction item is reserved for a bidder whose bag is full when their bid is tried (CR-LT-9.1). No gold moves during the grace; if the bidder frees a slot the normal resolution runs, otherwise the next bid is tried with its own grace. Not applied at zone teardown, to a bidder whose balance is below their bid, or to a bidder whose party member status is Disconnected or Ghost when the bid is tried (all three are passed over at once). A disconnect during a running grace does not end it. A round-robin fallback that follows a grace gets a fresh GROUND_ITEM_TTL_TICKS. BagFullPickupBlocked.remainingTicks carries the grace remaining. Safe range: [200, 1200]. Worst case per auction = number of bidders × this value."
+    added: "2026-10-03"
+    revised: "2026-10-03"
+
   - name: PICKUP_RADIUS_UNITS
     status: active
     source: design/gdd/loot-table-system.md

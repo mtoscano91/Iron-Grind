@@ -2,7 +2,7 @@
 
 > **Status**: Approved (Pass 4 lean, 2026-05-12; ghost session amendment 2026-05-14; wire schema additions 2026-05-17; Zone Instancing amendment 2026-05-29; CSP amendment 2026-06-14)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-10-03 (`GoldTransactionReason` enum block: `AuctionBid = 9` added; `CompensatingRefund = 8` listed — it was in the registry and the code but missing here; no schema or size change); 2026-10-01 (TD-045 amendment: `MoveResult` gains per-slot enhancement-level bytes (22-byte body); `EquipRequest` gains `inventorySlot` (10-byte body) — an ItemID alone cannot distinguish same-type items at different enhancement levels; `EquipResult` gains `slotEnhancementLevel` (12-byte body); `EquipFailReason` comments aligned with the rewritten equipment-system.md CR-EQS-8.) Previous: 2026-06-14 (CSP amendment: `SelfPositionUpdate` added to R-U batch — per-tick authoritative self-position delivery for client-side prediction reconciliation. Resolves CR-CSP-7 data-source gap. Channel: R-U (not U-U) — reconciliation most critical under packet loss. Body: 10B; batch: 14B; Scenario C R-U batch 332B (no overflow; 180B headroom). F-NET-1/F-NET-2 updated. Prior: Zone Instancing amendment 2026-05-29; OQ-CUS-1 amendment 2026-06-11.)
+> **Last Updated**: 2026-10-03 (`BagFullPickupBlocked` note: also sent for the auction winner grace, loot-table-system.md CR-LT-9.1; `remainingTicks` is then the grace remaining; no schema or size change); 2026-10-03 (`GoldTransactionReason` enum block: `AuctionBid = 9` added; `CompensatingRefund = 8` listed — it was in the registry and the code but missing here; no schema or size change); 2026-10-01 (TD-045 amendment: `MoveResult` gains per-slot enhancement-level bytes (22-byte body); `EquipRequest` gains `inventorySlot` (10-byte body) — an ItemID alone cannot distinguish same-type items at different enhancement levels; `EquipResult` gains `slotEnhancementLevel` (12-byte body); `EquipFailReason` comments aligned with the rewritten equipment-system.md CR-EQS-8.) Previous: 2026-06-14 (CSP amendment: `SelfPositionUpdate` added to R-U batch — per-tick authoritative self-position delivery for client-side prediction reconciliation. Resolves CR-CSP-7 data-source gap. Channel: R-U (not U-U) — reconciliation most critical under packet loss. Body: 10B; batch: 14B; Scenario C R-U batch 332B (no overflow; 180B headroom). F-NET-1/F-NET-2 updated. Prior: Zone Instancing amendment 2026-05-29; OQ-CUS-1 amendment 2026-06-11.)
 > **Parent**: networking-core.md
 
 ## Overview
@@ -665,13 +665,15 @@ GroundItemSpawned {
 
 ---
 
-**GroundItemAssigned** (R-OD, server → assigned character, 8-byte body; 18 bytes standalone):
+**GroundItemAssigned** (R-OD, server → assigned character, 12-byte body; 22 bytes standalone):
 ```
 GroundItemAssigned {
     GroundItemID groundItemId;  // 4 bytes
     CharacterID  assignedTo;    // 4 bytes — must not be CharacterID.Invalid(0); assert per CR-NET-7.3
+    uint         expiryTick;    // 4 bytes — the item's current expiry; replaces the value from GroundItemSpawned (added 2026-10-03)
 }
 ```
+*`expiryTick` added 2026-10-03 (body 8 → 12 bytes): an auction fallback can get a fresh pickup window (loot-table-system.md CR-LT-12), and hud.md CR-HUD-15 already reads `expiryTick` from this message. When no fresh window applies it repeats the spawn-time value.*
 *Sent when an item's assignment changes after initial spawn — specifically for CR-LT-10 zero-bid auction fallback to round-robin. Common drops do not emit a separate `GroundItemAssigned` — the `GroundItemSpawned` sent exclusively to the assigned character implies assignment.*
 
 ---
@@ -695,7 +697,7 @@ AuctionResolved {
     bool         isRoundRobinFallback; // 1 byte — true when zero valid bids or all bidders failed TrySpendGold (CR-LT-10)
 }
 ```
-*Sent to all party members when `windowCloseTick` is reached or when `expiryTick` fires during `Auctioning` state. When `isRoundRobinFallback = true`, `winnerCharacterId` must be treated as `CharacterID.Invalid` — clients must not attempt to resolve the winner display from this field.*
+*Sent to all party members once per auction, at its final outcome: at `windowCloseTick` (or at `expiryTick` if it comes first while the bid window is open), or later when a CR-LT-9.1 winner grace delays the outcome (loot-table-system.md, added 2026-10-03). When `isRoundRobinFallback = true`, `winnerCharacterId` must be treated as `CharacterID.Invalid` — clients must not attempt to resolve the winner display from this field.*
 
 ---
 
@@ -716,10 +718,10 @@ BagFullPickupBlocked {
     GroundItemID groundItemId;   // 4 bytes
     ItemID       itemId;         // 4 bytes
     string       displayName;    // ushort(2) + UTF-8 bytes; max 24 UTF-8 bytes = 26 bytes max
-    uint         remainingTicks; // 4 bytes — ticks until expiryTick at time of emission (informational)
+    uint         remainingTicks; // 4 bytes — ticks until expiryTick at time of emission (informational); for an auction winner grace: ticks left in the grace
 }
 ```
-*Variable-length: `displayName` string field. Minimum body (empty name): 14 bytes. Maximum body (24 UTF-8 bytes): 40 bytes. `displayName` cap: 24 UTF-8 bytes (not characters — multi-byte sequences count). Sent when `PickupResult.Fail` (bag full) fires within pickup radius (CR-LT-13.2). Client renders the discard modal.*
+*Variable-length: `displayName` string field. Minimum body (empty name): 14 bytes. Maximum body (24 UTF-8 bytes): 40 bytes. `displayName` cap: 24 UTF-8 bytes (not characters — multi-byte sequences count). Sent when `PickupResult.Fail` (bag full) fires within pickup radius (CR-LT-13.2), and to an auction bidder whose bag is full when their bid is tried (loot-table-system.md CR-LT-9.1, added 2026-10-03 — no proximity; no schema or size change). Client renders the discard modal. The client tells the two cases apart from its own ground item state: item `Auctioning` → grace mode (`remainingTicks` is the grace remaining), any other state → pickup mode (`remainingTicks` is the item's TTL) — see the Discard Modal client rule in loot-table-system.md.*
 
 ---
 

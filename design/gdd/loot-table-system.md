@@ -1,8 +1,8 @@
 # Loot Table System
 
-> **Status**: Approved (2026-05-17)
+> **Status**: Approved (lean re-review #3, 2026-10-03 — covers the 2026-10-03 amendments; base design Approved 2026-05-17)
 > **Author**: Manuel Toscano + Claude Code agents
-> **Last Updated**: 2026-10-03 (Story 011 readiness decisions: CR-LT-9 — any non-`Success` `TrySpendGold` result disqualifies the bidder, and bids from characters who left the party are skipped; CR-LT-12 — an item `Assigned` out of an auction closed at `expiryTick` gets a fresh TTL; Edge Cases leaver line aligned — lean re-review pending); 2026-10-03 (Currency amendment: CR-LT-9, the Currency rows of the Interactions and Dependencies tables, and AC-LT-13 now name `GoldTransactionReason.AuctionBid` for the auction winner's `TrySpendGold` — no rule change); 2026-05-17 (lean re-review pass 2: B-LT-1 Party System status + rrNextIndex ownership propagated to Dependencies table; B-LT-2 Party System "Not yet designed" corrected; R-1 CR-LT-13.1 OQ-LT-4 reference updated; R-2 inventory-system.md re-approval noted; R-3 Interactions table AdvanceRrNextIndex corrected)
+> **Last Updated**: 2026-10-03 (revision after lean re-review #2: CR-LT-9.1 — "disconnected" defined as the party member status and checked only when the bid is tried, a running grace is not ended by a disconnect; CR-LT-12 — the fresh `expiryTick` is carried by `GroundItemAssigned`, and also applies to the paid-winner invariant path; `N = 1` on the paying tick stated; `AuctionOpen` corrected; message lists completed — lean re-review pending); 2026-10-03 (winner-grace revision after the lean re-review: CR-LT-9.1 — balance read before a grace, no grace for a disconnected bidder, `N` on the paying tick; CR-LT-12 — fresh TTL for any fallback that follows a grace; state table, Interactions, F-LT-2, the disconnect and leaver edge cases, the discard modal client rule, AC-LT-25 and bookkeeping aligned — lean re-review pending); 2026-10-03 (winner grace: new CR-LT-9.1 — a bidder with a full bag is not charged and gets `AUCTION_WINNER_GRACE_TICKS` = 600 to free a slot, then the next bid is tried; no grace at zone teardown; CR-LT-9 last sentence, CR-LT-12, the `Auctioning` state row, the teardown edge case, AC-LT-12, AC-LT-19 and the discard modal updated; new AC-LT-25 and tuning knob — lean re-review pending); 2026-10-03 (Story 011 readiness decisions: CR-LT-9 — any non-`Success` `TrySpendGold` result disqualifies the bidder, and bids from characters who left the party are skipped; CR-LT-12 — an item `Assigned` out of an auction closed at `expiryTick` gets a fresh TTL; Edge Cases leaver line aligned — lean re-review pending); 2026-10-03 (Currency amendment: CR-LT-9, the Currency rows of the Interactions and Dependencies tables, and AC-LT-13 now name `GoldTransactionReason.AuctionBid` for the auction winner's `TrySpendGold` — no rule change); 2026-05-17 (lean re-review pass 2: B-LT-1 Party System status + rrNextIndex ownership propagated to Dependencies table; B-LT-2 Party System "Not yet designed" corrected; R-1 CR-LT-13.1 OQ-LT-4 reference updated; R-2 inventory-system.md re-approval noted; R-3 Interactions table AdvanceRrNextIndex corrected)
 > **Implements Pillar**: Earned Power (primary — solo) / Social Gravity (primary — party) / Legendary Gear (contextual)
 
 ## Overview
@@ -58,7 +58,10 @@ An assigned character has exclusive pickup rights for the item's ground timer du
 When a rare drop lands in a party with size ≥ 2, an open gold bid auction is started with window duration `AUCTION_WINDOW_TICKS = 600` ticks (30 seconds). Each party member may submit any number of `LootBidRequest` messages with `BidAmount ≥ itemDef.SellPriceGold` (minimum bid = item's NPC sell price: 90g for Steel, 270g for DarkSteel). Bids below the floor are rejected server-side without notification to other members. All valid bids are broadcast to all party members as `LootBidUpdate` messages in real time (fully transparent). Members may revise their bid upward any number of times before the window closes; bids cannot be reduced once submitted.
 
 **CR-LT-9 — Rare Drop: Auction Resolution**
-At `windowCloseTick`, the server identifies the highest valid bid. In a bid tie, the earlier-submitted bid (by server tick) wins. The server calls `TrySpendGold(winner, winnerBid, GoldTransactionReason.AuctionBid)`. If `TrySpendGold` returns `Success`: the winner receives the item via `PickupRequest`; `goldPerMember = floor(winnerBid / N)` where N is current party size; remainder is discarded; every party member (including the winner) receives `AddGold(characterID, goldPerMember, GoldTransactionReason.MonsterDrop)`. The winner's net cost is `winnerBid − goldPerMember`. If `TrySpendGold` returns `InsufficientFunds`: the current winner is disqualified and the server re-runs resolution on the remaining valid bids in descending bid order, calling `TrySpendGold` on each in turn; the first bidder whose `TrySpendGold` returns `Success` wins and resolution proceeds normally. Any other non-`Success` result (`CharacterNotFound`, `ConcurrencyConflict`) is treated the same way — the bidder is disqualified, a server error is logged, and resolution moves to the next bid *(added 2026-10-03)*. Bids placed by a character who is no longer a party member at resolution are not valid bids and are skipped *(added 2026-10-03)*. If no bidder passes `TrySpendGold`, the auction falls to CR-LT-10 (round-robin; no gold changes hands). If the final winner's bag is full when `PickupRequest` is called, CR-LT-13 applies — the gold pool is still distributed regardless.
+At `windowCloseTick`, the server identifies the highest valid bid. In a bid tie, the earlier-submitted bid (by server tick) wins. The server calls `TrySpendGold(winner, winnerBid, GoldTransactionReason.AuctionBid)`. If `TrySpendGold` returns `Success`: the winner receives the item via `PickupRequest`; `goldPerMember = floor(winnerBid / N)` where N is the party size on the tick `TrySpendGold` succeeds (the paying tick — `windowCloseTick` unless a CR-LT-9.1 grace ran); remainder is discarded; every party member (including the winner) receives `AddGold(characterID, goldPerMember, GoldTransactionReason.MonsterDrop)`. The winner's net cost is `winnerBid − goldPerMember`. If `TrySpendGold` returns `InsufficientFunds`: the current winner is disqualified and the server re-runs resolution on the remaining valid bids in descending bid order, calling `TrySpendGold` on each in turn; the first bidder whose `TrySpendGold` returns `Success` wins and resolution proceeds normally. Any other non-`Success` result (`CharacterNotFound`, `ConcurrencyConflict`) is treated the same way — the bidder is disqualified, a server error is logged, and resolution moves to the next bid *(added 2026-10-03)*. Bids placed by a character who is no longer a party member at resolution are not valid bids and are skipped *(added 2026-10-03)*. If no bidder passes `TrySpendGold`, the auction falls to CR-LT-10 (round-robin; no gold changes hands). A bidder whose bag is full is not charged and is handled by CR-LT-9.1 *(replaces "CR-LT-13 applies — the gold pool is still distributed regardless", 2026-10-03)*.
+
+**CR-LT-9.1 — Winner Grace on Bag Full** *(added 2026-10-03)*
+Before `TrySpendGold` is called on a bidder, the server checks that the bidder has a free inventory slot (`HasFreeSlot`). If they have one, CR-LT-9 proceeds unchanged (spend, `PickupRequest`, pool split, `AuctionResolved`). If their bag is full, the server decides whether a grace is worth granting *(added 2026-10-03, revision)*: it reads `GetBalance(bidder)` and the bidder's party member status, and if the balance is below their bid, or the status is `Disconnected` or `Ghost` (Party System CR-PS-9 / CR-PS-11 — a bidder inside the 5-second reconnect window is not yet `Ghost` and counts as connected), the bidder is disqualified at once — no grace, no `BagFullPickupBlocked`, no gold moved — and the next bid in order is tried on the same tick. Otherwise no gold moves; the item is reserved for that bidder for `AUCTION_WINNER_GRACE_TICKS` (default 600 ticks = 30 seconds) and the server sends them `BagFullPickupBlocked(groundItemID, itemID, displayName, remainingTicks)` with `remainingTicks` = the ticks left in the grace. On the first server tick after an `InventoryChangedEvent` that leaves the bidder with a free slot, CR-LT-9 proceeds for that bidder — no proximity to the item is required; `N` for the pool split is the party size on that tick. If that `TrySpendGold` fails because the bidder spent gold during the grace, they are disqualified as in CR-LT-9; an item they discarded to make room is not restored. If the grace expires, or the bidder leaves the party during it, the bidder is disqualified with no gold moved (on the first server tick after the event) and the next bid in order is tried under the same rule, with its own grace. A disconnect during a grace does not end it — the grace runs to its deadline, so a short network drop costs the bidder nothing *(revised 2026-10-03: the connection status is checked only when the bid is tried)*. If every bidder is disqualified, CR-LT-10 applies. The item stays `Auctioning` during a grace: bids stay closed, it does not despawn at `expiryTick`, and CR-LT-13.1 (TTL pause) does not apply to the grace. `AuctionResolved` is sent once, at the final outcome. A winner therefore never holds an undelivered auction item, and never pays before delivery is possible.
 
 **CR-LT-10 — Rare Drop: Zero Bids**
 If no party member submits a valid bid before `windowCloseTick`, the item is reclassified as a common drop. It is assigned via round-robin (CR-LT-6) at `windowCloseTick`. No gold changes hands.
@@ -67,7 +70,7 @@ If no party member submits a valid bid before `windowCloseTick`, the item is rec
 If the winning party is size 1 (solo player), no auction is opened. The item is auto-assigned to the solo player via the common drop path. CR-LT-7 and CR-LT-13 apply normally.
 
 **CR-LT-12 — Ground Item Timer**
-Every spawned ground item carries `expiryTick = spawnTick + GROUND_ITEM_TTL_TICKS` (default `GROUND_ITEM_TTL_TICKS = 2,400` ticks = 120 seconds). If the item has not entered terminal state by `expiryTick`, it despawns. An open auction whose ground item reaches `expiryTick` closes immediately and resolves with whatever valid bids exist at that tick (normal CR-LT-9, or CR-LT-10 if zero valid bids). An item that becomes `Assigned` out of an auction closed at `expiryTick` — the CR-LT-10 round-robin fallback, or a CR-LT-9 winner whose bag was full — gets a fresh pickup window: `expiryTick = resolutionTick + GROUND_ITEM_TTL_TICKS` *(added 2026-10-03)*.
+Every spawned ground item carries `expiryTick = spawnTick + GROUND_ITEM_TTL_TICKS` (default `GROUND_ITEM_TTL_TICKS = 2,400` ticks = 120 seconds). If the item has not entered terminal state by `expiryTick`, it despawns. An open auction whose ground item reaches `expiryTick` closes immediately and resolves with whatever valid bids exist at that tick (normal CR-LT-9, or CR-LT-10 if zero valid bids). An item in a CR-LT-9.1 grace does not despawn at `expiryTick`. An item that becomes `Assigned` out of an auction (the CR-LT-10 round-robin fallback) gets a fresh pickup window, `expiryTick = resolutionTick + GROUND_ITEM_TTL_TICKS`, in two cases: the auction resolved at or after its `expiryTick`, or at least one CR-LT-9.1 grace ran before the fallback *(added 2026-10-03; the bag-full-winner case was removed the same day — CR-LT-9.1 replaces it; the any-grace case was added in the revision)*. The same two cases apply to an auction item that ends `Assigned` to a paid winner on the `Claiming` invariant-violation path (States table). The client learns the item's current `expiryTick` from `GroundItemAssigned.expiryTick` and replaces the value it held from `GroundItemSpawned`.
 
 **CR-LT-13 — Drop Fate on Bag Full (resolves OQ-INV-5)**
 If `PickupRequest` returns `PickupResult.Fail` (bag full), the ground item remains on the ground in `Assigned` state with its original character assignment intact. The item does not reassign to another party member. The item remains assigned to the original character until `expiryTick`. If `expiryTick` is reached with the item still undeliverable, the item despawns — **the drop is permanently lost**. CR-LT-13.1 through CR-LT-13.3 define extensions to this base rule for mobile-specific recovery flows.
@@ -85,7 +88,7 @@ When `expiryTick − currentTick == EXPIRY_WARNING_TICKS` (600 ticks / 30 second
 At mob death the server draws a gold amount uniformly from `[GoldMin, GoldMax]` authored on the mob's table entry. This is distributed to the winning party: `goldPerMember = floor(baseGold / N)` where N = winning party size at kill time. Remainder is discarded. Each member receives `AddGold(characterID, goldPerMember, GoldTransactionReason.MonsterDrop)`. If no party won the tag (CR-LT-4 no-attacker fallback), no gold is distributed. Gold is computed and applied in the same server tick as item drop spawning, regardless of whether any items are picked up.
 
 **CR-LT-15 — Server Authority**
-All drop roll results, tag resolution, round-robin advancement, auction bids, bid validation, and gold distribution are computed server-side. The client receives outcome events only (`GroundItemSpawned`, `GroundItemAssigned`, `LootBidUpdate`, `AuctionResolved`, `GroundItemDespawned`). No client has any vote in any drop outcome. All `LootBidRequest` messages are validated server-side before application.
+All drop roll results, tag resolution, round-robin advancement, auction bids, bid validation, and gold distribution are computed server-side. The client receives outcome events only (`GroundItemSpawned`, `GroundItemAssigned`, `LootBidUpdate`, `AuctionResolved`, `GroundItemDespawned`, `BagFullPickupBlocked`, `GroundItemExpiryWarning`). No client has any vote in any drop outcome. All `LootBidRequest` messages are validated server-side before application.
 
 ---
 
@@ -97,10 +100,10 @@ All drop roll results, tag resolution, round-robin advancement, auction bids, bi
 |-------|-------------|-------|------|
 | `Spawning` | Item created; `GroundItemSpawned` broadcast to zone clients. Lasts 1 server tick. | Mob death drop resolution produces ≥ 1 ItemID | → `Assigned` (common) or `Auctioning` (rare, party size ≥ 2) |
 | `Assigned` | Common drop (or zero-bid auction fallback). Exclusively assigned to one character. `expiryTick` may be extended by CR-LT-13.1 (TTL pause on background). | CR-LT-5/6 common path, or CR-LT-10 fallback | → `Claiming` on proximity trigger; → `Despawned` on `expiryTick` |
-| `Auctioning` | Rare drop. Bid window open. All bids visible to party. | CR-LT-8: Steel/DarkSteel with party size ≥ 2 | → `Claiming` at `windowCloseTick` with ≥ 1 valid bid; → `Assigned` at `windowCloseTick` with 0 valid bids (CR-LT-10); → immediate resolution if `expiryTick` occurs first |
-| `Claiming` | `PickupRequest` call in flight. Awaiting `PickupResult`. | Proximity trigger (common), or auction resolution (rare) | → `Inventory` on `PickupResult.Success`; → `Assigned` on `PickupResult.Fail` |
+| `Auctioning` | Rare drop. Bid window open. All bids visible to party. | CR-LT-8: Steel/DarkSteel with party size ≥ 2 | → `Claiming` at `windowCloseTick` with ≥ 1 valid bid whose bidder has a free slot; stays `Auctioning` (bids closed) while a bidder with a full bag is in a CR-LT-9.1 grace; → `Claiming` when the bidder in a grace frees a slot; → `Assigned` with 0 valid bids or when every bidder is disqualified (CR-LT-10); → immediate resolution if `expiryTick` occurs first while the bid window is open; → `Despawned` at zone teardown when no bidder can receive it |
+| `Claiming` | `PickupRequest` call in flight. Awaiting `PickupResult`. | Proximity trigger (common), or auction resolution (rare) | → `Inventory` on `PickupResult.Success`; → `Assigned` on `PickupResult.Fail` (common drop). For an auction item `PickupResult.Fail` is an invariant violation — the free slot was checked on the same tick (CR-LT-9.1); if it happens the item goes to `Assigned` for the winner, with the CR-LT-12 fresh pickup window where it applies, and a server error is logged (TD-051) |
 | `Inventory` | Terminal success. Item in character's inventory. Ground record destroyed. | `PickupResult.Success` | *(terminal)* |
-| `Despawned` | Terminal failure. `expiryTick` reached. Item lost. | `expiryTick` in any non-terminal state; zone teardown | *(terminal)* |
+| `Despawned` | Terminal failure. `expiryTick` reached. Item lost. | `expiryTick` in `Assigned` state (an `Auctioning` item resolves at `expiryTick` instead, and does not despawn during a CR-LT-9.1 grace); zone teardown | *(terminal)* |
 
 ---
 
@@ -111,12 +114,16 @@ All drop roll results, tag resolution, round-robin advancement, auction bids, bi
 | **Item Database** | ← reads | `GetItemsByCategory(ItemCategory.Equipment)` → full item list cached | Server startup (once) |
 | **Item Database** | ← reads | `GetItem(ItemID)` → `GearTier` (classification), `SellPriceGold` (auction floor) | At drop spawn, per-item |
 | **Inventory System** | → calls | `PickupRequest(characterID, itemID, quantity)` → `PickupResult` | On proximity trigger or auction resolution |
+| **Inventory System** | ← reads | `HasFreeSlot(): bool` for the bidder | Before `TrySpendGold` on each bidder (CR-LT-9.1) |
+| **Inventory System** | ← subscribes | `InventoryChangedEvent` (server-internal) | Retry on a freed slot: in pickup radius (CR-LT-13.2) and during an auction grace (CR-LT-9.1) |
 | **Currency System** | → calls | `AddGold(characterID, amount, GoldTransactionReason.MonsterDrop)` | Per party member at kill resolution (gold split) and per party member at auction resolution (pool split) |
-| **Currency System** | → calls | `TrySpendGold(characterID, winnerBid, GoldTransactionReason.AuctionBid)` | On the auction winner at resolution (CR-LT-9); repeated on the next bidder after an `InsufficientFunds` |
+| **Currency System** | → calls | `TrySpendGold(characterID, winnerBid, GoldTransactionReason.AuctionBid)` | On the auction winner at resolution (CR-LT-9); repeated on the next bidder after any non-`Success` result |
+| **Currency System** | ← reads | `GetBalance(characterID)` → `(Balance, Version)` | On a bidder whose bag is full, before a grace is granted (CR-LT-9.1) |
 | **Party System** | ← reads | Party membership array (CharacterID[], join-order stable), current `rrNextIndex` | At drop spawn for round-robin assignment |
+| **Party System** | ← reads | Member `Status` of a bidder (`Disconnected` / `Ghost`) | When a bidder's bag is full, before a grace is granted (CR-LT-9.1) |
 | **Party System** | → calls | `IPartySystem.AdvanceRrNextIndex(partyID)` — Party System advances cursor and handles clamping | Per common drop |
 | **Mob Spawning** | ← called by | Mob Spawning provides `MobTypeID` on kill event; Loot Table System resolves the drop table for that `MobTypeID` | Per kill event |
-| **Networking Core** | → sends | `GroundItemSpawned`, `GroundItemAssigned`, `GroundItemDespawned` to zone clients; `LootBidUpdate`, `AuctionResolved` to party member clients; validates incoming `LootBidRequest` from client | Per ground item lifecycle event |
+| **Networking Core** | → sends | `GroundItemSpawned`, `GroundItemAssigned`, `GroundItemDespawned` to zone clients; `LootBidUpdate`, `AuctionResolved` to party member clients; `BagFullPickupBlocked`, `GroundItemExpiryWarning` to the affected character; validates incoming `LootBidRequest` from client | Per ground item lifecycle event |
 | **HUD** | ← triggers via Networking | "Bag full — item on ground" notification shown while ≥ 1 undelivered `Assigned` ground item is linked to the local player | On `PickupResult.Fail`; cleared on delivery or despawn |
 
 ---
@@ -170,9 +177,9 @@ The Auction Net Cost formula is defined as:
 | Variable | Symbol | Type | Range | Description |
 |----------|--------|------|-------|-------------|
 | Winner's bid | `winnerBid` | uint | [SellPriceGold(tier), GOLD_CAP] | The bid the auction winner submitted |
-| Party size | `N` | int | [2, 4] | Party size at auction close (solo winners skip the auction) |
+| Party size | `N` | int | [1, 4] | Party size on the paying tick — the tick the winner's `TrySpendGold` succeeds; equal to `windowCloseTick` unless a CR-LT-9.1 grace ran. An auction only opens at party size ≥ 2; `N = 1` occurs only when every other member has left before the winner pays |
 
-**Output Range:** `winnerBid × (N-1) / N` — ranges from `winnerBid/2` (N=2) to `winnerBid × 0.75` (N=4).
+**Output Range:** `winnerBid × (N-1) / N` — ranges from `winnerBid/2` (N=2) to `winnerBid × 0.75` (N=4). At `N = 1` the net cost is 0: the winner is the whole party and receives the full pool back, the same outcome as the solo rule (CR-LT-11).
 
 **Example:** Winner bids 400g on a Steel item. Party of 4: pool split = `floor(400/4) = 100g` per member. Winner receives 100g back. Net cost: 400 − 100 = 300g. The other 3 members each gain 100g.
 
@@ -222,7 +229,7 @@ For a single table entry with drop chance `p`, the expected number of drops over
 
 ## Edge Cases
 
-**If a party member disconnects during an open auction:** Their last submitted valid bid (if any) remains in the auction record and is included in resolution at `windowCloseTick`. A disconnected member can win the auction on their final bid. If they win while disconnected, the server calls `PickupRequest` against their server-side session record — the item enters their inventory and persists. Their share of the gold pool split is delivered via `AddGold` regardless of connection state.
+**If a party member disconnects during an open auction:** Their last submitted valid bid (if any) remains in the auction record and is included in resolution at `windowCloseTick`. A disconnected member can win the auction on their final bid. If they win while disconnected, the server calls `PickupRequest` against their server-side session record — the item enters their inventory and persists. Their share of the gold pool split is delivered via `AddGold` regardless of connection state. If their bag is full when their bid is tried and their party member status is `Disconnected` or `Ghost`, they get no CR-LT-9.1 grace — nobody could act on it — and are disqualified at once. A bidder who disconnects during a grace keeps it until its deadline *(added 2026-10-03)*.
 
 **If a party member disconnects while a common drop is assigned to them and on the ground:** The item remains assigned — the assignment is fixed at spawn time and does not change on disconnect. The ground timer continues. If they reconnect and enter pickup radius before `expiryTick`, normal delivery applies. If `expiryTick` is reached while disconnected, the item despawns. The item does not reassign to another party member.
 
@@ -240,9 +247,9 @@ For a single table entry with drop chance `p`, the expected number of drops over
 
 **If a `LootBidRequest` arrives after `windowCloseTick`:** Rejected by server — resolution has already begun. The client must disable the bid UI at `windowCloseTick − 1` to prevent late submissions. The server must validate bid timestamp and reject any bid with `receivedTick > windowCloseTick`.
 
-**If a party member leaves between kill time and auction close:** The gold pool split uses party size `N` at `windowCloseTick`, not kill time. A member who leaves the party before the auction closes is not eligible to bid and receives no pool share; a bid they placed before leaving is excluded at resolution (CR-LT-9). The round-robin counter uses `currentPartySize` at each drop assignment moment (CR-LT-6).
+**If a party member leaves between kill time and auction close:** The gold pool split uses party size `N` on the paying tick (CR-LT-9), not kill time — that is `windowCloseTick` unless a CR-LT-9.1 grace ran. If every other member has left by then, `N = 1` and the winner's net cost is 0 (F-LT-2). A member who leaves the party before the winner pays is not eligible to bid and receives no pool share; a bid they placed before leaving is excluded at resolution (CR-LT-9). The round-robin counter uses `currentPartySize` at each drop assignment moment (CR-LT-6).
 
-**If a zone teardown occurs while ground items exist:** All ground items despawn immediately. For items in `Auctioning` state: the auction closes immediately and resolves with whatever valid bids exist at teardown tick (CR-LT-9; or CR-LT-10 if zero valid bids). For items in `Claiming` state where `PickupRequest` success is pending: treat as successfully delivered — do not double-award on reconnect. Zone teardown must flush all pending `PickupRequest` outcomes before shutting down loot state.
+**If a zone teardown occurs while ground items exist:** All ground items despawn immediately. For items in `Auctioning` state: the auction closes immediately and resolves with whatever valid bids exist at teardown tick (CR-LT-9; or CR-LT-10 if zero valid bids). There is no CR-LT-9.1 grace at teardown: a bidder whose bag is full is passed over at once with no gold moved and the next bid is tried; a grace already running ends the same way. If no bidder can receive the item it despawns, no gold moves, and `AuctionResolved` reports the fallback outcome *(added 2026-10-03)*. For items in `Claiming` state where `PickupRequest` success is pending: treat as successfully delivered — do not double-award on reconnect. Zone teardown must flush all pending `PickupRequest` outcomes before shutting down loot state.
 
 **If a `LootBidRequest` carries an amount below `itemDef.SellPriceGold`:** Rejected silently server-side. No other party member is notified. The client should validate the floor locally before enabling the Submit button to reduce invalid request traffic.
 
@@ -253,23 +260,23 @@ For a single table entry with drop chance `p`, the expected number of drops over
 | System | GDD | Dependency Type | Interface | Hard/Soft |
 |--------|-----|----------------|-----------|-----------|
 | **Item Database** | Approved | Reads | `GetItemsByCategory(ItemCategory.Equipment)` at startup; `GetItem(ItemID)` per-drop for `GearTier` (classification) and `SellPriceGold` (auction floor) | **Hard** — cannot build drop pools or run auctions without item definitions |
-| **Currency System** | Approved | Writes | `AddGold(characterID, amount, GoldTransactionReason.MonsterDrop)`; `TrySpendGold(characterID, winnerBid, GoldTransactionReason.AuctionBid)` (auction winner, CR-LT-9) | **Hard** — cannot distribute gold without Currency System |
-| **Inventory System** | Approved | Writes | `PickupRequest(characterID, itemID, quantity)` → `PickupResult` | **Hard** — cannot deliver items without Inventory System |
-| **Party System** | Approved (2026-05-17) | Reads/Calls | Party membership array (CharacterID[], join-order stable) via `IPartySystem.GetMemberAtIndex(partyID, rrNextIndex)`; cursor advance via `IPartySystem.AdvanceRrNextIndex(partyID)` | **Hard** — round-robin and auction distribution require party state. Party System CR-PS-7 owns and maintains `rrNextIndex`; Loot Table System reads and advances it exclusively via the IPartySystem interface. |
-| **Networking Core** | Approved | Sends via | Message dispatch for `GroundItemSpawned`, `GroundItemAssigned`, `LootBidUpdate`, `AuctionResolved`, `GroundItemDespawned`; validates incoming `LootBidRequest` | **Hard** — ground item lifecycle events require network delivery to zone clients |
+| **Currency System** | Approved | Reads/Writes | `AddGold(characterID, amount, GoldTransactionReason.MonsterDrop)`; `TrySpendGold(characterID, winnerBid, GoldTransactionReason.AuctionBid)` (auction winner, CR-LT-9); `GetBalance(characterID)` (CR-LT-9.1) | **Hard** — cannot distribute gold without Currency System |
+| **Inventory System** | Approved | Reads/Writes | `PickupRequest(characterID, itemID, quantity)` → `PickupResult`; `HasFreeSlot(): bool` and `InventoryChangedEvent` (CR-LT-9.1, CR-LT-13.2) | **Hard** — cannot deliver items without Inventory System |
+| **Party System** | Approved (2026-05-17) | Reads/Calls | Party membership array (CharacterID[], join-order stable) via `IPartySystem.GetMemberAtIndex(partyID, rrNextIndex)`; cursor advance via `IPartySystem.AdvanceRrNextIndex(partyID)`; member `Status` read for a full-bag bidder (CR-LT-9.1) | **Hard** — round-robin and auction distribution require party state. Party System CR-PS-7 owns and maintains `rrNextIndex`; Loot Table System reads and advances it exclusively via the IPartySystem interface. |
+| **Networking Core** | Approved | Sends via | Message dispatch for `GroundItemSpawned`, `GroundItemAssigned`, `LootBidUpdate`, `AuctionResolved`, `GroundItemDespawned`, `BagFullPickupBlocked`, `GroundItemExpiryWarning`; validates incoming `LootBidRequest` | **Hard** — ground item lifecycle events require network delivery to zone clients |
 
 **Downstream dependents — systems that depend on Loot Table System:**
 
 | System | GDD | Dependency Type | What they need | Hard/Soft |
 |--------|-----|----------------|----------------|-----------|
 | **Mob Spawning** | Approved (design/gdd/mob-spawning.md) | Kill event source + data consumer | Enemy AI raises `MobEventBus.MobDied` after `ResolveMobDrop`; Mob Spawning establishes the `(EntityID ↔ MobTypeID)` binding used at drop resolution time; `LootTableRef` is a field in `MobDefinition` | **Hard** — Mob Spawning cannot drop items without Loot Table resolution |
-| **HUD** | Not yet designed | Consumes ground item state | "Bag full — item on ground" notification driven by `GroundItemAssigned` events scoped to the local player; HUD must clear the indicator on delivery or despawn | **Soft** — gameplay continues; only the notification is absent |
-| **Character Persistence** | Not yet designed | Indirect | Inventory System persists items received through this system; Character Persistence must support items awarded by the Loot Table System | **Indirect** — mediated by Inventory System |
+| **HUD** | Approved (2026-06-20, design/gdd/hud.md) | Consumes ground item state | "Bag full — item on ground" notification driven by `GroundItemAssigned` events scoped to the local player; HUD must clear the indicator on delivery or despawn | **Soft** — gameplay continues; only the notification is absent |
+| **Character Persistence** | Approved (2026-05-24, design/gdd/character-persistence.md) | Indirect | Inventory System persists items received through this system; Character Persistence must support items awarded by the Loot Table System | **Indirect** — mediated by Inventory System |
 
 **Bidirectionality notes:**
 - `design/gdd/item-database.md` — Loot Table System already listed as a downstream dependent ✓
 - `design/gdd/inventory-system.md` — ✓ DONE (2026-05-17): Interactions table updated; `PickupRequest(CharacterID, ItemID, quantity)` is now the canonical signature. Lean re-review complete (2026-05-17) — re-Approved.
-- `design/gdd/currency-system.md` — should add Loot Table System as a caller when next amended
+- `design/gdd/currency-system.md` — ✓ DONE (2026-10-03): Loot Table System is listed as a caller of `AddGold`, `TrySpendGold` and `GetBalance` in the Interactions and Downstream Dependents tables.
 - `design/gdd/party-system.md` — ✓ DONE (Approved 2026-05-17): `rrNextIndex` is owned by Party System (CR-PS-7); Loot Table System reads and advances it via IPartySystem interface.
 
 ## Tuning Knobs
@@ -286,6 +293,7 @@ For a single table entry with drop chance `p`, the expected number of drops over
 |------|---------|-------|-----------|-------------|
 | `GROUND_ITEM_TTL_TICKS` | 2,400 | 120 seconds | [600, 7,200] | Too low (→30s): mobile players who switch apps briefly lose drops; full-bag players can't react fast enough. Too high (→360s): ground item records accumulate — 20 players clearing 5 mobs/min for 6 minutes = 600+ live ground records. |
 | `AUCTION_WINDOW_TICKS` | 600 | 30 seconds | [200, 1,200] | Too low (→10s): insufficient time for mobile players to read tooltip, decide, type bid. Too high (→60s): party waits one minute per Steel drop — interrupts grind flow. |
+| `AUCTION_WINNER_GRACE_TICKS` | 600 | 30 seconds | [200, 1,200] | Too low (→10s): a mobile player cannot open the discard modal, pick a slot and confirm in time — they lose an item they bid for. Too high (→60s): each full-bag bidder in turn can hold the item and the party's pool share for a minute. Worst case per auction = number of bidders × this value (CR-LT-9.1). *(added 2026-10-03)* |
 | `PICKUP_RADIUS_UNITS` | 2.0 | — | [1.0, 5.0] | Too small: players must walk directly on top of the item; fiddly on touch. Too large: auto-delivery triggers from across a room; undermines the "walk to claim" player fantasy. Provisional — calibrate during first playtest with item pickup feeling. |
 | `GROUND_ITEM_TTL_PAUSE_CAP_TICKS` | 1,200 | 60 seconds | [0, 3,600] | Too low (0): no mobile benefit. Too high: players hold items indefinitely by backgrounding. Governs total accumulated background pause per item assignment (CR-LT-13.1). |
 | `EXPIRY_WARNING_TICKS` | 600 | 30 seconds | [100, 1,200] | Too low: insufficient reaction time. Too high: warning fires so early it loses urgency. Must be < GROUND_ITEM_TTL_TICKS. Warning fires once at adjusted expiryTick − this value (CR-LT-13.3). |
@@ -346,7 +354,7 @@ When `PickupRequest` succeeds: a short "item acquired" particle burst at the ite
 On `PickupResult.Fail`: the beacon shifts to a pulsing amber/red. A short "blocked" audio ping plays once (not looping). The HUD bag-full indicator activates. The discard modal appears immediately (CR-LT-13.2).
 
 **Discard Modal**
-Triggered by `BagFullPickupBlocked`. Overlay showing: item being claimed (icon + name + tier badge), TTL countdown (real-time seconds remaining), and the player's inventory grid. Player selects any unlocked slot and taps "Discard" to free space. On confirm: item discarded, pickup retried automatically. Modal dismissed on exit from `PICKUP_RADIUS_UNITS` or on successful delivery.
+Triggered by `BagFullPickupBlocked`. Overlay showing: item being claimed (icon + name + tier badge), TTL countdown (real-time seconds remaining), and the player's inventory grid. Player selects any unlocked slot and taps "Discard" to free space. On confirm: item discarded, pickup retried automatically. The modal has two modes, chosen by the client from the state of the ground item named in `BagFullPickupBlocked` *(added 2026-10-03)*: **pickup mode** (item `Assigned`, CR-LT-13.2) — countdown is the item's TTL; dismissed on exit from `PICKUP_RADIUS_UNITS` or on successful delivery. **Grace mode** (item `Auctioning`, CR-LT-9.1) — countdown is the grace remaining; not dismissed on exit from `PICKUP_RADIUS_UNITS`; closed on successful delivery, on `AuctionResolved` for that item, or when the countdown reaches zero.
 
 **Expiry Warning**
 Triggered by `GroundItemExpiryWarning` (30 seconds before `expiryTick`). HUD flashes urgent red (distinct from the amber bag-full beacon). A distinct escalating audio cue plays — not the same as the blocked beacon sound; must convey "act now" urgency. The flash persists until the item is delivered, despawns, or the player taps to acknowledge.
@@ -365,7 +373,7 @@ This section specifies trigger events and emotional intent only. Exact asset nam
 ## UI Requirements
 
 **Auction Bid Window**
-Triggered by an `AuctionOpen` event for a rare item the local player is eligible to bid on.
+Triggered by `GroundItemSpawned` with `isAuction = true` for a rare item the local player is eligible to bid on *(corrected 2026-10-03 — was "an `AuctionOpen` event", which is not a wire message)*.
 
 Contents:
 - Item name, icon, and tier badge
@@ -385,6 +393,7 @@ Active while ≥1 ground item is assigned to the local player with `PickupResult
 
 **Discard Modal (UI)**
 - Triggered by `BagFullPickupBlocked` event or by tapping the bag-full HUD indicator
+- Also shown to an auction bidder in a CR-LT-9.1 grace, wherever they stand *(added 2026-10-03)*. Client rule: if the ground item named in `BagFullPickupBlocked` is `Auctioning` in the client's ground item state, the modal is in grace mode — the countdown is the grace remaining (`remainingTicks`), leaving `PICKUP_RADIUS_UNITS` does not dismiss it, and it closes on delivery, on `AuctionResolved` for that item, or when the countdown reaches zero. Any other item state → pickup mode (CR-LT-13.2). No wire field distinguishes the two cases
 - Contents: item icon + name + tier badge at top; TTL countdown in seconds (live); full inventory grid (20 slots) below
 - Locked slots (Enhancement lock) are dimmed and non-selectable
 - Selecting a slot highlights it and enables the "Discard" confirm button
@@ -467,7 +476,20 @@ THEN the item enters `Auctioning` state. A bid of 89g is rejected silently (no `
 **AC-LT-12** [BLOCKING] [Integration — requires Party System stub, Inventory System stub, Currency System stub]
 GIVEN a DarkSteel auction in a party of 4: A bids 400g at tick 100, B bids 400g at tick 120, C bids 350g at tick 80, D bids nothing; `windowCloseTick` is reached,
 THEN A wins (earlier 400g bid at tick 100 < 120); `PickupRequest(A, itemID, 1)` is called once; `goldPerMember = floor(400/4) = 100`; all 4 members receive `AddGold(characterID, 100, GoldTransactionReason.MonsterDrop)` (4 calls total).
-If A's bag is full: CR-LT-13 applies to the item; gold pool split still executes for all 4 members.
+If A's bag is full: CR-LT-9.1 applies — see AC-LT-25 *(replaces "CR-LT-13 applies to the item; gold pool split still executes", 2026-10-03)*.
+
+**AC-LT-25** [BLOCKING] [Integration — requires Party System stub, Inventory System stub, Currency System stub] *(added 2026-10-03)*
+GIVEN the DarkSteel auction of AC-LT-12, A's bag is full at `windowCloseTick`, and A is connected with a balance ≥ 400g,
+THEN no `TrySpendGold` and no `AddGold` is called; A receives one `BagFullPickupBlocked` with `remainingTicks = AUCTION_WINNER_GRACE_TICKS`; the item stays `Auctioning`; no `AuctionResolved` is sent.
+GIVEN A frees a slot before the grace expires: on the first server tick after A's `InventoryChangedEvent`, `TrySpendGold(A, 400, AuctionBid)` is called once, `PickupRequest(A, itemID, 1)` once, `AddGold` 4 times (100g each), and `AuctionResolved` names A.
+GIVEN A does not free a slot: at `windowCloseTick + AUCTION_WINNER_GRACE_TICKS` A is disqualified with no gold moved and B (400g at tick 120) is tried on that tick under the same rule.
+GIVEN A's bag is full and A's balance is 399g at `windowCloseTick`: no `BagFullPickupBlocked` is sent to A, no `TrySpendGold(A, …)` is called, and B is tried on `windowCloseTick`.
+GIVEN A's bag is full and A's party member status is `Disconnected` at `windowCloseTick`: no `BagFullPickupBlocked` is sent, and B is tried on `windowCloseTick`.
+GIVEN A leaves the party during the grace: on the first server tick after, A is disqualified with no gold moved and B is tried on that tick.
+GIVEN A's status becomes `Disconnected` during the grace: nothing changes — A is still reserved until `windowCloseTick + AUCTION_WINNER_GRACE_TICKS`.
+GIVEN a party member leaves during A's grace and A then frees a slot: `AddGold` is called 3 times with `floor(400 / 3) = 133g` each.
+GIVEN every bidder's grace expires: CR-LT-10 round-robin applies, no gold moves, `AuctionResolved` reports the fallback outcome, the item's `expiryTick = resolutionTick + GROUND_ITEM_TTL_TICKS`, and `GroundItemAssigned` carries that `expiryTick`.
+The item does not despawn during a grace, including past its `expiryTick`.
 
 **AC-LT-13** [BLOCKING] [Integration — requires Currency System stub]
 GIVEN the same DarkSteel auction resolved in AC-LT-12 (winner A bids 400g at tick 100, party of 4, goldPerMember=100) and A has sufficient gold at `windowCloseTick`,
@@ -506,6 +528,7 @@ GIVEN a DarkSteel item in `Auctioning` state with 3 valid bids when a zone teard
 WHEN the zone begins shutdown,
 THEN the auction closes immediately at the teardown tick; CR-LT-9 resolves (highest bidder wins); `PickupRequest` and all `AddGold` calls complete before zone state is destroyed. Zone teardown does not finalize until all pending loot resolution calls have returned or timed out.
 GIVEN zero valid bids at teardown: CR-LT-10 round-robin applies before teardown.
+GIVEN the highest bidder's bag is full at teardown: that bidder is passed over with no `TrySpendGold`; the next bidder with a free slot is charged and wins. GIVEN no bidder has a free slot: no gold moves, the item despawns, and `AuctionResolved` reports the fallback outcome *(added 2026-10-03)*.
 
 **AC-LT-20** [BLOCKING]
 GIVEN a mob with GoldMin=10/GoldMax=10 killed by a solo player (N=1),
@@ -535,9 +558,9 @@ WHEN the server advances 1 tick (601 → 600 ticks remaining, equal to `EXPIRY_W
 THEN `GroundItemExpiryWarning` is sent to Character 42 exactly once — verified via server outbound log showing exactly one `GroundItemExpiryWarning` for that `groundItemID`.
 GIVEN the same item has `expiryTick` extended by CR-LT-13.1 after the initial warning fires: a second `GroundItemExpiryWarning` IS sent at the new `expiryTick − EXPIRY_WARNING_TICKS` tick — verified via server outbound log showing exactly two `GroundItemExpiryWarning` messages for that `groundItemID`, one at each deadline threshold crossing.
 
-**BLOCKING: 19 | ADVISORY: 5 | Total: 24**
+**BLOCKING: 20 | ADVISORY: 5 | Total: 25**
 
-*QA note: AC-LT-8, AC-LT-9 require `PICKUP_RADIUS_UNITS` to be authored before integration tests can be implemented. AC-LT-4, AC-LT-7, AC-LT-11, AC-LT-12, AC-LT-13, AC-LT-19 require a Party System stub or interface contract — the Party System GDD should define at minimum `rrNextIndex`, the membership array shape, and `PartyID` type before these integration tests are written.*
+*QA note: AC-LT-8, AC-LT-9 require `PICKUP_RADIUS_UNITS` to be authored before integration tests can be implemented. AC-LT-4, AC-LT-7, AC-LT-11, AC-LT-12, AC-LT-13, AC-LT-19, AC-LT-25 require a Party System stub or interface contract — the Party System GDD should define at minimum `rrNextIndex`, the membership array shape, and `PartyID` type before these integration tests are written.*
 
 ## Open Questions
 
