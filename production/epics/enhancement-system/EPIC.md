@@ -3,7 +3,7 @@
 > **Layer**: Feature
 > **GDD**: design/gdd/enhancement-system.md
 > **Architecture Module**: Enhancement (Feature layer; "irreversible outcome — commit before broadcast" data flow in `architecture.md`)
-> **Status**: In Progress (2/10 — Stories 001 and 002 Complete 2026-10-07; 6 stories Ready; 2 Blocked: Story 009 on OQ-ENH-7, Story 010 on TD-046)
+> **Status**: In Progress (3/10 — Stories 001–003 Complete 2026-10-07; 5 stories Ready; 2 Blocked: Story 009 on OQ-ENH-7, Story 010 on TD-046)
 > **Stories**: 10 stories created 2026-10-07 (001–010)
 
 > **Created ahead of the GDD's stated gate (user decision 2026-10-07).** The GDD header says OQ-ENH-7 and the wire-protocol Enhancement message set (TD-046) should close before `/create-epics`. The epic was created anyway so that the formula and bonus-provider work, which neither gate touches, can be planned alongside the Equipment epic. Every requirement the gates affect is marked below.
@@ -65,7 +65,7 @@ This epic is complete when:
 |---|-------|------|--------|-----|
 | 001 | [Enhancement Config — Level Cap, Thresholds, Probability Table, Prestige Band](story-001-enhancement-config.md) | Logic | Complete | None (design-only) |
 | 002 | [Enhancement Bonus Provider](story-002-enhancement-bonus-provider.md) | Logic | Complete | ADR-010 |
-| 003 | [Attempt Validation and Result Codes](story-003-attempt-validation.md) | Integration | Ready | ADR-010 |
+| 003 | [Attempt Validation and Result Codes](story-003-attempt-validation.md) | Integration | Complete | ADR-010 |
 | 004 | [Attempt Sequence and Outcome Resolution](story-004-attempt-sequence.md) | Integration | Ready | ADR-010 |
 | 005 | [Commit-Then-Deliver and Rollback](story-005-commit-and-rollback.md) | Integration | Ready (commit seam to settle at readiness) | ADR-006, ADR-010 |
 | 006 | [NPC Interaction Session](story-006-npc-interaction-session.md) | Integration | Ready | ADR-010 |
@@ -94,4 +94,4 @@ Assigned to Blocked stories: **AC-ENH-38** (Story 009) and **AC-ENH-6** (Story 0
 
 ## Next Step
 
-Stories 001 and 002 are Complete (2026-10-07) — the bonus provider the Equipment epic needs is in code. Next: `/story-readiness production/epics/enhancement-system/story-003-attempt-validation.md`, then `/dev-story` (Story 008 is independent and also ready). Work through the stories in order — each story's `Depends on:` field says what must be Complete first. To unblock 009 and 010: decide OQ-ENH-7 (`/architecture-decision`) and run the wire-protocol authoring session for TD-046.
+Stories 001–003 are Complete (2026-10-07) — config, bonus provider and attempt validation are in code. Next: `/story-readiness production/epics/enhancement-system/story-004-attempt-sequence.md`, then `/dev-story` (Stories 006 and 008 are also unblocked). Work through the stories in order — each story's `Depends on:` field says what must be Complete first. To unblock 009 and 010: decide OQ-ENH-7 (`/architecture-decision`) and run the wire-protocol authoring session for TD-046.

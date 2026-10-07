@@ -17,7 +17,7 @@ Control Manifest Version: 2026-06-28
 | [Loot Table System](loot-table-system/EPIC.md) | Core | Loot Table System | design/gdd/loot-table-system.md | Not yet created | Ready |
 | [Status Effects / Buffs](status-effects/EPIC.md) | Core | Status Effects | design/gdd/status-effects.md | Not yet created | Ready |
 | [Equipment System](equipment-system/EPIC.md) | Core | Equipment System | design/gdd/equipment-system.md | Not yet created | Ready — **design gate OQ-EQS-9 open before `/create-stories`** |
-| [Enhancement System](enhancement-system/EPIC.md) | Feature | Enhancement System | design/gdd/enhancement-system.md | 10 stories (001-002 Complete; 003-008 Ready; 009 Blocked on OQ-ENH-7, 010 Blocked on TD-046) | In Progress |
+| [Enhancement System](enhancement-system/EPIC.md) | Feature | Enhancement System | design/gdd/enhancement-system.md | 10 stories (001-003 Complete; 004-008 Ready; 009 Blocked on OQ-ENH-7, 010 Blocked on TD-046) | In Progress |
 
 ## Notes
 
