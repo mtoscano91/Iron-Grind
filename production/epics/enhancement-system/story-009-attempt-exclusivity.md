@@ -1,7 +1,7 @@
 # Story 009: Attempt Exclusivity — Held Requests
 
 > **Epic**: Enhancement System
-> **Status**: Blocked — **OQ-ENH-7 is undecided (which layer holds requests during an attempt). Do not start until it is decided and, if it needs one, an ADR is Accepted.**
+> **Status**: Blocked — **(1) ADR-011 (Asynchronous Persistence in the Server Tick Loop) is Proposed, not Accepted; (2) the inbound request dispatcher that holds the requests does not exist yet (Networking Core, next to ADR-004 code). OQ-ENH-7 itself is decided by ADR-011 (2026-10-07).**
 > **Layer**: Feature
 > **Type**: Integration
 > **Manifest Version**: 2026-06-28
@@ -13,8 +13,8 @@
 **Requirement**: `TR-enh-007`
 *(Requirement text lives in `docs/architecture/tr-registry.yaml` — registry is currently empty; TR-IDs are the epic's placeholders)*
 
-**ADR Governing Implementation**: **None yet.** OQ-ENH-7 has two candidates and no decision: (a) the session's request dispatcher checks `IsAttemptInProgress` once for every inbound request (one enforcement point; needs a Networking Core rule), or (b) each mutating system (Inventory, Equipment, NPC Shop, Consumable Use) checks it. The decision must also cover server-originated bag mutations that are not client requests — e.g. the Loot Table System's pickup, which returns a synchronous result and cannot be deferred by a dispatcher — and applies equally to the other callers of `SaveIrreversibleOutcome` (level-up, respec, item consumption). Owner: Lead Programmer / Networking Core.
-**ADR Decision Summary**: N/A until decided. Expect `/architecture-decision`.
+**ADR Governing Implementation**: ADR-011: Asynchronous Persistence in the Server Tick Loop (**Proposed** 2026-10-07 — must be Accepted before this story starts). Decision 4 resolves OQ-ENH-7: a per-character `ICharacterMutationGate` is closed while an irreversible write is in flight; the session's inbound request dispatcher holds that character's requests marked `HeldDuringIrreversibleWrite` (up to `MAX_HELD_REQUESTS_PER_CHARACTER` = 16) and releases them in arrival order on the tick the gate opens; server-originated bag mutations (loot pickup, auction delivery) read the gate, are not attempted, and are retried after `OnGateOpened`. The same gate serves every caller of `SaveIrreversibleOutcome`.
+**ADR Decision Summary**: Tick code never awaits a persistence task; the result is handled on the tick by a completion queue, and a per-character gate holds or defers bag mutations until then.
 
 **Engine**: Unity 6.3 LTS | **Risk**: unknown until the enforcement layer is chosen (a dispatcher rule would sit next to ADR-004 code — HIGH knowledge risk there)
 **Engine Notes**: To be filled in when the decision is made.
@@ -37,7 +37,7 @@
 
 ## Implementation Notes
 
-- **Nothing to implement until OQ-ENH-7 is decided.** What already exists for this story to build on: `EnhancementService.IsAttemptInProgress(CharacterID)` (Story 004) and the in-flight commit seam (Story 005).
+- **Decided 2026-10-07 by ADR-011 (Proposed).** The four questions below are answered there: (1) the dispatcher holds, with a per-character queue; (2) server-originated mutations are deferred and retried after the gate opens; (3) the gate is general — "an irreversible write is in flight for this character" — not Enhancement-specific; (4) hold queue bound 16 requests, write watchdog `PERSISTENCE_WATCHDOG_TICKS` = 200. This story still needs the ADR Accepted and the dispatcher built; re-run `/story-readiness` then. Note for readiness: the first criterion lists "pickup" among held requests — under ADR-011 a server pickup is deferred, not queued. *(Text before the decision:)* Nothing to implement until OQ-ENH-7 is decided. What already exists for this story to build on: `EnhancementService.IsAttemptInProgress(CharacterID)` (Story 004) and the in-flight commit seam (Story 005).
 - Questions the decision has to answer before this story can be rewritten as Ready:
   1. Which layer holds requests, and where is the queue?
   2. What happens to server-originated mutations (loot pickup) during the window — deferred, rejected, or allowed with a rule that keeps the rollback safe?

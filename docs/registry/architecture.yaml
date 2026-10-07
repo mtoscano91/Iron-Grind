@@ -30,7 +30,7 @@
 #   Superseded entries:     Grep pattern="status: superseded"
 
 version: 1
-last_updated: ""
+last_updated: "2026-10-07"
 
 # ─── STATE OWNERSHIP ─────────────────────────────────────────────────────────
 # Who is the authoritative owner of each piece of shared game state.
@@ -121,6 +121,33 @@ interfaces:
     added: 2026-06-27
     revised: ""
 
+  - contract: tick_completion_queue
+    status: proposed
+    pattern: direct_call
+    producer: any tick-driven caller of an ICharacterPersistence method
+    consumers:
+      - the caller's own completion callback, invoked on the tick thread by Drain
+    adr: docs/architecture/ADR-011-async-persistence-tick-loop.md
+    signal_signature: "ITickCompletionQueue.Track<T>(Task<T>, CancellationTokenSource, Action<TickTaskResult<T>>); Drain(uint currentTick); main-thread only; watchdog PERSISTENCE_WATCHDOG_TICKS = 200"
+    referenced_by:
+      - docs/architecture/ADR-011-async-persistence-tick-loop.md
+    added: 2026-10-07
+    revised: ""
+
+  - contract: character_mutation_gate
+    status: proposed
+    pattern: direct_call
+    producer: IrreversibleOutcomeCoordinator (Close before the outcome is applied in memory; Open after the write's result is handled)
+    consumers:
+      - inbound request dispatcher (holds requests marked HeldDuringIrreversibleWrite; MAX_HELD_REQUESTS_PER_CHARACTER = 16; released in arrival order)
+      - server-originated bag mutators (loot pickup, auction delivery) — read IsHeld, defer, retry after OnGateOpened
+    adr: docs/architecture/ADR-011-async-persistence-tick-loop.md
+    signal_signature: "ICharacterMutationGate: bool IsHeld(CharacterID); void Close(CharacterID); void Open(CharacterID); event Action<CharacterID> OnGateOpened"
+    referenced_by:
+      - docs/architecture/ADR-011-async-persistence-tick-loop.md
+    added: 2026-10-07
+    revised: ""
+
 # Example:
 #
 # interfaces:
@@ -148,7 +175,16 @@ interfaces:
 # Register a budget when an ADR explicitly claims a frame time allocation.
 # The registry lets /architecture-review verify the total doesn't exceed the target.
 
-performance_budgets: []
+performance_budgets:
+  - system: persistence_result_handling
+    status: proposed
+    budget_ms: 0.0
+    adr: docs/architecture/ADR-011-async-persistence-tick-loop.md
+    notes: "Latency rule, not a frame-time allocation: the result of a persistence call is handled by Drain on the first tick after its task completes (normal case 50–100 ms after the request at 20 Hz). Drain itself is O(tasks in flight) per tick with no allocation when nothing is in flight. The tick never waits on I/O."
+    referenced_by:
+      - docs/architecture/ADR-011-async-persistence-tick-loop.md
+    added: 2026-10-07
+    revised: ""
 
 # Example:
 #
@@ -269,6 +305,17 @@ api_decisions:
     added: 2026-06-27
     revised: ""
 
+  - purpose: tick_code_async_persistence_consumption
+    status: proposed
+    api: "ITickCompletionQueue.Track(task, cancellation, callback) + Drain() once per tick before game logic; result handled on the tick thread. Irreversible outcomes go through IrreversibleOutcomeCoordinator (begin on tick N, completion callback on tick N+k)."
+    not: "await / UnityEngine.Awaitable in tick-driven code; blocking the tick on the write; the synchronous CommitBeforeBroadcastSequencer.Execute for any production caller of SaveIrreversibleOutcome"
+    adr: docs/architecture/ADR-011-async-persistence-tick-loop.md
+    reason: "The write budget (50 ms P95) equals one tick; the tick must never wait on I/O, and all game state changes must happen on the tick thread at a fixed point. Polling Task.IsCompleted needs no synchronization context and is deterministic in EditMode tests."
+    referenced_by:
+      - docs/architecture/ADR-011-async-persistence-tick-loop.md
+    added: 2026-10-07
+    revised: ""
+
 # Example:
 #
 # api_decisions:
@@ -363,6 +410,20 @@ forbidden_patterns:
     why: "SetupRenderPasses was deprecated in Unity 6.2 and URP Compatibility Mode was fully removed in Unity 6.3. Any custom URP rendering pass written with SetupRenderPasses will not compile or run correctly in Unity 6.3+. The loading overlay implementation (FullScreenLoadingOverlay using UI Toolkit VisualElement) avoids this entirely — if a custom URP pass is ever added, it must use the render graph API."
     adr: docs/architecture/ADR-009-scene-zone-load-management.md
     added: 2026-06-27
+
+  - pattern: await_or_block_on_task_in_tick_code
+    status: proposed
+    description: "Tick-driven server code (game systems, request handlers, orchestration) must not use await, async methods, Task.Result, Task.Wait(), GetAwaiter().GetResult(), ContinueWith or async void. Start the Task and pass it to ITickCompletionQueue.Track in the same statement."
+    why: "An awaited continuation resumes when Unity pumps its synchronization context, not at a defined point of ServerTickLoop, and cannot be tested deterministically in EditMode. Blocking on a task stalls every player in the zone for the length of a database write (budget 50 ms P95 = one tick) and can deadlock the main thread."
+    adr: docs/architecture/ADR-011-async-persistence-tick-loop.md
+    added: 2026-10-07
+
+  - pattern: persistence_await_capturing_unity_context
+    status: proposed
+    description: "Inside the persistence layer, never await without ConfigureAwait(false) (including await using / await foreach), never read or write live game state after the first await, and never create a TaskCompletionSource without TaskCreationOptions.RunContinuationsAsynchronously."
+    why: "A captured UnitySynchronizationContext posts the continuation to the main thread: invisible in EditMode tests, a late or stalled write on the server, and a shutdown drain that waits out its timeout. Game state is single-threaded and is only safe to read in the synchronous prefix, on the tick thread."
+    adr: docs/architecture/ADR-011-async-persistence-tick-loop.md
+    added: 2026-10-07
 
 # Example:
 #
