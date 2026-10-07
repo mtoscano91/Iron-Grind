@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using IronGrind.CharacterStats;
 using IronGrind.Currency;
 using IronGrind.LootTableSystem;
+using IronGrind.Tests.EditMode.LootTableSystem;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
@@ -268,7 +269,7 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
                 {
                     new KeyValuePair<MobTypeID, LootTableDefinition>(new MobTypeID(MOB_TYPE_RAW), table),
                 };
-                Assert.IsTrue(LootTableRegistry.TryCreate(tables, out LootTableRegistry registry, out _));
+                Assert.IsTrue(LootTableRegistry.TryCreate(tables, new EmptyItemDatabase(), LootTableConstants.ALLOW_ENHANCEMENT_SCROLL_DROPS, out LootTableRegistry registry, out _));
                 Registry = registry;
 
                 Mobs.Mobs[Mob] = new MobInfo(new MobTypeID(MOB_TYPE_RAW), MOB_MAX_HP, MobPosition);

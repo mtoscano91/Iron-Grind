@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using IronGrind.ItemDatabase;
 
 namespace IronGrind.LootTableSystem
 {
@@ -20,15 +21,27 @@ namespace IronGrind.LootTableSystem
         /// Validates <paramref name="tables"/> and builds a registry when there are no issues.
         /// </summary>
         /// <param name="tables">The (mob type, table) pairs.</param>
+        /// <param name="itemDatabase">Used to recognise Enhancement Scroll entries (CR-LT-16). Must not be null.</param>
+        /// <param name="allowEnhancementScrollDrops">
+        /// When false, an entry naming an Enhancement Scroll is a validation issue. Production wiring passes
+        /// <see cref="LootTableConstants.ALLOW_ENHANCEMENT_SCROLL_DROPS"/>.
+        /// </param>
         /// <param name="registry">The registry, or null when validation failed.</param>
         /// <param name="issues">Every validation issue found (empty on success).</param>
         /// <returns>True if the registry was created.</returns>
+        /// <exception cref="System.ArgumentNullException"><paramref name="itemDatabase"/> is null.</exception>
+        /// <exception cref="System.InvalidOperationException">
+        /// <paramref name="allowEnhancementScrollDrops"/> is false and <paramref name="itemDatabase"/> is not ready.
+        /// </exception>
         public static bool TryCreate(
             IReadOnlyList<KeyValuePair<MobTypeID, LootTableDefinition>> tables,
+            IItemDatabase itemDatabase,
+            bool allowEnhancementScrollDrops,
             out LootTableRegistry registry,
             out IReadOnlyList<LootTableValidationIssue> issues)
         {
-            IReadOnlyList<LootTableValidationIssue> found = LootTableValidator.Validate(tables);
+            IReadOnlyList<LootTableValidationIssue> found =
+                LootTableValidator.Validate(tables, itemDatabase, allowEnhancementScrollDrops);
             issues = found;
             if (found.Count > 0)
             {

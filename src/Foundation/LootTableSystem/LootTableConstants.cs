@@ -70,5 +70,12 @@ namespace IronGrind.LootTableSystem
         /// would otherwise have paid them, to make room. Tuning knob; safe range [200, 1200].
         /// </summary>
         public const int AUCTION_WINNER_GRACE_TICKS = 600;
+
+        /// <summary>
+        /// Data validation switch (CR-LT-16). While false (the MVP setting), a loot table entry that
+        /// names an Enhancement Scroll is a validation error. Must stay false until
+        /// enhancement-system.md OQ-ENH-9 (post-MVP scroll drops) is resolved.
+        /// </summary>
+        public const bool ALLOW_ENHANCEMENT_SCROLL_DROPS = false;
     }
 }

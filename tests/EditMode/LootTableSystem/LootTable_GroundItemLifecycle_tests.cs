@@ -423,7 +423,7 @@ namespace IronGrind.Tests.EditMode.LootTableSystem
             {
                 new KeyValuePair<MobTypeID, LootTableDefinition>(new MobTypeID(RAW_MOB_TYPE), table),
             };
-            Assert.IsTrue(LootTableRegistry.TryCreate(tables, out LootTableRegistry registry, out _));
+            Assert.IsTrue(LootTableRegistry.TryCreate(tables, new EmptyItemDatabase(), LootTableConstants.ALLOW_ENHANCEMENT_SCROLL_DROPS, out LootTableRegistry registry, out _));
             var parties = new StubPartyService();
             var mobs = new StubMobInfoProvider();
             var tracker = new PartyTagTracker(parties, mobs, () => SPAWN_TICK);

@@ -1,12 +1,14 @@
+using System;
 using System.Collections.Generic;
 using IronGrind.Currency;
+using IronGrind.ItemDatabase;
 using IronGrind.Networking;
 
 namespace IronGrind.LootTableSystem
 {
     /// <summary>
     /// Pure startup validation of loot tables (design/gdd/loot-table-system.md: CR-LT-2, F-LT-1 Notes,
-    /// F-LT-4 variable range, Tuning Knobs). Performs no logging; the caller decides what to do with the issues.
+    /// F-LT-4 variable range, Tuning Knobs, CR-LT-16 scroll exclusion). Performs no logging; the caller decides what to do with the issues.
     /// </summary>
     public static class LootTableValidator
     {
@@ -14,10 +16,33 @@ namespace IronGrind.LootTableSystem
         /// Validates the full set of tables.
         /// </summary>
         /// <param name="tables">The (mob type, table) pairs. A null set is treated as empty.</param>
+        /// <param name="itemDatabase">Used to recognise Enhancement Scroll entries (CR-LT-16). Must not be null.</param>
+        /// <param name="allowEnhancementScrollDrops">
+        /// When false, an entry naming an Enhancement Scroll (a definition with non-null ScrollData) is an issue.
+        /// An ItemID unknown to the database is not reported by this rule.
+        /// </param>
         /// <returns>All issues found, one per violation; an empty list means valid.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="itemDatabase"/> is null.</exception>
+        /// <exception cref="InvalidOperationException">
+        /// <paramref name="allowEnhancementScrollDrops"/> is false and <paramref name="itemDatabase"/> is not
+        /// ready: every lookup would fail, so every scroll entry would pass unseen.
+        /// </exception>
         public static IReadOnlyList<LootTableValidationIssue> Validate(
-            IReadOnlyList<KeyValuePair<MobTypeID, LootTableDefinition>> tables)
+            IReadOnlyList<KeyValuePair<MobTypeID, LootTableDefinition>> tables,
+            IItemDatabase itemDatabase,
+            bool allowEnhancementScrollDrops)
         {
+            if (itemDatabase == null)
+            {
+                throw new ArgumentNullException(nameof(itemDatabase));
+            }
+
+            if (!allowEnhancementScrollDrops && !itemDatabase.IsReady)
+            {
+                throw new InvalidOperationException(
+                    "Loot tables cannot be validated before the item database is ready: the Enhancement Scroll rule (CR-LT-16) needs item lookups.");
+            }
+
             var issues = new List<LootTableValidationIssue>();
             if (tables == null)
             {
@@ -49,7 +74,7 @@ namespace IronGrind.LootTableSystem
                 }
 
                 ValidateGoldRange(id, table, issues);
-                ValidateEntries(id, table.Entries, issues);
+                ValidateEntries(id, table.Entries, itemDatabase, allowEnhancementScrollDrops, issues);
             }
 
             return issues;
@@ -79,7 +104,11 @@ namespace IronGrind.LootTableSystem
         }
 
         private static void ValidateEntries(
-            MobTypeID id, IReadOnlyList<LootTableEntry> entries, List<LootTableValidationIssue> issues)
+            MobTypeID id,
+            IReadOnlyList<LootTableEntry> entries,
+            IItemDatabase itemDatabase,
+            bool allowEnhancementScrollDrops,
+            List<LootTableValidationIssue> issues)
         {
             for (int e = 0; e < entries.Count; e++)
             {
@@ -89,6 +118,15 @@ namespace IronGrind.LootTableSystem
                 {
                     issues.Add(new LootTableValidationIssue(id,
                         $"Entries[{e}] ({entries[e].ItemId}) DropChance: {chance} is outside [0, 1]."));
+                }
+
+                // CR-LT-16: a scroll is identified by data (ScrollData != null, item-database.md Rule 36).
+                if (!allowEnhancementScrollDrops
+                    && itemDatabase.TryGetItem(entries[e].ItemId, out var item)
+                    && item.ScrollData != null)
+                {
+                    issues.Add(new LootTableValidationIssue(id,
+                        $"Entries[{e}] ({entries[e].ItemId}) is an Enhancement Scroll; scrolls cannot be dropped while ALLOW_ENHANCEMENT_SCROLL_DROPS is false (CR-LT-16)."));
                 }
             }
         }

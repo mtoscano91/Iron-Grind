@@ -16,6 +16,7 @@ namespace IronGrind.Tests.EditMode.LootTableSystem
         private static readonly MobTypeID Mob2 = new MobTypeID(2u);
         private static readonly MobTypeID Mob3 = new MobTypeID(3u);
         private static readonly ItemID Item = new ItemID(500u);
+        private static readonly EmptyItemDatabase NoItems = new EmptyItemDatabase();
 
         private static LootTableDefinition Table(int goldMin, int goldMax, params float[] chances)
         {
@@ -40,7 +41,7 @@ namespace IronGrind.Tests.EditMode.LootTableSystem
 
         private static IReadOnlyList<LootTableValidationIssue> Validate(MobTypeID id, LootTableDefinition table)
         {
-            return LootTableValidator.Validate(Pairs(Pair(id, table)));
+            return LootTableValidator.Validate(Pairs(Pair(id, table)), NoItems, LootTableConstants.ALLOW_ENHANCEMENT_SCROLL_DROPS);
         }
 
         // Counts issues for a mob type whose message names the given field — order-independent.
@@ -70,7 +71,7 @@ namespace IronGrind.Tests.EditMode.LootTableSystem
             var pairs = Pairs(Pair(Mob1, t1), Pair(Mob2, t2));
 
             // Act
-            bool created = LootTableRegistry.TryCreate(pairs, out LootTableRegistry registry, out IReadOnlyList<LootTableValidationIssue> issues);
+            bool created = LootTableRegistry.TryCreate(pairs, NoItems, LootTableConstants.ALLOW_ENHANCEMENT_SCROLL_DROPS, out LootTableRegistry registry, out IReadOnlyList<LootTableValidationIssue> issues);
             bool found1 = registry.TryGetTable(Mob1, out LootTableDefinition got1);
             bool found3 = registry.TryGetTable(Mob3, out LootTableDefinition got3);
 
@@ -90,7 +91,7 @@ namespace IronGrind.Tests.EditMode.LootTableSystem
             var pairs = Pairs(Pair(Mob1, Table(4, 8)), Pair(Mob1, Table(4, 8)));
 
             // Act
-            bool created = LootTableRegistry.TryCreate(pairs, out LootTableRegistry registry, out IReadOnlyList<LootTableValidationIssue> issues);
+            bool created = LootTableRegistry.TryCreate(pairs, NoItems, LootTableConstants.ALLOW_ENHANCEMENT_SCROLL_DROPS, out LootTableRegistry registry, out IReadOnlyList<LootTableValidationIssue> issues);
 
             // Assert
             Assert.IsFalse(created);
@@ -107,7 +108,7 @@ namespace IronGrind.Tests.EditMode.LootTableSystem
             var pairs = Pairs(Pair(MobTypeID.Invalid, Table(4, 8)));
 
             // Act
-            bool created = LootTableRegistry.TryCreate(pairs, out LootTableRegistry registry, out IReadOnlyList<LootTableValidationIssue> issues);
+            bool created = LootTableRegistry.TryCreate(pairs, NoItems, LootTableConstants.ALLOW_ENHANCEMENT_SCROLL_DROPS, out LootTableRegistry registry, out IReadOnlyList<LootTableValidationIssue> issues);
 
             // Assert
             Assert.IsFalse(created);
@@ -164,7 +165,7 @@ namespace IronGrind.Tests.EditMode.LootTableSystem
             // Arrange
             LootTableDefinition t1 = Table(4, 8);
             var pairs = Pairs(Pair(Mob1, t1));
-            LootTableRegistry.TryCreate(pairs, out LootTableRegistry registry, out _);
+            LootTableRegistry.TryCreate(pairs, NoItems, LootTableConstants.ALLOW_ENHANCEMENT_SCROLL_DROPS, out LootTableRegistry registry, out _);
 
             // Act
             pairs[0] = Pair(Mob1, Table(5, 9));
@@ -309,7 +310,7 @@ namespace IronGrind.Tests.EditMode.LootTableSystem
             var pairs = Pairs(Pair(Mob1, Table(4, 8)), Pair(Mob2, Table(3, 8)));
 
             // Act
-            bool created = LootTableRegistry.TryCreate(pairs, out LootTableRegistry registry, out IReadOnlyList<LootTableValidationIssue> issues);
+            bool created = LootTableRegistry.TryCreate(pairs, NoItems, LootTableConstants.ALLOW_ENHANCEMENT_SCROLL_DROPS, out LootTableRegistry registry, out IReadOnlyList<LootTableValidationIssue> issues);
 
             // Assert
             Assert.IsFalse(created);
@@ -326,7 +327,7 @@ namespace IronGrind.Tests.EditMode.LootTableSystem
             var pairs = Pairs(Pair(Mob1, Table(3, 8, 1.5f)));
 
             // Act
-            bool created = LootTableRegistry.TryCreate(pairs, out LootTableRegistry registry, out IReadOnlyList<LootTableValidationIssue> issues);
+            bool created = LootTableRegistry.TryCreate(pairs, NoItems, LootTableConstants.ALLOW_ENHANCEMENT_SCROLL_DROPS, out LootTableRegistry registry, out IReadOnlyList<LootTableValidationIssue> issues);
 
             // Assert
             Assert.IsFalse(created);
@@ -343,7 +344,7 @@ namespace IronGrind.Tests.EditMode.LootTableSystem
             var pairs = Pairs(Pair(Mob1, null));
 
             // Act
-            bool created = LootTableRegistry.TryCreate(pairs, out LootTableRegistry registry, out IReadOnlyList<LootTableValidationIssue> issues);
+            bool created = LootTableRegistry.TryCreate(pairs, NoItems, LootTableConstants.ALLOW_ENHANCEMENT_SCROLL_DROPS, out LootTableRegistry registry, out IReadOnlyList<LootTableValidationIssue> issues);
 
             // Assert
             Assert.IsFalse(created);
@@ -356,8 +357,8 @@ namespace IronGrind.Tests.EditMode.LootTableSystem
         public void Registry_NullTableSet_CreatesEmptyRegistry()
         {
             // Arrange / Act
-            IReadOnlyList<LootTableValidationIssue> validated = LootTableValidator.Validate(null);
-            bool created = LootTableRegistry.TryCreate(null, out LootTableRegistry registry, out IReadOnlyList<LootTableValidationIssue> issues);
+            IReadOnlyList<LootTableValidationIssue> validated = LootTableValidator.Validate(null, NoItems, LootTableConstants.ALLOW_ENHANCEMENT_SCROLL_DROPS);
+            bool created = LootTableRegistry.TryCreate(null, NoItems, LootTableConstants.ALLOW_ENHANCEMENT_SCROLL_DROPS, out LootTableRegistry registry, out IReadOnlyList<LootTableValidationIssue> issues);
 
             // Assert
             Assert.AreEqual(0, validated.Count);

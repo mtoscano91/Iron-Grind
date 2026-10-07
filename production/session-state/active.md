@@ -12,6 +12,42 @@
 
 > **Commit status 2026-10-07 (later):** Enhancement Story 006 (code, tests, `.meta` files, story, `EPIC.md`, index, TD-058, this file) is committed as `687fa33`. The "not committed" / "Uncommitted" notes in the Story 006 extracts below are superseded. Not pushed: `main` is 3 ahead of `origin` (`feaa172`, `b932244`, `687fa33`). Untracked and left alone: `bash.exe.stackdump`. PAT rotation is still unconfirmed.
 
+## Session Extract — /story-done 2026-10-07 (Enhancement Story 008 — COMPLETE WITH NOTES; Enhancement epic 8/11; not committed)
+
+- Verdict: COMPLETE WITH NOTES. Story: `production/epics/enhancement-system/story-008-scroll-source-restriction.md` — Scroll Exclusion Validator Rule (MVP). 7/7 criteria; test file 16 tests; EditMode 1817/1817. Review mode lean — QL-TEST-COVERAGE and LP-CODE-REVIEW skipped.
+- Enhancement `EPIC.md`: In Progress (8/11; 0 Ready; 3 Blocked — 009 on OQ-ENH-7, 010 on TD-046, 011 on the async-persistence decision and Character Persistence); `production/epics/index.md` row updated.
+- Deviation (the not-ready item database check added at code review): the user chose to **add one sentence to CR-LT-16** instead of a tech debt item. `design/gdd/loot-table-system.md` (CR-LT-16 + "Last Updated") and the `ALLOW_ENHANCEMENT_SCROLL_DROPS` note in `design/registry/entities.yaml` updated — wording that follows the code; no review pass run on it. No AC was added for it in the GDD (the story's tests cover it).
+- Tech debt logged: None.
+- Still true: no production caller of `LootTableRegistry.TryCreate` (no loot data loader) — the rule is enforced in tests only until one exists.
+- **Committed on `main`** (the user asked) as the two commits after `757d1d2`: "design: CR-LT-16 — loot table validation needs a ready Item Database" (`loot-table-system.md`, `entities.yaml`) and "Enhancement System: Story 008 (scroll exclusion validator rule)" (code, tests, `.meta`, story, `EPIC.md`, index, this file). The "not committed" / "Uncommitted" notes in the three Story 008 extracts (this one and the two below) are superseded. Not pushed. Untracked and left alone: `bash.exe.stackdump`. PAT rotation is still unconfirmed.
+- Next recommended: none Ready in the Enhancement epic. To unblock 009–011: one architecture decision on asynchronous persistence in the tick loop (covers OQ-ENH-7), the wire-protocol authoring session for TD-046, and a Character Persistence epic.
+
+## Session Extract — /code-review 2026-10-07 (Enhancement Story 008 — APPROVED WITH SUGGESTIONS; all five applied; 1817/1817; not committed)
+
+- Lean self-review in the dev-story session (no specialists spawned). No required changes. ADR-010 compliant (`IItemDatabase` passed in; no bus, no singleton).
+- **The user said "fix all" — S1–S5 applied by the orchestrator:**
+  - S1: `LootTableValidator.Validate` throws `InvalidOperationException` when the switch is off and `itemDatabase.IsReady` is false (a not-ready database answers "not found" for every item, which would pass every scroll entry). Doc `<exception>` on `Validate` and `LootTableRegistry.TryCreate`. Three new tests (Validate / TryCreate throw; switch on does not throw). **Not in the story or the GDD** — a behaviour added at review; mention it in `/story-done`.
+  - S2: the potion fixture has real `ConsumableData` (`EffectType.RestoreHP`).
+  - S3: the `ScrollDropsAllowed` alias is gone — call sites pass `LootTableConstants.ALLOW_ENHANCEMENT_SCROLL_DROPS`.
+  - S4: the four existing test files use `EmptyItemDatabase` from `LootTestFakes.cs`; the four `using IronGrind.Tests.EditMode.InventorySystem;` lines added by the dev-story agent are removed (KillResolution gained `using IronGrind.Tests.EditMode.LootTableSystem;`).
+  - S5: the `TryCreate` rejection test also asserts the `ItemID`.
+- New test file now 16 `[Test]`. EditMode 1817/1817 (Unity 6000.3.10f1 batch mode).
+- Supersedes the "For `/code-review`" list and the 13 / 1814 figures in the dev-story extract below.
+- **Uncommitted since `757d1d2`:** 3 source files, 4 existing test files, the new test file + `.meta`, this file.
+- Next: `/story-done production/epics/enhancement-system/story-008-scroll-source-restriction.md`.
+
+## Session Extract — /dev-story 2026-10-07 (Enhancement Story 008 implemented — 1814/1814 EditMode, not reviewed, not committed)
+
+- Story: `production/epics/enhancement-system/story-008-scroll-source-restriction.md` — Scroll Exclusion Validator Rule (MVP). Status still Ready (`/story-done` not run). Same session as the design-review extract below (no `/clear` in between); that work is committed as `757d1d2`.
+- One `gameplay-programmer` agent (src + tests), tight brief; diff reviewed by the orchestrator. No orchestrator edits to code.
+- Source (`src/Foundation/LootTableSystem/`): `LootTableConstants.cs` (+`ALLOW_ENHANCEMENT_SCROLL_DROPS = false`), `LootTableValidator.cs` (`Validate(tables, IItemDatabase, bool)`, null database throws, scroll rule after the `DropChance` check), `LootTableRegistry.cs` (`TryCreate` passes both through).
+- Tests: new `tests/EditMode/LootTableSystem/LootTable_ScrollExclusion_tests.cs` (13 `[Test]`, + `.meta` generated by the run); 13 call sites updated in `LootTable_DefinitionValidation_tests.cs` (×10), `LootTable_KillResolution_integration_tests.cs`, `LootTable_RoundRobin_integration_tests.cs`, `LootTable_GroundItemLifecycle_tests.cs`.
+- Test run: Unity 6000.3.10f1 batch mode, EditMode 1814/1814 (was 1801).
+- No production caller of `TryCreate` exists yet (no loot data loader) — to be said in the completion notes.
+- For `/code-review`: (1) the potion fixture in the new tests has no `ConsumableData` (a record the Item Database validator would reject) — a real potion record would be truer; (2) the alias `ScrollDropsAllowed` in `LootTable_DefinitionValidation_tests.cs` is a PascalCase const and reads as "allowed" while its value is false; (3) the three integration/lifecycle sites pass `new StubItemDatabase()` although two of those files have their own fake item database.
+- **Uncommitted since `757d1d2`:** everything above and this file.
+- Next: `/code-review` on the changed files, then `/story-done`.
+
 ## Session Extract — /design-review 2026-10-07 (loot-table-system.md CR-LT-16 amendment, lean — NEEDS REVISION, 1 blocker, revised in the same session; not committed)
 
 - Verdict: NEEDS REVISION — 1 blocking, 4 recommended. CR-LT-16 itself is sound; no primitive gaps, no convergence stall.

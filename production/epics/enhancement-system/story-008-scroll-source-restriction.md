@@ -1,7 +1,7 @@
 # Story 008: Scroll Exclusion Validator Rule (MVP)
 
 > **Epic**: Enhancement System
-> **Status**: Ready (2026-10-07 — the `loot-table-system.md` CR-LT-16 amendment is Approved; the scroll criterion is AC-LT-26)
+> **Status**: Complete (2026-10-07)
 > **Layer**: Feature
 > **Type**: Logic
 > **Manifest Version**: 2026-06-28
@@ -32,13 +32,13 @@
 
 *From `loot-table-system.md` AC-LT-26 and `enhancement-system.md` AC-ENH-24, scoped to this story:*
 
-- [ ] **Scroll entry rejected (AC-LT-26, AC-ENH-24)**: with scroll drops not allowed, validating a table set in which one mob's table has an entry naming an Enhancement Scroll reports exactly one issue for that entry; the issue's mob type is that mob and its message names the entry index and the `ItemID`. `LootTableRegistry.TryCreate` on the same set returns false with a null registry.
-- [ ] **One issue per offending entry**: two scroll entries (in one table or in two tables) produce two issues.
-- [ ] **Scrolls are identified by data, not by name or id**: an entry is a scroll iff the item database returns a definition whose `ScrollData` is non-null (item-database.md Rule 36). A Consumable without `ScrollData` (a potion) and an Equipment item are not reported.
-- [ ] **Unknown item is not a scroll**: an entry whose `ItemID` is not in the item database is not reported by this rule.
-- [ ] **Switch on lifts the rule**: with scroll drops allowed, the same scroll-bearing set produces no issue from this rule and `TryCreate` builds the registry.
-- [ ] **MVP default is off**: `LootTableConstants.ALLOW_ENHANCEMENT_SCROLL_DROPS` is `false`.
-- [ ] **Existing rules unchanged**: every existing loot validation test passes with the new parameters supplied; a set that breaks an existing rule and also names a scroll reports both issues.
+- [x] **Scroll entry rejected (AC-LT-26, AC-ENH-24)**: with scroll drops not allowed, validating a table set in which one mob's table has an entry naming an Enhancement Scroll reports exactly one issue for that entry; the issue's mob type is that mob and its message names the entry index and the `ItemID`. `LootTableRegistry.TryCreate` on the same set returns false with a null registry.
+- [x] **One issue per offending entry**: two scroll entries (in one table or in two tables) produce two issues.
+- [x] **Scrolls are identified by data, not by name or id**: an entry is a scroll iff the item database returns a definition whose `ScrollData` is non-null (item-database.md Rule 36). A Consumable without `ScrollData` (a potion) and an Equipment item are not reported.
+- [x] **Unknown item is not a scroll**: an entry whose `ItemID` is not in the item database is not reported by this rule.
+- [x] **Switch on lifts the rule**: with scroll drops allowed, the same scroll-bearing set produces no issue from this rule and `TryCreate` builds the registry.
+- [x] **MVP default is off**: `LootTableConstants.ALLOW_ENHANCEMENT_SCROLL_DROPS` is `false`.
+- [x] **Existing rules unchanged**: every existing loot validation test passes with the new parameters supplied; a set that breaks an existing rule and also names a scroll reports both issues.
 
 ---
 
@@ -84,7 +84,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/LootTableSystem/LootTable_ScrollExclusion_tests.cs` — must exist and pass.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 16 tests, EditMode 1817/1817 (2026-10-07)
 
 ---
 
@@ -93,3 +93,16 @@
 - Depends on: None within this epic. Item Database Stories 005–006 (Complete — scroll records, `ScrollData`), Loot Table Story 001 (Complete — `LootTableValidator`, `LootTableRegistry`).
 - **Gate**: lean `/design-review design/gdd/loot-table-system.md` of the CR-LT-16 amendment — done 2026-10-07 (1 blocking item, the duplicate AC-LT-25 ID; fixed, revision accepted, GDD Approved). Gate closed.
 - Unlocks: None
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-10-07
+**Criteria**: 7/7 passing (none deferred)
+**Deviations**:
+- ADVISORY — `LootTableValidator.Validate` (and so `LootTableRegistry.TryCreate`) throws `InvalidOperationException` when scroll drops are not allowed and the item database is not ready. Added at code review: a not-ready database answers "not found" for every item, which would pass every scroll entry. `loot-table-system.md` CR-LT-16 gained one sentence for it the same day.
+- ADVISORY — there is no production caller of `TryCreate` yet (no loot data loader exists). The rule is enforced in tests only until a loader is written; that loader must pass `LootTableConstants.ALLOW_ENHANCEMENT_SCROLL_DROPS` and run after the item database is ready.
+**Test Evidence**: Logic — `tests/EditMode/LootTableSystem/LootTable_ScrollExclusion_tests.cs` (16 tests). Full EditMode suite 1817/1817, Unity 6000.3.10f1 batch mode.
+**Code Review**: Complete — lean self-review 2026-10-07, APPROVED WITH SUGGESTIONS; S1–S5 applied (not-ready database check, real potion fixture, alias removed, `EmptyItemDatabase` reused, `ItemID` assert).
+**Files**: `src/Foundation/LootTableSystem/` — `LootTableConstants.cs`, `LootTableValidator.cs`, `LootTableRegistry.cs`; tests — the new file above, and call sites in `LootTable_DefinitionValidation_tests.cs`, `LootTable_GroundItemLifecycle_tests.cs`, `LootTable_KillResolution_integration_tests.cs`, `LootTable_RoundRobin_integration_tests.cs`.
