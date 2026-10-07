@@ -551,9 +551,9 @@ constants:
     type: "bool constant (tuning knob)"
     value: false
     unit: "—"
-    note: "Data validation switch (CR-LT-16, AC-LT-25). false (MVP): a loot table entry naming an item with ScrollData is a startup validation error — Enhancement Scrolls are NPC Shop only (enhancement-system.md AC-ENH-24). true: scrolls may be authored as monster drops. Must stay false until enhancement-system.md OQ-ENH-9 is resolved (economy re-validation, scroll drop classification)."
+    note: "Data validation switch (CR-LT-16, AC-LT-26). false (MVP): a loot table entry naming an item with ScrollData is a startup validation error — Enhancement Scrolls are NPC Shop only (enhancement-system.md AC-ENH-24). true: scrolls may be authored as monster drops. Must stay false until enhancement-system.md OQ-ENH-9 is resolved (economy re-validation, scroll drop classification)."
     added: "2026-10-07"
-    revised: ""
+    revised: "2026-10-07"
 
   - name: PICKUP_RADIUS_UNITS
     status: active

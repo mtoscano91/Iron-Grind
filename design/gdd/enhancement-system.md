@@ -333,7 +333,7 @@ If `ServerBroadcast_Enhancement9` cannot be delivered to all players (high load,
 | **Damage Calculation** | Approved | `IEnhancementBonusProvider.GetElementalBonus(level, baseElementalDamage, gearTier, isWeapon)` for the `ElementalBonus` input of F-DC-2 — Damage Calculation passes the weapon's base `ElementalDamage` from the Item Database and the level from `Equipment.GetEquippedWeaponEnhancementLevel(): byte` |
 | **Character Persistence** | Approved | `EnhancementLevel: byte` per bag slot and per gear slot in the save/load payload; `IEnhancementBonusProvider` on load (equipment re-registration). Also an upstream dependency (above) |
 | **NPC Shop** | Approved | Shares the `NPCInteractionActive` flag (CR-ENH-17 — opening the shop pre-empts an Enhancement NPC session; no callback, see OQ-NS-6 there); sells the four Enhancement Scrolls at the TK-ENH-9 prices; no direct API dependency |
-| **Loot Table System** | Approved (CR-LT-16 amendment 2026-10-07, lean re-review pending) | Enforces the MVP scroll source restriction: while `ALLOW_ENHANCEMENT_SCROLL_DROPS` is `false`, loot table validation rejects any entry naming an item with `ScrollData` (loot-table-system.md CR-LT-16, AC-LT-25; AC-ENH-24 here). No runtime API dependency. Post-MVP scroll drops: OQ-ENH-9 |
+| **Loot Table System** | Approved (CR-LT-16 amendment Approved 2026-10-07) | Enforces the MVP scroll source restriction: while `ALLOW_ENHANCEMENT_SCROLL_DROPS` is `false`, loot table validation rejects any entry naming an item with `ScrollData` (loot-table-system.md CR-LT-16, AC-LT-26; AC-ENH-24 here). No runtime API dependency. Post-MVP scroll drops: OQ-ENH-9 |
 | **Enhancement UI** | Not Started | `EnhancementStateUpdate`, `EnhancementAttemptResult`, `ServerBroadcast_Enhancement9` message schemas; `ConfirmEnhancement` and `CancelEnhancement` request schemas |
 | **VFX System** | Not Started | `OnEnhancementSuccess(newLevel)`, `OnEnhancementDestruction()`, `OnPrestigeBandChange(band)` signals; `ENHANCEMENT_GLOW_THRESHOLD = 7` |
 | **Audio System** | Not Started | `OnEnhancementSuccess(newLevel)`, `OnEnhancementDestruction()` signals |
@@ -627,7 +627,7 @@ While an attempt is in progress (Confirm sent, result not yet received), the ite
 **AC-ENH-24: Scroll Source Restriction (MVP) — No Monster Loot Table Entry**
 *Setup*: A loot table set containing an entry that names an Enhancement Scroll (`ScrollData` non-null), with `ALLOW_ENHANCEMENT_SCROLL_DROPS = false`.
 *Action*: Startup loot table validation runs (loot-table-system.md CR-LT-16).
-*Pass*: The entry is reported as a validation error and no loot table registry is created (loot-table-system.md AC-LT-25). At MVP, Enhancement Scrolls appear only in NPC Shop purchase records.
+*Pass*: The entry is reported as a validation error and no loot table registry is created (loot-table-system.md AC-LT-26). At MVP, Enhancement Scrolls appear only in NPC Shop purchase records.
 *Note (2026-10-07)*: this is an MVP constraint, not a permanent one. Post-MVP, scrolls are intended to become a rare drop on some monsters — see OQ-ENH-9. Enforcement moved from a one-off scan to a validation rule because no production loot tables exist yet and every table must pass validation.
 
 **AC-ENH-25: UI Shows Probability Before Confirm**

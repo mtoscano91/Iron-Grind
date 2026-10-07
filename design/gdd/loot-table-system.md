@@ -1,8 +1,8 @@
 # Loot Table System
 
-> **Status**: Approved (lean re-review #3, 2026-10-03 — covers the 2026-10-03 amendments; base design Approved 2026-05-17). CR-LT-16 amendment 2026-10-07 (Enhancement Scroll exclusion at MVP, AC-LT-25) — lean re-review pending
+> **Status**: Approved (2026-10-07 — CR-LT-16 amendment, Enhancement Scroll exclusion at MVP, AC-LT-26: lean re-review found 1 blocking item, the duplicate AC-LT-25 ID; fixed the same day and the revision accepted by the user without a further review pass. Earlier: lean re-review #3, 2026-10-03, of the 2026-10-03 amendments; base design Approved 2026-05-17)
 > **Author**: Manuel Toscano + Claude Code agents
-> **Last Updated**: 2026-10-03 (revision after lean re-review #2: CR-LT-9.1 — "disconnected" defined as the party member status and checked only when the bid is tried, a running grace is not ended by a disconnect; CR-LT-12 — the fresh `expiryTick` is carried by `GroundItemAssigned`, and also applies to the paid-winner invariant path; `N = 1` on the paying tick stated; `AuctionOpen` corrected; message lists completed — lean re-review pending); 2026-10-03 (winner-grace revision after the lean re-review: CR-LT-9.1 — balance read before a grace, no grace for a disconnected bidder, `N` on the paying tick; CR-LT-12 — fresh TTL for any fallback that follows a grace; state table, Interactions, F-LT-2, the disconnect and leaver edge cases, the discard modal client rule, AC-LT-25 and bookkeeping aligned — lean re-review pending); 2026-10-03 (winner grace: new CR-LT-9.1 — a bidder with a full bag is not charged and gets `AUCTION_WINNER_GRACE_TICKS` = 600 to free a slot, then the next bid is tried; no grace at zone teardown; CR-LT-9 last sentence, CR-LT-12, the `Auctioning` state row, the teardown edge case, AC-LT-12, AC-LT-19 and the discard modal updated; new AC-LT-25 and tuning knob — lean re-review pending); 2026-10-03 (Story 011 readiness decisions: CR-LT-9 — any non-`Success` `TrySpendGold` result disqualifies the bidder, and bids from characters who left the party are skipped; CR-LT-12 — an item `Assigned` out of an auction closed at `expiryTick` gets a fresh TTL; Edge Cases leaver line aligned — lean re-review pending); 2026-10-03 (Currency amendment: CR-LT-9, the Currency rows of the Interactions and Dependencies tables, and AC-LT-13 now name `GoldTransactionReason.AuctionBid` for the auction winner's `TrySpendGold` — no rule change); 2026-05-17 (lean re-review pass 2: B-LT-1 Party System status + rrNextIndex ownership propagated to Dependencies table; B-LT-2 Party System "Not yet designed" corrected; R-1 CR-LT-13.1 OQ-LT-4 reference updated; R-2 inventory-system.md re-approval noted; R-3 Interactions table AdvanceRrNextIndex corrected)
+> **Last Updated**: 2026-10-07 (revision after the lean re-review of the CR-LT-16 amendment: the scroll criterion renumbered AC-LT-25 → AC-LT-26 — AC-LT-25 is the winner-grace criterion; AC-LT-26 gained a clause for two offending entries; the two "Consumables" drop rate rows exclude Enhancement Scrolls at MVP); 2026-10-07 (CR-LT-16 — Enhancement Scroll exclusion at MVP, knob `ALLOW_ENHANCEMENT_SCROLL_DROPS`, Item Database `ScrollData` read at table validation, Enhancement System as a downstream dependent); 2026-10-03 (revision after lean re-review #2: CR-LT-9.1 — "disconnected" defined as the party member status and checked only when the bid is tried, a running grace is not ended by a disconnect; CR-LT-12 — the fresh `expiryTick` is carried by `GroundItemAssigned`, and also applies to the paid-winner invariant path; `N = 1` on the paying tick stated; `AuctionOpen` corrected; message lists completed — lean re-review pending); 2026-10-03 (winner-grace revision after the lean re-review: CR-LT-9.1 — balance read before a grace, no grace for a disconnected bidder, `N` on the paying tick; CR-LT-12 — fresh TTL for any fallback that follows a grace; state table, Interactions, F-LT-2, the disconnect and leaver edge cases, the discard modal client rule, AC-LT-25 and bookkeeping aligned — lean re-review pending); 2026-10-03 (winner grace: new CR-LT-9.1 — a bidder with a full bag is not charged and gets `AUCTION_WINNER_GRACE_TICKS` = 600 to free a slot, then the next bid is tried; no grace at zone teardown; CR-LT-9 last sentence, CR-LT-12, the `Auctioning` state row, the teardown edge case, AC-LT-12, AC-LT-19 and the discard modal updated; new AC-LT-25 and tuning knob — lean re-review pending); 2026-10-03 (Story 011 readiness decisions: CR-LT-9 — any non-`Success` `TrySpendGold` result disqualifies the bidder, and bids from characters who left the party are skipped; CR-LT-12 — an item `Assigned` out of an auction closed at `expiryTick` gets a fresh TTL; Edge Cases leaver line aligned — lean re-review pending); 2026-10-03 (Currency amendment: CR-LT-9, the Currency rows of the Interactions and Dependencies tables, and AC-LT-13 now name `GoldTransactionReason.AuctionBid` for the auction winner's `TrySpendGold` — no rule change); 2026-05-17 (lean re-review pass 2: B-LT-1 Party System status + rrNextIndex ownership propagated to Dependencies table; B-LT-2 Party System "Not yet designed" corrected; R-1 CR-LT-13.1 OQ-LT-4 reference updated; R-2 inventory-system.md re-approval noted; R-3 Interactions table AdvanceRrNextIndex corrected)
 > **Implements Pillar**: Earned Power (primary — solo) / Social Gravity (primary — party) / Legendary Gear (contextual)
 
 ## Overview
@@ -142,7 +142,7 @@ Economy calibration targets for the `DropChance` field on loot table entries. Fi
 | Iron | 15–25% | 28–47 |
 | Steel | 3–6% | 117–233 |
 | DarkSteel | 0.5–1.5% | 467–1,400 |
-| Consumables (any type) | 20–35% | — |
+| Consumables (potions, any type — not Enhancement Scrolls at MVP, CR-LT-16) | 20–35% | — |
 
 ## Formulas
 
@@ -335,7 +335,7 @@ Drop rates are authored per table entry. The following calibration targets apply
 | Iron | 0.15–0.25 | 28–47 |
 | Steel | 0.03–0.06 | 117–233 |
 | DarkSteel | 0.005–0.015 | 467–1,400 |
-| Consumables (per type) | 0.20–0.35 | — |
+| Consumables (potions, per type — not Enhancement Scrolls at MVP, CR-LT-16) | 0.20–0.35 | — |
 
 *What breaks:* Bronze too low → new players equip slowly, churn before reaching enhancement. DarkSteel too high → Legendary Gear scarcity evaporates. DarkSteel too low (→0.001) → mobile players churn before seeing first drop.
 
@@ -570,10 +570,11 @@ WHEN the server advances 1 tick (601 → 600 ticks remaining, equal to `EXPIRY_W
 THEN `GroundItemExpiryWarning` is sent to Character 42 exactly once — verified via server outbound log showing exactly one `GroundItemExpiryWarning` for that `groundItemID`.
 GIVEN the same item has `expiryTick` extended by CR-LT-13.1 after the initial warning fires: a second `GroundItemExpiryWarning` IS sent at the new `expiryTick − EXPIRY_WARNING_TICKS` tick — verified via server outbound log showing exactly two `GroundItemExpiryWarning` messages for that `groundItemID`, one at each deadline threshold crossing.
 
-**AC-LT-25** [BLOCKING] [Logic] *(added 2026-10-07 — CR-LT-16)*
+**AC-LT-26** [BLOCKING] [Logic] *(added 2026-10-07 — CR-LT-16; renumbered from a duplicate AC-LT-25 the same day)*
 GIVEN a table set in which one mob's table has an entry naming the Bronze Enhancement Scroll (an item with `ScrollData`) and `ALLOW_ENHANCEMENT_SCROLL_DROPS = false`,
 WHEN the set is validated at startup,
 THEN exactly one issue is reported for that entry, naming the mob type, the entry index and the `ItemID`, and no registry is created.
+GIVEN a set with two scroll entries (in one table, or one in each of two tables): exactly two issues are reported by this rule, one per entry.
 GIVEN the same set with `ALLOW_ENHANCEMENT_SCROLL_DROPS = true`: no issue is reported by this rule and the registry is created.
 GIVEN a set whose entries name only items without `ScrollData`, or an `ItemID` that is not in the Item Database: no issue is reported by this rule.
 

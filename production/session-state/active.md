@@ -12,6 +12,21 @@
 
 > **Commit status 2026-10-07 (later):** Enhancement Story 006 (code, tests, `.meta` files, story, `EPIC.md`, index, TD-058, this file) is committed as `687fa33`. The "not committed" / "Uncommitted" notes in the Story 006 extracts below are superseded. Not pushed: `main` is 3 ahead of `origin` (`feaa172`, `b932244`, `687fa33`). Untracked and left alone: `bash.exe.stackdump`. PAT rotation is still unconfirmed.
 
+## Session Extract — /design-review 2026-10-07 (loot-table-system.md CR-LT-16 amendment, lean — NEEDS REVISION, 1 blocker, revised in the same session; not committed)
+
+- Verdict: NEEDS REVISION — 1 blocking, 4 recommended. CR-LT-16 itself is sound; no primitive gaps, no convergence stall.
+- **Blocker:** the new scroll criterion reused the ID AC-LT-25 (already the winner-grace criterion: Story 013, TR-loot-012, the grace tests, TD-056). **Renumbered to AC-LT-26.** Every "AC-LT-25" in the readiness extract below that refers to the scroll rule now reads AC-LT-26 in the files.
+- **User chose "Revise now — blocker + R1–R4". Applied:**
+  - `design/gdd/loot-table-system.md` — header status and two 2026-10-07 "Last Updated" entries; AC-LT-26 heading plus a two-entry clause; both "Consumables" drop rate rows exclude Enhancement Scrolls at MVP.
+  - `design/gdd/enhancement-system.md` (dependency row, AC-ENH-24), `design/gdd/systems-index.md`, `design/registry/entities.yaml` (`ALLOW_ENHANCEMENT_SCROLL_DROPS` note, `revised: 2026-10-07`), Story 008, Enhancement `EPIC.md` — AC-LT-25 → AC-LT-26.
+  - `design/gdd/item-database.md` — Loot Table rows of the Interactions and Dependencies tables name the `GetItem` → `ScrollData` read at table validation (wording only; header not touched).
+  - `design/gdd/reviews/loot-table-system-review-log.md` — 2026-10-07 entry appended.
+- Not applied (nice-to-have): a core rule defining startup loot table validation; whether an unknown `ItemID` in an entry is an error.
+- Propagation check: no scroll-rule citation of AC-LT-25 is left outside this file's older extract and the review log's description of the blocker.
+- **Committed on `main`** (the user asked for it at the end of this session) in the commit titled "design: Loot Table CR-LT-16 lean re-review — AC-LT-26 renumber, amendment Approved; Story 008 Ready" — the commit after `9725da4`; the "not committed" in this extract's heading is superseded. Not pushed. (The readiness extract's "Uncommitted since `687fa33`" note is also superseded — that work is `9725da4`.) Untracked and left alone: `bash.exe.stackdump`. PAT rotation is still unconfirmed.
+- **Closing decision: the user accepted the revisions and marked the amendment Approved** (no further review pass). Status set to Approved in the GDD header, `systems-index.md` and the `enhancement-system.md` dependency row; review log has an "Approved by acceptance" note. **Story 008 is Ready** — story file, Enhancement `EPIC.md` (1 Ready, 3 Blocked) and `production/epics/index.md` updated.
+- **Next:** `/dev-story production/epics/enhancement-system/story-008-scroll-source-restriction.md` (fresh session). The story cites AC-LT-26.
+
 ## Session Extract — /story-readiness 2026-10-07 (Enhancement Story 008 — rewritten as a validator rule; CR-LT-16 design amendment applied; Blocked on a lean re-review; not committed)
 
 - Story: `production/epics/enhancement-system/story-008-scroll-source-restriction.md`. First verdict NEEDS WORK: no production loot tables exist (no assets, no loader), `LootTableRegistry` cannot list its tables, so the test-only scan had nothing to scan. No consumable pool path exists (every `LootTableEntry` names one `ItemID`). "Scrolls identified by data" is already covered by `ItemDatabase_MvpRecords_tests.cs`.

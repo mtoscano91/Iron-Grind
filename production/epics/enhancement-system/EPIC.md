@@ -3,7 +3,7 @@
 > **Layer**: Feature
 > **GDD**: design/gdd/enhancement-system.md
 > **Architecture Module**: Enhancement (Feature layer; "irreversible outcome — commit before broadcast" data flow in `architecture.md`)
-> **Status**: In Progress (7/11 — Stories 001–007 Complete 2026-10-07; 0 Ready; 4 Blocked: Story 008 on the lean re-review of the loot-table-system.md CR-LT-16 amendment, Story 009 on OQ-ENH-7, Story 010 on TD-046, Story 011 on the tick-loop/async-persistence decision and Character Persistence)
+> **Status**: In Progress (7/11 — Stories 001–007 Complete 2026-10-07; 1 Ready: Story 008; 3 Blocked: Story 009 on OQ-ENH-7, Story 010 on TD-046, Story 011 on the tick-loop/async-persistence decision and Character Persistence)
 > **Stories**: 10 stories created 2026-10-07 (001–010); Story 011 added the same day when Story 005 was split at its readiness check
 
 > **Created ahead of the GDD's stated gate (user decision 2026-10-07).** The GDD header says OQ-ENH-7 and the wire-protocol Enhancement message set (TD-046) should close before `/create-epics`. The epic was created anyway so that the formula and bonus-provider work, which neither gate touches, can be planned alongside the Equipment epic. Every requirement the gates affect is marked below.
@@ -70,7 +70,7 @@ This epic is complete when:
 | 005 | [Rollback and the Pending Window](story-005-commit-and-rollback.md) | Integration | Complete | ADR-010 |
 | 006 | [NPC Interaction Session](story-006-npc-interaction-session.md) | Integration | Complete (2026-10-07) | ADR-010 |
 | 007 | [Outcome Events and +9 Broadcast Trigger](story-007-outcome-events-and-broadcast-trigger.md) | Logic | Complete | ADR-010 |
-| 008 | [Scroll Exclusion Validator Rule (MVP)](story-008-scroll-source-restriction.md) | Logic | **Blocked** — lean `/design-review` of the loot-table-system.md CR-LT-16 amendment (2026-10-07) | ADR-010 |
+| 008 | [Scroll Exclusion Validator Rule (MVP)](story-008-scroll-source-restriction.md) | Logic | Ready (2026-10-07 — CR-LT-16 amendment Approved) | ADR-010 |
 | 009 | [Attempt Exclusivity — Held Requests](story-009-attempt-exclusivity.md) | Integration | **Blocked** — OQ-ENH-7 | None yet |
 | 010 | [Client Requests and Result Delivery](story-010-client-requests-and-result-delivery.md) | Integration | **Blocked** — TD-046 | ADR-004 |
 | 011 | [Commit Orchestration](story-011-commit-orchestration.md) | Integration | **Blocked** — tick-loop/async-persistence decision (ADR), Character Persistence, TD-046 for the client-facing criteria | ADR-006 |
@@ -90,9 +90,9 @@ Assigned to Blocked stories: **AC-ENH-38** (Story 009), **AC-ENH-6** (Story 010)
 - Story 007 — *decided 2026-10-07 at readiness:* `OnPrestigeBandChange` is not implemented in this epic (the visible band only changes on equip, which the Equipment System does); the GDD rows naming it (Interactions and Downstream Dependencies, VFX) should move to the Equipment System when `enhancement-system.md` is next edited. The +9 trigger carries ids, and Story 010 resolves the display names. Also noted: the control manifest asks for event argument types in a shared `IronGrind.Events` namespace that no code uses.
 - Story 006 — *decided 2026-10-07 at readiness:* the shared tracker and `INpcInteractionSessions` live in the neutral `IronGrind.NpcInteraction` namespace; `npcId` is stored and not validated (telling NPC types apart and rejecting an unknown id are deferred to Story 010 / NPC authoring — TD-058, npc-shop.md OQ-NS-1).
 - Stories 002, 003, 004 — inputs the GDD gives no rule for (out-of-range level or slot index, non-equipment item in the item slot, an inventory call failing mid-attempt).
-- Story 008 — *decided 2026-10-07 at readiness:* no production loot tables exist and a registry cannot list its tables, so the restriction is enforced as a loot table validation rule (loot-table-system.md CR-LT-16, AC-LT-25, switch `ALLOW_ENHANCEMENT_SCROLL_DROPS`, default `false`) instead of a test-only scan. It is an MVP constraint: post-MVP, scrolls are intended to be a rare drop on some monsters (enhancement-system.md OQ-ENH-9). There is no consumable pool path — every loot entry names one `ItemID`. The story touches Loot Table code and is 3h, not 1h.
+- Story 008 — *decided 2026-10-07 at readiness:* no production loot tables exist and a registry cannot list its tables, so the restriction is enforced as a loot table validation rule (loot-table-system.md CR-LT-16, AC-LT-26, switch `ALLOW_ENHANCEMENT_SCROLL_DROPS`, default `false`) instead of a test-only scan. It is an MVP constraint: post-MVP, scrolls are intended to be a rare drop on some monsters (enhancement-system.md OQ-ENH-9). There is no consumable pool path — every loot entry names one `ItemID`. The story touches Loot Table code and is 3h, not 1h.
 - Story 010 — no request triggers `EnhancementStateUpdate`.
 
 ## Next Step
 
-Stories 001–007 are Complete (2026-10-07) — config, bonus provider, validation, the two-phase attempt sequence, the rollback, the outcome events and the NPC session are in code. Next: in a fresh session, lean `/design-review design/gdd/loot-table-system.md` (CR-LT-16 amendment); when it passes, set Story 008 to Ready and run `/dev-story` on it. To unblock 009, 010 and 011: one architecture decision on asynchronous persistence in the tick loop (covers OQ-ENH-7 too), the wire-protocol authoring session for TD-046, and a Character Persistence epic.
+Stories 001–007 are Complete (2026-10-07) — config, bonus provider, validation, the two-phase attempt sequence, the rollback, the outcome events and the NPC session are in code. Next: `/dev-story` on Story 008 — Ready since 2026-10-07 (the loot-table-system.md CR-LT-16 amendment is Approved). To unblock 009, 010 and 011: one architecture decision on asynchronous persistence in the tick loop (covers OQ-ENH-7 too), the wire-protocol authoring session for TD-046, and a Character Persistence epic.

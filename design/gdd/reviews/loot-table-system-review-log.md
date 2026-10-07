@@ -2,6 +2,37 @@
 
 ---
 
+## Review — 2026-10-07 — Verdict: NEEDS REVISION (lean re-review of the CR-LT-16 amendment)
+Scope signal: L (system, unchanged); amendment S
+Specialists: lean — single-session analysis (no specialist agents); run in a fresh session after `/clear`
+Blocking items: 1 | Recommended: 4
+Summary: CR-LT-16 (Enhancement Scroll exclusion at MVP) is sound and implementable — the scroll test is by data (`ScrollData != null`, item-database.md Rule 36), the knob, the registry constant and Story 008 agree, and every cited primitive exists (F-ENH-5, AC-ENH-24, OQ-ENH-9). The one blocker is mechanical: the new criterion reused the ID AC-LT-25, which the winner-grace criterion of 2026-10-03 already holds (cited by Story 013, TR-loot-012, the grace integration tests and TD-056). No convergence stall; no primitive gaps; 8/8 sections; all dependency GDDs exist.
+Prior verdict resolved: Yes — prior verdict was APPROVED (lean re-review #3, 2026-10-03); this pass covers only the 2026-10-07 amendment.
+
+### Blocking
+1. Duplicate AC ID — two criteria named AC-LT-25 (winner grace, line 493; scroll exclusion, line 573).
+
+### Recommended
+- R1: item-database.md Interactions and Dependencies rows for Loot Table System do not list the `GetItem` → `ScrollData` read at table validation.
+- R2: the "Consumables (any type)" rows of the two drop rate tables read as covering scrolls, which are Consumables.
+- R3: CR-LT-16 says "one issue per offending entry"; the AC tested one entry only (Story 008 tests two).
+- R4: the "Last Updated" header had no 2026-10-07 entry.
+
+### Nice-to-have (not applied)
+No core rule defines startup table validation ("rejected like any other validation failure" has nothing to point at; "registry" in the AC is a code term) — worth a short rule when the loot data loader is designed. An entry naming an unknown `ItemID` is still legal for the validator; CR-LT-16 and Story 008 scope it out.
+
+### Revision applied in the same session (user chose "Revise now — blocker + R1–R4")
+- Blocker: the scroll criterion renumbered to **AC-LT-26** in `loot-table-system.md` (header, AC heading), `enhancement-system.md` (dependency row, AC-ENH-24), `systems-index.md`, `entities.yaml` (`ALLOW_ENHANCEMENT_SCROLL_DROPS` note), Story 008 and the Enhancement `EPIC.md`. AC-LT-25 is again only the winner-grace criterion; the footer (21 / 5 / 26) was already correct.
+- R1: both item-database.md rows name the `ScrollData` read (wording only — no rule change).
+- R2: both Consumables rows say "potions … not Enhancement Scrolls at MVP, CR-LT-16".
+- R3: AC-LT-26 gained a two-entry clause.
+- R4: "Last Updated" carries two 2026-10-07 entries.
+
+### Outcome — Approved by acceptance, 2026-10-07
+The user chose "Accept revisions and mark Approved" — no further review pass was run on the revision (the blocker was an ID renumber with no design content; the propagation check was clean). GDD status line, `systems-index.md` and the `enhancement-system.md` dependency row set to Approved; Enhancement Story 008 set to Ready.
+
+---
+
 ## Review — 2026-10-03 — Verdict: APPROVED (lean re-review #3 of the winner-grace amendment)
 Scope signal: L (system, unchanged); amendment S
 Specialists: lean — single-session analysis (no specialist agents); run in a fresh session after `/clear`
