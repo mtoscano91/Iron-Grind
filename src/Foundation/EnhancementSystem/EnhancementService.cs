@@ -4,6 +4,7 @@ using IronGrind.CharacterStats;
 using IronGrind.Currency;
 using IronGrind.InventorySystem;
 using IronGrind.ItemDatabase;
+using IronGrind.NpcInteraction;
 using UnityEngine;
 
 namespace IronGrind.EnhancementSystem

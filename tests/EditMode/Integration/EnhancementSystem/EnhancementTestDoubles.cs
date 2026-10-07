@@ -4,6 +4,7 @@ using IronGrind.CharacterStats;
 using IronGrind.Currency;
 using IronGrind.EnhancementSystem;
 using IronGrind.InventorySystem;
+using IronGrind.NpcInteraction;
 
 namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
 {
@@ -44,6 +45,35 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
 
         /// <inheritdoc />
         public bool IsActive(CharacterID charId) => Active;
+    }
+
+    /// <summary>
+    /// Settable stand-in for the town hub query: every character is in the town hub by default;
+    /// <see cref="OutsideTownHub"/> holds per-character overrides for characters that are not.
+    /// </summary>
+    internal sealed class StubTownHubQuery : ITownHubQuery
+    {
+        /// <summary>Whether characters not listed in <see cref="OutsideTownHub"/> are in the town hub.</summary>
+        public bool InTownHub { get; set; } = true;
+
+        /// <summary>Characters reported as outside the town hub regardless of <see cref="InTownHub"/>.</summary>
+        public HashSet<CharacterID> OutsideTownHub { get; } = new HashSet<CharacterID>();
+
+        /// <inheritdoc />
+        public bool IsInTownHub(CharacterID charId) => InTownHub && !OutsideTownHub.Contains(charId);
+    }
+
+    /// <summary>Manually driven wall clock in seconds; tests pass <c>() =&gt; clock.Now</c> to the code under test.</summary>
+    internal sealed class ManualClock
+    {
+        /// <summary>The current time in seconds.</summary>
+        public double Now { get; set; }
+
+        /// <summary>Moves the clock forward by <paramref name="seconds"/>.</summary>
+        public void Advance(double seconds)
+        {
+            Now += seconds;
+        }
     }
 
     /// <summary>
