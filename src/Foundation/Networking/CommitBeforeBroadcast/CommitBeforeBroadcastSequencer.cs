@@ -1,5 +1,4 @@
 using System;
-using UnityEngine;
 
 namespace IronGrind.Networking
 {
@@ -25,9 +24,9 @@ namespace IronGrind.Networking
     /// <para>
     /// <b>Why the ordering guarantee needs no injectable clock (AC-NC-09, AC-NC-15):</b> this method
     /// is fully synchronous — <paramref name="persistOutcome"/> (via <see cref="Execute{TOutcome}"/>'s
-    /// generic parameter list) is called and awaited to completion (as an ordinary blocking
+    /// generic parameter list) is called and runs to completion (as an ordinary blocking
     /// delegate call) strictly before <paramref name="broadcastOutcome"/> is ever invoked. There is
-    /// no concurrent/async path where a broadcast could race ahead of a slow persistence write. This
+    /// no concurrent path where a broadcast could race ahead of a slow persistence write. This
     /// makes the "commit before broadcast" guarantee structural, not timing-dependent: a caller
     /// whose <paramref name="persistOutcome"/> delegate takes 200ms or 500ms to return cannot cause
     /// <paramref name="broadcastOutcome"/> to fire any earlier, by construction. Tests prove this by
@@ -324,30 +323,28 @@ namespace IronGrind.Networking
                 // class remarks for why CR-CP-5's numbered list is authoritative over CR-NET-5.5's
                 // prose summary): revert -> disconnect -> critical alert -> preserve session. No
                 // retries are attempted — irreversible outcome writes are not idempotent. Runs
-                // identically whether persistOutcome returned false or threw.
-                revertOnFailure();
-                disconnectClient(clientId, DisconnectReason.Other);
-
-                if (persistException != null)
-                {
-                    Debug.LogError($"[CommitBeforeBroadcastSequencer] PersistenceWriteFailed: clientId={clientId} — " +
+                // identically whether persistOutcome returned false or threw. The steps live in
+                // IrreversibleWriteFailureProtocol, shared with IrreversibleOutcomeCoordinator.
+                string logMessage = persistException != null
+                    ? $"[CommitBeforeBroadcastSequencer] PersistenceWriteFailed: clientId={clientId} — " +
                         $"persistOutcome threw {persistException.GetType().Name}: {persistException.Message}. No " +
                         "outcome message emitted, no retry attempted (CR-NET-5.5). Caller rollback and client " +
-                        "disconnect completed; critical infrastructure alert firing.");
-                }
-                else
-                {
-                    Debug.LogError($"[CommitBeforeBroadcastSequencer] PersistenceWriteFailed: clientId={clientId} — " +
+                        "disconnect completed; critical infrastructure alert firing."
+                    : $"[CommitBeforeBroadcastSequencer] PersistenceWriteFailed: clientId={clientId} — " +
                         "SaveIrreversibleOutcome failed. No outcome message emitted, no retry attempted (CR-NET-5.5). " +
-                        "Caller rollback and client disconnect completed; critical infrastructure alert firing.");
-                }
+                        "Caller rollback and client disconnect completed; critical infrastructure alert firing.";
 
+                IrreversibleWriteFailureProtocol.Run(
+                    clientId,
+                    logMessage,
+                    "SaveIrreversibleOutcome write failure (CR-NET-5.5 / CR-CP-5).",
+                    revertOnFailure,
+                    disconnectClient,
+                    preserveSessionForTtl
 #if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
-                observer?.OnCriticalInfrastructureAlertFired(clientId,
-                    "SaveIrreversibleOutcome write failure (CR-NET-5.5 / CR-CP-5).");
+                    , observer
 #endif
-
-                preserveSessionForTtl(clientId, SESSION_TTL_SECONDS);
+                    );
 
                 return CommitBeforeBroadcastResult.PersistenceFailed;
             }

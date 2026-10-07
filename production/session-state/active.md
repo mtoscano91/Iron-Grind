@@ -14,6 +14,66 @@
 
 > **Push status 2026-10-07 (later):** the user asked for a push after Story 008: `origin/main` is at `faa134c` (`0faea44..faa134c`). "Not pushed" notes in the 2026-10-07 extracts below are superseded. PAT rotation is still unconfirmed.
 
+## Session Extract — /story-done 2026-10-07 — Networking Core Story 031 (not committed)
+- Verdict: COMPLETE WITH NOTES (17/17 criteria, all covered by automated tests; EditMode 1900 / 1900). Lean mode: QL-TEST-COVERAGE and LP-CODE-REVIEW skipped; `/code-review` had already run.
+- Story: `production/epics/networking-core/story-031-irreversible-outcome-coordinator.md` — Irreversible-Outcome Coordinator and Shared Failure Protocol. Status → Complete, Completion Notes added. `EPIC.md` → Complete (31/31).
+- Tech debt logged: 1 item — TD-061 (a throwing `isSuccess` runs neither deliver nor the failure protocol; fix before Enhancement Story 011).
+- Uncommitted: Story 030 and Story 031 work (code, tests, `.meta` files, both story files, `EPIC.md`, ADR-011 clarification, tech-debt register, this file). `bash.exe.stackdump` stays untracked.
+- Next recommended: no Ready story in Networking Core (31/31). No `production/sprints/` plan exists. Enhancement Stories 009 and 011 are the consumers of this work and remain blocked on other work (dispatcher / ADR-004 code, Character Persistence types). PAT rotation still unconfirmed.
+
+## Session Extract — /dev-story 2026-10-07 — Networking Core Story 031 implemented (not committed)
+- Story: `production/epics/networking-core/story-031-irreversible-outcome-coordinator.md` — Irreversible-Outcome Coordinator and Shared Failure Protocol. Status still Ready (set by `/story-done`).
+- Files changed: new `src/Foundation/Networking/IrreversibleOutcome/` (`IIrreversibleOutcomeCoordinator.cs`, `IrreversibleOutcomeCoordinator.cs`, `IrreversibleOutcomeBeginResult.cs`, `IrreversibleWriteFailureProtocol.cs`, plus Editor-generated `.meta` files and the folder `.meta`); modified `src/Foundation/Networking/CommitBeforeBroadcast/CommitBeforeBroadcastSequencer.cs` (failure path routed through `IrreversibleWriteFailureProtocol.Run`; two doc-comment words changed so the forbidden-pattern grep is clean).
+- Test written: `tests/EditMode/Networking/TickLoop_IrreversibleOutcomeCoordinator_tests.cs` (+ `.meta`) — 23 `[Test]` + 9 `[TestCase]` = 32 cases.
+- Test run (Unity batch mode, EditMode): 1893 / 1893 passed; the 32 new cases and the 14 untouched `TickLoop_CommitBeforeBroadcast` tests pass. Forbidden-pattern grep over the five source files: no match.
+- For `/code-review`: (1) `startWrite` and `queue.Track` are two statements, not one, because the story requires a null-task check before `Track`; if `Track` itself throws after the write started, the gate opens and the exception propagates with no rollback. (2) `using UnityEngine;` in the sequencer is now unused. (3) The sequencer's log message is built before revert runs (text unchanged).
+- Not wired in: nothing in production constructs the coordinator (expected by the story).
+- Blockers: None.
+- **/code-review 2026-10-07: APPROVED WITH SUGGESTIONS** (unity-specialist + qa-tester, no blocking findings). User said "fix all"; all 9 suggestions applied (the three "For `/code-review`" points above are superseded):
+  - `IrreversibleOutcomeCoordinator.Begin` split: new private `StartAndTrack` (Begin now under 40 lines). If `queue.Track` throws after the write started (off the tick thread), the failure protocol runs with cause "write started but could not be tracked", the token source is left undisposed, the gate opens and the exception is rethrown. The start-delegate exception is logged with `ToString()`.
+  - `IIrreversibleOutcomeCoordinator.Begin` exception docs completed; unused `using UnityEngine;` removed from the sequencer; story Implementation Notes gained the "same statement" reading.
+  - Tests: now 30 `[Test]` + 9 `[TestCase]` = 39 cases. Each failure test asserts its cause text; the failure helper asserts the gate is held inside every failure step; new tests for Track throwing, revert throwing inside `Begin`, `isSuccess` throwing, a write already complete at `Begin`, `Begin` again after success and after failure; the two-character test is split in two.
+  - Test run after the fixes (Unity batch mode, EditMode): 1900 / 1900 passed.
+- Next: `/story-done production/epics/networking-core/story-031-irreversible-outcome-coordinator.md`. Nothing committed. PAT rotation still unconfirmed.
+
+## Session Extract — Networking Core Story 031 created 2026-10-07 (not committed)
+- New story: `production/epics/networking-core/story-031-irreversible-outcome-coordinator.md` — Irreversible-Outcome Coordinator and Shared Failure Protocol (Logic, 4h, ADR-011 Decision 5, Migration step 2). **Status: Ready** (user approved; `/story-readiness` not run). 17 criteria. Manifest Version 2026-10-07. Lean mode: QL-STORY-READY skipped.
+- Decisions where ADR-011 is silent (user approved): `Begin<TOutcome, TResult>` with a write delegate and an `isSuccess` predicate (no persistence types exist in `src/`); `Begin` on a closed gate returns `RejectedWriteInFlight` (review P2 — queueing stays open); a write that throws or returns null at start runs the failure protocol and returns `PersistenceFailed`; acknowledge/compute throwing opens the gate and propagates; the source is disposed in the callback except after `TimedOut`.
+- `EPIC.md`: In Progress (30/31), Story 031 row added.
+- `/story-readiness` run in the same session (lean; QL-STORY-READY skipped): **READY**, 20/20. Advisory: 4h estimate is tight (17 criteria, ~25 test cases, a sequencer refactor); the story does not say what `Begin` returns if a failure step throws on the write-did-not-start path (the gate opens, the exception propagates — by the no-catch rule).
+- Next: `/dev-story` on Story 031, in a fresh session.
+
+## Session Extract — /story-done 2026-10-07 (not committed)
+- Verdict: COMPLETE WITH NOTES (17/17 criteria; lean mode, director gates skipped)
+- Story: `production/epics/networking-core/story-030-tick-completion-queue-mutation-gate.md` — Tick Completion Queue and Character Mutation Gate. Status Complete; `EPIC.md` now Complete (30/30).
+- Tech debt logged: 1 item — TD-060 (gate `OnGateOpened` stops at the first throwing subscriber; fix before Enhancement Story 009 or the Loot Table gate story).
+- Uncommitted: story, `EPIC.md`, ADR-011 clarification, `docs/tech-debt-register.md`, six source files, two test files, their `.meta` files (two folder metas included), this file. `bash.exe.stackdump` untracked and left alone. PAT rotation still unconfirmed.
+- Next recommended: None identified in a sprint plan (none exists). Follow-up per ADR-011 Migration step 2: write the `IrreversibleOutcomeCoordinator` story.
+
+## Session Extract — /code-review 2026-10-07 (Networking Core Story 030; fixes applied, not committed)
+- Reviewers: main session + `unity-specialist` + `qa-tester`. Verdict CHANGES REQUIRED (2 required, 7 suggestions); user said "fix all" for items 1–5 and 7–9.
+- Fixed in `TickCompletionQueue.cs` / `ITickCompletionQueue.cs`: reentrancy guard (`Drain`/`DrainOnShutdown` from a callback throws `InvalidOperationException`, caught and logged by the outer call); `DrainOnShutdown` rejects a negative/infinite timeout (`ArgumentOutOfRangeException`) and caps at `int.MaxValue` ms; it now also waits on timed-out tasks, alerts the ones still incomplete, and alerts-and-drops tasks tracked by a callback during shutdown (queue empty afterwards); split into helpers (under 40 lines).
+- Tests: queue fixture 25 → 37 (12 new; `Drain_TaskIncomplete…` rewritten to three drains; extra assertions). Gate fixture unchanged (7). Batch-mode EditMode run after the fixes: 1861/1861 passed.
+- **Open, user decision**: review item 6 — `CharacterMutationGate.Open` stops at the first throwing `OnGateOpened` subscriber (as the story specifies). Not changed.
+- Known and accepted: a timed-out task that never completes stays in `_timedOut` until shutdown; `Track` before the first `Drain` uses `initialTick`; `Cancel()` runs token registrations inline on the tick thread.
+- Next: /story-done on the story.
+
+## Session Extract — /dev-story 2026-10-07 (Networking Core Story 030; not committed)
+- Story: `production/epics/networking-core/story-030-tick-completion-queue-mutation-gate.md` — Tick Completion Queue and Character Mutation Gate. Status still Ready (not closed).
+- Files changed (all new): `src/Foundation/Networking/TickCompletion/` (`ITickCompletionQueue.cs`, `TickCompletionQueue.cs`, `TickTaskResult.cs`, `TickCompletionConstants.cs`), `src/Foundation/Networking/MutationGate/` (`ICharacterMutationGate.cs`, `CharacterMutationGate.cs`), plus Unity-generated `.meta` files (must be committed).
+- Test written: `tests/EditMode/Networking/TickLoop_CompletionQueue_tests.cs` (25 tests), `TickLoop_CharacterMutationGate_tests.cs` (7 tests). Batch-mode EditMode run: 1849/1849 passed, 0 failed (Unity 6000.3.10f1).
+- Implemented by `engine-programmer`; diff reviewed in the main session; `unity-specialist` not spawned (plain C#).
+- Agent choices beyond the story: `TickTaskResult<T>` has a public constructor; `watchdogTicks < 1` throws `ArgumentOutOfRangeException`; `DrainOnShutdown` drops still-incomplete entries (InFlightCount 0 after) and does not cancel their tokens; a task tracked by a callback during `DrainOnShutdown` is left unhandled.
+- Blockers: None
+- Next: /code-review on the six source files and two test files, then /story-done on the story.
+
+## Session Extract — Networking Core Story 030 readiness 2026-10-07 (not committed)
+
+- `/story-readiness` on Story 030 (lean; QL-STORY-READY skipped): **READY**, 20/20 checks, 6 advisory notes.
+- User approved all six drafts; applied to the story: `Error` contents per status, `cancellation` may be null and is caller-owned (`Cancel()` wrapped in try/catch), late-completion criterion reworded, thread-assert exception to "`Drain` never throws", new criterion "Runs before game logic when registered first" (now 17 criteria: 13 queue, 4 gate), two new test cases (null cancellation, cancel throws).
+- ADR-011 Clarifications: new 2026-10-07 entry — `DrainOnShutdown(TimeSpan)` on `ITickCompletionQueue`; null `cancellation` allowed; caller owns the source.
+- Next: `/dev-story` on Story 030 (requested by the user in the same session).
+
 ## Session Extract — Networking Core Story 030 created 2026-10-07 (same session as the review below; not committed)
 
 - The review extract below is **committed** as `a1e6be0` ("architecture: review 2026-10-07 (CONCERNS)"), not pushed; its "not committed" / "Uncommitted" notes are superseded.

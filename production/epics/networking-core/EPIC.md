@@ -3,8 +3,8 @@
 > **Layer**: Foundation
 > **GDD**: design/gdd/networking-core.md + 9 sub-contracts
 > **Architecture Module**: Networking Core
-> **Status**: In Progress (29/30) — Story 030 added 2026-10-07 after ADR-011 (Ready). Stories 001–029 Complete (2026-07-22). Not yet confirmed via a full live Unity Editor test run across the whole epic together; see `production/session-state/active.md` for verification status per story.
-> **Stories**: 30 stories created (001–030)
+> **Status**: Complete (31/31) — Story 031 (added 2026-10-07, ADR-011 Migration step 2) Complete 2026-10-07; full EditMode suite 1900 / 1900 in Unity batch mode. Story 030 (added 2026-10-07 after ADR-011) Complete 2026-10-07. Stories 001–029 Complete (2026-07-22). Not yet confirmed via a full live Unity Editor test run across the whole epic together; see `production/session-state/active.md` for verification status per story.
+> **Stories**: 31 stories created (001–031)
 
 ## Overview
 
@@ -97,7 +97,8 @@ This epic is complete when:
 | 027 | SelfDamageEvent vs DamageEvent Delivery Exclusivity | Logic | Complete | ADR-004 |
 | 028 | EntityHealthUpdate/PartyMemberHealthUpdate Relevance Filter Algorithm | Logic | Complete | ADR-004 |
 | 029 | SetTarget RPC & Target Slot Management | Logic | Complete | ADR-004 |
-| 030 | Tick Completion Queue and Character Mutation Gate | Logic | Ready | ADR-011 |
+| 030 | Tick Completion Queue and Character Mutation Gate | Logic | Complete | ADR-011 |
+| 031 | Irreversible-Outcome Coordinator and Shared Failure Protocol | Logic | Complete | ADR-011 |
 
 **Scoped out of this epic** (owned by other systems' future epics, using these GDDs as their wire-contract reference): every specific downstream message schema for Auto-Attack Combat, Currency, Leveling, Zone Instancing, Party, Inventory, Equipment, NPC Shop, Consumable Use, Movement, and Skill systems. Networking Core owns the envelope/channel/tick/session/ghost/OWL/relevance-filter/test-harness substrate only.
 
