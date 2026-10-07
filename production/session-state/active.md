@@ -4,7 +4,45 @@
 
 > **Push status 2026-10-02:** the user pushed `main` to `origin` (`108db3a..125e98f`) — `origin/main` is at `125e98f`. Notes below saying "not pushed" or "`main` is ahead of `origin`" are superseded. PAT rotation is still unconfirmed.
 
+> **Commit and push status 2026-10-03 (later):** the winner-grace design amendment is committed as `74ad7f2`, and Stories 013 and 012 (code, tests, stories, `EPIC.md`, tech debt, this file) as `7910d2a`. The user asked for a push: `origin/main` is at `7910d2a` (`125e98f..7910d2a`). Every "Uncommitted" / "not committed" / "not pushed" note in the extracts below is superseded. Untracked and left alone: `bash.exe.stackdump` in the repo root (a Git Bash crash dump, not committed). PAT rotation is still unconfirmed.
+
 > **Commit status 2026-10-03:** Story 011 and the Currency amendment are committed on `main` — `c2acf60` (design: `AuctionBid = 9`, Story 011 readiness decisions) and `c789a05` (Story 011 code, tests, `.meta` files, story, EPIC, tech debt). The "Uncommitted" notes in the 2026-10-03 extracts below are superseded. Not pushed: `main` is 3 ahead of `origin`. PAT rotation still unconfirmed. **Uncommitted since `c789a05`:** the winner-grace amendment and story changes listed in the extract directly below.
+
+## Session Extract — /story-done 2026-10-07 (Inventory Story 010 — COMPLETE WITH NOTES; Inventory epic 10/10; not committed)
+
+- Verdict: COMPLETE WITH NOTES. Story: `production/epics/inventory-system/story-010-enhancement-level.md` — Per-Slot Enhancement Level. 23/23 criteria; new test file 57 methods (60 cases); EditMode 1501/1501.
+- `EPIC.md`: Status Complete (10/10); GDD AC coverage 23 of 24 (AC-INV-11 deferred to the Inventory UI epic).
+- Tech debt logged: None.
+- **Uncommitted since `7910d2a`:** six files in `src/Foundation/InventorySystem/`; the new EnhancementLevel test file + `.meta`; eleven fixture-only test files (nine inventory, `LootTestFakes.cs`, the loot bag-full recovery integration test); Story 010; inventory `EPIC.md`; this file.
+- Next recommended: commit when the user asks. Then: no Ready story exists in any epic — Equipment and Enhancement are unblocked on the inventory side but have no epics yet (`/create-epics`; Equipment still has pre-implementation gate OQ-EQS-9); Authentication, Damage Calculation and Status Effects have an `EPIC.md` but no stories (`/create-stories`); Item Database needs a code follow-up story for Amendment #4 (scrolls). Design side: TD-056 (Loot Table GDD wording) and `/design-system` for Inventory UI (#30). PAT rotation still unconfirmed.
+
+## Session Extract — /code-review 2026-10-07 (Inventory Story 010 — APPROVED WITH SUGGESTIONS → "fix all" applied, 1501/1501 EditMode, not committed)
+
+- Lean self-review in the dev-story session (no `unity-specialist` / `qa-tester` spawned). No required changes; six suggestions, all applied by the orchestrator. This supersedes the "For `/code-review`" list in the extract below.
+- **Applied:** (S1) the two clamp tests pin the warning's slot, character and levels (`ExpectClampWarning`); (S2) new test — locked slot whose item the Item Database cannot resolve is rejected; (S3) two new tests — `SeedSlotForTesting` throws for a level on an empty slot or on quantity > 1; (S4) `InventorySlot.EnhancementLevel` docs keyed on `StackLimit`, not quantity; (S5) `TryClaimSnapshotSlot` extracted, `ApplySnapshotEntry` is 33 lines; (S6) the three `SeedSlotForTesting` doc links name the 5-argument overload.
+- New test file: 57 methods, 60 cases. EditMode 1501/1501 (Unity 6000.3.10f1 batch mode).
+- Left as is (explained to the user): an invalid level on `MoveItemIn` returns the same `Failed` value as an invalid item; a same-item move with an unresolvable stack limit is a no-op when levels match.
+- **Uncommitted:** six files in `src/Foundation/InventorySystem/`, the new test file + `.meta`, eleven fixture files, the story file, this file.
+- Next: `/story-done production/epics/inventory-system/story-010-enhancement-level.md` — closes the Inventory epic (10/10).
+
+## Session Extract — /dev-story 2026-10-07 (Inventory Story 010 implemented — 1498/1498 EditMode, not reviewed, not committed)
+
+- Story: `production/epics/inventory-system/story-010-enhancement-level.md` — Per-Slot Enhancement Level. Status still Ready (`/story-done` not run). Run in the same session as the readiness extract below (no `/clear`).
+- Two `gameplay-programmer` agents in parallel against one API contract (src / tests). One fix by the orchestrator: removed a pointless `LockSlot` on an empty slot from the empty-slot rejection test.
+- Files changed (src/Foundation/InventorySystem): `InventoryService.cs` (third ctor arg `byte maxEnhancementLevel`, `SetEnhancementLevel`, `ValidatePlacementLevel`, `MergeSlots` split out of `ExecuteMove`, `NormalizeSnapshotLevel`, 5-arg `SeedSlotForTesting`, level on `RecordSlotChange` / `ValidateSlotContents`), `IInventoryService.cs` (`SetEnhancementLevel`; `MoveItemIn` / `ForceInsert` take a level), `InventorySlot.cs`, `SlotChange.cs`, `InventorySnapshotEntry.cs`, `MoveItemOutResult.cs` (ctor is now `(ItemID, byte, MoveItemOutCode)`).
+- Tests: new `tests/EditMode/InventorySystem/InventorySystem_EnhancementLevel_tests.cs` (54 methods, 57 cases, + `.meta` generated by the run); fixture updates in the nine inventory test files (`MaxEnhancementLevel` constant, third ctor arg, `, 0` on 29 `MoveItemIn` / `ForceInsert` calls), `LootTestFakes.cs`, `LootTable_BagFullRecovery_integration_tests.cs`. No existing assertion changed.
+- Test run: Unity 6000.3.10f1 batch mode, EditMode 1498/1498 (was 1441).
+- For `/code-review`: an invalid-level `MoveItemIn` returns `MoveItemInResult.Failed` (same value as an invalid item); a call with both an unknown item and an over-max level logs only the level error; same-item move with an unresolvable `StackLimit` now is a no-op when levels match (it used to swap) and still logs the lookup error; `ApplySnapshotEntry` is about 40 lines; no test asserts that the clamp warning names the character and slot (prefix-only regex); `ConsumeItem` emptying a slot has no level test (it only empties stacks); two `SeedSlotForTesting` overloads may make existing `<see cref>` doc links ambiguous (CS0419 warning).
+- Next: `/code-review` on the changed files, then `/story-done` — closes the Inventory epic (10/10).
+
+## Session Extract — /story-readiness 2026-10-07 (Inventory Story 010 — READY after three file-list fixes, not committed)
+
+- Story: `production/epics/inventory-system/story-010-enhancement-level.md` — Per-Slot Enhancement Level. The last open story of the Inventory epic (9/10); unlocks the Enhancement and Equipment epics.
+- First verdict NEEDS WORK — the story predates the Loot Table code: `RecordingInventoryService` in `tests/EditMode/LootTableSystem/LootTestFakes.cs` implements `IInventoryService` and was not in the file list; `LootTable_BagFullRecovery_integration_tests.cs` line 213 constructs `InventoryService` and was not in the list; "eight" existing inventory test files is nine.
+- **Applied to the story (user approved):** the three fixes — QA Test Cases file list, Test Evidence line, the constructor note in Implementation Notes. No criterion or rule changed.
+- Checked and fine: ADR-010 and ADR-006 (Amendment 1) Accepted; manifest version 2026-06-28 matches; dependencies 001, 004–009 Complete; the implementation notes match the current `InventoryService.cs`. `TR-inv-004` is not in the registry (registry holds only commented examples — same as the earlier inventory stories).
+- **Uncommitted:** the story file and this file.
+- Next: `/dev-story production/epics/inventory-system/story-010-enhancement-level.md`. Other open items: TD-056 (Loot Table GDD wording pass + lean re-review); `/design-system` for Inventory UI (#30). PAT rotation still unconfirmed.
 
 ## Session Extract — /story-done 2026-10-03 (Story 012 — COMPLETE WITH NOTES; Loot Table epic 13/13; not committed)
 

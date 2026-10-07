@@ -22,6 +22,8 @@ namespace IronGrind.Tests.EditMode.InventorySystem
     [TestFixture]
     internal sealed class InventorySystem_EquipmentInterface_Tests
     {
+        private const byte MaxEnhancementLevel = 10;
+
         private static readonly CharacterID Player = new CharacterID(1001u);
         private static readonly CharacterID UnregisteredPlayer = new CharacterID(1999u);
 
@@ -53,7 +55,7 @@ namespace IronGrind.Tests.EditMode.InventorySystem
                 _itemDatabase.Add(definition);
 
             _tick = 0u;
-            _inventory = new InventoryService(_itemDatabase, CurrentTick);
+            _inventory = new InventoryService(_itemDatabase, CurrentTick, MaxEnhancementLevel);
             _inventory.RegisterCharacter(Player);
 
             _events = new List<SlotChange[]>();
@@ -298,7 +300,7 @@ namespace IronGrind.Tests.EditMode.InventorySystem
             _inventory.SeedSlotForTesting(Player, 8, ItemID.Invalid, 0);
 
             // Act
-            var result = _inventory.MoveItemIn(Player, BronzeSwordItemId);
+            var result = _inventory.MoveItemIn(Player, BronzeSwordItemId, 0);
 
             // Assert
             Assert.IsTrue(result.Success);
@@ -320,7 +322,7 @@ namespace IronGrind.Tests.EditMode.InventorySystem
             var before = Snapshot(Player);
 
             // Act
-            var result = _inventory.MoveItemIn(Player, BronzeSwordItemId);
+            var result = _inventory.MoveItemIn(Player, BronzeSwordItemId, 0);
 
             // Assert
             Assert.IsFalse(result.Success);
@@ -339,7 +341,7 @@ namespace IronGrind.Tests.EditMode.InventorySystem
 
             // Act — the slot is claimed (via Pickup) before MoveItemIn executes.
             var pickup = _inventory.Pickup(Player, HPPotionItemId, 1);
-            var result = _inventory.MoveItemIn(Player, BronzeSwordItemId);
+            var result = _inventory.MoveItemIn(Player, BronzeSwordItemId, 0);
 
             // Assert — the item is not silently lost; the caller (Equipment System) keeps it.
             Assert.IsTrue(pickup.Success);
@@ -354,7 +356,7 @@ namespace IronGrind.Tests.EditMode.InventorySystem
             _inventory.SeedSlotForTesting(Player, 0, BronzeSwordItemId, 1);
 
             // Act
-            var result = _inventory.MoveItemIn(Player, BronzeSwordItemId);
+            var result = _inventory.MoveItemIn(Player, BronzeSwordItemId, 0);
 
             // Assert
             Assert.IsTrue(result.Success);
@@ -371,7 +373,7 @@ namespace IronGrind.Tests.EditMode.InventorySystem
             LogAssert.Expect(LogType.Error, new Regex(@"^\[InventoryService\] MoveItemIn: .*not a known item"));
 
             // Act
-            var result = _inventory.MoveItemIn(Player, ItemID.Invalid);
+            var result = _inventory.MoveItemIn(Player, ItemID.Invalid, 0);
 
             // Assert
             Assert.IsFalse(result.Success);
@@ -388,7 +390,7 @@ namespace IronGrind.Tests.EditMode.InventorySystem
             LogAssert.Expect(LogType.Error, new Regex(@"^\[InventoryService\] MoveItemIn: .*not a known item"));
 
             // Act
-            var result = _inventory.MoveItemIn(Player, UnregisteredItemId);
+            var result = _inventory.MoveItemIn(Player, UnregisteredItemId, 0);
 
             // Assert
             Assert.IsFalse(result.Success);
@@ -406,7 +408,7 @@ namespace IronGrind.Tests.EditMode.InventorySystem
             LogAssert.Expect(LogType.Error, new Regex(@"^\[InventoryService\] MoveItemIn: .*not a known item"));
 
             // Act
-            var result = _inventory.MoveItemIn(Player, BronzeSwordItemId);
+            var result = _inventory.MoveItemIn(Player, BronzeSwordItemId, 0);
 
             // Assert
             Assert.IsFalse(result.Success);
@@ -422,7 +424,7 @@ namespace IronGrind.Tests.EditMode.InventorySystem
             LogAssert.Expect(LogType.Error, new Regex(@"^\[InventoryService\] MoveItemIn: .*is not a registered character"));
 
             // Act
-            var result = _inventory.MoveItemIn(UnregisteredPlayer, BronzeSwordItemId);
+            var result = _inventory.MoveItemIn(UnregisteredPlayer, BronzeSwordItemId, 0);
 
             // Assert
             Assert.IsFalse(result.Success);
@@ -435,7 +437,7 @@ namespace IronGrind.Tests.EditMode.InventorySystem
         public void MoveItemIn_CalledFromOnInventoryChangedSubscriber_ThrowsInvalidOperationException_NoMutation()
         {
             // Arrange — a pickup fills slot 0; the handler tries MoveItemIn, which would land in slot 1.
-            _inventory.OnInventoryChanged += _ => _inventory.MoveItemIn(Player, BronzeSwordItemId);
+            _inventory.OnInventoryChanged += _ => _inventory.MoveItemIn(Player, BronzeSwordItemId, 0);
 
             // Act / Assert
             Assert.Throws<InvalidOperationException>(() => _inventory.Pickup(Player, HPPotionItemId, 1));
@@ -453,7 +455,7 @@ namespace IronGrind.Tests.EditMode.InventorySystem
             FillBagExceptSlot(Player, emptySlot: 7);
 
             // Act
-            bool success = _inventory.ForceInsert(Player, BronzeSwordItemId);
+            bool success = _inventory.ForceInsert(Player, BronzeSwordItemId, 0);
 
             // Assert
             Assert.IsTrue(success);
@@ -470,7 +472,7 @@ namespace IronGrind.Tests.EditMode.InventorySystem
             var before = Snapshot(Player);
 
             // Act
-            bool success = _inventory.ForceInsert(Player, BronzeSwordItemId);
+            bool success = _inventory.ForceInsert(Player, BronzeSwordItemId, 0);
 
             // Assert
             Assert.IsFalse(success);
@@ -486,7 +488,7 @@ namespace IronGrind.Tests.EditMode.InventorySystem
             _inventory.SeedSlotForTesting(Player, 0, BronzeSwordItemId, 1);
 
             // Act
-            bool success = _inventory.ForceInsert(Player, BronzeSwordItemId);
+            bool success = _inventory.ForceInsert(Player, BronzeSwordItemId, 0);
 
             // Assert
             Assert.IsTrue(success);
@@ -502,7 +504,7 @@ namespace IronGrind.Tests.EditMode.InventorySystem
             LogAssert.Expect(LogType.Error, new Regex(@"^\[InventoryService\] ForceInsert: .*not a known item"));
 
             // Act
-            bool success = _inventory.ForceInsert(Player, ItemID.Invalid);
+            bool success = _inventory.ForceInsert(Player, ItemID.Invalid, 0);
 
             // Assert
             Assert.IsFalse(success);
@@ -519,7 +521,7 @@ namespace IronGrind.Tests.EditMode.InventorySystem
             LogAssert.Expect(LogType.Error, new Regex(@"^\[InventoryService\] ForceInsert: .*not a known item"));
 
             // Act
-            bool success = _inventory.ForceInsert(Player, UnregisteredItemId);
+            bool success = _inventory.ForceInsert(Player, UnregisteredItemId, 0);
 
             // Assert
             Assert.IsFalse(success);
@@ -537,7 +539,7 @@ namespace IronGrind.Tests.EditMode.InventorySystem
             LogAssert.Expect(LogType.Error, new Regex(@"^\[InventoryService\] ForceInsert: .*not a known item"));
 
             // Act
-            bool success = _inventory.ForceInsert(Player, BronzeSwordItemId);
+            bool success = _inventory.ForceInsert(Player, BronzeSwordItemId, 0);
 
             // Assert
             Assert.IsFalse(success);
@@ -553,7 +555,7 @@ namespace IronGrind.Tests.EditMode.InventorySystem
             LogAssert.Expect(LogType.Error, new Regex(@"^\[InventoryService\] ForceInsert: .*is not a registered character"));
 
             // Act
-            bool success = _inventory.ForceInsert(UnregisteredPlayer, BronzeSwordItemId);
+            bool success = _inventory.ForceInsert(UnregisteredPlayer, BronzeSwordItemId, 0);
 
             // Assert
             Assert.IsFalse(success);
@@ -565,7 +567,7 @@ namespace IronGrind.Tests.EditMode.InventorySystem
         public void ForceInsert_CalledFromOnInventoryChangedSubscriber_ThrowsInvalidOperationException_NoMutation()
         {
             // Arrange — a pickup fills slot 0; the handler tries ForceInsert, which would land in slot 1.
-            _inventory.OnInventoryChanged += _ => _inventory.ForceInsert(Player, BronzeSwordItemId);
+            _inventory.OnInventoryChanged += _ => _inventory.ForceInsert(Player, BronzeSwordItemId, 0);
 
             // Act / Assert
             Assert.Throws<InvalidOperationException>(() => _inventory.Pickup(Player, HPPotionItemId, 1));
@@ -585,12 +587,12 @@ namespace IronGrind.Tests.EditMode.InventorySystem
             FillBag(Player);
 
             // Act / Assert — first full-bag ForceInsert fires once.
-            Assert.IsFalse(_inventory.ForceInsert(Player, BronzeSwordItemId));
+            Assert.IsFalse(_inventory.ForceInsert(Player, BronzeSwordItemId, 0));
             Assert.AreEqual(1, _fullEvents.Count, "Tick 0: first blocked ForceInsert notifies.");
 
             // A second full-bag ForceInsert within the window fires nothing.
             _tick = 100u;
-            Assert.IsFalse(_inventory.ForceInsert(Player, BronzeSwordItemId));
+            Assert.IsFalse(_inventory.ForceInsert(Player, BronzeSwordItemId, 0));
             Assert.AreEqual(1, _fullEvents.Count, "Tick 100: inside the window, suppressed.");
 
             // A failed Pickup shares the same window.
@@ -602,18 +604,18 @@ namespace IronGrind.Tests.EditMode.InventorySystem
             // A successful ForceInsert in between does not reset the window: free a slot, then insert.
             _tick = 300u;
             _inventory.RemoveItem(Player, 0);
-            Assert.IsTrue(_inventory.ForceInsert(Player, BronzeSwordItemId), "A freed slot lets ForceInsert succeed.");
+            Assert.IsTrue(_inventory.ForceInsert(Player, BronzeSwordItemId, 0), "A freed slot lets ForceInsert succeed.");
             Assert.AreEqual(1, _fullEvents.Count, "A successful ForceInsert must not reset the dedup window.");
             Assert.IsTrue(_inventory.IsFull(Player), "The successful insert re-fills the bag.");
 
             // Tick 599 is still inside the original [0, 600) window: no further notification.
             _tick = 599u;
-            Assert.IsFalse(_inventory.ForceInsert(Player, BronzeSwordItemId));
+            Assert.IsFalse(_inventory.ForceInsert(Player, BronzeSwordItemId, 0));
             Assert.AreEqual(1, _fullEvents.Count, "Tick 599: still inside the original window.");
 
             // Tick 600: the original window has expired; notifies again.
             _tick = 600u;
-            Assert.IsFalse(_inventory.ForceInsert(Player, BronzeSwordItemId));
+            Assert.IsFalse(_inventory.ForceInsert(Player, BronzeSwordItemId, 0));
             Assert.AreEqual(2, _fullEvents.Count, "Tick 600: window expired, notifies again.");
         }
 
@@ -650,7 +652,7 @@ namespace IronGrind.Tests.EditMode.InventorySystem
             _inventory.SeedSlotForTesting(Player, 0, HPPotionItemId, 50);
 
             // Act
-            var result = _inventory.MoveItemIn(Player, HPPotionItemId);
+            var result = _inventory.MoveItemIn(Player, HPPotionItemId, 0);
 
             // Assert
             Assert.IsTrue(result.Success);
@@ -668,7 +670,7 @@ namespace IronGrind.Tests.EditMode.InventorySystem
             _inventory.SeedSlotForTesting(Player, 0, HPPotionItemId, 50);
 
             // Act
-            bool inserted = _inventory.ForceInsert(Player, HPPotionItemId);
+            bool inserted = _inventory.ForceInsert(Player, HPPotionItemId, 0);
 
             // Assert
             Assert.IsTrue(inserted);
@@ -690,7 +692,7 @@ namespace IronGrind.Tests.EditMode.InventorySystem
             LogAssert.Expect(LogType.Error, new Regex(@"^\[InventoryService\] ForceInsert: .*not a known item"));
 
             // Act
-            bool inserted = _inventory.ForceInsert(Player, UnregisteredItemId);
+            bool inserted = _inventory.ForceInsert(Player, UnregisteredItemId, 0);
 
             // Assert — a caller bug, not a full bag: validation must fail before notifying.
             Assert.IsFalse(inserted);
@@ -714,9 +716,9 @@ namespace IronGrind.Tests.EditMode.InventorySystem
 
             // Act — tick 0: first character notifies; tick 100: second character, inside the first's window.
             _tick = 0u;
-            bool first = _inventory.ForceInsert(Player, BronzeSwordItemId);
+            bool first = _inventory.ForceInsert(Player, BronzeSwordItemId, 0);
             _tick = 100u;
-            bool second = _inventory.ForceInsert(secondPlayer, BronzeSwordItemId);
+            bool second = _inventory.ForceInsert(secondPlayer, BronzeSwordItemId, 0);
 
             // Assert — each character has its own window.
             Assert.IsFalse(first);
@@ -735,7 +737,7 @@ namespace IronGrind.Tests.EditMode.InventorySystem
             _inventory.SeedSlotForTesting(Player, 0, BronzeSwordItemId, 1);
 
             // Act
-            var result = _inventory.MoveItemIn(secondPlayer, BronzeSwordItemId);
+            var result = _inventory.MoveItemIn(secondPlayer, BronzeSwordItemId, 0);
 
             // Assert
             Assert.IsTrue(result.Success);
@@ -758,7 +760,7 @@ namespace IronGrind.Tests.EditMode.InventorySystem
 
             // Act
             var outResult = _inventory.MoveItemOut(Player, originalSlot);
-            var inResult = _inventory.MoveItemIn(Player, outResult.ItemId);
+            var inResult = _inventory.MoveItemIn(Player, outResult.ItemId, 0);
 
             // Assert
             Assert.AreEqual(MoveItemOutCode.Success, outResult.Code);

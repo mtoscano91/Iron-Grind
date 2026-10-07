@@ -23,15 +23,29 @@ namespace IronGrind.InventorySystem
         /// <summary>The slot's quantity after the mutation. 0 means the slot became empty.</summary>
         public readonly int Quantity;
 
+        /// <summary>The slot's enhancement level after the mutation. 0 when the slot became empty or holds a stack.</summary>
+        public readonly byte EnhancementLevel;
+
         /// <summary>Constructs a slot-change entry describing a single slot's post-mutation state.</summary>
         /// <param name="slotIndex">The slot index this entry describes.</param>
         /// <param name="itemId">The slot's item after the mutation.</param>
         /// <param name="quantity">The slot's quantity after the mutation.</param>
         public SlotChange(int slotIndex, ItemID itemId, int quantity)
+            : this(slotIndex, itemId, quantity, 0)
+        {
+        }
+
+        /// <summary>Constructs a slot-change entry including the slot's post-mutation enhancement level.</summary>
+        /// <param name="slotIndex">The slot index this entry describes.</param>
+        /// <param name="itemId">The slot's item after the mutation.</param>
+        /// <param name="quantity">The slot's quantity after the mutation.</param>
+        /// <param name="enhancementLevel">The slot's enhancement level after the mutation (0 when the slot became empty).</param>
+        public SlotChange(int slotIndex, ItemID itemId, int quantity, byte enhancementLevel)
         {
             SlotIndex = slotIndex;
             ItemId = itemId;
             Quantity = quantity;
+            EnhancementLevel = enhancementLevel;
         }
     }
 }

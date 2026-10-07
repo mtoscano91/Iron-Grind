@@ -24,6 +24,7 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
     [TestFixture]
     internal sealed class LootTable_BagFullRecovery_Integration_Tests
     {
+        private const byte MAX_ENHANCEMENT_LEVEL = 10;
         private const uint FILLER_A_ID = 2001u;
         private const uint FILLER_B_ID = 2002u;
         private const uint DROP_ID = 2003u;
@@ -210,7 +211,7 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
 
             var rig = new Rig
             {
-                Inventory = new InventoryService(database, () => 0u),
+                Inventory = new InventoryService(database, () => 0u, MAX_ENHANCEMENT_LEVEL),
                 Positions = new SettablePositionProvider(),
             };
             rig.Inventory.OnInventoryChanged += rig.CountInventoryEvent;

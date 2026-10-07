@@ -19,6 +19,8 @@ namespace IronGrind.Tests.EditMode.InventorySystem
     [TestFixture]
     internal sealed class InventorySystem_SlotContainer_Tests
     {
+        private const byte MaxEnhancementLevel = 10;
+
         private static readonly CharacterID Player = new CharacterID(1001u);
         private static readonly CharacterID OtherPlayer = new CharacterID(1002u);
         private static readonly ItemID HPPotionItemId = new ItemID(3001u);
@@ -57,7 +59,7 @@ namespace IronGrind.Tests.EditMode.InventorySystem
         [SetUp]
         public void SetUp()
         {
-            _inventory = new InventoryService(new StubItemDatabase(), () => 0u);
+            _inventory = new InventoryService(new StubItemDatabase(), () => 0u, MaxEnhancementLevel);
             _capturedEvents = new List<CapturedDispatch>();
             _secondRecorderEvents = new List<CapturedDispatch>();
         }

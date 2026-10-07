@@ -83,6 +83,10 @@ namespace IronGrind.InventorySystem
 
         private readonly Func<uint> _currentTick;
 
+        // Injected upper bound for enhancement levels (Enhancement System's MAX_ENHANCEMENT_LEVEL
+        // tuning knob). The Inventory System only uses it as a bound — never computes with it.
+        private readonly byte _maxEnhancementLevel;
+
         // Bag-full dedup (GDD Rule 4.10): per character, the server tick at which the current
         // notification window expires. Absent = no active window (the next blocked pickup fires).
         private readonly Dictionary<CharacterID, uint> _bagFullWindowExpiry = new Dictionary<CharacterID, uint>();
@@ -90,11 +94,13 @@ namespace IronGrind.InventorySystem
         /// <summary>Creates an inventory service.</summary>
         /// <param name="itemDatabase">Item Database used to look up <c>StackLimit</c> on pickup (Tier 1, ADR-010).</param>
         /// <param name="currentTick">Returns the current server tick (production: <c>() =&gt; serverTickLoop.ServerTickNumber</c>); used for the bag-full dedup window.</param>
+        /// <param name="maxEnhancementLevel">Inclusive upper bound for slot enhancement levels (Enhancement System's <c>MAX_ENHANCEMENT_LEVEL</c>; Story 010). Inventory only bounds by it.</param>
         /// <exception cref="ArgumentNullException"><paramref name="itemDatabase"/> or <paramref name="currentTick"/> is <see langword="null"/>.</exception>
-        public InventoryService(IItemDatabase itemDatabase, Func<uint> currentTick)
+        public InventoryService(IItemDatabase itemDatabase, Func<uint> currentTick, byte maxEnhancementLevel)
         {
             _itemDatabase = itemDatabase ?? throw new ArgumentNullException(nameof(itemDatabase));
             _currentTick = currentTick ?? throw new ArgumentNullException(nameof(currentTick));
+            _maxEnhancementLevel = maxEnhancementLevel;
         }
 
         /// <inheritdoc/>
@@ -497,28 +503,40 @@ namespace IronGrind.InventorySystem
         /// </summary>
         private MoveResult ExecuteMove(CharacterID charId, InventorySlot[] slots, int fromSlot, int toSlot, InventorySlot source, InventorySlot dest)
         {
-            if (source.ItemId == dest.ItemId)
-            {
-                if (!TryGetStackLimit(nameof(Move), source.ItemId, out int stackLimit))
-                    return SwapSlots(charId, slots, fromSlot, toSlot, source, dest);
+            bool sameItem = source.ItemId == dest.ItemId;
 
-                int transfer = Math.Min(source.Quantity, stackLimit - dest.Quantity);
-                if (transfer <= 0)
-                    return MoveResult.Succeeded(source, dest);
+            // Rule 7.20 (Story 010): only stackable items merge. StackLimit == 1 items (or an
+            // unresolvable limit) never merge — identical item AND level is a no-op, else swap.
+            if (sameItem && TryGetStackLimit(nameof(Move), source.ItemId, out int stackLimit) && stackLimit > 1)
+                return MergeSlots(charId, slots, fromSlot, toSlot, source, dest, stackLimit);
 
-                int newSourceQuantity = source.Quantity - transfer;
-                var newSource = newSourceQuantity == 0 ? InventorySlot.Empty : new InventorySlot(source.ItemId, newSourceQuantity);
-                var newDest = new InventorySlot(dest.ItemId, dest.Quantity + transfer);
-
-                RecordSlotChange(charId, fromSlot, newSource.ItemId, newSource.Quantity);
-                RecordSlotChange(charId, toSlot, newDest.ItemId, newDest.Quantity);
-                slots[fromSlot] = newSource;
-                slots[toSlot] = newDest;
-                EmitInventoryChanged(charId);
-                return MoveResult.Succeeded(newSource, newDest);
-            }
+            if (sameItem && source.EnhancementLevel == dest.EnhancementLevel)
+                return MoveResult.Succeeded(source, dest);
 
             return SwapSlots(charId, slots, fromSlot, toSlot, source, dest);
+        }
+
+        /// <summary>
+        /// Merges <paramref name="fromSlot"/> into <paramref name="toSlot"/> (same stackable item):
+        /// overflow beyond <paramref name="stackLimit"/> stays in the source; a full destination is a
+        /// no-op success with no event. Stacks are always level 0.
+        /// </summary>
+        private MoveResult MergeSlots(CharacterID charId, InventorySlot[] slots, int fromSlot, int toSlot, InventorySlot source, InventorySlot dest, int stackLimit)
+        {
+            int transfer = Math.Min(source.Quantity, stackLimit - dest.Quantity);
+            if (transfer <= 0)
+                return MoveResult.Succeeded(source, dest);
+
+            int newSourceQuantity = source.Quantity - transfer;
+            var newSource = newSourceQuantity == 0 ? InventorySlot.Empty : new InventorySlot(source.ItemId, newSourceQuantity);
+            var newDest = new InventorySlot(dest.ItemId, dest.Quantity + transfer);
+
+            RecordSlotChange(charId, fromSlot, newSource.ItemId, newSource.Quantity, newSource.EnhancementLevel);
+            RecordSlotChange(charId, toSlot, newDest.ItemId, newDest.Quantity, newDest.EnhancementLevel);
+            slots[fromSlot] = newSource;
+            slots[toSlot] = newDest;
+            EmitInventoryChanged(charId);
+            return MoveResult.Succeeded(newSource, newDest);
         }
 
         /// <summary>
@@ -528,8 +546,8 @@ namespace IronGrind.InventorySystem
         /// </summary>
         private MoveResult SwapSlots(CharacterID charId, InventorySlot[] slots, int fromSlot, int toSlot, InventorySlot source, InventorySlot dest)
         {
-            RecordSlotChange(charId, fromSlot, dest.ItemId, dest.Quantity);
-            RecordSlotChange(charId, toSlot, source.ItemId, source.Quantity);
+            RecordSlotChange(charId, fromSlot, dest.ItemId, dest.Quantity, dest.EnhancementLevel);
+            RecordSlotChange(charId, toSlot, source.ItemId, source.Quantity, source.EnhancementLevel);
             slots[fromSlot] = dest;
             slots[toSlot] = source;
             EmitInventoryChanged(charId);
@@ -578,10 +596,11 @@ namespace IronGrind.InventorySystem
             }
 
             ItemID removedItemId = slot.ItemId;
+            byte removedLevel = slot.EnhancementLevel;
             RecordSlotChange(charId, slotIndex, ItemID.Invalid, 0);
             slots[slotIndex] = InventorySlot.Empty;
             EmitInventoryChanged(charId);
-            return MoveItemOutResult.Succeeded(removedItemId);
+            return MoveItemOutResult.Succeeded(removedItemId, removedLevel);
         }
 
         /// <inheritdoc/>
@@ -594,7 +613,7 @@ namespace IronGrind.InventorySystem
         /// <see cref="MoveItemInResult.Failed"/>, not the broadcast event (see
         /// <see cref="ForceInsert"/> for the variant that does notify).
         /// </remarks>
-        public MoveItemInResult MoveItemIn(CharacterID charId, ItemID itemId)
+        public MoveItemInResult MoveItemIn(CharacterID charId, ItemID itemId, byte enhancementLevel)
         {
             ThrowIfDispatching();
 
@@ -604,10 +623,10 @@ namespace IronGrind.InventorySystem
                 return MoveItemInResult.Failed;
             }
 
-            if (!TryGetStackLimit(nameof(MoveItemIn), itemId, out _))
+            if (!ValidatePlacementLevel(nameof(MoveItemIn), itemId, enhancementLevel))
                 return MoveItemInResult.Failed;
 
-            if (PlaceInLowestEmptySlot(charId, slots, itemId, out int slotIndex))
+            if (PlaceInLowestEmptySlot(charId, slots, itemId, enhancementLevel, out int slotIndex))
                 return MoveItemInResult.Succeeded(slotIndex);
 
             return MoveItemInResult.Failed;
@@ -621,7 +640,7 @@ namespace IronGrind.InventorySystem
         /// <paramref name="charId"/> (GDD Rule 4.10) rather than failing silently. Neither this nor
         /// <see cref="MoveItemIn"/> touches the bag-full dedup window on a successful placement.
         /// </remarks>
-        public bool ForceInsert(CharacterID charId, ItemID itemId)
+        public bool ForceInsert(CharacterID charId, ItemID itemId, byte enhancementLevel)
         {
             ThrowIfDispatching();
 
@@ -631,10 +650,10 @@ namespace IronGrind.InventorySystem
                 return false;
             }
 
-            if (!TryGetStackLimit(nameof(ForceInsert), itemId, out _))
+            if (!ValidatePlacementLevel(nameof(ForceInsert), itemId, enhancementLevel))
                 return false;
 
-            if (PlaceInLowestEmptySlot(charId, slots, itemId, out _))
+            if (PlaceInLowestEmptySlot(charId, slots, itemId, enhancementLevel, out _))
                 return true;
 
             NotifyInventoryFull(charId);
@@ -652,21 +671,97 @@ namespace IronGrind.InventorySystem
         /// <see cref="TryGetStackLimit"/>, this <em>is</em> the mutation when it returns
         /// <see langword="true"/>.
         /// </summary>
-        private bool PlaceInLowestEmptySlot(CharacterID charId, InventorySlot[] slots, ItemID itemId, out int slotIndex)
+        private bool PlaceInLowestEmptySlot(CharacterID charId, InventorySlot[] slots, ItemID itemId, byte enhancementLevel, out int slotIndex)
         {
             for (int i = 0; i < slots.Length; i++)
             {
                 if (!slots[i].IsEmpty)
                     continue;
 
-                RecordSlotChange(charId, i, itemId, 1);
-                slots[i] = new InventorySlot(itemId, 1);
+                RecordSlotChange(charId, i, itemId, 1, enhancementLevel);
+                slots[i] = new InventorySlot(itemId, 1, enhancementLevel);
                 EmitInventoryChanged(charId);
                 slotIndex = i;
                 return true;
             }
 
             slotIndex = -1;
+            return false;
+        }
+
+        /// <summary>
+        /// Story 010 guard shared by <see cref="MoveItemIn"/>/<see cref="ForceInsert"/>, in the
+        /// GDD order: level above the injected maximum (server error) → item validity via
+        /// <see cref="TryGetStackLimit"/> → non-zero level for a <c>StackLimit</c> &gt; 1 item
+        /// (server error). Exactly one log per failure; no state is touched.
+        /// </summary>
+        private bool ValidatePlacementLevel(string caller, ItemID itemId, byte enhancementLevel)
+        {
+            if (enhancementLevel > _maxEnhancementLevel)
+            {
+                Debug.LogError($"[InventoryService] {caller}: enhancement level {enhancementLevel} for {itemId} exceeds the maximum {_maxEnhancementLevel}.");
+                return false;
+            }
+
+            if (!TryGetStackLimit(caller, itemId, out int stackLimit))
+                return false;
+
+            if (enhancementLevel != 0 && stackLimit > 1)
+            {
+                Debug.LogError($"[InventoryService] {caller}: enhancement level {enhancementLevel} is not allowed for stackable item {itemId} (StackLimit {stackLimit}).");
+                return false;
+            }
+            return true;
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>
+        /// Story 010 (GDD Rule 5.14a, AC-INV-17/22). Guard order: <see cref="ThrowIfDispatching"/>
+        /// → slot range → registered → empty → not locked → item is <c>StackLimit</c> = 1 (an
+        /// unresolvable item is rejected too) → <c>Quantity</c> == 1 → level within the injected
+        /// maximum → same level (no-op success, no event, no log) → record, write, emit. Each
+        /// rejection logs exactly one server error via <see cref="RejectSetLevel"/>. The slot's lock
+        /// is left untouched.
+        /// </remarks>
+        public bool SetEnhancementLevel(CharacterID charId, int slotIndex, byte level)
+        {
+            ThrowIfDispatching();
+
+            if (slotIndex < 0 || slotIndex >= InventoryConstants.INVENTORY_SLOT_COUNT)
+                return RejectSetLevel($"slotIndex {slotIndex} is out of range [0, {InventoryConstants.INVENTORY_SLOT_COUNT}).");
+
+            if (!_inventories.TryGetValue(charId, out var slots))
+                return RejectSetLevel($"{charId} is not a registered character. Call RegisterCharacter before mutating inventory.");
+
+            var slot = slots[slotIndex];
+            if (slot.IsEmpty)
+                return RejectSetLevel($"slot {slotIndex} for {charId} is empty.");
+
+            if (!_locks[charId][slotIndex])
+                return RejectSetLevel($"slot {slotIndex} for {charId} is not locked; the Enhancement System must lock the slot first.");
+
+            if (!_itemDatabase.TryGetItem(slot.ItemId, out var definition) || definition == null || definition.StackLimit != 1)
+                return RejectSetLevel($"{slot.ItemId} in slot {slotIndex} for {charId} is not a StackLimit 1 item (or is unknown); it cannot carry an enhancement level.");
+
+            if (slot.Quantity != 1)
+                return RejectSetLevel($"slot {slotIndex} for {charId} holds Quantity {slot.Quantity}; only a single item can carry an enhancement level.");
+
+            if (level > _maxEnhancementLevel)
+                return RejectSetLevel($"enhancement level {level} for slot {slotIndex} for {charId} exceeds the maximum {_maxEnhancementLevel}.");
+
+            if (level == slot.EnhancementLevel)
+                return true;
+
+            RecordSlotChange(charId, slotIndex, slot.ItemId, slot.Quantity, level);
+            slots[slotIndex] = new InventorySlot(slot.ItemId, slot.Quantity, level);
+            EmitInventoryChanged(charId);
+            return true;
+        }
+
+        /// <summary>Logs the single server error for a <see cref="SetEnhancementLevel"/> rejection and returns <see langword="false"/>.</summary>
+        private static bool RejectSetLevel(string reason)
+        {
+            Debug.LogError($"[InventoryService] SetEnhancementLevel: {reason}");
             return false;
         }
 
@@ -784,7 +879,7 @@ namespace IronGrind.InventorySystem
                 if (slot.IsEmpty)
                     continue;
 
-                entries.Add(new InventorySnapshotEntry((byte)i, slot.ItemId.RawValue, slot.Quantity));
+                entries.Add(new InventorySnapshotEntry((byte)i, slot.ItemId.RawValue, slot.Quantity, slot.EnhancementLevel));
             }
             return new InventorySnapshot(entries);
         }
@@ -840,20 +935,10 @@ namespace IronGrind.InventorySystem
         /// </summary>
         private void ApplySnapshotEntry(CharacterID charId, InventorySlot[] slots, bool[] claimed, InventorySnapshotEntry entry)
         {
-            if (entry.SlotIndex >= InventoryConstants.INVENTORY_SLOT_COUNT)
-            {
-                Debug.LogWarning($"[InventoryService] ImportSnapshot: entry slotIndex {entry.SlotIndex} for {charId} is out of range [0, {InventoryConstants.INVENTORY_SLOT_COUNT}); entry rejected.");
+            if (!TryClaimSnapshotSlot(charId, claimed, entry))
                 return;
-            }
 
             int slotIndex = entry.SlotIndex;
-            if (claimed[slotIndex])
-            {
-                Debug.LogWarning($"[InventoryService] ImportSnapshot: duplicate entry for slot {slotIndex} for {charId}; entry rejected.");
-                return;
-            }
-            claimed[slotIndex] = true;
-
             if (entry.ItemId == 0)
             {
                 Debug.LogWarning($"[InventoryService] ImportSnapshot: entry for slot {slotIndex} for {charId} has ItemId 0; slot left empty.");
@@ -878,7 +963,56 @@ namespace IronGrind.InventorySystem
                 Debug.LogWarning($"[InventoryService] ImportSnapshot: entry for slot {slotIndex} for {charId} has Quantity {entry.Quantity} above StackLimit {definition.StackLimit} for {itemId}; loading as-is.");
             }
 
-            slots[slotIndex] = new InventorySlot(itemId, entry.Quantity);
+            byte level = NormalizeSnapshotLevel(charId, slotIndex, entry, definition.StackLimit);
+            slots[slotIndex] = new InventorySlot(itemId, entry.Quantity, level);
+        }
+
+        /// <summary>
+        /// First two <see cref="ApplySnapshotEntry"/> rules: rejects (one warning each) an entry whose
+        /// slot index is out of range or whose slot an earlier entry of the same snapshot already
+        /// claimed; otherwise marks the slot claimed and returns <see langword="true"/>.
+        /// </summary>
+        private static bool TryClaimSnapshotSlot(CharacterID charId, bool[] claimed, InventorySnapshotEntry entry)
+        {
+            if (entry.SlotIndex >= InventoryConstants.INVENTORY_SLOT_COUNT)
+            {
+                Debug.LogWarning($"[InventoryService] ImportSnapshot: entry slotIndex {entry.SlotIndex} for {charId} is out of range [0, {InventoryConstants.INVENTORY_SLOT_COUNT}); entry rejected.");
+                return false;
+            }
+
+            if (claimed[entry.SlotIndex])
+            {
+                Debug.LogWarning($"[InventoryService] ImportSnapshot: duplicate entry for slot {entry.SlotIndex} for {charId}; entry rejected.");
+                return false;
+            }
+            claimed[entry.SlotIndex] = true;
+            return true;
+        }
+
+        /// <summary>
+        /// Story 010 (AC-INV-20/22) load rule for <see cref="InventorySnapshotEntry.EnhancementLevel"/>:
+        /// a non-zero level on a stackable item or a quantity above 1 is warned about and zeroed;
+        /// otherwise a level above the injected maximum is warned about and clamped to it. Level 0
+        /// logs nothing. Each normalisation logs exactly one warning.
+        /// </summary>
+        private byte NormalizeSnapshotLevel(CharacterID charId, int slotIndex, InventorySnapshotEntry entry, int stackLimit)
+        {
+            byte level = entry.EnhancementLevel;
+            if (level == 0)
+                return 0;
+
+            if (stackLimit > 1 || entry.Quantity > 1)
+            {
+                Debug.LogWarning($"[InventoryService] ImportSnapshot: entry for slot {slotIndex} for {charId} has enhancement level {level} on a stack (StackLimit {stackLimit}, Quantity {entry.Quantity}); enhancement level reset to 0.");
+                return 0;
+            }
+
+            if (level > _maxEnhancementLevel)
+            {
+                Debug.LogWarning($"[InventoryService] ImportSnapshot: entry for slot {slotIndex} for {charId} has enhancement level {level} above the maximum {_maxEnhancementLevel}; clamped to {_maxEnhancementLevel}.");
+                return _maxEnhancementLevel;
+            }
+            return level;
         }
 
         /// <inheritdoc/>
@@ -1086,7 +1220,7 @@ namespace IronGrind.InventorySystem
         /// Guards against synchronous re-entrant mutation from inside an
         /// <see cref="OnInventoryChanged"/> subscriber (ADR-010 Decision 3 re-entrancy contract).
         /// Every mutation entry point — this story's <see cref="RecordSlotChange"/> and
-        /// <see cref="SeedSlotForTesting"/>, plus every future mutation entry point added by
+        /// <see cref="SeedSlotForTesting(CharacterID, int, ItemID, int, byte)"/>, plus every future mutation entry point added by
         /// Stories 002 and 004–008 (Pickup, Lock/Unlock, Discard, Move/Merge/Swap, Equipment
         /// interop, Sell/Consume) — MUST call this first, before touching any slot state.
         /// </summary>
@@ -1121,13 +1255,28 @@ namespace IronGrind.InventorySystem
         /// <exception cref="ArgumentException"><paramref name="itemId"/>/<paramref name="quantity"/> form a phantom slot, or <paramref name="charId"/> is not registered.</exception>
         internal void SeedSlotForTesting(CharacterID charId, int slotIndex, ItemID itemId, int quantity)
         {
+            SeedSlotForTesting(charId, slotIndex, itemId, quantity, 0);
+        }
+
+        /// <summary>
+        /// Story 010 overload of <see cref="SeedSlotForTesting(CharacterID, int, ItemID, int)"/>
+        /// that also seeds the slot's enhancement level. The level must be 0 for an empty slot or a
+        /// quantity above 1 (<see cref="ValidateSlotContents"/> throws <see cref="ArgumentException"/>).
+        /// </summary>
+        /// <param name="charId">The character whose inventory to seed. Must already be registered.</param>
+        /// <param name="slotIndex">The slot index to set.</param>
+        /// <param name="itemId">The item to place, or <see cref="ItemID.Invalid"/> to clear the slot.</param>
+        /// <param name="quantity">The quantity to place.</param>
+        /// <param name="enhancementLevel">The enhancement level to seed.</param>
+        internal void SeedSlotForTesting(CharacterID charId, int slotIndex, ItemID itemId, int quantity, byte enhancementLevel)
+        {
             ThrowIfDispatching();
-            ValidateSlotContents(nameof(SeedSlotForTesting), slotIndex, itemId, quantity);
+            ValidateSlotContents(nameof(SeedSlotForTesting), slotIndex, itemId, quantity, enhancementLevel);
 
             if (!_inventories.TryGetValue(charId, out var slots))
                 throw new ArgumentException($"SeedSlotForTesting: {charId} is not a registered character. Call RegisterCharacter first.", nameof(charId));
 
-            slots[slotIndex] = new InventorySlot(itemId, quantity);
+            slots[slotIndex] = new InventorySlot(itemId, quantity, enhancementLevel);
         }
 
         /// <summary>
@@ -1139,7 +1288,7 @@ namespace IronGrind.InventorySystem
         /// <remarks>
         /// The first recorded change binds the pending buffer to <paramref name="charId"/>; every
         /// further change until the next emit/discard must be for the same character. Entries are
-        /// validated with the same no-phantom-slot invariant as <see cref="SeedSlotForTesting"/>.
+        /// validated with the same no-phantom-slot invariant as <see cref="SeedSlotForTesting(CharacterID, int, ItemID, int, byte)"/>.
         /// </remarks>
         /// <param name="charId">The character whose slot changed.</param>
         /// <param name="slotIndex">The slot index that changed. Valid range: [0, <see cref="InventoryConstants.INVENTORY_SLOT_COUNT"/>).</param>
@@ -1148,10 +1297,10 @@ namespace IronGrind.InventorySystem
         /// <exception cref="ArgumentOutOfRangeException"><paramref name="slotIndex"/> is out of range, or <paramref name="quantity"/> is negative.</exception>
         /// <exception cref="ArgumentException"><paramref name="itemId"/>/<paramref name="quantity"/> form a phantom slot.</exception>
         /// <exception cref="InvalidOperationException">A dispatch is currently in progress; changes for a different character are already pending; or more than <see cref="InventoryConstants.INVENTORY_SLOT_COUNT"/> changes have already been recorded for the pending dispatch (a programming error — no single atomic mutation can touch more than every slot once).</exception>
-        internal void RecordSlotChange(CharacterID charId, int slotIndex, ItemID itemId, int quantity)
+        internal void RecordSlotChange(CharacterID charId, int slotIndex, ItemID itemId, int quantity, byte enhancementLevel = 0)
         {
             ThrowIfDispatching();
-            ValidateSlotContents(nameof(RecordSlotChange), slotIndex, itemId, quantity);
+            ValidateSlotContents(nameof(RecordSlotChange), slotIndex, itemId, quantity, enhancementLevel);
 
             if (_changeCount > 0 && charId != _pendingCharacterId)
             {
@@ -1166,7 +1315,7 @@ namespace IronGrind.InventorySystem
             }
 
             _pendingCharacterId = charId;
-            _changeBuffer[_changeCount] = new SlotChange(slotIndex, itemId, quantity);
+            _changeBuffer[_changeCount] = new SlotChange(slotIndex, itemId, quantity, enhancementLevel);
             _changeCount++;
         }
 
@@ -1195,7 +1344,7 @@ namespace IronGrind.InventorySystem
         /// either fully empty (<see cref="ItemID.Invalid"/>, 0) or fully populated (valid
         /// <see cref="ItemID"/>, quantity &gt; 0).
         /// </summary>
-        private static void ValidateSlotContents(string caller, int slotIndex, ItemID itemId, int quantity)
+        private static void ValidateSlotContents(string caller, int slotIndex, ItemID itemId, int quantity, byte enhancementLevel = 0)
         {
             if (slotIndex < 0 || slotIndex >= InventoryConstants.INVENTORY_SLOT_COUNT)
                 throw new ArgumentOutOfRangeException(nameof(slotIndex), slotIndex, $"{caller}: slotIndex must be within [0, {InventoryConstants.INVENTORY_SLOT_COUNT}).");
@@ -1208,6 +1357,12 @@ namespace IronGrind.InventorySystem
                 throw new ArgumentException(
                     $"{caller} rejected a phantom slot: itemId={itemId}, quantity={quantity}. " +
                     "A slot must be either fully empty (ItemID.Invalid, quantity 0) or fully populated (valid ItemID, quantity > 0).");
+            }
+
+            if (enhancementLevel != 0 && (itemId == ItemID.Invalid || quantity > 1))
+            {
+                throw new ArgumentException(
+                    $"{caller} rejected enhancement level {enhancementLevel}: the level must be 0 for an empty slot or a quantity above 1 (itemId={itemId}, quantity={quantity}).");
             }
         }
 

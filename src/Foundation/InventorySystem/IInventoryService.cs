@@ -389,12 +389,20 @@ namespace IronGrind.InventorySystem
         /// at call time, not at any earlier query time — a caller that checked
         /// <see cref="HasFreeSlot"/> and then lost the race to another mutation must handle a
         /// failure here rather than assume success.</para>
+        ///
+        /// <para>Story 010 (GDD Rule 8.24a): the item is placed at <paramref name="enhancementLevel"/>
+        /// and the event entry carries it. Guard order is extended: unregistered character → level
+        /// above the injected maximum (server error) → item validity → non-zero level for a
+        /// <c>StackLimit</c> &gt; 1 item (server error) → placement. Either level failure returns
+        /// <see cref="MoveItemInResult.Failed"/> with no mutation, no event and no
+        /// <see cref="OnInventoryFull"/>.</para>
         /// </remarks>
         /// <param name="charId">The character whose inventory to mutate.</param>
         /// <param name="itemId">The item to place. Must be a known item in the Item Database.</param>
         /// <returns>The outcome; check <see cref="MoveItemInResult.Success"/> / <see cref="MoveItemInResult.SlotIndex"/>.</returns>
+        /// <param name="enhancementLevel">The level the item carried when it was moved out (<see cref="MoveItemOutResult.EnhancementLevel"/>); 0 for a fresh item.</param>
         /// <exception cref="InvalidOperationException">Called synchronously from an <see cref="OnInventoryChanged"/> subscriber.</exception>
-        MoveItemInResult MoveItemIn(CharacterID charId, ItemID itemId);
+        MoveItemInResult MoveItemIn(CharacterID charId, ItemID itemId, byte enhancementLevel);
 
         /// <summary>
         /// Places one unit of <paramref name="itemId"/> into the lowest-index empty slot, identical
@@ -420,12 +428,39 @@ namespace IronGrind.InventorySystem
         /// not ready, logs a server error and fails (no category check — this also places Equipment
         /// merge results); no empty slot fails and fires the shared bag-full notification for
         /// <paramref name="charId"/>.</para>
+        ///
+        /// <para>Story 010: same level guards as <see cref="MoveItemIn"/> (level above the injected
+        /// maximum, or a non-zero level for a <c>StackLimit</c> &gt; 1 item, logs a server error and
+        /// returns <see langword="false"/> with no mutation, no event and no
+        /// <see cref="OnInventoryFull"/>).</para>
         /// </remarks>
         /// <param name="charId">The character whose inventory to mutate.</param>
         /// <param name="itemId">The item to place. Must be a known item in the Item Database.</param>
         /// <returns><see langword="true"/> iff the item was placed.</returns>
+        /// <param name="enhancementLevel">The level the item is placed at; 0 for a fresh item.</param>
         /// <exception cref="InvalidOperationException">Called synchronously from an <see cref="OnInventoryChanged"/> subscriber.</exception>
-        bool ForceInsert(CharacterID charId, ItemID itemId);
+        bool ForceInsert(CharacterID charId, ItemID itemId, byte enhancementLevel);
+
+        /// <summary>
+        /// Sets the enhancement level of the single item in the slot at <paramref name="slotIndex"/>
+        /// (GDD Rule 5.14a). Only the Enhancement System calls this, on a slot it has locked, to
+        /// apply a success, failure drop or rollback (ADR-010 Tier 1). The slot stays locked.
+        /// </summary>
+        /// <remarks>
+        /// <para>Guard order (first match wins; every rejection logs one server error, returns
+        /// <see langword="false"/>, mutates nothing and fires no event): out-of-range slot;
+        /// unregistered <paramref name="charId"/>; empty slot; slot not locked; item not
+        /// <c>StackLimit</c> = 1 (or unresolvable in the Item Database); <c>Quantity</c> != 1;
+        /// <paramref name="level"/> above the injected maximum. A level equal to the slot's current
+        /// level is a no-op success (no event, no log). Otherwise fires exactly one
+        /// <see cref="OnInventoryChanged"/> with a single entry.</para>
+        /// </remarks>
+        /// <param name="charId">The character whose inventory to mutate.</param>
+        /// <param name="slotIndex">The slot index to update. Valid range: [0, <see cref="InventoryConstants.INVENTORY_SLOT_COUNT"/>).</param>
+        /// <param name="level">The new enhancement level, 0 to the injected maximum inclusive.</param>
+        /// <returns><see langword="true"/> iff the slot now holds <paramref name="level"/>.</returns>
+        /// <exception cref="InvalidOperationException">Called synchronously from an <see cref="OnInventoryChanged"/> subscriber.</exception>
+        bool SetEnhancementLevel(CharacterID charId, int slotIndex, byte level);
 
         /// <summary>
         /// Sells <paramref name="quantity"/> units of <paramref name="itemId"/> out of the slot at

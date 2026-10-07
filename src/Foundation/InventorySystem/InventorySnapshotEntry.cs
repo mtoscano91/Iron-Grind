@@ -30,15 +30,29 @@ namespace IronGrind.InventorySystem
         /// <summary>The stack quantity held in the slot.</summary>
         public readonly int Quantity;
 
-        /// <summary>Constructs a snapshot entry with the given slot index, item and quantity.</summary>
+        /// <summary>The enhancement level of the item in the slot. Normalised (zeroed or clamped) by <see cref="IInventoryService.ImportSnapshot"/>.</summary>
+        public readonly byte EnhancementLevel;
+
+        /// <summary>Constructs a snapshot entry with the given slot index, item and quantity (enhancement level 0).</summary>
         /// <param name="slotIndex">The slot index this entry occupies.</param>
         /// <param name="itemId">The raw item identifier occupying the slot.</param>
         /// <param name="quantity">The stack quantity held in the slot.</param>
         public InventorySnapshotEntry(byte slotIndex, uint itemId, int quantity)
+            : this(slotIndex, itemId, quantity, 0)
+        {
+        }
+
+        /// <summary>Constructs a snapshot entry including the item's enhancement level.</summary>
+        /// <param name="slotIndex">The slot index this entry occupies.</param>
+        /// <param name="itemId">The raw item identifier occupying the slot.</param>
+        /// <param name="quantity">The stack quantity held in the slot.</param>
+        /// <param name="enhancementLevel">The item's enhancement level (GDD AC-INV-20).</param>
+        public InventorySnapshotEntry(byte slotIndex, uint itemId, int quantity, byte enhancementLevel)
         {
             SlotIndex = slotIndex;
             ItemId = itemId;
             Quantity = quantity;
+            EnhancementLevel = enhancementLevel;
         }
     }
 }

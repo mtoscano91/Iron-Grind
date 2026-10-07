@@ -135,9 +135,11 @@ namespace IronGrind.Tests.EditMode.LootTableSystem
 
         public MoveItemOutResult MoveItemOut(CharacterID charId, int slotIndex) => throw Unsupported();
 
-        public MoveItemInResult MoveItemIn(CharacterID charId, ItemID itemId) => throw Unsupported();
+        public MoveItemInResult MoveItemIn(CharacterID charId, ItemID itemId, byte enhancementLevel) => throw Unsupported();
 
-        public bool ForceInsert(CharacterID charId, ItemID itemId) => throw Unsupported();
+        public bool ForceInsert(CharacterID charId, ItemID itemId, byte enhancementLevel) => throw Unsupported();
+
+        public bool SetEnhancementLevel(CharacterID charId, int slotIndex, byte level) => throw Unsupported();
 
         public SellItemResult SellItem(CharacterID charId, int slotIndex, ItemID itemId, int quantity) => throw Unsupported();
 

@@ -20,6 +20,8 @@ namespace IronGrind.Tests.EditMode.InventorySystem
     [TestFixture]
     internal sealed class InventorySystem_MoveMergeSwap_Tests
     {
+        private const byte MaxEnhancementLevel = 10;
+
         private static readonly CharacterID Player = new CharacterID(1001u);
         private static readonly CharacterID UnregisteredPlayer = new CharacterID(1999u);
 
@@ -51,7 +53,7 @@ namespace IronGrind.Tests.EditMode.InventorySystem
             foreach (var definition in _definitions)
                 _itemDatabase.Add(definition);
 
-            _inventory = new InventoryService(_itemDatabase, () => 0u);
+            _inventory = new InventoryService(_itemDatabase, () => 0u, MaxEnhancementLevel);
             _inventory.RegisterCharacter(Player);
 
             _events = new List<SlotChange[]>();

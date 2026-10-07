@@ -21,6 +21,8 @@ namespace IronGrind.Tests.EditMode.InventorySystem
     [TestFixture]
     internal sealed class InventorySystem_SnapshotSaveLoad_Tests
     {
+        private const byte MaxEnhancementLevel = 10;
+
         private static readonly CharacterID Player = new CharacterID(2001u);
         private static readonly CharacterID SecondPlayer = new CharacterID(2002u);
         private static readonly CharacterID UnregisteredPlayer = new CharacterID(2999u);
@@ -51,7 +53,7 @@ namespace IronGrind.Tests.EditMode.InventorySystem
             foreach (var definition in _definitions)
                 _itemDatabase.Add(definition);
 
-            _inventory = new InventoryService(_itemDatabase, () => 0u);
+            _inventory = new InventoryService(_itemDatabase, () => 0u, MaxEnhancementLevel);
             _inventory.RegisterCharacter(Player);
 
             _events = new List<SlotChange[]>();
@@ -124,7 +126,7 @@ namespace IronGrind.Tests.EditMode.InventorySystem
             _inventory.SeedSlotForTesting(Player, 7, HPPotionItemId, 42);
             _inventory.SeedSlotForTesting(Player, 19, HPPotionItemId, 99);
 
-            var importingService = new InventoryService(_itemDatabase, () => 0u);
+            var importingService = new InventoryService(_itemDatabase, () => 0u, MaxEnhancementLevel);
             var importEvents = new List<SlotChange[]>();
             int importFullEvents = 0;
             importingService.OnInventoryChanged += args =>

@@ -22,6 +22,8 @@ namespace IronGrind.Tests.EditMode.InventorySystem
     [TestFixture]
     internal sealed class InventorySystem_BagFullNotification_Tests
     {
+        private const byte MaxEnhancementLevel = 10;
+
         private static readonly CharacterID Player = new CharacterID(1001u);
         private static readonly CharacterID OtherPlayer = new CharacterID(1002u);
         private static readonly CharacterID UnregisteredPlayer = new CharacterID(1999u);
@@ -54,7 +56,7 @@ namespace IronGrind.Tests.EditMode.InventorySystem
                 _itemDatabase.Add(definition);
 
             _tick = 0u;
-            _inventory = new InventoryService(_itemDatabase, CurrentTick);
+            _inventory = new InventoryService(_itemDatabase, CurrentTick, MaxEnhancementLevel);
             _inventory.RegisterCharacter(Player);
 
             _fullEvents = new List<CharacterID>();
@@ -411,7 +413,7 @@ namespace IronGrind.Tests.EditMode.InventorySystem
         [Test]
         public void Constructor_NullTickProvider_ThrowsArgumentNullException()
         {
-            Assert.Throws<ArgumentNullException>(() => new InventoryService(_itemDatabase, null));
+            Assert.Throws<ArgumentNullException>(() => new InventoryService(_itemDatabase, null, MaxEnhancementLevel));
         }
     }
 }

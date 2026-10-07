@@ -3,8 +3,8 @@
 > **Layer**: Core
 > **GDD**: design/gdd/inventory-system.md
 > **Architecture Module**: Inventory
-> **Status**: In Progress (9/10 — Stories 001–009 Complete 2026-10-01; Story 010 added the same day by the TD-045 design session)
-> **Stories**: 9 stories created 2026-09-25 (all Complete 2026-10-01); Story 010 created 2026-10-01 (Ready)
+> **Status**: Complete (10/10 — Stories 001–009 Complete 2026-10-01; Story 010 Complete 2026-10-07)
+> **Stories**: 9 stories created 2026-09-25 (all Complete 2026-10-01); Story 010 created 2026-10-01 (Complete 2026-10-07)
 
 ## Overview
 
@@ -47,9 +47,9 @@ This epic is complete when:
 | 007 | [Equipment System Interface](story-007-equipment-interface.md) | Logic | Complete | ADR-010 |
 | 008 | [NPC Shop Sell & Consumable Use](story-008-sell-and-consume.md) | Logic | Complete | ADR-010 |
 | 009 | [InventorySnapshot Save/Load & Load Validation](story-009-snapshot-save-load.md) | Logic | Complete | ADR-006, ADR-010 |
-| 010 | [Per-Slot Enhancement Level](story-010-enhancement-level.md) | Logic | Ready | ADR-010, ADR-006 (Amendment 1) |
+| 010 | [Per-Slot Enhancement Level](story-010-enhancement-level.md) | Logic | Complete | ADR-010, ADR-006 (Amendment 1) |
 
-**GDD AC coverage**: 17 of the original 18 blocking ACs are Complete; the GDD now has 24 (AC-INV-17–22 added 2026-10-01 for the per-slot enhancement level — all six belong to Story 010), so coverage will be 23 of 24 when Story 010 closes. **AC-INV-11** (tapping a consumable opens the detail view without consuming) is pure UI — **deferred to a future Inventory UI epic** (Inventory UI GDD and `design/ux/inventory-screen.md` not yet authored). AC-INV-10 is covered on the inventory side only (Story 007); its "equipped item stays equipped" half belongs to the Equipment System epic.
+**GDD AC coverage**: 17 of the original 18 blocking ACs are Complete; the GDD now has 24 (AC-INV-17–22 added 2026-10-01 for the per-slot enhancement level — all six belong to Story 010), and Story 010 closed 2026-10-07, so coverage is 23 of 24. **AC-INV-11** (tapping a consumable opens the detail view without consuming) is pure UI — **deferred to a future Inventory UI epic** (Inventory UI GDD and `design/ux/inventory-screen.md` not yet authored). AC-INV-10 is covered on the inventory side only (Story 007); its "equipped item stays equipped" half belongs to the Equipment System epic.
 
 **Open questions to resolve at `/story-readiness`**: ~~(1) Story 001 — `InventoryChangedEvent` payload shape vs ADR-010~~ — RESOLVED 2026-09-25 (reused-buffer `readonly struct` + struct enumerator + re-entrancy guard, see Story 001); ~~(2) Story 006 — moving a consumable onto a different item~~ — RESOLVED 2026-09-27: swap (any category); full-destination merge = no-op success; empty source → InvalidSlot; GDD Rule 7.20 + AC-INV-9 (SourceLocked/DestLocked) updated; plus smaller confirmations noted in Stories 004 (RemoveItem on unlocked slots — RESOLVED 2026-09-26: allowed, required by Enhancement CR-ENH-15 step 4; scroll-stack conflict logged as TD-043), 007 (dedup — RESOLVED 2026-09-26 via Story 003: ForceInsert reuses the shared dedup helper), 008 (RESOLVED 2026-10-01: `SellItem` takes a `quantity` — partial-stack sells per NPC Shop CR-SHOP-7/8, GDD Interactions row + AC-INV-16 updated; `ConsumeItem` skips locked slots — GDD Rule 5.12 updated), 009 (RESOLVED 2026-10-01: import fires no events; `ImportSnapshot` returns `bool` and refuses to run before the Item Database is ready; over-limit quantities load as-is with a warning; `UnregisterCharacter` added to close TD-042; missing per-item `EnhancementLevel` logged as TD-045). Story 003 time source DECIDED 2026-09-26: server ticks via injected `Func<uint>`, window = 600 ticks.
 
@@ -57,4 +57,4 @@ This epic is complete when:
 
 ## Next Step
 
-Stories 001–009 are Complete (2026-10-01). The 2026-10-01 design session resolved TD-043, TD-044 and TD-045 at the design level (Inventory, Equipment, Enhancement, Character Persistence and wire-protocol GDDs, ADR-006 Amendment 1) and added **Story 010 — Per-Slot Enhancement Level** for the inventory-side code. Next: lean `/design-review` on `inventory-system.md`, `equipment-system.md` and `enhancement-system.md` (one per session), then `/story-readiness production/epics/inventory-system/story-010-enhancement-level.md` and `/dev-story`. Story 010 must be Complete before the Enhancement and Equipment epics start. AC-INV-11 remains deferred to the Inventory UI epic.
+All ten stories are Complete (001–009 on 2026-10-01, Story 010 — Per-Slot Enhancement Level — on 2026-10-07). The inventory side of the per-slot enhancement level is in code, so the Enhancement and Equipment epics are no longer blocked by this epic. AC-INV-11 remains deferred to the Inventory UI epic.
