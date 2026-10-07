@@ -1,44 +1,62 @@
 # Architecture Traceability Index
 
-> **Last Updated:** 2026-06-27
+> **Last Updated:** 2026-10-07
 > **Engine:** Unity 6.3 LTS (6000.3)
-> **Source review:** `docs/architecture/architecture-review-2026-06-27.md`
+> **Source review:** `docs/architecture/architecture-review-2026-10-07.md`
 
 ## Coverage Summary (domain-level)
 
-- Systems indexed (systems-index.md): 38 (33 Approved with docs, 2 Draft primitives, 5 Not Started UI/Audio/Meta)
-- ADRs on disk: 8 (8 Accepted)
-- Domains with ADR coverage: 8 (networking library, navigation execution, navigation lifecycle, shop transactions, HUD UI, persistence, hosting, combat UI)
-- Domains with blocking coverage gaps: **none**
-- Open issue: none — all 8 ADRs are Accepted as of 2026-06-27
-- Per-requirement TR-IDs minted: **0** (tr-registry.yaml intentionally empty — see Scope Note in the review report)
+- Systems indexed (systems-index.md): 38 Approved with docs (+2 Draft primitives), 6 Not Started UI/Audio/Meta
+- ADRs on disk: 11 (11 Accepted)
+- Domains with ADR coverage: 11
+  - Fully covered: 5 (networking library, navigation execution, navigation lifecycle, HUD UI, combat UI)
+  - Partial or in conflict: 6 (shop transactions, persistence, hosting, zone load/teardown, messaging — inbound requests, async persistence)
+- Schema gaps: 2 (hotbar assignments, respec reservation state)
+- Cross-ADR conflicts: 2 (C1 zone process supervision, C2 teardown order)
+- Per-requirement TR-IDs in `tr-registry.yaml`: **0** — the 12 EPIC files use 94 TR-IDs that are not registered
 
 ## Domain Coverage Matrix
 
 | Domain | Representative Systems | ADR | Status | Notes |
 |---|---|---|---|---|
-| Networking transport/library | networking-core, networking-wire-protocol, networking-session, client-side-prediction, movement-system | ADR-004 | ✅ Covered (Accepted) | Library only |
-| Navigation execution | navigation-pathfinding | ADR-002 | ✅ Covered (Accepted) | `link.xml` → `UnityEngine.AIModule` fix pending (carryover) |
-| Navigation agent lifecycle | navigation-pathfinding, enemy-ai | ADR-003 | ✅ Covered (Accepted) | Depends on ADR-002 (satisfied) |
-| Shop transaction integrity | npc-shop, currency-system, inventory-system, consumable-use-system | ADR-001 | ✅ Covered (Accepted) | Both propagations landed; Engine Compat + ADR Deps sections still missing |
-| HUD UI framework | hud, combat-ui | ADR-005 | ✅ Covered (Accepted 2026-06-27) | Specialist fixes applied; stale Combat-UI ADR-number refs to correct |
-| Persistence storage engine | character-persistence, authentication | ADR-006 | ✅ Covered (Accepted 2026-06-27) | PostgreSQL + Npgsql + Dapper; resolves OQ-ADR1-1, OQ-NET-5 |
-| Hosting backend | zone-instancing, networking-core (infra) | ADR-007 | ✅ Covered (Accepted 2026-06-27) | Self-hosted Hetzner VPS, co-located PG; resolves OQ-ADR4-1 |
-| Combat UI framework | combat-ui | ADR-008 | ✅ Covered (Accepted 2026-06-27) | Painter2D + MonoBehaviour presenter; sortingOrder = 1 reserved |
-| Core gameplay/data/economy/progression | character-stats, damage-calculation, skill-system, status-effects, equipment-system, enhancement-system, loot-table-system, leveling-system, party-system, et al. | — | ❌ No per-system ADR | By design — pure design/data; no deep architectural decision required |
+| Networking transport/library | networking-core, networking-wire-protocol, networking-session, client-side-prediction, movement-system | ADR-004 | ✅ Covered | OQ-ADR4-3 open |
+| Navigation execution | navigation-pathfinding | ADR-002 | ✅ Covered | — |
+| Navigation agent lifecycle | navigation-pathfinding, enemy-ai | ADR-003 | ✅ Covered | Depends on ADR-002 |
+| Shop transaction integrity | npc-shop, currency-system, inventory-system, consumable-use-system | ADR-001 | ⚠️ Partial | P3: purchase flow not restated for ADR-011; OQ-ADR1-2 open |
+| HUD UI framework | hud | ADR-005 | ✅ Covered | — |
+| Combat UI framework | combat-ui | ADR-008 | ✅ Covered | `sortingOrder = 1` |
+| Persistence storage engine and schema | character-persistence, authentication | ADR-006 (+ Amendment 1) | ⚠️ Partial | G1 hotbar, G2 respec reservation not in schema; stale text (TD-059, pool size) |
+| Hosting backend | zone-instancing, networking-core (infra) | ADR-007 | ⚠️ Conflict | C1: `Restart=always` vs ADR-009 zero-exit close; stale "ADR-006 Proposed" |
+| Zone scene load and teardown | zone-instancing, navigation-pathfinding | ADR-009 | ⚠️ Partial | C2: teardown lacks `Dispose()` pass and shutdown drain; P4: startup lacks NGO start, static-data-ready, wiring |
+| Cross-system messaging | all gameplay systems | ADR-010 | ⚠️ Partial | Events covered; P1: no decision owns the inbound request dispatcher; naming rule out of step with `src/` |
+| Async persistence in the tick loop | enhancement-system, character-persistence, networking-core, loot-table-system | ADR-011 | ⚠️ Partial | P1 dispatcher, P2 second irreversible outcome with a closed gate, P5 expected `SaveVersion` ownership |
+| Core gameplay/data/economy/progression | character-stats, damage-calculation, skill-system, status-effects, equipment-system, enhancement-system, loot-table-system, leveling-system, party-system, et al. | — | No per-system ADR | By design — pure design/data |
+| URP render / VFX | VFX System, Map/Minimap | — | Deferred | GDDs Not Started |
+| Audio | Audio System | — | Deferred | GDD Not Started |
 
 ## Known Gaps / Open Items
 
-All priority gaps closed as of 2026-06-27. Architecture is implementation-ready.
+Most foundational first (full text in the 2026-10-07 review):
 
-**Remaining open items (minor, non-blocking):**
-- ADR-001 OQ-ADR1-2: `SellRequest` atomicity — `PendingSell` record pattern; deferred to follow-up ADR-001 amendment
-- ADR-004 OQ-ADR4-3: `CustomMessagingManager` vs. thin UTP wrapper — resolve during Networking Core spike
-- 6 MVP GDDs not yet started: Inventory UI, Enhancement UI, Map/Minimap, Audio System, VFX System, Onboarding/Beginner Zone (no ADR required until design is authored)
+1. **P1 — Inbound request dispatch and full tick order.** No ADR. Suggested: `/architecture-decision` ADR-012, or an ADR-010 amendment. Blocks Enhancement Story 009.
+2. **C2 / P4 — ADR-009 teardown and startup sequences.** ADR-009 Amendment 1; also the exit call (`Process.Exit(0)` is not a .NET API — engine, unconfirmed).
+3. **C1 — Zone process supervision.** ADR-007 amendment (`Restart=on-failure`, single spawner, `ZoneID` minted at registration).
+4. **P2 / P5 — ADR-011 clarification.** Second irreversible outcome while the gate is closed; who supplies the expected `SaveVersion` for a queued write.
+5. **G1 / G2 — Persistence schema.** Hotbar assignments (`consumable-use-system.md` Rule 7) and respec reservation state (`leveling-system.md` CR-4.1): Character Persistence amendment + ADR-006 Amendment 2.
+6. **P3 — ADR-001 Amendment A2.** Asynchronous purchase flow; `PendingSell` (OQ-ADR1-2).
+7. **`architecture.md` refresh** — still at 8 ADRs; lists ADR-009/010 as missing.
+
+Other open items:
+- ADR-004 OQ-ADR4-3: `CustomMessagingManager` vs. thin UTP wrapper
+- TD-046: Enhancement wire messages and an inventory slot-update message (wire-protocol authoring session)
+- TD-059: Loot Table GDD has no "pickup deferred while the gate is closed" note
+- ADR-011 headless-build checks (4) and the device/headless gates carried from ADR-002, 004, 005, 006, 008
+- 6 MVP GDDs not started: Inventory UI, Enhancement UI, Map/Minimap, Audio System, VFX System, Onboarding/Beginner Zone
 
 ## Superseded Requirements
 
-None recorded this pass.
+- ADR-006 `inventory_slots` entry shape `{item_id, count}` → `{item_id, count, enhancement_level}` (Amendment 1, 2026-10-01; `inventory-system.md` Rule 1.4, `character-persistence.md` `InventoryEnhancementLevels[20]`).
+- `enhancement-system.md` OQ-ENH-7 (held requests during an attempt) → resolved by ADR-011 Decision 4.
 
 ## History
 
@@ -46,3 +64,4 @@ None recorded this pass.
 |------|---------|------|-------|
 | 2026-06-21 | FAIL | 5 (4 Accepted, 1 Proposed) | Foundation gaps: Persistence, Hosting, Combat UI ADRs missing |
 | 2026-06-27 | CONCERNS → **PASS** | 8 (8 Accepted) | 3 new ADRs promoted to Accepted; all cleanup fixes applied |
+| 2026-10-07 | **CONCERNS** | 11 (11 Accepted) | ADR-009/010/011 added. 2 conflicts (zone supervision, teardown order), 5 partial items, 2 schema gaps; `architecture.md` stale |

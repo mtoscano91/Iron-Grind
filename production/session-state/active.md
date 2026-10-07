@@ -14,6 +14,21 @@
 
 > **Push status 2026-10-07 (later):** the user asked for a push after Story 008: `origin/main` is at `faa134c` (`0faea44..faa134c`). "Not pushed" notes in the 2026-10-07 extracts below are superseded. PAT rotation is still unconfirmed.
 
+## Session Extract — /architecture-review 2026-10-07 (full, lean; not committed)
+
+- Verdict: **CONCERNS** (advisory). 11 ADRs, all Accepted. Domain-level, as in the earlier passes; `unity-specialist` consultation skipped (user decision); TR registry left empty (user decision — 94 TR-IDs in the EPIC files are unregistered).
+- Requirements: 11 ADR-backed domains — 5 covered, 6 partial or in conflict; 2 schema gaps.
+- New TR-IDs registered: None.
+- GDD revision flags: None from engine behaviour. Design follow-ups: `character-persistence.md` (hotbar assignments, respec reservation state not in the record), `class-system.md` SA-1 ("event bus" wording), `npc-shop.md` CR-SHOP-5 (synchronous purchase sequence), `loot-table-system.md` (TD-059, already logged).
+- Conflicts: **C1** ADR-007 `Restart=always` vs ADR-009 zero-exit zone close (+ ZoneID reuse, two supervisors); **C2** teardown order spread over ADR-002, ADR-009, CR-ZI-12, ADR-010 (`Dispose()`), ADR-011 (drain) — ADR-009's list has neither the dispose nor the drain, and CR-ZI-12 step 2 starts `SaveSession` tasks after the tick loop stops.
+- Partial: **P1** no decision owns the inbound request dispatcher or the full tick order (ADR-011 cites ADR-010 D5, which defines per-handler queues; blocks Story 009); **P2** second irreversible outcome while the gate is closed (`Close` throws); **P3** ADR-001 purchase flow not restated for ADR-011; **P4** ADR-009 startup lacks NGO start, static-data-ready (CR-LT-16), wiring; **P5** who supplies the expected `SaveVersion` for a queued write.
+- Engine (unconfirmed, no specialist): `Process.Exit(0)` is not a .NET API (ADR-009, ADR-011, control manifest); `StartClient(ip, port)` signature in ADR-009 D4.
+- Stale: `architecture.md` (8 ADRs, lists ADR-009/010 as missing, synchronous data flow 2); ADR-007 calls ADR-006 "Proposed"; ADR-006 Mono / pool size 20 / "future" Hosting ADR.
+- `src/` scan clean: no `await`/`.Result`/`.Wait(`, no `EventBus`/`UnityEvent`, no lambda subscriptions, all 14 event arg types `readonly struct`.
+- Top ADR gaps: (1) inbound request dispatch + tick order (ADR-012 or ADR-010 amendment); (2) ADR-009 Amendment 1 (teardown + startup + exit call); (3) ADR-007 amendment (supervision).  Then ADR-011 clarification (P2, P5), Character Persistence + ADR-006 Amendment 2 (hotbar, reservation), ADR-001 Amendment A2, `architecture.md` refresh.
+- Written: `docs/architecture/architecture-review-2026-10-07.md` (new), `docs/architecture/architecture-traceability.md` (rewritten to 11 ADRs), this file. **Uncommitted since `3345f44`.** Untracked and left alone: `bash.exe.stackdump`. PAT rotation is still unconfirmed.
+- **Next:** a story for `TickCompletionQueue` + `CharacterMutationGate` (ADR-011 Migration step 1) can still go first — it does not depend on the findings. The coordinator and the dispatcher do: write the dispatch decision (P1) and the ADR-011 clarification (P2, P5) before them. Each ADR in a fresh session.
+
 ## Session Extract — /create-control-manifest update 2026-10-07 (Manifest Version 2026-06-28 → 2026-10-07; not committed)
 
 - Verdict: COMPLETE. `docs/architecture/control-manifest.md` updated incrementally — ADR-001 to ADR-010 rules untouched. Review mode lean — TD-MANIFEST skipped.
