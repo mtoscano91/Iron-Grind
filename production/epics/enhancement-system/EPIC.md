@@ -3,7 +3,7 @@
 > **Layer**: Feature
 > **GDD**: design/gdd/enhancement-system.md
 > **Architecture Module**: Enhancement (Feature layer; "irreversible outcome — commit before broadcast" data flow in `architecture.md`)
-> **Status**: In Progress (5/11 — Stories 001–005 Complete 2026-10-07; 3 stories Ready (006–008); 3 Blocked: Story 009 on OQ-ENH-7, Story 010 on TD-046, Story 011 on the tick-loop/async-persistence decision and Character Persistence)
+> **Status**: In Progress (6/11 — Stories 001–005 and 007 Complete 2026-10-07; 2 stories Ready (006, 008); 3 Blocked: Story 009 on OQ-ENH-7, Story 010 on TD-046, Story 011 on the tick-loop/async-persistence decision and Character Persistence)
 > **Stories**: 10 stories created 2026-10-07 (001–010); Story 011 added the same day when Story 005 was split at its readiness check
 
 > **Created ahead of the GDD's stated gate (user decision 2026-10-07).** The GDD header says OQ-ENH-7 and the wire-protocol Enhancement message set (TD-046) should close before `/create-epics`. The epic was created anyway so that the formula and bonus-provider work, which neither gate touches, can be planned alongside the Equipment epic. Every requirement the gates affect is marked below.
@@ -69,7 +69,7 @@ This epic is complete when:
 | 004 | [Attempt Sequence and Outcome Resolution](story-004-attempt-sequence.md) | Integration | Complete | ADR-010 |
 | 005 | [Rollback and the Pending Window](story-005-commit-and-rollback.md) | Integration | Complete | ADR-010 |
 | 006 | [NPC Interaction Session](story-006-npc-interaction-session.md) | Integration | Ready | ADR-010 |
-| 007 | [Outcome Events and +9 Broadcast Trigger](story-007-outcome-events-and-broadcast-trigger.md) | Logic | Ready | ADR-010 |
+| 007 | [Outcome Events and +9 Broadcast Trigger](story-007-outcome-events-and-broadcast-trigger.md) | Logic | Complete | ADR-010 |
 | 008 | [Scroll Source Restriction Scan](story-008-scroll-source-restriction.md) | Logic | Ready | None (design-only) |
 | 009 | [Attempt Exclusivity — Held Requests](story-009-attempt-exclusivity.md) | Integration | **Blocked** — OQ-ENH-7 | None yet |
 | 010 | [Client Requests and Result Delivery](story-010-client-requests-and-result-delivery.md) | Integration | **Blocked** — TD-046 | ADR-004 |
@@ -95,4 +95,4 @@ Assigned to Blocked stories: **AC-ENH-38** (Story 009), **AC-ENH-6** (Story 010)
 
 ## Next Step
 
-Stories 001–005 are Complete (2026-10-07) — config, bonus provider, validation, the two-phase attempt sequence and the rollback are in code. Next: `/story-readiness` then `/dev-story` for Story 007 (outcome events — now unblocked), Story 006 (NPC session) or Story 008 (scroll source scan). To unblock 009, 010 and 011: one architecture decision on asynchronous persistence in the tick loop (covers OQ-ENH-7 too), the wire-protocol authoring session for TD-046, and a Character Persistence epic.
+Stories 001–005 and 007 are Complete (2026-10-07) — config, bonus provider, validation, the two-phase attempt sequence, the rollback and the outcome events are in code. Next: `/story-readiness` then `/dev-story` for Story 006 (NPC session) or Story 008 (scroll source scan) — the last two Ready stories. To unblock 009, 010 and 011: one architecture decision on asynchronous persistence in the tick loop (covers OQ-ENH-7 too), the wire-protocol authoring session for TD-046, and a Character Persistence epic.

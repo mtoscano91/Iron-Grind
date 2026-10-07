@@ -1,7 +1,7 @@
 # Story 007: Outcome Events and +9 Broadcast Trigger
 
 > **Epic**: Enhancement System
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Feature
 > **Type**: Logic
 > **Manifest Version**: 2026-06-28
@@ -32,13 +32,13 @@
 
 *From GDD `design/gdd/enhancement-system.md`, scoped to this story. Events are raised by `EnhancementService.CompleteAttempt` — the call the commit orchestrator (Story 011) makes only after a successful commit.*
 
-- [ ] **Success event**: `CompleteAttempt` for a success outcome raises `OnEnhancementSuccess` exactly once, carrying the character, the item's `ItemID` and the new level; `OnEnhancementDestruction` is not raised.
-- [ ] **Destruction event**: `CompleteAttempt` for a destruction raises `OnEnhancementDestruction` exactly once, carrying the character and the destroyed item's `ItemID`; `OnEnhancementSuccess` is not raised.
-- [ ] **AC-ENH-18 (+9 trigger, server side)**: when an attempt takes an item from +8 to +9, `OnEnhancementBroadcastLevelReached` is raised exactly once, carrying the character, the item's `ItemID` and the level 9. It is not raised for a success into +1 … +8 or into +10, nor for any destruction.
-- [ ] **Order (CR-ENH-15 steps 7–9)**: inside `CompleteAttempt` — `UnlockSlot` first, then the success or destruction event, then the +9 trigger, then the method returns its result. When an event is raised the attempt is already over: `IsAttemptInProgress` is false and the item slot is unlocked.
-- [ ] **Nothing before the commit (CR-ENH-11)**: `BeginAttempt` raises none of the three events, for a pending attempt or a rejection.
-- [ ] **Nothing on a rollback**: `RollBackAttempt` raises none of the three events.
-- [ ] **A throwing subscriber is contained (EC-ENH-8)**: if a subscriber of any of the three events throws, the exception is logged and not propagated; `CompleteAttempt` still returns its normal result; the bag is unchanged by the failure; the remaining events are still raised.
+- [x] **Success event**: `CompleteAttempt` for a success outcome raises `OnEnhancementSuccess` exactly once, carrying the character, the item's `ItemID` and the new level; `OnEnhancementDestruction` is not raised.
+- [x] **Destruction event**: `CompleteAttempt` for a destruction raises `OnEnhancementDestruction` exactly once, carrying the character and the destroyed item's `ItemID`; `OnEnhancementSuccess` is not raised.
+- [x] **AC-ENH-18 (+9 trigger, server side)**: when an attempt takes an item from +8 to +9, `OnEnhancementBroadcastLevelReached` is raised exactly once, carrying the character, the item's `ItemID` and the level 9. It is not raised for a success into +1 … +8 or into +10, nor for any destruction.
+- [x] **Order (CR-ENH-15 steps 7–9)**: inside `CompleteAttempt` — `UnlockSlot` first, then the success or destruction event, then the +9 trigger, then the method returns its result. When an event is raised the attempt is already over: `IsAttemptInProgress` is false and the item slot is unlocked.
+- [x] **Nothing before the commit (CR-ENH-11)**: `BeginAttempt` raises none of the three events, for a pending attempt or a rejection.
+- [x] **Nothing on a rollback**: `RollBackAttempt` raises none of the three events.
+- [x] **A throwing subscriber is contained (EC-ENH-8)**: if a subscriber of any of the three events throws, the exception is logged and not propagated; `CompleteAttempt` still returns its normal result; the bag is unchanged by the failure; the remaining events are still raised.
 
 ---
 
@@ -93,7 +93,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/EnhancementSystem/EnhancementSystem_OutcomeEvents_tests.cs` — must exist and pass; the Story 003, 004 and 005 suites must still pass.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 16 test methods + 9 parameterised cases (25 cases), passing (EditMode 1757/1757, Unity 6000.3.10f1 batch mode, 2026-10-07)
 
 ---
 
@@ -101,3 +101,15 @@
 
 - Depends on: Story 004 (`CompleteAttempt`), Story 005 (`RollBackAttempt`, for the "nothing on a rollback" check) — both Complete
 - Unlocks: Story 010 (wire delivery of the result and the broadcast)
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-07
+**Criteria**: 7/7 passing (none deferred)
+**Deviations**: None blocking. Notes (all decided at readiness): `OnPrestigeBandChange` is not implemented — it belongs to the Equipment System, and the two `enhancement-system.md` rows naming it still need correcting; the +9 trigger carries ids instead of the names in the GDD's message (Story 010 resolves them); event argument types are in `IronGrind.EnhancementSystem`, not the shared `IronGrind.Events` namespace the control manifest names (no code uses it).
+**Test Evidence**: Logic — `tests/EditMode/EnhancementSystem/EnhancementSystem_OutcomeEvents_tests.cs` (25 cases); EditMode 1757/1757 in Unity 6000.3.10f1 batch mode.
+**Code Review**: Complete — /code-review APPROVED WITH SUGGESTIONS; both applied (one generic `Raise<TArgs>` helper; throwing-destruction-subscriber test). LP-CODE-REVIEW / QL-TEST-COVERAGE skipped (lean mode).
+**Tech debt**: None logged.
+**Files**: `src/Foundation/EnhancementSystem/EnhancementService.cs` (three events, `Raise<TArgs>`), `EnhancementConstants.cs` (`SERVER_BROADCAST_LEVEL`), `EnhancementSuccessEventArgs.cs`, `EnhancementDestructionEventArgs.cs`, `EnhancementBroadcastEventArgs.cs`.
+**For Story 010**: subscribe to `OnEnhancementBroadcastLevelReached` and resolve the player name and `ItemDefinition.DisplayName` there. On the first IL2CPP server build, check whether `Action<T>` over these structs needs a `link.xml` entry (control manifest).

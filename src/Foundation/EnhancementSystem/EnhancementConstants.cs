@@ -62,6 +62,12 @@ namespace IronGrind.EnhancementSystem
         /// <summary>Elemental damage bonus per enhancement level, Dark Steel weapons (F-ENH-2, TK-ENH-8).</summary>
         public const int ELEMENTAL_BONUS_PER_LEVEL_DARK_STEEL = 5;
 
+        /// <summary>
+        /// Level whose success is announced server-wide (CR-ENH-14, AC-ENH-18). A fixed design value,
+        /// not a tuning knob and not derived from the level cap.
+        /// </summary>
+        public const byte SERVER_BROADCAST_LEVEL = 9;
+
         /// <summary>Lowest allowed per-level success probability (TK-ENH-1, F-ENH-4).</summary>
         public const double MIN_SUCCESS_PROBABILITY = 0.01;
 

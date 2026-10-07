@@ -13,7 +13,8 @@ namespace IronGrind.EnhancementSystem
     /// validation (<see cref="ValidateAttempt"/>). Story 004 adds the two-phase attempt sequence
     /// (decided at readiness 2026-10-07): <see cref="BeginAttempt"/> runs steps 2-6a (validate, lock,
     /// consume scroll, draw, apply) and leaves a pending attempt; the caller commits; then
-    /// <see cref="CompleteAttempt"/> runs step 7 (unlock, result). Story 005 adds the third call,
+    /// <see cref="CompleteAttempt"/> runs steps 7-9 (unlock, outcome events and the +9 trigger, result;
+    /// events added by Story 007). Story 005 adds the third call,
     /// <see cref="RollBackAttempt"/>, which ends a pending attempt by undoing it (CR-ENH-15 Rollback).
     /// An attempt ends through exactly one of <see cref="CompleteAttempt"/> or <see cref="RollBackAttempt"/>.
     /// Depends on injected interfaces only; the service is synchronous and never calls persistence.
@@ -48,6 +49,30 @@ namespace IronGrind.EnhancementSystem
             public EnhancementOutcome Outcome { get; }
             public byte NewLevel { get; }
         }
+
+        /// <summary>
+        /// Raised once per completed attempt whose outcome is Success (CR-ENH-15 steps 7-9, CR-ENH-11),
+        /// from <see cref="CompleteAttempt"/> after the slot is unlocked. Server-side; the commit
+        /// orchestrator (Story 011) calls <see cref="CompleteAttempt"/> only after a successful commit.
+        /// Carries ids, not names. A subscriber's exception is logged and contained.
+        /// </summary>
+        public event Action<EnhancementSuccessEventArgs> OnEnhancementSuccess;
+
+        /// <summary>
+        /// Raised once per completed attempt whose outcome is Destruction (CR-ENH-15 steps 7-9, CR-ENH-11),
+        /// from <see cref="CompleteAttempt"/> after the slot is unlocked. Server-side; carries ids, not
+        /// names. A subscriber's exception is logged and contained.
+        /// </summary>
+        public event Action<EnhancementDestructionEventArgs> OnEnhancementDestruction;
+
+        /// <summary>
+        /// Raised from <see cref="CompleteAttempt"/>, after <see cref="OnEnhancementSuccess"/>, when a
+        /// success reaches <see cref="EnhancementConstants.SERVER_BROADCAST_LEVEL"/> (CR-ENH-14, AC-ENH-18).
+        /// Server-side trigger only: carries ids, not names; Story 010 resolves the display names for
+        /// ServerBroadcast_Enhancement9 and delivery is best effort (EC-ENH-8). A subscriber's exception
+        /// is logged and contained.
+        /// </summary>
+        public event Action<EnhancementBroadcastEventArgs> OnEnhancementBroadcastLevelReached;
 
         /// <summary>Creates the service over its collaborators.</summary>
         /// <param name="inventory">Bag reads and mutations (locks, scroll consumption, level, destruction).</param>
@@ -134,9 +159,13 @@ namespace IronGrind.EnhancementSystem
         }
 
         /// <summary>
-        /// Runs CR-ENH-15 step 7 after a successful commit (the other way an attempt ends is
+        /// Runs CR-ENH-15 steps 7-9 after a successful commit (the other way an attempt ends is
         /// <see cref="RollBackAttempt"/>, after a failed one): ends the attempt, unlocks the item slot
-        /// (a silent no-op after a destruction) and returns the final result (UI-ENH-2).
+        /// (a silent no-op after a destruction), raises <see cref="OnEnhancementSuccess"/> or
+        /// <see cref="OnEnhancementDestruction"/>, then <see cref="OnEnhancementBroadcastLevelReached"/>
+        /// when a success reaches <see cref="EnhancementConstants.SERVER_BROADCAST_LEVEL"/> (CR-ENH-14,
+        /// AC-ENH-18), and returns the final result (UI-ENH-2). A subscriber's exception is logged and
+        /// contained (EC-ENH-8); the remaining events are still raised and the result is still returned.
         /// </summary>
         /// <param name="charId">The character whose pending attempt to complete.</param>
         /// <exception cref="InvalidOperationException">No attempt is pending for <paramref name="charId"/>.</exception>
@@ -147,10 +176,35 @@ namespace IronGrind.EnhancementSystem
 
             _pending.Remove(charId);
             _inventory.UnlockSlot(charId, attempt.ItemSlotIndex);
-            EnhancementResultCode code = attempt.Outcome == EnhancementOutcome.Success
-                ? EnhancementResultCode.Success
-                : EnhancementResultCode.Destruction;
+            bool isSuccess = attempt.Outcome == EnhancementOutcome.Success;
+            if (isSuccess)
+                Raise(OnEnhancementSuccess, new EnhancementSuccessEventArgs(charId, attempt.ItemId, attempt.NewLevel));
+            else
+                Raise(OnEnhancementDestruction, new EnhancementDestructionEventArgs(charId, attempt.ItemId));
+
+            if (isSuccess && attempt.NewLevel == EnhancementConstants.SERVER_BROADCAST_LEVEL)
+                Raise(OnEnhancementBroadcastLevelReached, new EnhancementBroadcastEventArgs(charId, attempt.ItemId, attempt.NewLevel));
+
+            EnhancementResultCode code = isSuccess ? EnhancementResultCode.Success : EnhancementResultCode.Destruction;
             return new EnhancementAttemptResult(attempt.Outcome, attempt.NewLevel, code);
+        }
+
+        // A subscriber's failure must not affect the attempt, the other events or the result (EC-ENH-8).
+        // The exception is logged and contained. A multicast delegate stops at its first throwing
+        // subscriber, so later subscribers of that same event are skipped (as in the Loot services).
+        private static void Raise<TArgs>(Action<TArgs> handlers, in TArgs args)
+        {
+            if (handlers == null)
+                return;
+
+            try
+            {
+                handlers(args);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogException(exception);
+            }
         }
 
         /// <summary>
