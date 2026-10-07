@@ -1,7 +1,7 @@
 # ADR-011: Asynchronous Persistence in the Server Tick Loop
 
 ## Status
-Proposed (2026-10-07)
+Accepted (2026-10-07)
 
 ## Date
 2026-10-07

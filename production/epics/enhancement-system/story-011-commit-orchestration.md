@@ -1,7 +1,7 @@
 # Story 011: Commit Orchestration
 
 > **Epic**: Enhancement System
-> **Status**: Blocked — **(1) ADR-011 (Asynchronous Persistence in the Server Tick Loop) is Proposed, not Accepted — it decides how tick code consumes the asynchronous commit; (2) the Character Persistence implementation of `SaveIrreversibleOutcome` does not exist; (3) for the client-facing criteria, the TD-046 wire-protocol amendment.**
+> **Status**: Blocked — **(1) the Character Persistence implementation of `SaveIrreversibleOutcome` does not exist; (2) for the client-facing criteria, the TD-046 wire-protocol amendment. How tick code consumes the asynchronous commit is decided by ADR-011 (Accepted 2026-10-07).**
 > **Layer**: Feature
 > **Type**: Integration
 > **Manifest Version**: 2026-06-28
@@ -15,7 +15,7 @@
 **Requirement**: `TR-enh-006` (commit side)
 *(Requirement text lives in `docs/architecture/tr-registry.yaml` — registry is currently empty; TR-IDs are the epic's placeholders)*
 
-**ADR Governing Implementation**: ADR-006: Persistence Layer (Accepted — every persistence call is `async Task<>`; one transaction per irreversible outcome; write budget ≤ 50 ms P95). **ADR-011: Asynchronous Persistence in the Server Tick Loop (Proposed 2026-10-07 — must be Accepted before this story starts)** says how tick code consumes that result: the task is started and handed to `ITickCompletionQueue`; no `await` in game logic; the result is handled on the first tick after completion; the sequence runs through `IrreversibleOutcomeCoordinator` (`BeginAttempt` on tick N; `CompleteAttempt` or `RollBackAttempt` in the completion callback), with the per-character mutation gate closed in between.
+**ADR Governing Implementation**: ADR-006: Persistence Layer (Accepted — every persistence call is `async Task<>`; one transaction per irreversible outcome; write budget ≤ 50 ms P95). **ADR-011: Asynchronous Persistence in the Server Tick Loop (Accepted 2026-10-07)** says how tick code consumes that result: the task is started and handed to `ITickCompletionQueue`; no `await` in game logic; the result is handled on the first tick after completion; the sequence runs through `IrreversibleOutcomeCoordinator` (`BeginAttempt` on tick N; `CompleteAttempt` or `RollBackAttempt` in the completion callback), with the per-character mutation gate closed in between.
 **ADR Decision Summary**: An irreversible outcome is written in a single transaction and confirmed before any client-visible result is sent; on a failed write the caller restores its own in-memory changes.
 
 **Engine**: Unity 6.3 LTS | **Risk**: to be set by the decision (an `async`/`await` path under Unity's synchronization context is a known hazard in EditMode tests and on a headless server)
@@ -29,7 +29,7 @@
 
 ## What is blocking
 
-1. **How the tick loop consumes an asynchronous commit — decided 2026-10-07 by ADR-011 (Proposed): candidate (c), a completion queue drained on the tick thread, with an `IrreversibleOutcomeCoordinator` built on the failure protocol extracted from the existing sequencer. Still a blocker until the ADR is Accepted.** *(Text before the decision:)* `EnhancementService` is deliberately synchronous: `BeginAttempt` → *commit* → `CompleteAttempt` or `RollBackAttempt`. Something has to run the commit in between. What exists and what conflicts:
+1. **How the tick loop consumes an asynchronous commit — decided 2026-10-07 by ADR-011 (Accepted): candidate (c), a completion queue drained on the tick thread, with an `IrreversibleOutcomeCoordinator` built on the failure protocol extracted from the existing sequencer. No longer a blocker; the story can be tested against a fake `ICharacterPersistence`.** *(Text before the decision:)* `EnhancementService` is deliberately synchronous: `BeginAttempt` → *commit* → `CompleteAttempt` or `RollBackAttempt`. Something has to run the commit in between. What exists and what conflicts:
    - ADR-006 and `character-persistence.md` define the commit as `Task<CharacterSaveResult>`.
    - Networking Core's `CommitBeforeBroadcastSequencer.Execute` already implements validate → acknowledge → compute → persist → broadcast with revert, disconnect and session preservation — but its `persistOutcome` is a synchronous `Func<TOutcome, bool>`, so it would block the tick for the write (budget ≤ 50 ms P95 against a 50 ms tick).
    - Candidates: (a) an orchestrator over the existing synchronous sequencer (blocks the tick during the write); (b) an asynchronous overload of the sequencer, with a stated rule for where the continuation runs; (c) a small completion queue drained on the tick thread, so the write runs off-thread and `CompleteAttempt` / `RollBackAttempt` are called on the tick.

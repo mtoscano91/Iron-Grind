@@ -122,7 +122,7 @@ interfaces:
     revised: ""
 
   - contract: tick_completion_queue
-    status: proposed
+    status: active
     pattern: direct_call
     producer: any tick-driven caller of an ICharacterPersistence method
     consumers:
@@ -135,7 +135,7 @@ interfaces:
     revised: ""
 
   - contract: character_mutation_gate
-    status: proposed
+    status: active
     pattern: direct_call
     producer: IrreversibleOutcomeCoordinator (Close before the outcome is applied in memory; Open after the write's result is handled)
     consumers:
@@ -177,7 +177,7 @@ interfaces:
 
 performance_budgets:
   - system: persistence_result_handling
-    status: proposed
+    status: active
     budget_ms: 0.0
     adr: docs/architecture/ADR-011-async-persistence-tick-loop.md
     notes: "Latency rule, not a frame-time allocation: the result of a persistence call is handled by Drain on the first tick after its task completes (normal case 50–100 ms after the request at 20 Hz). Drain itself is O(tasks in flight) per tick with no allocation when nothing is in flight. The tick never waits on I/O."
@@ -306,7 +306,7 @@ api_decisions:
     revised: ""
 
   - purpose: tick_code_async_persistence_consumption
-    status: proposed
+    status: active
     api: "ITickCompletionQueue.Track(task, cancellation, callback) + Drain() once per tick before game logic; result handled on the tick thread. Irreversible outcomes go through IrreversibleOutcomeCoordinator (begin on tick N, completion callback on tick N+k)."
     not: "await / UnityEngine.Awaitable in tick-driven code; blocking the tick on the write; the synchronous CommitBeforeBroadcastSequencer.Execute for any production caller of SaveIrreversibleOutcome"
     adr: docs/architecture/ADR-011-async-persistence-tick-loop.md
@@ -412,14 +412,14 @@ forbidden_patterns:
     added: 2026-06-27
 
   - pattern: await_or_block_on_task_in_tick_code
-    status: proposed
+    status: active
     description: "Tick-driven server code (game systems, request handlers, orchestration) must not use await, async methods, Task.Result, Task.Wait(), GetAwaiter().GetResult(), ContinueWith or async void. Start the Task and pass it to ITickCompletionQueue.Track in the same statement."
     why: "An awaited continuation resumes when Unity pumps its synchronization context, not at a defined point of ServerTickLoop, and cannot be tested deterministically in EditMode. Blocking on a task stalls every player in the zone for the length of a database write (budget 50 ms P95 = one tick) and can deadlock the main thread."
     adr: docs/architecture/ADR-011-async-persistence-tick-loop.md
     added: 2026-10-07
 
   - pattern: persistence_await_capturing_unity_context
-    status: proposed
+    status: active
     description: "Inside the persistence layer, never await without ConfigureAwait(false) (including await using / await foreach), never read or write live game state after the first await, and never create a TaskCompletionSource without TaskCreationOptions.RunContinuationsAsynchronously."
     why: "A captured UnitySynchronizationContext posts the continuation to the main thread: invisible in EditMode tests, a late or stalled write on the server, and a shutdown drain that waits out its timeout. Game state is single-threaded and is only safe to read in the synchronous prefix, on the tick thread."
     adr: docs/architecture/ADR-011-async-persistence-tick-loop.md

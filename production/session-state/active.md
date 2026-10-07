@@ -14,6 +14,15 @@
 
 > **Push status 2026-10-07 (later):** the user asked for a push after Story 008: `origin/main` is at `faa134c` (`0faea44..faa134c`). "Not pushed" notes in the 2026-10-07 extracts below are superseded. PAT rotation is still unconfirmed.
 
+## Session Extract — ADR-011 accepted 2026-10-07 (same session as the extract below; not committed)
+
+- The user said "accept ADR-011". `docs/architecture/ADR-011-async-persistence-tick-loop.md` is **Accepted (2026-10-07)**; its six entries in `docs/registry/architecture.yaml` are `status: active`. Every "Proposed" in the extract below is superseded.
+- The ADR's commit `978d0a6` was pushed first (`origin/main` at `978d0a6`); the "Not pushed" note below is superseded.
+- Stories 009 and 011 are **still Blocked**, now only on: 009 — the inbound request dispatcher (Networking Core, next to ADR-004 code); 011 — Character Persistence (`SaveIrreversibleOutcome`), and TD-046 for its client-facing criteria. Story 011 can be developed against a fake `ICharacterPersistence` once someone decides to split it that way (`/story-readiness`). Enhancement `EPIC.md`, epics index, `enhancement-system.md` OQ-ENH-7 text, `systems-index.md` and TD-059 wording updated to say Accepted.
+- Engine checks listed under the ADR's "Verification Required" (headless IL2CPP build, real Npgsql write, shutdown drain, SIGTERM) are still open — they gate shipping, not acceptance.
+- **Committed and pushed** (the user asked) in the commit titled "architecture: ADR-011 Accepted" — the commit after `978d0a6`; the "not committed" in this extract's heading is superseded. Untracked and left alone: `bash.exe.stackdump`. PAT rotation is still unconfirmed.
+- **Next:** `/create-control-manifest update` (adds the no-`await`-in-tick-code and persistence-layer rules; changes the manifest version, which every open story embeds). `/architecture-review` in a fresh session. Buildable now with no other dependency: `TickCompletionQueue` and `CharacterMutationGate` (ADR-011 Migration step 1) — no story exists for them yet.
+
 ## Session Extract — /architecture-decision 2026-10-07 (ADR-011 Asynchronous Persistence in the Server Tick Loop — written as Proposed; not committed)
 
 - File: `docs/architecture/ADR-011-async-persistence-tick-loop.md`, **Status: Proposed** (the user chose Proposed, not Accepted). Review mode lean — TD-ADR skipped. `unity-specialist` engine validation run: no blocking issue; its concerns are folded in (it could verify nothing from the engine reference files, which have no async content — the headless-build checks in the ADR are real gates).
