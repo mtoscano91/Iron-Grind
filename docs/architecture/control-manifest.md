@@ -1,9 +1,9 @@
 # Control Manifest
 
 > **Engine**: Unity 6.3 LTS (6000.3)
-> **Last Updated**: 2026-06-28
-> **Manifest Version**: 2026-06-28
-> **ADRs Covered**: ADR-001, ADR-002, ADR-003, ADR-004, ADR-005, ADR-006, ADR-007, ADR-008, ADR-009, ADR-010
+> **Last Updated**: 2026-10-07
+> **Manifest Version**: 2026-10-07
+> **ADRs Covered**: ADR-001, ADR-002, ADR-003, ADR-004, ADR-005, ADR-006, ADR-007, ADR-008, ADR-009, ADR-010, ADR-011 (and ADR-006 Amendment 1, 2026-10-01)
 > **Status**: Active — regenerate with `/create-control-manifest update` when ADRs change
 
 `Manifest Version` is the date this manifest was generated. Story files embed this date when created. `/story-readiness` compares a story's embedded version to this field to detect stories written against stale rules. Always matches `Last Updated` — they are the same date, serving different consumers.
@@ -46,6 +46,18 @@ This manifest is a programmer's quick-reference extracted from all Accepted ADRs
 - IL2CPP `link.xml` must preserve Npgsql and Dapper: `<assembly fullname="Npgsql" preserve="all" />` + `<assembly fullname="Dapper" preserve="all" />` — source: ADR-006
 - At-most-one write in flight per `CharacterID` (service-layer per-CharacterID write-queue) — source: ADR-006
 - Per-zone-process connection pool: `MaxPoolSize=10, MinPoolSize=2` (ADR-007 authoritative for the connection string; ADR-006's pre-topology estimate of 20 is superseded by ADR-007) — source: ADR-007
+- Each non-null `inventory_slots` JSONB entry is `{"item_id": N, "count": C, "enhancement_level": M}` with `0 ≤ M ≤ MAX_ENHANCEMENT_LEVEL`; the deserializer treats a missing `enhancement_level` key as 0 — source: ADR-006 Amendment 1
+
+**Asynchronous persistence in the tick loop (ADR-011):**
+- Tick-driven code calls a `Task`-returning persistence method and passes the returned task, in the same statement, to `ITickCompletionQueue.Track`. This applies to every `ICharacterPersistence` call made from tick code (`LoadCharacter`, `SaveSession`, `CreateStub`, `SaveIrreversibleOutcome`, the purchase calls) — source: ADR-011
+- `ITickCompletionQueue.Drain()` runs once per tick, before any game logic of that tick. For every tracked task whose `IsCompleted` is true, in the order the tasks were tracked, it invokes the callback on the tick thread with a `TickTaskResult<T>` (`Completed` / `Faulted` / `Canceled` / `TimedOut`). `Drain` reads `Task.IsCompleted` only, never throws into the tick, and an exception thrown by one callback is caught and logged without stopping the rest — source: ADR-011
+- `Track` and `Drain` are called from the tick thread only; both assert it — source: ADR-011
+- Watchdog: a task still incomplete `PERSISTENCE_WATCHDOG_TICKS` (200 = 10 s) after it was tracked has its `CancellationToken` cancelled, a critical alert raised, and its callback invoked with `TimedOut`. The persistence layer's own `PERSISTENCE_WRITE_TIMEOUT_SECONDS` (5 s, ADR-006) fires first; the watchdog is the backstop. A cancelled write has an unknown outcome. A late completion of a timed-out task is logged and its `Exception` is read — source: ADR-011
+- Shutdown drain: in the zone teardown sequence, after the tick loop has stopped and before `Process.Exit(0)`, one bounded blocking wait on all tracked tasks (timeout = the watchdog duration; `AggregateException` caught, not rethrown), then one last `Drain`. Incomplete tasks after the timeout are logged and alerted. It runs on the explicit shutdown path, not from `OnApplicationQuit` — source: ADR-011, ADR-009
+- `ICharacterPersistence` implementations copy everything they need from live game state before their first `await`, on the calling (tick) thread; after it they touch only that copy and the database — source: ADR-011
+- `ICharacterPersistence` implementations use `ConfigureAwait(false)` on every `await` (including `await using` / `await foreach`); if an awaited call cannot be trusted not to capture the context, the method runs its body through `Task.Run` after the snapshot. Every `TaskCompletionSource` in the persistence layer and in test fakes uses `TaskCreationOptions.RunContinuationsAsynchronously` — source: ADR-011
+- `ICharacterMutationGate`: closed by the irreversible-outcome coordinator before the outcome is applied in memory, opened after the result has been handled (success or rollback; opened in a `finally`). `Close` on an already closed gate is an error — one write in flight per character — source: ADR-011
+- The inbound request dispatcher (between the RPC guard chain and game logic) checks the gate once per request. A request whose type is marked `HeldDuringIrreversibleWrite` (every bag-mutating request: move, equip, unequip, discard, sell, buy, consumable use, accessory merge) is appended to the character's hold queue while the gate is closed; other requests are dispatched normally. When the gate opens, held requests are dispatched in arrival order on the same tick, after `Drain` and before that tick's new requests; if it opened because of a failed write, they are discarded — source: ADR-011
 
 **Hosting backend (ADR-007):**
 - Unity 6.3 IL2CPP headless server processes on Ubuntu 22.04 LTS (Hetzner VPS) — source: ADR-007
@@ -100,10 +112,21 @@ This manifest is a programmer's quick-reference extracted from all Accepted ADRs
 - **Never use lambda captures for persistent event subscriptions** — not unsubscribeable by reference; leaks service references across zone teardown — source: ADR-010
 - **Never call game-logic methods directly from `ServerRpc` or NGO message handlers** — bypasses the single-threaded main-loop execution guarantee; all game logic must run in the tick loop — source: ADR-010
 - **Never use shared mutable state polling between systems** — use C# events for low-frequency broadcasts — source: ADR-010
+- **Never use `await`, `async` methods, `Task.Result`, `Task.Wait()`, `GetAwaiter().GetResult()`, `ContinueWith` or `async void` in tick-driven server code** — a continuation resumes when Unity pumps its synchronization context, not at a defined point of the tick; start the `Task` and pass it to `ITickCompletionQueue.Track` in the same statement — source: ADR-011
+- **Never block the tick on a persistence write** — one write would stall every player in the zone for up to a full tick, and blocking the main thread on a task can deadlock; the shutdown drain is the only blocking wait in the server — source: ADR-011
+- **Never use the synchronous `CommitBeforeBroadcastSequencer.Execute` for a production caller of `SaveIrreversibleOutcome`** — it remains only for a persist step that is genuinely synchronous — source: ADR-011
+- **Never read or write live game state after the first `await` in the persistence layer** — game state is single-threaded; copy what is needed in the synchronous prefix, on the tick thread — source: ADR-011
+- **Never `await` in the persistence layer without `ConfigureAwait(false)`** (including `await using` and `await foreach`), and never create a `TaskCompletionSource` there or in a test fake without `TaskCreationOptions.RunContinuationsAsynchronously` — a captured Unity context is invisible in EditMode tests and stalls or delays writes on the server — source: ADR-011
+- **Never use `UnityEngine.Awaitable` for tick logic** — it resumes at player-loop points, not at a point of `ServerTickLoop` — source: ADR-011
+- **Never retry a failed irreversible write** — any non-success code, fault, cancellation or watchdog timeout takes the failure branch once — source: ADR-011 (CR-NET-5.5)
 
 ### Performance Guardrails
 
 - **Persistence write**: warning ≥ 50ms; critical ≥ 100ms; hard timeout = 5s (`PERSISTENCE_WRITE_TIMEOUT_SECONDS`) — source: ADR-006
+- **Persistence result handling**: the result of a persistence call is handled by `Drain` on the first tick after its task completes (normal case 50–100 ms after the request at 20 Hz); the tick never waits on I/O — source: ADR-011
+- **`ITickCompletionQueue.Drain`**: O(tasks in flight) per tick — at most one per character in the zone; no allocation when nothing is in flight — source: ADR-011
+- **Persistence watchdog**: `PERSISTENCE_WATCHDOG_TICKS = 200` (10 s) — the backstop above the 5 s `PERSISTENCE_WRITE_TIMEOUT_SECONDS`, which fires first — source: ADR-011, ADR-006
+- **Held requests**: `MAX_HELD_REQUESTS_PER_CHARACTER = 16`; a request arriving at a full queue is dropped and logged — source: ADR-011
 - **Server tick**: target < 30ms at 50 players + 150 mobs (F-NET-9 profiling gate — must be confirmed before Networking Core implementation is greenlit) — source: ADR-004
 - **Per-client batch body**: ≤ 512 bytes (F-NET-6) — source: ADR-004
 - **Zone server load time**: < 500ms at MVP asset scope — source: ADR-009
@@ -161,6 +184,7 @@ This manifest is a programmer's quick-reference extracted from all Accepted ADRs
 - **Never omit the `_latestRequests.TryGetValue` guard in `Tick()` drain loop** — causes `KeyNotFoundException` on any stop-during-pursuit sequence — source: ADR-003
 - **Never call `Resume()` from Dormant re-aggro** — Dormant always requires `SetDestination` (no preserved path) — source: ADR-003
 - **Never use lambda captures for persistent event subscriptions** — not unsubscribeable by reference — source: ADR-010
+- **Never use `await`, `async` methods, `Task.Result`, `Task.Wait()`, `GetAwaiter().GetResult()`, `ContinueWith` or `async void` in tick-driven core code** — start the `Task` and pass it to `ITickCompletionQueue.Track` — source: ADR-011
 
 ### Performance Guardrails
 
@@ -177,12 +201,16 @@ This manifest is a programmer's quick-reference extracted from all Accepted ADRs
 - All R-OD messages carrying a `requestId` field must use `(charId, messageType, requestId)` as the dedup key — includes `BuyRequest`, `SellRequest`, and `UseItemRequest` — source: ADR-001 Amendment A1
 - `Action<T>` specializations for struct event arg types: add generic type preservations to `link.xml` if `MissingMethodException` occurs on any `Action<StructType>` invocation in the first IL2CPP build — source: ADR-010
 - `readonly struct` event arg types declared in the shared `IronGrind.Events` namespace (one file per type: `MobDeathContext.cs`, `StatChangedArgs.cs`, etc.) — source: ADR-010
+- Server-originated bag mutations that get a synchronous result and cannot be queued (loot auto-pickup, auction delivery) read `ICharacterMutationGate.IsHeld(charId)` before mutating. If held, the mutation is **not attempted** — no bag-full result, no client notice — and the caller retries on the first tick after `OnGateOpened(charId)` — source: ADR-011
+- Every irreversible outcome (enhancement result, level-up, respec, item consumption) goes through `IrreversibleOutcomeCoordinator`: `Begin` on tick N (validate → close gate → acknowledge → compute and apply in memory → start the write → `Track`); the completion callback on tick N+k delivers on `Success`, or reverts, disconnects, alerts and preserves the session on any failure. For the Enhancement System: `BeginAttempt` in `Begin`, `CompleteAttempt` on success, `RollBackAttempt` on failure — source: ADR-011
 
 ### Forbidden Approaches
 
 - **Never call `Resume()` from a Dormant re-aggro transition** — Dormant has no preserved path; use `SetDestination` — source: ADR-003
 - **Never introduce an `EventBus` class anywhere in `src/`** — once present it proliferates; a structural architecture violation — source: ADR-010
 - **Never use class-typed event args** — forces heap allocation on every emit; use `readonly struct` — source: ADR-010
+- **Never use `await`, `async` methods, `Task.Result`, `Task.Wait()`, `GetAwaiter().GetResult()`, `ContinueWith` or `async void` in tick-driven feature code** — start the `Task` and pass it to `ITickCompletionQueue.Track` — source: ADR-011
+- **Never hold, reject or defer a client request inside a game system because a write is in flight, and never read `ICharacterMutationGate` from a game system** — the request dispatcher is the single enforcement point; the only readers of the gate are the dispatcher and the server-originated bag mutators named above — source: ADR-011
 
 ---
 
@@ -292,6 +320,7 @@ Source: `docs/engine-reference/unity/deprecated-apis.md`
 - **OpenGL ES on iOS: removed** — Graphics API list must contain Metal only; remove OpenGL ES in Player Settings — source: `current-best-practices.md`
 - **C# null-coalescing operators (`?.`, `??`) do not work correctly with Unity `Object` subclasses** — use explicit null checks instead — source: `current-best-practices.md`
 - **`async/await` with `LoadSceneAsync`**: use `yield return op` in a coroutine — `await` does not guarantee `Awake()`/`Start()` complete before the continuation in headless builds — source: ADR-009
+- **No `await` in server tick code**: tick-driven server code in every layer starts a `Task` and hands it to `ITickCompletionQueue`; it never awaits or blocks on it (see Foundation → Asynchronous persistence in the tick loop). `UnityEngine.Awaitable` is not used for tick logic — source: ADR-011
 - **`[SerializeField]` on properties**: compile error in Unity 6.3 — use on private fields only; or use `[field: SerializeField]` for auto-property backing fields — source: ADR-009, `current-best-practices.md`
 - **USS syntax errors block import** in Unity 6.3 (was a warning in 6.1/6.2) — all USS must be valid before commit; add USS linting to CI — source: ADR-005
 - **SRP Batcher**: enable in URP Asset → Advanced → SRP Batcher for significant CPU win on mobile — source: `current-best-practices.md`

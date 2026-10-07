@@ -14,6 +14,15 @@
 
 > **Push status 2026-10-07 (later):** the user asked for a push after Story 008: `origin/main` is at `faa134c` (`0faea44..faa134c`). "Not pushed" notes in the 2026-10-07 extracts below are superseded. PAT rotation is still unconfirmed.
 
+## Session Extract — /create-control-manifest update 2026-10-07 (Manifest Version 2026-06-28 → 2026-10-07; not committed)
+
+- Verdict: COMPLETE. `docs/architecture/control-manifest.md` updated incrementally — ADR-001 to ADR-010 rules untouched. Review mode lean — TD-MANIFEST skipped.
+- Added (source ADR-011 unless noted): Foundation — 10 required (one from ADR-006 Amendment 1: `inventory_slots` entries carry `enhancement_level`), 7 forbidden, 4 guardrails, under a new group "Asynchronous persistence in the tick loop (ADR-011)"; Core — 1 forbidden; Feature — 2 required, 2 forbidden; Global cross-cutting — 1. Header: ADRs Covered now lists ADR-011.
+- **ADR-011 clarified the same day (user approved; wording only, new "Clarifications" section):** the 5 s `PERSISTENCE_WRITE_TIMEOUT_SECONDS` of ADR-006 fires before the 10 s watchdog; the shutdown drain sits in ADR-009's teardown sequence before `Process.Exit(0)` (the text said "before `Application.Quit()`").
+- **Side effect:** every story embeds `Manifest Version: 2026-06-28`. Open (not Complete) stories will get a staleness advisory at `/story-readiness` / `/story-done` until re-checked; none of the new rules applies to code already written except the no-`await` rule, which existing `src/` already satisfies (only the test crash injector and the sequencer's doc comments mention async).
+- **Committed and pushed** (the user asked) in the commit titled "architecture: control manifest 2026-10-07 (ADR-011 rules); ADR-011 clarifications" — the commit after `4f8e3f3`; the "not committed" in this extract's heading is superseded. Untracked and left alone: `bash.exe.stackdump`. PAT rotation is still unconfirmed.
+- **Next:** `/architecture-review` in a fresh session. Then a story for `TickCompletionQueue` + `CharacterMutationGate` (ADR-011 Migration step 1; no epic owns it yet — Networking Core is the natural home).
+
 ## Session Extract — ADR-011 accepted 2026-10-07 (same session as the extract below; not committed)
 
 - The user said "accept ADR-011". `docs/architecture/ADR-011-async-persistence-tick-loop.md` is **Accepted (2026-10-07)**; its six entries in `docs/registry/architecture.yaml` are `status: active`. Every "Proposed" in the extract below is superseded.

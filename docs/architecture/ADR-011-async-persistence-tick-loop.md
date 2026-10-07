@@ -62,11 +62,11 @@ Where a continuation would resume is therefore never a question: there are no co
 
 `Drain` reads `Task.IsCompleted` only. It installs no continuation and does not depend on any synchronization context.
 
-**Watchdog.** A task still incomplete `PERSISTENCE_WATCHDOG_TICKS` (default 200 = 10 s, equal to `CHARACTER_LOAD_TIMEOUT_SECONDS`) after it was tracked has its `CancellationToken` cancelled, a critical alert is raised, and its callback is invoked with a `TimedOut` failure. A cancelled write has an unknown outcome: cancelling the token does not abort a command already running in the database. A late completion of a timed-out task is logged, its `Exception` is read (so it is observed), and it is otherwise ignored.
+**Watchdog.** A task still incomplete `PERSISTENCE_WATCHDOG_TICKS` (default 200 = 10 s, equal to `CHARACTER_LOAD_TIMEOUT_SECONDS`) after it was tracked has its `CancellationToken` cancelled, a critical alert is raised, and its callback is invoked with a `TimedOut` failure. A cancelled write has an unknown outcome: cancelling the token does not abort a command already running in the database. A late completion of a timed-out task is logged, its `Exception` is read (so it is observed), and it is otherwise ignored. The watchdog is a backstop: the persistence layer's own hard timeout on a write, `PERSISTENCE_WRITE_TIMEOUT_SECONDS` = 5 s (ADR-006 Decision 4), fires first and completes the task as a failure, which the next `Drain` handles normally; the watchdog only catches a task that does not honour it *(clarified 2026-10-07)*.
 
 **Threading.** `Track` and `Drain` are called from the tick thread only; both assert it.
 
-**Shutdown.** After the tick loop has stopped, zone teardown makes one bounded blocking wait on all tracked tasks (timeout = the watchdog duration; an `AggregateException` from faulted or cancelled tasks is caught, not rethrown), then drains one last time so every task, including failed ones, gets its callback. Tasks still incomplete after the timeout are logged and alerted, and the process goes on to exit. The drain runs on the explicit shutdown path before `Application.Quit()`, not from `OnApplicationQuit`. This is the only blocking wait on a task in the server.
+**Shutdown.** After the tick loop has stopped, zone teardown makes one bounded blocking wait on all tracked tasks (timeout = the watchdog duration; an `AggregateException` from faulted or cancelled tasks is caught, not rethrown), then drains one last time so every task, including failed ones, gets its callback. Tasks still incomplete after the timeout are logged and alerted, and the process goes on to exit. The drain is a step of ADR-009's zone teardown sequence — after `TickLoop.Active = false` and the wait for the current tick, before `Process.Exit(0)` — on the explicit shutdown path, not from `OnApplicationQuit` *(clarified 2026-10-07; was "before `Application.Quit()`")*. This is the only blocking wait on a task in the server.
 
 ### Decision 3 — Contract for `ICharacterPersistence` implementations
 - **Snapshot in the synchronous prefix.** Everything a method needs from live game state is copied before its first `await`, on the calling (tick) thread. After the first `await` the method touches only that copy and the database. Game state is never read or written off the tick thread.
@@ -215,6 +215,11 @@ Constants: `PERSISTENCE_WATCHDOG_TICKS = 200`, `MAX_HELD_REQUESTS_PER_CHARACTER 
 - A task already complete when it is tracked is handled by the next `Drain`.
 - With a fake that fails, faults, cancels or never completes: rollback, disconnect and session preservation happen exactly once and the gate ends open.
 - The four engine checks under Verification Required pass on a headless build.
+
+## Clarifications
+
+### 2026-10-07 — wording aligned with ADR-006 and ADR-009 (no decision change)
+Found while updating the control manifest, the day the ADR was accepted. (1) Decision 2, Watchdog: states that ADR-006's 5 s write timeout fires before the 10 s watchdog. (2) Decision 2, Shutdown: places the drain in ADR-009's teardown sequence, which ends in `Process.Exit(0)`, where the text said "before `Application.Quit()`".
 
 ## Related Decisions
 - ADR-006 (Persistence Layer), ADR-007 (Hosting), ADR-010 (Messaging), ADR-004 (NGO), ADR-001 (Purchase integrity — `BeginPurchase` / `CompletePurchase` are persistence calls and follow Decision 1 and 2).
