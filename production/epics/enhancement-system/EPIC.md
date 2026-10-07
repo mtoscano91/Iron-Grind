@@ -3,7 +3,7 @@
 > **Layer**: Feature
 > **GDD**: design/gdd/enhancement-system.md
 > **Architecture Module**: Enhancement (Feature layer; "irreversible outcome — commit before broadcast" data flow in `architecture.md`)
-> **Status**: Ready (0/10 — 8 stories Ready, 2 Blocked: Story 009 on OQ-ENH-7, Story 010 on TD-046)
+> **Status**: In Progress (1/10 — Story 001 Complete 2026-10-07; 7 stories Ready; 2 Blocked: Story 009 on OQ-ENH-7, Story 010 on TD-046)
 > **Stories**: 10 stories created 2026-10-07 (001–010)
 
 > **Created ahead of the GDD's stated gate (user decision 2026-10-07).** The GDD header says OQ-ENH-7 and the wire-protocol Enhancement message set (TD-046) should close before `/create-epics`. The epic was created anyway so that the formula and bonus-provider work, which neither gate touches, can be planned alongside the Equipment epic. Every requirement the gates affect is marked below.
@@ -63,7 +63,7 @@ This epic is complete when:
 
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
-| 001 | [Enhancement Config — Level Cap, Thresholds, Probability Table, Prestige Band](story-001-enhancement-config.md) | Logic | Ready | None (design-only) |
+| 001 | [Enhancement Config — Level Cap, Thresholds, Probability Table, Prestige Band](story-001-enhancement-config.md) | Logic | Complete | None (design-only) |
 | 002 | [Enhancement Bonus Provider](story-002-enhancement-bonus-provider.md) | Logic | Ready | ADR-010 |
 | 003 | [Attempt Validation and Result Codes](story-003-attempt-validation.md) | Integration | Ready | ADR-010 |
 | 004 | [Attempt Sequence and Outcome Resolution](story-004-attempt-sequence.md) | Integration | Ready | ADR-010 |
@@ -94,4 +94,4 @@ Assigned to Blocked stories: **AC-ENH-38** (Story 009) and **AC-ENH-6** (Story 0
 
 ## Next Step
 
-Run `/story-readiness production/epics/enhancement-system/story-001-enhancement-config.md`, then `/dev-story`. Work through the stories in order — each story's `Depends on:` field says what must be Complete first. To unblock 009 and 010: decide OQ-ENH-7 (`/architecture-decision`) and run the wire-protocol authoring session for TD-046.
+Story 001 is Complete (2026-10-07). Next: `/story-readiness production/epics/enhancement-system/story-002-enhancement-bonus-provider.md`, then `/dev-story` (Story 003 is also unblocked). Work through the stories in order — each story's `Depends on:` field says what must be Complete first. To unblock 009 and 010: decide OQ-ENH-7 (`/architecture-decision`) and run the wire-protocol authoring session for TD-046.
