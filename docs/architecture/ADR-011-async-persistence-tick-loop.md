@@ -221,6 +221,9 @@ Constants: `PERSISTENCE_WATCHDOG_TICKS = 200`, `MAX_HELD_REQUESTS_PER_CHARACTER 
 ### 2026-10-07 — wording aligned with ADR-006 and ADR-009 (no decision change)
 Found while updating the control manifest, the day the ADR was accepted. (1) Decision 2, Watchdog: states that ADR-006's 5 s write timeout fires before the 10 s watchdog. (2) Decision 2, Shutdown: places the drain in ADR-009's teardown sequence, which ends in `Process.Exit(0)`, where the text said "before `Application.Quit()`".
 
+### 2026-10-07 — `DrainOnShutdown` added to `ITickCompletionQueue` (no decision change)
+Decision 2 "Shutdown" describes a bounded blocking wait followed by a last drain; Key Interfaces did not list a member for it. Story 030 adds `void DrainOnShutdown(TimeSpan timeout)` to `ITickCompletionQueue`. A null `cancellation` argument to `Track` is allowed, and the caller owns the `CancellationTokenSource`.
+
 ## Related Decisions
 - ADR-006 (Persistence Layer), ADR-007 (Hosting), ADR-010 (Messaging), ADR-004 (NGO), ADR-001 (Purchase integrity — `BeginPurchase` / `CompletePurchase` are persistence calls and follow Decision 1 and 2).
 - `design/gdd/enhancement-system.md` OQ-ENH-7; `design/gdd/character-persistence.md` CR-CP-5, CR-CP-7; `design/gdd/networking-core.md` CR-NET-5.

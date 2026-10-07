@@ -1,7 +1,7 @@
 # Story 030: Tick Completion Queue and Character Mutation Gate
 
 > **Epic**: Networking Core
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Logic
 > **Manifest Version**: 2026-10-07
@@ -47,10 +47,11 @@
 - [ ] **Fault and cancellation**: a faulted task yields `Faulted` with the task's exception; a cancelled task yields `Canceled`. `Drain` does not throw.
 - [ ] **Throwing callback**: a callback that throws is logged as a server error; the remaining callbacks of that `Drain` still run, and `Drain` does not throw.
 - [ ] **Watchdog**: a task still incomplete the watchdog number of ticks after it was tracked has its `CancellationTokenSource` cancelled, a critical alert logged, and its callback invoked once with `TimedOut`. It no longer counts in `InFlightCount`.
-- [ ] **Late completion after a timeout**: when a timed-out task later completes or faults, it is logged, its `Exception` is read, and no second callback runs.
+- [ ] **Late completion after a timeout**: when a timed-out task later completes or faults, it is logged and no second callback runs. *(The entry's `task.Exception` is also read so the fault is observed — checked in code review, not by a test.)*
 - [ ] **Tick thread only**: `Track` and `Drain` throw `InvalidOperationException` when called from a thread other than the one the queue was created on.
 - [ ] **No allocation when idle**: `Drain` with nothing tracked allocates nothing.
 - [ ] **Shutdown drain**: `DrainOnShutdown(timeout)` waits once, up to the timeout, on all tracked tasks, catches the `AggregateException` of faulted or cancelled tasks, then drains so every finished task gets its callback (including failed ones). Tasks still incomplete after the timeout are logged and alerted and get no callback; the method returns.
+- [ ] **Runs before game logic when registered first**: with `Drain` registered as the first tick-driven delegate of a `ServerTickLoop`, a completion callback runs before a second tick-driven delegate on the tick after the task completes.
 - [ ] **Constants**: `PERSISTENCE_WATCHDOG_TICKS` is 200 and `MAX_HELD_REQUESTS_PER_CHARACTER` is 16.
 
 **Character mutation gate**
@@ -69,10 +70,12 @@
   - `src/Foundation/Networking/MutationGate/ICharacterMutationGate.cs`, `CharacterMutationGate.cs`
 - **Interfaces**: exactly as in ADR-011 "Key Interfaces". `ITickCompletionQueue` gains one member the ADR describes in prose but does not list: `void DrainOnShutdown(TimeSpan timeout)`. `CharacterID` is `IronGrind.Currency.CharacterID` (a `readonly struct`, so `event Action<CharacterID>` satisfies ADR-010 Decision 3).
 - **Generic storage without per-tick allocation**: `Track<T>` may allocate one small entry object per tracked task (one per persistence call, off the hot path). `Drain` itself must not allocate when the list is empty; iterate by index, no LINQ, no enumerator boxing.
+- **`Error` by status**: `Completed` → `null`. `Faulted` → `task.Exception.GetBaseException()` (the original exception when there is exactly one, otherwise the `AggregateException`). `Canceled` → a new `TaskCanceledException(task)`, because a cancelled task's `Task.Exception` is null. `TimedOut` → a new `TimeoutException` naming the watchdog length in ticks. `Value` is `default` for every status except `Completed`.
+- **`cancellation`**: may be null (a task with nothing to cancel, e.g. `Task.FromResult`); the watchdog then skips the cancel step and still reports `TimedOut`. The caller owns the source: the queue only calls `Cancel()` and never disposes it. `Cancel()` is wrapped in `try`/`catch` and a failure is logged, since it can throw (`ObjectDisposedException`, or an `AggregateException` from registered callbacks) and `Drain` must not.
 - **Order**: keep tracked entries in a list in track order. `Drain` walks it front to back, handles each entry whose task `IsCompleted` or whose watchdog tick has passed, and removes handled entries without reordering the rest. A callback may call `Track` (the coordinator will); an entry added during a `Drain` is handled on a later `Drain`, not the current one.
 - **Watchdog tick**: store `trackedAtTick + watchdogTicks` using the `currentTick` passed to `Drain`; `Track` needs the current tick too — take it from the last `Drain` call (initially the constructor's `initialTick`, default 0). Compare with `StaleDiscardComparer.IsTickExpired` so `uint` wraparound is safe. The watchdog length is a constructor parameter that defaults to `PERSISTENCE_WATCHDOG_TICKS`, so tests use a small number.
 - **Timed-out entries**: move them to a second list. Each `Drain` checks that list; when the task has completed, log it, read `task.Exception` (so it is observed) and drop the entry. `DrainOnShutdown` does the same for whatever is left.
-- **Tick thread assert**: the constructor takes an optional `Func<int> currentThreadId` (default `() => Environment.CurrentManagedThreadId`), calls it once and stores the result; `Track`, `Drain` and `DrainOnShutdown` compare. Tests pass a fake provider — no real second thread.
+- **Tick thread assert**: the constructor takes an optional `Func<int> currentThreadId` (default `() => Environment.CurrentManagedThreadId`), calls it once and stores the result; `Track`, `Drain` and `DrainOnShutdown` compare. Tests pass a fake provider — no real second thread. The off-thread `InvalidOperationException` is a programming-error assert and the one exception to "`Drain` never throws"; the doc comment on `Drain` says "never throws for a task or callback failure; throws `InvalidOperationException` if called off the tick thread".
 - **Logging**: follow `CommitBeforeBroadcastSequencer` — `Debug.LogError` with a `[TickCompletionQueue]` prefix for a throwing callback, a watchdog timeout ("critical infrastructure alert"), a late completion and an incomplete task at shutdown. Tests assert them with `LogAssert.Expect`.
 - **`DrainOnShutdown`**: the only place in the server that blocks on a task. `Task.WaitAll(tasks, timeout)` inside `try`/`catch (AggregateException)`; then one `Drain`-equivalent pass that ignores the watchdog. Do not call it from `Drain` or from any tick code.
 - **Gate**: a `HashSet<CharacterID>`; no thread assert in the ADR, none added. `Open` removes the id first, then raises the event. An exception thrown by a subscriber propagates (the gate is already open at that point).
@@ -100,10 +103,12 @@
 - **Already complete** — track `Task.FromResult(7)` → no callback during `Track`; next `Drain` → `Completed`, 7.
 - **Track order** — track A, B, C; complete C, then A, then B; one `Drain` → callbacks A, B, C.
 - **Incomplete** — track, `Drain` three times → no callback, `InFlightCount` 1.
-- **Faulted** — `SetException(e)` → `Faulted`, `Error` carries `e`. **Cancelled** — `SetCanceled()` → `Canceled`, `Error` non-null.
+- **Faulted** — `SetException(e)` → `Faulted`, `Error` is the same instance as `e`. **Cancelled** — `SetCanceled()` → `Canceled`, `Error` is a `TaskCanceledException`.
 - **Throwing callback** — two complete tasks, the first callback throws → error logged, second callback still runs, `Drain` returns.
 - **Callback tracks another task** — the callback of A tracks an already complete B → B is not handled in the same `Drain`; it is handled in the next.
-- **Watchdog** — watchdog 3 ticks; track at tick 10; `Drain(11)`, `Drain(12)` → nothing; `Drain(13)` → token cancelled, alert logged, callback `TimedOut` once, `InFlightCount` 0.
+- **Watchdog** — watchdog 3 ticks; track at tick 10; `Drain(11)`, `Drain(12)` → nothing; `Drain(13)` → token cancelled, alert logged, callback `TimedOut` once, `Error` is a `TimeoutException`, `InFlightCount` 0.
+- **Null cancellation** — track with a `null` source, let the watchdog fire → `TimedOut`, no exception.
+- **Cancel throws** — a source already disposed by the caller → error logged, callback still `TimedOut`, `Drain` returns.
 - **Watchdog boundary** — a task that completes on the tick the watchdog would fire is reported `Completed`, not `TimedOut`.
 - **Watchdog across wraparound** — track at `uint.MaxValue - 1` with watchdog 3 → fires at tick 1.
 - **Late completion** — after the timeout above, `SetException` then `Drain` → logged, no second callback.
@@ -121,7 +126,7 @@
 - **Open when open** — `Open(a)` never closed → no event, no exception; `Close`, `Open`, `Open` → one event.
 - **Reuse** — `Close`, `Open`, `Close` on the same character works.
 
-**Integration with the tick loop**
+**Integration with the tick loop** (in `TickLoop_CompletionQueue_tests.cs`)
 - Registering `dt => queue.Drain(tickLoop.ServerTickNumber)` first on a `ServerTickLoop` makes the completion callback run before a second tick-driven delegate on the tick after the task completes.
 
 ---
@@ -131,7 +136,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/Networking/TickLoop_CompletionQueue_tests.cs` and `tests/EditMode/Networking/TickLoop_CharacterMutationGate_tests.cs` — must exist and pass.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — 37 queue tests and 7 gate tests; batch-mode EditMode run 2026-10-07, 1861/1861 passed (Unity 6000.3.10f1)
 
 ---
 
@@ -139,3 +144,16 @@
 
 - Depends on: Story 009 (Complete — `ServerTickLoop`), Story 005 (Complete — `StaleDiscardComparer`). ADR-011 Accepted (2026-10-07).
 - Unlocks: the `IrreversibleOutcomeCoordinator` story (not yet written); Enhancement Stories 009 and 011 (each still blocked on other work as well).
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-07
+**Criteria**: 17/17 passing (the "`Exception` is read" clause of the late-completion criterion is checked by review, as stated in the criterion)
+**Deviations** (advisory, none blocking):
+- `TickTaskResult<T>` has a public constructor that ADR-011 Key Interfaces does not list (needed by fakes).
+- Added in code review, beyond the story text: `Drain` / `DrainOnShutdown` called from a completion callback throw `InvalidOperationException` (caught and logged by the outer call); `DrainOnShutdown` rejects a negative or infinite timeout (`ArgumentOutOfRangeException`) and caps it at `int.MaxValue` ms; it also waits on timed-out tasks and alerts those still incomplete; a task tracked by a callback during `DrainOnShutdown` is alerted and dropped with no callback. A watchdog length below 1 throws `ArgumentOutOfRangeException`.
+- `CharacterMutationGate.Open` stops at the first throwing `OnGateOpened` subscriber, as specified here — logged as TD-060.
+**Not wired in**: nothing in production constructs `TickCompletionQueue` or `CharacterMutationGate` yet (no zone bootstrap exists). A zone that constructs the queue after tick 0 must pass the current tick as `initialTick`.
+**Test Evidence**: Logic — `tests/EditMode/Networking/TickLoop_CompletionQueue_tests.cs` (37 tests), `tests/EditMode/Networking/TickLoop_CharacterMutationGate_tests.cs` (7 tests); full EditMode suite 1861/1861 passed in Unity batch mode.
+**Code Review**: Complete — `/code-review` 2026-10-07 (`unity-specialist`, `qa-tester`); CHANGES REQUIRED, all required changes and suggestions 1–5 and 7–9 applied and re-verified. Director gates skipped (lean mode).
