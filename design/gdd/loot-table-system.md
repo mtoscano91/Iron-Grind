@@ -1,6 +1,6 @@
 # Loot Table System
 
-> **Status**: Approved (lean re-review #3, 2026-10-03 — covers the 2026-10-03 amendments; base design Approved 2026-05-17)
+> **Status**: Approved (lean re-review #3, 2026-10-03 — covers the 2026-10-03 amendments; base design Approved 2026-05-17). CR-LT-16 amendment 2026-10-07 (Enhancement Scroll exclusion at MVP, AC-LT-25) — lean re-review pending
 > **Author**: Manuel Toscano + Claude Code agents
 > **Last Updated**: 2026-10-03 (revision after lean re-review #2: CR-LT-9.1 — "disconnected" defined as the party member status and checked only when the bid is tried, a running grace is not ended by a disconnect; CR-LT-12 — the fresh `expiryTick` is carried by `GroundItemAssigned`, and also applies to the paid-winner invariant path; `N = 1` on the paying tick stated; `AuctionOpen` corrected; message lists completed — lean re-review pending); 2026-10-03 (winner-grace revision after the lean re-review: CR-LT-9.1 — balance read before a grace, no grace for a disconnected bidder, `N` on the paying tick; CR-LT-12 — fresh TTL for any fallback that follows a grace; state table, Interactions, F-LT-2, the disconnect and leaver edge cases, the discard modal client rule, AC-LT-25 and bookkeeping aligned — lean re-review pending); 2026-10-03 (winner grace: new CR-LT-9.1 — a bidder with a full bag is not charged and gets `AUCTION_WINNER_GRACE_TICKS` = 600 to free a slot, then the next bid is tried; no grace at zone teardown; CR-LT-9 last sentence, CR-LT-12, the `Auctioning` state row, the teardown edge case, AC-LT-12, AC-LT-19 and the discard modal updated; new AC-LT-25 and tuning knob — lean re-review pending); 2026-10-03 (Story 011 readiness decisions: CR-LT-9 — any non-`Success` `TrySpendGold` result disqualifies the bidder, and bids from characters who left the party are skipped; CR-LT-12 — an item `Assigned` out of an auction closed at `expiryTick` gets a fresh TTL; Edge Cases leaver line aligned — lean re-review pending); 2026-10-03 (Currency amendment: CR-LT-9, the Currency rows of the Interactions and Dependencies tables, and AC-LT-13 now name `GoldTransactionReason.AuctionBid` for the auction winner's `TrySpendGold` — no rule change); 2026-05-17 (lean re-review pass 2: B-LT-1 Party System status + rrNextIndex ownership propagated to Dependencies table; B-LT-2 Party System "Not yet designed" corrected; R-1 CR-LT-13.1 OQ-LT-4 reference updated; R-2 inventory-system.md re-approval noted; R-3 Interactions table AdvanceRrNextIndex corrected)
 > **Implements Pillar**: Earned Power (primary — solo) / Social Gravity (primary — party) / Legendary Gear (contextual)
@@ -90,6 +90,9 @@ At mob death the server draws a gold amount uniformly from `[GoldMin, GoldMax]` 
 **CR-LT-15 — Server Authority**
 All drop roll results, tag resolution, round-robin advancement, auction bids, bid validation, and gold distribution are computed server-side. The client receives outcome events only (`GroundItemSpawned`, `GroundItemAssigned`, `LootBidUpdate`, `AuctionResolved`, `GroundItemDespawned`, `BagFullPickupBlocked`, `GroundItemExpiryWarning`). No client has any vote in any drop outcome. All `LootBidRequest` messages are validated server-side before application.
 
+**CR-LT-16 — Enhancement Scroll Exclusion (MVP)** *(added 2026-10-07)*
+At MVP, no loot table entry may name an Enhancement Scroll — an item whose `ItemDefinition.ScrollData` is non-null (item-database.md Rule 36). While `ALLOW_ENHANCEMENT_SCROLL_DROPS` is `false` (the MVP default), startup data validation reports one issue per offending entry, naming the mob type, the entry index and the `ItemID`, and the table set is rejected like any other validation failure. An entry whose `ItemID` is not in the Item Database is not a scroll for this rule. *Why*: at MVP the scroll economy is the primary gold sink (enhancement-system.md F-ENH-5, AC-ENH-24); a dropped scroll is an attempt that removes no gold. *Post-MVP intent*: scrolls become a rare drop on some monsters. Setting the knob to `true` is gated on enhancement-system.md OQ-ENH-9: the scroll economy must be re-validated, and scrolls need a drop classification of their own — under CR-LT-5 a scroll has `GearTier.None` and would be a Common round-robin drop, not a rare one.
+
 ---
 
 ### States and Transitions
@@ -113,6 +116,7 @@ All drop roll results, tag resolution, round-robin advancement, auction bids, bi
 |--------|-----------|-----------|------|
 | **Item Database** | ← reads | `GetItemsByCategory(ItemCategory.Equipment)` → full item list cached | Server startup (once) |
 | **Item Database** | ← reads | `GetItem(ItemID)` → `GearTier` (classification), `SellPriceGold` (auction floor) | At drop spawn, per-item |
+| **Item Database** | ← reads | `GetItem(ItemID)` → `ScrollData` (is the entry an Enhancement Scroll — CR-LT-16) | Server startup, during table validation |
 | **Inventory System** | → calls | `PickupRequest(characterID, itemID, quantity)` → `PickupResult` | On proximity trigger or auction resolution |
 | **Inventory System** | ← reads | `HasFreeSlot(): bool` for the bidder | Before `TrySpendGold` on each bidder (CR-LT-9.1) |
 | **Inventory System** | ← subscribes | `InventoryChangedEvent` (server-internal) | Retry on a freed slot: in pickup radius (CR-LT-13.2) and during an auction grace (CR-LT-9.1) |
@@ -259,7 +263,7 @@ For a single table entry with drop chance `p`, the expected number of drops over
 
 | System | GDD | Dependency Type | Interface | Hard/Soft |
 |--------|-----|----------------|-----------|-----------|
-| **Item Database** | Approved | Reads | `GetItemsByCategory(ItemCategory.Equipment)` at startup; `GetItem(ItemID)` per-drop for `GearTier` (classification) and `SellPriceGold` (auction floor) | **Hard** — cannot build drop pools or run auctions without item definitions |
+| **Item Database** | Approved | Reads | `GetItemsByCategory(ItemCategory.Equipment)` at startup; `GetItem(ItemID)` per-drop for `GearTier` (classification) and `SellPriceGold` (auction floor); `GetItem(ItemID)` at table validation for `ScrollData` (CR-LT-16) | **Hard** — cannot build drop pools or run auctions without item definitions |
 | **Currency System** | Approved | Reads/Writes | `AddGold(characterID, amount, GoldTransactionReason.MonsterDrop)`; `TrySpendGold(characterID, winnerBid, GoldTransactionReason.AuctionBid)` (auction winner, CR-LT-9); `GetBalance(characterID)` (CR-LT-9.1) | **Hard** — cannot distribute gold without Currency System |
 | **Inventory System** | Approved | Reads/Writes | `PickupRequest(characterID, itemID, quantity)` → `PickupResult`; `HasFreeSlot(): bool` and `InventoryChangedEvent` (CR-LT-9.1, CR-LT-13.2) | **Hard** — cannot deliver items without Inventory System |
 | **Party System** | Approved (2026-05-17) | Reads/Calls | Party membership array (CharacterID[], join-order stable) via `IPartySystem.GetMemberAtIndex(partyID, rrNextIndex)`; cursor advance via `IPartySystem.AdvanceRrNextIndex(partyID)`; member `Status` read for a full-bag bidder (CR-LT-9.1) | **Hard** — round-robin and auction distribution require party state. Party System CR-PS-7 owns and maintains `rrNextIndex`; Loot Table System reads and advances it exclusively via the IPartySystem interface. |
@@ -272,9 +276,11 @@ For a single table entry with drop chance `p`, the expected number of drops over
 | **Mob Spawning** | Approved (design/gdd/mob-spawning.md) | Kill event source + data consumer | Enemy AI raises `MobEventBus.MobDied` after `ResolveMobDrop`; Mob Spawning establishes the `(EntityID ↔ MobTypeID)` binding used at drop resolution time; `LootTableRef` is a field in `MobDefinition` | **Hard** — Mob Spawning cannot drop items without Loot Table resolution |
 | **HUD** | Approved (2026-06-20, design/gdd/hud.md) | Consumes ground item state | "Bag full — item on ground" notification driven by `GroundItemAssigned` events scoped to the local player; HUD must clear the indicator on delivery or despawn | **Soft** — gameplay continues; only the notification is absent |
 | **Character Persistence** | Approved (2026-05-24, design/gdd/character-persistence.md) | Indirect | Inventory System persists items received through this system; Character Persistence must support items awarded by the Loot Table System | **Indirect** — mediated by Inventory System |
+| **Enhancement System** | Approved (design/gdd/enhancement-system.md) | Data constraint | The MVP scroll source restriction (AC-ENH-24): no loot table may yield an Enhancement Scroll while `ALLOW_ENHANCEMENT_SCROLL_DROPS` is `false` (CR-LT-16). No runtime call in either direction | **Soft** — an economy rule, lifted post-MVP through enhancement-system.md OQ-ENH-9 |
 
 **Bidirectionality notes:**
 - `design/gdd/item-database.md` — Loot Table System already listed as a downstream dependent ✓
+- `design/gdd/enhancement-system.md` — Loot Table System listed in its dependency table (CR-LT-16, added 2026-10-07) ✓
 - `design/gdd/inventory-system.md` — ✓ DONE (2026-05-17): Interactions table updated; `PickupRequest(CharacterID, ItemID, quantity)` is now the canonical signature. Lean re-review complete (2026-05-17) — re-Approved.
 - `design/gdd/currency-system.md` — ✓ DONE (2026-10-03): Loot Table System is listed as a caller of `AddGold`, `TrySpendGold` and `GetBalance` in the Interactions and Downstream Dependents tables.
 - `design/gdd/party-system.md` — ✓ DONE (Approved 2026-05-17): `rrNextIndex` is owned by Party System (CR-PS-7); Loot Table System reads and advances it via IPartySystem interface.
@@ -312,6 +318,12 @@ Gold ranges are authored per mob individually. The following tier guidelines cal
 **Constraint**: `GoldMin ≥ 4` on every authored entry — prevents zero-gold distributions in full parties (F-LT-1). Data validation must enforce this at startup.
 
 **Cross-reference**: `GOLD_CAP = 9,999,999g` (owned by `design/gdd/currency-system.md`). No authored `GoldMax` may exceed this value.
+
+**Data Validation Switches**
+
+| Knob | Default | Values | What Breaks |
+|------|---------|--------|-------------|
+| `ALLOW_ENHANCEMENT_SCROLL_DROPS` | `false` | `false` / `true` | `false` (MVP): any loot table entry naming an Enhancement Scroll is a validation error (CR-LT-16). `true`: scrolls may be authored as drops — every dropped scroll bypasses the gold sink, so do not enable before enhancement-system.md OQ-ENH-9 is resolved (economy re-validation and a scroll drop classification). |
 
 **Drop Rates**
 
@@ -558,7 +570,14 @@ WHEN the server advances 1 tick (601 → 600 ticks remaining, equal to `EXPIRY_W
 THEN `GroundItemExpiryWarning` is sent to Character 42 exactly once — verified via server outbound log showing exactly one `GroundItemExpiryWarning` for that `groundItemID`.
 GIVEN the same item has `expiryTick` extended by CR-LT-13.1 after the initial warning fires: a second `GroundItemExpiryWarning` IS sent at the new `expiryTick − EXPIRY_WARNING_TICKS` tick — verified via server outbound log showing exactly two `GroundItemExpiryWarning` messages for that `groundItemID`, one at each deadline threshold crossing.
 
-**BLOCKING: 20 | ADVISORY: 5 | Total: 25**
+**AC-LT-25** [BLOCKING] [Logic] *(added 2026-10-07 — CR-LT-16)*
+GIVEN a table set in which one mob's table has an entry naming the Bronze Enhancement Scroll (an item with `ScrollData`) and `ALLOW_ENHANCEMENT_SCROLL_DROPS = false`,
+WHEN the set is validated at startup,
+THEN exactly one issue is reported for that entry, naming the mob type, the entry index and the `ItemID`, and no registry is created.
+GIVEN the same set with `ALLOW_ENHANCEMENT_SCROLL_DROPS = true`: no issue is reported by this rule and the registry is created.
+GIVEN a set whose entries name only items without `ScrollData`, or an `ItemID` that is not in the Item Database: no issue is reported by this rule.
+
+**BLOCKING: 21 | ADVISORY: 5 | Total: 26**
 
 *QA note: AC-LT-8, AC-LT-9 require `PICKUP_RADIUS_UNITS` to be authored before integration tests can be implemented. AC-LT-4, AC-LT-7, AC-LT-11, AC-LT-12, AC-LT-13, AC-LT-19, AC-LT-25 require a Party System stub or interface contract — the Party System GDD should define at minimum `rrNextIndex`, the membership array shape, and `PartyID` type before these integration tests are written.*
 

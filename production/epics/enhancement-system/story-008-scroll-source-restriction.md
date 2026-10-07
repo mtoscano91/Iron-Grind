@@ -1,73 +1,88 @@
-# Story 008: Scroll Source Restriction Scan
+# Story 008: Scroll Exclusion Validator Rule (MVP)
 
 > **Epic**: Enhancement System
-> **Status**: Ready
+> **Status**: Blocked — lean `/design-review` of the `loot-table-system.md` CR-LT-16 amendment (2026-10-07) must pass first
 > **Layer**: Feature
 > **Type**: Logic
 > **Manifest Version**: 2026-06-28
-> **Estimate**: 1 hour
+> **Estimate**: 3 hours
+
+*Rewritten 2026-10-07 at `/story-readiness`. The original story ("Scroll Source Restriction Scan", 1h) was a test-only scan of every monster loot table. Readiness found nothing real to scan — no production loot tables are authored, and a `LootTableRegistry` cannot list its tables — so the user chose to enforce the restriction as a loot table validation rule instead, and to mark it an MVP-only constraint (post-MVP, scrolls are intended to be a rare drop on some monsters: enhancement-system.md OQ-ENH-9).*
 
 ## Context
 
-**GDD**: `design/gdd/enhancement-system.md` — AC-ENH-24 (Enhancement Scrolls have no monster loot table entry; they are sold only by the NPC Shop), F-ENH-5 economy validation (the scroll economy is the primary gold sink).
-**Requirement**: none in the epic's TR table — this story covers one acceptance criterion directly (AC-ENH-24)
+**GDD**: `design/gdd/loot-table-system.md` — CR-LT-16 (Enhancement Scroll Exclusion at MVP), tuning knob `ALLOW_ENHANCEMENT_SCROLL_DROPS` (default `false`), AC-LT-25. `design/gdd/enhancement-system.md` — AC-ENH-24 (Scroll Source Restriction, MVP), F-ENH-5 economy validation (the scroll economy is the primary gold sink at MVP), OQ-ENH-9 (post-MVP scroll drops). `design/gdd/item-database.md` — Rule 36 (`ScrollData != null` is the test for "this item is an Enhancement Scroll").
+**Requirement**: none in the epic's TR table — this story covers AC-ENH-24 / AC-LT-25 directly
 *(Requirement text lives in `docs/architecture/tr-registry.yaml` — registry is currently empty)*
 
-**ADR Governing Implementation**: None — design-only (a data invariant check; no runtime behaviour).
-**ADR Decision Summary**: N/A.
+**ADR Governing Implementation**: ADR-010: Event/Messaging Architecture (interface dependency — the validator reads items through `IItemDatabase`, never the concrete class).
+**ADR Decision Summary**: Systems are injected through interfaces and call each other directly; no central event bus.
 
 **Engine**: Unity 6.3 LTS | **Risk**: LOW
-**Engine Notes**: N/A — no engine API involved.
+**Engine Notes**: N/A — plain C#; no engine API involved.
+**Performance**: No performance impact expected — one item lookup per loot table entry, once at server startup; nothing per tick.
 
 **Control Manifest Rules (Feature layer)**:
-- N/A — test-only story; no new runtime code is expected.
+- Required: interface dependency — ADR-010
+- Forbidden: no `EventBus` class — ADR-010
 
 ---
 
 ## Acceptance Criteria
 
-*From GDD `design/gdd/enhancement-system.md`, scoped to this story:*
+*From `loot-table-system.md` AC-LT-25 and `enhancement-system.md` AC-ENH-24, scoped to this story:*
 
-- [ ] **AC-ENH-24**: an automated scan of every monster loot table finds zero entries that can yield an Enhancement Scroll.
-- [ ] **The scan identifies scrolls by data, not by name**: an item is an Enhancement Scroll iff its `ItemDefinition.ScrollData` is non-null (item-database.md Rule 13); the four MVP scroll records are found that way.
-- [ ] **The scan fails when it should**: given a loot table that does include a scroll, the same check reports it.
+- [ ] **Scroll entry rejected (AC-LT-25, AC-ENH-24)**: with scroll drops not allowed, validating a table set in which one mob's table has an entry naming an Enhancement Scroll reports exactly one issue for that entry; the issue's mob type is that mob and its message names the entry index and the `ItemID`. `LootTableRegistry.TryCreate` on the same set returns false with a null registry.
+- [ ] **One issue per offending entry**: two scroll entries (in one table or in two tables) produce two issues.
+- [ ] **Scrolls are identified by data, not by name or id**: an entry is a scroll iff the item database returns a definition whose `ScrollData` is non-null (item-database.md Rule 36). A Consumable without `ScrollData` (a potion) and an Equipment item are not reported.
+- [ ] **Unknown item is not a scroll**: an entry whose `ItemID` is not in the item database is not reported by this rule.
+- [ ] **Switch on lifts the rule**: with scroll drops allowed, the same scroll-bearing set produces no issue from this rule and `TryCreate` builds the registry.
+- [ ] **MVP default is off**: `LootTableConstants.ALLOW_ENHANCEMENT_SCROLL_DROPS` is `false`.
+- [ ] **Existing rules unchanged**: every existing loot validation test passes with the new parameters supplied; a set that breaks an existing rule and also names a scroll reports both issues.
 
 ---
 
 ## Implementation Notes
 
-- This is a guard test. It adds no production code unless the Loot Table module has no way to enumerate what a table can drop — in that case the smallest read-only accessor is acceptable; say so in the completion notes.
-- **Confirm the data source at `/story-readiness`.** The Loot Table code (`LootTableDefinition`, `LootTableEntry`, `LootTableRegistry`, `LootTableValidator` in `src/Foundation/LootTableSystem/`) defines the table shape, and equipment drops are resolved through a cached `IItemDatabase.GetItemsByCategory` lookup (loot-table-system.md CR-LT-2). Check two things before writing the test:
-  - whether production loot tables are authored anywhere yet — if only test-local tables exist, the scan has nothing real to scan, and the story should assert the structural rule instead (next point) and be re-run when mob loot data lands;
-  - how a Consumable can enter a table. If a table entry can name a category or pool rather than an `ItemID`, a scroll is a Consumable (`ItemCategory.Consumable` with `ScrollData`) and could be drawn from a consumable pool without any entry naming it. The scan must cover that path, not only literal `ItemID` matches.
-- If a structural rule is needed (for example "the loot validator rejects a table that can yield an item with `ScrollData`"), that is a Loot Table rule change — it needs a line in `loot-table-system.md` first. Do not add it under this story without that.
-- The NPC Shop half of the criterion ("appear only in NPC Shop purchase records") cannot be checked: no shop inventory data exists in code. Note it as deferred to the NPC Shop epic.
+- **Signature change** (`src/Foundation/LootTableSystem/`): `LootTableValidator.Validate(tables, IItemDatabase itemDatabase, bool allowEnhancementScrollDrops)` and `LootTableRegistry.TryCreate(tables, IItemDatabase itemDatabase, bool allowEnhancementScrollDrops, out registry, out issues)`. A null `itemDatabase` throws `ArgumentNullException` — do not skip the rule silently.
+- **The knob**: `LootTableConstants.ALLOW_ENHANCEMENT_SCROLL_DROPS = false`, beside the module's other tuning constants. The validator takes the value as a parameter so both settings are testable; production wiring passes the constant. There is no production caller of `TryCreate` yet (no loot data loader exists) — say so in the completion notes.
+- **The check**: for each entry, `itemDatabase.TryGetItem(entry.ItemId, out var item)`; when it returns true and `item.ScrollData != null`, add a `LootTableValidationIssue` in the existing message style, e.g. `Entries[{e}] ({ItemId}) is an Enhancement Scroll; scrolls cannot be dropped while ALLOW_ENHANCEMENT_SCROLL_DROPS is false (CR-LT-16).` Run it inside the existing per-entry loop, after the `DropChance` check, so issue order stays table by table, entry by entry.
+- **Existing call sites**: 13 test call sites pass the new arguments (`LootTable_DefinitionValidation_tests.cs` ×10, `LootTable_KillResolution_integration_tests.cs`, `LootTable_RoundRobin_integration_tests.cs`, `LootTable_GroundItemLifecycle_tests.cs`). Use the item database each fixture already has, or an empty `StubItemDatabase` where it has none; pass `LootTableConstants.ALLOW_ENHANCEMENT_SCROLL_DROPS`.
+- **Not part of this rule**: an entry naming an unknown `ItemID` stays legal for the validator, as today. Whether that should be an error is a separate Loot Table question — do not add it here.
+- **Post-MVP**: turning the switch on is gated on enhancement-system.md OQ-ENH-9 (economy re-validation, a rare-drop classification for scrolls). This story adds no classification logic.
 
 ---
 
 ## Out of Scope
 
-- NPC Shop epic: scroll prices (TK-ENH-9) and the shop's stock list
-- Loot Table System: any change to how tables are authored or validated
+- Any loot data loader or production loot tables (none exist yet)
+- Validating that an entry's `ItemID` exists in the item database
+- A drop classification or drop rate for scrolls (post-MVP, OQ-ENH-9)
+- NPC Shop epic: scroll prices (TK-ENH-9) and the shop's stock list — the "appear only in NPC Shop purchase records" half of AC-ENH-24 cannot be checked until shop data exists
 - Story 003: recognising a scroll at attempt validation
 
 ---
 
 ## QA Test Cases
 
-**File**: `tests/EditMode/EnhancementSystem/EnhancementSystem_ScrollSourceRestriction_tests.cs` (new)
+**File**: `tests/EditMode/LootTableSystem/LootTable_ScrollExclusion_tests.cs` (new). `StubItemDatabase` with a Bronze sword, a potion and a Bronze Enhancement Scroll built with `ItemDefinitionBuilder`; table sets built in the test.
 
-- **AC-ENH-24** — enumerate every registered monster loot table and every item each can yield; assert none has `ScrollData != null`. The failure message names the table and the scroll.
-- **Scrolls are identified by data** — the MVP item records contain exactly four items with `ScrollData`, one per gear tier (Bronze, Iron, Steel, Dark Steel).
-- **Negative control** — a test-local table that includes a scroll makes the same scan report one violation.
-- **Consumable path** — if tables can draw from a consumable pool, a test-local table using that pool is scanned and the scan result reflects whether scrolls are reachable through it.
+- **Scroll entry rejected** — one table, entries [sword, scroll], switch off → exactly one issue; mob type matches; message contains the entry index (1) and the scroll's `ItemID`; `TryCreate` → false, registry null, same single issue.
+- **One issue per entry** — two scroll entries in one table → two issues with indices 0 and 1; one scroll entry in each of two tables → two issues, one per mob type.
+- **Identified by data** — potion entry (Consumable, no `ScrollData`) and sword entry → no issue; a scroll record with an unrelated display name and id → reported.
+- **Unknown item** — entry naming an `ItemID` absent from the database → no issue from this rule.
+- **Switch on** — the scroll-bearing set with the switch on → zero issues; `TryCreate` → true and `TryGetTable` returns the table.
+- **Default** — `LootTableConstants.ALLOW_ENHANCEMENT_SCROLL_DROPS` is false.
+- **Combined with an existing rule** — a table with `GoldMin` below the party size and a scroll entry → both issues reported.
+- **Null item database** — `Validate` and `TryCreate` throw `ArgumentNullException`.
+- **Regression** — the existing Loot Table validation, kill resolution, round-robin and ground item suites pass unchanged in behaviour.
 
 ---
 
 ## Test Evidence
 
 **Story Type**: Logic
-**Required evidence**: `tests/EditMode/EnhancementSystem/EnhancementSystem_ScrollSourceRestriction_tests.cs` — must exist and pass.
+**Required evidence**: `tests/EditMode/LootTableSystem/LootTable_ScrollExclusion_tests.cs` — must exist and pass.
 
 **Status**: [ ] Not yet created
 
@@ -75,5 +90,6 @@
 
 ## Dependencies
 
-- Depends on: None within this epic. Item Database Stories 005–006 (Complete — scroll records), Loot Table System epic (Complete).
+- Depends on: None within this epic. Item Database Stories 005–006 (Complete — scroll records, `ScrollData`), Loot Table Story 001 (Complete — `LootTableValidator`, `LootTableRegistry`).
+- **Gate**: lean `/design-review design/gdd/loot-table-system.md` of the CR-LT-16 amendment, in a fresh session. When it passes, set this story to Ready.
 - Unlocks: None

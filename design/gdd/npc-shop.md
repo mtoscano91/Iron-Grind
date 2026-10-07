@@ -291,7 +291,7 @@ Integer form: `(BuyPrice × 10) ≥ (SellPriceGold × 15)` — equivalent to `Bu
 | System | GDD Status | What they need | Bidirectionality required |
 |--------|-----------|----------------|--------------------------|
 | **Consumable Use System** | Not Started | Consumables purchased at NPC Shop land in inventory and are available for use; no direct API dependency on NPC Shop | Must list NPC Shop in its Dependencies when authored |
-| **Enhancement System** | Approved | Shares `NPCInteractionActive` flag (opening shop clears any active Enhancement NPC session); expects Enhancement Scrolls sold exclusively here; no direct API dependency | Enhancement System GDD already documents the scroll source restriction (CR-ENH-3) and `NPCInteractionActive` shared flag (CR-ENH-17) |
+| **Enhancement System** | Approved | Shares `NPCInteractionActive` flag (opening shop clears any active Enhancement NPC session); expects Enhancement Scrolls sold exclusively here at MVP (post-MVP rare monster drops are planned — enhancement-system.md OQ-ENH-9); no direct API dependency | Enhancement System GDD already documents the MVP scroll source restriction (AC-ENH-24, enforced by loot-table-system.md CR-LT-16) and `NPCInteractionActive` shared flag (CR-ENH-17) |
 | **HUD** | Not Started | Gold balance display updates via `GoldSyncEvent` emitted by Currency System after shop transactions; no direct API dependency on NPC Shop | HUD GDD must list Currency System; NPC Shop is indirect via Currency System events — no direct bidirectionality required |
 
 **Bidirectionality flag:** When the Consumable Use System GDD is authored, it must include NPC Shop in its Dependencies section. Enhancement System already satisfies bidirectionality.

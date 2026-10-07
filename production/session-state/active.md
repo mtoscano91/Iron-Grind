@@ -10,6 +10,23 @@
 
 > **Commit status 2026-10-03:** Story 011 and the Currency amendment are committed on `main` — `c2acf60` (design: `AuctionBid = 9`, Story 011 readiness decisions) and `c789a05` (Story 011 code, tests, `.meta` files, story, EPIC, tech debt). The "Uncommitted" notes in the 2026-10-03 extracts below are superseded. Not pushed: `main` is 3 ahead of `origin`. PAT rotation still unconfirmed. **Uncommitted since `c789a05`:** the winner-grace amendment and story changes listed in the extract directly below.
 
+> **Commit status 2026-10-07 (later):** Enhancement Story 006 (code, tests, `.meta` files, story, `EPIC.md`, index, TD-058, this file) is committed as `687fa33`. The "not committed" / "Uncommitted" notes in the Story 006 extracts below are superseded. Not pushed: `main` is 3 ahead of `origin` (`feaa172`, `b932244`, `687fa33`). Untracked and left alone: `bash.exe.stackdump`. PAT rotation is still unconfirmed.
+
+## Session Extract — /story-readiness 2026-10-07 (Enhancement Story 008 — rewritten as a validator rule; CR-LT-16 design amendment applied; Blocked on a lean re-review; not committed)
+
+- Story: `production/epics/enhancement-system/story-008-scroll-source-restriction.md`. First verdict NEEDS WORK: no production loot tables exist (no assets, no loader), `LootTableRegistry` cannot list its tables, so the test-only scan had nothing to scan. No consumable pool path exists (every `LootTableEntry` names one `ItemID`). "Scrolls identified by data" is already covered by `ItemDatabase_MvpRecords_tests.cs`.
+- **User decisions:** enforce the restriction as a loot table validation rule; **the shop-only restriction is an MVP constraint only — post-MVP, scrolls should be a rare drop on some monsters.** Approved the draft with a switch.
+- **Design amendment applied (authoring):**
+  - `design/gdd/loot-table-system.md` — new CR-LT-16 (Enhancement Scroll Exclusion, MVP), knob `ALLOW_ENHANCEMENT_SCROLL_DROPS` (default `false`, "Data Validation Switches" table), AC-LT-25 (totals 21 BLOCKING / 5 ADVISORY / 26), Item Database interaction and dependency rows (`ScrollData` read at validation), Enhancement System added as a downstream dependent, status line "lean re-review pending".
+  - `design/gdd/enhancement-system.md` — AC-ENH-24 reworded as an MVP constraint enforced by CR-LT-16; F-ENH-5 economy note says the figures assume bought scrolls; Loot Table System dependency row; new **OQ-ENH-9** (post-MVP scroll drops: economy re-validation, TK-ENH-9 prices, a rare-drop classification since a scroll is `GearTier.None` = Common under CR-LT-5, AC-ENH-24 retirement).
+  - `design/gdd/npc-shop.md` — "sold exclusively here at MVP"; wrong CR-ENH-3 citation replaced by AC-ENH-24 / CR-LT-16.
+  - `design/registry/entities.yaml` — four scroll notes (MVP wording, corrected citation, `revised: 2026-10-07`); new constant `ALLOW_ENHANCEMENT_SCROLL_DROPS`.
+  - `design/gdd/systems-index.md` — Loot Table and Enhancement rows note the amendment.
+- **Propagation check:** `CR-ENH-3` as "scroll source restriction" no longer cited anywhere (item-database.md's two CR-ENH-3 mentions are about tier match — correct). "NPC Shop only" wording: registry and npc-shop.md updated.
+- **Story 008 rewritten** as "Scroll Exclusion Validator Rule (MVP)" (Logic, 3h, ADR-010): `LootTableValidator.Validate` / `LootTableRegistry.TryCreate` gain `IItemDatabase` and `allowEnhancementScrollDrops`; `LootTableConstants.ALLOW_ENHANCEMENT_SCROLL_DROPS = false`; 13 existing test call sites change; new test file `tests/EditMode/LootTableSystem/LootTable_ScrollExclusion_tests.cs`. Status **Blocked** on the re-review. Enhancement `EPIC.md` (0 Ready, 4 Blocked) and `production/epics/index.md` updated.
+- **Uncommitted since `687fa33`:** the five design files above, Story 008, Enhancement `EPIC.md`, `production/epics/index.md`, this file.
+- **Next (fresh session, `/clear` first):** `/design-review design/gdd/loot-table-system.md --depth lean` (targeted amendment, same structure). If it passes: append the review log, set the GDD and systems-index status, set Story 008 to Ready, then `/dev-story` on it.
+
 ## Session Extract — /story-done 2026-10-07 (Enhancement Story 006 — COMPLETE WITH NOTES; Enhancement epic 7/11; not committed)
 
 - Verdict: COMPLETE WITH NOTES. Story: `production/epics/enhancement-system/story-006-npc-interaction-session.md` — NPC Interaction Session. 9/9 criteria; test file 44 cases; EditMode 1801/1801.

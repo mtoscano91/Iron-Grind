@@ -286,7 +286,7 @@ T[k] = T[k-1] + A[k-1]
 | +9 | 2,727 |
 | +10 | ~45,500 |
 
-**Economy validation**: At Dark Steel Scroll price 350g and Dark Steel item sell price 270g, expected cost to reach +9 ≈ 955K gold. Scroll-to-item-value ratio ≈ 3,533×. The scroll economy is the primary gold sink; destroyed item value is negligible relative to scroll investment. `GoldTransactionReason.Enhancement = 5` (pre-allocated in Currency System).
+**Economy validation**: At Dark Steel Scroll price 350g and Dark Steel item sell price 270g, expected cost to reach +9 ≈ 955K gold. Scroll-to-item-value ratio ≈ 3,533×. The scroll economy is the primary gold sink; destroyed item value is negligible relative to scroll investment. These figures assume scrolls are bought, never dropped — true at MVP (AC-ENH-24); post-MVP scroll drops (OQ-ENH-9) require this validation to be redone. `GoldTransactionReason.Enhancement = 5` (pre-allocated in Currency System).
 
 ## Edge Cases
 
@@ -333,6 +333,7 @@ If `ServerBroadcast_Enhancement9` cannot be delivered to all players (high load,
 | **Damage Calculation** | Approved | `IEnhancementBonusProvider.GetElementalBonus(level, baseElementalDamage, gearTier, isWeapon)` for the `ElementalBonus` input of F-DC-2 — Damage Calculation passes the weapon's base `ElementalDamage` from the Item Database and the level from `Equipment.GetEquippedWeaponEnhancementLevel(): byte` |
 | **Character Persistence** | Approved | `EnhancementLevel: byte` per bag slot and per gear slot in the save/load payload; `IEnhancementBonusProvider` on load (equipment re-registration). Also an upstream dependency (above) |
 | **NPC Shop** | Approved | Shares the `NPCInteractionActive` flag (CR-ENH-17 — opening the shop pre-empts an Enhancement NPC session; no callback, see OQ-NS-6 there); sells the four Enhancement Scrolls at the TK-ENH-9 prices; no direct API dependency |
+| **Loot Table System** | Approved (CR-LT-16 amendment 2026-10-07, lean re-review pending) | Enforces the MVP scroll source restriction: while `ALLOW_ENHANCEMENT_SCROLL_DROPS` is `false`, loot table validation rejects any entry naming an item with `ScrollData` (loot-table-system.md CR-LT-16, AC-LT-25; AC-ENH-24 here). No runtime API dependency. Post-MVP scroll drops: OQ-ENH-9 |
 | **Enhancement UI** | Not Started | `EnhancementStateUpdate`, `EnhancementAttemptResult`, `ServerBroadcast_Enhancement9` message schemas; `ConfirmEnhancement` and `CancelEnhancement` request schemas |
 | **VFX System** | Not Started | `OnEnhancementSuccess(newLevel)`, `OnEnhancementDestruction()`, `OnPrestigeBandChange(band)` signals; `ENHANCEMENT_GLOW_THRESHOLD = 7` |
 | **Audio System** | Not Started | `OnEnhancementSuccess(newLevel)`, `OnEnhancementDestruction()` signals |
@@ -623,10 +624,11 @@ While an attempt is in progress (Confirm sent, result not yet received), the ite
 *Action*: `ConfirmEnhancement(0, 1)`.
 *Pass*: The bag holds the item exactly once, at level 4, in an unlocked slot. Slot 1 holds 3 scrolls. No `EnhancementAttemptResult` is sent. Server logs `CriticalEnhancementWriteFailed`. The client is disconnected (CR-CP-5).
 
-**AC-ENH-24: Scroll Source Restriction — No Monster Loot Table Entry**
-*Setup*: All monster loot table entries in Item Database (automated scan).
-*Action*: Search all loot tables for any Enhancement Scroll `ItemId`.
-*Pass*: Zero matches. Enhancement Scrolls appear only in NPC Shop purchase records.
+**AC-ENH-24: Scroll Source Restriction (MVP) — No Monster Loot Table Entry**
+*Setup*: A loot table set containing an entry that names an Enhancement Scroll (`ScrollData` non-null), with `ALLOW_ENHANCEMENT_SCROLL_DROPS = false`.
+*Action*: Startup loot table validation runs (loot-table-system.md CR-LT-16).
+*Pass*: The entry is reported as a validation error and no loot table registry is created (loot-table-system.md AC-LT-25). At MVP, Enhancement Scrolls appear only in NPC Shop purchase records.
+*Note (2026-10-07)*: this is an MVP constraint, not a permanent one. Post-MVP, scrolls are intended to become a rare drop on some monsters — see OQ-ENH-9. Enforcement moved from a one-off scan to a validation rule because no production loot tables exist yet and every table must pass validation.
 
 **AC-ENH-25: UI Shows Probability Before Confirm**
 *Setup*: Player selects a +4 Bronze item and a Bronze Enhancement Scroll in the Enhancement UI.
@@ -729,3 +731,7 @@ CR-ENH-18 requires that a character's other inventory-mutating requests are held
 
 **OQ-ENH-8: Replaying a missed result on next login**
 character-persistence.md OQ-CP-2 assigns this here: if the client closes between the step 6b commit and delivery of `EnhancementAttemptResult`, the player logs back in with the outcome applied but never saw the result screen. Should the server record an unacknowledged result and replay it at login? Current spec: no replay (EC-ENH-1). Deferred to Enhancement UI design.
+
+**OQ-ENH-9: Post-MVP scroll drops** *(opened 2026-10-07)*
+At MVP, Enhancement Scrolls are sold only by the NPC Shop (AC-ENH-24; enforced by loot-table-system.md CR-LT-16 while `ALLOW_ENHANCEMENT_SCROLL_DROPS` is `false`). The intent after MVP is for scrolls to be a rare drop on some monsters. Before the switch is set to `true`, four things must be decided: (1) the F-ENH-5 economy validation redone with a drop source — the cost-to-+9 figures and the "primary gold sink" claim assume every scroll is bought; (2) the TK-ENH-9 prices re-checked against the drop rates chosen; (3) a drop classification for scrolls in loot-table-system.md — under CR-LT-5 a scroll has `GearTier.None` and is a Common round-robin drop, so a "rare" scroll needs its own rule (rate target, and whether it is auctioned); (4) AC-ENH-24 retired or rewritten, and the "NPC Shop only" notes in npc-shop.md and the entity registry updated.
+*Owner*: Economy Designer / Game Designer. *Target*: post-MVP — not a pre-implementation gate.
