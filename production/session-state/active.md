@@ -14,6 +14,16 @@
 
 > **Push status 2026-10-07 (later):** the user asked for a push after Story 008: `origin/main` is at `faa134c` (`0faea44..faa134c`). "Not pushed" notes in the 2026-10-07 extracts below are superseded. PAT rotation is still unconfirmed.
 
+## Session Extract — Networking Core Story 030 created 2026-10-07 (same session as the review below; not committed)
+
+- The review extract below is **committed** as `a1e6be0` ("architecture: review 2026-10-07 (CONCERNS)"), not pushed; its "not committed" / "Uncommitted" notes are superseded.
+- New story: `production/epics/networking-core/story-030-tick-completion-queue-mutation-gate.md` — Tick Completion Queue and Character Mutation Gate (Logic, 4h, ADR-011 Decisions 2 and 4, Migration step 1). **Status: Ready** (user approved the draft; `/story-readiness` not run). 16 criteria (12 queue, 4 gate). Manifest Version 2026-10-07.
+- User decisions: shutdown drain (`DrainOnShutdown(timeout)`) is in this story; `Open` on a gate that is not closed is a no-op with no event (ADR-011 is silent on it).
+- Story choices: tick thread id through an injectable `Func<int>`; watchdog length a constructor parameter defaulting to `PERSISTENCE_WATCHDOG_TICKS`; `Debug.LogError` for alerts, as in `CommitBeforeBroadcastSequencer`; files under `src/Foundation/Networking/TickCompletion/` and `MutationGate/`; tests `tests/EditMode/Networking/TickLoop_CompletionQueue_tests.cs` and `TickLoop_CharacterMutationGate_tests.cs`.
+- Networking Core `EPIC.md`: In Progress (29/30), ADR-011 added to Governing ADRs, row 030; `production/epics/index.md` row updated.
+- **Uncommitted since `a1e6be0`:** the story file, Networking Core `EPIC.md`, `production/epics/index.md`, this file. Untracked and left alone: `bash.exe.stackdump`. PAT rotation is still unconfirmed.
+- **Next (fresh session):** `/story-readiness` then `/dev-story production/epics/networking-core/story-030-tick-completion-queue-mutation-gate.md`.
+
 ## Session Extract — /architecture-review 2026-10-07 (full, lean; not committed)
 
 - Verdict: **CONCERNS** (advisory). 11 ADRs, all Accepted. Domain-level, as in the earlier passes; `unity-specialist` consultation skipped (user decision); TR registry left empty (user decision — 94 TR-IDs in the EPIC files are unregistered).

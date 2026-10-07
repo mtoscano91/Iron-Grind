@@ -3,8 +3,8 @@
 > **Layer**: Foundation
 > **GDD**: design/gdd/networking-core.md + 9 sub-contracts
 > **Architecture Module**: Networking Core
-> **Status**: Complete — all 29 stories Complete (2026-07-22). Not yet confirmed via a full live Unity Editor test run across the whole epic together; see `production/session-state/active.md` for verification status per story.
-> **Stories**: 29 stories created (001–029)
+> **Status**: In Progress (29/30) — Story 030 added 2026-10-07 after ADR-011 (Ready). Stories 001–029 Complete (2026-07-22). Not yet confirmed via a full live Unity Editor test run across the whole epic together; see `production/session-state/active.md` for verification status per story.
+> **Stories**: 30 stories created (001–030)
 
 ## Overview
 
@@ -18,6 +18,7 @@ Networking Core is the multiplayer substrate for Project Iron Grind — the modu
 | ADR-001: Purchase Integrity | R-OD dedup key = `(charId, messageType, requestId)`, TTL = 300s; `messageType` resolved from envelope field | LOW |
 | ADR-009: Scene/Zone-Load Management | Tick loop must not start until `ZoneNavigationService.Initialize()` completes; gateway registration only after tick is active | HIGH (Unity 6.3 `Scene.handle` type change) |
 | ADR-010: Event/Messaging Architecture | NGO RPCs and custom messages are the network boundary; they are NOT "events" in the ADR-010 sense — ADR-010 governs intra-process messaging only | LOW |
+| ADR-011: Asynchronous Persistence in the Server Tick Loop | Tick-driven code never awaits a persistence `Task`; `ITickCompletionQueue.Drain` handles results on the tick thread; `ICharacterMutationGate` records an irreversible write in flight | MEDIUM — where an `await` continuation resumes; headless-build checks gate shipping |
 
 ## GDD Requirements
 
@@ -96,6 +97,7 @@ This epic is complete when:
 | 027 | SelfDamageEvent vs DamageEvent Delivery Exclusivity | Logic | Complete | ADR-004 |
 | 028 | EntityHealthUpdate/PartyMemberHealthUpdate Relevance Filter Algorithm | Logic | Complete | ADR-004 |
 | 029 | SetTarget RPC & Target Slot Management | Logic | Complete | ADR-004 |
+| 030 | Tick Completion Queue and Character Mutation Gate | Logic | Ready | ADR-011 |
 
 **Scoped out of this epic** (owned by other systems' future epics, using these GDDs as their wire-contract reference): every specific downstream message schema for Auto-Attack Combat, Currency, Leveling, Zone Instancing, Party, Inventory, Equipment, NPC Shop, Consumable Use, Movement, and Skill systems. Networking Core owns the envelope/channel/tick/session/ghost/OWL/relevance-filter/test-harness substrate only.
 
