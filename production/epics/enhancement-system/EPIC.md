@@ -3,8 +3,8 @@
 > **Layer**: Feature
 > **GDD**: design/gdd/enhancement-system.md
 > **Architecture Module**: Enhancement (Feature layer; "irreversible outcome — commit before broadcast" data flow in `architecture.md`)
-> **Status**: In Progress (4/10 — Stories 001–004 Complete 2026-10-07; 4 stories Ready; 2 Blocked: Story 009 on OQ-ENH-7, Story 010 on TD-046)
-> **Stories**: 10 stories created 2026-10-07 (001–010)
+> **Status**: In Progress (5/11 — Stories 001–005 Complete 2026-10-07; 3 stories Ready (006–008); 3 Blocked: Story 009 on OQ-ENH-7, Story 010 on TD-046, Story 011 on the tick-loop/async-persistence decision and Character Persistence)
+> **Stories**: 10 stories created 2026-10-07 (001–010); Story 011 added the same day when Story 005 was split at its readiness check
 
 > **Created ahead of the GDD's stated gate (user decision 2026-10-07).** The GDD header says OQ-ENH-7 and the wire-protocol Enhancement message set (TD-046) should close before `/create-epics`. The epic was created anyway so that the formula and bonus-provider work, which neither gate touches, can be planned alongside the Equipment epic. Every requirement the gates affect is marked below.
 
@@ -67,26 +67,27 @@ This epic is complete when:
 | 002 | [Enhancement Bonus Provider](story-002-enhancement-bonus-provider.md) | Logic | Complete | ADR-010 |
 | 003 | [Attempt Validation and Result Codes](story-003-attempt-validation.md) | Integration | Complete | ADR-010 |
 | 004 | [Attempt Sequence and Outcome Resolution](story-004-attempt-sequence.md) | Integration | Complete | ADR-010 |
-| 005 | [Commit-Then-Deliver and Rollback](story-005-commit-and-rollback.md) | Integration | Ready (commit orchestrator to settle at readiness) | ADR-006, ADR-010 |
+| 005 | [Rollback and the Pending Window](story-005-commit-and-rollback.md) | Integration | Complete | ADR-010 |
 | 006 | [NPC Interaction Session](story-006-npc-interaction-session.md) | Integration | Ready | ADR-010 |
-| 007 | [Outcome Events and +9 Broadcast Trigger](story-007-outcome-events-and-broadcast-trigger.md) | Logic | Ready (`OnPrestigeBandChange` owner to settle at readiness) | ADR-010 |
+| 007 | [Outcome Events and +9 Broadcast Trigger](story-007-outcome-events-and-broadcast-trigger.md) | Logic | Ready | ADR-010 |
 | 008 | [Scroll Source Restriction Scan](story-008-scroll-source-restriction.md) | Logic | Ready | None (design-only) |
 | 009 | [Attempt Exclusivity — Held Requests](story-009-attempt-exclusivity.md) | Integration | **Blocked** — OQ-ENH-7 | None yet |
 | 010 | [Client Requests and Result Delivery](story-010-client-requests-and-result-delivery.md) | Integration | **Blocked** — TD-046 | ADR-004 |
+| 011 | [Commit Orchestration](story-011-commit-orchestration.md) | Integration | **Blocked** — tick-loop/async-persistence decision (ADR), Character Persistence, TD-046 for the client-facing criteria | ADR-006 |
 
-**Order**: 001 first; 002 and 003 need 001; 004 needs 003; 005 and 007 need 004 (007 also needs 005); 006 needs 003; 008 is independent.
+**Order**: 001 first; 002 and 003 need 001; 004 needs 003; 005 and 007 need 004 (007 also needs 005 for its "nothing on a rollback" check); 006 needs 003; 008 is independent; 011 needs 005 and its blockers; 009 and 010 follow 011.
 
-**GDD AC coverage**: 30 of the 39 acceptance criteria are assigned to these stories (28 to Ready stories, 2 to Blocked ones). The other nine are owned elsewhere:
+**GDD AC coverage**: 30 of the 39 acceptance criteria are assigned to these stories. The other nine are owned elsewhere:
 - **AC-ENH-1** (new item starts at level 0) — already verified by Inventory System Story 010.
 - **AC-ENH-2** (level persists across sessions) — deferred to the Character Persistence epic.
 - **AC-ENH-15, 16, 17, 32** (prestige bits in `equipmentAppearanceFlags`) — the byte is written by the Equipment System; Story 001 covers the level-to-band mapping, the end-to-end check belongs to the Equipment epic (TR-equip-007).
 - **AC-ENH-25, 26, 31** (probability display, heightened warning, acknowledgment) — deferred to the Enhancement UI epic (GDD not yet authored).
 
-Assigned to Blocked stories: **AC-ENH-38** (Story 009) and **AC-ENH-6** (Story 010). Story 010 also holds the delivery halves of **AC-ENH-13** and **AC-ENH-18**, whose server-side halves are in Stories 005 and 007.
+Assigned to Blocked stories: **AC-ENH-38** (Story 009), **AC-ENH-6** (Story 010) and **AC-ENH-13** (Story 011). **AC-ENH-23, 34 and 35** are split: their bag-state halves are in Story 005 (Ready), their commit halves in Story 011 (Blocked). Story 010 holds the delivery half of **AC-ENH-18**, whose server-side half is in Story 007. **AC-ENH-8** was moved from Story 005 to Story 004 and is Complete.
 
 **Open points recorded in the stories for `/story-readiness`**:
-- Story 005 — the commit orchestrator. *Partly decided 2026-10-07 (Story 004 readiness):* `EnhancementService` is two-phase and synchronous (`BeginAttempt` → caller commits → `CompleteAttempt`, or `RollBackAttempt` from Story 005) and never calls persistence. Still open: who sits between the two calls — the existing synchronous `CommitBeforeBroadcastSequencer`, an asynchronous wrapper around `SaveIrreversibleOutcome` (`Task<CharacterSaveResult>`), or both — and whether that needs an ADR. AC-ENH-8 moved from Story 005 to Story 004.
-- Story 007 — `OnPrestigeBandChange` is listed as an Enhancement signal, but the visible band only changes on equip (Equipment System).
+- Story 011 (split out of Story 005 on 2026-10-07) — how server tick-loop code consumes the asynchronous `SaveIrreversibleOutcome`. `EnhancementService` is two-phase and synchronous (`BeginAttempt` → the caller commits → `CompleteAttempt` or `RollBackAttempt`) and never calls persistence; the existing `CommitBeforeBroadcastSequencer` is synchronous and would block the tick for the write. Needs a decision, probably an ADR, shared with OQ-ENH-7 and the other irreversible outcomes (level-up, respec, item consumption).
+- Story 007 — *decided 2026-10-07 at readiness:* `OnPrestigeBandChange` is not implemented in this epic (the visible band only changes on equip, which the Equipment System does); the GDD rows naming it (Interactions and Downstream Dependencies, VFX) should move to the Equipment System when `enhancement-system.md` is next edited. The +9 trigger carries ids, and Story 010 resolves the display names. Also noted: the control manifest asks for event argument types in a shared `IronGrind.Events` namespace that no code uses.
 - Story 006 — where the shared NPC session type lives (NPC Shop uses the same flag); how `npcId` identifies an Enhancement NPC.
 - Stories 002, 003, 004 — inputs the GDD gives no rule for (out-of-range level or slot index, non-equipment item in the item slot, an inventory call failing mid-attempt).
 - Story 008 — whether production loot tables exist yet, and whether a scroll can be reached through a consumable pool.
@@ -94,4 +95,4 @@ Assigned to Blocked stories: **AC-ENH-38** (Story 009) and **AC-ENH-6** (Story 0
 
 ## Next Step
 
-Stories 001–004 are Complete (2026-10-07) — config, bonus provider, validation and the two-phase attempt sequence are in code. Next: `/story-readiness production/epics/enhancement-system/story-005-commit-and-rollback.md` (its criteria need rewriting for the two-phase design, and the commit orchestrator is still to be decided), or Story 006 / Story 008, which do not depend on that decision. Work through the stories in order — each story's `Depends on:` field says what must be Complete first. To unblock 009 and 010: decide OQ-ENH-7 (`/architecture-decision`) and run the wire-protocol authoring session for TD-046.
+Stories 001–005 are Complete (2026-10-07) — config, bonus provider, validation, the two-phase attempt sequence and the rollback are in code. Next: `/story-readiness` then `/dev-story` for Story 007 (outcome events — now unblocked), Story 006 (NPC session) or Story 008 (scroll source scan). To unblock 009, 010 and 011: one architecture decision on asynchronous persistence in the tick loop (covers OQ-ENH-7 too), the wire-protocol authoring session for TD-046, and a Character Persistence epic.

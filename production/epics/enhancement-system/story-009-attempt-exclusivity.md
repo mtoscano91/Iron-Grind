@@ -80,5 +80,5 @@
 
 ## Dependencies
 
-- Depends on: **OQ-ENH-7 decision (blocking)**; Story 005 (commit seam and rollback). AC-ENH-38 as written also needs an Equipment System unequip request.
+- Depends on: **OQ-ENH-7 decision (blocking)**; Story 005 (rollback) and Story 011 (commit orchestration — the "write in flight" this story is about; likely decided by the same ADR). AC-ENH-38 as written also needs an Equipment System unequip request.
 - Unlocks: closes the assumption the Story 005 rollback relies on

@@ -13,7 +13,9 @@ namespace IronGrind.EnhancementSystem
     /// validation (<see cref="ValidateAttempt"/>). Story 004 adds the two-phase attempt sequence
     /// (decided at readiness 2026-10-07): <see cref="BeginAttempt"/> runs steps 2-6a (validate, lock,
     /// consume scroll, draw, apply) and leaves a pending attempt; the caller commits; then
-    /// <see cref="CompleteAttempt"/> runs step 7 (unlock, result). Story 005 adds rollback.
+    /// <see cref="CompleteAttempt"/> runs step 7 (unlock, result). Story 005 adds the third call,
+    /// <see cref="RollBackAttempt"/>, which ends a pending attempt by undoing it (CR-ENH-15 Rollback).
+    /// An attempt ends through exactly one of <see cref="CompleteAttempt"/> or <see cref="RollBackAttempt"/>.
     /// Depends on injected interfaces only; the service is synchronous and never calls persistence.
     /// </summary>
     public sealed class EnhancementService
@@ -72,7 +74,7 @@ namespace IronGrind.EnhancementSystem
 
         /// <summary>
         /// True iff a pending attempt is stored for <paramref name="charId"/> (CR-ENH-8, CR-ENH-18):
-        /// from a pending <see cref="BeginAttempt"/> until <see cref="CompleteAttempt"/>.
+        /// from a pending <see cref="BeginAttempt"/> until <see cref="CompleteAttempt"/> or <see cref="RollBackAttempt"/>.
         /// </summary>
         /// <param name="charId">The character to query.</param>
         public bool IsAttemptInProgress(CharacterID charId)
@@ -83,7 +85,7 @@ namespace IronGrind.EnhancementSystem
         /// <summary>
         /// Runs CR-ENH-15 steps 2-6a: validate; lock the item slot (CR-ENH-7); consume one scroll;
         /// draw once and resolve the outcome; apply it to the bag (level + 1, or destroy the item).
-        /// The item slot stays locked until <see cref="CompleteAttempt"/>. Two-phase design decided
+        /// The item slot stays locked until <see cref="CompleteAttempt"/> or <see cref="RollBackAttempt"/>. Two-phase design decided
         /// at readiness 2026-10-07. AC-ENH-8, 9, 10, 11, 12, 33, 36.
         /// </summary>
         /// <param name="charId">The requesting character.</param>
@@ -132,7 +134,8 @@ namespace IronGrind.EnhancementSystem
         }
 
         /// <summary>
-        /// Runs CR-ENH-15 step 7 after a successful commit: ends the attempt, unlocks the item slot
+        /// Runs CR-ENH-15 step 7 after a successful commit (the other way an attempt ends is
+        /// <see cref="RollBackAttempt"/>, after a failed one): ends the attempt, unlocks the item slot
         /// (a silent no-op after a destruction) and returns the final result (UI-ENH-2).
         /// </summary>
         /// <param name="charId">The character whose pending attempt to complete.</param>
@@ -148,6 +151,78 @@ namespace IronGrind.EnhancementSystem
                 ? EnhancementResultCode.Success
                 : EnhancementResultCode.Destruction;
             return new EnhancementAttemptResult(attempt.Outcome, attempt.NewLevel, code);
+        }
+
+        /// <summary>
+        /// Undoes a pending attempt after a failed commit (CR-ENH-7, CR-ENH-11, CR-ENH-15 Rollback,
+        /// EC-ENH-6, AC-ENH-23, AC-ENH-34; character-persistence.md CR-CP-5: rollback is caller-owned).
+        /// Called by the commit orchestrator (Enhancement Story 011) when the commit reports any
+        /// non-success result. Order: restore the item (level reset after a success, re-insert after a
+        /// destruction), restore the scroll, unlock the item slot, log <c>CriticalEnhancementWriteFailed</c>.
+        /// A failed restore call logs <c>CriticalEnhancementRollbackFailed</c> and the remaining steps
+        /// still run. Does NOT disconnect the client, preserve the session or send a result; returns nothing.
+        /// </summary>
+        /// <param name="charId">The character whose pending attempt to roll back.</param>
+        /// <exception cref="InvalidOperationException">No attempt is pending for <paramref name="charId"/>; nothing else happens.</exception>
+        /// <remarks>
+        /// The attempt always ends: the pending entry is removed, the slot unlocked and the critical
+        /// write-failed error logged even if an inventory call throws (a subscriber's exception
+        /// propagates out of it). The scroll restore still runs when the item restore throws; the
+        /// exception then continues to the caller. Slot positions: after a destruction the item is restored into the
+        /// lowest empty slot, so it may land in a different slot, and an emptied scroll stack's slot can
+        /// be taken by the item. Contents are restored; positions may swap.
+        /// </remarks>
+        public void RollBackAttempt(CharacterID charId)
+        {
+            if (!_pending.TryGetValue(charId, out PendingAttempt attempt))
+                throw new InvalidOperationException($"[EnhancementService] RollBackAttempt: no attempt is pending for {charId}.");
+
+            try
+            {
+                // The scroll restore runs even if the item restore throws (a subscriber's exception
+                // propagates out of inventory calls): one failing step must not cost the player the
+                // other half of the rollback.
+                try
+                {
+                    RestoreItem(charId, attempt);
+                }
+                finally
+                {
+                    RestoreScroll(charId, attempt);
+                }
+            }
+            finally
+            {
+                // The attempt always ends, and the failed write is always logged — also when an
+                // exception from a restore step is propagating.
+                _pending.Remove(charId);
+                _inventory.UnlockSlot(charId, attempt.ItemSlotIndex);
+                Debug.LogError(
+                    $"[EnhancementService] CriticalEnhancementWriteFailed: rolled back the attempt for {charId} (item {attempt.ItemId}, previous level {attempt.PreviousLevel}, scroll {attempt.ScrollItemId}).");
+            }
+        }
+
+        // Rollback step 1. Logs and continues if the inventory refuses.
+        private void RestoreItem(CharacterID charId, PendingAttempt attempt)
+        {
+            bool restored = attempt.Outcome == EnhancementOutcome.Success
+                ? _inventory.SetEnhancementLevel(charId, attempt.ItemSlotIndex, attempt.PreviousLevel)
+                : _inventory.ForceInsert(charId, attempt.ItemId, attempt.PreviousLevel);
+            if (!restored)
+            {
+                Debug.LogError(
+                    $"[EnhancementService] CriticalEnhancementRollbackFailed: item restore failed for {charId}: item {attempt.ItemId} at level {attempt.PreviousLevel}, scroll {attempt.ScrollItemId}. Manual restoration required.");
+            }
+        }
+
+        // Rollback step 2. Logs and continues if the inventory refuses.
+        private void RestoreScroll(CharacterID charId, PendingAttempt attempt)
+        {
+            if (!_inventory.Pickup(charId, attempt.ScrollItemId, 1).Success)
+            {
+                Debug.LogError(
+                    $"[EnhancementService] CriticalEnhancementRollbackFailed: scroll restore failed for {charId}: item {attempt.ItemId} at level {attempt.PreviousLevel}, scroll {attempt.ScrollItemId}. Manual restoration required.");
+            }
         }
 
         // Step 6a. Returns the new level (0 on destruction). Throws if the level cannot be set;

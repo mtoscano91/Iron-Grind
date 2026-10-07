@@ -68,6 +68,12 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
         /// <summary>When true, <see cref="SetEnhancementLevel"/> records the call and returns false without forwarding.</summary>
         public bool FailSetEnhancementLevel { get; set; }
 
+        /// <summary>When true, <see cref="ForceInsert"/> records the call and returns false without forwarding.</summary>
+        public bool FailForceInsert { get; set; }
+
+        /// <summary>When true, <see cref="Pickup"/> records the call and returns a failed (inventory full) result without forwarding.</summary>
+        public bool FailPickup { get; set; }
+
         public event Action<InventoryChangedEventArgs> OnInventoryChanged
         {
             add { _inner.OnInventoryChanged += value; }
@@ -97,6 +103,8 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
         public PickupResult Pickup(CharacterID characterId, ItemID itemId, int quantity)
         {
             Calls.Add("Pickup");
+            if (FailPickup)
+                return PickupResult.Fail(PickupFailReason.InventoryFull);
             return _inner.Pickup(characterId, itemId, quantity);
         }
 
@@ -145,6 +153,8 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
         public bool ForceInsert(CharacterID charId, ItemID itemId, byte enhancementLevel)
         {
             Calls.Add("ForceInsert");
+            if (FailForceInsert)
+                return false;
             return _inner.ForceInsert(charId, itemId, enhancementLevel);
         }
 

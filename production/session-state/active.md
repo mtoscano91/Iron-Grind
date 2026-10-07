@@ -10,6 +10,46 @@
 
 > **Commit status 2026-10-03:** Story 011 and the Currency amendment are committed on `main` — `c2acf60` (design: `AuctionBid = 9`, Story 011 readiness decisions) and `c789a05` (Story 011 code, tests, `.meta` files, story, EPIC, tech debt). The "Uncommitted" notes in the 2026-10-03 extracts below are superseded. Not pushed: `main` is 3 ahead of `origin`. PAT rotation still unconfirmed. **Uncommitted since `c789a05`:** the winner-grace amendment and story changes listed in the extract directly below.
 
+## Session Extract — /story-readiness 2026-10-07 (Enhancement Story 007 — READY after a rewrite; Story 005 work still uncommitted)
+
+- The user said "continue" after Story 005's close-out; taken as "next story". **Story 005's work is NOT committed** (see the extract below for the file list).
+- Story: `production/epics/enhancement-system/story-007-outcome-events-and-broadcast-trigger.md` — Outcome Events and +9 Broadcast Trigger. First verdict NEEDS WORK: written for the single-call design; three open questions.
+- **User decisions (approved the recommendations):** `OnPrestigeBandChange` is not implemented here (belongs to the Equipment System; GDD rows to be corrected later); the +9 trigger carries `CharacterID` + `ItemID` + level, and Story 010 resolves the display names; event argument types go in `IronGrind.EnhancementSystem`, following the codebase (the manifest's shared `IronGrind.Events` namespace is used by no code — drift noted, not resolved).
+- **Applied:** Story 007 rewritten — three events raised from `CompleteAttempt` after the unlock (`OnEnhancementSuccess`, `OnEnhancementDestruction`, `OnEnhancementBroadcastLevelReached`); nothing from `BeginAttempt`, `RollBackAttempt` or rejections; subscriber exceptions caught and logged with `Debug.LogException` (Loot services precedent); `EnhancementConstants.SERVER_BROADCAST_LEVEL = 9`. Enhancement `EPIC.md` row and open point updated.
+- **Uncommitted:** everything listed in the Story 005 extract below, plus Story 007's rewrite.
+- Next: `/dev-story production/epics/enhancement-system/story-007-outcome-events-and-broadcast-trigger.md` (or commit first).
+
+## Session Extract — /story-done 2026-10-07 (Enhancement Story 005 — COMPLETE WITH NOTES; Enhancement epic 5/11; not committed)
+
+- Verdict: COMPLETE WITH NOTES. Story: `production/epics/enhancement-system/story-005-commit-and-rollback.md` — Rollback and the Pending Window. 11/11 criteria; test file 24 cases; EditMode 1732/1732.
+- Enhancement `EPIC.md`: In Progress (5/11); `production/epics/index.md` row updated.
+- Tech debt logged: None. Still offered and not confirmed: one entry noting that `enhancement-system.md` describes `ConfirmEnhancement` as one step (code has `BeginAttempt` / `CompleteAttempt` / `RollBackAttempt`) and says the restored scroll "refills the slot it emptied" (positions can swap).
+- **Uncommitted since `0faea44`:** `EnhancementService.cs`; the Rollback test file (+ `.meta`) and `EnhancementTestDoubles.cs`; Stories 005, 007, 009, 010 and new Story 011; Enhancement `EPIC.md`; `production/epics/index.md`; this file.
+- Next recommended: Story 007 — Outcome Events and +9 Broadcast Trigger (`story-007-outcome-events-and-broadcast-trigger.md`, Logic, 2h; both dependencies now Complete). Its readiness must settle: events are raised from `CompleteAttempt`; who owns `OnPrestigeBandChange`; how the player's display name reaches the +9 trigger. Stories 006 (NPC session, 3h) and 008 (scroll source scan, 1h) are also Ready. Blocked: 009 (OQ-ENH-7), 010 (TD-046), 011 (async-persistence decision, Character Persistence).
+
+## Session Extract — /dev-story + /code-review 2026-10-07 (Enhancement Story 005 implemented — 1732/1732 EditMode; review APPROVED WITH SUGGESTIONS, suggestions not yet applied; not committed)
+
+- Story: `production/epics/enhancement-system/story-005-commit-and-rollback.md` — Rollback and the Pending Window. Status still Ready (`/story-done` not run). Same session as the readiness extract below.
+- Two `gameplay-programmer` agents in parallel against one contract (src / tests). No orchestrator edits.
+- Source: `EnhancementService.cs` — `RollBackAttempt(charId)` with private `RestoreItem` / `RestoreScroll`; `try { item; scroll } finally { remove pending; UnlockSlot }`, then the `CriticalEnhancementWriteFailed` error; docs of the class, `IsAttemptInProgress`, `BeginAttempt`, `CompleteAttempt` updated.
+- Tests: new `Enhancement_Rollback_integration_tests.cs` (20 `[Test]` + 4 `[TestCase]` rows = 24 cases, + `.meta`); `EnhancementTestDoubles.cs` — `FailForceInsert`, `FailPickup` on the decorator.
+- Test run: Unity 6000.3.10f1 batch mode, EditMode 1732/1732 (was 1708).
+- `/code-review` (lean self-review, requested while the test agent was running, done once the suite passed): no required changes. Suggestions, awaiting the user's answer: (S1) a subscriber exception during the item restore skips the scroll restore — both steps share one `try`, so the player would lose the scroll; run the scroll restore even if the item restore throws; (S2) on that exception path the `CriticalEnhancementWriteFailed` error is not logged; (S3) the tests match log prefixes only, while the criterion says the errors name the character, item, previous level and scroll.
+- **Update (same day): the user said "fix all" — S1–S3 applied by the orchestrator:** `RollBackAttempt` nests the item restore in its own `try`/`finally` so the scroll restore always runs, and the `CriticalEnhancementWriteFailed` error is logged inside the outer `finally` (every path); the method's remarks updated; the three log expectations now also match the character, the sword's `ItemID`, a level and the scroll's `ItemID` (`WithIdentifiers`); the two exception tests expect the write-failed error, and the item-restore one asserts the scroll is still restored (renamed `…_ScrollStillRestored_…`). Test count unchanged (24 cases). EditMode 1732/1732.
+- Next: `/story-done production/epics/enhancement-system/story-005-commit-and-rollback.md`.
+
+## Session Extract — /story-readiness 2026-10-07 (Enhancement Story 005 — split; 005 READY as "Rollback and the Pending Window", new Story 011 Blocked; not committed)
+
+- Story 004 (extracts below) is committed and pushed as `0faea44`; their "not committed" notes are superseded.
+- Story: `production/epics/enhancement-system/story-005-commit-and-rollback.md`. First verdict NEEDS WORK: written for the replaced single-call design; half implementable now (service rollback), half not (the commit caller).
+- **User decision (approved the recommendation): split.** Story 005 rewritten as **Rollback and the Pending Window** (Integration, 3h, Ready): `RollBackAttempt(charId)`, rollback order, `CriticalEnhancementWriteFailed` / `CriticalEnhancementRollbackFailed` logs, AC-ENH-7, and the bag-state halves of AC-ENH-23, 34, 35. New **Story 011 — Commit Orchestration** (`story-011-commit-orchestration.md`, Blocked): one `SaveIrreversibleOutcome` call, failure codes → rollback, no result before or without a successful commit, client disconnect, AC-ENH-13.
+- **Story 011 blockers:** (1) a decision, probably an ADR, on how tick-loop code consumes an asynchronous persistence call (existing `CommitBeforeBroadcastSequencer` is synchronous and would block the tick; also bears on OQ-ENH-7, level-up, respec, item consumption); (2) Character Persistence has no implementation or epic; (3) TD-046 for the client-facing criteria.
+- **Recorded in Story 005:** after a destruction rollback the item goes to the lowest empty slot, so an emptied scroll slot with a lower index than the item's old slot swaps positions with it — contents correct, GDD's "refills the slot it emptied" not guaranteed; tests assert contents there.
+- **Propagated:** Enhancement `EPIC.md` (4/11, table rows 005 and 011, order, AC allocation, open points, next step); `production/epics/index.md`; dependency lines and a dated note in Stories 007, 009, 010.
+- Checked in code: `MoveFailReason.SourceLocked` exists; `ForceInsert` places in the lowest empty slot at the given level; `Pickup` tops up or fills; the Story 004 decorator already records `ForceInsert` and `Pickup`.
+- **Uncommitted:** Stories 005, 007, 009, 010, new Story 011, Enhancement `EPIC.md`, `production/epics/index.md`, this file.
+- Next: `/dev-story production/epics/enhancement-system/story-005-commit-and-rollback.md`.
+
 ## Session Extract — /story-done 2026-10-07 (Enhancement Story 004 — COMPLETE WITH NOTES; Enhancement epic 4/10; not committed)
 
 - Verdict: COMPLETE WITH NOTES. Story: `production/epics/enhancement-system/story-004-attempt-sequence.md` — Attempt Sequence and Outcome Resolution. 12/12 criteria; test file 32 cases; EditMode 1708/1708.

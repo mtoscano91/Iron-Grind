@@ -96,5 +96,5 @@ Fix: a wire-protocol authoring session (align the request to the slot-based cont
 
 ## Dependencies
 
-- Depends on: **TD-046 wire-protocol amendment (blocking)**; Stories 005, 006 and 007
+- Depends on: **TD-046 wire-protocol amendment (blocking)**; Story 011 (commit orchestration — the result this story delivers comes from it); Stories 005, 006 and 007
 - Unlocks: Enhancement UI epic
