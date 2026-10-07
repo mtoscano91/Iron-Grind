@@ -1,6 +1,6 @@
 # Epics Index
 
-Last Updated: 2026-07-22
+Last Updated: 2026-10-07
 Engine: Unity 6.3 LTS (6000.3)
 Control Manifest Version: 2026-06-28
 
@@ -16,6 +16,8 @@ Control Manifest Version: 2026-06-28
 | [Inventory System](inventory-system/EPIC.md) | Core | Inventory System | design/gdd/inventory-system.md | 9 stories (001-009 Ready) | Ready |
 | [Loot Table System](loot-table-system/EPIC.md) | Core | Loot Table System | design/gdd/loot-table-system.md | Not yet created | Ready |
 | [Status Effects / Buffs](status-effects/EPIC.md) | Core | Status Effects | design/gdd/status-effects.md | Not yet created | Ready |
+| [Equipment System](equipment-system/EPIC.md) | Core | Equipment System | design/gdd/equipment-system.md | Not yet created | Ready — **design gate OQ-EQS-9 open before `/create-stories`** |
+| [Enhancement System](enhancement-system/EPIC.md) | Feature | Enhancement System | design/gdd/enhancement-system.md | Not yet created | Ready — **attempt-path stories blocked on OQ-ENH-7 and TD-046**; formula and bonus-provider work unblocked |
 
 ## Notes
 
@@ -24,12 +26,13 @@ Control Manifest Version: 2026-06-28
 - **Damage Calculation epic has a real, GDD-stated architecture gap**: the GDD's own Core Rules text requires an ADR for the `ServerLogic.asmdef` server/client assembly boundary before implementation begins — this is not yet written. Run `/architecture-decision` before starting Damage Calculation Story 001.
 - **Authentication epic has a partial architecture gap**: CR-AUTH-4's standalone .NET sidecar/IPC process has no Accepted ADR, and its two primitive GDDs (`auth-wire-messages.md`, `auth-sidecar-ipc.md`) are still Draft. Only the sidecar-boundary stories are affected — the AccountID/credential-contract stories are not blocked.
 - **Core layer epics now created**: Leveling, Inventory, and Loot Table appear in the Foundation module table of `architecture.md` but are classified as Core layer in `systems-index.md` (authoritative) — resolved by creating them here as Core-layer epics, per that authoritative classification.
+- **Equipment and Enhancement epics created 2026-10-07**: the two systems are mutually dependent (Equipment consumes `IEnhancementBonusProvider`; Enhancement relies on Equipment to store the level while equipped). Enhancement was created ahead of the gate its GDD states ("before `/create-epics`": OQ-ENH-7, TD-046) by user decision, so its formula and bonus-provider stories can be planned with Equipment; its attempt-path stories stay Blocked until both gates close.
 
 ## Layer Coverage
 
 | Layer | Epics Created | Remaining |
 |-------|--------------|-----------|
 | Foundation | 4 / 4 (all Complete) | — |
-| Core | 6 / 6 created (0 implemented) | Run `/create-stories [epic-slug]` per epic |
-| Feature | 0 | Run `/create-epics layer: feature` after Core is nearly complete |
+| Core | 7 created (Equipment added 2026-10-07) | Character Persistence, Hit Detection, Movement and Skill System have no epic yet; run `/create-stories [epic-slug]` per created epic |
+| Feature | 1 (Enhancement, created 2026-10-07 ahead of its two gates) | Run `/create-epics layer: feature` for the rest after Core is nearly complete |
 | Presentation | 0 | Run `/create-epics layer: presentation` after Feature is nearly complete |

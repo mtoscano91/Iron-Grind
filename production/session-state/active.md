@@ -6,7 +6,20 @@
 
 > **Commit and push status 2026-10-03 (later):** the winner-grace design amendment is committed as `74ad7f2`, and Stories 013 and 012 (code, tests, stories, `EPIC.md`, tech debt, this file) as `7910d2a`. The user asked for a push: `origin/main` is at `7910d2a` (`125e98f..7910d2a`). Every "Uncommitted" / "not committed" / "not pushed" note in the extracts below is superseded. Untracked and left alone: `bash.exe.stackdump` in the repo root (a Git Bash crash dump, not committed). PAT rotation is still unconfirmed.
 
+> **Commit and push status 2026-10-07:** Inventory Story 010 (code, tests, story, `EPIC.md`, this file) is committed as `17e82b5`, and the user asked for a push: `origin/main` is at `17e82b5` (`7910d2a..17e82b5`). The "not committed" / "Uncommitted" notes in the 2026-10-07 extracts below are superseded. Untracked and left alone: `bash.exe.stackdump`. PAT rotation is still unconfirmed.
+
 > **Commit status 2026-10-03:** Story 011 and the Currency amendment are committed on `main` — `c2acf60` (design: `AuctionBid = 9`, Story 011 readiness decisions) and `c789a05` (Story 011 code, tests, `.meta` files, story, EPIC, tech debt). The "Uncommitted" notes in the 2026-10-03 extracts below are superseded. Not pushed: `main` is 3 ahead of `origin`. PAT rotation still unconfirmed. **Uncommitted since `c789a05`:** the winner-grace amendment and story changes listed in the extract directly below.
+
+## Session Extract — /create-epics 2026-10-07 (Equipment + Enhancement — 2 epics written, not committed)
+
+- Scope chosen by the user: Equipment System + Enhancement System. Lean mode — PR-EPIC skipped. TR registry still empty, so TR-IDs are placeholders.
+- **Written:** `production/epics/equipment-system/EPIC.md` (Core, 11 TRs, Status Ready with gate OQ-EQS-9 before `/create-stories`); `production/epics/enhancement-system/EPIC.md` (Feature, 11 TRs); `production/epics/index.md` (two rows, a note, layer coverage, date).
+- **User decision:** create the Enhancement epic now although its GDD header says OQ-ENH-7 and TD-046 should close before `/create-epics`. The epic records this; TR-enh-007 (OQ-ENH-7) and TR-enh-009 (TD-046) are blocked, TR-enh-005/006/008/010 affected. Unblocked now: TR-enh-001 to 003 (bonus provider, level range and thresholds, probability table).
+- Other blockers recorded in the Enhancement epic: Item Database Amendment #4 scroll records are not in code (no story yet); Character Persistence has no epic (`SaveIrreversibleOutcome`).
+- Open for `/create-stories`: how `IEnhancementBonusProvider` reaches the Equipment epic (Enhancement's provider story first, or a consumer-side stub).
+- Not changed: stale rows in `production/epics/index.md` for Inventory ("9 stories Ready") and Loot Table ("Not yet created") — both epics are Complete.
+- **Uncommitted:** the two new epic folders, `production/epics/index.md`, this file.
+- Next: decide OQ-EQS-9 (design), then `/create-stories equipment-system`; `/create-stories enhancement-system` can run now for the unblocked formula stories. Gates to close for the rest: OQ-ENH-7 (likely `/architecture-decision`) and TD-046 (wire-protocol authoring session + lean re-review).
 
 ## Session Extract — /story-done 2026-10-07 (Inventory Story 010 — COMPLETE WITH NOTES; Inventory epic 10/10; not committed)
 
