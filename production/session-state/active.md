@@ -10,6 +10,17 @@
 
 > **Commit status 2026-10-03:** Story 011 and the Currency amendment are committed on `main` — `c2acf60` (design: `AuctionBid = 9`, Story 011 readiness decisions) and `c789a05` (Story 011 code, tests, `.meta` files, story, EPIC, tech debt). The "Uncommitted" notes in the 2026-10-03 extracts below are superseded. Not pushed: `main` is 3 ahead of `origin`. PAT rotation still unconfirmed. **Uncommitted since `c789a05`:** the winner-grace amendment and story changes listed in the extract directly below.
 
+## Session Extract — /create-stories 2026-10-07 (Enhancement System — 10 stories written, not committed)
+
+- The two epics of the extract below are committed and pushed as `99d3afb`; its "not committed" notes are superseded.
+- **Written:** `production/epics/enhancement-system/story-001` to `story-010` (8 Ready, 2 Blocked); `EPIC.md` (Stories table, AC coverage 30 of 39, open points, Status "Ready (0/10)"); `production/epics/index.md` row. Lean mode — QL-STORY-READY skipped; QA test cases written by the assistant.
+- Stories: 001 config / probability table / prestige band (Logic, 3h); 002 bonus provider (Logic, 2h — the Equipment epic needs this first); 003 attempt validation (Integration, 4h); 004 attempt sequence (Integration, 4h); 005 commit and rollback (Integration, 5h); 006 NPC interaction session (Integration, 3h); 007 outcome events and +9 trigger (Logic, 2h); 008 scroll source scan (Logic, 1h); 009 attempt exclusivity — **Blocked on OQ-ENH-7**; 010 client requests and result delivery — **Blocked on TD-046**.
+- **Correction made:** the Enhancement `EPIC.md` committed in `99d3afb` wrongly listed the scroll records as "not in code". They are (Item Database Stories 005–006). Fixed in `EPIC.md`. The "code follow-up story needed" notes in `enhancement-system.md` (header, Required Upstream Amendments item 4) and `systems-index.md` (rows 11 and 23) are stale and NOT yet corrected — a small design-doc cleanup.
+- **Open points left for `/story-readiness`** (recorded in the stories and the epic): Story 005 commit seam — GDD commit is `Task<CharacterSaveResult>`, the existing `CommitBeforeBroadcastSequencer` is synchronous; Story 007 — `OnPrestigeBandChange` has no sensible owner in Enhancement; Story 006 — where the shared NPC session type lives, `npcId` meaning; Stories 002–004 — inputs with no GDD rule; Story 008 — whether production loot tables exist and whether a scroll is reachable through a consumable pool; Story 010 — no request triggers `EnhancementStateUpdate`.
+- AC owned elsewhere: AC-ENH-1 (Inventory Story 010, done), AC-ENH-2 (Character Persistence), AC-ENH-15/16/17/32 (Equipment epic), AC-ENH-25/26/31 (Enhancement UI).
+- **Uncommitted:** the ten story files, the Enhancement `EPIC.md`, `production/epics/index.md`, this file.
+- Next: `/story-readiness production/epics/enhancement-system/story-001-enhancement-config.md` then `/dev-story`. Equipment epic still needs the OQ-EQS-9 decision before `/create-stories equipment-system`.
+
 ## Session Extract — /create-epics 2026-10-07 (Equipment + Enhancement — 2 epics written, not committed)
 
 - Scope chosen by the user: Equipment System + Enhancement System. Lean mode — PR-EPIC skipped. TR registry still empty, so TR-IDs are placeholders.
