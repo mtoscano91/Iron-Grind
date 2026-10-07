@@ -10,6 +10,46 @@
 
 > **Commit status 2026-10-03:** Story 011 and the Currency amendment are committed on `main` — `c2acf60` (design: `AuctionBid = 9`, Story 011 readiness decisions) and `c789a05` (Story 011 code, tests, `.meta` files, story, EPIC, tech debt). The "Uncommitted" notes in the 2026-10-03 extracts below are superseded. Not pushed: `main` is 3 ahead of `origin`. PAT rotation still unconfirmed. **Uncommitted since `c789a05`:** the winner-grace amendment and story changes listed in the extract directly below.
 
+## Session Extract — /story-done 2026-10-07 (Enhancement Story 004 — COMPLETE WITH NOTES; Enhancement epic 4/10; not committed)
+
+- Verdict: COMPLETE WITH NOTES. Story: `production/epics/enhancement-system/story-004-attempt-sequence.md` — Attempt Sequence and Outcome Resolution. 12/12 criteria; test file 32 cases; EditMode 1708/1708.
+- Enhancement `EPIC.md`: In Progress (4/10); `production/epics/index.md` row updated.
+- Tech debt logged: None. **Offered, not confirmed by the user (their "yes" answered the status update):** an entry noting that `enhancement-system.md` still describes `ConfirmEnhancement` as one server step and does not mention `BeginAttempt` / `CompleteAttempt`.
+- **Uncommitted since `18c76a5`:** `EnhancementService.cs`, `IInventoryService.cs` (doc comments), `EnhancementAttemptStart.cs`, `EnhancementAttemptResult.cs` (+ `.meta`); the AttemptSequence test file and `EnhancementTestDoubles.cs` (+ `.meta`), the Story 003 test file; Stories 004 and 005; Enhancement `EPIC.md`; `production/epics/index.md`; this file.
+- Next recommended: Story 005 — Commit-Then-Deliver and Rollback needs a readiness pass that rewrites its criteria for the two-phase design and settles the commit orchestrator (possibly an ADR). Stories 006 (NPC Interaction Session, 3h) and 008 (Scroll Source Restriction Scan, 1h) do not depend on that. Story 007 (outcome events) depends on 005.
+
+## Session Extract — /code-review 2026-10-07 (Enhancement Story 004 — CHANGES REQUIRED → "fix all" applied, 1708/1708 EditMode, not committed)
+
+- Lean self-review in the dev-story session (no specialists spawned). One required change, two suggestions; all applied by the orchestrator. This supersedes the "For `/code-review`" list in the extract below.
+- **Applied:** (R1) `BeginAttempt` wraps everything after `LockSlot` in `try`/`catch`: any exception — including one thrown by an `OnInventoryChanged` subscriber, which `InventoryService` lets propagate — unlocks the item slot and is rethrown with nothing pending; `ApplyOutcome` no longer unlocks itself (the catch does). New test `BeginAttempt_InventorySubscriberThrowsDuringScrollConsumption_UnlocksItemNothingPendingAndRethrows`. (S1) the Story 003 test file uses the shared `StubNpcSessions` (its private nested copy is removed). (S2) remark on `EnhancementAttemptStart.Rejected`: `Outcome` holds the enum's zero value (`Success`) and means nothing on a rejection.
+- Test file: 28 `[Test]` + 4 `[TestCase]` rows = 32 cases.
+- **Test runs after the fixes:** first run 1707/1708 — the one failure was the known flaky wall-clock test `TickLoop_CommitBeforeBroadcast_Tests.Execute_PersistenceWriteTakes200ms_BroadcastNotInvokedBeforeAtLeast200msElapsed` (measured 199 ms against a 200 ms floor; already logged as TD-050; Networking code untouched by this story). Second run, no changes in between: 1708/1708.
+- **Uncommitted:** `EnhancementService.cs`, `IInventoryService.cs` (doc comments), new `EnhancementAttemptStart.cs` / `EnhancementAttemptResult.cs` (+ `.meta`); new AttemptSequence test file and `EnhancementTestDoubles.cs` (+ `.meta`), the Story 003 test file; Stories 004 and 005; Enhancement `EPIC.md`; this file.
+- Next: `/story-done production/epics/enhancement-system/story-004-attempt-sequence.md`.
+
+## Session Extract — /dev-story 2026-10-07 (Enhancement Story 004 implemented — 1707/1707 EditMode, not reviewed, not committed)
+
+- Story: `production/epics/enhancement-system/story-004-attempt-sequence.md` — Attempt Sequence and Outcome Resolution. Status still Ready (`/story-done` not run). Same session as the readiness extract below.
+- Two `gameplay-programmer` agents in parallel against one API contract (src / tests). No orchestrator edits.
+- Source: `EnhancementService.cs` (fifth ctor arg `System.Random`; real `IsAttemptInProgress`; `BeginAttempt`, `CompleteAttempt`, private `ApplyOutcome`; `Dictionary<CharacterID, PendingAttempt>` with a private nested `readonly struct`); new `EnhancementAttemptStart.cs`, `EnhancementAttemptResult.cs`; `IInventoryService.cs` — doc comments of `ConsumeItem` and `RemoveItem` corrected (no behaviour change).
+- Tests: new `Enhancement_AttemptSequence_integration_tests.cs` (27 `[Test]` + 4 `[TestCase]` rows = 31 cases); new `EnhancementTestDoubles.cs` (`ScriptedRandom`, `StubNpcSessions`, `RecordingInventoryDecorator` forwarding all 22 methods and 2 events); `Enhancement_AttemptValidation_integration_tests.cs` — five constructor call sites gain `new System.Random(0)`, one test renamed. Four `.meta` files generated by the run.
+- Test run: Unity 6000.3.10f1 batch mode, EditMode 1707/1707 (was 1676).
+- For `/code-review`: an exception thrown between `LockSlot` and the pending record (e.g. from an `OnInventoryChanged` subscriber during `ConsumeItem`) would leave the item slot locked with nothing pending — only the `SetEnhancementLevel == false` path unlocks; `Outcome` on a rejected `EnhancementAttemptStart` reads `Success` (enum default 0) although it is documented as meaningless; the Story 003 test file keeps its own private `StubNpcSessions` next to the shared one.
+- Next: `/code-review` on the changed files, then `/story-done`.
+
+## Session Extract — /story-readiness 2026-10-07 (Enhancement Story 004 — READY after a rewrite; commit-seam decision; not committed)
+
+- Story 003 (extracts below) is committed and pushed as `18c76a5`; their "not committed" notes are superseded.
+- Story: `production/epics/enhancement-system/story-004-attempt-sequence.md` — Attempt Sequence and Outcome Resolution. First verdict NEEDS WORK: the commit seam decides the story's API (ADR-006 says every persistence call is `async Task<>`; no ADR says where game logic resumes; the existing `CommitBeforeBroadcastSequencer` is synchronous).
+- **User decision — two-phase, synchronous service:** `BeginAttempt(charId, itemSlot, scrollSlot)` does steps 2–6a and returns a rejection or a pending attempt; the caller commits; `CompleteAttempt(charId)` unlocks and returns the result. The service never calls persistence or sees a `Task`. `IsAttemptInProgress` is true while an attempt is pending.
+- **Assistant's refinement of the chosen sketch (told to the user):** the failed-commit path is a separate `RollBackAttempt(charId)` in Story 005, not a `bool committed` flag on `CompleteAttempt` (the preview the user picked showed the flag).
+- **User decision:** if `SetEnhancementLevel` fails after the scroll is consumed → unlock, no pending attempt, throw `InvalidOperationException`; scroll not restored.
+- **Applied:** Story 004 rewritten (design-decision section, 12 criteria, notes, QA cases). AC-ENH-8 moved here from Story 005. The Story 003 test fixture is in the file list (constructor gains a `System.Random`). Two stale doc comments in `IInventoryService.cs` (`ConsumeItem`, `RemoveItem`) are to be corrected by this story (doc-only).
+- **Propagated:** Story 005 has a dated note at the top of its Implementation Notes (its criteria must be rewritten at its readiness: commit orchestrator still open, `RollBackAttempt`, AC-ENH-8 moved out); Enhancement `EPIC.md` story table row 005 and the open-points line.
+- Checked in code: `UnlockSlot` on an unlocked or cleared slot is a documented silent no-op; `ConsumeItem` skips locked stacks and fails without mutating; `RemoveItem` clears the slot and its lock.
+- **Uncommitted:** Stories 004 and 005, Enhancement `EPIC.md`, this file.
+- Next: `/dev-story production/epics/enhancement-system/story-004-attempt-sequence.md`.
+
 ## Session Extract — /story-done 2026-10-07 (Enhancement Story 003 — COMPLETE WITH NOTES; Enhancement epic 3/10; not committed)
 
 - Verdict: COMPLETE WITH NOTES. Story: `production/epics/enhancement-system/story-003-attempt-validation.md` — Attempt Validation and Result Codes. 12/12 criteria; test file 37 cases; EditMode 1676/1676.

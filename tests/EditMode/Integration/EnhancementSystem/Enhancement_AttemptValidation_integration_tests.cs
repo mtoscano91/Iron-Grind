@@ -73,14 +73,6 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
         private List<ItemDefinition> _definitions;
         private int _inventoryEvents;
 
-        /// <summary>Settable stand-in for the NPC session query; active by default.</summary>
-        private sealed class StubNpcSessions : INpcInteractionSessions
-        {
-            public bool Active { get; set; } = true;
-
-            public bool IsActive(CharacterID charId) => Active;
-        }
-
         /// <summary>Full copy of a character's bag and lock flags plus the event count at capture time.</summary>
         private sealed class BagSnapshot
         {
@@ -134,7 +126,7 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
             _inventory.OnInventoryChanged += _ => _inventoryEvents++;
 
             _sessions = new StubNpcSessions();
-            _service = new EnhancementService(_inventory, _itemDatabase, EnhancementConfig.Default, _sessions);
+            _service = new EnhancementService(_inventory, _itemDatabase, EnhancementConfig.Default, _sessions, new System.Random(0));
         }
 
         [TearDown]
@@ -234,32 +226,32 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
         public void Constructor_NullInventory_Throws()
         {
             Assert.Throws<ArgumentNullException>(() =>
-                new EnhancementService(null, _itemDatabase, EnhancementConfig.Default, _sessions));
+                new EnhancementService(null, _itemDatabase, EnhancementConfig.Default, _sessions, new System.Random(0)));
         }
 
         [Test]
         public void Constructor_NullItemDatabase_Throws()
         {
             Assert.Throws<ArgumentNullException>(() =>
-                new EnhancementService(_inventory, null, EnhancementConfig.Default, _sessions));
+                new EnhancementService(_inventory, null, EnhancementConfig.Default, _sessions, new System.Random(0)));
         }
 
         [Test]
         public void Constructor_NullConfig_Throws()
         {
             Assert.Throws<ArgumentNullException>(() =>
-                new EnhancementService(_inventory, _itemDatabase, null, _sessions));
+                new EnhancementService(_inventory, _itemDatabase, null, _sessions, new System.Random(0)));
         }
 
         [Test]
         public void Constructor_NullNpcSessions_Throws()
         {
             Assert.Throws<ArgumentNullException>(() =>
-                new EnhancementService(_inventory, _itemDatabase, EnhancementConfig.Default, null));
+                new EnhancementService(_inventory, _itemDatabase, EnhancementConfig.Default, null, new System.Random(0)));
         }
 
         [Test]
-        public void IsAttemptInProgress_ForAnyCharacter_IsFalseInThisStory()
+        public void IsAttemptInProgress_WithNoAttemptPending_IsFalse()
         {
             // Act / Assert
             Assert.IsFalse(_service.IsAttemptInProgress(Player));

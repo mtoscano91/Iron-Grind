@@ -232,16 +232,15 @@ namespace IronGrind.InventorySystem
         /// <summary>
         /// Destroys the item in the slot at <paramref name="slotIndex"/>, clearing it to
         /// <see cref="ItemID.Invalid"/>/<c>Quantity = 0</c> and releasing its lock if held (GDD
-        /// Rule 5, States and Transitions: the only path from Occupied-Locked to Empty; also used
-        /// by the Enhancement System on an <i>unlocked</i> scroll slot per Enhancement GDD
-        /// CR-ENH-15 step 4). Only the Enhancement System calls this — on item destruction and on
-        /// scroll consumption (ADR-010 Tier 1).
+        /// Rule 5, States and Transitions: the only path from Occupied-Locked to Empty). Only the
+        /// Enhancement System calls this, and only on item destruction (ADR-010 Tier 1); it
+        /// consumes scrolls through <see cref="ConsumeItem"/> instead (CR-ENH-15 step 4, TD-043).
         /// </summary>
         /// <remarks>
         /// <para>Works on any occupied slot, locked or unlocked, and clears the entire stack
         /// regardless of <see cref="InventorySlot.Quantity"/> — this is not a quantity-aware
-        /// removal (Implementation Notes: a cross-GDD conflict with stackable Enhancement Scrolls
-        /// is open and owned by the Enhancement System GDD; out of scope for this story). On
+        /// removal (the former cross-GDD conflict with stackable Enhancement Scrolls was resolved by
+        /// TD-043: scrolls are consumed through <see cref="ConsumeItem"/>). On
         /// success, fires exactly one <see cref="OnInventoryChanged"/> with a single entry
         /// <c>{ slotIndex, itemId: 0, quantity: 0 }</c>. On an empty in-range slot: no-op, no
         /// event, no log (removing nothing is not a caller bug).</para>
@@ -506,8 +505,9 @@ namespace IronGrind.InventorySystem
         /// Destroys <paramref name="quantity"/> units of <paramref name="itemId"/> from
         /// <paramref name="charId"/>'s inventory (GDD Interactions table, Consumable Use System
         /// row), decrementing from the lowest-index unlocked slot holding the item first and
-        /// continuing into the next lowest-index unlocked stack if needed. Only the Consumable Use
-        /// System calls this (ADR-010 Tier 1). Category-agnostic — decrements whatever
+        /// continuing into the next lowest-index unlocked stack if needed. Called by the Consumable
+        /// Use System and by the Enhancement System, which consumes one Enhancement Scroll per
+        /// attempt (Enhancement GDD CR-ENH-15 step 4, TD-043) (ADR-010 Tier 1). Category-agnostic — decrements whatever
         /// <paramref name="itemId"/> it is given, with no Item Database lookup.
         /// </summary>
         /// <remarks>

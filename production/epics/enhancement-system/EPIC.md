@@ -3,7 +3,7 @@
 > **Layer**: Feature
 > **GDD**: design/gdd/enhancement-system.md
 > **Architecture Module**: Enhancement (Feature layer; "irreversible outcome — commit before broadcast" data flow in `architecture.md`)
-> **Status**: In Progress (3/10 — Stories 001–003 Complete 2026-10-07; 5 stories Ready; 2 Blocked: Story 009 on OQ-ENH-7, Story 010 on TD-046)
+> **Status**: In Progress (4/10 — Stories 001–004 Complete 2026-10-07; 4 stories Ready; 2 Blocked: Story 009 on OQ-ENH-7, Story 010 on TD-046)
 > **Stories**: 10 stories created 2026-10-07 (001–010)
 
 > **Created ahead of the GDD's stated gate (user decision 2026-10-07).** The GDD header says OQ-ENH-7 and the wire-protocol Enhancement message set (TD-046) should close before `/create-epics`. The epic was created anyway so that the formula and bonus-provider work, which neither gate touches, can be planned alongside the Equipment epic. Every requirement the gates affect is marked below.
@@ -66,8 +66,8 @@ This epic is complete when:
 | 001 | [Enhancement Config — Level Cap, Thresholds, Probability Table, Prestige Band](story-001-enhancement-config.md) | Logic | Complete | None (design-only) |
 | 002 | [Enhancement Bonus Provider](story-002-enhancement-bonus-provider.md) | Logic | Complete | ADR-010 |
 | 003 | [Attempt Validation and Result Codes](story-003-attempt-validation.md) | Integration | Complete | ADR-010 |
-| 004 | [Attempt Sequence and Outcome Resolution](story-004-attempt-sequence.md) | Integration | Ready | ADR-010 |
-| 005 | [Commit-Then-Deliver and Rollback](story-005-commit-and-rollback.md) | Integration | Ready (commit seam to settle at readiness) | ADR-006, ADR-010 |
+| 004 | [Attempt Sequence and Outcome Resolution](story-004-attempt-sequence.md) | Integration | Complete | ADR-010 |
+| 005 | [Commit-Then-Deliver and Rollback](story-005-commit-and-rollback.md) | Integration | Ready (commit orchestrator to settle at readiness) | ADR-006, ADR-010 |
 | 006 | [NPC Interaction Session](story-006-npc-interaction-session.md) | Integration | Ready | ADR-010 |
 | 007 | [Outcome Events and +9 Broadcast Trigger](story-007-outcome-events-and-broadcast-trigger.md) | Logic | Ready (`OnPrestigeBandChange` owner to settle at readiness) | ADR-010 |
 | 008 | [Scroll Source Restriction Scan](story-008-scroll-source-restriction.md) | Logic | Ready | None (design-only) |
@@ -85,7 +85,7 @@ This epic is complete when:
 Assigned to Blocked stories: **AC-ENH-38** (Story 009) and **AC-ENH-6** (Story 010). Story 010 also holds the delivery halves of **AC-ENH-13** and **AC-ENH-18**, whose server-side halves are in Stories 005 and 007.
 
 **Open points recorded in the stories for `/story-readiness`**:
-- Story 005 — the commit seam: the GDD's commit is asynchronous (`Task<CharacterSaveResult>`) and three criteria need a write in flight; Networking Core's existing `CommitBeforeBroadcastSequencer` takes a synchronous `Func<TOutcome, bool>`.
+- Story 005 — the commit orchestrator. *Partly decided 2026-10-07 (Story 004 readiness):* `EnhancementService` is two-phase and synchronous (`BeginAttempt` → caller commits → `CompleteAttempt`, or `RollBackAttempt` from Story 005) and never calls persistence. Still open: who sits between the two calls — the existing synchronous `CommitBeforeBroadcastSequencer`, an asynchronous wrapper around `SaveIrreversibleOutcome` (`Task<CharacterSaveResult>`), or both — and whether that needs an ADR. AC-ENH-8 moved from Story 005 to Story 004.
 - Story 007 — `OnPrestigeBandChange` is listed as an Enhancement signal, but the visible band only changes on equip (Equipment System).
 - Story 006 — where the shared NPC session type lives (NPC Shop uses the same flag); how `npcId` identifies an Enhancement NPC.
 - Stories 002, 003, 004 — inputs the GDD gives no rule for (out-of-range level or slot index, non-equipment item in the item slot, an inventory call failing mid-attempt).
@@ -94,4 +94,4 @@ Assigned to Blocked stories: **AC-ENH-38** (Story 009) and **AC-ENH-6** (Story 0
 
 ## Next Step
 
-Stories 001–003 are Complete (2026-10-07) — config, bonus provider and attempt validation are in code. Next: `/story-readiness production/epics/enhancement-system/story-004-attempt-sequence.md`, then `/dev-story` (Stories 006 and 008 are also unblocked). Work through the stories in order — each story's `Depends on:` field says what must be Complete first. To unblock 009 and 010: decide OQ-ENH-7 (`/architecture-decision`) and run the wire-protocol authoring session for TD-046.
+Stories 001–004 are Complete (2026-10-07) — config, bonus provider, validation and the two-phase attempt sequence are in code. Next: `/story-readiness production/epics/enhancement-system/story-005-commit-and-rollback.md` (its criteria need rewriting for the two-phase design, and the commit orchestrator is still to be decided), or Story 006 / Story 008, which do not depend on that decision. Work through the stories in order — each story's `Depends on:` field says what must be Complete first. To unblock 009 and 010: decide OQ-ENH-7 (`/architecture-decision`) and run the wire-protocol authoring session for TD-046.

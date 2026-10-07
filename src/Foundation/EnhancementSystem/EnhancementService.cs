@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using IronGrind.CharacterStats;
 using IronGrind.Currency;
 using IronGrind.InventorySystem;
@@ -8,11 +9,12 @@ using UnityEngine;
 namespace IronGrind.EnhancementSystem
 {
     /// <summary>
-    /// Enhancement System entry point (design/gdd/enhancement-system.md CR-ENH-15). This story adds
-    /// the validation step only (<see cref="ValidateAttempt"/>); Story 004 adds the attempt
-    /// sequence (lock, scroll, draw, apply) and Story 005 the commit and rollback.
-    /// Depends on injected interfaces only; validation reads state and mutates nothing.
-    /// Enhancement Story 003.
+    /// Enhancement System entry point (design/gdd/enhancement-system.md CR-ENH-15). Story 003 added
+    /// validation (<see cref="ValidateAttempt"/>). Story 004 adds the two-phase attempt sequence
+    /// (decided at readiness 2026-10-07): <see cref="BeginAttempt"/> runs steps 2-6a (validate, lock,
+    /// consume scroll, draw, apply) and leaves a pending attempt; the caller commits; then
+    /// <see cref="CompleteAttempt"/> runs step 7 (unlock, result). Story 005 adds rollback.
+    /// Depends on injected interfaces only; the service is synchronous and never calls persistence.
     /// </summary>
     public sealed class EnhancementService
     {
@@ -20,34 +22,151 @@ namespace IronGrind.EnhancementSystem
         private readonly IItemDatabase _itemDatabase;
         private readonly EnhancementConfig _config;
         private readonly INpcInteractionSessions _npcSessions;
+        private readonly System.Random _random;
+        private readonly Dictionary<CharacterID, PendingAttempt> _pending = new Dictionary<CharacterID, PendingAttempt>();
+
+        // What Complete (and Story 005's rollback) needs for one in-flight attempt.
+        private readonly struct PendingAttempt
+        {
+            public PendingAttempt(
+                int itemSlotIndex, ItemID itemId, byte previousLevel, ItemID scrollItemId, EnhancementOutcome outcome, byte newLevel)
+            {
+                ItemSlotIndex = itemSlotIndex;
+                ItemId = itemId;
+                PreviousLevel = previousLevel;
+                ScrollItemId = scrollItemId;
+                Outcome = outcome;
+                NewLevel = newLevel;
+            }
+
+            public int ItemSlotIndex { get; }
+            public ItemID ItemId { get; }
+            public byte PreviousLevel { get; }
+            public ItemID ScrollItemId { get; }
+            public EnhancementOutcome Outcome { get; }
+            public byte NewLevel { get; }
+        }
 
         /// <summary>Creates the service over its collaborators.</summary>
-        /// <param name="inventory">Bag reads (slot contents, lock flags).</param>
+        /// <param name="inventory">Bag reads and mutations (locks, scroll consumption, level, destruction).</param>
         /// <param name="itemDatabase">Item definitions (upgradeable flag, gear data, scroll data).</param>
-        /// <param name="config">Level cap (CR-ENH-2).</param>
+        /// <param name="config">Level cap (CR-ENH-2) and outcome resolution (CR-ENH-9, CR-ENH-10).</param>
         /// <param name="npcSessions">NPC session query (CR-ENH-17).</param>
+        /// <param name="random">Random source; exactly one <see cref="System.Random.NextDouble"/> per pending attempt.</param>
         /// <exception cref="ArgumentNullException">Any argument is null.</exception>
         public EnhancementService(
-            IInventoryService inventory, IItemDatabase itemDatabase, EnhancementConfig config, INpcInteractionSessions npcSessions)
+            IInventoryService inventory, IItemDatabase itemDatabase, EnhancementConfig config,
+            INpcInteractionSessions npcSessions, System.Random random)
         {
             if (inventory == null) throw new ArgumentNullException(nameof(inventory));
             if (itemDatabase == null) throw new ArgumentNullException(nameof(itemDatabase));
             if (config == null) throw new ArgumentNullException(nameof(config));
             if (npcSessions == null) throw new ArgumentNullException(nameof(npcSessions));
+            if (random == null) throw new ArgumentNullException(nameof(random));
             _inventory = inventory;
             _itemDatabase = itemDatabase;
             _config = config;
             _npcSessions = npcSessions;
+            _random = random;
         }
 
         /// <summary>
-        /// True iff an attempt is already in flight for <paramref name="charId"/> (CR-ENH-18). In
-        /// Story 003 this is always false; Story 004 adds the flag.
+        /// True iff a pending attempt is stored for <paramref name="charId"/> (CR-ENH-8, CR-ENH-18):
+        /// from a pending <see cref="BeginAttempt"/> until <see cref="CompleteAttempt"/>.
         /// </summary>
         /// <param name="charId">The character to query.</param>
         public bool IsAttemptInProgress(CharacterID charId)
         {
-            return false;
+            return _pending.ContainsKey(charId);
+        }
+
+        /// <summary>
+        /// Runs CR-ENH-15 steps 2-6a: validate; lock the item slot (CR-ENH-7); consume one scroll;
+        /// draw once and resolve the outcome; apply it to the bag (level + 1, or destroy the item).
+        /// The item slot stays locked until <see cref="CompleteAttempt"/>. Two-phase design decided
+        /// at readiness 2026-10-07. AC-ENH-8, 9, 10, 11, 12, 33, 36.
+        /// </summary>
+        /// <param name="charId">The requesting character.</param>
+        /// <param name="itemSlotIndex">Bag slot of the item to enhance.</param>
+        /// <param name="scrollSlotIndex">Bag slot of the scroll.</param>
+        /// <returns>A rejection (nothing changed, no draw) or a pending attempt (outcome not to be sent to a client before the commit, CR-ENH-11).</returns>
+        /// <exception cref="InvalidOperationException">Broken invariant: the level could not be set after the scroll was consumed. The slot is unlocked and no attempt is pending.</exception>
+        /// <remarks>
+        /// Any exception raised after the lock — including one thrown by an
+        /// <c>OnInventoryChanged</c> subscriber during the scroll consumption or the level change —
+        /// is rethrown after the item slot has been unlocked, with no attempt pending. Bag changes
+        /// already made on that path (the consumed scroll, a level already set) are not undone.
+        /// </remarks>
+        public EnhancementAttemptStart BeginAttempt(CharacterID charId, int itemSlotIndex, int scrollSlotIndex)
+        {
+            EnhancementAttemptValidation validation = ValidateAttempt(charId, itemSlotIndex, scrollSlotIndex);
+            if (!validation.IsValid)
+                return EnhancementAttemptStart.Rejected(validation.RejectionCode);
+
+            _inventory.LockSlot(charId, itemSlotIndex);
+            try
+            {
+                if (!_inventory.ConsumeItem(charId, validation.ScrollItemId, 1).Success)
+                {
+                    _inventory.UnlockSlot(charId, itemSlotIndex);
+                    return EnhancementAttemptStart.Rejected(EnhancementResultCode.RejectedScrollNotFound);
+                }
+
+                EnhancementOutcome outcome = _config.ResolveOutcome(validation.CurrentLevel, _random.NextDouble());
+                byte newLevel = ApplyOutcome(charId, itemSlotIndex, validation, outcome);
+
+                // Recorded last so that nothing above can leave a character stuck "in progress".
+                _pending[charId] = new PendingAttempt(
+                    itemSlotIndex, validation.ItemId, validation.CurrentLevel, validation.ScrollItemId, outcome, newLevel);
+                return EnhancementAttemptStart.Pending(outcome, newLevel);
+            }
+            catch
+            {
+                // Nothing is pending on this path, so nothing else would ever unlock the slot: the
+                // inventory calls above fire OnInventoryChanged, and a throwing subscriber's
+                // exception propagates out of them. Unlock (a silent no-op if the slot was cleared),
+                // then rethrow.
+                _inventory.UnlockSlot(charId, itemSlotIndex);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Runs CR-ENH-15 step 7 after a successful commit: ends the attempt, unlocks the item slot
+        /// (a silent no-op after a destruction) and returns the final result (UI-ENH-2).
+        /// </summary>
+        /// <param name="charId">The character whose pending attempt to complete.</param>
+        /// <exception cref="InvalidOperationException">No attempt is pending for <paramref name="charId"/>.</exception>
+        public EnhancementAttemptResult CompleteAttempt(CharacterID charId)
+        {
+            if (!_pending.TryGetValue(charId, out PendingAttempt attempt))
+                throw new InvalidOperationException($"[EnhancementService] CompleteAttempt: no attempt is pending for {charId}.");
+
+            _pending.Remove(charId);
+            _inventory.UnlockSlot(charId, attempt.ItemSlotIndex);
+            EnhancementResultCode code = attempt.Outcome == EnhancementOutcome.Success
+                ? EnhancementResultCode.Success
+                : EnhancementResultCode.Destruction;
+            return new EnhancementAttemptResult(attempt.Outcome, attempt.NewLevel, code);
+        }
+
+        // Step 6a. Returns the new level (0 on destruction). Throws if the level cannot be set;
+        // BeginAttempt's catch unlocks the slot.
+        private byte ApplyOutcome(CharacterID charId, int itemSlotIndex, EnhancementAttemptValidation validation, EnhancementOutcome outcome)
+        {
+            if (outcome == EnhancementOutcome.Destruction)
+            {
+                _inventory.RemoveItem(charId, itemSlotIndex);
+                return 0;
+            }
+
+            byte newLevel = (byte)(validation.CurrentLevel + 1);
+            if (!_inventory.SetEnhancementLevel(charId, itemSlotIndex, newLevel))
+            {
+                throw new InvalidOperationException(
+                    $"[EnhancementService] BeginAttempt: SetEnhancementLevel failed for {charId}, slot {itemSlotIndex}, item {validation.ItemId} after the scroll was consumed.");
+            }
+            return newLevel;
         }
 
         /// <summary>
