@@ -1,7 +1,7 @@
 # Story 014: Move Loot Table to the Server Assembly
 
 > **Epic**: Loot Table System
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-08
@@ -45,12 +45,12 @@ All 37 types of `src/Foundation/LootTableSystem/` (namespace `IronGrind.LootTabl
 
 ## Acceptance Criteria
 
-- [ ] **Graph re-checked before the move**: a grep for the 37 type names in `src/` outside the Loot Table folder finds no code reference (doc comments do not count). If one is found, stop and report it.
-- [ ] **Moved**: the 37 files of `src/Foundation/LootTableSystem/` are in `src/ServerLogic/LootTableSystem/`; namespace `IronGrind.LootTableSystem` unchanged; `.meta` GUIDs unchanged (git shows renames with no content change). `src/Foundation/LootTableSystem/` no longer exists.
-- [ ] **Lists updated**: `AssemblyBoundaryLists.NotYetMovedList` loses exactly its 37 Loot Table entries (204 → 167) and the "Loot Table" header; `SharedAllowList` is unchanged (26).
-- [ ] **Server-only namespaces are data**: `AssemblyBoundaryLists` gains a `ServerOnlyNamespaces` list (`IronGrind.DamageCalculation`, `IronGrind.LootTableSystem`), and the boundary test asserts that no type of a listed namespace is defined in `IronGrind.Foundation` or `IronGrind.Client`, and that each listed namespace has at least one type in `IronGrind.ServerLogic`.
-- [ ] **No production code change**: no `.cs` under `src/` is edited. If a moved file turns out to reach an `internal` member of a `Foundation` type, that member becomes `public` (ADR-012 Decision 5) and the change is listed under Deviations.
-- [ ] **Suite green**: the full EditMode suite passes (2002 before this story, plus any test added), with no compile error and no new compiler warning.
+- [x] **Graph re-checked before the move**: a grep for the 37 type names in `src/` outside the Loot Table folder finds no code reference (doc comments do not count). If one is found, stop and report it.
+- [x] **Moved**: the 37 files of `src/Foundation/LootTableSystem/` are in `src/ServerLogic/LootTableSystem/`; namespace `IronGrind.LootTableSystem` unchanged; `.meta` GUIDs unchanged (git shows renames with no content change). `src/Foundation/LootTableSystem/` no longer exists.
+- [x] **Lists updated**: `AssemblyBoundaryLists.NotYetMovedList` loses exactly its 37 Loot Table entries (204 → 167) and the "Loot Table" header; `SharedAllowList` is unchanged (26).
+- [x] **Server-only namespaces are data**: `AssemblyBoundaryLists` gains a `ServerOnlyNamespaces` list (`IronGrind.DamageCalculation`, `IronGrind.LootTableSystem`), and the boundary test asserts that no type of a listed namespace is defined in `IronGrind.Foundation` or `IronGrind.Client`, and that each listed namespace has at least one type in `IronGrind.ServerLogic`.
+- [x] **No production code change**: no `.cs` under `src/` is edited. If a moved file turns out to reach an `internal` member of a `Foundation` type, that member becomes `public` (ADR-012 Decision 5) and the change is listed under Deviations.
+- [x] **Suite green**: the full EditMode suite passes (2002 before this story, plus any test added), with no compile error and no new compiler warning.
 
 ---
 
@@ -98,7 +98,7 @@ Other rules:
 - `tests/EditMode/Architecture/AssemblyBoundary_tests.cs` — the data-driven namespace test exists and passes.
 - The full EditMode suite result after the move: pass count and zero failures (batch-mode results XML, or the user's Test Runner result).
 
-**Status**: [ ] Not yet created
+**Status**: [x] Passing (8 boundary tests; full EditMode suite green per the user's Test Runner runs)
 
 ---
 
@@ -106,3 +106,17 @@ Other rules:
 
 - Depends on: ADR-012 (Accepted 2026-10-08); Damage Calculation Story 006 (Complete — the assemblies and the boundary test exist); Loot Table Stories 001–013 (Complete — the code to move).
 - Unlocks: the Enhancement move story (third in ADR-012's order).
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-08
+**Criteria**: 6/6 passing (none deferred)
+**Deviations** (all advisory):
+- No results file and no confirmed total. The Editor was open throughout, so there was no batch-mode run; the suite was run twice by the user in the Test Runner (after the move, and after the review fix) and reported as all passing. The expected total of 2003 was not stated.
+- Implemented inline in the main session, without the programmer agent `/dev-story` prescribes (one `git mv` and two test-file edits).
+- The failure path of the new namespace test was not demonstrated with a probe, as Story 006's was.
+**Implementation**: `git mv` of the folder and its `.meta` (75 renames, no content change); 37 entries removed from `NotYetMovedList` (204 → 167), `SharedAllowList` unchanged (26); `ServerOnlyNamespaces` added (Damage Calculation, Loot Table). `test_damage_calculation_is_server_only` was split into `test_damage_calculation_types_are_in_server_logic` and `test_server_only_namespaces_have_no_type_outside_server_logic`. Serialization grep re-run before the move: no `[SerializeReference]`, `[SerializeField]`, `MonoBehaviour`, `ScriptableObject`, `Type.GetType`, `AssemblyQualifiedName` or `TypeNameHandling` in the folder — no `[MovedFrom]`, no asset re-save. No `internal` member widened.
+**Test Evidence**: Integration — `tests/EditMode/Architecture/AssemblyBoundary_tests.cs` (8 tests), lists in `AssemblyBoundaryLists.cs`.
+**Code Review**: Complete — `/code-review` inline (self-review), APPROVED WITH SUGGESTIONS; the nested-namespace suggestion applied (`14d1304`). QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean mode).
+**Commits**: `a17ddbf` (implementation), `14d1304` (review fix).

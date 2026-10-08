@@ -22,6 +22,8 @@
 
 > **ADR-012 reviewed 2026-10-08 — CONCERNS, stays Proposed (not committed):** report `docs/architecture/architecture-review-2026-10-08.md`; `architecture-traceability.md` updated. Uncommitted: those two files and this file. The "then the user marks it Accepted" note below is superseded: amend the ADR first. **Next (fresh authoring session):** amend ADR-012 for B1–B3 and C1–C7, then a lean re-review, then acceptance. Details in the extract "/architecture-review 2026-10-08" below. PAT rotation is still unconfirmed.
 
+> **Loot Table Story 014 closed 2026-10-08 (not committed):** `/story-done` verdict COMPLETE WITH NOTES (no results file or confirmed total of 2003; implemented inline without a programmer agent; new test's failure path not probed). Story file Status Complete with Completion Notes; Loot Table `EPIC.md` Complete (14/14). The review fix is committed as `14d1304`. Uncommitted: the story file, `EPIC.md`, this file. `main` is 18 ahead of `origin` (not pushed). ADR-012 moves done: Damage Calculation, Loot Table (2 of 9). **Next (pick one, fresh session):** create the Enhancement move story (third in ADR-012's order; check first whether Networking's `EnhancementOutcome` mentions and `IEnhancementBonusProvider` usage from `src/ServerLogic/DamageCalculation` allow it); or `/architecture-decision` for server RNG injection (unblocks Damage Calculation Story 003) or ADR-013 inbound request dispatch (unblocks Enhancement Story 009). PAT rotation is still unconfirmed.
+
 > **Story 014 review fix verified by the user 2026-10-08:** the user re-ran the EditMode suite in the Test Runner after the nested-namespace fix — all tests passed (user report; no results file; the total of 2003 was asked for and not stated). The "NOT yet re-run" in the note below is superseded. **Next:** `/story-done production/epics/loot-table-system/story-014-server-assembly-move.md`. PAT rotation is still unconfirmed.
 
 > **Story 014 code review 2026-10-08 — APPROVED WITH SUGGESTIONS, fix applied (not committed, NOT yet re-run):** inline self-review, no specialist spawned. Fix: `test_server_only_namespaces_have_no_type_outside_server_logic` now also matches nested namespaces (new private helper `IsInNamespace` in `AssemblyBoundary_tests.cs`; doc line in `AssemblyBoundaryLists.cs`). The implementation is committed as `a17ddbf`. Editor still open, so **the user must re-run the EditMode Test Runner and confirm the total is 2003.** **Next:** that result, then `/story-done production/epics/loot-table-system/story-014-server-assembly-move.md`. PAT rotation is still unconfirmed.
@@ -55,6 +57,13 @@
 > **Commit status 2026-10-08 (ADR-012 amendment):** the amended ADR-012 and this file are committed as `54c7856`. The "not committed" / "Uncommitted" notes about the amendment below are superseded. Not pushed: `main` is 6 ahead of `origin` (`origin/main` is at `b6f9dfa`). Uncommitted: this note only. Untracked and left alone: `bash.exe.stackdump`. PAT rotation is still unconfirmed.
 
 > **ADR-012 amended 2026-10-08 — still Proposed (not committed):** B1–B3 and C1–C7 of the review are written into `docs/architecture/ADR-012-server-client-assembly-boundary.md`. The review itself is committed as `78303e7` (the "not committed" in the note above is superseded). Uncommitted: the ADR and this file. `main` is 5 ahead of `origin` (not pushed). **Next (fresh review session):** lean re-review of ADR-012 against `architecture-review-2026-10-08.md` — verify B1–B3 and C1–C7 are closed, nothing else — then the user marks it Accepted. Details in the extract directly below. PAT rotation is still unconfirmed.
+
+## Session Extract — /story-done 2026-10-08 — Loot Table Story 014
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/loot-table-system/story-014-server-assembly-move.md — Move Loot Table to the Server Assembly
+- Notes: suite green by user report only (Editor open, no batch run, total not confirmed); implemented inline; no probe of the new test.
+- Tech debt logged: None
+- Next recommended: None identified (no Ready story). Next ADR-012 move is Enhancement — no story file yet.
 
 ## Session Extract — /story-done 2026-10-08
 - Verdict: COMPLETE WITH NOTES

@@ -3,7 +3,7 @@
 > **Layer**: Core
 > **GDD**: design/gdd/loot-table-system.md
 > **Architecture Module**: Loot Table
-> **Status**: In Progress (13/14 — gameplay Stories 001–013 Complete, 2026-10-02 and 2026-10-03; Story 014, the ADR-012 assembly move, Ready)
+> **Status**: Complete (14/14 — gameplay Stories 001–013 Complete, 2026-10-02 and 2026-10-03; Story 014, the ADR-012 assembly move, Complete 2026-10-08). The code now lives in `src/ServerLogic/LootTableSystem/` (assembly `IronGrind.ServerLogic`).
 > **Stories**: 12 stories created (001–012) on 2026-10-02, Story 013 added 2026-10-03 (winner grace, CR-LT-9.1) — 13 Complete (012 and 013 Complete 2026-10-03). Story 014 added 2026-10-08 (move to `IronGrind.ServerLogic`, ADR-012 Migration Plan step 2).
 
 ## Overview
@@ -62,7 +62,7 @@ This epic is complete when:
 | 011 | Auction Resolution and Gold Pool | Integration | Complete | ADR-010 |
 | 012 | Zone Teardown Loot Flush | Integration | Complete (2026-10-03) | ADR-010 |
 | 013 | Auction Winner Grace | Integration | Complete (2026-10-03) | ADR-010 |
-| 014 | Move Loot Table to the Server Assembly | Integration | Ready (created 2026-10-08) | ADR-012 |
+| 014 | Move Loot Table to the Server Assembly | Integration | Complete (2026-10-08) | ADR-012 |
 
 Work through stories in order — each story's `Depends on:` field tells you what must be Done before you can start it.
 
