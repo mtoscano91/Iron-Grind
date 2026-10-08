@@ -3553,3 +3553,21 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Report: docs/architecture/architecture-review-2026-10-08-adr-013.md. `architecture-traceability.md` updated (ADR-013 row, item 0a, history line, summary corrected).
 - Uncommitted: the report, `architecture-traceability.md`, this file. Untracked and left alone: `bash.exe.stackdump`. PAT rotation is still unconfirmed.
 - **Next (fresh authoring session):** fold R1–R3 into ADR-013, then the user marks it Accepted; then registry entries, `/create-control-manifest update`, the GDD wording pass, Story 003 notes and `/story-readiness`, and the two migration stories.
+
+## Session Extract — ADR-013 amended 2026-10-08 — R1–R3 folded in (still Proposed, not committed)
+- The review above is committed as `38cc6b1` (its "not committed" note is superseded).
+- `docs/architecture/ADR-013-server-random-provider.md` amended in the same session as the review, at the user's instruction:
+  - R1 — Risks: the town hub case (Enhancement only there per CR-ENH-16, own process, safe zone per `npc-shop.md` line 64, so the stream is almost only Enhancement rolls; about a hundred cheap attempts are enough to search the 2³¹ seeds); the logged seed is sensitive and the startup log is handled like a credential. MVP acceptance and the `security-engineer` gate unchanged.
+  - R2 — Decision 3 gains an Enforcement item; Migration Plan step 3 adds a reflection test in `tests/EditMode/Architecture/` (no `System.Random` field or parameter in `IronGrind.ServerLogic` outside `IronGrind.Randomness`; no test type derives from `System.Random`); Validation Criteria rewritten to match, with the source search covering unqualified `new Random(`.
+  - R3 — Context states that the float directly below 0.75 is `0.74999994f` and that `0.7499999f` is the next one down; step 1 adds two adapter cases (`ToUnitFloat(12582911 × 128)` → `0.74999994f`, `ToUnitFloat(12582912 × 128)` → `0.75f`) and has Story 003 script `0.74999994f`; step 4 corrects the AC-DC-F-09b value in the GDD wording pass.
+- `architecture-traceability.md` item 0a updated. Not changed: R4–R7, the GDDs, Story 003, the control manifest, the registry.
+- Not re-reviewed after the amendment.
+- Uncommitted: the ADR, `architecture-traceability.md`, this file. PAT rotation is still unconfirmed.
+- **Next:** the user marks ADR-013 Accepted (optionally after a lean re-review in a fresh session); then registry entries, `/create-control-manifest update`, the GDD wording pass (step 4 plus R6), Story 003 notes and `/story-readiness`, the two migration stories.
+
+## Session Extract — ADR-013 Accepted 2026-10-08
+- `docs/architecture/ADR-013-server-random-provider.md` Status **Accepted (2026-10-08)** by the user's instruction, after R1–R3 were folded in. The amendment was not re-reviewed. The "still Proposed" notes in the two extracts above are superseded.
+- Also updated: ADR-012 line 303 and `architecture-traceability.md` (13 Accepted; row, item 0a, history line).
+- **Still say "Proposed" and need the follow-up session:** `production/epics/damage-calculation/story-003-critical-strike.md` (lines 4, 16, 92; Status Blocked) and that epic's `EPIC.md` (lines 6, 50, 63, 72).
+- Committed together with the R1–R3 amendment, in the commit after `38cc6b1`. Not pushed. PAT rotation is still unconfirmed.
+- **Next (fresh session, pick in this order):** registry entries (5, listed in the ADR-013 authoring extract); `/create-control-manifest update`; GDD wording pass (ADR-013 Migration Plan step 4, plus R6); Story 003 Implementation Notes and QA cases from the ADR, then `/story-readiness`; create the Loot Table and Enhancement migration stories.

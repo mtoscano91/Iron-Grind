@@ -7,10 +7,10 @@
 ## Coverage Summary (domain-level)
 
 - Systems indexed (systems-index.md): 38 Approved with docs (+2 Draft primitives), 6 Not Started UI/Audio/Meta
-- ADRs on disk: 13 (12 Accepted, 1 Proposed — ADR-013 server random provider, written and reviewed 2026-10-08: no blocker, ready for acceptance)
+- ADRs on disk: 13 (13 Accepted — ADR-013 server random provider written, reviewed and Accepted 2026-10-08)
 - Domains with ADR coverage: 13
   - Fully covered: 5 (networking library, navigation execution, navigation lifecycle, HUD UI, combat UI)
-  - Partial or in conflict: 8 (shop transactions, persistence, hosting, zone load/teardown, messaging — inbound requests, async persistence, server/client code isolation — code moved, build-pipeline checks open, server randomness — ADR Proposed, nothing implemented)
+  - Partial or in conflict: 8 (shop transactions, persistence, hosting, zone load/teardown, messaging — inbound requests, async persistence, server/client code isolation — code moved, build-pipeline checks open, server randomness — ADR Accepted, nothing implemented)
 - Schema gaps: 2 (hotbar assignments, respec reservation state)
 - Cross-ADR conflicts: 2 (C1 zone process supervision, C2 teardown order)
 - Per-requirement TR-IDs in `tr-registry.yaml`: **0** — the 12 EPIC files use 94 TR-IDs that are not registered
@@ -31,7 +31,7 @@
 | Cross-system messaging | all gameplay systems | ADR-010 | ⚠️ Partial | Events covered; P1: no decision owns the inbound request dispatcher; naming rule out of step with `src/` |
 | Async persistence in the tick loop | enhancement-system, character-persistence, networking-core, loot-table-system | ADR-011 | ⚠️ Partial | P1 dispatcher, P2 second irreversible outcome with a closed gate, P5 expected `SaveVersion` ownership |
 | Server/client code isolation | damage-calculation, currency-system, hit-detection, enemy-ai, navigation-pathfinding | ADR-012 | ⚠️ Partial | Accepted 2026-10-08 (N1–N5 of the re-review folded in). Decision covered. Migration Plan step 2 implemented 2026-10-08: all nine systems are in `IronGrind.ServerLogic` and the boundary test (Decision 6 check 1) gates `IronGrind.Foundation`. Still partial: the client-binary scan (check 2, closes AC-DC-I-01 and AC-CS-G-01) and the content check (check 3) need a build pipeline |
-| Server randomness | damage-calculation, loot-table-system, enhancement-system, enemy-ai | ADR-013 | ⚠️ Partial | Proposed 2026-10-08; reviewed the same day, no blocker (R1–R7). Decision covers OQ-DC-2, CR-LT-1, the Enhancement roll and CR-AI-12. Nothing implemented: `IRandomProvider` is created by Damage Calculation Story 003; Loot Table and Enhancement still inject `System.Random` |
+| Server randomness | damage-calculation, loot-table-system, enhancement-system, enemy-ai | ADR-013 | ⚠️ Partial | Accepted 2026-10-08 (reviewed the same day, no blocker; R1–R3 folded in, R4–R7 open). Decision covers OQ-DC-2, CR-LT-1, the Enhancement roll and CR-AI-12. Nothing implemented: `IRandomProvider` is created by Damage Calculation Story 003; Loot Table and Enhancement still inject `System.Random` |
 | Core gameplay/data/economy/progression | character-stats, damage-calculation, skill-system, status-effects, equipment-system, enhancement-system, loot-table-system, leveling-system, party-system, et al. | — | No per-system ADR | By design — pure design/data |
 | URP render / VFX | VFX System, Map/Minimap | — | Deferred | GDDs Not Started |
 | Audio | Audio System | — | Deferred | GDD Not Started |
@@ -41,8 +41,8 @@
 Most foundational first (full text in the 2026-10-07 review; item 0 in the 2026-10-08 review):
 
 0. **ADR-012 — Accepted 2026-10-08; follow-ups open.** `/create-control-manifest update` (assembly rules); GDD wording pass (ADR-012 Migration Plan step 5); rewrite Damage Calculation Story 006 against the two-list boundary test — its header still says the ADR does not exist. Currency Group G is eighth in the move order.
-0a. **ADR-013 — reviewed 2026-10-08, ready for acceptance.** Suggested first: R1 (town hub predictability case and the logged seed, in Risks), R2 (reflection test for the `System.Random` ban), R3 (`0.7499999f` is not the float adjacent to 0.75; use `0.74999994f`). After acceptance: registry entries, `/create-control-manifest update`, GDD wording pass (Migration Plan step 4 plus R3 and R6), Story 003 notes, two migration stories. Gate before any public release: `security-engineer` verdict on generator predictability.
-1. **P1 — Inbound request dispatch and full tick order.** No ADR. Suggested: `/architecture-decision` ADR-014 (012 is the assembly boundary; 013 is the server random provider, Proposed 2026-10-08), or an ADR-010 amendment. Blocks Enhancement Story 009.
+0a. **ADR-013 — Accepted 2026-10-08; follow-ups open.** R1–R3 of the review are in the ADR; R4–R7 ride with the follow-ups. Open: registry entries, `/create-control-manifest update`, GDD wording pass (Migration Plan step 4 plus R3 and R6), Story 003 notes, two migration stories. Gate before any public release: `security-engineer` verdict on generator predictability.
+1. **P1 — Inbound request dispatch and full tick order.** No ADR. Suggested: `/architecture-decision` ADR-014 (012 is the assembly boundary; 013 is the server random provider, Accepted 2026-10-08), or an ADR-010 amendment. Blocks Enhancement Story 009.
 2. **C2 / P4 — ADR-009 teardown and startup sequences.** ADR-009 Amendment 1, including the step that creates the one `IRandomProvider` (ADR-013 Decision 4); also the exit call (`Process.Exit(0)` is not a .NET API — engine, unconfirmed).
 3. **C1 — Zone process supervision.** ADR-007 amendment (`Restart=on-failure`, single spawner, `ZoneID` minted at registration).
 4. **P2 / P5 — ADR-011 clarification.** Second irreversible outcome while the gate is closed; who supplies the expected `SaveVersion` for a queued write.
@@ -73,3 +73,4 @@ Other open items:
 | 2026-10-08 | ADR-012 lean re-review: no blocker (project-wide **CONCERNS** unchanged) | 12 (11 Accepted, 1 Proposed) | Amended ADR-012 (`54c7856`): B1–B3 and C1–C7 closed; 5 small items N1–N5; ready for acceptance |
 | 2026-10-08 | ADR-012 **Accepted** (no review run) | 12 (12 Accepted) | N1–N5 folded into the ADR; status changed by the user's instruction |
 | 2026-10-08 | ADR-013 reviewed alone: no blocker (project-wide **CONCERNS** unchanged) | 13 (12 Accepted, 1 Proposed) | Arithmetic, code and GDD claims confirmed; no cross-ADR conflict; 7 small items R1–R7; ready for acceptance |
+| 2026-10-08 | ADR-013 **Accepted** (amendment not re-reviewed) | 13 (13 Accepted) | R1–R3 folded into the ADR; status changed by the user's instruction |
