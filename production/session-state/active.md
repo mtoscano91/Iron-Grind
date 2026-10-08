@@ -3539,3 +3539,17 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
   - `/create-control-manifest update`; Story 003 Implementation Notes and QA cases completed from the ADR, then `/story-readiness`; two migration stories to create (Loot Table, Enhancement).
 - Uncommitted: the ADR, ADR-012, `architecture-traceability.md`, the story, `EPIC.md`, this file. `main` is 33 ahead of `origin` (not pushed). PAT rotation is still unconfirmed.
 - **Next (fresh session):** `/architecture-review` on ADR-013 only (never in the session that authored it), then the user marks it Accepted.
+- Committed as the commit after `6c9123a` with the message "ADR-013: Server Random Provider (Proposed); inbound dispatch renumbered to ADR-014". The "not committed" / "Uncommitted" notes in the extract above are superseded, except for this line. Not pushed: `main` is 34 ahead of `origin`. PAT rotation is still unconfirmed.
+
+## Session Extract — /architecture-review 2026-10-08 — ADR-013 only (not committed)
+- Verdict: **ADR-013 has no blocking issue; ready for acceptance (still Proposed).** Project-wide **CONCERNS**, unchanged.
+- Scope: ADR-013 only plus a project-wide delta check. GDDs not re-read in full; Phases 2–3 matrix not rebuilt; `unity-specialist` not run; TR registry left empty.
+- Requirements: domain level — 13 ADR-backed domains, 5 covered, 8 partial or in conflict, 2 schema gaps (G1, G2).
+- New TR-IDs registered: None.
+- GDD revision flags: None (wording only, after acceptance: `damage-calculation.md`, `loot-table-system.md`, `enemy-ai.md`).
+- Items R1–R7, none blocking: R1 town hub process makes the generator's predictability easy to exploit for Enhancement, and the logged seed is sensitive (name both in Risks; MVP acceptance and the `security-engineer` gate stand); R2 the `System.Random` ban is checked only by a text search that misses unqualified `Random` (`LootTableService.cs:20`, `LootDropRoller.cs:21`) — add a reflection test in Migration Plan step 3; R3 `0.7499999f` is 0.74999988, not the float adjacent to 0.75 (`0.74999994f`) — AC-DC-F-09b and Story 003; R4 `IRandomProvider` vs the `I[SystemName]Service` rule; R5 ADR-009 startup has no step that creates the provider (add to Amendment 1); R6 `enemy-ai.md` does not state its draw count; R7 `ToUnitFloat` doc range, Story 003 estimate and manifest version.
+- Confirmed: Decision 2 arithmetic; six `System.Random` test doubles; nine `DamageCalculator` construction sites; 2009 tests; `GoldMax + 1` cannot overflow (`LootTableValidator.cs:93`); all GDD quotes; no cross-ADR conflict; no cycle.
+- Top ADR gaps: ADR-014 inbound request dispatch + tick order; ADR-009 Amendment 1; ADR-007 amendment (supervision).
+- Report: docs/architecture/architecture-review-2026-10-08-adr-013.md. `architecture-traceability.md` updated (ADR-013 row, item 0a, history line, summary corrected).
+- Uncommitted: the report, `architecture-traceability.md`, this file. Untracked and left alone: `bash.exe.stackdump`. PAT rotation is still unconfirmed.
+- **Next (fresh authoring session):** fold R1–R3 into ADR-013, then the user marks it Accepted; then registry entries, `/create-control-manifest update`, the GDD wording pass, Story 003 notes and `/story-readiness`, and the two migration stories.
