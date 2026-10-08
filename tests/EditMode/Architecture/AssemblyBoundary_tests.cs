@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -41,9 +40,14 @@ namespace IronGrind.Tests.EditMode.Architecture
             public string[] precompiledReferences;
             public bool autoReferenced;
             public string[] defineConstraints;
+            public string[] includePlatforms;
+            public string[] excludePlatforms;
         }
 
-        /// <summary>Shape of the three asmdefs: names, define constraints, autoReferenced (Decision 6 check 1).</summary>
+        /// <summary>
+        /// Shape of the three asmdefs: names, define constraints, autoReferenced (Decision 6 check 1), and
+        /// no platform include/exclude list (Decision 2: platform lists are not used for this boundary).
+        /// </summary>
         [Test]
         public void test_asmdef_shape_matches_adr012()
         {
@@ -60,6 +64,11 @@ namespace IronGrind.Tests.EditMode.Architecture
             Assert.IsFalse(foundation.autoReferenced, "Foundation autoReferenced");
             Assert.IsFalse(server.autoReferenced, "ServerLogic autoReferenced");
             Assert.IsFalse(client.autoReferenced, "Client autoReferenced");
+            foreach (AsmdefData asmdef in new[] { foundation, server, client })
+            {
+                CollectionAssert.IsEmpty(Safe(asmdef.includePlatforms), asmdef.name + " includePlatforms");
+                CollectionAssert.IsEmpty(Safe(asmdef.excludePlatforms), asmdef.name + " excludePlatforms");
+            }
         }
 
         /// <summary>Reference lists of the three asmdefs match ADR-012 Decision 1.</summary>
@@ -214,10 +223,11 @@ namespace IronGrind.Tests.EditMode.Architecture
             string path = CompilationPipeline.GetAssemblyDefinitionFilePathFromAssemblyName(assemblyName);
             Assert.IsFalse(string.IsNullOrEmpty(path), "No asmdef located for " + assemblyName);
 
-            // The path may be a virtual package path; prefer the AssetDatabase, fall back to the file system.
+            // The path is a virtual package path (a file: package has no real Packages/ folder on disk),
+            // so the file is read through the AssetDatabase, never the file system.
             var asset = AssetDatabase.LoadAssetAtPath<TextAsset>(path);
-            string json = asset != null ? asset.text : File.ReadAllText(Path.GetFullPath(path));
-            return JsonUtility.FromJson<AsmdefData>(json);
+            Assert.IsNotNull(asset, "Could not load the asmdef at " + path);
+            return JsonUtility.FromJson<AsmdefData>(asset.text);
         }
 
         private static Type[] GetTypesOrFail(Assembly assembly)
@@ -241,13 +251,13 @@ namespace IronGrind.Tests.EditMode.Architecture
             {
                 return true;
             }
-            if (string.IsNullOrEmpty(outermost.Namespace)
-                && outermost.GetCustomAttribute<CompilerGeneratedAttribute>() != null)
-            {
-                return true;
-            }
-            return outermost.Namespace == "System.Runtime.CompilerServices"
-                || (outermost.Namespace == "Microsoft.CodeAnalysis" && outermost.Name == "EmbeddedAttribute");
+            // Types the compiler embeds (EmbeddedAttribute, IsReadOnlyAttribute, NullableAttribute, ...) and
+            // Unity's generated MonoScript table all carry [CompilerGenerated]. A hand-written type does not,
+            // whatever namespace it is placed in, so it cannot use this exemption to bypass the lists.
+            bool compilerNamespace = string.IsNullOrEmpty(outermost.Namespace)
+                || outermost.Namespace == "System.Runtime.CompilerServices"
+                || outermost.Namespace == "Microsoft.CodeAnalysis";
+            return compilerNamespace && outermost.GetCustomAttribute<CompilerGeneratedAttribute>() != null;
         }
 
         private static IEnumerable<KeyValuePair<string, Type>> EnumerateSignatureTypes(Type type)

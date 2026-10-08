@@ -948,14 +948,15 @@ namespace IronGrind.LevelingSystem
         /// just by convention.
         /// </summary>
         /// <remarks>
-        /// <c>public</c> (widened from <c>internal</c> by ADR-012 Decision 5 because its callers moved to IronGrind.Client; originally a Story 011 test-observability seam,
-        /// mirroring the <see cref="IsLevelingUpInProgress"/>/<c>TestOnly_...</c> idiom elsewhere
-        /// in this class) — lets
+        /// <c>public</c>: widened from <c>internal</c> by ADR-012 Decision 5, because its UI
+        /// callers moved to <c>IronGrind.Client</c>. Originally a Story 011 test-observability
+        /// seam (mirroring the <see cref="IsLevelingUpInProgress"/>/<c>TestOnly_...</c> idiom
+        /// elsewhere in this class) — lets
         /// <c>LevelingSystem_TierAutoAllocFormulaVerification_tests.cs</c> (AC-LS-34) verify this
         /// lookup table's boundary values directly, in isolation from any level-up sequence,
         /// through this one static method. Unlike the <c>TestOnly_...</c> fields, this
         /// method is a permanently-present, unguarded (no <c>#if</c>) seam — acceptable because it
-        /// is side-effect-free and stateless, so there is nothing for other code in this assembly
+        /// is side-effect-free and stateless, so there is nothing for a caller in any assembly
         /// to misuse even in a release build. Logic unchanged by the visibility widening.
         /// </remarks>
         public static float GetLevelTierMultiplier(int level)

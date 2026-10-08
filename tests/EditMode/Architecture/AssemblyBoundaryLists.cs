@@ -15,14 +15,16 @@ namespace IronGrind.Tests.EditMode.Architecture
         /// </summary>
         internal static readonly string[] SharedAllowList =
         {
-            // Ids used by client screens and wire messages.
-            "IronGrind.CharacterStats.EntityID",   // consumer: HUD presenters (target and party frames)
-            "IronGrind.CharacterStats.ItemID",     // consumer: inventory and item tooltip screens
-            "IronGrind.CharacterStats.StatID",     // consumer: stat panel, LevelingFormulaPreview
-            "IronGrind.Currency.CharacterID",      // consumer: HUD and gold display (wire id)
-            "IronGrind.Currency.GoldTransactionReason", // consumer: gold sync event display (wire enum)
+            // Ids used by client screens and wire messages. "planned" marks a consumer that is not built
+            // yet: the type is shared by ADR-012 Decision 6 because it appears in wire messages.
+            "IronGrind.CharacterStats.EntityID",   // consumer: LevelingHudController, RespecScreenPresenter, LevelUpOverlayPresenter
+            "IronGrind.CharacterStats.ItemID",     // consumer (planned): inventory and item tooltip screens
+            "IronGrind.CharacterStats.StatID",     // consumer: RespecScreenPresenter, PlayerResourceClusterPresenter, LevelingFormulaPreview
+            "IronGrind.Currency.CharacterID",      // consumer (planned): client session and gold display (wire id)
+            "IronGrind.Currency.GoldTransactionReason", // consumer (planned): gold sync event display (wire enum)
 
-            // Item Database: static definition data both sides load (whole folder is shared).
+            // Item Database: static definition data both sides load (whole folder is shared, ADR-012
+            // Decision 6). The consumer of every entry below is planned, not built.
             "IronGrind.ItemDatabase.ConsumableData",        // consumer: item tooltip and inventory screens
             "IronGrind.ItemDatabase.EffectType",            // consumer: item tooltip and inventory screens
             "IronGrind.ItemDatabase.ElementType",           // consumer: item tooltip and inventory screens

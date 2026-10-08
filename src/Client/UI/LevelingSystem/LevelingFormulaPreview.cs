@@ -14,22 +14,21 @@ namespace IronGrind.UI.LevelingSystem
     /// <c>LevelingService.RecomputeDerivedStats</c> and its private <c>GetAutoAllocIncrement</c>
     /// helper are <c>private</c>. Story 013's scope explicitly forbids touching Leveling
     /// System production code ("this story only consumes existing APIs... as read-only/call-only
-    /// consumers") -- so even though this UI code lives in the same <c>IronGrind.Foundation</c>
-    /// assembly and could otherwise call an <c>internal</c> member directly (as
-    /// <see cref="LevelingService.GetLevelTierMultiplier"/> already IS called directly by
-    /// <see cref="RespecScreenPresenter"/> and <see cref="LevelUpOverlayPresenter"/> -- that one
-    /// is already <c>internal</c>, so no duplication was needed there), widening
-    /// <c>RecomputeDerivedStats</c>'s or <c>GetAutoAllocIncrement</c>'s visibility was not an
-    /// option this session.</para>
+    /// consumers"), so widening <c>RecomputeDerivedStats</c>'s or <c>GetAutoAllocIncrement</c>'s
+    /// visibility was not an option in that story. (<see cref="LevelingService.GetLevelTierMultiplier"/>
+    /// is called directly by <see cref="RespecScreenPresenter"/> and
+    /// <see cref="LevelUpOverlayPresenter"/>: it is <c>public</c>, so no duplication was needed
+    /// there.) Since ADR-012 this file is in <c>IronGrind.Client</c>, a different assembly from
+    /// <see cref="LevelingService"/>, and can reach only its public members.</para>
     /// <para><b>KNOWN DRIFT RISK.</b> The formula bodies below are copied verbatim from
     /// <c>LevelingService.RecomputeDerivedStats</c> (F-3-F-9) and from
     /// <c>LevelingService.TryApplyRespec</c>'s CR-4.3 floor check
     /// (<c>floor = 10 + (level - 1) * increment</c>), as of Story 013's implementation date.
     /// There is no compiler enforcement keeping these two copies in sync -- if either formula
     /// set changes in <see cref="LevelingService"/>, this file must be updated by hand.
-    /// Flagged in Story 013's completion report for the Leveling System owner: promoting
-    /// <c>RecomputeDerivedStats</c> and <c>GetAutoAllocIncrement</c> to <c>internal</c> in a
-    /// future story would let this file be deleted in favor of calling them directly.</para>
+    /// Flagged in Story 013's completion report for the Leveling System owner. ADR-012
+    /// Decision 7 resolves it in the Leveling move story: the display formulas move to one
+    /// static class in <c>IronGrind.Foundation</c> that both this UI and the server call.</para>
     /// <para>Read-only: this class never writes to <see cref="CharacterStats"/>.</para>
     /// </remarks>
     public static class LevelingFormulaPreview
