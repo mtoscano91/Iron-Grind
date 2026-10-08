@@ -3,8 +3,8 @@
 > **Layer**: Core
 > **GDD**: design/gdd/inventory-system.md
 > **Architecture Module**: Inventory
-> **Status**: Complete (10/10 — Stories 001–009 Complete 2026-10-01; Story 010 Complete 2026-10-07)
-> **Stories**: 9 stories created 2026-09-25 (all Complete 2026-10-01); Story 010 created 2026-10-01 (Complete 2026-10-07)
+> **Status**: Complete (11/11 — Stories 001–009 Complete 2026-10-01; Story 010 Complete 2026-10-07; Story 011, the ADR-012 assembly move, Complete 2026-10-08)
+> **Stories**: 9 stories created 2026-09-25 (all Complete 2026-10-01); Story 010 created 2026-10-01 (Complete 2026-10-07); Story 011 created and Complete 2026-10-08
 
 ## Overview
 
@@ -48,6 +48,7 @@ This epic is complete when:
 | 008 | [NPC Shop Sell & Consumable Use](story-008-sell-and-consume.md) | Logic | Complete | ADR-010 |
 | 009 | [InventorySnapshot Save/Load & Load Validation](story-009-snapshot-save-load.md) | Logic | Complete | ADR-006, ADR-010 |
 | 010 | [Per-Slot Enhancement Level](story-010-enhancement-level.md) | Logic | Complete | ADR-010, ADR-006 (Amendment 1) |
+| 011 | [Move Inventory to the Server Assembly](story-011-server-assembly-move.md) | Integration | Complete (2026-10-08) | ADR-012 |
 
 **GDD AC coverage**: 17 of the original 18 blocking ACs are Complete; the GDD now has 24 (AC-INV-17–22 added 2026-10-01 for the per-slot enhancement level — all six belong to Story 010), and Story 010 closed 2026-10-07, so coverage is 23 of 24. **AC-INV-11** (tapping a consumable opens the detail view without consuming) is pure UI — **deferred to a future Inventory UI epic** (Inventory UI GDD and `design/ux/inventory-screen.md` not yet authored). AC-INV-10 is covered on the inventory side only (Story 007); its "equipped item stays equipped" half belongs to the Equipment System epic.
 

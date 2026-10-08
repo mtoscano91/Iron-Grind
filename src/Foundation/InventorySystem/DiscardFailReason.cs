@@ -1,11 +1,11 @@
 namespace IronGrind.InventorySystem
 {
     /// <summary>
-    /// Why an <see cref="IInventoryService.Discard"/> call did not apply. <see cref="None"/>
+    /// Why an <c>IInventoryService.Discard</c> call did not apply. <see cref="None"/>
     /// indicates success.
     /// </summary>
     /// <remarks>
-    /// Backed by <see cref="byte"/> for IL2CPP efficiency (mirrors <see cref="PickupFailReason"/>).
+    /// Backed by <see cref="byte"/> for IL2CPP efficiency (mirrors <c>PickupFailReason</c>).
     /// Mirrors `design/gdd/networking-wire-protocol.md`'s <c>DiscardFailReason</c> member-for-member
     /// and value-for-value so the future wire codec maps 1:1 — do not add members without updating
     /// the wire GDD first.

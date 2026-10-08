@@ -1,7 +1,7 @@
 namespace IronGrind.InventorySystem
 {
     /// <summary>
-    /// Why an <see cref="IInventoryService.Move"/> call did not apply. <see cref="None"/>
+    /// Why an <c>IInventoryService.Move</c> call did not apply. <see cref="None"/>
     /// indicates success.
     /// </summary>
     /// <remarks>

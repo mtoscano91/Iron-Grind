@@ -3263,3 +3263,33 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: None
 - Nothing committed: 9 staged renames, `AssemblyBoundaryLists.cs`, the Story 013 file (untracked), `EPIC.md`, this file. PAT rotation is still unconfirmed.
 - Next recommended: the Inventory move story (fifth in ADR-012's order) — not yet written. It is larger than the last two: 22 types, and some are likely client-facing (snapshot and result types), so it needs a per-type classification.
+
+## Session Extract — 2026-10-08 (Enhancement Story 013 committed; Inventory Story 011 created)
+- Enhancement Story 013 committed as `7e6b3f4`. The "Nothing committed" note in the /story-done extract above is superseded. Not pushed; PAT rotation is still unconfirmed.
+- Created: production/epics/inventory-system/story-011-server-assembly-move.md — Move Inventory to the Server Assembly (ADR-012 step 2, fifth in the order). The Inventory `EPIC.md` goes back to In Progress (10/11).
+- **Classification decision in the story, to confirm at /story-readiness:** 20 of the 22 types move; `DiscardFailReason` and `MoveFailReason` stay in `Foundation` on the shared allow-list as planned-consumer wire enums (ADR-012 Decision 3 rule 3; `networking-wire-protocol.md` defines both, and the code mirrors them value for value). Consequences: the folder is split, `IronGrind.InventorySystem` is not added to `ServerOnlyNamespaces`, `src/ServerLogic/InventorySystem.meta` is a new Unity-generated file to commit, and the two kept files get a doc-comment-only edit (crefs to moved types become `<c>` text). Alternative not taken: move all 22 as the Enhancement story did.
+- Facts checked at creation: only `EnhancementService`, `GroundItemService`, `LootAuctionService` use the types from outside the folder; no `internal` member or type of another system is used (Inventory shared an assembly with Networking, so this was not compiler-checked before); no serialization attributes; expected lists `NotYetMovedList` 149 → 127, `SharedAllowList` 26 → 28; expected suite total 2003.
+- Uncommitted: the Story 011 file (untracked), `production/epics/inventory-system/EPIC.md`, this file.
+- Next: /story-readiness production/epics/inventory-system/story-011-server-assembly-move.md, then /dev-story.
+
+## Session Extract — /dev-story 2026-10-08 (Inventory Story 011)
+- Story: production/epics/inventory-system/story-011-server-assembly-move.md — Move Inventory to the Server Assembly. The user said "continue" after the classification was put to them: 20 types move, `DiscardFailReason` and `MoveFailReason` stay in `Foundation`.
+- Files changed: 20 `.cs` + 20 `.cs.meta` from `src/Foundation/InventorySystem/` to `src/ServerLogic/InventorySystem/` (40 git renames, 0 lines changed, staged); `DiscardFailReason.cs` and `MoveFailReason.cs` (three doc-comment crefs to moved types became `<c>` text, nothing else); `tests/EditMode/Architecture/AssemblyBoundaryLists.cs` (`NotYetMovedList` 149 → 127, `SharedAllowList` 26 → 28 with the two wire enums, `ServerOnlyNamespaces` unchanged, its doc comment now names Inventory).
+- Test written: none new — the existing boundary tests cover the move through the edited lists.
+- Re-checks at implementation time: only the three `ServerLogic` services use Inventory types from outside the folder; no serialization attribute or by-name type lookup.
+- **Not verified: the EditMode suite has not been run after this move.** The Editor was open at 15:35. Expected total 2003.
+- **Pending file:** `src/ServerLogic/InventorySystem.meta` does not exist yet; Unity generates it on the next refresh and it must be staged with the commit.
+- Nothing committed. PAT rotation is still unconfirmed.
+- Next: user runs the Test Runner (total read from `TestResults.xml`), then /story-done and commit.
+
+## Session Extract — /story-done 2026-10-08 (Inventory Story 011)
+- Verdict: COMPLETE
+- Story: production/epics/inventory-system/story-011-server-assembly-move.md — Move Inventory to the Server Assembly
+- Suite after the move: 2003/2003 passed, read from `TestResults.xml` (15:36 run); no compile error or warning. `src/ServerLogic/InventorySystem.meta` was generated and is staged. The "not verified" and "pending file" notes in the /dev-story extract above are superseded.
+- Code review: inline only, no specialist panel. Inventory `EPIC.md` is Complete (11/11).
+- Tech debt logged: None
+- Nothing committed: 40 staged renames, the new folder `.meta` (staged), the two enum files, `AssemblyBoundaryLists.cs`, the Story 011 file (untracked), the Inventory `EPIC.md`, this file. PAT rotation is still unconfirmed.
+- ADR-012 move order status: Damage Calculation, Loot Table, Enhancement, NPC Interaction, Inventory done (5 of 9). `NotYetMovedList` is 127 (Leveling 8, Networking 108, Currency 5, Character Stats 6).
+- Next recommended: the Leveling move story — not yet written, and not a mechanical move: ADR-012 Decision 7 makes it carry the client read-only views, the respec request interface, the display-formula class and the `LevelingHudManualTestHarness` move to `src/DevHarness/`. Start it in a fresh session.
+
+> **Commit status 2026-10-08 (Inventory Story 011):** committed on `main` with the message "Inventory: Story 011 complete (moved to IronGrind.ServerLogic)" (40 renames, the new folder `.meta`, the two enum files, `AssemblyBoundaryLists.cs`, story, `EPIC.md`, this file). The "Nothing committed" note in the /story-done extract above is superseded. Not pushed. Untracked and left alone: `bash.exe.stackdump`. PAT rotation is still unconfirmed. **Next:** write the Leveling move story (ADR-012 Decision 7 scope) in a fresh session.

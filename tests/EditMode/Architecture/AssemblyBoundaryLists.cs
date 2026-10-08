@@ -44,6 +44,10 @@ namespace IronGrind.Tests.EditMode.Architecture
             "IronGrind.ItemDatabase.ScrollData",            // consumer: item tooltip and inventory screens
             "IronGrind.ItemDatabase.StatModifierEntry",     // consumer: item tooltip and inventory screens
 
+            // Inventory: enums that networking-wire-protocol.md defines as wire enums.
+            "IronGrind.InventorySystem.DiscardFailReason", // consumer (planned): inventory screen (wire enum, DiscardResult message)
+            "IronGrind.InventorySystem.MoveFailReason",    // consumer (planned): inventory screen (wire enum, MoveResult message)
+
             // Class definitions shown by the respec flow.
             "IronGrind.LevelingSystem.ClassDefinition", // consumer: RespecScreenPresenter, LevelingFormulaPreview
             "IronGrind.LevelingSystem.IClassRegistry",  // consumer: RespecScreenPresenter, LevelingFormulaPreview
@@ -57,30 +61,6 @@ namespace IronGrind.Tests.EditMode.Architecture
         /// </summary>
         internal static readonly string[] NotYetMovedList =
         {
-            // ---- Inventory ----
-            "IronGrind.InventorySystem.ConsumeItemFailReason",
-            "IronGrind.InventorySystem.ConsumeItemResult",
-            "IronGrind.InventorySystem.DiscardFailReason",
-            "IronGrind.InventorySystem.DiscardResult",
-            "IronGrind.InventorySystem.IInventoryService",
-            "IronGrind.InventorySystem.InventoryChangedEventArgs",
-            "IronGrind.InventorySystem.InventoryConstants",
-            "IronGrind.InventorySystem.InventoryFullEventArgs",
-            "IronGrind.InventorySystem.InventoryService",
-            "IronGrind.InventorySystem.InventorySlot",
-            "IronGrind.InventorySystem.InventorySnapshot",
-            "IronGrind.InventorySystem.InventorySnapshotEntry",
-            "IronGrind.InventorySystem.MoveFailReason",
-            "IronGrind.InventorySystem.MoveItemInResult",
-            "IronGrind.InventorySystem.MoveItemOutCode",
-            "IronGrind.InventorySystem.MoveItemOutResult",
-            "IronGrind.InventorySystem.MoveResult",
-            "IronGrind.InventorySystem.PickupFailReason",
-            "IronGrind.InventorySystem.PickupResult",
-            "IronGrind.InventorySystem.SellItemFailReason",
-            "IronGrind.InventorySystem.SellItemResult",
-            "IronGrind.InventorySystem.SlotChange",
-
             // ---- Leveling ----
             "IronGrind.LevelingSystem.AllocateFreePointResult",
             "IronGrind.LevelingSystem.IItemReservation",
@@ -221,7 +201,8 @@ namespace IronGrind.Tests.EditMode.Architecture
         /// Namespaces whose every type is server-only, nested namespaces included: none may be defined in <c>IronGrind.Foundation</c>
         /// or <c>IronGrind.Client</c>, and each must have at least one type in <c>IronGrind.ServerLogic</c>.
         /// A move story adds its namespace here only if the whole namespace moved. Namespaces that keep
-        /// shared types in <c>Foundation</c> (Networking, Currency, Character Stats, Leveling) are not listed.
+        /// shared types in <c>Foundation</c> (Networking, Currency, Character Stats, Leveling,
+        /// Inventory) are not listed.
         /// </summary>
         internal static readonly string[] ServerOnlyNamespaces =
         {
