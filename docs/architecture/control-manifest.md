@@ -1,9 +1,9 @@
 # Control Manifest
 
 > **Engine**: Unity 6.3 LTS (6000.3)
-> **Last Updated**: 2026-10-07
-> **Manifest Version**: 2026-10-07
-> **ADRs Covered**: ADR-001, ADR-002, ADR-003, ADR-004, ADR-005, ADR-006, ADR-007, ADR-008, ADR-009, ADR-010, ADR-011 (and ADR-006 Amendment 1, 2026-10-01)
+> **Last Updated**: 2026-10-08
+> **Manifest Version**: 2026-10-08
+> **ADRs Covered**: ADR-001, ADR-002, ADR-003, ADR-004, ADR-005, ADR-006, ADR-007, ADR-008, ADR-009, ADR-010, ADR-011, ADR-012 (and ADR-006 Amendment 1, 2026-10-01)
 > **Status**: Active — regenerate with `/create-control-manifest update` when ADRs change
 
 `Manifest Version` is the date this manifest was generated. Story files embed this date when created. `/story-readiness` compares a story's embedded version to this field to detect stories written against stale rules. Always matches `Last Updated` — they are the same date, serving different consumers.
@@ -14,9 +14,30 @@ This manifest is a programmer's quick-reference extracted from all Accepted ADRs
 
 ## Foundation Layer Rules
 
-*Applies to: scene management, event architecture, save/load, engine initialisation, networking substrate, persistence, hosting infrastructure*
+*Applies to: scene management, event architecture, save/load, engine initialisation, networking substrate, persistence, hosting infrastructure, assembly layout*
+
+"Foundation layer" here is a layering term. It is not the assembly `IronGrind.Foundation`, which is the shared assembly of ADR-012; most of this layer's code is server-only and lives in `IronGrind.ServerLogic` — source: ADR-012
 
 ### Required Patterns
+
+**Server/client assembly boundary (ADR-012):**
+- Three assemblies: `IronGrind.Foundation` (`src/Foundation/`, in both builds; may reference Unity engine assemblies and approved packages only), `IronGrind.ServerLogic` (`src/ServerLogic/`, server build only; may reference `IronGrind.Foundation` and the named server-only DLLs), `IronGrind.Client` (`src/Client/`, client build only; may reference `IronGrind.Foundation`). `ServerLogic` and `Client` do not reference each other; `Foundation` references neither — source: ADR-012
+- Define constraints, exactly: `IronGrind.ServerLogic` → `["UNITY_SERVER || UNITY_EDITOR"]`; `IronGrind.Client` → `["!UNITY_SERVER || UNITY_EDITOR"]` — source: ADR-012
+- All three assemblies are `autoReferenced: false`; any script under `Assets/` that uses project code gets its own asmdef with explicit references — source: ADR-012
+- Classify every type by asking in this order, the first "yes" decides: (1) references UI Toolkit, UGUI, rendering, audio or input, or exists only to present → `Client`; (2) computes, validates or mutates authoritative game state, or holds a formula, probability, tuning value, roll, or a rule the player must not be able to read or replace → `ServerLogic`; (3) both sides need it to talk to each other or to describe the same thing (ids, wire enums and structs, wire message schemas, static definitions the client displays) → `Foundation`; (4) otherwise → `ServerLogic` — source: ADR-012
+- Result types follow their producer unless the client receives them (`DamageResult`, `DamageContext` are `ServerLogic`; the client gets the wire message built from them) — source: ADR-012
+- An interface lives with its consumer. An interface declared so that `Foundation` code can call into server logic is `Foundation`, and its signature must not carry a server-only type — source: ADR-012
+- Shared by decision: every type in `src/Foundation/ItemDatabase/` (no move story), and the class data `ClassDefinition`, `IClassRegistry`, `ClassRegistry` — source: ADR-012
+- A move is a folder and assembly change only: namespaces do not change; the `.cs` and its `.meta` move together (GUID preserved); a moved type that is serialized through `[SerializeReference]` or stored by name gets `[MovedFrom(true, sourceAssembly: "IronGrind.Foundation")]` and its assets are re-saved; `src/` is searched for `Type.GetType`, `AssemblyQualifiedName` and `TypeNameHandling` — source: ADR-012
+- Move order (users first, the most depended-on last): Damage Calculation → Loot Table → Enhancement → NPC Interaction → Inventory → Leveling → Networking (server part, classified file by file) → Currency → Character Stats. Each move story re-checks the graph first (grep for the system's type names outside its folder), deletes its entries from the boundary test's not-yet-moved list, adds what stays shared to the allow-list, and leaves the suite green — source: ADR-012
+- New systems (Hit Detection, Enemy AI, Navigation/Pathfinding, Auto-Attack Combat, Status Effects) are written in `src/ServerLogic/` from their first story — source: ADR-012
+- Npgsql and Dapper are referenced by `IronGrind.ServerLogic` only, and each DLL is itself absent from a client player under the same condition (`UNITY_SERVER || UNITY_EDITOR`) — source: ADR-012, ADR-006
+- A `NetworkBehaviour` on a prefab clients also instantiate lives in `IronGrind.Foundation` as a thin shell: it declares what NGO needs and hands server-side calls to an interface declared in `Foundation` and implemented in `ServerLogic`, supplied by the server composition root (constructor or `Initialize` injection); on the client the interface is not supplied — source: ADR-012, ADR-010
+- Wire message schemas and the code that reads and writes them are `Foundation`. Server-side handlers for inbound messages are registered by the server composition root in `ServerLogic`; client-side handlers by the client composition root in `Client`. A server handler validates the envelope and enqueues for the tick — source: ADR-012, ADR-004, ADR-010
+- The server composition root and its bootstrap component are in `IronGrind.ServerLogic`; the client's are in `IronGrind.Client`. Server-only components are created in code by the server composition root or live in server-only scenes that are not in the client build profile's scene list — source: ADR-012
+- Tests: the single test assembly `IronGrind.Foundation.EditModeTests` references all three assemblies; each new assembly has its own `AssemblyInfo.cs` with `InternalsVisibleTo("IronGrind.Foundation.EditModeTests")` — source: ADR-012
+- Boundary test (`tests/EditMode/Architecture/`, runs with the EditMode suite): asserts the asmdef names, the two constraint strings, `autoReferenced: false` and the reference lists; asserts per type that every type in `IronGrind.Foundation` is on the shared allow-list (each entry with its client consumer named in a comment) or on the not-yet-moved list (which only shrinks); asserts that no `Foundation` or `Client` type has a field, property, parameter or base type from `ServerLogic`. The asmdef files are located through `CompilationPipeline.GetAssemblyDefinitionFilePathFromAssemblyName` — source: ADR-012
+- Build checks: a client-binary scan under `tools/` fails a client build that contains `IronGrind.ServerLogic`, `Npgsql`, `Dapper` or a forbidden type name, and must be shown to fail on a deliberately misplaced type; a content check fails a client build whose assets depend on a script under `src/ServerLogic/`, a Dedicated Server build whose assets depend on a script under `src/Client/`, and either build on a script under `src/DevHarness/` — source: ADR-012
 
 **Purchase transaction integrity (ADR-001):**
 - `BuyRequest` and `SellRequest` must carry `requestId: uint` (monotonically incrementing per session; resets on each new `OpenNPCInteraction`) — source: ADR-001
@@ -43,7 +64,7 @@ This manifest is a programmer's quick-reference extracted from all Accepted ADRs
 - All SQL is explicit parameterized SQL — no dynamic query generation, no ORM change tracking — source: ADR-006
 - Optimistic-concurrency UPDATE: `WHERE character_id = @id AND save_version = @expected`; rows-affected = 0 → return `ConcurrencyConflict` — source: ADR-006
 - `PendingPurchase` INSERT and `TrySpendGold` UPDATE share one `NpgsqlTransaction` — source: ADR-006
-- IL2CPP `link.xml` must preserve Npgsql and Dapper: `<assembly fullname="Npgsql" preserve="all" />` + `<assembly fullname="Dapper" preserve="all" />` — source: ADR-006
+- IL2CPP `link.xml` must preserve Npgsql and Dapper: `<assembly fullname="Npgsql" preserve="all" />` + `<assembly fullname="Dapper" preserve="all" />` — source: ADR-006. The `link.xml` is project-wide and must not be what brings the DLLs into a client build — source: ADR-012
 - At-most-one write in flight per `CharacterID` (service-layer per-CharacterID write-queue) — source: ADR-006
 - Per-zone-process connection pool: `MaxPoolSize=10, MinPoolSize=2` (ADR-007 authoritative for the connection string; ADR-006's pre-topology estimate of 20 is superseded by ADR-007) — source: ADR-007
 - Each non-null `inventory_slots` JSONB entry is `{"item_id": N, "count": C, "enhancement_level": M}` with `0 ≤ M ≤ MAX_ENHANCEMENT_LEVEL`; the deserializer treats a missing `enhancement_level` key as 0 — source: ADR-006 Amendment 1
@@ -53,7 +74,7 @@ This manifest is a programmer's quick-reference extracted from all Accepted ADRs
 - `ITickCompletionQueue.Drain()` runs once per tick, before any game logic of that tick. For every tracked task whose `IsCompleted` is true, in the order the tasks were tracked, it invokes the callback on the tick thread with a `TickTaskResult<T>` (`Completed` / `Faulted` / `Canceled` / `TimedOut`). `Drain` reads `Task.IsCompleted` only, never throws into the tick, and an exception thrown by one callback is caught and logged without stopping the rest — source: ADR-011
 - `Track` and `Drain` are called from the tick thread only; both assert it — source: ADR-011
 - Watchdog: a task still incomplete `PERSISTENCE_WATCHDOG_TICKS` (200 = 10 s) after it was tracked has its `CancellationToken` cancelled, a critical alert raised, and its callback invoked with `TimedOut`. The persistence layer's own `PERSISTENCE_WRITE_TIMEOUT_SECONDS` (5 s, ADR-006) fires first; the watchdog is the backstop. A cancelled write has an unknown outcome. A late completion of a timed-out task is logged and its `Exception` is read — source: ADR-011
-- Shutdown drain: in the zone teardown sequence, after the tick loop has stopped and before `Process.Exit(0)`, one bounded blocking wait on all tracked tasks (timeout = the watchdog duration; `AggregateException` caught, not rethrown), then one last `Drain`. Incomplete tasks after the timeout are logged and alerted. It runs on the explicit shutdown path, not from `OnApplicationQuit` — source: ADR-011, ADR-009
+- Shutdown drain (`ITickCompletionQueue.DrainOnShutdown(TimeSpan timeout)`): in the zone teardown sequence, after the tick loop has stopped and before `Process.Exit(0)`, one bounded blocking wait on all tracked tasks (timeout = the watchdog duration; `AggregateException` caught, not rethrown), then one last `Drain`. Incomplete tasks after the timeout are logged and alerted. It runs on the explicit shutdown path, not from `OnApplicationQuit` — source: ADR-011, ADR-009
 - `ICharacterPersistence` implementations copy everything they need from live game state before their first `await`, on the calling (tick) thread; after it they touch only that copy and the database — source: ADR-011
 - `ICharacterPersistence` implementations use `ConfigureAwait(false)` on every `await` (including `await using` / `await foreach`); if an awaited call cannot be trusted not to capture the context, the method runs its body through `Task.Run` after the snapshot. Every `TaskCompletionSource` in the persistence layer and in test fakes uses `TaskCreationOptions.RunContinuationsAsynchronously` — source: ADR-011
 - `ICharacterMutationGate`: closed by the irreversible-outcome coordinator before the outcome is applied in memory, opened after the result has been handled (success or rollback; opened in a `finally`). `Close` on an already closed gate is an error — one write in flight per character — source: ADR-011
@@ -119,6 +140,19 @@ This manifest is a programmer's quick-reference extracted from all Accepted ADRs
 - **Never `await` in the persistence layer without `ConfigureAwait(false)`** (including `await using` and `await foreach`), and never create a `TaskCompletionSource` there or in a test fake without `TaskCreationOptions.RunContinuationsAsynchronously` — a captured Unity context is invisible in EditMode tests and stalls or delays writes on the server — source: ADR-011
 - **Never use `UnityEngine.Awaitable` for tick logic** — it resumes at player-loop points, not at a point of `ServerTickLoop` — source: ADR-011
 - **Never retry a failed irreversible write** — any non-success code, fault, cancellation or watchdog timeout takes the failure branch once — source: ADR-011 (CR-NET-5.5)
+- **Never rely on the `[Server]` attribute or on IL2CPP managed stripping to keep server code out of the client** — `[Server]` blocks execution, not shipping; stripping keeps anything reachable — source: ADR-012
+- **Never wrap a type that must not ship to the client in `#if UNITY_SERVER`** — move it to `IronGrind.ServerLogic`; `#if UNITY_SERVER` stays legal only for small differences inside `Foundation`, and not in code under test — source: ADR-012
+- **Never use a bare `UNITY_SERVER` define constraint** — it removes the assembly from the Editor, and with it the EditMode suite — source: ADR-012
+- **Never use asmdef platform include/exclude lists for the server/client boundary** — there is no Dedicated Server platform name, and the server and a desktop client share a platform — source: ADR-012
+- **Never use `InternalsVisibleTo` between production assemblies** — the member becomes public, or the type is in the wrong assembly — source: ADR-012
+- **Never put a rule, a formula or a constant in an RPC body or in message-handling code in `Foundation`** — the body ships in the client binary whatever its target; it contains nothing but enqueueing through a `Foundation` interface — source: ADR-012
+- **Never add a server-only `NetworkBehaviour` to a prefab the client also instantiates** — NGO addresses behaviours by index on the `NetworkObject`, so both sides need the same component list — source: ADR-012
+- **Never reference a `MonoBehaviour`, `ScriptableObject` or `[SerializeReference]` type of `IronGrind.ServerLogic` from a scene, prefab, Addressables group or asset in a client build; never a `IronGrind.Client` one from a scene or asset the Dedicated Server loads; never a `IronGrind.DevHarness` one from either** — it serializes without error in the Editor and is a missing script at runtime — source: ADR-012
+- **Never build server logic as a separate project or precompiled DLL** — cost out of proportion for a solo project; the define-constrained assembly gives the same guarantee for the binary — source: ADR-012
+- **Never use `BuildReport.packedAssets`, `CompilationPipeline.GetAssemblies` or the `Library/Bee` folders for the client-binary scan** — assets not assemblies; the Editor's active target, not the build in progress; internal layout — source: ADR-012
+- **Never hard-code the path of an `.asmdef` in the boundary test** — a `file:` package has no real `Packages/com.irongrind.src/` folder on disk — source: ADR-012
+- **Never let a PlayMode test assembly reference `IronGrind.ServerLogic` unless it is Editor-only or carries the same define constraint** — it fails to compile for a client player — source: ADR-012
+- **Never distribute a client build before the move stories are complete** — until a system's move is done its code is still in the client build — source: ADR-012
 
 ### Performance Guardrails
 
@@ -131,6 +165,7 @@ This manifest is a programmer's quick-reference extracted from all Accepted ADRs
 - **Per-client batch body**: ≤ 512 bytes (F-NET-6) — source: ADR-004
 - **Zone server load time**: < 500ms at MVP asset scope — source: ADR-009
 - **NGO channel mapping — identifiers are verification-pending**: `ReliableSequenced` / `Reliable` / `Unreliable` / `ReliableFragmentedSequenced` are the proposed identifiers per ADR-004 Decision 2, but the Unity 6.3 NGO/UTP API is post-LLM-cutoff. The guarantee mapping (R-OD/R-U/U-U) is binding; confirm exact enum member names against the engine reference before writing networking code — source: ADR-004
+- **Assembly boundary — engine behaviour is verification-pending**: confirm each item on the first build or story that exercises it — (1) a client player contains no `IronGrind.ServerLogic`; (2) a Linux Dedicated Server IL2CPP build contains it and runs; (3) whether `UNITY_SERVER` is defined in the Editor under a server build profile; (4) whether asmdef platform lists offer a Dedicated Server entry (not relied on); (5) `IPostBuildPlayerScriptDLLs` and the output file locations for the client-binary scan; (6) `[MovedFrom]` for `[SerializeReference]` data when a type changes assembly; (7) the import setting that keeps Npgsql and Dapper out of a client player; (8) whether a `MonoBehaviour` in an assembly constrained to `UNITY_EDITOR` can be attached to a scene object — source: ADR-012
 
 ---
 
@@ -172,6 +207,9 @@ This manifest is a programmer's quick-reference extracted from all Accepted ADRs
 - Unsubscribe in `Dispose()` (server) or `OnDestroy()`/`OnDisable()` (client) — source: ADR-010
 - If invocation order between two subscribers matters: collapse into one subscriber or use explicit Tier 1 call ordering — source: ADR-010
 
+**Assembly placement — Core tier (ADR-012):**
+- Server-authoritative core logic — resolvers and services, their configs, server state machines, the tick loop, RPC guards and server-side validation — is `IronGrind.ServerLogic`. Hit Detection, Navigation/Pathfinding and Auto-Attack Combat are written in `src/ServerLogic/` from their first story (see Foundation → Server/client assembly boundary) — source: ADR-012
+
 ### Forbidden Approaches
 
 - **Never call `Navigation.Tick()` or `SyncAgentPositions()` outside `ZoneNavigationService` and the canonical tick phase** — source: ADR-002
@@ -185,6 +223,7 @@ This manifest is a programmer's quick-reference extracted from all Accepted ADRs
 - **Never call `Resume()` from Dormant re-aggro** — Dormant always requires `SetDestination` (no preserved path) — source: ADR-003
 - **Never use lambda captures for persistent event subscriptions** — not unsubscribeable by reference — source: ADR-010
 - **Never use `await`, `async` methods, `Task.Result`, `Task.Wait()`, `GetAwaiter().GetResult()`, `ContinueWith` or `async void` in tick-driven core code** — start the `Task` and pass it to `ITickCompletionQueue.Track` — source: ADR-011
+- **Never place a formula that decides an outcome the player does not see computed (damage, crit) in `IronGrind.Foundation`** — it would ship in the client — source: ADR-012
 
 ### Performance Guardrails
 
@@ -203,6 +242,8 @@ This manifest is a programmer's quick-reference extracted from all Accepted ADRs
 - `readonly struct` event arg types declared in the shared `IronGrind.Events` namespace (one file per type: `MobDeathContext.cs`, `StatChangedArgs.cs`, etc.) — source: ADR-010
 - Server-originated bag mutations that get a synchronous result and cannot be queued (loot auto-pickup, auction delivery) read `ICharacterMutationGate.IsHeld(charId)` before mutating. If held, the mutation is **not attempted** — no bag-full result, no client notice — and the caller retries on the first tick after `OnGateOpened(charId)` — source: ADR-011
 - Every irreversible outcome (enhancement result, level-up, respec, item consumption) goes through `IrreversibleOutcomeCoordinator`: `Begin` on tick N (validate → close gate → acknowledge → compute and apply in memory → start the write → `Track`); the completion callback on tick N+k delivers on `Success`, or reverts, disconnects, alerts and preserves the session on any failure. For the Enhancement System: `BeginAttempt` in `Begin`, `CompleteAttempt` on success, `RollBackAttempt` on failure — source: ADR-011
+- Feature services and their configs (`EnhancementService`, `LootAuctionService`, `GroundItemService`, `EnhancementConfig`, …) are `IronGrind.ServerLogic`; Enemy AI and Status Effects are written in `src/ServerLogic/` from their first story — source: ADR-012
+- A feature type goes in `IronGrind.Foundation` only with a named client consumer, and is added to the boundary test's shared allow-list with that consumer in a comment; a new type in `Foundation` that is on neither list fails the test — source: ADR-012
 
 ### Forbidden Approaches
 
@@ -211,6 +252,7 @@ This manifest is a programmer's quick-reference extracted from all Accepted ADRs
 - **Never use class-typed event args** — forces heap allocation on every emit; use `readonly struct` — source: ADR-010
 - **Never use `await`, `async` methods, `Task.Result`, `Task.Wait()`, `GetAwaiter().GetResult()`, `ContinueWith` or `async void` in tick-driven feature code** — start the `Task` and pass it to `ITickCompletionQueue.Track` — source: ADR-011
 - **Never hold, reject or defer a client request inside a game system because a write is in flight, and never read `ICharacterMutationGate` from a game system** — the request dispatcher is the single enforcement point; the only readers of the gate are the dispatcher and the server-originated bag mutators named above — source: ADR-011
+- **Never place a drop roll, enhancement odds or any other outcome formula in `IronGrind.Foundation`** — only a formula whose result the game shows the player, and which the client must evaluate to draw a screen, may be there — source: ADR-012
 
 ---
 
@@ -245,6 +287,13 @@ This manifest is a programmer's quick-reference extracted from all Accepted ADRs
 - `SkillBarState` and `SlotState` are `struct` types — zero heap allocation on copy — source: ADR-008
 - `[SerializeField]` on fields only — compile error on properties in Unity 6.3 — source: ADR-008 / ADR-009
 
+**What the client reads (ADR-012):**
+- UI and presentation code is in `IronGrind.Client` (`src/Client/`), which references `IronGrind.Foundation` only — source: ADR-012
+- Presenters read the local player's state only through read-only view interfaces declared in `Foundation` (working names `ILocalPlayerStatsView`, `ILocalPlayerLevelingView`); the client implementation is a mirror filled from the server's state and event messages, and is `Client` code — source: ADR-012
+- A player action on a screen goes out through a request interface declared in `Foundation` (working name `IRespecRequestSender`) whose client implementation sends the message; the server validates and applies, and the result comes back as state — source: ADR-012
+- A formula the client must evaluate to draw a screen, and whose result the game shows the player anyway (experience threshold, level tier multiplier, derived-stat preview), lives in a static class in `Foundation`, in one copy that `ServerLogic` also calls, with its client consumer named — source: ADR-012
+- The manual HUD harness is in `IronGrind.DevHarness` (`src/DevHarness/`, define constraint `UNITY_EDITOR`, in no player build); a device harness, if wanted, drives the read-only views with fake data — source: ADR-012
+
 ### Forbidden Approaches
 
 - **Never use `VisualElement.transform` setter** — deprecated in Unity 6.2; use `style.translate`, `style.rotate`, `style.scale` — source: ADR-005
@@ -257,6 +306,9 @@ This manifest is a programmer's quick-reference extracted from all Accepted ADRs
 - **Never use HLSL shader background-image material for the cooldown arc** — post-cutoff integration risk for material-property-block UI Toolkit in Unity 6.3; Painter2D is the first-class API for this pattern — source: ADR-008
 - **Never write VisualElement properties directly from NGO message handlers** — use `Queue<T>` decoupling; keeps network and UI layers independently testable — source: ADR-008
 - **Never use deprecated UI Toolkit event API names in any combat UI C# file**: `ExecuteDefaultAction`, `ExecuteDefaultActionAtTarget`, `PreventDefault()` — CI lint gate enforces this — source: ADR-008
+- **Never name a service or the `CharacterStats` class in `IronGrind.Client`** (`LevelingService` after the Leveling move, `CharacterStats` after the Character Stats move) — the client reads views — source: ADR-012
+- **Never call `TryApplyRespec`, `RegisterPlayerEntity` or `AttachCharacterStats` from client code** — the server validates and applies — source: ADR-012
+- **Never put a `IronGrind.Client` `MonoBehaviour` or `ScriptableObject` in a scene or asset the Dedicated Server loads (zone scenes)** — it is a missing script there; presentation components are added by the client composition root or live in client-only scenes — source: ADR-012, ADR-009
 
 ### Performance Guardrails
 
@@ -321,6 +373,8 @@ Source: `docs/engine-reference/unity/deprecated-apis.md`
 - **C# null-coalescing operators (`?.`, `??`) do not work correctly with Unity `Object` subclasses** — use explicit null checks instead — source: `current-best-practices.md`
 - **`async/await` with `LoadSceneAsync`**: use `yield return op` in a coroutine — `await` does not guarantee `Awake()`/`Start()` complete before the continuation in headless builds — source: ADR-009
 - **No `await` in server tick code**: tick-driven server code in every layer starts a `Task` and hands it to `ITickCompletionQueue`; it never awaits or blocks on it (see Foundation → Asynchronous persistence in the tick loop). `UnityEngine.Awaitable` is not used for tick logic — source: ADR-011
+- **Folder encodes build membership**: `src/Foundation/` ships in both builds, `src/ServerLogic/` in the server only, `src/Client/` in the client only, `src/DevHarness/` in neither. Server-only is the default for game logic (see Foundation → Server/client assembly boundary) — source: ADR-012
+- **Until a system's move story is done, its code is still in `IronGrind.Foundation` and in the client build**: new code for a not-yet-moved system follows that system's current folder; the boundary test's not-yet-moved list is the record of what remains — source: ADR-012
 - **`[SerializeField]` on properties**: compile error in Unity 6.3 — use on private fields only; or use `[field: SerializeField]` for auto-property backing fields — source: ADR-009, `current-best-practices.md`
 - **USS syntax errors block import** in Unity 6.3 (was a warning in 6.1/6.2) — all USS must be valid before commit; add USS linting to CI — source: ADR-005
 - **SRP Batcher**: enable in URP Asset → Advanced → SRP Batcher for significant CPU win on mobile — source: `current-best-practices.md`
