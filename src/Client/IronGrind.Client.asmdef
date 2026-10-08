@@ -1,14 +1,18 @@
 {
-    "name": "IronGrind.Foundation",
+    "name": "IronGrind.Client",
     "rootNamespace": "",
-    "references": [],
+    "references": [
+        "IronGrind.Foundation"
+    ],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
     "overrideReferences": false,
     "precompiledReferences": [],
     "autoReferenced": false,
-    "defineConstraints": [],
+    "defineConstraints": [
+        "!UNITY_SERVER || UNITY_EDITOR"
+    ],
     "versionDefines": [],
     "noEngineReferences": false
 }

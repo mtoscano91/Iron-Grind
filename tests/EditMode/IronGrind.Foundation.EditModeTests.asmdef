@@ -2,7 +2,9 @@
     "name": "IronGrind.Foundation.EditModeTests",
     "rootNamespace": "",
     "references": [
-        "IronGrind.Foundation"
+        "IronGrind.Foundation",
+        "IronGrind.ServerLogic",
+        "IronGrind.Client"
     ],
     "includePlatforms": [
         "Editor"

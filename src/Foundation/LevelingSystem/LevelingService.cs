@@ -948,17 +948,17 @@ namespace IronGrind.LevelingSystem
         /// just by convention.
         /// </summary>
         /// <remarks>
-        /// <c>internal</c> rather than <c>private</c> (Story 011 test-observability seam,
+        /// <c>public</c> (widened from <c>internal</c> by ADR-012 Decision 5 because its callers moved to IronGrind.Client; originally a Story 011 test-observability seam,
         /// mirroring the <see cref="IsLevelingUpInProgress"/>/<c>TestOnly_...</c> idiom elsewhere
         /// in this class) — lets
         /// <c>LevelingSystem_TierAutoAllocFormulaVerification_tests.cs</c> (AC-LS-34) verify this
         /// lookup table's boundary values directly, in isolation from any level-up sequence,
-        /// without adding any new public API surface. Unlike the <c>TestOnly_...</c> fields, this
+        /// through this one static method. Unlike the <c>TestOnly_...</c> fields, this
         /// method is a permanently-present, unguarded (no <c>#if</c>) seam — acceptable because it
         /// is side-effect-free and stateless, so there is nothing for other code in this assembly
         /// to misuse even in a release build. Logic unchanged by the visibility widening.
         /// </remarks>
-        internal static float GetLevelTierMultiplier(int level)
+        public static float GetLevelTierMultiplier(int level)
         {
             if (level >= 60) return 2.0f;
             if (level >= 40) return 1.5f;
