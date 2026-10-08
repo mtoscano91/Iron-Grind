@@ -272,6 +272,7 @@ max(1, 422) = 422  →  DamageResult.FinalDamage = 422
 
 - **If `CritChance = 0.75` and roll `r = 0.75` exactly**: `0.75 < 0.75` = false → `IsCrit = false`. The strict `<` operator is load-bearing — the GDD specifies strict less-than and the crit rate approaches but never exactly reaches 75%.
 
+- **If `CritMultiplier` reads below `1.0` on a crit** (the attacker's stat was never set, so Character Stats' absent-stat rule returns `0.0` instead of the clamped minimum): the resolver uses `1.0`. `FinalDamage` equals the normal hit, `IsCrit = true` is still reported, and a dev error is logged in editor and development builds only. Nothing is logged on a non-crit hit. (User decision 2026-10-08.)
 - **If `CritMultiplier = 1.0` and `IsCrit = true`**: `FinalDamage` is numerically identical to a normal hit. `DamageResult.IsCrit = true` still fires. VFX/audio must key on `IsCrit` directly — not on whether the number is visibly larger. A crit at minimum multiplier still plays crit effects.
 
 - **If target's `CurrentHP = 0.0` when `DamageCalculation` is called**: Kill detection would re-fire on an already-dead entity — callers must never invoke `DamageCalculation` on a dead target. Damage Calculation is a defensive second layer: if `CurrentHP = 0.0` at Step 10, log a dev error and return `IsKill = false` without calling `AddExperience` or `OnEntityDied`. Auto-Attack Combat must gate on target liveness before invoking Damage Calculation.

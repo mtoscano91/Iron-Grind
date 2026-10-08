@@ -3,7 +3,7 @@
 > **Layer**: Core
 > **GDD**: design/gdd/damage-calculation.md
 > **Architecture Module**: Damage Calc
-> **Status**: In Progress (5/7 — 5 Complete, 0 Ready, 2 Blocked: 003 on ADR-013, written 2026-10-08 and still Proposed, 007 on the client build pipeline)
+> **Status**: In Progress (5/7 — 5 Complete, 1 Ready: 003, 1 Blocked: 007 on the client build pipeline)
 > **Stories**: 6 stories created 2026-10-07 (001–006); 006 rewritten and 007 split from it 2026-10-08
 
 ## Overview
@@ -47,7 +47,7 @@ This epic is complete when:
 |---|-------|------|--------|-----|
 | 001 | Result Types, Tuning Config, Physical Mitigation and Final Floor | Logic | Complete (2026-10-07) | none (design-only) |
 | 002 | Elemental Bonus and Mitigation | Logic | Complete (2026-10-08) | none (design-only) |
-| 003 | Critical Strike with Injected Server RNG | Logic | Blocked — OQ-DC-2 (ADR-013 Server Random Provider is Proposed, not yet Accepted) | ADR-013 (Proposed) |
+| 003 | Critical Strike with Injected Server RNG | Logic | Ready (2026-10-08; also creates `IRandomProvider`, `SystemRandomProvider` and the shared test doubles) | ADR-013 |
 | 004 | Kill Detection and Dead-Entity Guard | Logic | Complete (2026-10-08) | none (design-only) |
 | 005 | Kill Sequence Against Real Character Stats | Integration | Complete (2026-10-08) | none (design-only) |
 | 006 | Server Assembly Isolation — First Move and Boundary Test | Integration | Complete (2026-10-08) | ADR-012 |
@@ -60,7 +60,7 @@ Work through stories in order — each story's `Depends on:` field tells you wha
 **Update 2026-10-08**: ADR-012 is Accepted. Story 006 now covers the first move and the boundary test; AC-DC-I-01 itself (a scan of a real client build) is Story 007, which waits for a client build pipeline. The epic cannot close until Story 007 is done.
 
 **ADRs still to write** (`/architecture-decision`):
-- Server RNG injection contract (OQ-DC-2) — `docs/architecture/ADR-013-server-random-provider.md`, **Proposed 2026-10-08**; blocks Story 003 until Accepted. It rules on the existing `System.Random` injection in Enhancement and Loot Table (both migrate to `IRandomProvider` in two later stories) and on how a float in [0.0, 1.0) is produced (24 bits of one integer draw, no rounding).
+- Server RNG injection contract (OQ-DC-2) — `docs/architecture/ADR-013-server-random-provider.md`, **Accepted 2026-10-08**; Story 003 is completed from it. It rules on the existing `System.Random` injection in Enhancement and Loot Table (both migrate to `IRandomProvider` in two later stories) and on how a float in [0.0, 1.0) is produced (24 bits of one integer draw, no rounding).
 - Server tick ordering for sequential damage resolution per entity (OQ-DC-4, double-kill race) — no story here; it constrains the callers and must exist before Auto-Attack Combat is implemented.
 
 **Seam introduced by Story 002**: `IEquippedWeaponQuery` (`GetEquippedWeaponID`, `GetEquippedWeaponEnhancementLevel`) is declared on the Damage Calculation side because the Equipment System is not built; the Equipment epic implements it.
@@ -69,4 +69,4 @@ Work through stories in order — each story's `Depends on:` field tells you wha
 
 ## Next Step
 
-No Ready story remains in this epic. Story 003 needs ADR-013 (Server Random Provider, Proposed 2026-10-08) to be reviewed in a fresh session and Accepted; when it is implemented, its code is written in `src/ServerLogic/DamageCalculation/`. Story 007 needs a client build pipeline. Damage Calculation now lives in `IronGrind.ServerLogic` (Story 006); the next assembly move under ADR-012 is Loot Table, which has no move story yet.
+Story 003 is Ready (ADR-013 Accepted 2026-10-08): `/story-readiness production/epics/damage-calculation/story-003-critical-strike.md`, then `/dev-story`. Its code is written in `src/ServerLogic/DamageCalculation/` and `src/ServerLogic/Randomness/`. Story 007 needs a client build pipeline. Damage Calculation lives in `IronGrind.ServerLogic` (Story 006).
