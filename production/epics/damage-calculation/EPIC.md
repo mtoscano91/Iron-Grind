@@ -3,8 +3,8 @@
 > **Layer**: Core
 > **GDD**: design/gdd/damage-calculation.md
 > **Architecture Module**: Damage Calc
-> **Status**: In Progress (4/6 — 4 Complete, 0 Ready, 2 Blocked on ADRs that do not exist yet)
-> **Stories**: 6 stories created 2026-10-07 (001–006)
+> **Status**: In Progress (4/7 — 4 Complete, 1 Ready, 2 Blocked: 003 on an ADR not yet written, 007 on the client build pipeline)
+> **Stories**: 6 stories created 2026-10-07 (001–006); 006 rewritten and 007 split from it 2026-10-08
 
 ## Overview
 
@@ -14,15 +14,17 @@ Damage Calculation is the authoritative resolver of every damage event in Iron G
 
 **⚠️ Untraced architecture decision — explicitly required by the GDD itself, not by this epic's inference**: the GDD's own Core Rules text states "Damage Calculation and all types it owns... reside in a `ServerLogic.asmdef` assembly excluded from the client build via Unity platform constraints. Using `[Server]` attribute alone is insufficient — it ships code to the client binary. **The ADR specifying the complete server/client assembly boundary must be authored before implementation begins.**" No such ADR exists in `docs/architecture/`. This contradicts architecture.md's blanket "🟢 LOW / by-design no ADR" classification for this system — the classification covers gameplay-formula risk, not the assembly-boundary/anti-cheat concern the GDD itself flags as blocking. Flag for `/architecture-decision` before Story 001 of this epic is implemented.
 
+**Resolved 2026-10-08**: that ADR is ADR-012, Accepted. The paragraph above is kept as the record of why Stories 001–005 were built in `IronGrind.Foundation`; the GDD text it quotes now names `IronGrind.ServerLogic` and the define constraint.
+
 | ADR | Decision Summary | Engine Risk |
 |-----|-----------------|-------------|
-| *(none accepted)* | Server/client assembly boundary (`ServerLogic.asmdef` exclusion) — required per the GDD's own text, not yet written | Unclassified — likely LOW/MEDIUM (build-configuration decision, not an engine API risk) |
+| ADR-012 Server/Client Assembly Boundary (Accepted 2026-10-08) | Three assemblies; `IronGrind.ServerLogic` excluded from client builds by the define constraint `UNITY_SERVER \|\| UNITY_EDITOR`; boundary test on every test run, client-binary scan on a real client build | HIGH (knowledge risk; eight engine points still to verify on real builds) |
 
 ## GDD Requirements
 
 | TR-ID | Requirement | ADR Coverage |
 |-------|-------------|--------------|
-| TR-dmg-001 | `DamageCalculation(BaseDamage, AttackerID, TargetID, DamageContext) → DamageResult` is server-only; no client code path calls it; enforced via `ServerLogic.asmdef` client-build exclusion | ❌ No ADR — see Untraced Architecture Decision above |
+| TR-dmg-001 | `DamageCalculation(BaseDamage, AttackerID, TargetID, DamageContext) → DamageResult` is server-only; no client code path calls it; enforced by placing the resolver in `IronGrind.ServerLogic`, which is excluded from client builds | ✅ ADR-012 (Stories 006, 007) |
 | TR-dmg-002 | `DamageContext` (`PhysicalAuto`/`PhysicalSkill`/`MagicalSkill`) is echoed in `DamageResult` for VFX routing only; at MVP all three contexts produce identical formula output for the same `BaseDamage` — any divergence is the caller's responsibility, never a formula branch here | ❌ No ADR (design-only, LOW risk) |
 | TR-dmg-003 | `BaseDamage` is caller-precomputed (`GetEffectiveStat(AttackerID, AttackPower)`); this system never re-queries AttackPower itself | ❌ No ADR (design-only, LOW risk) |
 | TR-dmg-004 | Resolution executes as a fixed 11-step sequence (crit stats read → defense read → physical mitigation → ... ); no step may be reordered | ❌ No ADR (design-only, LOW risk) |
@@ -48,14 +50,16 @@ This epic is complete when:
 | 003 | Critical Strike with Injected Server RNG | Logic | Blocked — OQ-DC-2 (server RNG injection ADR) | not written |
 | 004 | Kill Detection and Dead-Entity Guard | Logic | Complete (2026-10-08) | none (design-only) |
 | 005 | Kill Sequence Against Real Character Stats | Integration | Complete (2026-10-08) | none (design-only) |
-| 006 | Server Assembly Isolation Scan | Integration | Blocked — server/client assembly boundary ADR | not written |
+| 006 | Server Assembly Isolation — First Move and Boundary Test | Integration | Ready (rewritten 2026-10-08) | ADR-012 |
+| 007 | Client-Binary Scan (AC-DC-I-01) | Integration | Blocked — no client build pipeline | ADR-012 |
 
 Work through stories in order — each story's `Depends on:` field tells you what must be Done before you can start it.
 
 **Decision recorded 2026-10-07 (user)**: the GDD and the Definition of Done above require the server/client assembly ADR before implementation begins. Stories 001, 002, 004 and 005 are nevertheless Ready and are built in `IronGrind.Foundation`, as the Currency epic did for its Group G; each records this as a deviation. AC-DC-I-01 stays open in Story 006, so the epic cannot close until that ADR is Accepted and Story 006 is done.
 
+**Update 2026-10-08**: ADR-012 is Accepted. Story 006 now covers the first move and the boundary test; AC-DC-I-01 itself (a scan of a real client build) is Story 007, which waits for a client build pipeline. The epic cannot close until Story 007 is done.
+
 **ADRs still to write** (`/architecture-decision`):
-- Server/client assembly boundary (`ServerLogic.asmdef`) — blocks Story 006; also wanted by the Currency epic (Group G).
 - Server RNG injection contract (OQ-DC-2) — blocks Story 003. Must rule on the existing `System.Random` injection in Enhancement and Loot Table and on how a float in [0.0, 1.0) is produced.
 - Server tick ordering for sequential damage resolution per entity (OQ-DC-4, double-kill race) — no story here; it constrains the callers and must exist before Auto-Attack Combat is implemented.
 
@@ -65,4 +69,4 @@ Work through stories in order — each story's `Depends on:` field tells you wha
 
 ## Next Step
 
-No Ready story remains. Write the two missing ADRs with `/architecture-decision` — server RNG injection (unblocks Story 003) and the server/client assembly boundary (unblocks Story 006) — then run `/story-readiness` on the unblocked story.
+Run `/story-readiness production/epics/damage-calculation/story-006-server-assembly-isolation.md`, then `/dev-story`. Story 003 still needs the server RNG injection ADR (`/architecture-decision`); Story 007 needs a client build pipeline.
