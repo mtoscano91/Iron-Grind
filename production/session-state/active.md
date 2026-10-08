@@ -14,6 +14,26 @@
 
 > **Push status 2026-10-07 (later):** the user asked for a push after Story 008: `origin/main` is at `faa134c` (`0faea44..faa134c`). "Not pushed" notes in the 2026-10-07 extracts below are superseded. PAT rotation is still unconfirmed.
 
+> **Commit and push status 2026-10-07 (Networking Core 030–031):** Story 030 (queue, gate, tests, `.meta` files, story, ADR-011 clarification) is committed as `c55e423`, and Story 031 (coordinator, failure protocol, sequencer change, tests, `.meta` files, story, `EPIC.md`, tech-debt register, this file) as `addf77f`. The user asked for a push: `origin/main` is at `addf77f` (`3345f44..addf77f`), level with `main`. The "not committed" / "Uncommitted" notes in the Story 030 and Story 031 extracts below are superseded. Uncommitted: this note only. Untracked and left alone: `bash.exe.stackdump`. PAT rotation is still unconfirmed.
+
+## Session Extract — /dev-story 2026-10-07 — Damage Calculation Story 001 implemented (not committed)
+- Story: `production/epics/damage-calculation/story-001-result-types-physical-mitigation.md` — Result Types, Tuning Config, Physical Mitigation and Final Floor. Status still Ready (set by `/story-done`). `/story-readiness`: one gap only — TR-dmg IDs are placeholders (registry empty), accepted as on earlier epics.
+- Files changed: new `src/Foundation/DamageCalculation/` (`DamageContext.cs`, `DamageResult.cs`, `DamageCalculationConfig.cs`, `DamageCalculator.cs`, Editor-generated `.meta` files and folder `.meta`). No existing file modified.
+- Test written: `tests/EditMode/DamageCalculation/DamageCalculation_PhysicalMitigation_tests.cs` (+ `.meta`, folder `.meta`) — 15 `[Test]` + 12 `[TestCase]` = 27 cases. It reuses `CharacterStatsFixture.Create()` from `tests/EditMode/CharacterStats/TestHelpers/`.
+- Test run (Unity batch mode, EditMode): 1927 / 1927 passed. The float-sensitive cases (100 × 0.05 → 5, 20 × 0.05 → 1) pass.
+- Deviation to record at `/story-done`: server/client assembly ADR gate not met (user decision; tracked in Story 006). Three tests beyond the story's list (negative base damage, inactive fields, fractions of 1.0 accepted).
+- Blockers: None.
+- Next: `/code-review` on the four source files and the test file, then `/story-done`. Then Story 002.
+
+## Session Extract — /create-stories damage-calculation 2026-10-07 (not committed)
+- 6 stories written to `production/epics/damage-calculation/` (001–006); `EPIC.md` updated with the story table. Lean mode: QL-STORY-READY skipped; QA test cases written at story creation.
+- Ready: 001 (types, config, physical mitigation, final floor), 002 (elemental path), 004 (kill detection), 005 (kill-sequence integration test). Blocked: 003 (crit — OQ-DC-2 RNG ADR), 006 (assembly isolation — server/client assembly ADR).
+- User decision: the GDD requires the server/client assembly ADR before implementation; the four Ready stories are built in `IronGrind.Foundation` anyway (Currency precedent) and record the deviation. The epic cannot close until Story 006 is done.
+- Decided at story creation where the GDD is silent (review at `/story-readiness`): class `DamageCalculator.Calculate(...)` in namespace `IronGrind.DamageCalculation`; "dev-build assert" = `Debug.LogError` under `UNITY_EDITOR || DEVELOPMENT_BUILD` (the ACs expect a returned result); `IEquippedWeaponQuery` seam for the unbuilt Equipment System; unknown / non-equipment weapon item → no elemental contribution + dev error; Step 10 reads `CharacterStats.GetCurrentHP` (float), not `GetEffectiveStat` (floored int).
+- ADRs still to write: server/client assembly boundary; server RNG injection (OQ-DC-2); server tick ordering for damage resolution (OQ-DC-4, before Auto-Attack Combat).
+- TR registry is still empty: TR-dmg-001..006 are placeholders in the stories.
+- Next: `/story-readiness production/epics/damage-calculation/story-001-result-types-physical-mitigation.md` → `/dev-story`. Epics without stories: authentication, status-effects, equipment-system (gate OQ-EQS-9).
+
 ## Session Extract — /story-done 2026-10-07 — Networking Core Story 031 (not committed)
 - Verdict: COMPLETE WITH NOTES (17/17 criteria, all covered by automated tests; EditMode 1900 / 1900). Lean mode: QL-TEST-COVERAGE and LP-CODE-REVIEW skipped; `/code-review` had already run.
 - Story: `production/epics/networking-core/story-031-irreversible-outcome-coordinator.md` — Irreversible-Outcome Coordinator and Shared Failure Protocol. Status → Complete, Completion Notes added. `EPIC.md` → Complete (31/31).
@@ -2990,3 +3010,18 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Not changed, flag again: npc-shop.md OQ-NS-6 (answerable from CR-ENH-17 "In-flight attempts"); wire-protocol Enhancement message set + line 964 (TD-046); Item Database amendment #4 (scroll records); item-database.md open question on elemental scaling (line ~593, stale); damage-calculation.md `GetEquippedWeaponID(AttackerID)` naming drift; character-persistence.md header Status "In Review" vs index Approved, load step 4 `CorruptRecord` vs Inventory clamp; systems-index design-order line ~120; damage-calculation.md / inventory-system.md / character-persistence.md / item-database.md carry no "revised" marker in systems-index (contract-row edits only).
 - New pre-implementation gate: OQ-ENH-7 (which layer holds a character's inventory-mutating requests while `IsAttemptInProgress` is true — session dispatcher vs each system; applies to every caller-owned rollback behind `SaveIrreversibleOutcome`).
 - Next: /clear → /design-review design/gdd/enhancement-system.md --depth lean (verify Pass 5 blockers closed) → /story-readiness + /dev-story for Inventory Story 010. Commit the design changeset when the user asks (main is ahead of origin; PAT-in-remote reminder still outstanding before any push).
+
+## Session Extract — /code-review 2026-10-07 — Damage Calculation Story 001 (APPROVED WITH SUGGESTIONS, all 7 applied, not committed)
+- Reviewers: unity-specialist (no blocking, 4 warnings), qa-tester (GAPS, none blocking). No required changes.
+- Applied ("fix all"): `DamageResult.Rejected(context)` factory + named arguments + doc that FinalDamage 0 means rejected; `DamageCalculationConfig` gains a 4th constructor parameter `int maxBaseDamage` (default 99999, valid [1, `MAX_BASE_DAMAGE_LIMIT` = 2^24]) and rejects infinite `kMagic`; `DamageCalculator` rejects `baseDamage > MaxBaseDamage` with a dev error ("BaseDamage must be at most"); test file: 21 new cases (48 total), `AssertRejected` helper, named config constants, null-guarded TearDown.
+- Tests: full EditMode suite in batch mode, 1948 / 1948 passed.
+- Record at `/story-done`: (a) assembly ADR gate not met (user decision, Story 006); (b) `MaxBaseDamage` is a config value beyond the story's three knobs — Stories 002–005 must use the 4-argument config constructor; (c) unknown target is treated as Defense 0 (pinned by a test; whether it should be an error is open for Story 004).
+- Open, outside this story: GDD says BaseDamage / AttackPower range is [1, 9999] (`damage-calculation.md:143`, `:265`); `StatSchema.cs:86` clamps AttackPower to 99999. One of them is out of date.
+- Next: `/story-done production/epics/damage-calculation/story-001-result-types-physical-mitigation.md`, then Story 002.
+
+## Session Extract — /story-done 2026-10-07
+- Verdict: COMPLETE WITH NOTES
+- Story: `production/epics/damage-calculation/story-001-result-types-physical-mitigation.md` — Result Types, Tuning Config, Physical Mitigation and Final Floor. `EPIC.md` → In Progress (1/6).
+- Tech debt logged: None (user chose notes in stories). Notes added to Stories 002, 004, 005 (4-argument config constructor; unknown-target question in 004) and to `EPIC.md` (AttackPower 9999 vs 99999 mismatch, `MaxBaseDamage` not in GDD Tuning Knobs).
+- Nothing committed: Damage Calculation stories, `EPIC.md`, source, tests, `.meta` files, this file.
+- Next recommended: Story 002 — Elemental Bonus and Mitigation, `production/epics/damage-calculation/story-002-elemental-bonus-and-mitigation.md` (`/story-readiness`, then `/dev-story`).

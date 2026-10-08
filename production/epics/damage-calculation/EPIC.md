@@ -3,8 +3,8 @@
 > **Layer**: Core
 > **GDD**: design/gdd/damage-calculation.md
 > **Architecture Module**: Damage Calc
-> **Status**: Ready
-> **Stories**: Not yet created — run `/create-stories damage-calculation`
+> **Status**: In Progress (1/6 — 1 Complete, 3 Ready, 2 Blocked on ADRs that do not exist yet)
+> **Stories**: 6 stories created 2026-10-07 (001–006)
 
 ## Overview
 
@@ -39,6 +39,30 @@ This epic is complete when:
 - Logic stories have passing test files in `tests/EditMode/DamageCalculation/`
 - The server/client assembly boundary ADR (TR-dmg-001) is Accepted before implementation begins — this is a hard GDD-stated prerequisite, not a soft recommendation
 
+## Stories
+
+| # | Story | Type | Status | ADR |
+|---|-------|------|--------|-----|
+| 001 | Result Types, Tuning Config, Physical Mitigation and Final Floor | Logic | Complete (2026-10-07) | none (design-only) |
+| 002 | Elemental Bonus and Mitigation | Logic | Ready | none (design-only) |
+| 003 | Critical Strike with Injected Server RNG | Logic | Blocked — OQ-DC-2 (server RNG injection ADR) | not written |
+| 004 | Kill Detection and Dead-Entity Guard | Logic | Ready | none (design-only) |
+| 005 | Kill Sequence Against Real Character Stats | Integration | Ready | none (design-only) |
+| 006 | Server Assembly Isolation Scan | Integration | Blocked — server/client assembly boundary ADR | not written |
+
+Work through stories in order — each story's `Depends on:` field tells you what must be Done before you can start it.
+
+**Decision recorded 2026-10-07 (user)**: the GDD and the Definition of Done above require the server/client assembly ADR before implementation begins. Stories 001, 002, 004 and 005 are nevertheless Ready and are built in `IronGrind.Foundation`, as the Currency epic did for its Group G; each records this as a deviation. AC-DC-I-01 stays open in Story 006, so the epic cannot close until that ADR is Accepted and Story 006 is done.
+
+**ADRs still to write** (`/architecture-decision`):
+- Server/client assembly boundary (`ServerLogic.asmdef`) — blocks Story 006; also wanted by the Currency epic (Group G).
+- Server RNG injection contract (OQ-DC-2) — blocks Story 003. Must rule on the existing `System.Random` injection in Enhancement and Loot Table and on how a float in [0.0, 1.0) is produced.
+- Server tick ordering for sequential damage resolution per entity (OQ-DC-4, double-kill race) — no story here; it constrains the callers and must exist before Auto-Attack Combat is implemented.
+
+**Seam introduced by Story 002**: `IEquippedWeaponQuery` (`GetEquippedWeaponID`, `GetEquippedWeaponEnhancementLevel`) is declared on the Damage Calculation side because the Equipment System is not built; the Equipment epic implements it.
+
+**Open design mismatch found in Story 001 (2026-10-07)**: the GDD gives `BaseDamage` and AttackPower the range [1, 9999] (`design/gdd/damage-calculation.md` Formulas variable table and the `BaseDamage = 0` edge case); `src/Foundation/CharacterStats/StatSchema.cs` clamps AttackPower to 99999. Story 001 added a configurable ceiling, `DamageCalculationConfig.MaxBaseDamage`, defaulting to 99999 to match the code. Correct the GDD or the schema, and add the ceiling to the GDD's Tuning Knobs if it stays.
+
 ## Next Step
 
-Run `/architecture-decision` for the `ServerLogic.asmdef` server/client boundary first, then `/create-stories damage-calculation`. Story 001 should not begin without that ADR Accepted.
+Run `/story-readiness production/epics/damage-calculation/story-002-elemental-bonus-and-mitigation.md`, then `/dev-story` on it.
