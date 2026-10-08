@@ -22,6 +22,8 @@
 
 > **ADR-012 reviewed 2026-10-08 — CONCERNS, stays Proposed (not committed):** report `docs/architecture/architecture-review-2026-10-08.md`; `architecture-traceability.md` updated. Uncommitted: those two files and this file. The "then the user marks it Accepted" note below is superseded: amend the ADR first. **Next (fresh authoring session):** amend ADR-012 for B1–B3 and C1–C7, then a lean re-review, then acceptance. Details in the extract "/architecture-review 2026-10-08" below. PAT rotation is still unconfirmed.
 
+> **Enhancement Story 012 created 2026-10-08 (not committed):** `production/epics/enhancement-system/story-012-server-assembly-move.md` — move the 14 Enhancement files to `IronGrind.ServerLogic` (ADR-012 Migration Plan step 2, third in the order), Status Ready, Manifest Version 2026-10-08, estimate 1.5 h. All 14 types server-only; `EnhancementOutcome`, `EnhancementResultCode` and `PrestigeBand` are expected to return to `Foundation` with Story 010 or the enhancement screen. Lists: not-yet-moved 167 → 153; `ServerOnlyNamespaces` gains the namespace; no test-logic change. Checked at creation: the only outside code reference is `DamageCalculator` (already in `ServerLogic`); no `internal` member of another system reached; no serialized-by-name type. New criterion compared with Story 014: the suite total must be recorded. Blocked Stories 009–011 name `src/Foundation/EnhancementSystem/` paths that will be stale after the move. `EPIC.md` now 8/12. Story 014's closure is committed as `2fef5fc` (the "not committed" in the note below is superseded). Uncommitted: the story, the Enhancement `EPIC.md`, this file. **Next (fresh session):** `/story-readiness production/epics/enhancement-system/story-012-server-assembly-move.md`, then `/dev-story` — close the Editor first so the suite can run in batch mode. PAT rotation is still unconfirmed.
+
 > **Loot Table Story 014 closed 2026-10-08 (not committed):** `/story-done` verdict COMPLETE WITH NOTES (no results file or confirmed total of 2003; implemented inline without a programmer agent; new test's failure path not probed). Story file Status Complete with Completion Notes; Loot Table `EPIC.md` Complete (14/14). The review fix is committed as `14d1304`. Uncommitted: the story file, `EPIC.md`, this file. `main` is 18 ahead of `origin` (not pushed). ADR-012 moves done: Damage Calculation, Loot Table (2 of 9). **Next (pick one, fresh session):** create the Enhancement move story (third in ADR-012's order; check first whether Networking's `EnhancementOutcome` mentions and `IEnhancementBonusProvider` usage from `src/ServerLogic/DamageCalculation` allow it); or `/architecture-decision` for server RNG injection (unblocks Damage Calculation Story 003) or ADR-013 inbound request dispatch (unblocks Enhancement Story 009). PAT rotation is still unconfirmed.
 
 > **Story 014 review fix verified by the user 2026-10-08:** the user re-ran the EditMode suite in the Test Runner after the nested-namespace fix — all tests passed (user report; no results file; the total of 2003 was asked for and not stated). The "NOT yet re-run" in the note below is superseded. **Next:** `/story-done production/epics/loot-table-system/story-014-server-assembly-move.md`. PAT rotation is still unconfirmed.
@@ -3216,3 +3218,22 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: None (user chose notes in stories). Notes added to Stories 002, 004, 005 (4-argument config constructor; unknown-target question in 004) and to `EPIC.md` (AttackPower 9999 vs 99999 mismatch, `MaxBaseDamage` not in GDD Tuning Knobs).
 - Nothing committed: Damage Calculation stories, `EPIC.md`, source, tests, `.meta` files, this file.
 - Next recommended: Story 002 — Elemental Bonus and Mitigation, `production/epics/damage-calculation/story-002-elemental-bonus-and-mitigation.md` (`/story-readiness`, then `/dev-story`).
+
+## Session Extract — /dev-story 2026-10-08 (Enhancement Story 012)
+- Story: production/epics/enhancement-system/story-012-server-assembly-move.md — Move Enhancement to the Server Assembly
+- `/story-readiness`: READY (lean mode, QL-STORY-READY skipped); the story's counts and reference-graph claims were checked against the repo.
+- Files changed: `src/Foundation/EnhancementSystem/` → `src/ServerLogic/EnhancementSystem/` (14 `.cs`, 14 `.cs.meta`, folder `.meta`; 29 git renames, 0 lines changed, staged by `git mv`); `tests/EditMode/Architecture/AssemblyBoundaryLists.cs` (`NotYetMovedList` 167 → 153, `ServerOnlyNamespaces` gains `IronGrind.EnhancementSystem`; `SharedAllowList` unchanged at 26).
+- Test written: none new — the existing boundary tests cover the move through the edited lists.
+- Graph and serialization re-checks at implementation time: only `DamageCalculator.cs` references Enhancement types from outside the folder; no serialization attribute or by-name type lookup in the folder, so no `[MovedFrom]`.
+- **Not verified: the EditMode suite has not been run after the move.** The Editor was open (`Unity.exe`, `Temp/UnityLockfile`), so batch mode was not possible. Expected total 2003. The "Suite green" criterion is open until a total is recorded.
+- Nothing committed. Untracked: the story file, `bash.exe.stackdump`. PAT rotation is still unconfirmed.
+- Next: suite result (user's Test Runner total, or batch mode with the Editor closed), then /code-review and /story-done.
+
+## Session Extract — /story-done 2026-10-08 (Enhancement Story 012)
+- Verdict: COMPLETE
+- Story: production/epics/enhancement-system/story-012-server-assembly-move.md — Move Enhancement to the Server Assembly
+- Suite after the move: 2003/2003 passed, read from the Editor Test Runner results file (`%USERPROFILE%/AppData/LocalLow/DefaultCompany/IronGrind/TestResults.xml`); no compile error or warning in the Editor log. The "suite not run" note in the /dev-story extract above is superseded.
+- `/code-review`: APPROVED, no changes. `EPIC.md` updated to 9/12.
+- Tech debt logged: None
+- Nothing committed: 29 staged renames, plus `AssemblyBoundaryLists.cs`, the story file (untracked), `EPIC.md` and this file. PAT rotation is still unconfirmed.
+- Next recommended: the NPC Interaction move story (fourth in ADR-012's order) — not yet written; `/create-stories` for it, then `/story-readiness`.

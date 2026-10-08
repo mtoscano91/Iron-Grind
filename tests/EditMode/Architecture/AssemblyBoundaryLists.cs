@@ -57,22 +57,6 @@ namespace IronGrind.Tests.EditMode.Architecture
         /// </summary>
         internal static readonly string[] NotYetMovedList =
         {
-            // ---- Enhancement ----
-            "IronGrind.EnhancementSystem.EnhancementAttemptResult",
-            "IronGrind.EnhancementSystem.EnhancementAttemptStart",
-            "IronGrind.EnhancementSystem.EnhancementAttemptValidation",
-            "IronGrind.EnhancementSystem.EnhancementBonusProvider",
-            "IronGrind.EnhancementSystem.EnhancementBroadcastEventArgs",
-            "IronGrind.EnhancementSystem.EnhancementConfig",
-            "IronGrind.EnhancementSystem.EnhancementConstants",
-            "IronGrind.EnhancementSystem.EnhancementDestructionEventArgs",
-            "IronGrind.EnhancementSystem.EnhancementOutcome",
-            "IronGrind.EnhancementSystem.EnhancementResultCode",
-            "IronGrind.EnhancementSystem.EnhancementService",
-            "IronGrind.EnhancementSystem.EnhancementSuccessEventArgs",
-            "IronGrind.EnhancementSystem.IEnhancementBonusProvider",
-            "IronGrind.EnhancementSystem.PrestigeBand",
-
             // ---- NPC Interaction ----
             "IronGrind.NpcInteraction.INpcInteractionSessions",
             "IronGrind.NpcInteraction.ITownHubQuery",
@@ -249,6 +233,7 @@ namespace IronGrind.Tests.EditMode.Architecture
         {
             "IronGrind.DamageCalculation", // Damage Calculation Story 006
             "IronGrind.LootTableSystem",   // Loot Table Story 014
+            "IronGrind.EnhancementSystem", // Enhancement Story 012
         };
     }
 }
