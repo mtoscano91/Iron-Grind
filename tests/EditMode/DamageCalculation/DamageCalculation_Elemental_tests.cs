@@ -23,6 +23,7 @@ namespace IronGrind.Tests.EditMode.DamageCalculation
     {
         private const uint ATTACKER_RAW_ID = 1001u;
         private const uint TARGET_RAW_ID = 2001u;
+        private const int TARGET_SETUP_MAX_HP = 99999; // StatSchema MaxHP ceiling
         private const uint WEAPON_RAW_ITEM_ID = 701u;
         private const uint MISSING_RAW_ITEM_ID = 799u;
         private const int MAX_DEFENSE = 9999;
@@ -58,6 +59,10 @@ namespace IronGrind.Tests.EditMode.DamageCalculation
         public void SetUp()
         {
             _stats = CharacterStatsFixture.Create();
+            // Story 004: keep the target alive and out of reach so no case logs the dead-entity error or
+            // flips IsKill. MaxHP is set first because SetCurrentHP clamps to the effective MaxHP.
+            _stats.SetBaseStat(Target, StatID.MaxHP, TARGET_SETUP_MAX_HP);
+            _stats.SetCurrentHP(Target, TARGET_SETUP_MAX_HP);
             _weapons = new FakeEquippedWeaponQuery();
             _items = new CountingItemDatabase();
             _createdDefinitions = new List<ItemDefinition>();

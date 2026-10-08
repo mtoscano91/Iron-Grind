@@ -151,4 +151,21 @@ namespace IronGrind.Tests.EditMode.DamageCalculation
             return ElementalBonusToReturn;
         }
     }
+
+    /// <summary>
+    /// <see cref="ILevelingService"/> stub that treats every entity as a player, so
+    /// <c>CharacterStats.AddExperience</c> really changes Experience and an "Experience unchanged"
+    /// assertion can fail. The threshold is never reached and notifications are discarded.
+    /// </summary>
+    internal sealed class AllPlayersLevelingService : ILevelingService
+    {
+        /// <inheritdoc/>
+        public bool IsPlayerEntity(EntityID entityId) => true;
+
+        /// <inheritdoc/>
+        public int GetExperienceThreshold(EntityID entityId) => int.MaxValue;
+
+        /// <inheritdoc/>
+        public void NotifyExperienceCrossedThreshold(EntityID entityId) { }
+    }
 }

@@ -20,9 +20,11 @@ namespace IronGrind.Tests.EditMode.DamageCalculation
     {
         private const uint ATTACKER_RAW_ID = 1001u;
         private const uint TARGET_RAW_ID = 2001u;
+        private const int TARGET_SETUP_MAX_HP = 99999; // StatSchema MaxHP ceiling
         private const int TARGET_MAX_HP = 1000;
         private const float TARGET_START_HP = 100f;
         private const int ATTACKER_START_XP = 250;
+        private const int LEVEL_BELOW_CAP = 1; // AddExperience is a no-op at the level cap
         private const int MAX_DEFENSE = 9999;
         private const uint UNKNOWN_RAW_ID = 3001u;
         private const uint ARMOR_RAW_ITEM_ID = 501u;
@@ -42,10 +44,15 @@ namespace IronGrind.Tests.EditMode.DamageCalculation
         [SetUp]
         public void SetUp()
         {
-            _stats = CharacterStatsFixture.Create();
+            _stats = CharacterStatsFixture.CreateWithLeveling(new AllPlayersLevelingService());
             _diedCount = 0;
             _diedHandler = OnEntityDied;
             _stats.Subscribe(_diedHandler);
+
+            // Story 004: the target must be alive and out of reach so no case logs the dead-entity error
+            // or flips IsKill. MaxHP is set first because SetCurrentHP clamps to the effective MaxHP.
+            _stats.SetBaseStat(Target, StatID.MaxHP, TARGET_SETUP_MAX_HP);
+            _stats.SetCurrentHP(Target, TARGET_SETUP_MAX_HP);
         }
 
         [TearDown]
@@ -245,6 +252,7 @@ namespace IronGrind.Tests.EditMode.DamageCalculation
         {
             // Arrange
             DamageCalculator calculator = CreateCalculator();
+            LogAssert.Expect(LogType.Error, new Regex("dead-entity guard")); // no HP record reads as 0
 
             // Act
             DamageResult result = calculator.Calculate(100, Attacker, UnknownEntity, DamageContext.PhysicalAuto);
@@ -252,6 +260,7 @@ namespace IronGrind.Tests.EditMode.DamageCalculation
             // Assert
             Assert.AreEqual(100, result.PhysicalDamage);
             Assert.AreEqual(100, result.FinalDamage);
+            Assert.IsFalse(result.IsKill);
         }
 
         [Test]
@@ -265,8 +274,9 @@ namespace IronGrind.Tests.EditMode.DamageCalculation
             DamageResult result = calculator.Calculate(
                 DEFAULT_MAX_BASE_DAMAGE, Attacker, Target, DamageContext.PhysicalAuto);
 
-            // Assert
+            // Assert - 99999 damage on the 99999 HP set in SetUp is a kill at equality
             Assert.AreEqual(DEFAULT_MAX_BASE_DAMAGE, result.FinalDamage);
+            Assert.IsTrue(result.IsKill);
         }
 
         [Test]
@@ -286,6 +296,7 @@ namespace IronGrind.Tests.EditMode.DamageCalculation
             // Assert
             Assert.AreEqual(DamageCalculationConfig.MAX_BASE_DAMAGE_LIMIT, result.PhysicalDamage);
             Assert.AreEqual(DamageCalculationConfig.MAX_BASE_DAMAGE_LIMIT, result.FinalDamage);
+            Assert.IsTrue(result.IsKill);
         }
 
         // ---------- context echo ----------
@@ -330,8 +341,10 @@ namespace IronGrind.Tests.EditMode.DamageCalculation
         [Test]
         public void DamageCalculation_Calculate_AttackerEqualsTarget_ReturnsZeroAndNoSideEffects() // AC-DC-E-02
         {
-            // Arrange
+            // Arrange - Target is both attacker and target here, so it is the entity that could gain XP.
+            // It is a player (see SetUp) below the level cap, so a stray AddExperience would show.
             GivenTargetHp(TARGET_START_HP);
+            _stats.SetBaseStat(Target, StatID.Level, LEVEL_BELOW_CAP);
             _stats.SetBaseStat(Target, StatID.Experience, ATTACKER_START_XP);
             DamageCalculator calculator = CreateCalculator();
             LogAssert.Expect(LogType.Error, new Regex("AttackerID equals TargetID"));
@@ -422,7 +435,7 @@ namespace IronGrind.Tests.EditMode.DamageCalculation
         {
             // Arrange
             GivenTargetDefense(394);
-            GivenTargetHp(TARGET_START_HP);
+            GivenTargetHp(TARGET_MAX_HP); // above the 374 dealt: a non-lethal hit (kill detection is live since Story 004)
             DamageCalculator calculator = CreateCalculator();
 
             // Act
@@ -433,7 +446,7 @@ namespace IronGrind.Tests.EditMode.DamageCalculation
             Assert.IsFalse(result.HasElementalContribution);
             Assert.IsFalse(result.IsCrit);
             Assert.IsFalse(result.IsKill);
-            Assert.AreEqual(TARGET_START_HP, _stats.GetCurrentHP(Target));
+            Assert.AreEqual((float)TARGET_MAX_HP, _stats.GetCurrentHP(Target));
             Assert.AreEqual(0, _diedCount);
         }
 

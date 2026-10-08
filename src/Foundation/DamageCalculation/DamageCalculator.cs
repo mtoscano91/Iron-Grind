@@ -10,8 +10,8 @@ namespace IronGrind.DamageCalculation
     /// Stateless damage resolver (design/gdd/damage-calculation.md Core Rules 1-3, Resolution Sequence,
     /// F-DC-1, F-DC-2, F-DC-4). Reads stats, never writes them: it fires no event, awards no XP and holds
     /// no Leveling reference. Damage Calculation Story 001 implements Steps 2, 3, 9 and 11; Story 002
-    /// adds Steps 4-7 and the elemental fields of Step 11; Steps 1, 8 and 10 are marked below for later
-    /// stories.
+    /// adds Steps 4-7 and the elemental fields of Step 11; Story 004 adds Step 10 (kill detection and the
+    /// dead-entity guard); Steps 1 and 8 are marked below for Story 003.
     /// </summary>
     /// <remarks>
     /// Server-side only. Nothing in this file references client, UI or networking types, so moving it to a
@@ -49,12 +49,19 @@ namespace IronGrind.DamageCalculation
         /// <summary>
         /// Resolves one hit. Invalid calls (<paramref name="baseDamage"/> at most 0 or above the config's
         /// MaxBaseDamage, or attacker equal to target) return <see cref="DamageResult.Rejected"/> and log
-        /// an error in editor and development builds only; no stat is read in that case. A target with no
-        /// stat record has Defense 0 and MagicDefense 0. When the attacker's equipped weapon id is not in
-        /// the Item Database, or the item has no equipment data, the hit has no elemental contribution,
-        /// a dev error is logged (editor and development builds only) and the physical result is still
-        /// returned.
+        /// an error in editor and development builds only; no stat is read in that case.
         /// </summary>
+        /// <remarks>
+        /// <para>A target with no stat record has Defense 0 and MagicDefense 0.</para>
+        /// <para>When the attacker's equipped weapon id is not in the Item Database, or the item has no
+        /// equipment data, the hit has no elemental contribution, a dev error is logged (editor and
+        /// development builds only) and the physical result is still returned.</para>
+        /// <para>Kill detection (Step 10) sets <see cref="DamageResult.IsKill"/> when the final damage is
+        /// at least the target's current HP; it only reports, and never applies damage, awards XP or fires
+        /// an event. When the target's current HP is not above 0 (dead entity), IsKill is false, a dev
+        /// error is logged (editor and development builds only) and every other field is still computed.
+        /// A target with no HP record reads as 0 HP and takes the same path (user decision 2026-10-08).</para>
+        /// </remarks>
         /// <param name="baseDamage">Caller-computed physical base (the attacker's AttackPower), in [1, MaxBaseDamage].</param>
         /// <param name="attackerId">The attacking entity.</param>
         /// <param name="targetId">The entity being hit.</param>
@@ -95,7 +102,8 @@ namespace IronGrind.DamageCalculation
             int physicalDamage = Mathf.FloorToInt(physicalMitigated);
             int finalDamage = Mathf.Max(1, Mathf.FloorToInt(damageAfterCrit));
 
-            // Step 10 - kill detection: Story 004.
+            // Step 10 - kill detection (Core Rule 4); report only, no write.
+            bool isKill = ResolveIsKill(targetId, finalDamage);
 
             // Step 11 - return.
             return new DamageResult(
@@ -103,9 +111,31 @@ namespace IronGrind.DamageCalculation
                 elementalDamage: Mathf.FloorToInt(elementalMitigated),
                 finalDamage: finalDamage,
                 isCrit: false,
-                isKill: false,
+                isKill: isKill,
                 damageContext: context,
                 hasElementalContribution: elementalMitigated > 0f);
+        }
+
+        /// <summary>
+        /// Step 10: true when <paramref name="finalDamage"/> is at least the target's current HP (equality
+        /// is a kill). HP is read as the float pool value through <c>GetCurrentHP</c>, not the floored int
+        /// of <c>GetEffectiveStat</c>, so 100.5 HP is not killed by 100 damage. Dead-entity guard: a target
+        /// at 0 HP (or with no HP record, which reads as 0, or a NaN HP) is never reported as a kill and a dev error is
+        /// logged (editor and development builds only). Reads only; never writes HP or fires an event.
+        /// </summary>
+        private bool ResolveIsKill(EntityID targetId, int finalDamage)
+        {
+            float currentHp = _stats.GetCurrentHP(targetId);
+            // Negated so that a NaN HP also takes the guard path instead of failing both comparisons silently.
+            if (!(currentHp > 0f))
+            {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                Debug.LogError($"[DamageCalculator] Target {targetId} has 0 HP, NaN HP or no HP record (dead-entity guard); IsKill is false.");
+#endif
+                return false;
+            }
+
+            return finalDamage >= currentHp;
         }
 
         /// <summary>
