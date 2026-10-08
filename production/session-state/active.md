@@ -14,7 +14,33 @@
 
 > **Push status 2026-10-07 (later):** the user asked for a push after Story 008: `origin/main` is at `faa134c` (`0faea44..faa134c`). "Not pushed" notes in the 2026-10-07 extracts below are superseded. PAT rotation is still unconfirmed.
 
+> **Commit and push status 2026-10-07 (Damage Calculation Story 001):** the six Damage Calculation stories, `EPIC.md`, Story 001 code, tests, `.meta` files and this file are committed as `b6f9dfa`, and the user asked for a push: `origin/main` is at `b6f9dfa` (`addf77f..b6f9dfa`), level with `main`. The "not committed" / "Nothing committed" notes in the Damage Calculation extracts below are superseded. Uncommitted: this note only. Untracked and left alone: `bash.exe.stackdump`. PAT rotation is still unconfirmed. **Next:** Story 002 — `/story-readiness production/epics/damage-calculation/story-002-elemental-bonus-and-mitigation.md`, then `/dev-story`. Stories 003 and 006 stay blocked on ADRs not yet written (server RNG injection; server/client assembly boundary).
+
 > **Commit and push status 2026-10-07 (Networking Core 030–031):** Story 030 (queue, gate, tests, `.meta` files, story, ADR-011 clarification) is committed as `c55e423`, and Story 031 (coordinator, failure protocol, sequencer change, tests, `.meta` files, story, `EPIC.md`, tech-debt register, this file) as `addf77f`. The user asked for a push: `origin/main` is at `addf77f` (`3345f44..addf77f`), level with `main`. The "not committed" / "Uncommitted" notes in the Story 030 and Story 031 extracts below are superseded. Uncommitted: this note only. Untracked and left alone: `bash.exe.stackdump`. PAT rotation is still unconfirmed.
+
+## Session Extract — /story-done 2026-10-08 — Damage Calculation Story 002 (not committed)
+- Verdict: COMPLETE WITH NOTES (11/11 criteria, all covered by automated tests; EditMode 1970 / 1970). Lean mode: QL-TEST-COVERAGE and LP-CODE-REVIEW skipped; `/code-review` had already run.
+- Story: `production/epics/damage-calculation/story-002-elemental-bonus-and-mitigation.md` — Elemental Bonus and Mitigation. Status → Complete, Completion Notes added. `EPIC.md` → In Progress (2/6).
+- Tech debt logged: None (user did not ask for the per-hit dev `LogError` to be logged; it is in the Completion Notes).
+- Stale, not touched: `production/epics/index.md` still shows the Damage Calculation row as "Not yet created".
+- Uncommitted: Story 002 work — `DamageCalculator.cs`, new `IEquippedWeaponQuery.cs`, three test files (two new), three `.meta` files, the story, `EPIC.md`, this file. `bash.exe.stackdump` stays untracked. PAT rotation still unconfirmed.
+- Next recommended: Story 004 — `/story-readiness production/epics/damage-calculation/story-004-kill-detection.md`, then `/dev-story`, in a fresh session. Stories 003 and 006 stay blocked on ADRs not yet written.
+
+## Session Extract — /dev-story 2026-10-08 — Damage Calculation Story 002 implemented (not committed)
+- Story: `production/epics/damage-calculation/story-002-elemental-bonus-and-mitigation.md` — Elemental Bonus and Mitigation. Status still Ready (set by `/story-done`). `/story-readiness` (lean; QL-STORY-READY skipped): READY, one accepted gap — `TR-dmg-004` is a placeholder (registry empty).
+- Files changed: new `src/Foundation/DamageCalculation/IEquippedWeaponQuery.cs`; modified `src/Foundation/DamageCalculation/DamageCalculator.cs` (5-argument constructor, Steps 4–7, elemental fields of Step 11, private `ResolveElementalBonus`); modified `tests/EditMode/DamageCalculation/DamageCalculation_PhysicalMitigation_tests.cs` (constructor calls only); new `tests/EditMode/DamageCalculation/DamageCalculationTestFakes.cs` (`FakeEquippedWeaponQuery`, `CountingItemDatabase`, `RecordingBonusProvider`). Editor-generated `.meta` files for the three new files must be committed.
+- Test written: `tests/EditMode/DamageCalculation/DamageCalculation_Elemental_tests.cs` — 16 `[Test]`.
+- Test run (Unity batch mode, EditMode): 1964 / 1964 passed.
+- Implemented by `gameplay-programmer`; diff reviewed in the main session; `unity-specialist` not spawned (plain C#, LOW risk).
+- Choices beyond the story (for `/code-review` and `/story-done`): lookup uses `TryGetItem`; "not equipment" is detected by `EquipmentData == null`; a bonus of 0 or less skips Steps 5–6 (a negative provider value counts as 0); `ArgumentOutOfRangeException` from the bonus provider propagates uncaught (documented, tested); one extra test (provider throws) and one for "item is not equipment". Deviation carried from Story 001: server/client assembly ADR gate not met (Story 006).
+- Blockers: None.
+- **/code-review 2026-10-08: CHANGES REQUIRED** (main session + `unity-specialist` + `qa-tester`; 3 required, 9 suggestions). User said "fix all"; items 1–11 applied, item 12 (per-hit dev `LogError` for a bad weapon id) left as is:
+  - `DamageCalculator.cs`: guards extracted to private `IsInvalidRequest`, Steps 5–6 to private `ResolveElementalMitigated` (`Calculate` now 42 lines with comments and blanks); `<returns>` tag added. No behaviour change.
+  - Fakes: `FakeEquippedWeaponQuery` records the last entity of each query; `CountingItemDatabase.AddFoundButNull`; unused `TotalLookupCount` removed.
+  - Tests: Elemental fixture now 22 `[Test]` (6 new: custom `KMagic`, custom `MinElementalFraction`, target without stat record, real provider at +5, provider returns negative, database returns true with a null item). Contract test asserts both queries were called once with the attacker; missing-item and non-equipment tests assert the level query was not called; `BASE_DAMAGE_100` constant.
+  - Accepted gap: "MagicDefense not consulted" for a non-elemental weapon is not observable through the real `CharacterStats`.
+  - Test run after the fixes (Unity batch mode, EditMode): 1970 / 1970 passed.
+- Next: `/story-done production/epics/damage-calculation/story-002-elemental-bonus-and-mitigation.md`. Then Story 004 (kill detection); Story 003 stays blocked on the RNG ADR.
 
 ## Session Extract — /dev-story 2026-10-07 — Damage Calculation Story 001 implemented (not committed)
 - Story: `production/epics/damage-calculation/story-001-result-types-physical-mitigation.md` — Result Types, Tuning Config, Physical Mitigation and Final Floor. Status still Ready (set by `/story-done`). `/story-readiness`: one gap only — TR-dmg IDs are placeholders (registry empty), accepted as on earlier epics.

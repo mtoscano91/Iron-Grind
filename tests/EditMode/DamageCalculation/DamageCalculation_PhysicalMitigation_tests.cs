@@ -2,6 +2,7 @@ using System;
 using System.Text.RegularExpressions;
 using IronGrind.CharacterStats;
 using IronGrind.DamageCalculation;
+using IronGrind.EnhancementSystem;
 using IronGrind.Tests.EditMode.CharacterStats;
 using NUnit.Framework;
 using UnityEngine;
@@ -63,7 +64,13 @@ namespace IronGrind.Tests.EditMode.DamageCalculation
         /// <summary>The single place the calculator is built; later stories change only this method.</summary>
         private DamageCalculator CreateCalculator(DamageCalculationConfig config = null)
         {
-            return new DamageCalculator(_stats, config ?? DamageCalculationConfig.Default);
+            // No weapon equipped: every Story 001 case stays purely physical.
+            return new DamageCalculator(
+                _stats,
+                new FakeEquippedWeaponQuery(),
+                new CountingItemDatabase(),
+                new EnhancementBonusProvider(EnhancementConfig.Default),
+                config ?? DamageCalculationConfig.Default);
         }
 
         private void GivenTargetDefense(int defense)
@@ -536,14 +543,18 @@ namespace IronGrind.Tests.EditMode.DamageCalculation
         public void DamageCalculator_Constructor_NullStats_Throws()
         {
             // Arrange / Act / Assert
-            Assert.Throws<ArgumentNullException>(() => new DamageCalculator(null, DamageCalculationConfig.Default));
+            Assert.Throws<ArgumentNullException>(() => new DamageCalculator(
+                null, new FakeEquippedWeaponQuery(), new CountingItemDatabase(),
+                new EnhancementBonusProvider(EnhancementConfig.Default), DamageCalculationConfig.Default));
         }
 
         [Test]
         public void DamageCalculator_Constructor_NullConfig_Throws()
         {
             // Arrange / Act / Assert
-            Assert.Throws<ArgumentNullException>(() => new DamageCalculator(_stats, null));
+            Assert.Throws<ArgumentNullException>(() => new DamageCalculator(
+                _stats, new FakeEquippedWeaponQuery(), new CountingItemDatabase(),
+                new EnhancementBonusProvider(EnhancementConfig.Default), null));
         }
     }
 }

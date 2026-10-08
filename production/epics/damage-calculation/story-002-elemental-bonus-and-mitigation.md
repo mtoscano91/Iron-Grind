@@ -1,7 +1,7 @@
 # Story 002: Elemental Bonus and Mitigation
 
 > **Epic**: Damage Calculation
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-07
@@ -30,17 +30,17 @@
 
 *From GDD `design/gdd/damage-calculation.md`, scoped to this story. Every case uses `CritChance = 0.0`.*
 
-- [ ] **AC-DC-F-04**: `ElementalBonus = 50`, `MagicDefense = 8`, `K_MAGIC = 200` → `ElementalDamage = 48`.
-- [ ] **AC-DC-F-05**: `ElementalBonus = 100`, `MagicDefense = 9999` → `ElementalDamage = 10` (`MIN_ELEMENTAL_FRACTION` floor — never 0).
-- [ ] **AC-DC-F-06**: the weapon query returns `ItemID.Invalid` → `ElementalDamage = 0`, `HasElementalContribution = false`, and `IItemDatabase.GetItem` / `TryGetItem` is not invoked.
-- [ ] **AC-DC-F-08**: `BaseDamage = 768`, `Defense = 394`, `ElementalBonus = 50`, `MagicDefense = 8` → `IsCrit = false`, `FinalDamage = 422`.
-- [ ] **AC-DC-F-12**: same inputs → `PhysicalDamage = 374`, `ElementalDamage = 48`, `FinalDamage = 422`.
-- [ ] **AC-DC-F-12b**: with `PhysicalMitigated = 374.6` and `ElementalMitigated = 48.6` → `FinalDamage = 423` while `PhysicalDamage + ElementalDamage = 422`.
-- [ ] **AC-DC-E-04**: a weapon with `ElementType = Fire` and `ElementalBonus = 0` → `ElementalDamage = 0`, `HasElementalContribution = false`, no error.
-- [ ] **AC-DC-E-06**: `ElementType = Fire`, `ElementalBonus = 9`, `MagicDefense = 9999` → `ElementalDamage = 0` and `HasElementalContribution = true`.
-- [ ] **Non-elemental weapon**: a weapon with `ElementType.None` → `ElementalDamage = 0`, `HasElementalContribution = false`; neither `MagicDefense` nor the bonus provider is consulted.
-- [ ] **Bonus provider contract**: for an elemental weapon the provider is called once with `(level from the weapon query, base ElementalDamage and GearTier from the Item Database, isWeapon: true)` and its return value is the `ElementalBonus` of F-DC-2.
-- [ ] **Physical unaffected**: with no weapon equipped, the Story 001 results are unchanged.
+- [x] **AC-DC-F-04**: `ElementalBonus = 50`, `MagicDefense = 8`, `K_MAGIC = 200` → `ElementalDamage = 48`.
+- [x] **AC-DC-F-05**: `ElementalBonus = 100`, `MagicDefense = 9999` → `ElementalDamage = 10` (`MIN_ELEMENTAL_FRACTION` floor — never 0).
+- [x] **AC-DC-F-06**: the weapon query returns `ItemID.Invalid` → `ElementalDamage = 0`, `HasElementalContribution = false`, and `IItemDatabase.GetItem` / `TryGetItem` is not invoked.
+- [x] **AC-DC-F-08**: `BaseDamage = 768`, `Defense = 394`, `ElementalBonus = 50`, `MagicDefense = 8` → `IsCrit = false`, `FinalDamage = 422`.
+- [x] **AC-DC-F-12**: same inputs → `PhysicalDamage = 374`, `ElementalDamage = 48`, `FinalDamage = 422`.
+- [x] **AC-DC-F-12b**: with `PhysicalMitigated = 374.6` and `ElementalMitigated = 48.6` → `FinalDamage = 423` while `PhysicalDamage + ElementalDamage = 422`.
+- [x] **AC-DC-E-04**: a weapon with `ElementType = Fire` and `ElementalBonus = 0` → `ElementalDamage = 0`, `HasElementalContribution = false`, no error.
+- [x] **AC-DC-E-06**: `ElementType = Fire`, `ElementalBonus = 9`, `MagicDefense = 9999` → `ElementalDamage = 0` and `HasElementalContribution = true`.
+- [x] **Non-elemental weapon**: a weapon with `ElementType.None` → `ElementalDamage = 0`, `HasElementalContribution = false`; neither `MagicDefense` nor the bonus provider is consulted.
+- [x] **Bonus provider contract**: for an elemental weapon the provider is called once with `(level from the weapon query, base ElementalDamage and GearTier from the Item Database, isWeapon: true)` and its return value is the `ElementalBonus` of F-DC-2.
+- [x] **Physical unaffected**: with no weapon equipped, the Story 001 results are unchanged.
 
 ---
 
@@ -89,7 +89,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/DamageCalculation/DamageCalculation_Elemental_tests.cs` — must exist and pass; the Story 001 test file still passes.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing (22 cases)
 
 ---
 
@@ -97,3 +97,20 @@
 
 - Depends on: Story 001. Enhancement Story 002 (`IEnhancementBonusProvider` — Complete), Item Database epic (Complete).
 - Unlocks: Story 003, Story 004.
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-08
+**Criteria**: 11/11 passing (none deferred). Full EditMode suite in Unity batch mode: 1970 / 1970.
+**Deviations** (all advisory):
+- Assembly ADR gate not met: the code is in `IronGrind.Foundation` by user decision (2026-10-07). Tracked in Story 006.
+- "Neither `MagicDefense` nor the bonus provider is consulted" for a non-elemental weapon: the provider and the enhancement-level query are asserted not called; the skipped `MagicDefense` read is true in the code (`ResolveElementalMitigated` returns before the read) but is not observable through the real `CharacterStats`.
+- Decided where the GDD is silent, each pinned by a test: a negative value from the bonus provider counts as 0 (no elemental contribution, physical damage not reduced); an exception from the bonus provider (`GearTier.None`, out-of-range level) propagates uncaught; a database that reports an id as found but returns no definition is treated as a missing item; a target with no stat record has `MagicDefense = 0`.
+- A weapon id that is missing from the Item Database, or is not equipment, logs a dev error on every hit (editor and development builds only). Not rate-limited.
+- The item lookup uses `IItemDatabase.TryGetItem`; "not equipment" is detected by `EquipmentData == null`.
+- Extra file beyond the story's list: `tests/EditMode/DamageCalculation/DamageCalculationTestFakes.cs` (`FakeEquippedWeaponQuery`, `CountingItemDatabase`, `RecordingBonusProvider`, shared with the Story 001 fixture).
+- `Calculate` was split in code review: guards in private `IsInvalidRequest`, Steps 5–6 in private `ResolveElementalMitigated`, Step 4 in private `ResolveElementalBonus`. Stories 003 and 004 add their steps to `Calculate`.
+- `TR-dmg-004` is a placeholder (registry empty).
+**Test Evidence**: Logic — `tests/EditMode/DamageCalculation/DamageCalculation_Elemental_tests.cs` (22 cases; 7 beyond the story's QA list, 6 of them added in code review). `DamageCalculation_PhysicalMitigation_tests.cs` still passes (constructor calls updated only).
+**Code Review**: Complete — CHANGES REQUIRED (unity-specialist, qa-tester; 3 required, 9 suggestions); items 1–11 applied, item 12 (rate-limiting the dev error) left as is. Director gates QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (Lean mode).

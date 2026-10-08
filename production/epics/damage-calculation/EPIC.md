@@ -3,7 +3,7 @@
 > **Layer**: Core
 > **GDD**: design/gdd/damage-calculation.md
 > **Architecture Module**: Damage Calc
-> **Status**: In Progress (1/6 — 1 Complete, 3 Ready, 2 Blocked on ADRs that do not exist yet)
+> **Status**: In Progress (2/6 — 2 Complete, 2 Ready, 2 Blocked on ADRs that do not exist yet)
 > **Stories**: 6 stories created 2026-10-07 (001–006)
 
 ## Overview
@@ -44,7 +44,7 @@ This epic is complete when:
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
 | 001 | Result Types, Tuning Config, Physical Mitigation and Final Floor | Logic | Complete (2026-10-07) | none (design-only) |
-| 002 | Elemental Bonus and Mitigation | Logic | Ready | none (design-only) |
+| 002 | Elemental Bonus and Mitigation | Logic | Complete (2026-10-08) | none (design-only) |
 | 003 | Critical Strike with Injected Server RNG | Logic | Blocked — OQ-DC-2 (server RNG injection ADR) | not written |
 | 004 | Kill Detection and Dead-Entity Guard | Logic | Ready | none (design-only) |
 | 005 | Kill Sequence Against Real Character Stats | Integration | Ready | none (design-only) |
@@ -65,4 +65,4 @@ Work through stories in order — each story's `Depends on:` field tells you wha
 
 ## Next Step
 
-Run `/story-readiness production/epics/damage-calculation/story-002-elemental-bonus-and-mitigation.md`, then `/dev-story` on it.
+Run `/story-readiness production/epics/damage-calculation/story-004-kill-detection.md`, then `/dev-story` on it.
