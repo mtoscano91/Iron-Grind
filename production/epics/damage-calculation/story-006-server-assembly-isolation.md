@@ -68,6 +68,7 @@ Work in this order; the project compiles after each numbered step.
 Other rules:
 - Tests are deterministic and do no file I/O beyond reading the three asmdef files, which is the point of the test.
 - Naming: test methods `test_[scenario]_[expected]`, as in the existing suites.
+- No performance impact expected — files change assembly only; no runtime behaviour changes (ADR-012 Performance Implications).
 - Do not touch `link.xml`, the build pipeline, or any system other than Damage Calculation, the seven UI files and the one access change above.
 
 ---
