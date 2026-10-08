@@ -63,7 +63,7 @@ Each tick, `TargetEntityID` is validated. Invalidation cases and responses:
 All movement delegates to `INavigationProvider` (provisional). Before any navigation call, verify the agent is on the NavMesh (`NavMeshAgent.isOnNavMesh`); if not, skip the call and log a warning. In `Pursuing`, `SetDestination(EntityID, Vector3)` is called only when the target moves more than `PURSUIT_REPOSITION_THRESHOLD` from the last issued destination — not every tick. `IsPathStale(EntityID)` is polled each tick in `Pursuing`; if stale, `SetDestination` is refreshed regardless of threshold. `IsPathStale` must be O(1) — it may not trigger path recalculation. On `WindingUp` entry, `Stop(EntityID)` is called; the implementation must halt movement without clearing path data (so re-entry into `Pursuing` can resume without a new `SetDestination` call). On `Returning` entry, `SetDestination(spawnPoint)` is called once. Dormant mobs have `NavMeshAgent` disabled.
 
 **CR-AI-12: Enraged spawn roll**
-At spawn, roll `_rng.NextDouble() < EnragedChance` using an injected `IRandomProvider` instance (`_rng`) — not `UnityEngine.Random.value` (thread-unsafe) and not a `System.Random` instantiated inline (untestable without injection). `MobController` accepts `IRandomProvider` at construction. Minimum interface:
+At spawn, roll `_rng.NextDouble() < EnragedChance` using an injected `IRandomProvider` instance (`_rng`) — not `UnityEngine.Random.value` (thread-unsafe) and not a `System.Random` instantiated inline (untestable without injection). `MobController` accepts `IRandomProvider` at construction. Minimum interface (the full definition is in ADR-013):
 
 ```csharp
 interface IRandomProvider {
@@ -71,7 +71,7 @@ interface IRandomProvider {
 }
 ```
 
-Production implementation wraps `new System.Random()` seeded at mob spawn. Test implementations return controlled values (see AC-AI-13). On success: call `SetBaseStat(EntityID, StatType.MaxHP, BaseMaxHP × EnragedMaxHPMultiplier)` and `SetBaseStat(EntityID, StatType.AttackPower, BaseAttackPower × EnragedAttackPowerMultiplier)`. Set `IsEnraged = true`; set current HP to the new MaxHP. `SetBaseStat` is used — not `AddBuffModifier` — because Enraged is a permanent spawn variant, not a timed buff.
+The process-level `IRandomProvider` is injected (ADR-013); no generator is created or seeded per mob. Test implementations return controlled values (see AC-AI-13). On success: call `SetBaseStat(EntityID, StatType.MaxHP, BaseMaxHP × EnragedMaxHPMultiplier)` and `SetBaseStat(EntityID, StatType.AttackPower, BaseAttackPower × EnragedAttackPowerMultiplier)`. Set `IsEnraged = true`; set current HP to the new MaxHP. `SetBaseStat` is used — not `AddBuffModifier` — because Enraged is a permanent spawn variant, not a timed buff.
 
 **CR-AI-13: Dead check at tick start**
 At the start of each mob's AI tick, if HP ≤ 0 and the mob is not already in `Dead` state, transition to `Dead` immediately and skip all further processing for that tick. This ensures the global HP ≤ 0 → `Dead` override is enforced before any state-specific logic runs, regardless of which system decremented HP.

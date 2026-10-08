@@ -61,7 +61,7 @@ Steps execute in fixed order. No step may be reordered.
 
 - **Step 7 — Pre-crit sum.** `PreCritDamage = PhysicalMitigated + ElementalMitigated` (float).
 
-- **Step 8 — Critical strike evaluation.** Roll `r = serverRNG.NextFloat()` on the server, uniform in [0.0, 1.0). If `r < CritChance`: `IsCrit = true`, `DamageAfterCrit = PreCritDamage × CritMultiplier`. Otherwise: `IsCrit = false`, `DamageAfterCrit = PreCritDamage`. Crit applies to the summed `PreCritDamage` — not separately per component. One crit roll produces one damage number and one VFX state.
+- **Step 8 — Critical strike evaluation.** Roll `r = serverRNG.NextFloat()` on the server, uniform in [0.0, 1.0) (`serverRNG` is the injected `IRandomProvider`, ADR-013). If `r < CritChance`: `IsCrit = true`, `DamageAfterCrit = PreCritDamage × CritMultiplier`. Otherwise: `IsCrit = false`, `DamageAfterCrit = PreCritDamage`. Crit applies to the summed `PreCritDamage` — not separately per component. One crit roll produces one damage number and one VFX state.
 
 - **Step 9 — Floor clamp.** `FinalDamage = max(1, Mathf.FloorToInt(DamageAfterCrit))`. The minimum-1 floor ensures every connecting hit deals at least 1 damage. At BaseDamage < 20, `MIN_DAMAGE_FRACTION × BaseDamage` truncates to 0 via `FloorToInt` — the absolute-1 floor is load-bearing here, not a safety net for extreme edge cases. For BaseDamage ≥ 20, the `MIN_DAMAGE_FRACTION` floor in Step 3 produces ≥ 1 before truncation and the absolute-1 floor serves as a fallback against pathological float accumulation only.
 
@@ -437,7 +437,7 @@ Damage Calculation does not own any screen or HUD element. It is a pure computat
 
 ## Acceptance Criteria
 
-*Prerequisites: Tests marked (Unit) require a mock stat provider and injectable server RNG. Tests marked (Integration) require the full multi-system test harness. Before writing crit-dependent tests (AC-DC-F-07, F-09, F-09b, F-11, AC-DC-E-03), the server RNG injection contract must be documented in `docs/architecture/` — without it, crit tests cannot be deterministic, violating the automated test rules in coding-standards.md. These five ACs are **BLOCKED on OQ-DC-2**.*
+*Prerequisites: Tests marked (Unit) require a mock stat provider and injectable server RNG. Tests marked (Integration) require the full multi-system test harness. The server RNG injection contract is ADR-013 (`docs/architecture/ADR-013-server-random-provider.md`). Crit-dependent tests (AC-DC-F-07, F-09, F-09b, F-11, AC-DC-E-03) script the roll with `ScriptedRandomProvider`; they are no longer blocked on OQ-DC-2.*
 
 ### Group A — Formula Tests (Unit)
 
@@ -459,7 +459,7 @@ Damage Calculation does not own any screen or HUD element. It is a pure computat
 
 **AC-DC-F-09** — GIVEN `CritChance = 0.75`, mocked RNG returns exactly `0.75`, WHEN called, THEN `DamageResult.IsCrit = false` (strict `<` operator: `0.75 < 0.75` = false).
 
-**AC-DC-F-09b** *(BLOCKED:OQ-DC-2)* — GIVEN `CritChance = 0.75`, mocked RNG returns `0.7499999` (nearest representable float below 0.75), WHEN called, THEN `DamageResult.IsCrit = true` (`0.7499999 < 0.75` = true — confirms strict less-than, not `<=`).
+**AC-DC-F-09b** — GIVEN `CritChance = 0.75`, mocked RNG returns `0.74999994` (the float directly below 0.75), WHEN called, THEN `DamageResult.IsCrit = true` (`0.74999994 < 0.75` = true — confirms strict less-than, not `<=`).
 
 **AC-DC-F-10** — GIVEN `BaseDamage = 1`, `Defense = 1`, `CritChance = 0.0`, no elemental weapon, WHEN called, THEN `DamageResult.FinalDamage = 1` (absolute-1 floor fires: `FloorToInt(0.05) = 0`).
 
@@ -539,7 +539,7 @@ Damage Calculation does not own any screen or HUD element. It is a pure computat
 
 **OQ-DC-1** *(BLOCKING — Enhancement System GDD)*: Does `ElementalBonus` scale with enhancement level? Step 4 reads `ElementalBonus` from Item Database for the item at +0. If the Enhancement System applies a multiplier to elemental damage on enhanced weapons, Damage Calculation must instead read the scaled value from Equipment System (which would own the post-enhancement value), not from Item Database directly. This dependency boundary must be resolved before the Enhancement System GDD is authored. If the answer is "yes, Enhancement scales elemental," the `ReadElementalBonus(ItemID)` call in Step 4 moves from Item Database to Equipment System.
 
-**OQ-DC-2** *(BLOCKING — ADR required before implementation)*: Server RNG injection contract. Acceptance Criteria AC-DC-F-07, AC-DC-F-09, AC-DC-F-09b, AC-DC-F-11, and AC-DC-E-03 require deterministic crit simulation in tests — **5 ACs are unwritable until this ADR is documented**. The architectural pattern (interface design, injection point, test double contract) must be resolved before implementation begins. The ADR should also confirm the RNG is stateless per call (no sequence tracking) to survive zone migration safely — a stateful RNG reset on zone transfer would corrupt crit streams. Flagged in Section H (Acceptance Criteria prerequisite note).
+**OQ-DC-2** *(RESOLVED 2026-10-08 — ADR-013)*: Server RNG injection contract. Acceptance Criteria AC-DC-F-07, AC-DC-F-09, AC-DC-F-09b, AC-DC-F-11, and AC-DC-E-03 require deterministic crit simulation in tests — **5 ACs are unwritable until this ADR is documented**. The architectural pattern (interface design, injection point, test double contract) must be resolved before implementation begins. The ADR should also confirm the RNG is stateless per call (no sequence tracking) to survive zone migration safely — a stateful RNG reset on zone transfer would corrupt crit streams. Flagged in Section H (Acceptance Criteria prerequisite note). **Resolved by ADR-013:** `IRandomProvider` injected through the constructor, `ScriptedRandomProvider` / `RecordingRandomProvider` as test doubles, one generator per zone process, and no random state kept by any caller or carried across a zone transfer.
 
 **OQ-DC-3** *(Leveling System GDD)*: `GetXPAward(EntityID): int` interface ownership. Under Option B, the callers (Auto-Attack Combat, Skill System) call this when `DamageResult.IsKill = true` — Damage Calculation is no longer the caller. The Leveling System GDD must define: (a) what determines the XP award for a given mob, (b) whether the award is fixed per mob type or computed dynamically (e.g., scaled by attacker level — which would create a gray-mob falloff mechanic with significant design implications for Earned Power), and (c) whether the interface returns a single value or a parameterized one. Note three-way option: (i) fixed lookup in Item/Mob Database, (ii) attacker-level-scaled, (iii) Enhancement-scaled (if enhanced gear affects XP yield — unlikely but possible). Callers must know which before the kill-handling code is written.
 
