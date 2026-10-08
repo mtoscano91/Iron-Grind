@@ -26,9 +26,9 @@ namespace IronGrind.LevelingSystem
     /// AC-LS-31 explicitly states "the runtime float formula is not trusted for the authoritative
     /// values".</para>
     /// <para><b>Index 0 is unused.</b> Matches this epic's established 1-based level-indexing
-    /// convention: <see cref="LevelingService"/> is constructor-injected with an
+    /// convention: <c>LevelingService</c> is constructor-injected with an
     /// <c>IReadOnlyList&lt;int&gt; xpThresholds</c> and reads <c>xpThresholds[level + 1]</c> (see
-    /// <see cref="LevelingService.GetExperienceThreshold"/>); every test-local XP threshold array
+    /// <c>LevelingService.GetExperienceThreshold</c>); every test-local XP threshold array
     /// built elsewhere in this epic (e.g.
     /// <c>LevelingSystem_TierAutoAllocFormulaVerification_tests.cs</c>'s
     /// <c>BuildAllZeroXpThresholdsToCap</c>) follows the same "index 0 unused, real data starts at
@@ -39,7 +39,7 @@ namespace IronGrind.LevelingSystem
     /// at Level 60) without a separate bounds-check branch. Per EC-LS-35, the sentinel is
     /// separately authored, not computed from the F-LS-1 formula.</para>
     /// <para><b>Out of scope (this story).</b> Wiring this table into
-    /// <see cref="LevelingService"/>'s actual constructor call site is explicitly deferred —
+    /// <c>LevelingService</c>'s actual constructor call site is explicitly deferred —
     /// Stories 002/003/008/011 all supply their own test-local fake tables today and are
     /// unaffected by this file's existence. See Story 010's Out of Scope section.</para>
     /// </remarks>

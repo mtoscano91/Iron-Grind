@@ -3340,3 +3340,23 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: None. Follow-up: update ADR-012 / control manifest for Verification Required 8.
 - Nothing committed: all Story 014 files, including the new `.meta` files and `src/DevHarness/`. PAT rotation is still unconfirmed.
 - Next recommended: write Leveling Story 015 (move `LevelingService`, `AllocateFreePointResult`, `IItemReservation`, `LevelingStateSnapshot`, `RespecTwoPhaseCommitCoordinator`; allow-list `ILevelingEventBroadcaster`, `LevelUpEventArgs`; decide `XpThresholdTable`; `NotYetMovedList` 127 → 119). The harness in `IronGrind.DevHarness` already references `ServerLogic`, so nothing in `Client` blocks the move.
+
+## Session Extract — 2026-10-08 (Leveling Story 014 committed; Story 015 created and implemented, not yet verified)
+- Story 014 committed as `3d4a21e` (31 files). The "Nothing committed" note in its /story-done extract is superseded. Not pushed; PAT rotation is still unconfirmed.
+- Created: production/epics/leveling-system/story-015-server-assembly-move.md — Move Leveling to the Server Assembly. Leveling `EPIC.md` is 14/15. Decision in the story the user may overrule: `XpThresholdTable` stays in `Foundation` on the shared allow-list (ADR-012 Decision 7 display data; no production code names it today).
+- Implemented (uncommitted): 5 `.cs` + 5 `.cs.meta` from `src/Foundation/LevelingSystem/` to `src/ServerLogic/LevelingSystem/` (`LevelingService`, `RespecTwoPhaseCommitCoordinator`, `IItemReservation`, `LevelingStateSnapshot`, `AllocateFreePointResult`; 10 staged renames, 0 lines changed); 10 doc-comment crefs to moved types turned into `<c>` text in 7 files (`CharacterStats.cs`, `ClassDefinition.cs`, `ClassRegistry.cs`, `LevelingDisplayFormulas.cs`, `LevelUpEventArgs.cs`, `XpThresholdTable.cs`, `PlayerResourceClusterPresenter.cs`); `AssemblyBoundaryLists.cs` (`NotYetMovedList` 127 → 119, `SharedAllowList` 31 → 34).
+- **Not verified.** The user reported a green run (2008/2008 at 16:05:28), but it ran while the agent was still working and before the Editor imported the move (no `src/ServerLogic/LevelingSystem.meta`, lists not yet edited), so it tested the pre-move compile. A fresh run is needed.
+- **Pending file:** `src/ServerLogic/LevelingSystem.meta` (Unity generates it on refresh; stage it).
+- Next: user recompiles, runs the suite, enters Play mode once to check the harness; then /story-done and commit.
+
+## Session Extract — /story-done 2026-10-08 (Leveling Story 015)
+- Verdict: COMPLETE
+- Story: production/epics/leveling-system/story-015-server-assembly-move.md — Move Leveling to the Server Assembly
+- Suite after the import of the move: 2008/2008 (run started 16:07:26; folder `.meta` generated 16:07:19 and staged); 9/9 boundary tests; no compile error or warning. The "Not verified" note in the extract above is superseded.
+- The user reported the harness works after the move; the Editor log shows no Play-mode entry after the move, so this is their word only. Not an acceptance criterion.
+- Leveling `EPIC.md` is Complete (15/15). Tech debt logged: None.
+- Nothing committed for Story 015: 10 staged renames, the folder `.meta` (staged), 7 doc-comment files, `AssemblyBoundaryLists.cs`, the story file (untracked), `EPIC.md`, this file. PAT rotation is still unconfirmed.
+- ADR-012 move order status: 6 of 9 done (Damage Calculation, Loot Table, Enhancement, NPC Interaction, Inventory, Leveling). `NotYetMovedList` is 119: Networking 108, Currency 5, Character Stats 6.
+- Next recommended, in a fresh session: the Networking server-part move. ADR-012 says it is "classified file by file first" — 108 types, many of them wire schemas and codecs that stay shared. That classification is a design task for the user to review before any story is written; consider doing it as its own document or as several stories by sub-folder. Open follow-up: mark Verification Required 8 confirmed in ADR-012 and the control manifest.
+
+> **Commit status 2026-10-08 (Leveling Story 015):** committed on `main` with the message "Leveling: Story 015 complete (moved to IronGrind.ServerLogic)". The "Nothing committed for Story 015" note in the /story-done extract above is superseded. Not pushed. Untracked and left alone: `bash.exe.stackdump`. PAT rotation is still unconfirmed. **Next:** Networking server-part classification (108 types), for the user's review before any story is written.

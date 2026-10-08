@@ -57,6 +57,9 @@ namespace IronGrind.Tests.EditMode.Architecture
             "IronGrind.LevelingSystem.LevelingDisplayFormulas", // consumer: LevelUpOverlayPresenter, RespecScreenPresenter
             "IronGrind.LevelingSystem.ILocalPlayerLevelingView", // consumer: RespecScreenPresenter
             "IronGrind.LevelingSystem.IRespecRequestSender",     // consumer: RespecScreenPresenter
+            "IronGrind.LevelingSystem.ILevelingEventBroadcaster", // consumer: LevelUpOverlayPresenter
+            "IronGrind.LevelingSystem.LevelUpEventArgs",          // consumer: LevelUpOverlayPresenter
+            "IronGrind.LevelingSystem.XpThresholdTable",          // consumer: PlayerResourceClusterPresenter (XP bar; receives Values as a list — wiring by the client composition root is planned)
         };
 
         /// <summary>
@@ -66,16 +69,6 @@ namespace IronGrind.Tests.EditMode.Architecture
         /// </summary>
         internal static readonly string[] NotYetMovedList =
         {
-            // ---- Leveling ----
-            "IronGrind.LevelingSystem.AllocateFreePointResult",
-            "IronGrind.LevelingSystem.IItemReservation",
-            "IronGrind.LevelingSystem.ILevelingEventBroadcaster",
-            "IronGrind.LevelingSystem.LevelUpEventArgs",
-            "IronGrind.LevelingSystem.LevelingService",
-            "IronGrind.LevelingSystem.LevelingStateSnapshot",
-            "IronGrind.LevelingSystem.RespecTwoPhaseCommitCoordinator",
-            "IronGrind.LevelingSystem.XpThresholdTable",
-
             // ---- Networking ----
             "IronGrind.Networking.CommitBeforeBroadcastResult",
             "IronGrind.Networking.CommitBeforeBroadcastSequencer",

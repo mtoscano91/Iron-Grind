@@ -2,7 +2,7 @@ namespace IronGrind.LevelingSystem
 {
     /// <summary>
     /// Event payload for <see cref="ILevelingEventBroadcaster.OnLevelUp"/>. Fired once per level
-    /// gained, in ascending order, only after <see cref="LevelingService.NotifyExperienceCrossedThreshold"/>'s
+    /// gained, in ascending order, only after <c>LevelingService.NotifyExperienceCrossedThreshold</c>'s
     /// full CR-2.9 consecutive-level-up loop has completed (CR-2.10) — never mid-iteration. See
     /// <c>story-003-consecutive-level-up-reentrancy.md</c> AC-LS-08.
     /// </summary>

@@ -12,7 +12,7 @@ namespace IronGrind.LevelingSystem
     /// <see cref="ClassRegistry"/> for the accompanying lookup mock.</para>
     /// <para>Auto-alloc increments are read in the fixed CR-2.4 iteration order
     /// {Strength, Dexterity, Vitality, Intelligence} — see
-    /// <see cref="LevelingService"/>'s private auto-alloc order table.</para>
+    /// <c>LevelingService</c>'s private auto-alloc order table.</para>
     /// </remarks>
     public readonly struct ClassDefinition
     {

@@ -16,8 +16,8 @@ namespace IronGrind.UI.LevelingSystem
     /// <c>style.scale</c> on the X axis (<see cref="UsageHints.DynamicTransform"/> set once at
     /// construction) — never <c>style.width</c> percentage. USS supplies
     /// <c>transform-origin: left center</c>.</para>
-    /// <para><b>xpThresholds is caller-supplied, not read from <see cref="LevelingSystem.LevelingService"/>.</b>
-    /// <see cref="LevelingSystem.LevelingService.GetExperienceThreshold"/> only exposes
+    /// <para><b>xpThresholds is caller-supplied, not read from <c>LevelingService</c>.</b>
+    /// <c>LevelingService.GetExperienceThreshold</c> only exposes
     /// <c>XpThreshold[CurrentLevel + 1]</c> (the threshold to the NEXT level); the AC-LS-47 fill
     /// formula also needs <c>XpThreshold[CurrentLevel]</c> (the lower bound), which has no
     /// public accessor — <c>LevelingService</c>'s own <c>_xpThresholds</c> field is private, and

@@ -5,7 +5,7 @@ namespace IronGrind.LevelingSystem
 {
     /// <summary>
     /// The one copy of the Leveling display formulas (ADR-012 Decision 7, Leveling Story 014).
-    /// <see cref="LevelingService"/> (server) calls these to decide outcomes; the HUD
+    /// <c>LevelingService</c> (server) calls these to decide outcomes; the HUD
     /// (<c>LevelUpOverlayPresenter</c>, <c>RespecScreenPresenter</c>) calls the same methods to
     /// show the player what the server will compute. Pure and stateless: no member reads or
     /// writes any field, so no multiplier can be cached (AC-LS-16, AC-LS-34).

@@ -5,7 +5,7 @@ namespace IronGrind.LevelingSystem
     /// <summary>
     /// Caller-supplied in-memory <see cref="IClassRegistry"/> implementation. Mirrors the
     /// same "test-local/caller-supplied state for not-yet-built subsystems" idiom as
-    /// <see cref="LevelingService.RegisterPlayerEntity"/> (this epic) and
+    /// <c>LevelingService.RegisterPlayerEntity</c> (this epic) and
     /// <c>PartyDisbandCoordinator</c> (Networking Core Story 020) — nothing here is the real
     /// Class System, it is a stand-in a caller populates with whatever class data it needs.
     /// </summary>

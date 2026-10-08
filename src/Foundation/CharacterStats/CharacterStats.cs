@@ -989,7 +989,7 @@ namespace IronGrind.CharacterStats
         /// <c>Experience</c> is already sitting at the cap value and must never move again.
         /// <para><b>Depends on OQ-1</b> (see the <c>// TODO: OQ-1</c> note on <see cref="SetBaseStat"/>):
         /// this guarantee holds only because <see cref="StatID.Level"/> is, in practice, written
-        /// exclusively by <see cref="LevelingSystem.LevelingService"/>'s CR-2 sequence today. If
+        /// exclusively by <c>LevelingService</c>'s CR-2 sequence today. If
         /// OQ-1 (caller-identity enforcement on the <c>Level</c> write) is ever resolved by adding
         /// alternate writers, re-verify this guard's correctness against whatever new write paths
         /// are introduced.</para>
