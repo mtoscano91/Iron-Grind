@@ -3,7 +3,7 @@
 > **Engine**: Unity 6.3 LTS (6000.3)
 > **Last Updated**: 2026-10-08
 > **Manifest Version**: 2026-10-08
-> **ADRs Covered**: ADR-001, ADR-002, ADR-003, ADR-004, ADR-005, ADR-006, ADR-007, ADR-008, ADR-009, ADR-010, ADR-011, ADR-012 (and ADR-006 Amendment 1, 2026-10-01)
+> **ADRs Covered**: ADR-001, ADR-002, ADR-003, ADR-004, ADR-005, ADR-006, ADR-007, ADR-008, ADR-009, ADR-010, ADR-011, ADR-012, ADR-013 (and ADR-006 Amendment 1, 2026-10-01)
 > **Status**: Active — regenerate with `/create-control-manifest update` when ADRs change
 
 `Manifest Version` is the date this manifest was generated. Story files embed this date when created. `/story-readiness` compares a story's embedded version to this field to detect stories written against stale rules. Always matches `Last Updated` — they are the same date, serving different consumers.
@@ -80,6 +80,24 @@ This manifest is a programmer's quick-reference extracted from all Accepted ADRs
 - `ICharacterMutationGate`: closed by the irreversible-outcome coordinator before the outcome is applied in memory, opened after the result has been handled (success or rollback; opened in a `finally`). `Close` on an already closed gate is an error — one write in flight per character — source: ADR-011
 - The inbound request dispatcher (between the RPC guard chain and game logic) checks the gate once per request. A request whose type is marked `HeldDuringIrreversibleWrite` (every bag-mutating request: move, equip, unequip, discard, sell, buy, consumable use, accessory merge) is appended to the character's hold queue while the gate is closed; other requests are dispatched normally. When the gate opens, held requests are dispatched in arrival order on the same tick, after `Drain` and before that tick's new requests; if it opened because of a failed write, they are discarded — source: ADR-011
 
+**Server random provider (ADR-013):**
+- Every piece of server code that needs a random number takes an `IRandomProvider`: `float NextFloat()` — uniform in [0.0f, 1.0f), `0.0f` is a possible result, `1.0f` is not; `double NextDouble()` — uniform in [0.0, 1.0); `int NextInt(int minInclusive, int maxExclusive)` — uniform in [`minInclusive`, `maxExclusive`), returns `minInclusive` when the two are equal, throws `ArgumentOutOfRangeException` when `minInclusive > maxExclusive` — source: ADR-013
+- The interface and its production implementation are in the namespace `IronGrind.Randomness`, folder `src/ServerLogic/Randomness/`, assembly `IronGrind.ServerLogic`. The namespace is added to `ServerOnlyNamespaces` in `tests/EditMode/Architecture/AssemblyBoundaryLists.cs`, so the boundary test fails if one of these types appears in `Foundation` or `Client` — source: ADR-013, ADR-012
+- A member is added to the interface only when a GDD rule needs a draw the three above cannot express without bias or rounding. Convenience members (pick from a list, shuffle, weighted choice) are static helpers that take an `IRandomProvider` — source: ADR-013
+- `SystemRandomProvider` is a sealed class that wraps one `System.Random` handed to its constructor (null → `ArgumentNullException`). `NextFloat()` is `ToUnitFloat(_random.Next())` — one call to the underlying generator per draw; the public static `ToUnitFloat(int sample)` returns `(sample >> 7) * (1f / 16777216f)` and throws `ArgumentOutOfRangeException` for a negative `sample`. `NextDouble()` returns `_random.NextDouble()` unchanged; `NextInt(min, max)` returns `_random.Next(min, max)` unchanged — source: ADR-013
+- A caller whose threshold is a `float` either draws `NextFloat()`, or widens the threshold to `double` and draws `NextDouble()` — source: ADR-013
+- Injection: a class that rolls takes `IRandomProvider` as a constructor parameter and stores it in a `private readonly` field (a null argument throws `ArgumentNullException`); a static method that rolls takes it as a parameter (`LootDropRoller.Roll(table, random)`); it is not a parameter of a public gameplay method on an instance — source: ADR-013
+- The server composition root creates exactly one `IRandomProvider` at startup by calling `RandomProviderFactory.CreateSeededFromEntropy(out int seed)` and passes that same instance to every system it constructs — source: ADR-013
+- `RandomProviderFactory` replaces `LootRandomFactory`: it draws a 32-bit seed from `RandomNumberGenerator.Create()`, logs `[Random] PRNG seed: {seed}` once with `UnityEngine.Debug.Log`, and returns `new SystemRandomProvider(new System.Random(seed))` — source: ADR-013
+- The provider is drawn from the game-logic thread only (tick code, in ADR-011's terms). It has no lock. If a persistence continuation, a thread-pool callback or a background job needs an outcome, the tick draws it first and passes the value in — source: ADR-013, ADR-011
+- Each roll is one independent draw. Each consumer's GDD states how many draws one operation makes, and its tests assert that count — source: ADR-013
+- Values that must be unpredictable to an attacker (session tokens, authentication nonces, anything in `networking-session-token.md` or `authentication.md`) use `System.Security.Cryptography.RandomNumberGenerator` — source: ADR-013
+- The startup log that carries the seed is treated like a credential until the generator is replaced: not shipped to a third-party log service, not pasted into bug reports, readable by operators only — source: ADR-013
+- Tests implement `IRandomProvider`. Two shared doubles live in `tests/EditMode/Randomness/`: `ScriptedRandomProvider` (three queues filled with `EnqueueFloat`, `EnqueueDouble`, `EnqueueInt`; each `Next…` call dequeues from its own queue and returns the value unchanged; a draw from an empty queue throws `InvalidOperationException`; `DrawCount`, `FloatDrawCount`, `DoubleDrawCount`, `IntDrawCount`) and `RecordingRandomProvider` (wraps another `IRandomProvider`, forwards every call, keeps the last value returned by each method plus the same counters) — source: ADR-013
+- Test rules: a test that needs a pseudo-random sequence builds `new SystemRandomProvider(new System.Random(SEED))` with `SEED` as a named constant; "guaranteed crit" and similar setups script the roll (`EnqueueFloat(0.0f)`) and do not rely on a stat of 1.0; a test that does not care about the roll still supplies a double; for paths that must not draw, an empty `ScriptedRandomProvider` is the assertion; seeded tests assert properties (range, rate within a band), never specific values — source: ADR-013
+- Enforcement: the `System.Random` type rule (see Forbidden Approaches) is asserted by a reflection test in `tests/EditMode/Architecture/`, beside the ADR-012 boundary test, from Migration Plan step 3. The other bans are calls inside method bodies and are checked by a source search in code review; the search must match the unqualified name `Random` too (`LootTableService` and `LootDropRoller` write `Random` under `using System;`) — source: ADR-013
+- Migration status: `src/ServerLogic/Randomness/` and `tests/EditMode/Randomness/` are created by Damage Calculation Story 003 (Migration Plan step 1); Loot Table migrates in step 2 and Enhancement in step 3. Until step 3 is done, `EnhancementService`, `LootTableService` and `LootDropRoller` are the listed exceptions to the `System.Random` type rule — source: ADR-013
+
 **Hosting backend (ADR-007):**
 - Unity 6.3 IL2CPP headless server processes on Ubuntu 22.04 LTS (Hetzner VPS) — source: ADR-007
 - PostgreSQL co-located on same machine; connect via loopback `127.0.0.1:5432` — source: ADR-007
@@ -153,6 +171,19 @@ This manifest is a programmer's quick-reference extracted from all Accepted ADRs
 - **Never hard-code the path of an `.asmdef` in the boundary test** — a `file:` package has no real `Packages/com.irongrind.src/` folder on disk — source: ADR-012
 - **Never let a PlayMode test assembly reference `IronGrind.ServerLogic` unless it is Editor-only or carries the same define constraint** — it fails to compile for a client player — source: ADR-012
 - **Never distribute a client build before the move stories are complete** — until a system's move is done its code is still in the client build (the move stories were completed on 2026-10-08; AC-DC-I-01 and the second sentence of AC-CS-G-01 stay open until the client-binary scan, ADR-012 Decision 6 check 2) — source: ADR-012
+- **Never use `UnityEngine.Random` in `IronGrind.ServerLogic`, in any form** — global state, not injectable — source: ADR-013
+- **Never use a static or ambient accessor for the random provider** (`RandomProvider.Current`, a singleton, a service locator) — hidden dependency; tests must set and restore global state, which breaks test isolation — source: ADR-013
+- **Never write `new System.Random(...)` in `IronGrind.ServerLogic` anywhere except `RandomProviderFactory`** — source: ADR-013
+- **Never use `System.Random` as the type of a field, constructor parameter or method parameter in `IronGrind.ServerLogic`, except inside `SystemRandomProvider` and `RandomProviderFactory`** — holds from the end of ADR-013 Migration Plan step 3; until then `EnhancementService`, `LootTableService` and `LootDropRoller` are the listed exceptions — source: ADR-013
+- **Never cast the result of `NextDouble()` to `float`** — a double just under 1.0 becomes `1.0f`, and a double just under 0.75 becomes `0.75f`, which turns a crit into a non-crit under the strict `<`; a redraw breaks "exactly one draw per call" — source: ADR-013
+- **Never create a generator per system or per entity, re-seed, or derive a child generator from the process one** — one generator per zone process — source: ADR-013
+- **Never draw from a persistence continuation, a thread-pool callback or a background job** — `System.Random` is not thread-safe and corrupts its state silently under concurrent use — source: ADR-013, ADR-011
+- **Never store a previous draw, a draw counter, a streak or a "pity" value that changes later odds; never store random-number state on an entity, on a character, in a session, in the character record or in a zone-transfer handoff** — nothing about randomness is persisted — source: ADR-013
+- **Never use `IRandomProvider` for a value that must be unpredictable to an attacker** — it is a seeded, reproducible generator — source: ADR-013
+- **Never subclass `System.Random` as a test double** — each double silently inherits real random behaviour for the methods it does not override — source: ADR-013
+- **Never call `RandomProviderFactory.CreateSeededFromEntropy` from a test**, except the one test of the factory itself, which asserts the log line and nothing about the values — source: ADR-013
+- **Never assert a specific value sequence in a seeded test** — .NET does not guarantee the `System.Random` algorithm across runtime versions — source: ADR-013
+- **Never make a public release, or a build in which Enhancement outcomes have real value to players, without a `security-engineer` verdict (`/security-audit`) on the predictable-generator risk** — source: ADR-013
 
 ### Performance Guardrails
 
@@ -166,6 +197,9 @@ This manifest is a programmer's quick-reference extracted from all Accepted ADRs
 - **Zone server load time**: < 500ms at MVP asset scope — source: ADR-009
 - **NGO channel mapping — identifiers are verification-pending**: `ReliableSequenced` / `Reliable` / `Unreliable` / `ReliableFragmentedSequenced` are the proposed identifiers per ADR-004 Decision 2, but the Unity 6.3 NGO/UTP API is post-LLM-cutoff. The guarantee mapping (R-OD/R-U/U-U) is binding; confirm exact enum member names against the engine reference before writing networking code — source: ADR-004
 - **Assembly boundary — engine behaviour is verification-pending**: confirm each item on the first build or story that exercises it — (1) a client player contains no `IronGrind.ServerLogic`; (2) a Linux Dedicated Server IL2CPP build contains it and runs; (3) whether `UNITY_SERVER` is defined in the Editor under a server build profile; (4) whether asmdef platform lists offer a Dedicated Server entry (not relied on); (5) `IPostBuildPlayerScriptDLLs` and the output file locations for the client-binary scan; (6) `[MovedFrom]` for `[SerializeReference]` data when a type changes assembly; (7) the import setting that keeps Npgsql and Dapper out of a client player; (8) ~~whether a `MonoBehaviour` in an assembly constrained to `UNITY_EDITOR` can be attached to a scene object~~ — confirmed 2026-10-08 on Unity 6.3 (Leveling Story 014): it attaches and runs in Play mode — source: ADR-012
+- **Random draw**: one interface call plus a shift and a multiply per float draw; no allocation per draw; one `SystemRandomProvider` and one `System.Random` per process — source: ADR-013
+- **`NextFloat()` resolution**: 24 bits — a probability smaller than 2⁻²⁴ (about 6 × 10⁻⁸) cannot be expressed with `NextFloat()`; such a roll uses `NextDouble()` — source: ADR-013
+- **Random provider — runtime behaviour is verification-pending**: (1) `System.Random.Next()` on the project's scripting runtime returns a value in [0, `int.MaxValue`) — asserted by the adapter tests of Migration Plan step 1; (2) `SystemRandomProvider.NextFloat()` allocates nothing per call under IL2CPP; (3) `RandomNumberGenerator.Create()` returns entropy in the Linux IL2CPP Dedicated Server build with managed stripping on — check: two server starts log different seeds — source: ADR-013
 
 ---
 
@@ -210,6 +244,10 @@ This manifest is a programmer's quick-reference extracted from all Accepted ADRs
 **Assembly placement — Core tier (ADR-012):**
 - Server-authoritative core logic — resolvers and services, their configs, server state machines, the tick loop, RPC guards and server-side validation — is `IronGrind.ServerLogic`. Hit Detection, Navigation/Pathfinding and Auto-Attack Combat are written in `src/ServerLogic/` from their first story (see Foundation → Server/client assembly boundary) — source: ADR-012
 
+**Random draws — Core tier (ADR-013):**
+- `DamageCalculator(stats, weapons, items, bonuses, config, random)` draws `NextFloat()` for the crit roll: exactly one draw per `Calculate` call (including when `CritChance` is 0.0) and none on a rejected call. `Calculate(baseDamage, attackerId, targetId, context)` keeps the signature the GDD specifies (see Foundation → Server random provider) — source: ADR-013
+- The AC-DC-F-09b test scripts `0.74999994f`, the float directly below 0.75, not the GDD's `0.7499999` — source: ADR-013
+
 ### Forbidden Approaches
 
 - **Never call `Navigation.Tick()` or `SyncAgentPositions()` outside `ZoneNavigationService` and the canonical tick phase** — source: ADR-002
@@ -224,6 +262,7 @@ This manifest is a programmer's quick-reference extracted from all Accepted ADRs
 - **Never use lambda captures for persistent event subscriptions** — not unsubscribeable by reference — source: ADR-010
 - **Never use `await`, `async` methods, `Task.Result`, `Task.Wait()`, `GetAwaiter().GetResult()`, `ContinueWith` or `async void` in tick-driven core code** — start the `Task` and pass it to `ITickCompletionQueue.Track` — source: ADR-011
 - **Never place a formula that decides an outcome the player does not see computed (damage, crit) in `IronGrind.Foundation`** — it would ship in the client — source: ADR-012
+- **Never pass the roll into `DamageCalculator.Calculate` as a value** — it changes the signature the GDD specifies and moves "one roll per call" to every caller, where a caller can reuse or forget a roll — source: ADR-013
 
 ### Performance Guardrails
 
@@ -244,6 +283,9 @@ This manifest is a programmer's quick-reference extracted from all Accepted ADRs
 - Every irreversible outcome (enhancement result, level-up, respec, item consumption) goes through `IrreversibleOutcomeCoordinator`: `Begin` on tick N (validate → close gate → acknowledge → compute and apply in memory → start the write → `Track`); the completion callback on tick N+k delivers on `Success`, or reverts, disconnects, alerts and preserves the session on any failure. For the Enhancement System: `BeginAttempt` in `Begin`, `CompleteAttempt` on success, `RollBackAttempt` on failure — source: ADR-011
 - Feature services and their configs (`EnhancementService`, `LootAuctionService`, `GroundItemService`, `EnhancementConfig`, …) are `IronGrind.ServerLogic`; Enemy AI and Status Effects are written in `src/ServerLogic/` from their first story — source: ADR-012
 - A feature type goes in `IronGrind.Foundation` only with a named client consumer, and is added to the boundary test's shared allow-list with that consumer in a comment; a new type in `Foundation` that is on neither list fails the test — source: ADR-012
+- Loot Table draws one `NextDouble()` per drop-table entry, compared with `(double)DropChance`, and one `NextInt(GoldMin, GoldMax + 1)` for gold per kill — source: ADR-013
+- Enhancement draws one `NextDouble()` per attempt and none on a rejected attempt — source: ADR-013
+- Enemy AI's Enraged spawn roll (CR-AI-12) is one `NextDouble()` per spawn on the injected process-level `IRandomProvider` — source: ADR-013
 
 ### Forbidden Approaches
 
@@ -253,6 +295,8 @@ This manifest is a programmer's quick-reference extracted from all Accepted ADRs
 - **Never use `await`, `async` methods, `Task.Result`, `Task.Wait()`, `GetAwaiter().GetResult()`, `ContinueWith` or `async void` in tick-driven feature code** — start the `Task` and pass it to `ITickCompletionQueue.Track` — source: ADR-011
 - **Never hold, reject or defer a client request inside a game system because a write is in flight, and never read `ICharacterMutationGate` from a game system** — the request dispatcher is the single enforcement point; the only readers of the gate are the dispatcher and the server-originated bag mutators named above — source: ADR-011
 - **Never place a drop roll, enhancement odds or any other outcome formula in `IronGrind.Foundation`** — only a formula whose result the game shows the player, and which the client must evaluate to draw a screen, may be there — source: ADR-012
+- **Never seed a `System.Random` at mob spawn** — ADR-013 Decision 4 overrides that sentence of `enemy-ai.md` CR-AI-12; the process-level `IRandomProvider` is injected — source: ADR-013
+- **Never add a pity or streak mechanic to a roll** — no system stores a value that changes later odds — source: ADR-013
 
 ---
 
@@ -375,6 +419,7 @@ Source: `docs/engine-reference/unity/deprecated-apis.md`
 - **No `await` in server tick code**: tick-driven server code in every layer starts a `Task` and hands it to `ITickCompletionQueue`; it never awaits or blocks on it (see Foundation → Asynchronous persistence in the tick loop). `UnityEngine.Awaitable` is not used for tick logic — source: ADR-011
 - **Folder encodes build membership**: `src/Foundation/` ships in both builds, `src/ServerLogic/` in the server only, `src/Client/` in the client only, `src/DevHarness/` in neither. Server-only is the default for game logic (see Foundation → Server/client assembly boundary) — source: ADR-012
 - **Every move story is done (2026-10-08): no game-logic system remains in `IronGrind.Foundation`.** A new type goes in `Foundation` only with an entry on the boundary test's shared allow-list and its client consumer named; everything else is written in `src/ServerLogic/` or `src/Client/` — source: ADR-012
+- **Server randomness goes through the one injected `IRandomProvider`**: no `UnityEngine.Random`, no `new System.Random` and no static accessor in `IronGrind.ServerLogic` (see Foundation → Server random provider) — source: ADR-013
 - **`[SerializeField]` on properties**: compile error in Unity 6.3 — use on private fields only; or use `[field: SerializeField]` for auto-property backing fields — source: ADR-009, `current-best-practices.md`
 - **USS syntax errors block import** in Unity 6.3 (was a warning in 6.1/6.2) — all USS must be valid before commit; add USS linting to CI — source: ADR-005
 - **SRP Batcher**: enable in URP Asset → Advanced → SRP Batcher for significant CPU win on mobile — source: `current-best-practices.md`
