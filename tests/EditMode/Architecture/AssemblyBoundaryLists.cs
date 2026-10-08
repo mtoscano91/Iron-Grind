@@ -57,45 +57,6 @@ namespace IronGrind.Tests.EditMode.Architecture
         /// </summary>
         internal static readonly string[] NotYetMovedList =
         {
-            // ---- Loot Table ----
-            "IronGrind.LootTableSystem.AuctionResolvedEventArgs",
-            "IronGrind.LootTableSystem.BagFullPickupBlockedEventArgs",
-            "IronGrind.LootTableSystem.DropTier",
-            "IronGrind.LootTableSystem.GroundItem",
-            "IronGrind.LootTableSystem.GroundItemAssignedEventArgs",
-            "IronGrind.LootTableSystem.GroundItemDespawnedEventArgs",
-            "IronGrind.LootTableSystem.GroundItemExpiryWarningEventArgs",
-            "IronGrind.LootTableSystem.GroundItemID",
-            "IronGrind.LootTableSystem.GroundItemService",
-            "IronGrind.LootTableSystem.GroundItemSpawnedEventArgs",
-            "IronGrind.LootTableSystem.GroundItemState",
-            "IronGrind.LootTableSystem.ICharacterPositionProvider",
-            "IronGrind.LootTableSystem.IGroundItemService",
-            "IronGrind.LootTableSystem.ILootAuctionService",
-            "IronGrind.LootTableSystem.ILootDropSink",
-            "IronGrind.LootTableSystem.ILootTableService",
-            "IronGrind.LootTableSystem.IMobInfoProvider",
-            "IronGrind.LootTableSystem.IPartyService",
-            "IronGrind.LootTableSystem.LootAuctionService",
-            "IronGrind.LootTableSystem.LootBidResult",
-            "IronGrind.LootTableSystem.LootBidUpdateEventArgs",
-            "IronGrind.LootTableSystem.LootDropDistributor",
-            "IronGrind.LootTableSystem.LootDropRoller",
-            "IronGrind.LootTableSystem.LootEquipmentCache",
-            "IronGrind.LootTableSystem.LootRandomFactory",
-            "IronGrind.LootTableSystem.LootTableConstants",
-            "IronGrind.LootTableSystem.LootTableDefinition",
-            "IronGrind.LootTableSystem.LootTableEntry",
-            "IronGrind.LootTableSystem.LootTableRegistry",
-            "IronGrind.LootTableSystem.LootTableService",
-            "IronGrind.LootTableSystem.LootTableValidationIssue",
-            "IronGrind.LootTableSystem.LootTableValidator",
-            "IronGrind.LootTableSystem.LootTeardownCoordinator",
-            "IronGrind.LootTableSystem.MobInfo",
-            "IronGrind.LootTableSystem.MobTypeID",
-            "IronGrind.LootTableSystem.PartyID",
-            "IronGrind.LootTableSystem.PartyTagTracker",
-
             // ---- Enhancement ----
             "IronGrind.EnhancementSystem.EnhancementAttemptResult",
             "IronGrind.EnhancementSystem.EnhancementAttemptStart",
@@ -276,6 +237,18 @@ namespace IronGrind.Tests.EditMode.Architecture
             "IronGrind.CharacterStats.EquipmentModifierEntry",
             "IronGrind.CharacterStats.ILevelingService",
             "IronGrind.CharacterStats.StatSchema",
+        };
+
+        /// <summary>
+        /// Namespaces whose every type is server-only: none may be defined in <c>IronGrind.Foundation</c>
+        /// or <c>IronGrind.Client</c>, and each must have at least one type in <c>IronGrind.ServerLogic</c>.
+        /// A move story adds its namespace here only if the whole namespace moved. Namespaces that keep
+        /// shared types in <c>Foundation</c> (Networking, Currency, Character Stats, Leveling) are not listed.
+        /// </summary>
+        internal static readonly string[] ServerOnlyNamespaces =
+        {
+            "IronGrind.DamageCalculation", // Damage Calculation Story 006
+            "IronGrind.LootTableSystem",   // Loot Table Story 014
         };
     }
 }

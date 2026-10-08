@@ -25,7 +25,6 @@ namespace IronGrind.Tests.EditMode.Architecture
         private const string CLIENT = "IronGrind.Client";
         private const string SERVER_CONSTRAINT = "UNITY_SERVER || UNITY_EDITOR";
         private const string CLIENT_CONSTRAINT = "!UNITY_SERVER || UNITY_EDITOR";
-        private const string DAMAGE_NAMESPACE = "IronGrind.DamageCalculation";
         private const BindingFlags ALL_DECLARED = BindingFlags.Public | BindingFlags.NonPublic
             | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly;
 
@@ -156,9 +155,12 @@ namespace IronGrind.Tests.EditMode.Architecture
             Assert.IsEmpty(duplicates, "Duplicated within a list:\n" + string.Join("\n", duplicates));
         }
 
-        /// <summary>Damage Calculation lives in ServerLogic only (Story 006 acceptance criterion).</summary>
+        /// <summary>
+        /// The five Damage Calculation types the GDD and AC-DC-I-01 name are defined in ServerLogic
+        /// (Damage Calculation Story 006 acceptance criterion).
+        /// </summary>
         [Test]
-        public void test_damage_calculation_is_server_only()
+        public void test_damage_calculation_types_are_in_server_logic()
         {
             Type[] damageTypes =
             {
@@ -172,16 +174,38 @@ namespace IronGrind.Tests.EditMode.Architecture
             {
                 Assert.AreEqual(SERVER_LOGIC, type.Assembly.GetName().Name, type.FullName);
             }
+        }
 
+        /// <summary>
+        /// No type of a namespace on <see cref="AssemblyBoundaryLists.ServerOnlyNamespaces"/> is defined in
+        /// Foundation or Client, and each listed namespace has at least one type in ServerLogic, so a
+        /// misspelt or emptied entry fails instead of passing vacuously (Loot Table Story 014).
+        /// </summary>
+        [Test]
+        public void test_server_only_namespaces_have_no_type_outside_server_logic()
+        {
+            Assembly serverLogic = typeof(IronGrind.DamageCalculation.DamageCalculator).Assembly;
             Assembly foundation = typeof(IronGrind.CharacterStats.EntityID).Assembly;
             Assembly client = typeof(IronGrind.UI.LevelingSystem.LevelingHudController).Assembly;
-            foreach (Assembly assembly in new[] { foundation, client })
+            Type[] serverTypes = GetTypesOrFail(serverLogic);
+
+            var problems = new SortedSet<string>(StringComparer.Ordinal);
+            foreach (string serverOnlyNamespace in AssemblyBoundaryLists.ServerOnlyNamespaces)
             {
-                string[] leaked = GetTypesOrFail(assembly)
-                    .Where(t => t.Namespace == DAMAGE_NAMESPACE)
-                    .Select(t => t.FullName).OrderBy(n => n, StringComparer.Ordinal).ToArray();
-                Assert.IsEmpty(leaked, DAMAGE_NAMESPACE + " types found in " + assembly.GetName().Name + ":\n" + string.Join("\n", leaked));
+                foreach (Assembly assembly in new[] { foundation, client })
+                {
+                    foreach (Type leaked in GetTypesOrFail(assembly).Where(t => t.Namespace == serverOnlyNamespace))
+                    {
+                        problems.Add(leaked.FullName + " is defined in " + assembly.GetName().Name);
+                    }
+                }
+                if (!serverTypes.Any(t => t.Namespace == serverOnlyNamespace))
+                {
+                    problems.Add(serverOnlyNamespace + " has no type in " + SERVER_LOGIC);
+                }
             }
+
+            Assert.IsEmpty(problems, "Server-only namespace violations:\n" + string.Join("\n", problems));
         }
 
         /// <summary>
