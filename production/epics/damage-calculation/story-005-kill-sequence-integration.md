@@ -1,7 +1,7 @@
 # Story 005: Kill Sequence Against Real Character Stats
 
 > **Epic**: Damage Calculation
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-07
@@ -29,10 +29,10 @@
 
 *From GDD `design/gdd/damage-calculation.md`, scoped to this story. No caller exists yet (Auto-Attack Combat and the Skill System are not built), so the test plays the caller and executes the sequence the GDD prescribes.*
 
-- [ ] **AC-DC-I-02**: after `Calculate` returns `IsKill = true` and the caller applies `CharacterStats.ApplyDamage(TargetID, FinalDamage)`, an `OnEntityDied` subscriber that reads the target's current HP inside the handler observes `0.0`.
-- [ ] **AC-DC-I-02b**: with a sequencing recorder, the order is [XP award obtained] → [`AddExperience` applied] → [`ApplyDamage` called] → [`OnEntityDied` fires]. `OnEntityDied` does not fire before the caller calls `ApplyDamage`.
-- [ ] **AC-DC-I-06 (caller half)**: `BaseDamage = 500`, `Defense = 0`, no elemental weapon, `CurrentHP = 100.0` → the resolver returns `IsKill = true`, `FinalDamage = 500` with no side effect; when the caller then runs XP award → `AddExperience(AttackerID, xp)` → `ApplyDamage`, `OnEntityDied(TargetID)` fires exactly once.
-- [ ] **Second hit on the dead target**: a further `Calculate` on the same target after the sequence returns `IsKill = false` (dead-entity guard) and a repeated `ApplyDamage` does not fire `OnEntityDied` again.
+- [x] **AC-DC-I-02**: after `Calculate` returns `IsKill = true` and the caller applies `CharacterStats.ApplyDamage(TargetID, FinalDamage)`, an `OnEntityDied` subscriber that reads the target's current HP inside the handler observes `0.0`.
+- [x] **AC-DC-I-02b**: with a sequencing recorder, the order is [XP award obtained] → [`AddExperience` applied] → [`ApplyDamage` called] → [`OnEntityDied` fires]. `OnEntityDied` does not fire before the caller calls `ApplyDamage`.
+- [x] **AC-DC-I-06 (caller half)**: `BaseDamage = 500`, `Defense = 0`, no elemental weapon, `CurrentHP = 100.0` → the resolver returns `IsKill = true`, `FinalDamage = 500` with no side effect; when the caller then runs XP award → `AddExperience(AttackerID, xp)` → `ApplyDamage`, `OnEntityDied(TargetID)` fires exactly once.
+- [x] **Second hit on the dead target**: a further `Calculate` on the same target after the sequence returns `IsKill = false` (dead-entity guard) and a repeated `ApplyDamage` does not fire `OnEntityDied` again.
 
 ---
 
@@ -43,7 +43,7 @@
 - **The caller in the test**: a small private helper in the fixture that does what GDD Rule 4 prescribes — if `result.IsKill`: obtain the XP amount from a fake XP source, call `stats.AddExperience(attackerId, xp)`, then `stats.ApplyDamage(targetId, result.FinalDamage)`. It is test code; it is not the Auto-Attack Combat implementation.
 - **XP source**: `LevelingSystem.GetXPAward` is caller-owned (OQ-DC-3). Use a fake that returns a fixed amount and records its call in the sequence list. Do not add a Leveling dependency to `DamageCalculator`.
 - **Recording order**: the fake XP source, the stat-changed subscription for `StatID.Experience` (or a direct read after `AddExperience`), the helper's `ApplyDamage` step and the `OnEntityDied` handler each append to one list.
-- **Leveling service**: `CharacterStats` takes an `ILevelingService`; use the same test double the existing `tests/EditMode/CharacterStats/` fixtures use.
+- **Leveling service**: build the stats with `CharacterStatsFixture.CreateWithLeveling(new AllPlayersLevelingService())` (in `tests/EditMode/DamageCalculation/DamageCalculationTestFakes.cs`) and set the attacker's `Level` to 1. The default fixture stub treats no entity as a player and `AddExperience` is also a no-op at level 60 (TD-062), so XP would never be added. (Corrected at `/story-readiness` 2026-10-08.)
 
 ---
 
@@ -72,7 +72,7 @@
 **Story Type**: Integration
 **Required evidence**: `tests/EditMode/Integration/DamageCalculation/DamageCalculation_KillSequence_integration_tests.cs` — must exist and pass.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing (8 cases)
 
 ---
 
@@ -80,3 +80,18 @@
 
 - Depends on: Story 004.
 - Unlocks: None inside this epic. Gives Auto-Attack Combat a tested reference for its kill sequence.
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-08
+**Criteria**: 4/4 passing (none deferred). Full EditMode suite in Unity batch mode: 1995 / 1995.
+**Deviations** (all advisory):
+- Assembly ADR gate not met: carried from Story 001 (user decision 2026-10-07). Tracked in Story 006.
+- The caller is test code. No real caller exists (Auto-Attack Combat and the Skill System are not built); the fixture's `RunCallerFollowUp` follows GDD Core Rule 4. In the order test the `xpAward` and `applyDamage` markers are written by that helper; the observations taken from `CharacterStats` are the stat-changed event for the attacker's `Experience`, the `OnEntityDied` event, the target HP read inside the died handler, and the attacker's `Experience` read inside the died handler (already raised when the death fires).
+- Leveling test double: the story first pointed at the default `CharacterStatsFixture` stub, under which `AddExperience` is a no-op (TD-062). Corrected at `/story-readiness`: `AllPlayersLevelingService`, attacker at Level 1.
+- The recorder is cleared at the end of arrange, because setup writes raise the same stat-changed event.
+- `TR-dmg-006` is a placeholder (registry empty).
+**For Auto-Attack Combat**: this file is the tested reference for the kill sequence — obtain the XP award, `AddExperience`, then `ApplyDamage`; `OnEntityDied` fires inside `ApplyDamage` after HP is written to 0; a second `Calculate` on the dead target is not a kill and logs the dead-entity dev error, and a second `ApplyDamage` does not fire the event again.
+**Test Evidence**: Integration — `tests/EditMode/Integration/DamageCalculation/DamageCalculation_KillSequence_integration_tests.cs` (8 cases; 3 beyond the acceptance criteria: non-kill, exact-lethal damage, two targets killed in turn). No production code changed.
+**Code Review**: Complete — APPROVED WITH SUGGESTIONS (unity-specialist, qa-tester); all 5 suggestions applied. Director gates QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (Lean mode).

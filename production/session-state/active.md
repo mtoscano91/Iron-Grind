@@ -18,7 +18,28 @@
 
 > **Commit and push status 2026-10-07 (Networking Core 030–031):** Story 030 (queue, gate, tests, `.meta` files, story, ADR-011 clarification) is committed as `c55e423`, and Story 031 (coordinator, failure protocol, sequencer change, tests, `.meta` files, story, `EPIC.md`, tech-debt register, this file) as `addf77f`. The user asked for a push: `origin/main` is at `addf77f` (`3345f44..addf77f`), level with `main`. The "not committed" / "Uncommitted" notes in the Story 030 and Story 031 extracts below are superseded. Uncommitted: this note only. Untracked and left alone: `bash.exe.stackdump`. PAT rotation is still unconfirmed.
 
+> **Commit status 2026-10-08 (Damage Calculation Story 004):** Story 004 (code, tests, `.meta` file, story, `EPIC.md`, TD-062, this file) is committed as `1837762`. The "not committed" / "Uncommitted" notes in the Story 004 extracts below are superseded, and so is the "Not pushed … 1 ahead" part of the Story 002 note that follows. Not pushed: `main` is 2 ahead of `origin` (`136bc10`, `1837762`; `origin/main` is at `b6f9dfa`). Uncommitted: this note only. Untracked and left alone: `bash.exe.stackdump`. PAT rotation is still unconfirmed. **Next:** Story 005 — `/story-readiness production/epics/damage-calculation/story-005-kill-sequence-integration.md`, then `/dev-story`, in a fresh session; read TD-062 first.
+
 > **Commit status 2026-10-08 (Damage Calculation Story 002):** Story 002 (code, tests, `.meta` files, story, `EPIC.md`, this file) is committed as `136bc10`. The "not committed" / "Uncommitted" notes in the Story 002 extracts below are superseded. Not pushed: `main` is 1 ahead of `origin` (`b6f9dfa`). Uncommitted: this note only. Untracked and left alone: `bash.exe.stackdump`. PAT rotation is still unconfirmed. **Next:** Story 004 — `/story-readiness production/epics/damage-calculation/story-004-kill-detection.md`, then `/dev-story`.
+
+## Session Extract — /story-done 2026-10-08 — Damage Calculation Story 005 (not committed)
+- `/code-review` 2026-10-08: APPROVED WITH SUGGESTIONS (`unity-specialist` + `qa-tester`, nothing required). User said "fix all"; all 5 applied: the died handler also records the attacker's `Experience` (asserted 290 at death in the order test), new exact-lethal test (HP 500, base 500), a remark on bare `CharacterStats` / `DamageCalculation` names binding to namespaces in the Integration folders, re-entrance comment corrected (throws in the Editor, logs and skips in release), `FakeXpSource` moved to the end of the fixture. Test run after the fixes: 1995 / 1995.
+- Verdict: COMPLETE WITH NOTES (4/4 criteria, all covered by automated tests). Lean mode: QL-TEST-COVERAGE and LP-CODE-REVIEW skipped.
+- Story: `production/epics/damage-calculation/story-005-kill-sequence-integration.md` — Kill Sequence Against Real Character Stats. Status → Complete, Completion Notes added. `EPIC.md` → In Progress (4/6 — 0 Ready, 2 Blocked).
+- Tech debt logged: None.
+- Uncommitted since `1837762`: the new test file and its folder (`tests/EditMode/Integration/DamageCalculation/` + two `.meta` files), the story, `EPIC.md`, this file. `main` is 2 ahead of `origin` (not pushed). `bash.exe.stackdump` stays untracked. PAT rotation still unconfirmed.
+- Next recommended: no Ready story in Damage Calculation. Stories 003 and 006 each need an ADR: server RNG injection (OQ-DC-2) and the server/client assembly boundary — `/architecture-decision` for each, in a fresh session. Other epics without stories: authentication, status-effects, equipment-system (gate OQ-EQS-9). Still stale: `production/epics/index.md` Damage Calculation row.
+
+## Session Extract — /dev-story 2026-10-08 — Damage Calculation Story 005 implemented (not committed)
+- Story: `production/epics/damage-calculation/story-005-kill-sequence-integration.md` — Kill Sequence Against Real Character Stats (Integration). Status still Ready (set by `/story-done`).
+- `/story-readiness` (lean): NEEDS WORK → fixed in the story with user approval: the Leveling-service note pointed at the default fixture stub (no entity is a player, TD-062); it now says `CreateWithLeveling(new AllPlayersLevelingService())` and attacker Level 1.
+- Files changed: the story file only. No production code (as the story expects).
+- Test written: `tests/EditMode/Integration/DamageCalculation/DamageCalculation_KillSequence_integration_tests.cs` — 7 `[Test]`; new folder, so the folder `.meta` and the file `.meta` must be committed.
+- Test run (Unity batch mode, EditMode): 1994 / 1994 passed.
+- Implemented by `gameplay-programmer`; file reviewed in the main session.
+- Choices beyond the story: the `addExperience` marker is recorded by a named `StatChangedHandler` (`AddExperience` → `SetBaseStat` raises stat-changed outside a transaction); the recorder is cleared after arranging, because setup writes raise the same event; the `applyDamage` marker is appended just before `ApplyDamage`; the caller is split into `CalculateHit` / `RunCallerFollowUp` / `RunCaller`; one extra test (two targets killed in turn).
+- Blockers: None.
+- Next: `/code-review` on the test file, then `/story-done`. After that the epic has no Ready story: 003 needs the server RNG ADR, 006 the server/client assembly ADR.
 
 ## Session Extract — /story-done 2026-10-08 — Damage Calculation Story 004 (not committed)
 - Verdict: COMPLETE WITH NOTES (10/10 criteria, all covered by automated tests; EditMode 1987 / 1987). Lean mode: QL-TEST-COVERAGE and LP-CODE-REVIEW skipped; `/code-review` had already run.
