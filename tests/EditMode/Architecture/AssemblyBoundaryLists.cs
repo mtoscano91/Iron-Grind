@@ -240,7 +240,7 @@ namespace IronGrind.Tests.EditMode.Architecture
         };
 
         /// <summary>
-        /// Namespaces whose every type is server-only: none may be defined in <c>IronGrind.Foundation</c>
+        /// Namespaces whose every type is server-only, nested namespaces included: none may be defined in <c>IronGrind.Foundation</c>
         /// or <c>IronGrind.Client</c>, and each must have at least one type in <c>IronGrind.ServerLogic</c>.
         /// A move story adds its namespace here only if the whole namespace moved. Namespaces that keep
         /// shared types in <c>Foundation</c> (Networking, Currency, Character Stats, Leveling) are not listed.

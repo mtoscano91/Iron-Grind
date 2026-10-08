@@ -194,12 +194,12 @@ namespace IronGrind.Tests.EditMode.Architecture
             {
                 foreach (Assembly assembly in new[] { foundation, client })
                 {
-                    foreach (Type leaked in GetTypesOrFail(assembly).Where(t => t.Namespace == serverOnlyNamespace))
+                    foreach (Type leaked in GetTypesOrFail(assembly).Where(t => IsInNamespace(t, serverOnlyNamespace)))
                     {
                         problems.Add(leaked.FullName + " is defined in " + assembly.GetName().Name);
                     }
                 }
-                if (!serverTypes.Any(t => t.Namespace == serverOnlyNamespace))
+                if (!serverTypes.Any(t => IsInNamespace(t, serverOnlyNamespace)))
                 {
                     problems.Add(serverOnlyNamespace + " has no type in " + SERVER_LOGIC);
                 }
@@ -235,6 +235,15 @@ namespace IronGrind.Tests.EditMode.Architecture
             }
 
             Assert.IsEmpty(violations, "ServerLogic types in Foundation/Client signatures:\n" + string.Join("\n", violations));
+        }
+
+        /// <summary>True when the type is in <paramref name="rootNamespace"/> or in a namespace nested under it.</summary>
+        private static bool IsInNamespace(Type type, string rootNamespace)
+        {
+            string typeNamespace = type.Namespace;
+            return typeNamespace != null
+                && (typeNamespace == rootNamespace
+                    || typeNamespace.StartsWith(rootNamespace + ".", StringComparison.Ordinal));
         }
 
         private static string[] Safe(string[] values)
