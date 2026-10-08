@@ -227,8 +227,8 @@ namespace IronGrind.Networking
         /// CR-GH-8, <c>networking-ghost-session.md</c>). <paramref name="tickNumber"/> is the server
         /// tick the disband event is processed at -- the boundary after which post-disconnect party
         /// XP share accumulation must stop for every ghosted member (AC-GH-18). Fires once per
-        /// disband event, before any per-member <see cref="GhostXpPoolTracker.StopAccumulation"/>
-        /// call issued by <see cref="PartyDisbandCoordinator.ProcessPartyDisband"/>.
+        /// disband event, before any per-member <c>GhostXpPoolTracker.StopAccumulation</c>
+        /// call issued by <c>PartyDisbandCoordinator.ProcessPartyDisband</c>.
         /// </summary>
         void OnPartyDisbanded(uint partyId, uint tickNumber);
 
@@ -282,7 +282,7 @@ namespace IronGrind.Networking
 
         /// <summary>
         /// Called when the server emits a <c>ConnectionQualityUpdate</c> to a single client
-        /// (CR-NET-8.3, <see cref="OwlThresholdHysteresisTracker.EvaluateOwlSample"/>). Fires only
+        /// (CR-NET-8.3, <c>OwlThresholdHysteresisTracker.EvaluateOwlSample</c>). Fires only
         /// on an actual OWL-compensation mode flip (ON&#8596;OFF) — never on every OWL sample, and
         /// never for the implicit default-mode baseline established by an entity's first sample
         /// (unless that very first sample itself crosses the threshold, in which case the flip is
@@ -300,9 +300,9 @@ namespace IronGrind.Networking
         /// <summary>
         /// Called when the server fires a critical infrastructure alert following a
         /// <c>SaveIrreversibleOutcome</c> persistence write failure
-        /// (<see cref="CommitBeforeBroadcastSequencer"/>, CR-NET-5.5 / CR-CP-5 step 4). Fires after
+        /// (<c>CommitBeforeBroadcastSequencer</c>, CR-NET-5.5 / CR-CP-5 step 4). Fires after
         /// the caller's revert callback and the client disconnect, before the session is preserved
-        /// for <see cref="CommitBeforeBroadcastSequencer.SESSION_TTL_SECONDS"/> (CR-CP-5's numbered
+        /// for <c>CommitBeforeBroadcastSequencer.SESSION_TTL_SECONDS</c> (CR-CP-5's numbered
         /// order — see that class's remarks). Used by AC-CBB-1.
         /// </summary>
         void OnCriticalInfrastructureAlertFired(uint clientId, string reason);

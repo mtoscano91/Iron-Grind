@@ -13,25 +13,25 @@ namespace IronGrind.Networking
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>Stateful, per-client registry — same shape as <see cref="ConnectionStateMachine"/>, not
-    /// <see cref="CommitBeforeBroadcastSequencer"/>'s stateless-static shape:</b> reassembly progress
+    /// <b>Stateful, per-client registry — same shape as <c>ConnectionStateMachine</c>, not
+    /// <c>CommitBeforeBroadcastSequencer</c>'s stateless-static shape:</b> reassembly progress
     /// (attempt count, gate-open/exhausted flags, the timeout baseline tick) is inherently state that
     /// must survive across separate <see cref="EvaluateReassemblyTimeout"/> calls for the same client,
     /// so this class owns an in-memory <see cref="Dictionary{TKey,TValue}"/> registry keyed by
-    /// <c>clientId</c>, exactly like <see cref="ConnectionStateMachine"/>'s own account registry.
+    /// <c>clientId</c>, exactly like <c>ConnectionStateMachine</c>'s own account registry.
     /// </para>
     /// <para>
     /// <b>Tick-driven, no wall-clock, no <see cref="System.Threading.Thread.Sleep"/>:</b>
     /// <see cref="EvaluateReassemblyTimeout"/> takes <c>currentTick</c> and a caller-supplied
     /// <c>reassemblyTimeoutTicks</c> — never a hardcoded <c>FRAGMENT_REASSEMBLY_TIMEOUT_SECONDS</c>
-    /// constant — matching <see cref="ConnectionStateMachine.EvaluateTimeouts"/>'s
+    /// constant — matching <c>ConnectionStateMachine.EvaluateTimeouts</c>'s
     /// <c>heartbeatTimeoutTicks</c>/<c>connectingTimeoutTicks</c> precedent: the GDD's own default (10s)
     /// and safe range ([5, 30]) are documentation only, never baked into this class.
     /// </para>
     /// <para>
     /// <b><see cref="MAX_SNAPSHOT_RETRANSMIT_ATTEMPTS"/> is declared here, provisionally</b> — the one
     /// value AC-NC-40 itself pins to a concrete literal (3), following
-    /// <see cref="CommitBeforeBroadcastSequencer.SESSION_TTL_SECONDS"/>'s precedent (Story 011) for a
+    /// <c>CommitBeforeBroadcastSequencer.SESSION_TTL_SECONDS</c>'s precedent (Story 011) for a
     /// GDD-tunable value an AC requires as a concrete number, pending a real Networking Core zone-entry
     /// story that owns its full lifecycle.
     /// </para>
@@ -90,7 +90,7 @@ namespace IronGrind.Networking
         /// Begins tracking a new zone-entry reassembly attempt for <paramref name="clientId"/>.
         /// Unconditionally overwrites any prior entry for <paramref name="clientId"/> — a fresh zone
         /// entry (initial join, or a new attempt after a prior one gave up) always starts a clean
-        /// attempt, matching <see cref="ConnectionStateMachine.EnterConnecting"/>'s own overwrite
+        /// attempt, matching <c>ConnectionStateMachine.EnterConnecting</c>'s own overwrite
         /// precedent.
         /// </summary>
         /// <param name="clientId">The joining client's connection identity.</param>
