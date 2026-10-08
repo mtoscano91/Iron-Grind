@@ -3411,3 +3411,23 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Committed with the message "Networking Core: Story 033 complete (WireProtocol server half moved to IronGrind.ServerLogic)". Not pushed; PAT rotation is still unconfirmed.
 - `NotYetMovedList` is 66 — Networking 55 (9 TestHarness types to move, 46 shared types to reclassify), Currency 5, Character Stats 6.
 - Next: Story 034 (not yet written).
+
+## Session Extract — 2026-10-08 (Networking Core Story 033 committed; Story 034 created, implementation started)
+- Story 033 committed as `a57381e`. Not pushed; PAT rotation is still unconfirmed.
+- Created: production/epics/networking-core/story-034-server-assembly-move-test-harness-and-shared-list.md — moves the 8 harness files (9 types) to `src/ServerLogic/Networking/TestHarness/` and puts the 46 shared Networking types on `SharedAllowList` with consumers (most "planned"). Networking `EPIC.md` is 33/34. Checked at creation: all nine `TestHarness` files are wrapped whole in `#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD`; the harness files import only `System` namespaces; no shared file names a harness type in code.
+- In progress: a `network-programmer` agent is implementing Story 034 (16 renames, no `.cs` edit under `src/`, `NotYetMovedList` 66 → 11, `SharedAllowList` 34 → 80). Not yet reviewed, not compiled, not committed.
+- After 034 the ADR-012 move order has Currency (5 types) and Character Stats (6 types) left.
+
+## Session Extract — /dev-story 2026-10-08 (Networking Core Story 034)
+- Implemented and reviewed (uncommitted): 8 `.cs` + 8 `.cs.meta` from `src/Foundation/Networking/TestHarness/` to `src/ServerLogic/Networking/TestHarness/` (16 staged renames, 0 lines changed; `INetworkTestObserver.cs` stays); no `.cs` under `src/` edited; `AssemblyBoundaryLists.cs`: the Networking block is gone from `NotYetMovedList` (66 → 11: Currency 5, Character Stats 6) and `SharedAllowList` gains a Networking section of 46 entries in seven commented groups (34 → 80). The orchestrator compared the 46 added names with the classification's shared set: identical; no duplicate entry in the file.
+- Pre-move checks by the agent: no code use of the 9 harness types in files that stay; no internal access across the boundary in either direction.
+- **Not verified: nothing compiled or run since the move.** Expected suite total 2008.
+- **Pending file:** `src/ServerLogic/Networking/TestHarness.meta` (Unity generates it; stage it).
+- Next: user recompiles and runs the suite; then close and commit. That ends ADR-012's Networking step; Currency and Character Stats remain.
+
+## Session Extract — /story-done 2026-10-08 (Networking Core Story 034)
+- Verdict: COMPLETE. Suite 2008/2008 (run 16:45:13, after the import at 16:45:05); 9/9 boundary tests; no compile error or warning. The "Not verified" note in the /dev-story extract above is superseded.
+- Committed with the message "Networking Core: Story 034 complete (test harness moved; shared types on the allow-list)". Networking `EPIC.md` is Complete (34/34). Not pushed; PAT rotation is still unconfirmed.
+- **ADR-012 move order: 7 of 9 done.** `NotYetMovedList` is 11: Currency 5 (`CurrencySystem`, `GoldMutationError`, `GoldMutationResult`, `GoldSyncEventArgs`, `ICurrencyService`), Character Stats 6 (`BuffID`, `BuffModifierEntry`, `CharacterStats`, `EquipmentModifierEntry`, `ILevelingService`, `StatSchema`). `SharedAllowList` is 80.
+- Caveat recorded in the story: the Networking classification rests on doc comments and scans, not on a reading of every method body; 42 of the 46 shared entries name a planned consumer.
+- Next: Currency move story (not yet written). Character Stats after it is not mechanical: three `Client` presenters and `LevelingHudController` use the `CharacterStats` class directly, so it needs the stats view of ADR-012 Decision 7 first (`ILocalPlayerStatsView`), like Leveling Story 014.

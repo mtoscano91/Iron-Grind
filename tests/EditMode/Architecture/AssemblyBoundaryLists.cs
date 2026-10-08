@@ -60,6 +60,62 @@ namespace IronGrind.Tests.EditMode.Architecture
             "IronGrind.LevelingSystem.ILevelingEventBroadcaster", // consumer: LevelUpOverlayPresenter
             "IronGrind.LevelingSystem.LevelUpEventArgs",          // consumer: LevelUpOverlayPresenter
             "IronGrind.LevelingSystem.XpThresholdTable",          // consumer: PlayerResourceClusterPresenter (XP bar; receives Values as a list — wiring by the client composition root is planned)
+
+            // Networking (ADR-012 Decision 4): message schemas, the codecs that read and write them, wire enums,
+            // and logic both sides or the client run. "planned" marks a consumer that is not built yet.
+            // Networking: wire message schemas
+            "IronGrind.Networking.ServerMessageEnvelope",       // consumer (planned): client message handlers (wire schema)
+            "IronGrind.Networking.ClientEntityMessageEnvelope", // consumer (planned): client message handlers (wire schema)
+            "IronGrind.Networking.DamageEvent",                 // consumer (planned): client message handlers (wire schema)
+            "IronGrind.Networking.SelfDamageEvent",             // consumer (planned): client message handlers (wire schema)
+            "IronGrind.Networking.GoldSyncEvent",               // consumer (planned): client message handlers (wire schema)
+            "IronGrind.Networking.GoldSyncEventForcedDelivery", // consumer (planned): client message handlers (wire schema)
+            "IronGrind.Networking.CycleTimerBroadcast",         // consumer (planned): client message handlers (wire schema)
+            "IronGrind.Networking.EntityPositionUpdate",        // consumer (planned): client message handlers (wire schema)
+            "IronGrind.Networking.EntityHealthUpdate",          // consumer (planned): client message handlers (wire schema)
+            "IronGrind.Networking.PartyMemberHealthUpdate",     // consumer (planned): client message handlers (wire schema)
+            "IronGrind.Networking.HeartbeatMessage",            // consumer (planned): client message handlers (wire schema)
+            "IronGrind.Networking.SetTarget",                   // consumer (planned): client message handlers (wire schema)
+            // Networking: codecs
+            "IronGrind.Networking.MessageEnvelopeCodec",        // consumer (planned): client message read and write path (codec)
+            "IronGrind.Networking.BatchHeaderCodec",            // consumer (planned): client message read and write path (codec)
+            "IronGrind.Networking.BatchSubMessageCodec",        // consumer (planned): client message read and write path (codec)
+            "IronGrind.Networking.BatchSubMessageFraming",      // consumer (planned): client message read and write path (codec)
+            "IronGrind.Networking.GoldSyncForcedDeliveryCodec", // consumer (planned): client message read and write path (codec)
+            "IronGrind.Networking.SelfDamageEventCodec",        // consumer (planned): client message read and write path (codec)
+            "IronGrind.Networking.SetTargetCodec",              // consumer (planned): client message read and write path (codec)
+            "IronGrind.Networking.WireEnumCodec",               // consumer (planned): client message read and write path (codec)
+            "IronGrind.Networking.WireFixedPointCodec",         // consumer (planned): client message read and write path (codec)
+            "IronGrind.Networking.WireIdCodec",                 // consumer (planned): client message read and write path (codec)
+            // Networking: wire enums
+            "IronGrind.Networking.DamageType",             // consumer (planned): client message handlers (wire enum)
+            "IronGrind.Networking.DisconnectReason",       // consumer (planned): client message handlers (wire enum)
+            "IronGrind.Networking.DisconnectType",         // consumer (planned): client message handlers (wire enum)
+            "IronGrind.Networking.MessageDirection",       // consumer (planned): client message handlers (wire enum)
+            "IronGrind.Networking.MessageDeliveryContext", // consumer (planned): client message handlers (wire enum)
+            "IronGrind.Networking.NetworkChannel",         // consumer (planned): client message handlers (wire enum)
+            "IronGrind.Networking.DesignPillar",           // consumer (planned): client message handlers (wire enum)
+            "IronGrind.Networking.RUBatchCategory",        // consumer (planned): client message handlers (wire enum)
+            // Networking: routing table
+            "IronGrind.Networking.MessageRoutingRegistry",         // consumer (planned): client send and receive path (every call site consults the registry)
+            "IronGrind.Networking.MessageRoutingEntry",            // consumer (planned): client send and receive path (every call site consults the registry)
+            "IronGrind.Networking.MessageRoutingResult",           // consumer (planned): client send and receive path (every call site consults the registry)
+            "IronGrind.Networking.PendingSchemaDispatchException", // consumer (planned): client send and receive path (every call site consults the registry)
+            "IronGrind.Networking.BuildConfiguration",             // consumer (planned): client send and receive path (every call site consults the registry)
+            // Networking: rules both sides apply
+            "IronGrind.Networking.ConnectionSequenceCounter", // consumer (planned): client send path (per-connection sequence numbers)
+            "IronGrind.Networking.StaleDiscardComparer",      // consumer (planned): client receive path (stale-message discard)
+            // Networking: logic the client runs
+            "IronGrind.Networking.CycleTimerInterpolator",        // consumer (planned): client cycle-timer display (its doc comment: client-render-oriented interpolation)
+            "IronGrind.Networking.HeartbeatActivityTracker",      // consumer (planned): client heartbeat sender (networking-wire-protocol.md CR-NET-7.10: heartbeats are client to server)
+            "IronGrind.Networking.SelfDamageRecipientGuard",      // consumer (planned): client self-damage handling (its doc comment: client-side recipient check)
+            "IronGrind.Networking.SelfDamageSuppressionGate",     // consumer (planned): client damage-number display (its doc comment: client-side suppression)
+            "IronGrind.Networking.ZoneSnapshotReassemblyTracker", // consumer (planned): client zone-snapshot reassembly (networking-session.md: the client reassembles and gives up after the retransmit limit)
+            // Networking: test observer
+            "IronGrind.Networking.INetworkTestObserver",   // consumer: shared codecs take the observer as an optional parameter (tests and development builds only)
+            "IronGrind.Networking.PersistenceWriteReason", // consumer: INetworkTestObserver signatures
+            "IronGrind.Networking.SessionState",           // consumer: INetworkTestObserver signatures
+            "IronGrind.Networking.ZoneState",              // consumer: INetworkTestObserver signatures
         };
 
         /// <summary>
@@ -69,63 +125,6 @@ namespace IronGrind.Tests.EditMode.Architecture
         /// </summary>
         internal static readonly string[] NotYetMovedList =
         {
-            // ---- Networking ----
-            "IronGrind.Networking.DamageType",
-            "IronGrind.Networking.DisconnectReason",
-            "IronGrind.Networking.DisconnectType",
-            "IronGrind.Networking.SessionState",
-            "IronGrind.Networking.INetworkTestObserver",
-            "IronGrind.Networking.PersistenceWriteReason",
-            "IronGrind.Networking.IServerCrashInjector",
-            "IronGrind.Networking.CrashStep",
-            "IronGrind.Networking.ITransportFaultInjector",
-            "IronGrind.Networking.IZoneTestConfigurator",
-            "IronGrind.Networking.NetworkTestObserver",
-            "IronGrind.Networking.NetworkingTestHarness",
-            "IronGrind.Networking.ServerCrashInjector",
-            "IronGrind.Networking.TransportFaultInjector",
-            "IronGrind.Networking.ZoneTestConfigurator",
-            "IronGrind.Networking.BatchHeaderCodec",
-            "IronGrind.Networking.BatchSubMessageCodec",
-            "IronGrind.Networking.BatchSubMessageFraming",
-            "IronGrind.Networking.BuildConfiguration",
-            "IronGrind.Networking.ClientEntityMessageEnvelope",
-            "IronGrind.Networking.ConnectionSequenceCounter",
-            "IronGrind.Networking.CycleTimerBroadcast",
-            "IronGrind.Networking.CycleTimerInterpolator",
-            "IronGrind.Networking.DamageEvent",
-            "IronGrind.Networking.DesignPillar",
-            "IronGrind.Networking.EntityHealthUpdate",
-            "IronGrind.Networking.EntityPositionUpdate",
-            "IronGrind.Networking.GoldSyncEvent",
-            "IronGrind.Networking.GoldSyncEventForcedDelivery",
-            "IronGrind.Networking.GoldSyncForcedDeliveryCodec",
-            "IronGrind.Networking.HeartbeatActivityTracker",
-            "IronGrind.Networking.HeartbeatMessage",
-            "IronGrind.Networking.MessageDeliveryContext",
-            "IronGrind.Networking.MessageDirection",
-            "IronGrind.Networking.MessageEnvelopeCodec",
-            "IronGrind.Networking.MessageRoutingEntry",
-            "IronGrind.Networking.MessageRoutingRegistry",
-            "IronGrind.Networking.MessageRoutingResult",
-            "IronGrind.Networking.NetworkChannel",
-            "IronGrind.Networking.PartyMemberHealthUpdate",
-            "IronGrind.Networking.PendingSchemaDispatchException",
-            "IronGrind.Networking.RUBatchCategory",
-            "IronGrind.Networking.SelfDamageEvent",
-            "IronGrind.Networking.SelfDamageEventCodec",
-            "IronGrind.Networking.SelfDamageRecipientGuard",
-            "IronGrind.Networking.SelfDamageSuppressionGate",
-            "IronGrind.Networking.ServerMessageEnvelope",
-            "IronGrind.Networking.SetTarget",
-            "IronGrind.Networking.SetTargetCodec",
-            "IronGrind.Networking.StaleDiscardComparer",
-            "IronGrind.Networking.WireEnumCodec",
-            "IronGrind.Networking.WireFixedPointCodec",
-            "IronGrind.Networking.WireIdCodec",
-            "IronGrind.Networking.ZoneSnapshotReassemblyTracker",
-            "IronGrind.Networking.ZoneState",
-
             // ---- Currency ----
             "IronGrind.Currency.CurrencySystem",
             "IronGrind.Currency.GoldMutationError",
