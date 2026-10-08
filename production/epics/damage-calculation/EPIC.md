@@ -3,7 +3,7 @@
 > **Layer**: Core
 > **GDD**: design/gdd/damage-calculation.md
 > **Architecture Module**: Damage Calc
-> **Status**: In Progress (4/7 — 4 Complete, 1 Ready, 2 Blocked: 003 on an ADR not yet written, 007 on the client build pipeline)
+> **Status**: In Progress (5/7 — 5 Complete, 0 Ready, 2 Blocked: 003 on an ADR not yet written, 007 on the client build pipeline)
 > **Stories**: 6 stories created 2026-10-07 (001–006); 006 rewritten and 007 split from it 2026-10-08
 
 ## Overview
@@ -50,7 +50,7 @@ This epic is complete when:
 | 003 | Critical Strike with Injected Server RNG | Logic | Blocked — OQ-DC-2 (server RNG injection ADR) | not written |
 | 004 | Kill Detection and Dead-Entity Guard | Logic | Complete (2026-10-08) | none (design-only) |
 | 005 | Kill Sequence Against Real Character Stats | Integration | Complete (2026-10-08) | none (design-only) |
-| 006 | Server Assembly Isolation — First Move and Boundary Test | Integration | Ready (rewritten 2026-10-08) | ADR-012 |
+| 006 | Server Assembly Isolation — First Move and Boundary Test | Integration | Complete (2026-10-08) | ADR-012 |
 | 007 | Client-Binary Scan (AC-DC-I-01) | Integration | Blocked — no client build pipeline | ADR-012 |
 
 Work through stories in order — each story's `Depends on:` field tells you what must be Done before you can start it.
@@ -69,4 +69,4 @@ Work through stories in order — each story's `Depends on:` field tells you wha
 
 ## Next Step
 
-Run `/story-readiness production/epics/damage-calculation/story-006-server-assembly-isolation.md`, then `/dev-story`. Story 003 still needs the server RNG injection ADR (`/architecture-decision`); Story 007 needs a client build pipeline.
+No Ready story remains in this epic. Story 003 needs the server RNG injection ADR (`/architecture-decision`); when it is implemented, its code is written in `src/ServerLogic/DamageCalculation/`. Story 007 needs a client build pipeline. Damage Calculation now lives in `IronGrind.ServerLogic` (Story 006); the next assembly move under ADR-012 is Loot Table, which has no move story yet.

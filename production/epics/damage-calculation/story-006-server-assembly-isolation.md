@@ -1,7 +1,7 @@
 # Story 006: Server Assembly Isolation — First Move and Boundary Test
 
 > **Epic**: Damage Calculation
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-08
@@ -35,13 +35,13 @@
 
 ## Acceptance Criteria
 
-- [ ] **Assemblies exist**: `src/ServerLogic/IronGrind.ServerLogic.asmdef` and `src/Client/IronGrind.Client.asmdef` exist with the names, references (`IronGrind.Foundation` only) and define constraints of ADR-012 Decision 2. `IronGrind.Foundation`, `IronGrind.ServerLogic` and `IronGrind.Client` are all `autoReferenced: false`.
-- [ ] **Damage Calculation moved**: the five files of `src/Foundation/DamageCalculation/` are in `src/ServerLogic/DamageCalculation/`, namespace `IronGrind.DamageCalculation` unchanged, `.meta` GUIDs unchanged. No type of that namespace is defined in `IronGrind.Foundation`.
-- [ ] **UI moved**: the seven files of `src/Foundation/UI/` are in `src/Client/UI/` (same sub-folders), namespaces unchanged, `.meta` GUIDs unchanged.
-- [ ] **Editor script compiles**: `Assets/Editor/HudBootstrap.cs` is in an Editor-only asmdef that references `IronGrind.Client` explicitly, and both of its menu commands still work.
-- [ ] **Boundary test exists and passes** (`tests/EditMode/Architecture/`), asserting what ADR-012 Decision 6 check 1 lists: asmdef names, the two constraint strings, `autoReferenced: false`, reference lists; every type in `IronGrind.Foundation` is on the shared allow-list or on the not-yet-moved list; no stale entry on either list; no `Foundation` or `Client` type has a field, property, parameter or base type from `ServerLogic`.
-- [ ] **Boundary test detects a violation**: shown once, by hand — a throwaway type in namespace `IronGrind.DamageCalculation` placed under `src/Foundation/` makes the test fail; the type is then deleted. Recorded in the evidence note below.
-- [ ] **Suite green**: the full EditMode suite passes after the move (1995 cases before this story, plus the new boundary tests), with zero compile errors and zero new warnings in all four assemblies.
+- [x] **Assemblies exist**: `src/ServerLogic/IronGrind.ServerLogic.asmdef` and `src/Client/IronGrind.Client.asmdef` exist with the names, references (`IronGrind.Foundation` only) and define constraints of ADR-012 Decision 2. `IronGrind.Foundation`, `IronGrind.ServerLogic` and `IronGrind.Client` are all `autoReferenced: false`.
+- [x] **Damage Calculation moved**: the five files of `src/Foundation/DamageCalculation/` are in `src/ServerLogic/DamageCalculation/`, namespace `IronGrind.DamageCalculation` unchanged, `.meta` GUIDs unchanged. No type of that namespace is defined in `IronGrind.Foundation`.
+- [x] **UI moved**: the seven files of `src/Foundation/UI/` are in `src/Client/UI/` (same sub-folders), namespaces unchanged, `.meta` GUIDs unchanged.
+- [x] **Editor script compiles**: `Assets/Editor/HudBootstrap.cs` is in an Editor-only asmdef that references `IronGrind.Client` explicitly, and both of its menu commands still work.
+- [x] **Boundary test exists and passes** (`tests/EditMode/Architecture/`), asserting what ADR-012 Decision 6 check 1 lists: asmdef names, the two constraint strings, `autoReferenced: false`, reference lists; every type in `IronGrind.Foundation` is on the shared allow-list or on the not-yet-moved list; no stale entry on either list; no `Foundation` or `Client` type has a field, property, parameter or base type from `ServerLogic`.
+- [x] **Boundary test detects a violation**: shown once, by hand — a throwaway type in namespace `IronGrind.DamageCalculation` placed under `src/Foundation/` makes the test fail; the type is then deleted. Recorded in the evidence note below.
+- [x] **Suite green**: the full EditMode suite passes after the move (1995 cases before this story, plus the new boundary tests), with zero compile errors and zero new warnings in all four assemblies.
 
 ---
 
@@ -106,7 +106,7 @@ Other rules:
 - The full EditMode suite result after the move (Test Runner or batch-mode results XML): pass count and zero failures.
 - `production/qa/evidence/damage-calculation-story-006-boundary-probe.md` — the failure message from the probe and the green run after its removal.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing (7 tests; full EditMode suite 2002/2002)
 
 ---
 
@@ -114,3 +114,18 @@ Other rules:
 
 - Depends on: ADR-012 (Accepted 2026-10-08); Stories 001, 002, 004, 005 (the types to move — Complete). Story 003 is not required: when it is implemented, its code is written in `src/ServerLogic/DamageCalculation/`.
 - Unlocks: every later move story (ADR-012 Migration Plan step 2, next Loot Table); Story 007; new server-only systems can be authored in `src/ServerLogic/`.
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-08
+**Criteria**: 7/7 passing (none deferred)
+**Deviations** (all advisory):
+- The last full-suite run has no results file. The batch-mode result (2002/2002, Unity 6000.3.10f1) predates the five code-review fixes; the run after them was made by the user in the Editor's Test Runner and reported as all passing.
+- One moved file was edited after the move: a doc comment in `src/Client/UI/LevelingSystem/LevelingFormulaPreview.cs` (code-review fix; no code change). The story said not to edit moved files.
+- `TR-dmg-001` is a placeholder; the TR registry is empty.
+- `LevelingService.GetLevelTierMultiplier` went from `internal` to `public`, as this story and the corrected ADR-012 Decision 7 prescribe (not a deviation; recorded because it widens a production API).
+**Implementation**: `unity-specialist` agent, reviewed in the main session. The agent's test file did not compile at first (CS0104, `Assembly` ambiguous); fixed with a `using` alias. Lists: 26 shared, 204 not yet moved; the grep-generated lists needed no correction.
+**Test Evidence**: Integration — `tests/EditMode/Architecture/AssemblyBoundary_tests.cs` (7 tests), lists in `AssemblyBoundaryLists.cs`; probe and suite results in `production/qa/evidence/damage-calculation-story-006-boundary-probe.md`. `Tools/HUD` menu commands confirmed by the user in the Editor.
+**Code Review**: Complete — `/code-review` inline, APPROVED WITH SUGGESTIONS, all five applied (`834c939`). QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean mode).
+**Commits**: `2032b4b` (implementation), `834c939` (review fixes).
