@@ -52,7 +52,7 @@ namespace IronGrind.Networking
         /// without iterating billions of calls. Internal — visible to
         /// <c>IronGrind.Foundation.EditModeTests</c> via <c>InternalsVisibleTo</c>
         /// (<c>src/Foundation/AssemblyInfo.cs</c>), matching this codebase's existing test-seam
-        /// convention (e.g. <see cref="NetworkTestObserver.RecordOutboundMessage"/>).
+        /// convention (e.g. <c>NetworkTestObserver.RecordOutboundMessage</c>).
         /// </summary>
         internal ConnectionSequenceCounter(uint startingNext)
         {

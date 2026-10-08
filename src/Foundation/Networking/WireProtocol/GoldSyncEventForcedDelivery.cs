@@ -3,7 +3,7 @@ namespace IronGrind.Networking
     /// <summary>
     /// MCR-4's forced-delivery escalation for <see cref="GoldSyncEvent"/> (Story 026): a standalone
     /// R-OD priority-path message emitted after <c>GOLD_MAX_CONSECUTIVE_DROP</c> consecutive R-U
-    /// overflow-drops (<see cref="RUBatchWriter"/>'s category-eviction policy, Story 007). This is a
+    /// overflow-drops (<c>RUBatchWriter</c>'s category-eviction policy, Story 007). This is a
     /// distinct wire schema from the batch-framed R-U <see cref="GoldSyncEvent"/>
     /// (<see cref="BatchSubMessageCodec.WriteGoldSyncEvent"/>) — same payload fields, but a distinct
     /// <see cref="MessageTypeId"/> and a distinct wire shape: the 10-byte

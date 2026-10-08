@@ -7,7 +7,7 @@ namespace IronGrind.Networking
     /// U-U CycleBroadcast-packet sub-message reporting one zone entity's auto-attack cycle
     /// position, normalized to a 0–10,000 fraction (CR-NET-7's Message Schemas section). One
     /// instance is sent per zone entity other than the receiving client, every tick, via
-    /// <see cref="CycleBroadcastPacketWriter"/> (<c>TICK_BATCH_UU_CYCLE = 0x0103</c>).
+    /// <c>CycleBroadcastPacketWriter</c> (<c>TICK_BATCH_UU_CYCLE = 0x0103</c>).
     /// </summary>
     /// <remarks>
     /// <para>
@@ -17,9 +17,9 @@ namespace IronGrind.Networking
     /// </para>
     /// <para>
     /// <b>Never dropped</b> — this packet drives the Rhythm Mastery core gameplay pillar (Pillar
-    /// 2). <see cref="CycleBroadcastPacketWriter"/> throws rather than truncating if the caller
-    /// supplies more entries than fit within <see cref="RUBatchWriter.MAX_MESSAGE_BODY_BYTES"/>
-    /// (a <see cref="ZoneBufferPool.MAX_PLAYERS_PER_ZONE"/> misconfiguration, not a runtime
+    /// 2). <c>CycleBroadcastPacketWriter</c> throws rather than truncating if the caller
+    /// supplies more entries than fit within <c>RUBatchWriter.MAX_MESSAGE_BODY_BYTES</c>
+    /// (a <c>ZoneBufferPool.MAX_PLAYERS_PER_ZONE</c> misconfiguration, not a runtime
     /// network condition).
     /// </para>
     /// <para>

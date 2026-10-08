@@ -7,7 +7,7 @@ namespace IronGrind.Networking
     /// the most recent outbound packet on this connection — of any type, not just heartbeats — and
     /// answers "is a <see cref="HeartbeatMessage"/> due yet?" against a caller-supplied tick
     /// interval. One instance belongs to exactly one client connection, the same per-connection,
-    /// stateful-tracker shape as <see cref="PriorityPathQueue{T}"/> (Story 006).
+    /// stateful-tracker shape as <c>PriorityPathQueue{T}</c> (Story 006).
     /// </summary>
     /// <remarks>
     /// <para>
@@ -19,7 +19,7 @@ namespace IronGrind.Networking
     /// takes an explicit <c>intervalTicks</c> parameter, and computing that value (conceptually
     /// <c>intervalTicks = HEARTBEAT_INTERVAL_SECONDS * ServerTickLoop.TICK_RATE_HZ</c>) is left to
     /// whichever future story integrates this tracker with the real tick loop — mirroring
-    /// <see cref="PriorityPathQueue{T}"/>'s own precedent of pure tick-count logic that does not
+    /// <c>PriorityPathQueue{T}</c>'s own precedent of pure tick-count logic that does not
     /// assume a running tick loop exists yet.
     /// </para>
     /// <para>
@@ -71,7 +71,7 @@ namespace IronGrind.Networking
         /// GDD tuning knob (CR-NET-7.10): seconds between client heartbeat sends when no other
         /// outbound packet was sent in the preceding interval. Default <c>3</c>, safe range
         /// <c>[1, 10]</c>. Declared here for discoverability, matching
-        /// <see cref="PriorityPathQueue{T}.PRIORITY_PATH_CAP"/>'s precedent of declaring a
+        /// <c>PriorityPathQueue{T}.PRIORITY_PATH_CAP</c>'s precedent of declaring a
         /// governing tuning-knob constant directly on the class it governs rather than reading it
         /// from external config. <b>Not consumed internally by this class</b> — see the class
         /// remarks on tick-count-only scope; this constant exists purely as documentation of the

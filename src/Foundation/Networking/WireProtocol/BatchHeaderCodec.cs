@@ -5,8 +5,8 @@ namespace IronGrind.Networking
 {
     /// <summary>
     /// Encode/decode for the 12-byte batch-packet header shared by all three per-tick batch types
-    /// (<see cref="RUBatchWriter"/> / <c>TICK_BATCH_RU</c>, <see cref="CycleBroadcastPacketWriter"/> /
-    /// <c>TICK_BATCH_UU_CYCLE</c>, <see cref="PositionPacketWriter"/> / <c>TICK_BATCH_UU</c>).
+    /// (<c>RUBatchWriter</c> / <c>TICK_BATCH_RU</c>, <c>CycleBroadcastPacketWriter</c> /
+    /// <c>TICK_BATCH_UU_CYCLE</c>, <c>PositionPacketWriter</c> / <c>TICK_BATCH_UU</c>).
     /// </summary>
     /// <remarks>
     /// The batch header extends the standard 10-byte <see cref="ServerMessageEnvelope"/> (CR-NET-7.1)

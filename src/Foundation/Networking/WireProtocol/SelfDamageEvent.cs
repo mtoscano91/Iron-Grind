@@ -40,7 +40,7 @@ namespace IronGrind.Networking
     /// <b>Recipient-set construction (EC-CCR-2, MCR-2):</b> the server must construct this message's
     /// recipient set as a singleton <c>{attackerEntityId}</c>, never by filtering the zone-wide
     /// <see cref="DamageEvent"/> broadcast list down to one entry — see
-    /// <see cref="SelfDamageEventDispatcher"/>, whose only public method accepts a single attacker
+    /// <c>SelfDamageEventDispatcher</c>, whose only public method accepts a single attacker
     /// <see cref="EntityID"/> parameter (never a collection), making the exclusivity structural
     /// rather than conventional.
     /// </para>

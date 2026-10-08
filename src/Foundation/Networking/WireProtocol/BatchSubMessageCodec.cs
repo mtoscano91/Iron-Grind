@@ -22,8 +22,8 @@ namespace IronGrind.Networking
     /// convention). <c>TryRead*</c> methods instead return <see langword="false"/> on a too-short
     /// source, since decode paths receive untrusted/possibly-truncated network data. Every
     /// <c>Write*</c> method returns the total number of bytes written (header + body) so callers —
-    /// including <see cref="RUBatchWriter"/>, <see cref="CycleBroadcastPacketWriter"/>,
-    /// <see cref="PositionPacketWriter"/>, and test fixtures summing serialized bytes per tick —
+    /// including <c>RUBatchWriter</c>, <c>CycleBroadcastPacketWriter</c>,
+    /// <c>PositionPacketWriter</c>, and test fixtures summing serialized bytes per tick —
     /// can advance their own write cursor or accumulate a byte total without a separate size
     /// lookup.
     /// </remarks>
@@ -332,13 +332,14 @@ namespace IronGrind.Networking
         /// Writes only the <see cref="EntityHealthUpdate.BodySize"/>-byte (12) <see cref="EntityHealthUpdate"/>
         /// body — entityId, currentHP, maxHP — excluding the 4-byte sub-message header
         /// <see cref="WriteEntityHealthUpdate"/> writes ahead of it. Factored out (mirroring
-        /// <see cref="WriteGoldSyncEventBody"/>) so <see cref="RelevanceFilter"/> can write only the
-        /// body bytes into a <see cref="PendingSubMessage"/>'s <see cref="PendingSubMessage.Payload"/>
-        /// — <see cref="RUBatchWriter"/> writes the 4-byte header itself for every opaque
-        /// <see cref="PendingSubMessage"/> at the point of batch insertion.
+        /// <see cref="WriteGoldSyncEventBody"/>) so <c>RelevanceFilter</c> can write only the
+        /// body bytes into a <c>PendingSubMessage</c>'s <c>PendingSubMessage.Payload</c>
+        /// — <c>RUBatchWriter</c> writes the 4-byte header itself for every opaque
+        /// <c>PendingSubMessage</c> at the point of batch insertion.
         /// </summary>
         /// <returns><see cref="EntityHealthUpdate.BodySize"/> (12), always.</returns>
-        internal static int WriteEntityHealthUpdateBody(Span<byte> destination, in EntityHealthUpdate entityHealthUpdate)
+        /// <remarks>Public since Networking Core Story 033 because <c>RelevanceFilter</c> calls it from IronGrind.ServerLogic (ADR-012 Decision 5).</remarks>
+        public static int WriteEntityHealthUpdateBody(Span<byte> destination, in EntityHealthUpdate entityHealthUpdate)
         {
             WireIdCodec.SerializeEntityId(destination.Slice(0, 4), entityHealthUpdate.EntityId, EntityHealthUpdate.MessageTypeId, "entityId");
             BinaryPrimitives.WriteInt32LittleEndian(destination.Slice(4, 4), entityHealthUpdate.CurrentHP);
@@ -400,11 +401,12 @@ namespace IronGrind.Networking
         /// <see cref="PartyMemberHealthUpdate"/> body — entityId, currentHP, maxHP, currentMP, maxMP —
         /// excluding the 4-byte sub-message header <see cref="WritePartyMemberHealthUpdate"/> writes
         /// ahead of it. Factored out for the same reason as <see cref="WriteEntityHealthUpdateBody"/>
-        /// — <see cref="RelevanceFilter"/> writes only body bytes into each
-        /// <see cref="PendingSubMessage"/>'s <see cref="PendingSubMessage.Payload"/>.
+        /// — <c>RelevanceFilter</c> writes only body bytes into each
+        /// <c>PendingSubMessage</c>'s <c>PendingSubMessage.Payload</c>.
         /// </summary>
         /// <returns><see cref="PartyMemberHealthUpdate.BodySize"/> (20), always.</returns>
-        internal static int WritePartyMemberHealthUpdateBody(Span<byte> destination, in PartyMemberHealthUpdate partyMemberHealthUpdate)
+        /// <remarks>Public since Networking Core Story 033 because <c>RelevanceFilter</c> calls it from IronGrind.ServerLogic (ADR-012 Decision 5).</remarks>
+        public static int WritePartyMemberHealthUpdateBody(Span<byte> destination, in PartyMemberHealthUpdate partyMemberHealthUpdate)
         {
             WireIdCodec.SerializeEntityId(destination.Slice(0, 4), partyMemberHealthUpdate.EntityId, PartyMemberHealthUpdate.MessageTypeId, "entityId");
             BinaryPrimitives.WriteInt32LittleEndian(destination.Slice(4, 4), partyMemberHealthUpdate.CurrentHP);

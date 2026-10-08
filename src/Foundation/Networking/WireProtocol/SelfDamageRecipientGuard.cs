@@ -5,7 +5,7 @@ namespace IronGrind.Networking
     /// <summary>
     /// EC-CCR-2's client-side wrong-recipient defense for <see cref="SelfDamageEvent"/> (Story 027):
     /// a sanity check layered on top of the server-side singleton-recipient guarantee
-    /// (<see cref="SelfDamageEventDispatcher"/>), not a substitute for it. If a
+    /// (<c>SelfDamageEventDispatcher</c>), not a substitute for it. If a
     /// <see cref="SelfDamageEvent"/> is ever mistakenly delivered to a non-attacker client, this
     /// class stops it from displaying a phantom damage number.
     /// </summary>

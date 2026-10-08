@@ -3397,3 +3397,17 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Committed with the message "Networking Core: Story 032 complete (server state moved to IronGrind.ServerLogic)". From this story on, the user's "continue" after a green run is taken to cover closing the story and committing it (that has been their answer every time today). Not pushed; PAT rotation is still unconfirmed.
 - ADR-012 status: `NotYetMovedList` is 79 — Networking 68 (13 server half of WireProtocol, 9 TestHarness, 46 shared), Currency 5, Character Stats 6.
 - Next: Story 033 (WireProtocol server half + two `BatchSubMessageCodec` methods made `public`), then 034.
+
+## Session Extract — /dev-story 2026-10-08 (Networking Core Story 033)
+- Story 032 committed as `8c4c3be`. Created: production/epics/networking-core/story-033-server-assembly-move-wire-protocol-server-half.md; Networking `EPIC.md` is 32/33 with 034 Planned.
+- Story 033 implemented and reviewed (uncommitted): 13 `.cs` + 13 `.cs.meta` from `src/Foundation/Networking/WireProtocol/` to `src/ServerLogic/Networking/WireProtocol/` (26 staged renames, 0 lines changed; 38 files remain); `BatchSubMessageCodec.WriteEntityHealthUpdateBody` and `WritePartyMemberHealthUpdateBody` `internal static` → `public static`, each with a `<remarks>` line saying why; doc-comment crefs to the 62 server types turned into `<c>` text in 16 shared files (57 comment lines) — the orchestrator checked that, with the tags stripped, the only textual differences under `src/` are the two signatures and the two new remarks; `AssemblyBoundaryLists.cs`: exactly the 13 entries removed (`NotYetMovedList` 79 → 66, 55 Networking entries remain).
+- Pre-move checks by the agent: no code use of the 13 types in files that stay; the only `Foundation` internals the 13 use are the two codec methods; nothing that stays uses an internal of the 13.
+- **Not verified: nothing compiled or run since the move.** Expected suite total 2008.
+- **Pending file:** `src/ServerLogic/Networking/WireProtocol.meta` (Unity generates it; stage it).
+- Next: user recompiles and runs the suite; then close and commit; then Story 034 (TestHarness + the 46 shared types onto `SharedAllowList`).
+
+## Session Extract — /story-done 2026-10-08 (Networking Core Story 033)
+- Verdict: COMPLETE. Suite 2008/2008 (run 16:37:41, after the import at 16:37:05); 9/9 boundary tests; no compile error or warning. The "Not verified" note in the /dev-story extract above is superseded.
+- Committed with the message "Networking Core: Story 033 complete (WireProtocol server half moved to IronGrind.ServerLogic)". Not pushed; PAT rotation is still unconfirmed.
+- `NotYetMovedList` is 66 — Networking 55 (9 TestHarness types to move, 46 shared types to reclassify), Currency 5, Character Stats 6.
+- Next: Story 034 (not yet written).

@@ -6,7 +6,7 @@ namespace IronGrind.Networking
     /// lost, the charge bar must keep advancing via linear extrapolation from the last two received
     /// <c>cycleTimer</c> values, rather than freezing or resetting to zero. A plain, injectable C#
     /// class — no <c>MonoBehaviour</c>/<c>Update()</c> dependency, matching this folder's engine-
-    /// agnostic discipline (see <see cref="PriorityPathQueue{T}"/>'s own remarks on the same point).
+    /// agnostic discipline (see <c>PriorityPathQueue{T}</c>'s own remarks on the same point).
     /// This is the first client-render-oriented logic class in this codebase; every other class in
     /// this folder is server-authoring or pure-codec.
     /// </summary>
@@ -31,7 +31,7 @@ namespace IronGrind.Networking
     /// </para>
     /// <para>
     /// <b>Known scope limit (honestly documented, matching this epic's convention — see
-    /// <see cref="GoldSyncForcedDeliveryTracker"/>'s own remarks for the precedent):</b> a genuine
+    /// <c>GoldSyncForcedDeliveryTracker</c>'s own remarks for the precedent):</b> a genuine
     /// full-cycle wrap occurring <i>during</i> the extrapolation window itself (as opposed to between
     /// two already-received real samples) is not specially guarded against — the extrapolated raw
     /// value is wrapped into <c>[0, CYCLE_FULL)</c> for display, which could in principle read as a

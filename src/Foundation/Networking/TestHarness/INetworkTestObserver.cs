@@ -17,11 +17,11 @@ namespace IronGrind.Networking
     /// return value of any of these calls (there is none — every method but
     /// <see cref="GetOutboundMessageCount"/> returns <see langword="void"/>).</para>
     /// <para><b>Incremental wiring:</b> this story (Story 002) defines the interface shape and a
-    /// concrete recorder implementation (<see cref="NetworkTestObserver"/>). It does not wire every
+    /// concrete recorder implementation (<c>NetworkTestObserver</c>). It does not wire every
     /// callback into its real production trigger point — each owning story (session lifecycle,
     /// priority-path queue, OWL compensation, etc.) adds its own emit call as it implements that
     /// feature later in the Networking Core epic.</para>
-    /// <para><b>Release-build stripping:</b> see <see cref="ITransportFaultInjector"/> remarks — the
+    /// <para><b>Release-build stripping:</b> see <c>ITransportFaultInjector</c> remarks — the
     /// same guard and enforcement rules apply to this interface. <c>SessionState</c> and
     /// <c>ZoneState</c> (used by two of the callbacks below) are production enums declared
     /// unconditionally elsewhere in this namespace — see <c>SessionState.cs</c> / <c>ZoneState.cs</c>
@@ -341,7 +341,7 @@ namespace IronGrind.Networking
         /// Called when forced <c>GoldSyncEvent</c> delivery has been substituting for normal R-U
         /// delivery for more than <c>FORCED_DELIVERY_CONSECUTIVE_TICKS</c> consecutive elapsed real
         /// ticks without a normal R-U delivery succeeding in between (MCR-4's anomaly threshold,
-        /// <see cref="GoldSyncForcedDeliveryTracker"/>). Fires exactly once per anomaly streak — never
+        /// <c>GoldSyncForcedDeliveryTracker</c>). Fires exactly once per anomaly streak — never
         /// on every subsequent tick while still elevated (same idiom as
         /// <see cref="OnConnectionQualityUpdateEmitted"/>). Used by AC-MCR-07.
         /// </summary>
@@ -356,7 +356,7 @@ namespace IronGrind.Networking
         /// that a received <c>SelfDamageEvent</c>'s <c>attackerEntityId</c> does not match this
         /// client's own <c>EntityID</c> (EC-CCR-2's <c>SelfDamageDirectionViolation</c> anomaly). This
         /// is a client-side sanity check layered on top of the server-side singleton-recipient
-        /// guarantee (<see cref="SelfDamageEventDispatcher"/>), not a substitute for it. Used by
+        /// guarantee (<c>SelfDamageEventDispatcher</c>), not a substitute for it. Used by
         /// <c>MessageRouting_SelfDamageExclusivity_tests.cs</c>.
         /// </summary>
         void OnSelfDamageDirectionViolationLogged(uint attackerEntityId, uint localPlayerEntityId);
@@ -366,13 +366,13 @@ namespace IronGrind.Networking
         // ---------------------------------------------------------------------
 
         /// <summary>
-        /// Called when <see cref="TargetSlotTracker.ProcessSetTarget"/> rejects a self-target attempt
+        /// Called when <c>TargetSlotTracker.ProcessSetTarget</c> rejects a self-target attempt
         /// (RFR-5/EC-RFR-4, <c>SelfTargetAttempt</c> advisory anomaly). Used by AC-RFR-05.
         /// </summary>
         void OnSelfTargetAttemptLogged(uint entityId);
 
         /// <summary>
-        /// Called when <see cref="TargetSlotTracker.ProcessSetTarget"/> rejects a <c>SetTarget</c> RPC
+        /// Called when <c>TargetSlotTracker.ProcessSetTarget</c> rejects a <c>SetTarget</c> RPC
         /// because <c>targetEntityId</c> is not present in the current zone's valid EntityIDs
         /// (RFR-3a, <c>InvalidTargetEntityId</c> advisory anomaly).
         /// </summary>
@@ -387,7 +387,7 @@ namespace IronGrind.Networking
         /// emitted by the server to <paramref name="clientId"/> since the last reset or test harness
         /// initialization. Counts are incremented at the server serialization boundary — before
         /// fault injection — so a fragment subsequently dropped by
-        /// <see cref="ITransportFaultInjector"/> still counts. AC-ZI-8 usage: pass
+        /// <c>ITransportFaultInjector</c> still counts. AC-ZI-8 usage: pass
         /// <c>ZoneStateSnapshotFragment.MessageTypeID</c> to assert the exact fragment count emitted
         /// for a joining client matches F-ZI-1 (expected range [17, 19] at max load).
         /// </summary>

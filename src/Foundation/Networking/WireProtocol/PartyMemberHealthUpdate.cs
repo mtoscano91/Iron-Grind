@@ -6,9 +6,9 @@ namespace IronGrind.Networking
     /// <summary>
     /// R-U batch sub-message reporting one party member's current/max HP and MP (Networking Core
     /// Story 028, <c>networking-relevance-filter.md</c> RFR-1). Carried in the R-U batch's
-    /// <see cref="RUBatchCategory.PartyMemberHealthUpdate"/> category via <see cref="PendingSubMessage"/>
-    /// — see <see cref="RelevanceFilter"/>, which is the only production constructor of this type's
-    /// <see cref="PendingSubMessage"/> wrapping. Sent per-client about that client's own party members
+    /// <see cref="RUBatchCategory.PartyMemberHealthUpdate"/> category via <c>PendingSubMessage</c>
+    /// — see <c>RelevanceFilter</c>, which is the only production constructor of this type's
+    /// <c>PendingSubMessage</c> wrapping. Sent per-client about that client's own party members
     /// only — never zone-wide.
     /// </summary>
     /// <remarks>
@@ -17,7 +17,7 @@ namespace IronGrind.Networking
     /// <see cref="DamageEvent"/> and <see cref="EntityHealthUpdate"/>. Encoded/decoded via
     /// <see cref="BatchSubMessageCodec.WritePartyMemberHealthUpdate"/> /
     /// <see cref="BatchSubMessageCodec.TryReadPartyMemberHealthUpdate"/>. This type doubles as both
-    /// the wire schema and the domain-level input <see cref="RelevanceFilter.BuildHealthUpdateSubMessages"/>
+    /// the wire schema and the domain-level input <c>RelevanceFilter.BuildHealthUpdateSubMessages</c>
     /// accepts for its <c>partyMembers</c> parameter — see <see cref="EntityHealthUpdate"/>'s remarks
     /// for the rationale (the established <see cref="DamageEvent"/>/<see cref="GoldSyncEvent"/>
     /// dual-role pattern, reused rather than inventing a separate "snapshot" type).
@@ -29,7 +29,7 @@ namespace IronGrind.Networking
     /// </para>
     /// <para>
     /// <b>Dead party members remain in this set (EC-RFR-2):</b> a party member with <c>CurrentHP == 0</c>
-    /// is not excluded by <see cref="RelevanceFilter"/> — the Party System (not yet implemented) governs
+    /// is not excluded by <c>RelevanceFilter</c> — the Party System (not yet implemented) governs
     /// when dead members leave the caller-supplied party list. This type has no opinion on the death
     /// state itself; it only carries whatever HP/MP values the caller supplies.
     /// </para>

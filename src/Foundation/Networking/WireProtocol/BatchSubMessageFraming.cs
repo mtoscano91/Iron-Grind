@@ -6,8 +6,8 @@ namespace IronGrind.Networking
     /// <summary>
     /// The 4-byte per-sub-message framing header (<c>uint16 length</c> + <c>uint16 MessageTypeID</c>)
     /// shared by every R-U/U-U batch sub-message (CR-NET-7.7): <c>[uint16 length][MessageTypeID][payload]</c>.
-    /// Factored out of <see cref="RUBatchWriter"/>, <see cref="CycleBroadcastPacketWriter"/>, and
-    /// <see cref="PositionPacketWriter"/> because all three packet types share this exact framing.
+    /// Factored out of <c>RUBatchWriter</c>, <c>CycleBroadcastPacketWriter</c>, and
+    /// <c>PositionPacketWriter</c> because all three packet types share this exact framing.
     /// </summary>
     /// <remarks>
     /// The <c>uint16 length</c> field records the byte count of <c>MessageTypeID + payload</c> —

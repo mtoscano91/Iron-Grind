@@ -7,8 +7,8 @@ namespace IronGrind.Networking
     /// R-U batch sub-message reporting one entity's current/max HP, relevance-filtered per
     /// <c>networking-relevance-filter.md</c> RFR-1/RFR-2 (Networking Core Story 028). Carried in the
     /// R-U batch's <see cref="RUBatchCategory.EntityHealthUpdate"/> category via
-    /// <see cref="PendingSubMessage"/> — see <see cref="RelevanceFilter"/>, which is the only
-    /// production constructor of this type's <see cref="PendingSubMessage"/> wrapping.
+    /// <c>PendingSubMessage</c> — see <c>RelevanceFilter</c>, which is the only
+    /// production constructor of this type's <c>PendingSubMessage</c> wrapping.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -16,7 +16,7 @@ namespace IronGrind.Networking
     /// <see cref="DamageEvent"/>. Encoded/decoded via
     /// <see cref="BatchSubMessageCodec.WriteEntityHealthUpdate"/> /
     /// <see cref="BatchSubMessageCodec.TryReadEntityHealthUpdate"/>. This type doubles as both the
-    /// wire schema and the domain-level input <see cref="RelevanceFilter.BuildHealthUpdateSubMessages"/>
+    /// wire schema and the domain-level input <c>RelevanceFilter.BuildHealthUpdateSubMessages</c>
     /// accepts for its self-slot and target-slot parameters (RFR-1) — the same "struct is both the
     /// wire payload and the value callers construct" pattern <see cref="DamageEvent"/> and
     /// <see cref="GoldSyncEvent"/> already establish in this folder, deliberately reused here rather
@@ -27,7 +27,7 @@ namespace IronGrind.Networking
     /// must never be <see cref="EntityID.Invalid"/>) and the target slot (0 or 1 present —
     /// <see cref="EntityID.Invalid"/> as <see cref="EntityId"/> is the caller-facing sentinel meaning
     /// "no target," matching the <c>SetTarget</c> RPC's own wire convention in RFR-3a: "EntityID = 0
-    /// means deselect current target." <see cref="RelevanceFilter"/> never serializes an instance
+    /// means deselect current target." <c>RelevanceFilter</c> never serializes an instance
     /// with <see cref="EntityID.Invalid"/> onto the wire — it is only ever used as the "no target"
     /// signal on the input side.
     /// </para>
@@ -62,7 +62,7 @@ namespace IronGrind.Networking
         /// <summary>
         /// The entity this HP snapshot describes. On the wire, must not be <see cref="EntityID.Invalid"/>
         /// (CR-NET-7.3 zero-write guard, enforced by <see cref="WireIdCodec.SerializeEntityId"/>). As
-        /// a <see cref="RelevanceFilter"/> target-slot input, <see cref="EntityID.Invalid"/> is the
+        /// a <c>RelevanceFilter</c> target-slot input, <see cref="EntityID.Invalid"/> is the
         /// caller-facing "no target" sentinel — see type-level remarks.
         /// </summary>
         public readonly EntityID EntityId;

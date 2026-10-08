@@ -45,7 +45,7 @@ namespace IronGrind.Networking
         /// <param name="tickNumber">The server tick this <see cref="SelfDamageEvent"/> was authored on.</param>
         /// <param name="selfDamageEvent">
         /// The attacker/target/damage/crit/type tuple (same fields as <see cref="DamageEvent"/>,
-        /// CCR-3). Callers should route through <see cref="SelfDamageEventDispatcher"/> rather than
+        /// CCR-3). Callers should route through <c>SelfDamageEventDispatcher</c> rather than
         /// calling this method directly, so the singleton-recipient invariant stays structural.
         /// </param>
         /// <returns><see cref="SelfDamageEvent.WireSize"/> (24), always.</returns>

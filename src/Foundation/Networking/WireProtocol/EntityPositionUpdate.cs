@@ -6,7 +6,7 @@ namespace IronGrind.Networking
     /// <summary>
     /// U-U Position-packet sub-message reporting one zone entity's authoritative position, as
     /// fixed-point centimeters (CR-NET-7's Message Schemas section). Sent via
-    /// <see cref="PositionPacketWriter"/> (<c>TICK_BATCH_UU = 0x0102</c>) for every zone entity
+    /// <c>PositionPacketWriter</c> (<c>TICK_BATCH_UU = 0x0102</c>) for every zone entity
     /// other than the receiver, sorted ascending by <see cref="EntityId"/>.
     /// </summary>
     /// <remarks>
@@ -23,7 +23,7 @@ namespace IronGrind.Networking
     /// <para>
     /// <b>Overflow policy:</b> unlike <see cref="CycleTimerBroadcast"/>, this packet may drop
     /// entries on overflow — highest <see cref="EntityId"/> first, after ascending sort (see
-    /// <see cref="PositionPacketWriter"/> remarks).
+    /// <c>PositionPacketWriter</c> remarks).
     /// </para>
     /// <para>
     /// <b><see cref="MessageTypeId"/> provisionality:</b> same genuinely-unassigned situation as
