@@ -97,7 +97,7 @@ Other rules:
 
 - The `WireProtocol` server half and the two `BatchSubMessageCodec` methods (Story 033).
 - `TestHarness/` and the reclassification of the 46 shared types onto the shared allow-list (Story 034).
-- Correcting ADR-012's stated reason for the order ("Currency uses Networking types" — in code the references run from Networking to Currency). Wording only; do it in the next ADR authoring pass.
+- ~~Correcting ADR-012's stated reason for the order.~~ *Withdrawn 2026-10-08: the ADR is right. Its Migration Plan lists Currency after Networking because Networking uses Currency types, which is what the code shows. The claim that the ADR said the opposite was a misreading made while briefing the classification.*
 - Currency and Character Stats (eighth and ninth in ADR-012's order).
 - Damage Calculation Story 007 (client-binary scan). When it is written, its forbidden-name list gains the moved type names.
 

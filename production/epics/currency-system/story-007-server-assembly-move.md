@@ -81,7 +81,7 @@ Other rules:
 
 - The client-binary scan that closes the second sentence of AC-CS-G-01 (Damage Calculation Story 007, with the first client build pipeline). Its forbidden-name list gains `CurrencySystem` and the other four names.
 - Character Stats (ninth and last in ADR-012's order). It is not a mechanical move: `Client` presenters use the `CharacterStats` class directly, so it needs the stats view of ADR-012 Decision 7 first.
-- Correcting ADR-012's stated reason for moving Networking before Currency.
+- ~~Correcting ADR-012's stated reason for moving Networking before Currency.~~ *Withdrawn 2026-10-08: the ADR is right. Its Migration Plan lists Currency after Networking because Networking uses Currency types (`ConnectionStateMachine` uses `ICurrencyService`), which is what the code shows. The "wrong reason" was a misreading of the ADR made while briefing the Networking classification.*
 
 ---
 

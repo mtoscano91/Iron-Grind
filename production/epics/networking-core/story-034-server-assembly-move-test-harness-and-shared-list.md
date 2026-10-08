@@ -108,7 +108,7 @@ Other rules:
 
 - Any change to the harness's behaviour or to `INetworkTestObserver`'s signatures (for example replacing the three enums with primitives so that they could move).
 - Building the client consumers named as "planned".
-- Correcting ADR-012's stated reason for the move order (Networking does not depend on being moved before Currency for the reason given; in code Networking uses Currency types, not the reverse).
+- ~~Correcting ADR-012's stated reason for the move order.~~ *Withdrawn 2026-10-08: the ADR is right (Currency moves after Networking because Networking uses Currency types). The claim that it said the opposite was a misreading made while briefing the classification.*
 - Currency and Character Stats (eighth and ninth in ADR-012's order).
 
 ---

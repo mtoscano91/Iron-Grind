@@ -3508,3 +3508,13 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
   3. The Networking classification was made from doc comments and scans; 42 of its 46 shared entries name planned consumers. Worth a specialist review before client networking code is written.
   4. The HUD scaffolding is not saved in `SampleScene.unity`.
   5. Stories still blocked from before: Enhancement 009, 010, 011 (their story files name `src/Foundation/EnhancementSystem/` paths that are now `src/ServerLogic/EnhancementSystem/`).
+
+## Session Extract — 2026-10-08 (documentation pass after ADR-012 step 2; one earlier claim withdrawn)
+- Character Stats Story 010 committed as `979ba3c`.
+- **Correction — the "wrong stated reason" finding was wrong.** Earlier extracts and three story files said ADR-012 gives a wrong reason for moving Networking before Currency. It does not: Migration Plan item 8 says Currency's types "are used by … Networking", which is what the code shows (`ConnectionStateMachine` uses `ICurrencyService`). The opposite statement was the orchestrator's own misreading, written into the classification brief and then repeated. Withdrawn in `currency-system/story-007`, `networking-core/story-032` and `story-034` (Out of Scope lines struck through with a note). Follow-up 1 in the Story 010 extract above no longer includes it. No code or list was affected.
+- Documentation updated (wording and status only, no rule changed, manifest version date unchanged):
+  - `docs/architecture/control-manifest.md` lines 32, 39, 155, 377 — all nine systems moved; the not-yet-moved list removed; a new `Foundation` type needs an allow-list entry and a named consumer.
+  - `docs/architecture/ADR-012-server-client-assembly-boundary.md` lines 135, 239, 288 — the list is removed; all move stories completed 2026-10-08; step 3 still open.
+  - `docs/architecture/architecture-traceability.md` line 33 — server/client isolation: step 2 implemented; still Partial because checks 2 and 3 need a build pipeline.
+- Committed with the message "ADR-012: record Migration Plan step 2 as complete; withdraw a wrong claim about the move order". Not pushed; PAT rotation is still unconfirmed.
+- Remaining follow-ups: client-binary scan (needs a client build pipeline); specialist review of the Networking classification; HUD scaffolding not saved in `SampleScene.unity`; Enhancement Stories 009–011 still blocked and naming old `src/Foundation/EnhancementSystem/` paths.
