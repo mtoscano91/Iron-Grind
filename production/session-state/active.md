@@ -3431,3 +3431,23 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - **ADR-012 move order: 7 of 9 done.** `NotYetMovedList` is 11: Currency 5 (`CurrencySystem`, `GoldMutationError`, `GoldMutationResult`, `GoldSyncEventArgs`, `ICurrencyService`), Character Stats 6 (`BuffID`, `BuffModifierEntry`, `CharacterStats`, `EquipmentModifierEntry`, `ILevelingService`, `StatSchema`). `SharedAllowList` is 80.
 - Caveat recorded in the story: the Networking classification rests on doc comments and scans, not on a reading of every method body; 42 of the 46 shared entries name a planned consumer.
 - Next: Currency move story (not yet written). Character Stats after it is not mechanical: three `Client` presenters and `LevelingHudController` use the `CharacterStats` class directly, so it needs the stats view of ADR-012 Decision 7 first (`ILocalPlayerStatsView`), like Leveling Story 014.
+
+## Session Extract — 2026-10-08 (Networking Core Story 034 committed; Currency Story 007 created, implementation started)
+- Story 034 committed as `4d15bc5`. ADR-012's Networking step is done. Not pushed; PAT rotation is still unconfirmed.
+- Created: production/epics/currency-system/story-007-server-assembly-move.md — Move Currency to the Server Assembly (Group G; AC-CS-G-01 first sentence). Moves `CurrencySystem`, `ICurrencyService`, `GoldMutationResult`, `GoldMutationError`, `GoldSyncEventArgs`; `CharacterID` and `GoldTransactionReason` stay shared. Adds one boundary test, `test_currency_system_is_in_server_logic`. Expected: 10 renames, `NotYetMovedList` 11 → 6, suite 2009. Currency `EPIC.md` is 6/7 and its "Group G scoped out" note is struck through.
+- Facts checked at creation: the only code users of the 5 types are `LootAuctionService`, `LootTableService`, `LootTableValidator`, `ConnectionStateMachine` (all `ServerLogic`); the folder's one `internal` member (`TryCompareAndSwapSpend`) is called only by tests; no cref to the 5 types from a file that stays; no serialization attributes.
+- In progress: a `gameplay-programmer` agent is implementing Story 007. Not yet reviewed, not compiled, not committed.
+- After Currency only Character Stats remains (6 types), and it needs the stats view of ADR-012 Decision 7 first.
+
+## Session Extract — /dev-story 2026-10-08 (Currency Story 007)
+- Implemented and reviewed by the orchestrator from the working tree (the agent's own report had not arrived yet): 5 `.cs` + 5 `.cs.meta` from `src/Foundation/Currency/` to `src/ServerLogic/Currency/` (10 staged renames, 0 lines changed; `CharacterID.cs` and `GoldTransactionReason.cs` stay); no `.cs` under `src/` edited; `AssemblyBoundaryLists.cs`: Currency block removed (`NotYetMovedList` 11 → 6, Character Stats only; `SharedAllowList` 80); `AssemblyBoundary_tests.cs`: `test_currency_system_is_in_server_logic` added.
+- Orchestrator's own checks after the move: no code line and no cref in `src/Foundation/`, `src/Client/`, `src/DevHarness/` or `Assets/` names one of the 5 moved types.
+- **Not verified: nothing compiled or run since the move.** Expected suite total 2009.
+- **Pending file:** `src/ServerLogic/Currency.meta` (Unity generates it; stage it).
+- Next: user recompiles and runs the suite; then close and commit.
+
+## Session Extract — /story-done 2026-10-08 (Currency Story 007)
+- Verdict: COMPLETE. Suite 2009/2009 (run 16:49:35, after the import at 16:49:26); 10/10 boundary tests including the new `test_currency_system_is_in_server_logic`; no compile error or warning.
+- Committed with the message "Currency: Story 007 complete (moved to IronGrind.ServerLogic, Group G)". Currency `EPIC.md` is Complete (7/7). AC-CS-G-01's second sentence stays open until the client-binary scan. Not pushed; PAT rotation is still unconfirmed.
+- **ADR-012 move order: 8 of 9 done.** `NotYetMovedList` is 6, all Character Stats: `BuffID`, `BuffModifierEntry`, `CharacterStats`, `EquipmentModifierEntry`, `ILevelingService`, `StatSchema`.
+- Next: Character Stats, in two stories like Leveling — first the stats view of ADR-012 Decision 7 (the `Client` presenters and `LevelingHudController` use the `CharacterStats` class directly), then the move.

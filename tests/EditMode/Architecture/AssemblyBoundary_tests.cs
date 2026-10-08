@@ -198,6 +198,17 @@ namespace IronGrind.Tests.EditMode.Architecture
         }
 
         /// <summary>
+        /// <c>CurrencySystem</c> is defined in ServerLogic — <c>currency-system.md</c> AC-CS-G-01, first
+        /// sentence (ADR-012 Decision 6, check 1); Currency System Story 007. The second sentence of the
+        /// criterion (no client build includes the class) needs the client-binary scan and is not covered here.
+        /// </summary>
+        [Test]
+        public void test_currency_system_is_in_server_logic()
+        {
+            Assert.AreEqual(SERVER_LOGIC, typeof(IronGrind.Currency.CurrencySystem).Assembly.GetName().Name, typeof(IronGrind.Currency.CurrencySystem).FullName);
+        }
+
+        /// <summary>
         /// No type of a namespace on <see cref="AssemblyBoundaryLists.ServerOnlyNamespaces"/> is defined in
         /// Foundation or Client, and each listed namespace has at least one type in ServerLogic, so a
         /// misspelt or emptied entry fails instead of passing vacuously (Loot Table Story 014).

@@ -3,8 +3,8 @@
 > **Layer**: Foundation
 > **GDD**: design/gdd/currency-system.md
 > **Architecture Module**: Currency
-> **Status**: Complete
-> **Stories**: 6 stories created (001–006), all Complete
+> **Status**: Complete (7/7 — Story 007, the ADR-012 assembly move for Group G, Complete 2026-10-08; AC-CS-G-01 second sentence waits for the client-binary scan)
+> **Stories**: 6 stories created (001–006), all Complete; Story 007 created and Complete 2026-10-08
 
 ## Overview
 
@@ -48,10 +48,11 @@ This epic is complete when:
 | 004 | Concurrency Safety (Thread-Safe Balance Mutation) | Logic | Complete | ADR-006 (reference only — in-memory model) |
 | 005 | GoldSyncEvent Emission | Logic | Complete | ADR-010 |
 | 006 | TransferGold Stub & Compensating Refund | Logic | Complete | ADR-001 |
+| 007 | [Move Currency to the Server Assembly (Group G)](story-007-server-assembly-move.md) | Integration | Complete (2026-10-08) | ADR-012 |
 
 Work through stories in order — each story's `Depends on:` field tells you what must be Done before you can start it.
 
 **Scoped out of this epic** (infrastructure that doesn't exist yet in this project):
-- GDD Group G (Server Assembly Isolation via `ServerLogic.asmdef`) — no server/client assembly split exists yet
+- ~~GDD Group G (Server Assembly Isolation via `ServerLogic.asmdef`) — no server/client assembly split exists yet~~ — *in scope since 2026-10-08: ADR-012 created the split; Story 007 covers AC-CS-G-01 check 1 (the client-binary scan, check 2, is Damage Calculation Story 007).*
 - GDD Group I (Session Resync) — depends on Networking Core's session handshake, not yet built
 - Real PostgreSQL persistence — Character Persistence's future responsibility; these stories implement an in-memory model matching `CharacterStats`/`ItemDatabase`'s established pattern

@@ -125,13 +125,6 @@ namespace IronGrind.Tests.EditMode.Architecture
         /// </summary>
         internal static readonly string[] NotYetMovedList =
         {
-            // ---- Currency ----
-            "IronGrind.Currency.CurrencySystem",
-            "IronGrind.Currency.GoldMutationError",
-            "IronGrind.Currency.GoldMutationResult",
-            "IronGrind.Currency.GoldSyncEventArgs",
-            "IronGrind.Currency.ICurrencyService",
-
             // ---- Character Stats ----
             "IronGrind.CharacterStats.BuffID",
             "IronGrind.CharacterStats.BuffModifierEntry",
