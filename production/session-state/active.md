@@ -3518,3 +3518,10 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
   - `docs/architecture/architecture-traceability.md` line 33 — server/client isolation: step 2 implemented; still Partial because checks 2 and 3 need a build pipeline.
 - Committed with the message "ADR-012: record Migration Plan step 2 as complete; withdraw a wrong claim about the move order". Not pushed; PAT rotation is still unconfirmed.
 - Remaining follow-ups: client-binary scan (needs a client build pipeline); specialist review of the Networking classification; HUD scaffolding not saved in `SampleScene.unity`; Enhancement Stories 009–011 still blocked and naming old `src/Foundation/EnhancementSystem/` paths.
+
+## Session Extract — 2026-10-08 (stale source paths after the ADR-012 moves)
+- Documentation pass committed as `08862b9`.
+- Follow-up 5 ("blocked Enhancement Stories 009–011 name old `src/Foundation/EnhancementSystem/` paths") is withdrawn: checked, and no story that is not Complete names any `src/Foundation/` source path. Enhancement Story 012's Out of Scope note that said so was inaccurate. Complete stories keep their original paths as historical records.
+- `docs/tech-debt-register.md`: 32 distinct source paths that no longer existed (files moved to `src/ServerLogic/`, plus two UI files moved to `src/Client/` by Damage Calculation Story 006) were rewritten to their current location, 29 lines changed; each old path resolved to exactly one current file, and every `.cs` path the register names now exists. Line numbers after a path were not re-checked: the moves were pure renames, but `LevelingService.cs` and the three HUD presenters were edited by Leveling Story 014 and Character Stats Story 009, so numbers quoted for those files may have shifted.
+- Committed with the message "Tech debt register: update source paths after the ADR-012 moves". Not pushed; PAT rotation is still unconfirmed.
+- Remaining follow-ups, all needing a decision or new work: client-binary scan (needs a client build pipeline); specialist review of the Networking classification; HUD scaffolding not saved in `SampleScene.unity`; push after PAT rotation.
