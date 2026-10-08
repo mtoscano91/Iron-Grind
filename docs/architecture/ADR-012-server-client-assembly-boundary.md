@@ -23,7 +23,7 @@ Accepted (2026-10-08)
 | Field | Value |
 |-------|-------|
 | **Depends On** | ADR-007 (hosting backend — the server is a Unity 6.3 IL2CPP Linux headless build); ADR-004 (NGO — gameplay messages over `CustomMessagingManager`, Decision 4 here); ADR-010 (event messaging — Tier 1 injection and enqueue-on-receive, Decision 4 here). All Accepted. |
-| **Enables** | The server RNG injection ADR (OQ-DC-2) can name the assembly its types live in. ADR-013 (inbound request dispatch and tick order) can name where handlers are registered. |
+| **Enables** | The server RNG injection ADR (OQ-DC-2) can name the assembly its types live in. ADR-014 (inbound request dispatch and tick order; called "ADR-013" before 2026-10-08, when that number went to the server random provider) can name where handlers are registered. |
 | **Blocks** | Damage Calculation Story 006 (Server Assembly Isolation Scan); Currency System Group G (Server Assembly Isolation) — unblocked by acceptance, but Currency is eighth in the move order (Migration Plan step 2); every later per-system move story. |
 | **Ordering Note** | ADR-004 (NGO): no `NetworkBehaviour` exists in `src/` yet. Decision 4 fixes where they go before the first one is written. |
 
@@ -110,7 +110,7 @@ An interface lives with its consumer. An interface that server code calls and se
 ### Decision 4 — Networked behaviours and assets
 
 - A `NetworkBehaviour` that sits on a prefab clients also instantiate must exist in both builds, so it lives in `IronGrind.Foundation` and stays a thin shell: it declares what NGO needs on the object and hands server-side calls to an interface declared in `Foundation` and implemented in `ServerLogic`. The implementation is supplied by the server composition root (constructor or `Initialize` injection, ADR-010 Tier 1); on the client the interface is not supplied.
-- Gameplay messages do not travel as RPCs or `NetworkVariable`s: ADR-004 Decision 4 sends them through `CustomMessagingManager`. The message schemas and the code that reads and writes them are `Foundation` (both sides serialize them). Server-side handlers for inbound messages are registered by the server composition root, in `ServerLogic`; client-side handlers by the client composition root, in `Client`. A server handler does not execute the request: it validates the envelope and enqueues it for the tick (ADR-010 Decision 5). Which component dispatches the queue and in what tick order is ADR-013, not this ADR.
+- Gameplay messages do not travel as RPCs or `NetworkVariable`s: ADR-004 Decision 4 sends them through `CustomMessagingManager`. The message schemas and the code that reads and writes them are `Foundation` (both sides serialize them). Server-side handlers for inbound messages are registered by the server composition root, in `ServerLogic`; client-side handlers by the client composition root, in `Client`. A server handler does not execute the request: it validates the envelope and enqueues it for the tick (ADR-010 Decision 5). Which component dispatches the queue and in what tick order is ADR-014, not this ADR.
 - Where an RPC is used at all, its body ships in the client binary whatever its target: only its execution is server-side. It must contain nothing but enqueueing through a `Foundation` interface — never a rule, a formula or a constant. The same holds for any message-handling code placed in `Foundation`.
 - A server-only `NetworkBehaviour` must not be added to a prefab the client also instantiates: NGO addresses behaviours by their index on the `NetworkObject`, so both sides need the same component list.
 - A `MonoBehaviour`, `ScriptableObject` or `[SerializeReference]` type in `IronGrind.ServerLogic` must not appear in any scene, prefab, Addressables group or asset included in a client build. The Editor compiles `ServerLogic`, so such a reference serializes without error and becomes a missing script at client runtime. Enforced by Decision 6, check 3. Server-only components are created in code by the server composition root, or live in server-only scenes, and those scenes are not in the client build profile's scene list.
@@ -300,7 +300,8 @@ Until a system's move story is done, its code is still in the client build. That
 - ADR-007 (hosting backend) — the server build this assembly ships in.
 - ADR-005 (HUD framework), ADR-008 (combat UI framework) — screens built on them read the views of Decision 7, never a service.
 - ADR-009 (scene/zone loading) — zone scenes the server loads must hold no `Client` script, Decision 4.
-- ADR-013 (inbound request dispatch and tick order, not yet written) — owns the dispatcher that Decision 4 leaves open.
+- ADR-013 (server random provider, Proposed 2026-10-08) — the server RNG injection decision this ADR lists under Enables.
+- ADR-014 (inbound request dispatch and tick order, not yet written) — owns the dispatcher that Decision 4 leaves open.
 - ADR-010 (event messaging) — Tier 1 injection is how `Foundation` shells reach `ServerLogic` implementations; event argument structs the client receives are `Foundation`.
 - `design/gdd/damage-calculation.md` Core Rule 1, AC-DC-I-01; `design/gdd/currency-system.md` Group G; `design/gdd/hit-detection.md`; `design/gdd/enemy-ai.md`.
 - `docs/tech-debt-register.md` TD-002 (local packages and asmdef wiring).

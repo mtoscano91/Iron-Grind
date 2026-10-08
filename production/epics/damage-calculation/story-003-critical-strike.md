@@ -1,7 +1,7 @@
 # Story 003: Critical Strike with Injected Server RNG
 
 > **Epic**: Damage Calculation
-> **Status**: Blocked — **OQ-DC-2: the server RNG injection contract must be documented in an ADR before this story is implemented (GDD Acceptance Criteria prerequisite note). Run `/architecture-decision`.**
+> **Status**: Blocked — **OQ-DC-2: ADR-013 (Server Random Provider) is written but still Proposed (2026-10-08). Review it in a fresh session (`/architecture-review`); on acceptance, complete this story's Implementation Notes from the ADR and set it Ready.**
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-07
@@ -13,7 +13,7 @@
 **Requirement**: `TR-dmg-004` (placeholder — `docs/architecture/tr-registry.yaml` is empty)
 *(Requirement text lives in `docs/architecture/tr-registry.yaml` — read fresh at review time)*
 
-**ADR Governing Implementation**: none yet — **required**. OQ-DC-2 asks the ADR to define the interface, the injection point, the test-double contract, and to confirm the RNG is stateless per call so it survives zone migration.
+**ADR Governing Implementation**: `docs/architecture/ADR-013-server-random-provider.md` — **Proposed, not yet Accepted**. It defines `IRandomProvider` (`NextFloat` built from 24 bits, no rounding), constructor injection, the shared `ScriptedRandomProvider` / `RecordingRandomProvider` test doubles, and makes this story the one that creates those types (Migration Plan step 1). The rest of this header predates the ADR: OQ-DC-2 asks the ADR to define the interface, the injection point, the test-double contract, and to confirm the RNG is stateless per call so it survives zone migration.
 **Existing precedent the ADR should rule on**: `EnhancementService` and `LootDropRoller` inject `System.Random` and tests subclass it (`ScriptedRandom`). `System.Random` yields a `double`; the GDD specifies `NextFloat()` uniform in [0.0, 1.0) and a strict `<` against a float `CritChance`. A `(float)NextDouble()` conversion can round up to `1.0f`, and can move a value across the `0.75` boundary — the ADR must say how the float is produced.
 
 **Engine**: Unity 6.3 LTS | **Risk**: LOW
@@ -89,5 +89,5 @@
 
 ## Dependencies
 
-- Depends on: Story 002; **an Accepted ADR for the server RNG injection contract (OQ-DC-2)**.
+- Depends on: Story 002; **ADR-013 Accepted** (the server RNG injection contract, OQ-DC-2 — Proposed as of 2026-10-08).
 - Unlocks: None inside this epic. Auto-Attack Combat and the Skill System need crits before they ship.

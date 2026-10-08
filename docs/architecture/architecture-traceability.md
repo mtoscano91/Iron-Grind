@@ -7,7 +7,7 @@
 ## Coverage Summary (domain-level)
 
 - Systems indexed (systems-index.md): 38 Approved with docs (+2 Draft primitives), 6 Not Started UI/Audio/Meta
-- ADRs on disk: 12 (12 Accepted)
+- ADRs on disk: 13 (12 Accepted, 1 Proposed — ADR-013 server random provider, written 2026-10-08, not yet reviewed)
 - Domains with ADR coverage: 12
   - Fully covered: 5 (networking library, navigation execution, navigation lifecycle, HUD UI, combat UI)
   - Partial or in conflict: 7 (shop transactions, persistence, hosting, zone load/teardown, messaging — inbound requests, async persistence, server/client code isolation — ADR Accepted, code not yet moved)
@@ -40,7 +40,7 @@
 Most foundational first (full text in the 2026-10-07 review; item 0 in the 2026-10-08 review):
 
 0. **ADR-012 — Accepted 2026-10-08; follow-ups open.** `/create-control-manifest update` (assembly rules); GDD wording pass (ADR-012 Migration Plan step 5); rewrite Damage Calculation Story 006 against the two-list boundary test — its header still says the ADR does not exist. Currency Group G is eighth in the move order.
-1. **P1 — Inbound request dispatch and full tick order.** No ADR. Suggested: `/architecture-decision` ADR-013 (the number 012 is taken by the assembly boundary), or an ADR-010 amendment. Blocks Enhancement Story 009.
+1. **P1 — Inbound request dispatch and full tick order.** No ADR. Suggested: `/architecture-decision` ADR-014 (012 is the assembly boundary; 013 is the server random provider, Proposed 2026-10-08), or an ADR-010 amendment. Blocks Enhancement Story 009.
 2. **C2 / P4 — ADR-009 teardown and startup sequences.** ADR-009 Amendment 1; also the exit call (`Process.Exit(0)` is not a .NET API — engine, unconfirmed).
 3. **C1 — Zone process supervision.** ADR-007 amendment (`Restart=on-failure`, single spawner, `ZoneID` minted at registration).
 4. **P2 / P5 — ADR-011 clarification.** Second irreversible outcome while the gate is closed; who supplies the expected `SaveVersion` for a queued write.
