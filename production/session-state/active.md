@@ -22,7 +22,25 @@
 
 > **ADR-012 reviewed 2026-10-08 — CONCERNS, stays Proposed (not committed):** report `docs/architecture/architecture-review-2026-10-08.md`; `architecture-traceability.md` updated. Uncommitted: those two files and this file. The "then the user marks it Accepted" note below is superseded: amend the ADR first. **Next (fresh authoring session):** amend ADR-012 for B1–B3 and C1–C7, then a lean re-review, then acceptance. Details in the extract "/architecture-review 2026-10-08" below. PAT rotation is still unconfirmed.
 
+> **ADR-012 re-reviewed 2026-10-08 — no blocker, still Proposed (not committed):** report `docs/architecture/architecture-review-2026-10-08-rereview.md`; `architecture-traceability.md` updated. B1–B3 and C1–C7 are closed. The "Next: lean re-review" notes below are superseded. Uncommitted: those two files and this file. **Next (fresh authoring session):** fold N1–N5 into ADR-012 (N2 affects Story 006), then the user marks it Accepted; then `/create-control-manifest update`, the GDD wording pass, the Story 006 rewrite. Details in the extract "/architecture-review 2026-10-08 — ADR-012 lean re-review" below. PAT rotation is still unconfirmed.
+
+> **Commit status 2026-10-08 (ADR-012 amendment):** the amended ADR-012 and this file are committed as `54c7856`. The "not committed" / "Uncommitted" notes about the amendment below are superseded. Not pushed: `main` is 6 ahead of `origin` (`origin/main` is at `b6f9dfa`). Uncommitted: this note only. Untracked and left alone: `bash.exe.stackdump`. PAT rotation is still unconfirmed.
+
 > **ADR-012 amended 2026-10-08 — still Proposed (not committed):** B1–B3 and C1–C7 of the review are written into `docs/architecture/ADR-012-server-client-assembly-boundary.md`. The review itself is committed as `78303e7` (the "not committed" in the note above is superseded). Uncommitted: the ADR and this file. `main` is 5 ahead of `origin` (not pushed). **Next (fresh review session):** lean re-review of ADR-012 against `architecture-review-2026-10-08.md` — verify B1–B3 and C1–C7 are closed, nothing else — then the user marks it Accepted. Details in the extract directly below. PAT rotation is still unconfirmed.
+
+## Session Extract — /architecture-review 2026-10-08 — ADR-012 lean re-review (not committed)
+- Verdict: ADR-012 has no blocking issue and is ready for acceptance; project-wide **CONCERNS** unchanged (2026-10-07 items). `unity-specialist` not spawned; full traceability matrix not rebuilt.
+- Requirements: domain level, unchanged — 12 ADR-backed domains, 5 covered, 7 partial or in conflict, 2 schema gaps.
+- Closed: B1 (nine-step order checked against the code reference graph; the backward references are doc comments only), B2 (Decision 7 covers every `LevelingService` / `CharacterStats` member the UI calls), B3 (per type, two lists), C1–C7. Open: C8 (`architecture-review-2026-10-07.md` lines 103 and 216 still call inbound dispatch "ADR-012").
+- N1: `IClassRegistry` / `ClassDefinition` / `ClassRegistry` are used by `RespecScreenPresenter`, `LevelingHudController` and `LevelingFormulaPreview` and are not classified in Decision 7 (Leveling move story).
+- N2: Item Database has no move story — `ItemDatabase`, `IItemDatabase`, `StatModifierEntry`, `ItemDatabaseSeeder`, `ItemDefinitionValidator`, `MvpItemRecordData` are neither on the shared allow-list nor in the move order, so the not-yet-moved list never empties. Affects Story 006.
+- N3: Decision 6 check 3 does not scan for `src/DevHarness/` scripts; `HudBootstrap` adds the harness to a scene the user is told to save.
+- N4: AC-CS-G-01 (`currency-system.md:309`, names `CompilationPipeline`) and AC-AI-21 (`enemy-ai.md:478`, by namespace) are not mapped; add to the step 5 wording pass.
+- N5: Risks, last bullet, cites "Verification Required 3–5"; there are eight.
+- New TR-IDs registered: None. GDD revision flags: None (wording corrections only, after acceptance).
+- Top ADR gaps: ADR-013 inbound request dispatch + tick order; ADR-009 Amendment 1; ADR-007 amendment (supervision).
+- Report: docs/architecture/architecture-review-2026-10-08-rereview.md
+- Damage Calculation Story 006 and Currency Group G stay Blocked until ADR-012 is Accepted.
 
 ## Session Extract — ADR-012 amendment 2026-10-08 (authoring session, not committed)
 - User decisions: **B2** — client read model in `Foundation` (not "classify as shared", not a separate ADR); **B1** — reorder the moves by the reference graph (not temporary interfaces).

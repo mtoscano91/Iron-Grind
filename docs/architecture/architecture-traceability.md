@@ -2,7 +2,7 @@
 
 > **Last Updated:** 2026-10-08
 > **Engine:** Unity 6.3 LTS (6000.3)
-> **Source review:** `docs/architecture/architecture-review-2026-10-07.md` (full); `docs/architecture/architecture-review-2026-10-08.md` (ADR-012 only)
+> **Source review:** `docs/architecture/architecture-review-2026-10-07.md` (full); `docs/architecture/architecture-review-2026-10-08.md` (ADR-012 only); `docs/architecture/architecture-review-2026-10-08-rereview.md` (ADR-012 lean re-review)
 
 ## Coverage Summary (domain-level)
 
@@ -30,7 +30,7 @@
 | Zone scene load and teardown | zone-instancing, navigation-pathfinding | ADR-009 | ⚠️ Partial | C2: teardown lacks `Dispose()` pass and shutdown drain; P4: startup lacks NGO start, static-data-ready, wiring |
 | Cross-system messaging | all gameplay systems | ADR-010 | ⚠️ Partial | Events covered; P1: no decision owns the inbound request dispatcher; naming rule out of step with `src/` |
 | Async persistence in the tick loop | enhancement-system, character-persistence, networking-core, loot-table-system | ADR-011 | ⚠️ Partial | P1 dispatcher, P2 second irreversible outcome with a closed gate, P5 expected `SaveVersion` ownership |
-| Server/client code isolation | damage-calculation, currency-system, hit-detection, enemy-ai, navigation-pathfinding | ADR-012 (Proposed) | ⚠️ Partial | Not Accepted. B1 migration order, B2 HUD depends on `LevelingService` / `CharacterStats`, B3 boundary test by namespace; navigation-pathfinding not listed in the ADR |
+| Server/client code isolation | damage-calculation, currency-system, hit-detection, enemy-ai, navigation-pathfinding | ADR-012 (Proposed) | ⚠️ Partial | Not Accepted yet. Re-review 2026-10-08: B1–B3 and C1–C7 closed, no blocking issue. Small items N1–N5 (class registry types unclassified, Item Database has no move story, `src/DevHarness/` not in the content check, AC-CS-G-01 / AC-AI-21 unmapped, one stale cross-reference) |
 | Core gameplay/data/economy/progression | character-stats, damage-calculation, skill-system, status-effects, equipment-system, enhancement-system, loot-table-system, leveling-system, party-system, et al. | — | No per-system ADR | By design — pure design/data |
 | URP render / VFX | VFX System, Map/Minimap | — | Deferred | GDDs Not Started |
 | Audio | Audio System | — | Deferred | GDD Not Started |
@@ -39,7 +39,7 @@
 
 Most foundational first (full text in the 2026-10-07 review; item 0 in the 2026-10-08 review):
 
-0. **ADR-012 — amend before Accepted.** Migration order against the real reference graph (B1); what `IronGrind.Client` reads in place of `LevelingService` and `CharacterStats` (B2); boundary test per type with a `Foundation` allow-list (B3); concerns C1–C7. Blocks Damage Calculation Story 006 and Currency Group G.
+0. **ADR-012 — ready for acceptance.** B1–B3 and C1–C7 closed (re-review 2026-10-08). Suggested first: N1–N5, of which N2 (Item Database types on the boundary test's lists) affects Story 006. Damage Calculation Story 006 and Currency Group G stay Blocked until the status is Accepted.
 1. **P1 — Inbound request dispatch and full tick order.** No ADR. Suggested: `/architecture-decision` ADR-013 (the number 012 is taken by the assembly boundary), or an ADR-010 amendment. Blocks Enhancement Story 009.
 2. **C2 / P4 — ADR-009 teardown and startup sequences.** ADR-009 Amendment 1; also the exit call (`Process.Exit(0)` is not a .NET API — engine, unconfirmed).
 3. **C1 — Zone process supervision.** ADR-007 amendment (`Restart=on-failure`, single spawner, `ZoneID` minted at registration).
@@ -68,3 +68,4 @@ Other open items:
 | 2026-06-27 | CONCERNS → **PASS** | 8 (8 Accepted) | 3 new ADRs promoted to Accepted; all cleanup fixes applied |
 | 2026-10-07 | **CONCERNS** | 11 (11 Accepted) | ADR-009/010/011 added. 2 conflicts (zone supervision, teardown order), 5 partial items, 2 schema gaps; `architecture.md` stale |
 | 2026-10-08 | **CONCERNS** (ADR-012 only) | 12 (11 Accepted, 1 Proposed) | ADR-012 reviewed alone: decision sound and confirmed against the 6.3 manual; 3 items to fix before acceptance (migration order, HUD dependencies, boundary test granularity), 8 concerns |
+| 2026-10-08 | ADR-012 lean re-review: no blocker (project-wide **CONCERNS** unchanged) | 12 (11 Accepted, 1 Proposed) | Amended ADR-012 (`54c7856`): B1–B3 and C1–C7 closed; 5 small items N1–N5; ready for acceptance |
