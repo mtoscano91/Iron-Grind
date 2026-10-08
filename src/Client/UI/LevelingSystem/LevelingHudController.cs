@@ -16,7 +16,7 @@ namespace IronGrind.UI.LevelingSystem
     /// <remarks>
     /// <para><b>Forward-dependency wiring seam.</b> No player/session spawn system exists yet in
     /// this codebase (confirmed via repo search) — there is no automatic way for this component
-    /// to discover which <see cref="CharacterStats"/>/Leveling views/
+    /// to discover which <see cref="ILocalPlayerStatsView"/>/Leveling views/
     /// <see cref="EntityID"/> it should track. <see cref="Initialize"/> mirrors the same
     /// "caller-supplied state for a forward dependency" idiom already established by
     /// <c>LevelingService.RegisterPlayerEntity</c> / <c>AttachCharacterStats</c> — a future
@@ -56,7 +56,7 @@ namespace IronGrind.UI.LevelingSystem
         /// Wires this controller to a real (or test-harness-constructed) Leveling System
         /// instance. Safe to call more than once — a prior wiring is torn down first.
         /// </summary>
-        /// <param name="stats">The tracked entity's stat container.</param>
+        /// <param name="stats">Read-only view of the tracked entity's stats (backed by <c>CharacterStats</c> on the server).</param>
         /// <param name="levelEvents">Source of <c>OnLevelUp</c> events for the level-up overlay.</param>
         /// <param name="levelingView">Read-only Leveling state the respec screen displays.</param>
         /// <param name="respecRequests">Sender the respec screen uses to submit a respec.</param>
@@ -72,7 +72,7 @@ namespace IronGrind.UI.LevelingSystem
         /// </param>
         /// <param name="trackedEntityId">The locally-controlled player entity this HUD displays.</param>
         public void Initialize(
-            IronGrind.CharacterStats.CharacterStats stats,
+            ILocalPlayerStatsView stats,
             ILevelingEventBroadcaster levelEvents,
             ILocalPlayerLevelingView levelingView,
             IRespecRequestSender respecRequests,

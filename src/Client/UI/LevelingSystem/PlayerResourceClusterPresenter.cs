@@ -43,7 +43,7 @@ namespace IronGrind.UI.LevelingSystem
 
         private readonly VisualElement _xpBarFill;
         private readonly Label _levelBadgeLabel;
-        private readonly IronGrind.CharacterStats.CharacterStats _stats;
+        private readonly ILocalPlayerStatsView _stats;
         private readonly IReadOnlyList<int> _xpThresholds;
         private readonly EntityID _entityId;
 
@@ -52,7 +52,7 @@ namespace IronGrind.UI.LevelingSystem
         public PlayerResourceClusterPresenter(
             VisualElement xpBarFill,
             Label levelBadgeLabel,
-            IronGrind.CharacterStats.CharacterStats stats,
+            ILocalPlayerStatsView stats,
             IReadOnlyList<int> xpThresholds,
             EntityID entityId)
         {
@@ -71,7 +71,7 @@ namespace IronGrind.UI.LevelingSystem
         }
 
         /// <summary>
-        /// Re-renders the level badge and XP bar from current <see cref="CharacterStats"/>
+        /// Re-renders the level badge and XP bar from current <see cref="ILocalPlayerStatsView"/>
         /// values. Public so <see cref="LevelUpOverlayPresenter"/> can force a refresh after its
         /// own transient XP-bar-flash effect (AC-LS-46's "flashes-white-then-resets" step)
         /// without duplicating the fill formula a second time.

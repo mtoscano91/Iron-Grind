@@ -61,6 +61,10 @@ namespace IronGrind.Tests.EditMode.Architecture
             "IronGrind.LevelingSystem.LevelUpEventArgs",          // consumer: LevelUpOverlayPresenter
             "IronGrind.LevelingSystem.XpThresholdTable",          // consumer: PlayerResourceClusterPresenter (XP bar; receives Values as a list — wiring by the client composition root is planned)
 
+            // Character Stats: client read model (ADR-012 Decision 7).
+            "IronGrind.CharacterStats.ILocalPlayerStatsView",         // consumer: PlayerResourceClusterPresenter, RespecScreenPresenter
+            "IronGrind.CharacterStats.LocalPlayerStatChangedHandler", // consumer: PlayerResourceClusterPresenter
+
             // Networking (ADR-012 Decision 4): message schemas, the codecs that read and write them, wire enums,
             // and logic both sides or the client run. "planned" marks a consumer that is not built yet.
             // Networking: wire message schemas

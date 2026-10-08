@@ -74,7 +74,7 @@ namespace IronGrind.UI.LevelingSystem
         private readonly Label _previewCritChance;
         private readonly Label _previewAttackSpeed;
 
-        private readonly IronGrind.CharacterStats.CharacterStats _stats;
+        private readonly ILocalPlayerStatsView _stats;
         private readonly ILocalPlayerLevelingView _levelingView;
         private readonly IRespecRequestSender _respecRequests;
         private readonly IClassRegistry _classRegistry;
@@ -89,7 +89,7 @@ namespace IronGrind.UI.LevelingSystem
 
         public RespecScreenPresenter(
             VisualElement respecScreenRoot,
-            IronGrind.CharacterStats.CharacterStats stats,
+            ILocalPlayerStatsView stats,
             ILocalPlayerLevelingView levelingView,
             IRespecRequestSender respecRequests,
             IClassRegistry classRegistry,

@@ -44,8 +44,9 @@ namespace IronGrind.UI.LevelingSystem
 
             BuildTestLevelingSystem();
             _levelingAdapter = new HarnessLevelingAdapter(_levelingService);
+            var statsAdapter = new HarnessStatsAdapter(_stats);
             _hudController.Initialize(
-                _stats, _levelingService, _levelingAdapter, _levelingAdapter,
+                statsAdapter, _levelingService, _levelingAdapter, _levelingAdapter,
                 _xpThresholds, _classRegistry, TestEntityId);
             BuildDebugButtonRow();
 
@@ -105,18 +106,26 @@ namespace IronGrind.UI.LevelingSystem
                 {
                     position = Position.Absolute,
                     left = 8,
-                    right = 8, // Bounds the row to the screen width so flexWrap can wrap; without it the row ran off the right edge.
                     bottom = 8,
-                    flexDirection = FlexDirection.Row,
-                    flexWrap = Wrap.Wrap,
+                    // A vertical stack in the bottom-left corner. A horizontal row spans the screen
+                    // width and, being added after the HUD, sits on top of the centred respec panel's
+                    // lower edge, where it can cover the "Confirm Respec" button and take its clicks.
+                    flexDirection = FlexDirection.Column,
+                    alignItems = Align.FlexStart,
                 },
+                // Only the buttons take pointer events; the container's empty area lets them through.
+                pickingMode = PickingMode.Ignore,
             };
 
             row.Add(MakeDebugButton("AC-LS-46: Normal Level-Up (L5->L6)", () => CrossIntoNextLevel(5, 1)));
             row.Add(MakeDebugButton("AC-LS-46: Tier-Transition (L19->L20)", () => CrossIntoNextLevel(19, 1)));
             row.Add(MakeDebugButton("AC-LS-46: Consecutive (+3, L10->L13)", () => CrossIntoNextLevel(10, 3)));
             row.Add(MakeDebugButton("AC-LS-47: Bring to L60 (MAX)", () => CrossIntoNextLevel(59, 1)));
-            row.Add(MakeDebugButton("AC-LS-48: Open Respec Screen", () => _hudController.OpenRespecScreen(TestClassType)));
+            row.Add(MakeDebugButton("AC-LS-48: Open Respec Screen", () =>
+            {
+                _hudController.OpenRespecScreen(TestClassType);
+                ReportRespecLayoutAfterOpen(row);
+            }));
 
             _uiDocument.rootVisualElement.Add(row);
 
@@ -141,6 +150,34 @@ namespace IronGrind.UI.LevelingSystem
                     $"panelSettings scale={_uiDocument.panelSettings?.scale}, scaleMode={_uiDocument.panelSettings?.scaleMode}, " +
                     $"sortingOrder={_uiDocument.panelSettings?.sortingOrder}, targetTexture={(_uiDocument.panelSettings?.targetTexture == null ? "none" : "set")}.");
             });
+        }
+
+        /// <summary>
+        /// Logs, shortly after the respec screen opens, where its commit button is, whether it is
+        /// enabled, and whether the debug button stack overlaps it. Diagnostic for "cannot commit a
+        /// respec" reports: a disabled button means points are still unallocated (AC-LS-48); an
+        /// overlap means the harness's own buttons are in the way.
+        /// </summary>
+        private void ReportRespecLayoutAfterOpen(VisualElement debugButtons)
+        {
+            VisualElement root = _uiDocument.rootVisualElement;
+            root.schedule.Execute(() =>
+            {
+                var commit = root.Q<Button>("RespecCommitButton");
+                var pool = root.Q<Label>("RespecPoolLabel");
+                if (commit == null)
+                {
+                    Debug.LogWarning("[LevelingHudManualTestHarness] Respec: RespecCommitButton not found under the UIDocument root.");
+                    return;
+                }
+
+                Debug.Log(
+                    "[LevelingHudManualTestHarness] Respec: " +
+                    $"commit button worldBound={commit.worldBound}, enabled={commit.enabledInHierarchy}; " +
+                    $"pool label='{pool?.text}'; " +
+                    $"debug buttons worldBound={debugButtons.worldBound}; " +
+                    $"overlap={commit.worldBound.Overlaps(debugButtons.worldBound)}.");
+            }).ExecuteLater(250);
         }
 
         private static Button MakeDebugButton(string label, System.Action onClick)
