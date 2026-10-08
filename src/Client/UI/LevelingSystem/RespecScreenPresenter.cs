@@ -11,8 +11,8 @@ namespace IronGrind.UI.LevelingSystem
     /// AC-LS-48: Respec Screen — auto-alloc floor values in a muted color (never editable),
     /// a redistributable pool counter, commit disabled until the pool is fully allocated, a
     /// Confirm-only (no Cancel) modal, and a projected derived-stats preview column. Calls the
-    /// real <see cref="LevelingService.TryApplyRespec"/> on confirm — never reimplements respec
-    /// logic itself.
+    /// <see cref="IRespecRequestSender"/> on confirm (the authority runs
+    /// <c>LevelingService.TryApplyRespec</c>) — never reimplements respec logic itself.
     /// </summary>
     /// <remarks>
     /// <para><b>Scope.</b> This is the minimum needed to make the respec screen functional and
@@ -34,7 +34,7 @@ namespace IronGrind.UI.LevelingSystem
     /// literally as TWO steps: (1) the main Commit button becomes enabled only once the pool is
     /// fully allocated, and clicking it OPENS a confirmation modal (not an immediate commit); (2)
     /// that modal's single Confirm button performs the actual
-    /// <see cref="LevelingService.TryApplyRespec"/> call. Flagged as this story's own reading of
+    /// <see cref="IRespecRequestSender.RequestRespec"/> call. Flagged as this story's own reading of
     /// the two GDD lines together, not a literal single-sentence spec.</para>
     /// </remarks>
     public sealed class RespecScreenPresenter : IDisposable
@@ -75,7 +75,8 @@ namespace IronGrind.UI.LevelingSystem
         private readonly Label _previewAttackSpeed;
 
         private readonly IronGrind.CharacterStats.CharacterStats _stats;
-        private readonly LevelingService _levelingService;
+        private readonly ILocalPlayerLevelingView _levelingView;
+        private readonly IRespecRequestSender _respecRequests;
         private readonly IClassRegistry _classRegistry;
         private readonly EntityID _entityId;
 
@@ -89,13 +90,15 @@ namespace IronGrind.UI.LevelingSystem
         public RespecScreenPresenter(
             VisualElement respecScreenRoot,
             IronGrind.CharacterStats.CharacterStats stats,
-            LevelingService levelingService,
+            ILocalPlayerLevelingView levelingView,
+            IRespecRequestSender respecRequests,
             IClassRegistry classRegistry,
             EntityID entityId)
         {
             _root = respecScreenRoot ?? throw new ArgumentNullException(nameof(respecScreenRoot));
             _stats = stats ?? throw new ArgumentNullException(nameof(stats));
-            _levelingService = levelingService ?? throw new ArgumentNullException(nameof(levelingService));
+            _levelingView = levelingView ?? throw new ArgumentNullException(nameof(levelingView));
+            _respecRequests = respecRequests ?? throw new ArgumentNullException(nameof(respecRequests));
             _classRegistry = classRegistry ?? throw new ArgumentNullException(nameof(classRegistry));
             _entityId = entityId;
 
@@ -154,7 +157,7 @@ namespace IronGrind.UI.LevelingSystem
         /// <summary>
         /// Opens the respec screen for the tracked entity. <paramref name="classType"/> is
         /// caller-supplied — see class remarks for why (no public classType accessor on
-        /// <see cref="LevelingService"/>).
+        /// <c>LevelingService</c>).
         /// </summary>
         public void Open(byte classType)
         {
@@ -168,8 +171,8 @@ namespace IronGrind.UI.LevelingSystem
 
             foreach (StatID stat in PrimaryStats)
             {
-                int increment = LevelingFormulaPreview.GetAutoAllocIncrement(def, stat);
-                int floor = LevelingFormulaPreview.GetRespecFloor(_level, increment);
+                int increment = LevelingDisplayFormulas.GetAutoAllocIncrement(def, stat);
+                int floor = LevelingDisplayFormulas.GetRespecFloor(_level, increment);
                 int current = _stats.GetBaseStat(_entityId, stat);
 
                 _floors[stat] = floor;
@@ -187,7 +190,7 @@ namespace IronGrind.UI.LevelingSystem
             // where they land — is this screen's own UX rule (AC-LS-48), not a service-layer rule.
             _poolRemaining = Mathf.Max(0, totalPoints - totalFloor);
 
-            _heldFreePointsLabel.text = $"Held Free Points (separate, not part of this pool): {_levelingService.GetHeldFreePoints(_entityId)}";
+            _heldFreePointsLabel.text = $"Held Free Points (separate, not part of this pool): {_levelingView.GetHeldFreePoints(_entityId)}";
 
             _confirmModal.style.display = DisplayStyle.None;
             _root.style.display = DisplayStyle.Flex;
@@ -227,8 +230,8 @@ namespace IronGrind.UI.LevelingSystem
             // AC-LS-48 — commit disabled while any redistributable point remains unallocated.
             _commitButton.SetEnabled(_poolRemaining == 0);
 
-            float tier = LevelingService.GetLevelTierMultiplier(_level);
-            var preview = LevelingFormulaPreview.ComputeDerivedStatsPreview(
+            float tier = LevelingDisplayFormulas.GetLevelTierMultiplier(_level);
+            LevelingDisplayFormulas.DerivedStats preview = LevelingDisplayFormulas.ComputeDerivedStats(
                 _allocation[StatID.Strength], _allocation[StatID.Dexterity],
                 _allocation[StatID.Vitality], _allocation[StatID.Intelligence], tier);
 
@@ -255,7 +258,7 @@ namespace IronGrind.UI.LevelingSystem
 
             try
             {
-                _levelingService.TryApplyRespec(_entityId, newTotals);
+                _respecRequests.RequestRespec(_entityId, newTotals);
                 Close();
             }
             catch (Exception ex)
@@ -264,7 +267,7 @@ namespace IronGrind.UI.LevelingSystem
                 // screen's own +/- logic should make that unreachable in practice (floors are
                 // never editable below their value), but the call is still wrapped defensively
                 // rather than trusting the UI-side guard alone.
-                Debug.LogError($"[RespecScreenPresenter] TryApplyRespec failed for entity {_entityId}: {ex}");
+                Debug.LogError($"[RespecScreenPresenter] RequestRespec failed for entity {_entityId}: {ex}");
                 _confirmModal.style.display = DisplayStyle.None;
             }
         }

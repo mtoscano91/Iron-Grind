@@ -237,7 +237,7 @@ namespace IronGrind.LevelingSystem
         /// <item><c>SetBaseStat</c> STR=DEX=VIT=INT=10.</item>
         /// <item><see cref="RecomputeDerivedStats"/> at a LITERAL tier of <c>1.0</c> (CR-6.2 step
         /// 3 pins "&#215;1.0" explicitly rather than deriving it from
-        /// <see cref="GetLevelTierMultiplier"/> — the two are numerically equal at Level 1, but
+        /// <see cref="LevelingDisplayFormulas.GetLevelTierMultiplier"/> — the two are numerically equal at Level 1, but
         /// the spec's wording is followed literally).</item>
         /// <item><c>SetCurrentHP(entityId, MaxHP)</c>, <c>SetCurrentMP(entityId, MaxMP)</c> — the
         /// same GDD-vs-reality fix Story 002 already applied to
@@ -282,7 +282,7 @@ namespace IronGrind.LevelingSystem
             _stats.SetBaseStat(entityId, IronGrind.CharacterStats.StatID.Vitality, 10);
             _stats.SetBaseStat(entityId, IronGrind.CharacterStats.StatID.Intelligence, 10);
 
-            // CR-6.2 step 3 — literal x1.0, not GetLevelTierMultiplier(1) (see remarks).
+            // CR-6.2 step 3 — literal x1.0, not LevelingDisplayFormulas.GetLevelTierMultiplier(1) (see remarks).
             RecomputeDerivedStats(entityId, 1.0f);
 
             // CR-6.2 step 4 — GDD-vs-reality fix (see remarks): SetCurrentHP/SetCurrentMP, not
@@ -473,7 +473,7 @@ namespace IronGrind.LevelingSystem
         /// Implements the real CR-3 free-point spend sequence (Story 005): busy-check (Story
         /// 003, unmodified) → Guard 1 (no held points) → Guard 2 (invalid target stat) →
         /// decrement → <c>SetBaseStat</c> write → F-3–F-9 derived-stat recompute at the
-        /// on-demand <see cref="GetLevelTierMultiplier"/> tier. Each call is immediately
+        /// on-demand <see cref="LevelingDisplayFormulas.GetLevelTierMultiplier"/> tier. Each call is immediately
         /// committed (CR-3.3) — there is no preview/confirm or undo path at this API layer; a
         /// client-side preview/confirm UX belongs in the Stat Screen UI (Story 013), not here.
         /// </summary>
@@ -522,7 +522,7 @@ namespace IronGrind.LevelingSystem
             // write methods as ExecuteLevelUpSequence's CR-2.6 block, via the shared helper.
             // CurrentHP/CurrentMP are deliberately left untouched — see method remarks.
             int level = _stats.GetBaseStat(entityId, IronGrind.CharacterStats.StatID.Level);
-            float tier = GetLevelTierMultiplier(level);
+            float tier = LevelingDisplayFormulas.GetLevelTierMultiplier(level);
             RecomputeDerivedStats(entityId, tier);
 
             return AllocateFreePointResult.Success;
@@ -693,7 +693,7 @@ namespace IronGrind.LevelingSystem
             }
 
             // CR-2.3 — Determine LevelTierMultiplier, based on the NEW level.
-            float tier = GetLevelTierMultiplier(newLevel);
+            float tier = LevelingDisplayFormulas.GetLevelTierMultiplier(newLevel);
 
             // CR-2.4 — Auto-Allocate Attribute Points, fixed {STR, DEX, VIT, INT} order.
             byte classType = GetClassType(entityId);
@@ -702,7 +702,7 @@ namespace IronGrind.LevelingSystem
                 for (int i = 0; i < AutoAllocOrder.Length; i++)
                 {
                     var stat = AutoAllocOrder[i];
-                    int increment = GetAutoAllocIncrement(def, stat);
+                    int increment = LevelingDisplayFormulas.GetAutoAllocIncrement(def, stat);
                     if (increment > 0)
                         _stats.SetBaseStat(entityId, stat, _stats.GetBaseStat(entityId, stat) + increment);
                 }
@@ -745,26 +745,17 @@ namespace IronGrind.LevelingSystem
             int vitality = _stats.GetBaseStat(entityId, IronGrind.CharacterStats.StatID.Vitality);
             int intelligence = _stats.GetBaseStat(entityId, IronGrind.CharacterStats.StatID.Intelligence);
 
-            int maxHp = Mathf.FloorToInt((200 + vitality * 20) * tier);
-            _stats.SetBaseStat(entityId, IronGrind.CharacterStats.StatID.MaxHP, maxHp);
+            // F-3-F-9 arithmetic lives in the shared display-formula class (ADR-012 Decision 7).
+            LevelingDisplayFormulas.DerivedStats derived =
+                LevelingDisplayFormulas.ComputeDerivedStats(strength, dexterity, vitality, intelligence, tier);
 
-            int maxMp = Mathf.Min(Mathf.FloorToInt((100 + intelligence * 12) * tier), 9999);
-            _stats.SetBaseStat(entityId, IronGrind.CharacterStats.StatID.MaxMP, maxMp);
-
-            int attackPower = Mathf.FloorToInt((10 + strength * 2) * tier);
-            _stats.SetBaseStat(entityId, IronGrind.CharacterStats.StatID.AttackPower, attackPower);
-
-            int defense = Mathf.FloorToInt((5 + vitality * 1.5f) * tier);
-            _stats.SetBaseStat(entityId, IronGrind.CharacterStats.StatID.Defense, defense);
-
-            int magicDefense = Mathf.FloorToInt(intelligence * 0.4f * tier);
-            _stats.SetBaseStat(entityId, IronGrind.CharacterStats.StatID.MagicDefense, magicDefense);
-
-            float critChance = 0.05f + (dexterity * 0.0015f * tier);
-            _stats.SetBaseStatFloat(entityId, IronGrind.CharacterStats.StatID.CritChance, critChance);
-
-            float attackSpeedMultiplier = 1.0f + (dexterity * 0.003f * tier);
-            _stats.SetBaseStatFloat(entityId, IronGrind.CharacterStats.StatID.AttackSpeedMultiplier, attackSpeedMultiplier);
+            _stats.SetBaseStat(entityId, IronGrind.CharacterStats.StatID.MaxHP, derived.MaxHP);
+            _stats.SetBaseStat(entityId, IronGrind.CharacterStats.StatID.MaxMP, derived.MaxMP);
+            _stats.SetBaseStat(entityId, IronGrind.CharacterStats.StatID.AttackPower, derived.AttackPower);
+            _stats.SetBaseStat(entityId, IronGrind.CharacterStats.StatID.Defense, derived.Defense);
+            _stats.SetBaseStat(entityId, IronGrind.CharacterStats.StatID.MagicDefense, derived.MagicDefense);
+            _stats.SetBaseStatFloat(entityId, IronGrind.CharacterStats.StatID.CritChance, derived.CritChance);
+            _stats.SetBaseStatFloat(entityId, IronGrind.CharacterStats.StatID.AttackSpeedMultiplier, derived.AttackSpeedMultiplier);
         }
 
         /// <summary>
@@ -832,8 +823,8 @@ namespace IronGrind.LevelingSystem
                         $"[LevelingService] TryApplyRespec: newTotals is missing required key {stat}.",
                         nameof(newTotals));
 
-                int increment = GetAutoAllocIncrement(def, stat);
-                int floor = 10 + (level - 1) * increment;
+                int increment = LevelingDisplayFormulas.GetAutoAllocIncrement(def, stat);
+                int floor = LevelingDisplayFormulas.GetRespecFloor(level, increment);
                 if (proposed < floor)
                     throw new ArgumentException(
                         $"[LevelingService] TryApplyRespec: {stat} total {proposed} is below its " +
@@ -863,7 +854,7 @@ namespace IronGrind.LevelingSystem
                 // Level is invariant across this method (never written by TryApplyRespec) —
                 // reuse the value already read for the CR-4.3 floor check above rather than
                 // re-reading.
-                float tier = GetLevelTierMultiplier(level);
+                float tier = LevelingDisplayFormulas.GetLevelTierMultiplier(level);
                 RecomputeDerivedStats(entityId, tier);
 #if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
                 // EC-LS-23 test-only injection point — broadens AC-LS-22's step-2-only literal
@@ -927,44 +918,5 @@ namespace IronGrind.LevelingSystem
         /// </summary>
         internal Action<IronGrind.CharacterStats.EntityID> TestOnly_ThrowAfterRecomputeDerivedStats;
 #endif
-
-        private static int GetAutoAllocIncrement(ClassDefinition def, IronGrind.CharacterStats.StatID stat)
-        {
-            switch (stat)
-            {
-                case IronGrind.CharacterStats.StatID.Strength:     return def.StrengthAutoAlloc;
-                case IronGrind.CharacterStats.StatID.Dexterity:    return def.DexterityAutoAlloc;
-                case IronGrind.CharacterStats.StatID.Vitality:     return def.VitalityAutoAlloc;
-                case IronGrind.CharacterStats.StatID.Intelligence: return def.IntelligenceAutoAlloc;
-                default:                                            return 0;
-            }
-        }
-
-        /// <summary>
-        /// CR-2.3 tier lookup: L1–19 → ×1.0, L20–39 → ×1.2, L40–59 → ×1.5, L60 → ×2.0, based on
-        /// the NEW level. Pure and stateless — every call reads only <paramref name="level"/> and
-        /// returns immediately; there is no field this value could be cached in, satisfying
-        /// AC-LS-16/AC-LS-34's "never a stored/cached multiplier" requirement structurally, not
-        /// just by convention.
-        /// </summary>
-        /// <remarks>
-        /// <c>public</c>: widened from <c>internal</c> by ADR-012 Decision 5, because its UI
-        /// callers moved to <c>IronGrind.Client</c>. Originally a Story 011 test-observability
-        /// seam (mirroring the <see cref="IsLevelingUpInProgress"/>/<c>TestOnly_...</c> idiom
-        /// elsewhere in this class) — lets
-        /// <c>LevelingSystem_TierAutoAllocFormulaVerification_tests.cs</c> (AC-LS-34) verify this
-        /// lookup table's boundary values directly, in isolation from any level-up sequence,
-        /// through this one static method. Unlike the <c>TestOnly_...</c> fields, this
-        /// method is a permanently-present, unguarded (no <c>#if</c>) seam — acceptable because it
-        /// is side-effect-free and stateless, so there is nothing for a caller in any assembly
-        /// to misuse even in a release build. Logic unchanged by the visibility widening.
-        /// </remarks>
-        public static float GetLevelTierMultiplier(int level)
-        {
-            if (level >= 60) return 2.0f;
-            if (level >= 40) return 1.5f;
-            if (level >= 20) return 1.2f;
-            return 1.0f;
-        }
     }
 }

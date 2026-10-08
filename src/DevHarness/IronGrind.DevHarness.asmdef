@@ -1,0 +1,20 @@
+{
+    "name": "IronGrind.DevHarness",
+    "rootNamespace": "",
+    "references": [
+        "IronGrind.Foundation",
+        "IronGrind.ServerLogic",
+        "IronGrind.Client"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_EDITOR"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -23,6 +23,7 @@ namespace IronGrind.Tests.EditMode.Architecture
         private const string FOUNDATION = "IronGrind.Foundation";
         private const string SERVER_LOGIC = "IronGrind.ServerLogic";
         private const string CLIENT = "IronGrind.Client";
+        private const string DEV_HARNESS = "IronGrind.DevHarness";
         private const string SERVER_CONSTRAINT = "UNITY_SERVER || UNITY_EDITOR";
         private const string CLIENT_CONSTRAINT = "!UNITY_SERVER || UNITY_EDITOR";
         private const BindingFlags ALL_DECLARED = BindingFlags.Public | BindingFlags.NonPublic
@@ -87,6 +88,26 @@ namespace IronGrind.Tests.EditMode.Architecture
             CollectionAssert.IsEmpty(Safe(client.precompiledReferences), "Client precompiled references");
             CollectionAssert.DoesNotContain(Safe(foundation.references), SERVER_LOGIC);
             CollectionAssert.DoesNotContain(Safe(foundation.references), CLIENT);
+        }
+
+        /// <summary>
+        /// The manual harness assembly is Editor-only (ADR-012 Decision 7): define constraint exactly
+        /// UNITY_EDITOR, not auto-referenced, references exactly the three production assemblies, and none
+        /// of those references it.
+        /// </summary>
+        [Test]
+        public void test_dev_harness_asmdef_is_editor_only_and_unreferenced()
+        {
+            AsmdefData harness = LoadAsmdef(DEV_HARNESS);
+
+            Assert.AreEqual(DEV_HARNESS, harness.name);
+            CollectionAssert.AreEqual(new[] { "UNITY_EDITOR" }, Safe(harness.defineConstraints), "DevHarness constraint");
+            Assert.IsFalse(harness.autoReferenced, "DevHarness autoReferenced");
+            CollectionAssert.AreEquivalent(new[] { FOUNDATION, SERVER_LOGIC, CLIENT }, Safe(harness.references), "DevHarness references");
+            foreach (string name in new[] { FOUNDATION, SERVER_LOGIC, CLIENT })
+            {
+                CollectionAssert.DoesNotContain(Safe(LoadAsmdef(name).references), DEV_HARNESS, name + " must not reference DevHarness");
+            }
         }
 
         /// <summary>Every top-level Foundation type is on the shared allow-list or the not-yet-moved list.</summary>

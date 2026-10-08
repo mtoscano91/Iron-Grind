@@ -16,7 +16,7 @@ namespace IronGrind.UI.LevelingSystem
     /// <remarks>
     /// <para><b>Forward-dependency wiring seam.</b> No player/session spawn system exists yet in
     /// this codebase (confirmed via repo search) — there is no automatic way for this component
-    /// to discover which <see cref="CharacterStats"/>/<see cref="LevelingService"/>/
+    /// to discover which <see cref="CharacterStats"/>/Leveling views/
     /// <see cref="EntityID"/> it should track. <see cref="Initialize"/> mirrors the same
     /// "caller-supplied state for a forward dependency" idiom already established by
     /// <c>LevelingService.RegisterPlayerEntity</c> / <c>AttachCharacterStats</c> — a future
@@ -57,21 +57,25 @@ namespace IronGrind.UI.LevelingSystem
         /// instance. Safe to call more than once — a prior wiring is torn down first.
         /// </summary>
         /// <param name="stats">The tracked entity's stat container.</param>
-        /// <param name="levelingService">The Leveling System instance the tracked entity belongs to.</param>
+        /// <param name="levelEvents">Source of <c>OnLevelUp</c> events for the level-up overlay.</param>
+        /// <param name="levelingView">Read-only Leveling state the respec screen displays.</param>
+        /// <param name="respecRequests">Sender the respec screen uses to submit a respec.</param>
         /// <param name="xpThresholds">
-        /// The SAME XP threshold table passed into <c>new LevelingService(xpThresholds, ...)</c>
+        /// The SAME XP threshold table the Leveling authority was constructed with
         /// — see <see cref="PlayerResourceClusterPresenter"/>'s remarks for why the UI layer
         /// needs its own reference to this table.
         /// </param>
         /// <param name="classRegistry">
-        /// The SAME <see cref="IClassRegistry"/> passed into <c>new LevelingService(...)</c> —
+        /// The SAME <see cref="IClassRegistry"/> the Leveling authority was constructed with —
         /// see <see cref="RespecScreenPresenter"/>'s remarks for why the respec floor
         /// computation needs it directly.
         /// </param>
         /// <param name="trackedEntityId">The locally-controlled player entity this HUD displays.</param>
         public void Initialize(
             IronGrind.CharacterStats.CharacterStats stats,
-            LevelingService levelingService,
+            ILevelingEventBroadcaster levelEvents,
+            ILocalPlayerLevelingView levelingView,
+            IRespecRequestSender respecRequests,
             IReadOnlyList<int> xpThresholds,
             IClassRegistry classRegistry,
             EntityID trackedEntityId)
@@ -93,11 +97,11 @@ namespace IronGrind.UI.LevelingSystem
 
             _levelUpOverlayPresenter = new LevelUpOverlayPresenter(
                 overlayRoot, levelNumberLabel, floatingTextLabel, xpBarFill,
-                levelingService, _resourceClusterPresenter, _audioSource,
+                levelEvents, _resourceClusterPresenter, _audioSource,
                 _levelUpChime, _tierTransitionChime, trackedEntityId);
 
             _respecScreenPresenter = new RespecScreenPresenter(
-                respecRoot, stats, levelingService, classRegistry, trackedEntityId);
+                respecRoot, stats, levelingView, respecRequests, classRegistry, trackedEntityId);
 
             _initialized = true;
         }

@@ -15,10 +15,9 @@ namespace IronGrind.Tests.EditMode.LevelingSystem
     /// <c>LevelingSystem_FreePointAllocation_tests.cs</c> (Story 005) exactly.
     /// </summary>
     /// <remarks>
-    /// <para>Covers AC-LS-34 (<see cref="LevelingService.GetLevelTierMultiplier"/> boundary
-    /// values at L1/19/20/39/40/59/60, tested directly against the now-<c>internal</c> lookup
-    /// method — see that method's own doc comment for why it was widened from <c>private</c> for
-    /// this story), AC-LS-35 (Warrior L60 auto-alloc snapshot), and AC-LS-36 (Healer L60
+    /// <para>Covers AC-LS-34 (<see cref="LevelingDisplayFormulas.GetLevelTierMultiplier"/> boundary
+    /// values at L1/19/20/39/40/59/60, tested directly against the shared, pure lookup method
+    /// in <c>Foundation</c>), AC-LS-35 (Warrior L60 auto-alloc snapshot), and AC-LS-36 (Healer L60
     /// auto-alloc snapshot) — both driven via a single <c>AddExperience</c> call that cascades
     /// through 59 consecutive real level-ups (Story 002/003's CR-2.9 loop), with zero free-point
     /// spend, per the story's own Implementation Notes.</para>
@@ -97,13 +96,13 @@ namespace IronGrind.Tests.EditMode.LevelingSystem
         [Test]
         public void GetLevelTierMultiplier_AllTierBoundaries_ReturnExactMultipliers()
         {
-            Assert.AreEqual(1.0f, LevelingService.GetLevelTierMultiplier(1), "L1 must be tier x1.0.");
-            Assert.AreEqual(1.0f, LevelingService.GetLevelTierMultiplier(19), "L19 must still be tier x1.0 (upper edge of the first band).");
-            Assert.AreEqual(1.2f, LevelingService.GetLevelTierMultiplier(20), "L20 must be tier x1.2 (lower edge of the second band).");
-            Assert.AreEqual(1.2f, LevelingService.GetLevelTierMultiplier(39), "L39 must still be tier x1.2 (upper edge of the second band).");
-            Assert.AreEqual(1.5f, LevelingService.GetLevelTierMultiplier(40), "L40 must be tier x1.5 (lower edge of the third band).");
-            Assert.AreEqual(1.5f, LevelingService.GetLevelTierMultiplier(59), "L59 must still be tier x1.5 (upper edge of the third band).");
-            Assert.AreEqual(2.0f, LevelingService.GetLevelTierMultiplier(60), "L60 must be tier x2.0 (the cap tier).");
+            Assert.AreEqual(1.0f, LevelingDisplayFormulas.GetLevelTierMultiplier(1), "L1 must be tier x1.0.");
+            Assert.AreEqual(1.0f, LevelingDisplayFormulas.GetLevelTierMultiplier(19), "L19 must still be tier x1.0 (upper edge of the first band).");
+            Assert.AreEqual(1.2f, LevelingDisplayFormulas.GetLevelTierMultiplier(20), "L20 must be tier x1.2 (lower edge of the second band).");
+            Assert.AreEqual(1.2f, LevelingDisplayFormulas.GetLevelTierMultiplier(39), "L39 must still be tier x1.2 (upper edge of the second band).");
+            Assert.AreEqual(1.5f, LevelingDisplayFormulas.GetLevelTierMultiplier(40), "L40 must be tier x1.5 (lower edge of the third band).");
+            Assert.AreEqual(1.5f, LevelingDisplayFormulas.GetLevelTierMultiplier(59), "L59 must still be tier x1.5 (upper edge of the third band).");
+            Assert.AreEqual(2.0f, LevelingDisplayFormulas.GetLevelTierMultiplier(60), "L60 must be tier x2.0 (the cap tier).");
         }
 
         // ---------------------------------------------------------------
@@ -118,8 +117,8 @@ namespace IronGrind.Tests.EditMode.LevelingSystem
         [Test]
         public void GetLevelTierMultiplier_OutOfDocumentedRange_DegradesGracefully()
         {
-            Assert.AreEqual(1.0f, LevelingService.GetLevelTierMultiplier(0), "Below the documented [1,60] range must fall through to the lowest tier, x1.0, not throw.");
-            Assert.AreEqual(2.0f, LevelingService.GetLevelTierMultiplier(61), "Above the documented [1,60] range must still resolve to the cap tier, x2.0, not throw.");
+            Assert.AreEqual(1.0f, LevelingDisplayFormulas.GetLevelTierMultiplier(0), "Below the documented [1,60] range must fall through to the lowest tier, x1.0, not throw.");
+            Assert.AreEqual(2.0f, LevelingDisplayFormulas.GetLevelTierMultiplier(61), "Above the documented [1,60] range must still resolve to the cap tier, x2.0, not throw.");
         }
 
         // ---------------------------------------------------------------

@@ -31,7 +31,7 @@ namespace IronGrind.UI.LevelingSystem
     /// mechanism, so this is flagged as a resolved ambiguity, not a literal spec requirement.</para>
     /// <para><b>Tier-transition detection for a batch.</b> A single level-up's tier-transition
     /// status is unambiguous (does crossing this one level cross a
-    /// <c>LevelingService.GetLevelTierMultiplier</c> boundary?). For a CONSECUTIVE batch, the
+    /// <c>LevelingDisplayFormulas.GetLevelTierMultiplier</c> boundary?). For a CONSECUTIVE batch, the
     /// story doesn't specify how tier vs. normal should be decided when the batch spans a tier
     /// wall. This presenter's resolution (own design call, flagged): compare the tier at the
     /// level BEFORE the batch started against the tier at the FINAL level reached — if they
@@ -68,7 +68,7 @@ namespace IronGrind.UI.LevelingSystem
         private readonly Label _levelNumberLabel;
         private readonly Label _floatingTextLabel;
         private readonly VisualElement _xpBarFill;
-        private readonly LevelingService _levelingService;
+        private readonly ILevelingEventBroadcaster _levelEvents;
         private readonly PlayerResourceClusterPresenter _resourceClusterPresenter;
         private readonly AudioSource _audioSource;
         private readonly AudioClip _levelUpChime;
@@ -85,7 +85,7 @@ namespace IronGrind.UI.LevelingSystem
             Label levelNumberLabel,
             Label floatingTextLabel,
             VisualElement xpBarFill,
-            LevelingService levelingService,
+            ILevelingEventBroadcaster levelEvents,
             PlayerResourceClusterPresenter resourceClusterPresenter,
             AudioSource audioSource,
             AudioClip levelUpChime,
@@ -96,14 +96,14 @@ namespace IronGrind.UI.LevelingSystem
             _levelNumberLabel = levelNumberLabel ?? throw new ArgumentNullException(nameof(levelNumberLabel));
             _floatingTextLabel = floatingTextLabel ?? throw new ArgumentNullException(nameof(floatingTextLabel));
             _xpBarFill = xpBarFill ?? throw new ArgumentNullException(nameof(xpBarFill));
-            _levelingService = levelingService ?? throw new ArgumentNullException(nameof(levelingService));
+            _levelEvents = levelEvents ?? throw new ArgumentNullException(nameof(levelEvents));
             _resourceClusterPresenter = resourceClusterPresenter ?? throw new ArgumentNullException(nameof(resourceClusterPresenter));
             _audioSource = audioSource; // may be null — PlayOneShot guarded below
             _levelUpChime = levelUpChime; // may be null — pending real asset (see remarks)
             _tierTransitionChime = tierTransitionChime; // may be null
             _trackedEntityId = trackedEntityId;
 
-            _levelingService.OnLevelUp += OnLevelUp;
+            _levelEvents.OnLevelUp += OnLevelUp;
         }
 
         private void OnLevelUp(LevelUpEventArgs args)
@@ -129,8 +129,8 @@ namespace IronGrind.UI.LevelingSystem
         {
             bool isTierTransition =
                 !Mathf.Approximately(
-                    LevelingService.GetLevelTierMultiplier(finalLevel),
-                    LevelingService.GetLevelTierMultiplier(startLevel));
+                    LevelingDisplayFormulas.GetLevelTierMultiplier(finalLevel),
+                    LevelingDisplayFormulas.GetLevelTierMultiplier(startLevel));
 
             float holdSeconds = isTierTransition ? TierHoldSeconds : NormalHoldSeconds;
             AudioClip clip = isTierTransition ? _tierTransitionChime : _levelUpChime;
@@ -180,7 +180,7 @@ namespace IronGrind.UI.LevelingSystem
         {
             if (_disposed) return;
             _disposed = true;
-            _levelingService.OnLevelUp -= OnLevelUp;
+            _levelEvents.OnLevelUp -= OnLevelUp;
         }
     }
 }

@@ -63,6 +63,17 @@ namespace IronGrind.HudEditorTools
             if (hudGameObject.GetComponent<LevelingHudManualTestHarness>() == null)
                 hudGameObject.AddComponent<LevelingHudManualTestHarness>();
 
+            // The harness lives in IronGrind.DevHarness (UNITY_EDITOR define constraint). If Unity refuses
+            // to attach a MonoBehaviour from that assembly, say so instead of logging success
+            // (ADR-012 Verification Required 8).
+            if (hudGameObject.GetComponent<LevelingHudManualTestHarness>() == null)
+            {
+                Debug.LogError(
+                    $"[HudBootstrap] LevelingHudManualTestHarness could NOT be added to '{HudRootGameObjectName}'. " +
+                    "Unity did not attach the component from the IronGrind.DevHarness assembly.");
+                return;
+            }
+
             EditorUtility.SetDirty(hudGameObject);
             EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
 

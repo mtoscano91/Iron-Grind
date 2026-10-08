@@ -1,4 +1,3 @@
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -15,9 +14,8 @@ namespace IronGrind.UI.LevelingSystem
     /// instance wired to <see cref="LevelingHudController"/> in a live Play-mode session.
     /// </summary>
     /// <remarks>
-    /// <para>Compiled out of release Player builds (<c>UNITY_EDITOR || DEVELOPMENT_BUILD</c>),
-    /// matching this codebase's established fault-injection/test-seam guard pattern (see
-    /// <c>LevelingService.TestOnly_ThrowDuringRespecStep2</c>). This is throwaway test-local
+    /// <para>Lives in the <c>IronGrind.DevHarness</c> assembly, whose <c>UNITY_EDITOR</c> define
+    /// constraint keeps it out of every Player build (ADR-012 Decision 7). This is throwaway test-local
     /// state — a real player-spawn system replaces every one of these constructor calls, it does
     /// not extend this class.</para>
     /// <para>Builds its own tiny on-screen debug button row directly under the shared
@@ -37,6 +35,7 @@ namespace IronGrind.UI.LevelingSystem
         private LevelingService _levelingService;
         private List<int> _xpThresholds;
         private ClassRegistry _classRegistry;
+        private HarnessLevelingAdapter _levelingAdapter;
 
         private void Start()
         {
@@ -44,8 +43,15 @@ namespace IronGrind.UI.LevelingSystem
             _hudController = GetComponent<LevelingHudController>();
 
             BuildTestLevelingSystem();
-            _hudController.Initialize(_stats, _levelingService, _xpThresholds, _classRegistry, TestEntityId);
+            _levelingAdapter = new HarnessLevelingAdapter(_levelingService);
+            _hudController.Initialize(
+                _stats, _levelingService, _levelingAdapter, _levelingAdapter,
+                _xpThresholds, _classRegistry, TestEntityId);
             BuildDebugButtonRow();
+
+            Debug.Log(
+                $"[LevelingHudManualTestHarness] Started: debug button row added to '{_uiDocument.rootVisualElement.name}' " +
+                $"({_uiDocument.rootVisualElement.childCount} children under the UIDocument root).");
         }
 
         private void BuildTestLevelingSystem()
@@ -99,6 +105,7 @@ namespace IronGrind.UI.LevelingSystem
                 {
                     position = Position.Absolute,
                     left = 8,
+                    right = 8, // Bounds the row to the screen width so flexWrap can wrap; without it the row ran off the right edge.
                     bottom = 8,
                     flexDirection = FlexDirection.Row,
                     flexWrap = Wrap.Wrap,
@@ -112,6 +119,28 @@ namespace IronGrind.UI.LevelingSystem
             row.Add(MakeDebugButton("AC-LS-48: Open Respec Screen", () => _hudController.OpenRespecScreen(TestClassType)));
 
             _uiDocument.rootVisualElement.Add(row);
+
+            // Layout report (Leveling Story 014): logs once where the row ended up after UI Toolkit
+            // laid it out. The row sits in the bottom strip of the Game view, which is cropped when
+            // the Game view's Scale is above its minimum; this line tells "cropped" from "not drawn".
+            bool layoutReported = false;
+            row.RegisterCallback<GeometryChangedEvent>(_ =>
+            {
+                if (layoutReported) return;
+                layoutReported = true;
+                VisualElement root = _uiDocument.rootVisualElement;
+                VisualElement hud = root.childCount > 0 ? root[0] : null;
+                Debug.Log(
+                    "[LevelingHudManualTestHarness] Layout: " +
+                    $"row worldBound={row.worldBound}, display={row.resolvedStyle.display}, " +
+                    $"visibility={row.resolvedStyle.visibility}, opacity={row.resolvedStyle.opacity}; " +
+                    $"root worldBound={root.worldBound}; " +
+                    $"first child '{hud?.name}' worldBound={hud?.worldBound}; " +
+                    $"panel is {(root.panel == null ? "null" : "attached")}; " +
+                    $"screen={Screen.width}x{Screen.height}; " +
+                    $"panelSettings scale={_uiDocument.panelSettings?.scale}, scaleMode={_uiDocument.panelSettings?.scaleMode}, " +
+                    $"sortingOrder={_uiDocument.panelSettings?.sortingOrder}, targetTexture={(_uiDocument.panelSettings?.targetTexture == null ? "none" : "set")}.");
+            });
         }
 
         private static Button MakeDebugButton(string label, System.Action onClick)
@@ -123,8 +152,8 @@ namespace IronGrind.UI.LevelingSystem
             // since been changed from ConstantPhysicalSize to ConstantPixelSize for unrelated
             // reasons -- that change did not fix this button-sizing issue on its own, which is
             // why explicit sizing is still needed here regardless of scale mode.) Not production
-            // HUD styling -- this harness is compiled out of release/Player builds entirely (see
-            // the #if guard at the top of this file).
+            // HUD styling -- this harness is excluded from Player builds entirely (see
+            // the UNITY_EDITOR define constraint on IronGrind.DevHarness.asmdef).
             button.style.marginRight = 6;
             button.style.marginBottom = 6;
             button.style.paddingLeft = 10;
@@ -139,4 +168,3 @@ namespace IronGrind.UI.LevelingSystem
         }
     }
 }
-#endif

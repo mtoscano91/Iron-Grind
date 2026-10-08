@@ -3293,3 +3293,50 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Next recommended: the Leveling move story — not yet written, and not a mechanical move: ADR-012 Decision 7 makes it carry the client read-only views, the respec request interface, the display-formula class and the `LevelingHudManualTestHarness` move to `src/DevHarness/`. Start it in a fresh session.
 
 > **Commit status 2026-10-08 (Inventory Story 011):** committed on `main` with the message "Inventory: Story 011 complete (moved to IronGrind.ServerLogic)" (40 renames, the new folder `.meta`, the two enum files, `AssemblyBoundaryLists.cs`, story, `EPIC.md`, this file). The "Nothing committed" note in the /story-done extract above is superseded. Not pushed. Untracked and left alone: `bash.exe.stackdump`. PAT rotation is still unconfirmed. **Next:** write the Leveling move story (ADR-012 Decision 7 scope) in a fresh session.
+
+## Session Extract — 2026-10-08 (Leveling Story 014 created)
+- Created: production/epics/leveling-system/story-014-client-read-model.md — Client Read Model: the HUD stops referencing `LevelingService` (ADR-012 Decision 7; Migration Plan step 2 item 6, first half). Leveling `EPIC.md` is In Progress (13/14) with Story 015 listed as Planned.
+- **Decisions made in the story, to confirm at /story-readiness:**
+  1. ADR-012's "Leveling move story" is split in two: Story 014 (refactor, no type changes assembly) and Story 015 (the mechanical move, not yet written).
+  2. Names fixed: `LevelingDisplayFormulas`, `ILocalPlayerLevelingView`, `IRespecRequestSender` (the ADR left working names).
+  3. `LevelingService.GetLevelTierMultiplier` is deleted, not kept as a forwarder; 11 test call sites are retargeted.
+  4. `LevelingService` does not implement the client view; the harness gets an adapter in `IronGrind.DevHarness`.
+  5. The stats view (`ILocalPlayerStatsView`) is deferred whole to the Character Stats move story; presenters keep `CharacterStats` for now.
+- Facts checked at creation: the client's code use of `LevelingService` is `OnLevelUp`, `GetHeldFreePoints`, `TryApplyRespec`, the static tier multiplier, and the harness; `LevelingFormulaPreview` and `RecomputeDerivedStats` hold textually identical derived-stat expressions; no UI test file exists; no asset references the harness or controller script GUID; Leveling uses no `internal` member of Character Stats; no `Foundation` code outside the Leveling folder names a Leveling type.
+- Story 015 outline (for whoever writes it): move `LevelingService`, `AllocateFreePointResult`, `IItemReservation`, `LevelingStateSnapshot`, `RespecTwoPhaseCommitCoordinator`; shared allow-list gains `ILevelingEventBroadcaster`, `LevelUpEventArgs` (consumer `LevelUpOverlayPresenter`) and a decision on `XpThresholdTable`; `NotYetMovedList` 127 → 119; `ILevelingService` stays with Character Stats.
+- Uncommitted: the Story 014 file (untracked), the Leveling `EPIC.md`, this file.
+- Open engine check: ADR-012 Verification Required 8 (a `MonoBehaviour` in a `UNITY_EDITOR`-constrained assembly) is exercised by Story 014 and needs the user in the Editor.
+- Next: /story-readiness production/epics/leveling-system/story-014-client-read-model.md, then /dev-story. PAT rotation is still unconfirmed.
+
+## Session Extract — /dev-story 2026-10-08 (Leveling Story 014)
+- Story: production/epics/leveling-system/story-014-client-read-model.md — Client Read Model. The user said "continue" after the five decisions in the story were put to them.
+- Created: `src/Foundation/LevelingSystem/LevelingDisplayFormulas.cs`, `ILocalPlayerLevelingView.cs`, `IRespecRequestSender.cs`; `src/DevHarness/IronGrind.DevHarness.asmdef`; `src/DevHarness/UI/LevelingSystem/HarnessLevelingAdapter.cs`; `tests/EditMode/LevelingSystem/LevelingSystem_DisplayFormulas_tests.cs` (4 tests).
+- Edited: `LevelingService.cs` (tier lookup, derived-stat arithmetic, auto-alloc lookup and respec floor all call `LevelingDisplayFormulas`; `GetLevelTierMultiplier` and the private `GetAutoAllocIncrement` deleted — the last two call-site changes and that deletion were made by the orchestrator after reviewing the agent's diff, which had left the private copy); `LevelUpOverlayPresenter.cs`, `RespecScreenPresenter.cs`, `LevelingHudController.cs` (`Initialize` now takes `ILevelingEventBroadcaster`, `ILocalPlayerLevelingView`, `IRespecRequestSender`); `LevelingSystem_TierAutoAllocFormulaVerification_tests.cs` (11 call sites retargeted); `AssemblyBoundaryLists.cs` (`SharedAllowList` 28 → 31); `AssemblyBoundary_tests.cs` (+1 test for the DevHarness asmdef); `Assets/Editor/IronGrind.HudEditorTools.asmdef` (+ reference).
+- Moved (git): `LevelingHudManualTestHarness.cs` + `.meta` from `src/Client/UI/LevelingSystem/` to `src/DevHarness/UI/LevelingSystem/` (GUID kept, `#if` guard removed). Deleted (git): `LevelingFormulaPreview.cs` + `.meta`.
+- **Not verified: nothing has been compiled or run.** The Editor was open; the agent and the orchestrator checked by reading only. Expected suite total: 2008 (2003 + 4 formula tests + 1 boundary test).
+- **Pending:** Unity-generated `.meta` files for the 6 new files and the new folders under `src/DevHarness/`; the manual harness walkthrough (ADR-012 Verification Required 8).
+- Nothing committed. PAT rotation is still unconfirmed.
+- Next: user recompiles, runs the suite and the harness walkthrough; then /code-review and /story-done.
+
+## Session Extract — 2026-10-08 (Leveling Story 014 verified by the suite; harness walkthrough open)
+- Suite after the implementation: 2008/2008 passed, read from `TestResults.xml` (15:50 run); the 4 formula tests and `test_dev_harness_asmdef_is_editor_only_and_unreferenced` pass; no compile error or warning; `IronGrind.DevHarness.dll` was built. The "nothing has been compiled or run" note in the /dev-story extract above is superseded.
+- Unity generated the `.meta` files for the new files and for `src/DevHarness`, `src/DevHarness/UI`, `src/DevHarness/UI/LevelingSystem`; all are untracked and belong in the commit.
+- **Open:** the manual harness walkthrough (ADR-012 Verification Required 8) — the user reported the tests, not the walkthrough. Story 014 stays Ready/in progress until they answer. No scene or prefab under `Assets/` holds the harness component.
+- Nothing committed.
+
+## Session Extract — 2026-10-08 (Leveling Story 014: harness walkthrough FAILED, diagnosing)
+- User report: both `Tools/HUD` menu commands run, but the five debug buttons no longer appear in Play mode. This is the manual acceptance criterion and ADR-012 Verification Required 8. **Story 014 is not complete.**
+- Editor log after the compile: "[HudBootstrap] LevelingHudManualTestHarness added" is printed (but that message was unconditional), then Play mode is entered with no exception and no "missing script" or "Can't add script" message. So it is not known whether the component was attached or whether `Start` ran.
+- Diagnostics added (uncommitted): `Assets/Editor/HudBootstrap.cs` now logs an error and returns if the harness component is not on `HUD_Root` after `AddComponent`; `LevelingHudManualTestHarness.Start` logs one line after adding the button row.
+- Next: user re-runs `Tools/HUD/Add Leveling Manual Test Harness` and enters Play mode; read the Editor log for the two messages. If the component cannot be attached, the ADR's fallback applies (an Editor window or play-mode Editor script) and is a design change to confirm with the user.
+- Suite: 2008/2008 at 15:50, before the two diagnostic edits. Nothing committed.
+
+## Session Extract — /story-done 2026-10-08 (Leveling Story 014)
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/leveling-system/story-014-client-read-model.md — Client Read Model
+- Suite: 2008/2008 (15:50 run). Harness walkthrough confirmed by the user: component attached, five buttons visible and working, HUD as before. The "walkthrough FAILED" extract above is superseded: the buttons were drawn but cropped by the Game view's Scale, and the row did not wrap.
+- **ADR-012 Verification Required 8 is confirmed on Unity 6.3** (a `MonoBehaviour` in a `UNITY_EDITOR`-constrained assembly attaches and runs). The ADR and control manifest still say pending — update in the next authoring pass.
+- Notes (harness and Editor tool only): button row `right = 8`; two log lines in the harness; `HudBootstrap.AddManualTestHarness` verifies the component was attached. These edits were compiled by the Editor (no error) but came after the 15:50 suite run; no test covers them.
+- Tech debt logged: None. Follow-up: update ADR-012 / control manifest for Verification Required 8.
+- Nothing committed: all Story 014 files, including the new `.meta` files and `src/DevHarness/`. PAT rotation is still unconfirmed.
+- Next recommended: write Leveling Story 015 (move `LevelingService`, `AllocateFreePointResult`, `IItemReservation`, `LevelingStateSnapshot`, `RespecTwoPhaseCommitCoordinator`; allow-list `ILevelingEventBroadcaster`, `LevelUpEventArgs`; decide `XpThresholdTable`; `NotYetMovedList` 127 → 119). The harness in `IronGrind.DevHarness` already references `ServerLogic`, so nothing in `Client` blocks the move.

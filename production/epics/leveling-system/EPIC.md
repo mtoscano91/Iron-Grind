@@ -3,8 +3,8 @@
 > **Layer**: Core
 > **GDD**: design/gdd/leveling-system.md
 > **Architecture Module**: Leveling
-> **Status**: 13/13 Complete — Story 010 closed 2026-09-25 (economy-designer sign-off granted on the array/curve; the "205h/per-tier mob XP" sub-clause split out to TD-039 pending unpopulated mob-XP data)
-> **Stories**: 13 stories created (001–013; Story 007 Complete with AC-LS-18b sub-case partially Blocked on OQ-LS-3; Story 010 Complete 2026-09-25)
+> **Status**: In Progress (14/14 written stories Complete — Story 014, the ADR-012 client read model, Complete 2026-10-08; Story 015, the assembly move, is planned and not yet written). Stories 001–013 Complete — Story 010 closed 2026-09-25 (economy-designer sign-off granted on the array/curve; the "205h/per-tier mob XP" sub-clause split out to TD-039 pending unpopulated mob-XP data)
+> **Stories**: 13 stories created (001–013; Story 007 Complete with AC-LS-18b sub-case partially Blocked on OQ-LS-3; Story 010 Complete 2026-09-25); Story 014 created and Complete 2026-10-08
 
 ## Overview
 
@@ -66,6 +66,8 @@ This epic is complete when:
 | 011 | [Tier Multiplier & Auto-Alloc Formula Verification](story-011-tier-autoalloc-formula-verification.md) | Logic | Complete | — |
 | 012 | [Party XP Detriment Integration](story-012-party-xp-detriment-integration.md) | Integration | Complete | — |
 | 013 | [HUD/UI Display & Manual Verification](story-013-hud-ui-display.md) | Visual/Feel | Complete | ADR-005 |
+| 014 | [Client Read Model — the HUD Stops Referencing `LevelingService`](story-014-client-read-model.md) | Integration | Complete (2026-10-08) | ADR-012 |
+| 015 | Move Leveling to the Server Assembly — *not yet written; 014 is done, so it is unblocked* | Integration | Planned | ADR-012 |
 
 ## Next Step
 

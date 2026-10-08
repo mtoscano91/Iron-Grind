@@ -3,6 +3,7 @@
     "rootNamespace": "",
     "references": [
         "IronGrind.Client",
+        "IronGrind.DevHarness",
         "Unity.InputSystem",
         "UnityEngine.UI"
     ],

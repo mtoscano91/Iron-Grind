@@ -19,7 +19,7 @@ namespace IronGrind.Tests.EditMode.Architecture
             // yet: the type is shared by ADR-012 Decision 6 because it appears in wire messages.
             "IronGrind.CharacterStats.EntityID",   // consumer: LevelingHudController, RespecScreenPresenter, LevelUpOverlayPresenter
             "IronGrind.CharacterStats.ItemID",     // consumer (planned): inventory and item tooltip screens
-            "IronGrind.CharacterStats.StatID",     // consumer: RespecScreenPresenter, PlayerResourceClusterPresenter, LevelingFormulaPreview
+            "IronGrind.CharacterStats.StatID",     // consumer: RespecScreenPresenter, PlayerResourceClusterPresenter
             "IronGrind.Currency.CharacterID",      // consumer (planned): client session and gold display (wire id)
             "IronGrind.Currency.GoldTransactionReason", // consumer (planned): gold sync event display (wire enum)
 
@@ -49,9 +49,14 @@ namespace IronGrind.Tests.EditMode.Architecture
             "IronGrind.InventorySystem.MoveFailReason",    // consumer (planned): inventory screen (wire enum, MoveResult message)
 
             // Class definitions shown by the respec flow.
-            "IronGrind.LevelingSystem.ClassDefinition", // consumer: RespecScreenPresenter, LevelingFormulaPreview
-            "IronGrind.LevelingSystem.IClassRegistry",  // consumer: RespecScreenPresenter, LevelingFormulaPreview
-            "IronGrind.LevelingSystem.ClassRegistry",   // consumer: RespecScreenPresenter, LevelingFormulaPreview
+            "IronGrind.LevelingSystem.ClassDefinition", // consumer: RespecScreenPresenter
+            "IronGrind.LevelingSystem.IClassRegistry",  // consumer: RespecScreenPresenter
+            "IronGrind.LevelingSystem.ClassRegistry",   // consumer: RespecScreenPresenter
+
+            // Leveling: client read model (ADR-012 Decision 7).
+            "IronGrind.LevelingSystem.LevelingDisplayFormulas", // consumer: LevelUpOverlayPresenter, RespecScreenPresenter
+            "IronGrind.LevelingSystem.ILocalPlayerLevelingView", // consumer: RespecScreenPresenter
+            "IronGrind.LevelingSystem.IRespecRequestSender",     // consumer: RespecScreenPresenter
         };
 
         /// <summary>
