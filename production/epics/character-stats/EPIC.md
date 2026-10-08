@@ -3,8 +3,8 @@
 > **Layer**: Foundation
 > **GDD**: design/gdd/character-stats.md
 > **Architecture Module**: Character Stats
-> **Status**: In Progress (9/9 written stories Complete — Story 009, the ADR-012 client stats view, Complete 2026-10-08; Story 010, the assembly move, is planned and not yet written)
-> **Stories**: 8 stories created (001–008 Complete); Story 009 created and Complete 2026-10-08
+> **Status**: Complete (10/10 — Stories 009 and 010, the ADR-012 client stats view and the assembly move, Complete 2026-10-08)
+> **Stories**: 8 stories created (001–008 Complete); Story 009 created and Complete 2026-10-08; Story 010 created and Complete 2026-10-08
 
 ## Overview
 
@@ -42,7 +42,7 @@ Character Stats is the authoritative data store for every numeric attribute that
 | 007 | [Transaction API — BeginStatTransaction/EndStatTransaction/RollbackStatTransaction](story-007-transaction-api.md) | Logic | Complete | — |
 | 008 | [Integration — Leveling System ↔ Character Stats (spawn path, tier transitions, MaxMP ceiling)](story-008-integration-leveling.md) | Integration | Complete | — |
 | 009 | [Client Stats View — the HUD Stops Referencing `CharacterStats`](story-009-client-stats-view.md) | Integration | Complete (2026-10-08) | ADR-012 |
-| 010 | Move Character Stats to the Server Assembly — *not yet written; 009 is done, so it is unblocked* | Integration | Planned | ADR-012 |
+| 010 | [Move Character Stats to the Server Assembly — End of ADR-012 Migration Step 2](story-010-server-assembly-move.md) | Integration | Complete (2026-10-08) | ADR-012 |
 
 > **Note:** Story 007's `RollbackStatTransaction()` semantics were revised 2026-08-15 by Leveling System Story 007 (root-cause fix: real snapshot-and-restore, not a reopen) — see the Revision Note in `story-007-transaction-api.md`.
 

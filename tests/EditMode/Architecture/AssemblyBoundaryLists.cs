@@ -2,10 +2,12 @@ namespace IronGrind.Tests.EditMode.Architecture
 {
     /// <summary>
     /// Data for <see cref="AssemblyBoundary_Tests"/> (ADR-012 Decision 6, check 1). Every top-level type
-    /// defined in <c>IronGrind.Foundation</c> must be on exactly one of the two lists below, as a full
+    /// defined in <c>IronGrind.Foundation</c> must be on <see cref="SharedAllowList"/>, as a full
     /// reflection name (<c>Namespace.TypeName</c>; generic types carry their arity suffix, for example
     /// <c>`1</c>). Nested and compiler-generated types are matched through their declaring type.
-    /// Move stories edit this file, not the test logic.
+    /// The not-yet-moved list was removed when the last system moved (Character Stats Story 010,
+    /// 2026-10-08). A type is added to <c>Foundation</c> by adding an entry with its client consumer named;
+    /// move stories used to edit this file, and new shared types still do.
     /// </summary>
     internal static class AssemblyBoundaryLists
     {
@@ -120,22 +122,6 @@ namespace IronGrind.Tests.EditMode.Architecture
             "IronGrind.Networking.PersistenceWriteReason", // consumer: INetworkTestObserver signatures
             "IronGrind.Networking.SessionState",           // consumer: INetworkTestObserver signatures
             "IronGrind.Networking.ZoneState",              // consumer: INetworkTestObserver signatures
-        };
-
-        /// <summary>
-        /// Every other type in <c>IronGrind.Foundation</c> on the day the test was written, grouped by system
-        /// in ADR-012's move order. This list only shrinks: each move story deletes its system's entries, and
-        /// the test fails if an entry names a type that is no longer in Foundation. When empty, remove it.
-        /// </summary>
-        internal static readonly string[] NotYetMovedList =
-        {
-            // ---- Character Stats ----
-            "IronGrind.CharacterStats.BuffID",
-            "IronGrind.CharacterStats.BuffModifierEntry",
-            "IronGrind.CharacterStats.CharacterStats",
-            "IronGrind.CharacterStats.EquipmentModifierEntry",
-            "IronGrind.CharacterStats.ILevelingService",
-            "IronGrind.CharacterStats.StatSchema",
         };
 
         /// <summary>

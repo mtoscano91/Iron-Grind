@@ -3483,3 +3483,28 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Committed with the message "Character Stats: Story 009 complete (client stats view, ADR-012 Decision 7)". Not pushed; PAT rotation is still unconfirmed.
 - Not done: the scene with `HUD_Root` is still unsaved, so the HUD scaffolding has to be re-created with the two `Tools/HUD` commands whenever the Editor reloads the scene. Saving it is the user's call.
 - Next: Character Stats Story 010 — move `CharacterStats`, `StatSchema`, `ILevelingService`, `BuffID`, `BuffModifierEntry`, `EquipmentModifierEntry`; `NotYetMovedList` 6 → 0 and the list is then removed (ADR-012 Decision 6), which edits the boundary test logic.
+
+## Session Extract — 2026-10-08 (Character Stats Story 009 committed; Story 010 created, implementation started)
+- Story 009 committed as `5f9a1dc`. Not pushed; PAT rotation is still unconfirmed.
+- Created: production/epics/character-stats/story-010-server-assembly-move.md — the last move of ADR-012 Migration Plan step 2. Moves `CharacterStats`, `StatSchema`, `ILevelingService`, `BuffID`, `BuffModifierEntry`, `EquipmentModifierEntry` (12 renames); `EntityID`, `ItemID`, `StatID`, `ILocalPlayerStatsView`, `LocalPlayerStatChangedHandler` stay. Removes `NotYetMovedList` and adjusts the three boundary tests that read it (`test_no_type_is_on_both_lists_or_duplicated` is renamed `test_shared_allow_list_has_no_duplicate`); test count stays 10 in the fixture, suite total stays 2009. Four doc crefs to fix (`StatID.cs` 3, `ILevelingEventBroadcaster.cs` 1). Character Stats `EPIC.md` is 9/10.
+- Facts checked at creation: no code line in a file that stays in `Foundation`, in `Client` or in `Assets` names one of the 6 types; the 6 files import only `System`, `System.Collections.Generic`, `UnityEngine`; no serialization attributes.
+- In progress: a `gameplay-programmer` agent is implementing Story 010. Not yet reviewed, not compiled, not committed.
+- After this story: documentation pass still owed (ADR-012, control manifest and `src/` docs that describe the not-yet-moved list as current; the wrong stated reason for the Networking/Currency order).
+
+## Session Extract — /dev-story 2026-10-08 (Character Stats Story 010)
+- Implemented and reviewed by the orchestrator from the working tree (uncommitted): 6 `.cs` + 6 `.cs.meta` from `src/Foundation/CharacterStats/` to `src/ServerLogic/CharacterStats/` (12 staged renames, 0 lines changed; 5 files stay); 4 doc crefs turned into `<c>` text (`StatID.cs` 3, `ILevelingEventBroadcaster.cs` 1), no code line under `src/` changed; `AssemblyBoundaryLists.cs`: `NotYetMovedList` deleted (its 6 entries with it), class doc comment rewritten, `SharedAllowList` 82 unchanged; `AssemblyBoundary_tests.cs`: `test_every_foundation_type_is_listed` and `test_no_list_entry_is_stale` use `SharedAllowList` alone, `test_no_type_is_on_both_lists_or_duplicated` renamed `test_shared_allow_list_has_no_duplicate`; still 10 tests. No `NotYetMovedList` reference remains in any `.cs`.
+- **Not verified: nothing compiled or run since the move.** Expected suite total 2009.
+- **Pending file:** `src/ServerLogic/CharacterStats.meta` (Unity generates it; stage it).
+- Next: user recompiles and runs the suite (a Play-mode harness check is optional but recommended once); then close and commit. That ends ADR-012 Migration Plan step 2.
+
+## Session Extract — /story-done 2026-10-08 (Character Stats Story 010) — ADR-012 Migration Plan step 2 COMPLETE
+- Verdict: COMPLETE. Suite 2009/2009 (run 17:24:43, after the import at 17:07:40); 10/10 boundary tests including the renamed `test_shared_allow_list_has_no_duplicate`; no compile error or warning. The optional Play-mode harness check after this move was not done.
+- Committed with the message "Character Stats: Story 010 complete (moved to IronGrind.ServerLogic; not-yet-moved list removed)". Character Stats `EPIC.md` is Complete (10/10). Not pushed; PAT rotation is still unconfirmed.
+- **All nine systems of ADR-012's move order are in `IronGrind.ServerLogic`.** `NotYetMovedList` no longer exists; `SharedAllowList` has 82 entries; `IronGrind.Foundation` holds only shared types.
+- Session commits 2026-10-08: `f9d067d` (Enhancement 012), `7e6b3f4` (Enhancement 013), `c82de5b` (Inventory 011), `3d4a21e` (Leveling 014), `bf690a5` (Leveling 015), `38f0552` (ADR-012 VR8), `8c4c3be` (Networking 032), `a57381e` (Networking 033), `4d15bc5` (Networking 034), `2cd1317` (Currency 007), `5f9a1dc` (Character Stats 009), plus the Story 010 commit.
+- **Open follow-ups:**
+  1. Wording pass: ADR-012 (Migration Plan step 2 as done; the wrong stated reason for moving Networking before Currency; Decision 6 text about the not-yet-moved list), the control manifest (line ~377 "until a system's move story is done…", line 32 move order), and any `src/` doc that says code "is still in Foundation".
+  2. ADR-012 step 3: client-binary scan (Damage Calculation Story 007) — needs a client build pipeline; closes AC-DC-I-01 and the second sentence of AC-CS-G-01. Its forbidden-name list should hold every moved type.
+  3. The Networking classification was made from doc comments and scans; 42 of its 46 shared entries name planned consumers. Worth a specialist review before client networking code is written.
+  4. The HUD scaffolding is not saved in `SampleScene.unity`.
+  5. Stories still blocked from before: Enhancement 009, 010, 011 (their story files name `src/Foundation/EnhancementSystem/` paths that are now `src/ServerLogic/EnhancementSystem/`).

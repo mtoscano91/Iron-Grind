@@ -17,13 +17,13 @@ namespace IronGrind.CharacterStats
     /// <para><b>Float-schema stats</b> (CritChance – MovementSpeed, values 13–17) are stored
     /// in a separate per-entity <c>float[]</c> via <c>FloatStatValues</c>. Their enum values
     /// must never be used as indices into the int array. Use
-    /// <see cref="StatSchema.IsFloatStat"/> and <see cref="StatSchema.FloatStatIndex"/>.</para>
+    /// <c>StatSchema.IsFloatStat</c> and <c>StatSchema.FloatStatIndex</c>.</para>
     ///
     /// <para>INVARIANT: <c>Experience</c> must remain the highest-valued
     /// <b>int-schema</b> StatID member. <c>MovementSpeed</c> must remain the highest-valued
     /// float-schema StatID member. Adding a new stat in either schema: append to the
     /// corresponding block (or insert carefully, per the <c>MagicDefense</c> precedent) and
-    /// update <see cref="StatSchema"/> constants accordingly.</para>
+    /// update <c>StatSchema</c> constants accordingly.</para>
     /// </remarks>
     public enum StatID : byte
     {

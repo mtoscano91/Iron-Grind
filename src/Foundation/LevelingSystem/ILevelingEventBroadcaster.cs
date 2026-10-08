@@ -4,7 +4,7 @@ namespace IronGrind.LevelingSystem
 {
     /// <summary>
     /// Tier 2 broadcast event surface (ADR-010 Decision 3) for the Leveling System. Kept
-    /// separate from <see cref="IronGrind.CharacterStats.ILevelingService"/> — the Tier 1
+    /// separate from <c>ILevelingService</c> — the Tier 1
     /// single-listener interface <c>CharacterStats</c> depends on via constructor injection
     /// (ADR-010 Decision 2) — because <see cref="OnLevelUp"/> has multiple, independent
     /// subscribers (HUD, Audio, Skill System). See Story 003's "ADR Decision Summary".

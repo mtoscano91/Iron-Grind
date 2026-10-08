@@ -110,13 +110,12 @@ namespace IronGrind.Tests.EditMode.Architecture
             }
         }
 
-        /// <summary>Every top-level Foundation type is on the shared allow-list or the not-yet-moved list.</summary>
+        /// <summary>Every top-level Foundation type is on the shared allow-list.</summary>
         [Test]
         public void test_every_foundation_type_is_listed()
         {
             Assembly foundation = typeof(IronGrind.CharacterStats.EntityID).Assembly;
             var listed = new HashSet<string>(AssemblyBoundaryLists.SharedAllowList);
-            listed.UnionWith(AssemblyBoundaryLists.NotYetMovedList);
 
             var unlisted = new SortedSet<string>(StringComparer.Ordinal);
             foreach (Type type in GetTypesOrFail(foundation))
@@ -137,17 +136,17 @@ namespace IronGrind.Tests.EditMode.Architecture
             }
 
             Assert.IsEmpty(unlisted,
-                "Types in IronGrind.Foundation that are on neither list (ADR-012 Decision 3: move them to ServerLogic/Client or add a shared entry with its client consumer):\n"
+                "Types in IronGrind.Foundation that are not on the shared allow-list (ADR-012 Decision 3: move them to ServerLogic/Client or add a shared entry with its client consumer):\n"
                 + string.Join("\n", unlisted));
         }
 
-        /// <summary>Every list entry resolves to a type that is still in Foundation (no stale entry).</summary>
+        /// <summary>Every shared allow-list entry resolves to a type that is in Foundation.</summary>
         [Test]
         public void test_no_list_entry_is_stale()
         {
             Assembly foundation = typeof(IronGrind.CharacterStats.EntityID).Assembly;
             var stale = new SortedSet<string>(StringComparer.Ordinal);
-            foreach (string name in AssemblyBoundaryLists.SharedAllowList.Concat(AssemblyBoundaryLists.NotYetMovedList))
+            foreach (string name in AssemblyBoundaryLists.SharedAllowList)
             {
                 if (foundation.GetType(name) == null)
                 {
@@ -156,24 +155,18 @@ namespace IronGrind.Tests.EditMode.Architecture
             }
 
             Assert.IsEmpty(stale,
-                "List entries that are not types of IronGrind.Foundation (delete them when a system moves):\n"
+                "Shared allow-list entries that are not types of IronGrind.Foundation:\n"
                 + string.Join("\n", stale));
         }
 
-        /// <summary>No type is on both lists and neither list holds a duplicate.</summary>
+        /// <summary>No name appears twice on the shared allow-list.</summary>
         [Test]
-        public void test_no_type_is_on_both_lists_or_duplicated()
+        public void test_shared_allow_list_has_no_duplicate()
         {
-            string[] shared = AssemblyBoundaryLists.SharedAllowList;
-            string[] notMoved = AssemblyBoundaryLists.NotYetMovedList;
+            string[] duplicates = AssemblyBoundaryLists.SharedAllowList.GroupBy(n => n).Where(g => g.Count() > 1)
+                .Select(g => g.Key).OrderBy(n => n, StringComparer.Ordinal).ToArray();
 
-            string[] both = shared.Intersect(notMoved).OrderBy(n => n, StringComparer.Ordinal).ToArray();
-            string[] duplicates = shared.GroupBy(n => n).Where(g => g.Count() > 1).Select(g => g.Key)
-                .Concat(notMoved.GroupBy(n => n).Where(g => g.Count() > 1).Select(g => g.Key))
-                .OrderBy(n => n, StringComparer.Ordinal).ToArray();
-
-            Assert.IsEmpty(both, "On both lists:\n" + string.Join("\n", both));
-            Assert.IsEmpty(duplicates, "Duplicated within a list:\n" + string.Join("\n", duplicates));
+            Assert.IsEmpty(duplicates, "Duplicated on the shared allow-list:\n" + string.Join("\n", duplicates));
         }
 
         /// <summary>
