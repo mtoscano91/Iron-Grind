@@ -19,7 +19,7 @@ Mobs should feel *purposeful and committed* — not glitchy, rubber-banding, or 
 ### Core Rules
 
 **CR-NAV-1: Execution Domain**
-Navigation/Pathfinding executes within `ServerLogic.asmdef` (`defineConstraints: ["UNITY_SERVER"]`). All `INavigationProvider` calls execute synchronously on the Unity main thread as part of the 20 Hz server tick loop (Networking Core CR-NET-2; `TICK_RATE_HZ = 20`). Unity's NavMesh APIs are main-thread only; no background threads, `Task.ConfigureAwait(false)`, or concurrent data structures are used. One `ZoneNavigationService` instance exists per server process at MVP — one zone per server process (see OQ-NAV-1).
+Navigation/Pathfinding executes within `IronGrind.ServerLogic` (`defineConstraints: ["UNITY_SERVER || UNITY_EDITOR"]`; ADR-012). All `INavigationProvider` calls execute synchronously on the Unity main thread as part of the 20 Hz server tick loop (Networking Core CR-NET-2; `TICK_RATE_HZ = 20`). Unity's NavMesh APIs are main-thread only; no background threads, `Task.ConfigureAwait(false)`, or concurrent data structures are used. One `ZoneNavigationService` instance exists per server process at MVP — one zone per server process (see OQ-NAV-1).
 
 ---
 

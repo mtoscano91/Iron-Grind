@@ -854,7 +854,7 @@ constants:
       - design/gdd/auto-attack-combat.md
     type: "enum"
     fields: "{Hit = 0, MissOutOfRange = 1, MissFacing = 2}"
-    note: "Return type of CheckHit() in ServerLogic.asmdef. Used in HitCheckResult wire message (R-U batch, byte field). Callers gate DamageCalculation.Compute on HitResult == Hit only. MissFacing is only relevant for monster attacks — player auto-attacks always pass the facing check (CR-HD-5)."
+    note: "Return type of CheckHit() in IronGrind.ServerLogic. Used in HitCheckResult wire message (R-U batch, byte field). Callers gate DamageCalculation.Compute on HitResult == Hit only. MissFacing is only relevant for monster attacks — player auto-attacks always pass the facing check (CR-HD-5)."
     added: "2026-05-25"
     revised: ""
 

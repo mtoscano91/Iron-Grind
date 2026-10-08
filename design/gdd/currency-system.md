@@ -39,7 +39,7 @@ The system itself is non-intrusive — it surfaces only when needed and never in
 
 **Rule 9 — No `SetGold` operation.** There is no API to set a balance to an arbitrary value. All mutations are additive (`AddGold`) or subtractive (`TrySpendGold`). Admin correction uses a separate `CurrencyAdminService` not accessible to game systems.
 
-**Rule 10 — Server-only execution.** Currency System resides in `ServerLogic.asmdef`, excluded from client builds via Unity platform constraints (same model as Damage Calculation, Rule 1).
+**Rule 10 — Server-only execution.** Currency System resides in the `IronGrind.ServerLogic` assembly, excluded from client builds by an assembly define constraint (`UNITY_SERVER || UNITY_EDITOR`; same model as Damage Calculation, Rule 1; ADR-012).
 
 **Rule 11 — Concurrency safety via optimistic locking.** Each balance record carries a monotonic `Version` counter. A `TrySpendGold` write succeeds only if the record's `Version` at write time matches the version captured at read time. On conflict, the Currency System retries internally once; two consecutive conflicts return `ConcurrencyConflict` to the caller, which surfaces "Transaction failed — please try again" to the player.
 
@@ -306,7 +306,7 @@ The Currency System has no gameplay logic for pricing or drop rates, but the hea
 
 ### Group G: Server Assembly Isolation
 
-**AC-CS-G-01** — Static assembly scan: `CurrencySystem` class is present in `ServerLogic.asmdef`. It is absent from the client assembly manifest (confirmed via `UnityEditor.Compilation.CompilationPipeline` or assembly definition file inspection). No client build includes this class.
+**AC-CS-G-01** — Static assembly scan: `CurrencySystem` class is defined in `IronGrind.ServerLogic` and not in `IronGrind.Foundation` (confirmed by the boundary test, ADR-012 Decision 6, check 1). No client build includes this class (confirmed by the client-binary scan, ADR-012 Decision 6, check 2).
 
 ---
 

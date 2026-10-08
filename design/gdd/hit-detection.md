@@ -7,7 +7,7 @@
 
 ## Overview
 
-Hit Detection is the discrete, server-authoritative subsystem that validates whether an attack physically connects with its target before damage is calculated. It exposes a single `CheckHit` function that accepts attacker position, target position, attack range, and attacker forward direction, and returns a boolean result. An attack connects only if two conditions are both true: the target is within horizontal range of the attacker (Y-axis ignored — this is a ground-plane game) **and** the attacker is facing the target within an angular tolerance. Both conditions are evaluated by the same function, but their effective behavior is intentionally asymmetric: player auto-attacks always pass the facing check (capturedForward is derived toward the target at swing time), while monster attacks are subject to the facing check based on direction locked at wind-up start — the asymmetry that enables the Rhythm Mastery sidestep mechanic (see CR-HD-5). Hit Detection is called server-side only (assembly: `ServerLogic.asmdef`) as step 3 of the Auto-Attack Combat loop, immediately before `DamageCalculation.Compute`. A failed hit check produces no damage and no hit confirmation; the attacker's swing animation completes but has no mechanical effect. At MVP, the system handles single-target melee attacks only; area-of-effect and projectile paths are deferred.
+Hit Detection is the discrete, server-authoritative subsystem that validates whether an attack physically connects with its target before damage is calculated. It exposes a single `CheckHit` function that accepts attacker position, target position, attack range, and attacker forward direction, and returns a boolean result. An attack connects only if two conditions are both true: the target is within horizontal range of the attacker (Y-axis ignored — this is a ground-plane game) **and** the attacker is facing the target within an angular tolerance. Both conditions are evaluated by the same function, but their effective behavior is intentionally asymmetric: player auto-attacks always pass the facing check (capturedForward is derived toward the target at swing time), while monster attacks are subject to the facing check based on direction locked at wind-up start — the asymmetry that enables the Rhythm Mastery sidestep mechanic (see CR-HD-5). Hit Detection is called server-side only (assembly: `IronGrind.ServerLogic`) as step 3 of the Auto-Attack Combat loop, immediately before `DamageCalculation.Compute`. A failed hit check produces no damage and no hit confirmation; the attacker's swing animation completes but has no mechanical effect. At MVP, the system handles single-target melee attacks only; area-of-effect and projectile paths are deferred.
 
 ## Player Fantasy
 
@@ -30,7 +30,7 @@ HitResult CheckHit(
 );
 ```
 
-Implemented in `ServerLogic.asmdef` only. No client equivalent. `ServerLogic.asmdef` must declare `defineConstraints: ["UNITY_SERVER"]` — this prevents `CheckHit` from being referenced by client assemblies and enforces server-authoritative architecture at the assembly boundary. The `: byte` declaration is required for IL2CPP wire serialization correctness; without it, the enum defaults to `int` (4 bytes) and corrupts message framing.
+Implemented in `IronGrind.ServerLogic` only. No client equivalent. `IronGrind.ServerLogic` must declare `defineConstraints: ["UNITY_SERVER || UNITY_EDITOR"]` (ADR-012) — this prevents `CheckHit` from being referenced by client assemblies and enforces server-authoritative architecture at the assembly boundary. The `: byte` declaration is required for IL2CPP wire serialization correctness; without it, the enum defaults to `int` (4 bytes) and corrupts message framing.
 
 **CR-HD-2** — Range check (evaluated first). If `(T.x − A.x)² + (T.z − A.z)² > attackRange²`, return `MissOutOfRange`. Y-axis is ignored — this is a ground-plane game. Squared comparison avoids a `sqrt` call.
 
@@ -223,7 +223,7 @@ Each `CheckHit` call is independent — there is no shared state between calls. 
 | System | GDD | Status | What Hit Detection consumes |
 |--------|-----|--------|-----------------------------|
 | Networking Core | `networking-core.md` | Approved | `EntityState` struct (position fields, wire encoding); R-U/U-U batch message routing; server tick rate (`TICK_RATE_HZ = 20`) |
-| Damage Calculation | `damage-calculation.md` | Approved | `ServerLogic.asmdef` assembly pattern — Hit Detection co-located in the same server-only assembly |
+| Damage Calculation | `damage-calculation.md` | Approved | `IronGrind.ServerLogic` assembly pattern — Hit Detection co-located in the same server-only assembly |
 | Auto-Attack Combat | `auto-attack-combat.md` | Complete | Beat resolution sequence (step 3 calls `CheckHit`); `AttackRange = 3.0` default; confirmed Hit Detection is discrete (closes OQ-3 in that GDD) |
 
 ### Downstream (systems that consume this GDD)
