@@ -3237,3 +3237,29 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: None
 - Nothing committed: 29 staged renames, plus `AssemblyBoundaryLists.cs`, the story file (untracked), `EPIC.md` and this file. PAT rotation is still unconfirmed.
 - Next recommended: the NPC Interaction move story (fourth in ADR-012's order) — not yet written; `/create-stories` for it, then `/story-readiness`.
+
+## Session Extract — 2026-10-08 (Enhancement Story 012 committed; Story 013 created)
+- Story 012 committed as `f9d067d` (29 renames, `AssemblyBoundaryLists.cs`, story, `EPIC.md`, this file). The "Nothing committed" note in the /story-done extract above is superseded. Not pushed; PAT rotation is still unconfirmed.
+- Created: production/epics/enhancement-system/story-013-npc-interaction-server-assembly-move.md — Move NPC Interaction to the Server Assembly (ADR-012 step 2, fourth in the order). Placed in the Enhancement epic because the folder was written by Enhancement Story 006 and no NPC Interaction epic exists. `EPIC.md` is 9/13 with the new row.
+- Facts checked at creation: 4 types in `src/Foundation/NpcInteraction/`; only outside user is `EnhancementService` (in `ServerLogic`); no `internal`, no serialization attributes; expected lists 153 → 149; expected suite total 2003.
+- Uncommitted: Story 013 file (untracked), `EPIC.md`, this file.
+- Next: /story-readiness production/epics/enhancement-system/story-013-npc-interaction-server-assembly-move.md, then /dev-story.
+
+## Session Extract — /dev-story 2026-10-08 (Enhancement Story 013)
+- Story: production/epics/enhancement-system/story-013-npc-interaction-server-assembly-move.md — Move NPC Interaction to the Server Assembly
+- `/story-readiness`: READY (lean mode); the story's claims were re-checked against the repo.
+- Files changed: `src/Foundation/NpcInteraction/` → `src/ServerLogic/NpcInteraction/` (4 `.cs`, 4 `.cs.meta`, folder `.meta`; 9 git renames, 0 lines changed, staged by `git mv`); `tests/EditMode/Architecture/AssemblyBoundaryLists.cs` (`NotYetMovedList` 153 → 149, `ServerOnlyNamespaces` gains `IronGrind.NpcInteraction`; `SharedAllowList` unchanged at 26).
+- Test written: none new — the existing boundary tests cover the move through the edited lists.
+- Graph and serialization re-checks at implementation time: only `EnhancementService.cs` references NPC Interaction types from outside the folder; no serialization attribute, by-name type lookup or `UnityEngine` use, so no `[MovedFrom]`.
+- **Not verified: the EditMode suite has not been run after this move.** The Editor was open; `TestResults.xml` is still the 12:54 run from Story 012. Expected total 2003.
+- Nothing committed: the 9 staged renames, the list file, the Story 013 file (untracked), `EPIC.md`, this file. PAT rotation is still unconfirmed.
+- Next: user runs the Test Runner (total is read from `TestResults.xml`), then /code-review tests/EditMode/Architecture/AssemblyBoundaryLists.cs and /story-done.
+
+## Session Extract — /story-done 2026-10-08 (Enhancement Story 013)
+- Verdict: COMPLETE
+- Story: production/epics/enhancement-system/story-013-npc-interaction-server-assembly-move.md — Move NPC Interaction to the Server Assembly
+- Suite after the move: 2003/2003 passed, read from `TestResults.xml` (13:04 run); no compile error or warning. The "suite not run" note in the /dev-story extract above is superseded.
+- Code review: inline only, no specialist panel. `EPIC.md` is 10/13.
+- Tech debt logged: None
+- Nothing committed: 9 staged renames, `AssemblyBoundaryLists.cs`, the Story 013 file (untracked), `EPIC.md`, this file. PAT rotation is still unconfirmed.
+- Next recommended: the Inventory move story (fifth in ADR-012's order) — not yet written. It is larger than the last two: 22 types, and some are likely client-facing (snapshot and result types), so it needs a per-type classification.

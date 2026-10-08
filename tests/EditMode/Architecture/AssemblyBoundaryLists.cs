@@ -57,12 +57,6 @@ namespace IronGrind.Tests.EditMode.Architecture
         /// </summary>
         internal static readonly string[] NotYetMovedList =
         {
-            // ---- NPC Interaction ----
-            "IronGrind.NpcInteraction.INpcInteractionSessions",
-            "IronGrind.NpcInteraction.ITownHubQuery",
-            "IronGrind.NpcInteraction.NpcInteractionOpenResult",
-            "IronGrind.NpcInteraction.NpcInteractionSessionTracker",
-
             // ---- Inventory ----
             "IronGrind.InventorySystem.ConsumeItemFailReason",
             "IronGrind.InventorySystem.ConsumeItemResult",
@@ -234,6 +228,7 @@ namespace IronGrind.Tests.EditMode.Architecture
             "IronGrind.DamageCalculation", // Damage Calculation Story 006
             "IronGrind.LootTableSystem",   // Loot Table Story 014
             "IronGrind.EnhancementSystem", // Enhancement Story 012
+            "IronGrind.NpcInteraction",    // Enhancement Story 013
         };
     }
 }
