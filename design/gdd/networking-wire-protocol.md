@@ -1,8 +1,8 @@
 # Networking Wire Protocol
 
-> **Status**: Approved (Pass 4 lean, 2026-05-12; ghost session amendment 2026-05-14; wire schema additions 2026-05-17; Zone Instancing amendment 2026-05-29; CSP amendment 2026-06-14). **TD-046 amendment 2026-10-09 (Enhancement message set, inventory sync messages) — NEEDS REVISION (lean re-review 2026-10-09, 2 blocking; see the review log)**
+> **Status**: Approved (Pass 4 lean, 2026-05-12; ghost session amendment 2026-05-14; wire schema additions 2026-05-17; Zone Instancing amendment 2026-05-29; CSP amendment 2026-06-14). **TD-046 amendment 2026-10-09 (Enhancement message set, inventory sync messages) — lean re-review 2026-10-09: NEEDS REVISION (2 blocking, see the review log); revision applied 2026-10-09, lean verify pending**
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-10-09 (TD-046 amendment: `EnhancementAttemptRequest` is slot based — `{requestId, itemSlotIndex, scrollSlotIndex}`, 6-byte body; `EnhancementRequestReceived` `{requestId, itemSlotIndex}`, 5-byte body; the "TBD" `EnhancementOutcomeBroadcast` placeholder is replaced by `EnhancementAttemptResult` (owner only, cap-exempt) and `ServerBroadcast_Enhancement9` (+9 only, all connected clients, not cap-exempt); `CancelEnhancement`, `EnhancementPreviewRequest`, `EnhancementStateUpdate`, `EnhancementPreviewRejected`, `InventorySlotUpdate`, `InventoryFullSync` and the `EnhancementResultCode` enum block added; AC-NC-35 renamed to the new message; AC-NC-40 to AC-NC-44 added. Lean re-review pending.) Same day, earlier: 2026-10-09 (`RttProbeEcho` gains the 4-byte `probeSequence` body already defined by networking-channel-contract.md CCR-3 and EC-CCR-3 — propagation fix, 18 bytes standalone; F-NET-7 echo row ~1.8 bytes/s; no status change, no re-review by user decision). Previously: 2026-10-03 (`BagFullPickupBlocked` note: also sent for the auction winner grace, loot-table-system.md CR-LT-9.1; `remainingTicks` is then the grace remaining; no schema or size change); 2026-10-03 (`GoldTransactionReason` enum block: `AuctionBid = 9` added; `CompensatingRefund = 8` listed — it was in the registry and the code but missing here; no schema or size change); 2026-10-01 (TD-045 amendment: `MoveResult` gains per-slot enhancement-level bytes (22-byte body); `EquipRequest` gains `inventorySlot` (10-byte body) — an ItemID alone cannot distinguish same-type items at different enhancement levels; `EquipResult` gains `slotEnhancementLevel` (12-byte body); `EquipFailReason` comments aligned with the rewritten equipment-system.md CR-EQS-8.) Previous: 2026-06-14 (CSP amendment: `SelfPositionUpdate` added to R-U batch — per-tick authoritative self-position delivery for client-side prediction reconciliation. Resolves CR-CSP-7 data-source gap. Channel: R-U (not U-U) — reconciliation most critical under packet loss. Body: 10B; batch: 14B; Scenario C R-U batch 332B (no overflow; 180B headroom). F-NET-1/F-NET-2 updated. Prior: Zone Instancing amendment 2026-05-29; OQ-CUS-1 amendment 2026-06-11.)
+> **Last Updated**: 2026-10-09 (TD-046 revision after the lean re-review — no schema field, message size or enum value changed: a duplicate `EnhancementAttemptRequest` is dropped with no response; the CR-ENH-11 hold also covers `InventoryFullSync`; `EnhancementRequestReceived` is sent after CR-ENH-15 step 4 succeeds; CR-NET-7.3 names the nullable-ID exception; AC-NC-31, AC-NC-35, AC-NC-41 and AC-NC-43 revised; AC-NC-47 to AC-NC-49 and OQ-NC-SER-5 added (numbered from 47: AC-NC-45 and AC-NC-46 exist in networking-core.md). Lean verify pending.) Same day, earlier: 2026-10-09 (TD-046 amendment: `EnhancementAttemptRequest` is slot based — `{requestId, itemSlotIndex, scrollSlotIndex}`, 6-byte body; `EnhancementRequestReceived` `{requestId, itemSlotIndex}`, 5-byte body; the "TBD" `EnhancementOutcomeBroadcast` placeholder is replaced by `EnhancementAttemptResult` (owner only, cap-exempt) and `ServerBroadcast_Enhancement9` (+9 only, all connected clients, not cap-exempt); `CancelEnhancement`, `EnhancementPreviewRequest`, `EnhancementStateUpdate`, `EnhancementPreviewRejected`, `InventorySlotUpdate`, `InventoryFullSync` and the `EnhancementResultCode` enum block added; AC-NC-35 renamed to the new message; AC-NC-40 to AC-NC-44 added.) Same day, earlier: 2026-10-09 (`RttProbeEcho` gains the 4-byte `probeSequence` body already defined by networking-channel-contract.md CCR-3 and EC-CCR-3 — propagation fix, 18 bytes standalone; F-NET-7 echo row ~1.8 bytes/s; no status change, no re-review by user decision). Previously: 2026-10-03 (`BagFullPickupBlocked` note: also sent for the auction winner grace, loot-table-system.md CR-LT-9.1; `remainingTicks` is then the grace remaining; no schema or size change); 2026-10-03 (`GoldTransactionReason` enum block: `AuctionBid = 9` added; `CompensatingRefund = 8` listed — it was in the registry and the code but missing here; no schema or size change); 2026-10-01 (TD-045 amendment: `MoveResult` gains per-slot enhancement-level bytes (22-byte body); `EquipRequest` gains `inventorySlot` (10-byte body) — an ItemID alone cannot distinguish same-type items at different enhancement levels; `EquipResult` gains `slotEnhancementLevel` (12-byte body); `EquipFailReason` comments aligned with the rewritten equipment-system.md CR-EQS-8.) Previous: 2026-06-14 (CSP amendment: `SelfPositionUpdate` added to R-U batch — per-tick authoritative self-position delivery for client-side prediction reconciliation. Resolves CR-CSP-7 data-source gap. Channel: R-U (not U-U) — reconciliation most critical under packet loss. Body: 10B; batch: 14B; Scenario C R-U batch 332B (no overflow; 180B headroom). F-NET-1/F-NET-2 updated. Prior: Zone Instancing amendment 2026-05-29; OQ-CUS-1 amendment 2026-06-11.)
 > **Parent**: networking-core.md
 
 ## Overview
@@ -56,6 +56,8 @@ No raw `float`, `Vector3`, or `Quaternion` fields are permitted in any network m
 **CR-NET-7.3 — Entity ID Serialization**
 
 `EntityID`, `ItemID`, and `CharacterID` each serialize as a 4-byte unsigned integer, little-endian. The reserved value `0` (Invalid) must never appear in a valid game message body — the serialization layer must assert this before writing. All ID struct serializers must be concrete non-generic methods (no `Serialize<T>` reflection paths — IL2CPP AOT safety requirement).
+
+**Nullable ID fields (exception, stated 2026-10-09):** a field is exempt from the assertion when its schema in this document states that `0` is a meaningful value — an empty slot, a deselect, an unequip (for example `InventorySlotUpdate.itemId`, `MoveResult.fromSlotItemId`, `SetTarget.targetEntityId`). The schema comment or note is the declaration; an ID field without one is non-nullable and the assertion applies. The serializer of a nullable field writes `0` without asserting.
 
 ---
 
@@ -433,12 +435,14 @@ LootBidUpdate {
 **EnhancementAttemptRequest** (R-OD, client → server, 6-byte body; 20 bytes standalone):
 ```
 EnhancementAttemptRequest {
-    uint requestId;       // 4 bytes — client-generated monotonically increasing ID (CR-NET-5.2; dedup per ADR-001 A1)
+    uint requestId;       // 4 bytes — client-generated monotonically increasing ID (CR-NET-5.2; duplicate rule: networking-session.md EC-NET-9)
     byte itemSlotIndex;   // 1 byte  — bag slot of the item to enhance
     byte scrollSlotIndex; // 1 byte  — bag slot of the Enhancement Scroll
 }
 ```
 *Standalone: 10 (envelope) + 4 (SenderEntityID) + 6 (body) = 20 bytes. This is the `ConfirmEnhancement(itemSlotIndex, scrollSlotIndex)` request of enhancement-system.md (CR-ENH-6, CR-ENH-15 step 1) — one message, two names; the wire name is kept because ADR-014 and the control manifest use it. The requesting player is the envelope's `SenderEntityID`; the body carries no entity or `ItemID` (an `ItemID` cannot tell apart two same-type items at different enhancement levels). The server validates per CR-ENH-15 step 2. A slot index out of range is treated as an empty slot (`RejectedItemNotFound` / `RejectedScrollNotFound`).*
+
+*Duplicate `requestId` (2026-10-09): a request whose `requestId` equals the character's persisted `LastEnhancementRequestID` (CR-NET-5.2, networking-session.md EC-NET-9) is dropped before validation — no response of any kind, no state change, one `DuplicateEnhancementRequest` anomaly logged. No `EnhancementResultCode` exists for it and no earlier result is sent again. R-OD delivers each message once, so a client never needs to resend: after a reconnect it returns to IDLE and reads its bag from `InventoryFullSync`. This is not the ADR-001 cached-response rule of the shop and consumable requests.*
 
 **EnhancementRequestReceived** (R-OD, server → owning client, 5-byte body; 15 bytes standalone):
 ```
@@ -447,7 +451,7 @@ EnhancementRequestReceived {
     byte itemSlotIndex; // 1 byte  — the bag slot now locked for the attempt
 }
 ```
-*Standalone: 10 + 5 = 15 bytes. Sent only when validation passes, before the outcome is computed (networking-core.md CR-NET-5.3 step 3). It is an acknowledgment, not an outcome. A request that fails validation gets no acknowledgment — it gets `EnhancementAttemptResult` with a `Rejected*` code. Exempt from the priority-path cap (CR-NET-7.7).*
+*Standalone: 10 + 5 = 15 bytes. Sent only when validation passes and the scroll has been consumed (enhancement-system.md CR-ENH-15 steps 2–4, which run in one tick), before the outcome is computed (networking-core.md CR-NET-5.3 step 3). It is an acknowledgment, not an outcome. A rejected request gets no acknowledgment — it gets `EnhancementAttemptResult` with a `Rejected*` code; this includes the `RejectedScrollNotFound` of a failed step 4, so a `Rejected*` result never follows an acknowledgment for the same `requestId`. Exempt from the priority-path cap (CR-NET-7.7).*
 
 **EnhancementAttemptResult** (R-OD, server → owning client, 6-byte body; 16 bytes standalone):
 ```
@@ -466,7 +470,7 @@ ServerBroadcast_Enhancement9 {
     string itemName;   // ushort(2) + UTF-8 bytes; max 24 UTF-8 bytes = 26 bytes max — Item Database display name
 }
 ```
-*Variable-length: minimum body 4 bytes (two empty strings), maximum 52. Sent once per successful +8 → +9 transition, after the persistence write succeeds (CR-ENH-14, CR-ENH-15 step 8), to every connected client in every zone. No other level transition sends it. A string longer than 24 UTF-8 bytes is truncated at a character boundary before encoding. A delivery failure to some clients does not affect the outcome (EC-ENH-8). **Not** exempt from the priority-path cap.*
+*Variable-length: minimum body 4 bytes (two empty strings), maximum 52. Sent once per successful +8 → +9 transition, after the persistence write succeeds (CR-ENH-14, CR-ENH-15 step 8), to every connected client in every zone. No other level transition sends it. A string longer than 24 UTF-8 bytes is truncated at a character boundary before encoding (the longest prefix of whole characters that fits in 24 bytes). For `itemName` this cut is accepted (user decision 2026-10-09): item-database.md puts no length bound on `DisplayName`, so the display names of upgradeable equipment should stay within 24 UTF-8 bytes; a longer one is announced cut, not rejected. A delivery failure to some clients does not affect the outcome (EC-ENH-8). **Not** exempt from the priority-path cap.*
 
 **CancelEnhancement** (R-OD, client → server, no body; 14 bytes standalone):
 ```
@@ -978,7 +982,7 @@ InventorySlotUpdate {
 ```
 *Body: 1 + 10 × count. Added 2026-10-09 (TD-046). The owning client's authoritative view of its bag: one message per server-side `InventoryChangedEvent` (inventory-system.md), carrying the same entries — the absolute post-change state of each changed slot, never a delta. It is sent for every bag change, whatever caused it (pickup, unequip to the bag, purchase, enhancement, and also changes already echoed by `MoveResult`, `DiscardResult`, `SellResult` or `UseItemResult` — both carry absolute state on the same ordered channel, so applying both is harmless). The client overwrites each listed slot. No `Version` field: R-OD is exactly-once in-order (CCR-4). `itemId = 0` is allowed here as the empty-slot value, as in `MoveResult`.*
 
-*Enhancement hold (enhancement-system.md CR-ENH-11): from CR-ENH-15 step 3 until the step 6b commit returns, every `InventorySlotUpdate` for that character is held, not sent. If the commit succeeds the held messages are enqueued in the order they were raised, together with `EnhancementAttemptResult`. Their order relative to the result is not guaranteed — the result is cap-exempt and goes to the front of the queue (CR-NET-7.7) — so the client must not assume the bag is already updated when the result arrives. If the commit fails they are discarded, and so are the updates raised by the rollback; the client is disconnected (CR-NET-5.5) and receives `InventoryFullSync` when it reconnects.*
+*Enhancement hold (enhancement-system.md CR-ENH-11): from CR-ENH-15 step 3 until the step 6b commit returns, every `InventorySlotUpdate` for that character is held, not sent. If step 4 fails the attempt ends there with `RejectedScrollNotFound`: nothing was changed, no commit runs, and the hold ends at once. The hold also covers `InventoryFullSync` (see that message). If the commit succeeds the held messages are enqueued in the order they were raised, together with `EnhancementAttemptResult`. Their order relative to the result is not guaranteed — the result is cap-exempt and goes to the front of the queue (CR-NET-7.7) — so the client must not assume the bag is already updated when the result arrives. If the commit fails they are discarded, and so are the updates raised by the rollback; the client is disconnected (CR-NET-5.5) and receives `InventoryFullSync` when it reconnects.*
 
 ---
 
@@ -994,6 +998,8 @@ InventoryFullSync {
 }
 ```
 *Body: 1 + 10 × 20 = 201 bytes (within the 512-byte cap of CR-NET-7.6 — not a bulk-transfer message). Added 2026-10-09 (TD-046). Sent once per zone entry, after `SessionReady` and before any `InventorySlotUpdate` of that session — this covers login, reconnect and zone transfer. Every slot is listed, empty ones included; the client replaces its whole bag with the contents. A `count` other than `INVENTORY_SLOT_COUNT` is a malformed message: the client discards it and logs an anomaly. If `INVENTORY_SLOT_COUNT` is ever raised above 51 the body exceeds 512 bytes and this message must move to the bulk-transfer range.*
+
+*Enhancement hold (2026-10-09): the hold of `InventorySlotUpdate` applies to this message too. If a zone entry for the character completes while an enhancement attempt is between CR-ENH-15 step 3 and the return of the step 6b commit — the owning client disconnected mid-attempt and reconnected (enhancement-system.md EC-ENH-1) — the server sends `SessionReady` as usual and defers `InventoryFullSync` until the commit returns; the live bag holds an uncommitted outcome and must not reach a client (networking-core.md CR-NET-5.1, CR-NET-5.4). If the commit succeeds, the sync is built from the committed bag and sent then; the `InventorySlotUpdate` messages held for that character are discarded, because the sync already contains their changes, so the "before any `InventorySlotUpdate`" order holds. If the commit fails, no sync is sent on that connection: the client is disconnected (CR-NET-5.5) and gets its sync on the next zone entry, from the rolled-back bag. Until the sync arrives the client shows no bag contents.*
 
 ---
 
@@ -1780,7 +1786,7 @@ At the theoretical maximum mutation rate (one gold event per tick = 20/sec), `Go
 
 ---
 
-**AC-NC-31 (Logic)** — Given the serialization layer encoding a valid game message (e.g., `DamageEvent`, `EntityHealthUpdate`, or `KillEvent`) where any ID field (`EntityID`, `ItemID`, `CharacterID`) in the message body is `0` (Invalid), When the serializer attempts to write the message to the wire buffer, Then the serializer throws before writing any bytes for that message, a `InvalidIdZeroWrite` anomaly is logged with the message type and field name, and no partial message appears in the buffer. *Verifies CR-NET-7.3 "must assert before writing" requirement. Unit-testable without a running server.*
+**AC-NC-31 (Logic)** — Given the serialization layer encoding a valid game message (e.g., `DamageEvent`, `EntityHealthUpdate`, or `KillEvent`) where any non-nullable ID field (`EntityID`, `ItemID`, `CharacterID` — a field not declared nullable by its schema, CR-NET-7.3) in the message body is `0` (Invalid), When the serializer attempts to write the message to the wire buffer, Then the serializer throws before writing any bytes for that message, a `InvalidIdZeroWrite` anomaly is logged with the message type and field name, and no partial message appears in the buffer. *Verifies CR-NET-7.3 "must assert before writing" requirement. Unit-testable without a running server.*
 
 ---
 
@@ -1796,7 +1802,7 @@ At the theoretical maximum mutation rate (one gold event per tick = 20/sec), `Go
 
 ---
 
-**AC-NC-35 (Integration)** — Given a server tick where the Path 1 queue for client A already holds exactly 8 queued R-OD messages (at cap), When an `EnhancementAttemptResult` is enqueued for client A before the tick's flush, Then: (a) the `EnhancementAttemptResult` is placed at position 1 in the current tick's Path 1 queue (displacing the oldest non-exempt message to the next tick); (b) the `EnhancementAttemptResult` appears in the current tick's `INetworkTestObserver` capture; (c) the displaced message appears at position 1 in the following tick's capture. *Verifies the CR-NET-7.7 queue-front-insertion timing rule.*
+**AC-NC-35 (Integration)** — Given a server tick where the Path 1 queue for client A already holds exactly 8 queued R-OD messages (at cap), When an `EnhancementAttemptResult` is enqueued for client A before the tick's flush, Then: (a) the `EnhancementAttemptResult` is placed at position 1 in the current tick's Path 1 queue (displacing the oldest non-exempt message to the next tick); (b) the `EnhancementAttemptResult` appears in the current tick's `INetworkTestObserver` capture; (c) the displaced message appears at position 1 in the following tick's capture. (d) The same three results hold when the enqueued message is an `EnhancementRequestReceived` instead. *Verifies the CR-NET-7.7 queue-front-insertion timing rule for both exempt messages.*
 
 ---
 
@@ -1820,7 +1826,7 @@ At the theoretical maximum mutation rate (one gold event per tick = 20/sec), `Go
 
 ---
 
-**AC-NC-41 (Unit)** — Given `InventorySlotUpdate` messages with 1, 2 and 20 entries, When each is encoded, Then the body lengths are 11, 21 and 201 bytes and every entry round-trips, including an emptied slot (`itemId = 0`, `quantity = 0`, `enhancementLevel = 0`). Given `ServerBroadcast_Enhancement9` with two empty strings, with two 24-byte strings, and with a 30-byte `itemName`, Then the body lengths are 4, 52 and 52 bytes and the 30-byte name decodes as its first 24 bytes cut at a character boundary.
+**AC-NC-41 (Unit)** — Given `InventorySlotUpdate` messages with 1, 2 and 20 entries, When each is encoded, Then the body lengths are 11, 21 and 201 bytes and every entry round-trips, including an emptied slot (`itemId = 0`, `quantity = 0`, `enhancementLevel = 0`). Given `ServerBroadcast_Enhancement9` with (a) two empty strings, (b) two 24-byte ASCII strings, (c) a 24-byte ASCII `playerName` and a 30-byte ASCII `itemName`, (d) a 24-byte ASCII `playerName` and an `itemName` of 22 ASCII bytes followed by two 3-byte characters (28 bytes), Then the body lengths are 4, 52, 52 and 50 bytes; in (c) the name decodes as its first 24 bytes; in (d) it decodes as its first 22 bytes — the 3-byte character that would cross byte 24 is dropped whole.
 
 ---
 
@@ -1828,11 +1834,23 @@ At the theoretical maximum mutation rate (one gold event per tick = 20/sec), `Go
 
 ---
 
-**AC-NC-43 (Integration)** — Given a character whose enhancement attempt is between CR-ENH-15 step 3 and the step 6b commit (commit held open by a test double), When the attempt raises its `InventoryChangedEvent`s, Then the owning client's `INetworkTestObserver` capture contains zero `InventorySlotUpdate` and zero `EnhancementAttemptResult`. When the commit then returns `Success`, Then the capture contains the held `InventorySlotUpdate` messages in the order they were raised and exactly one `EnhancementAttemptResult` (their order relative to each other is not asserted). When instead the commit returns a non-Success code, Then the capture contains neither message type, including after the rollback.
+**AC-NC-43 (Integration)** — Given a character whose enhancement attempt is between CR-ENH-15 step 3 and the step 6b commit (commit held open by a test double), When the attempt raises its `InventoryChangedEvent`s, Then the owning client's `INetworkTestObserver` capture contains zero `InventorySlotUpdate` and zero `EnhancementAttemptResult`. When the commit then returns `Success`, Then the capture contains the held `InventorySlotUpdate` messages in the order they were raised and exactly one `EnhancementAttemptResult` (their order relative to each other is not asserted). When instead the commit returns a non-Success code, Then the capture contains neither message type, including after the rollback. **Reconnect case:** Given the owning client disconnected after step 3 and completes a new zone entry while the commit is still held open, Then its capture contains `SessionReady` and zero `InventoryFullSync`; when the commit returns `Success`, exactly one `InventoryFullSync` follows, its entries equal the committed bag, and no `InventorySlotUpdate` raised before the commit appears after it; when the commit returns a non-Success code, no `InventoryFullSync` appears on that connection. **Step 4 case:** Given `Inventory.ConsumeItem` forced to fail at step 4 (test double), Then the capture contains zero `EnhancementRequestReceived` and exactly one `EnhancementAttemptResult` with `RejectedScrollNotFound`, and an `InventorySlotUpdate` raised later in the same tick is sent, not held.
 
 ---
 
 **AC-NC-44 (Integration)** — Given a client completing a zone entry, When `SessionReady` has been sent, Then exactly one `InventoryFullSync` with 20 entries in ascending `slotIndex` order follows it on the R-OD path before any `InventorySlotUpdate` for that session, and its entries equal the server's bag for that character.
+
+---
+
+**AC-NC-47 (Integration)** — Given client A whose Path 1 queue holds exactly 8 non-exempt R-OD messages, and a +8 → +9 enhancement by another player that commits before the tick's flush, When the flush occurs, Then client A's `INetworkTestObserver` capture for that tick contains the 8 queued messages and no `ServerBroadcast_Enhancement9`, and the broadcast appears in the following tick's capture. Given clients in two different zones and one committed +8 → +9 success, Then each client's capture contains exactly one `ServerBroadcast_Enhancement9`. Given committed +7 → +8 and +9 → +10 successes, Then no capture contains one. *Verifies that the broadcast is not cap-exempt (CR-NET-7.7) and its delivery scope.*
+
+---
+
+**AC-NC-48 (Integration)** — Given an `EnhancementPreviewRequest` for a selection that passes the CR-ENH-15 step 2 checks, When the server processes it, Then the owning client's capture contains exactly one `EnhancementStateUpdate` echoing both slot indices and zero `EnhancementPreviewRejected`. Given a selection that fails a check, Then it contains exactly one `EnhancementPreviewRejected` with that check's `Rejected*` code and zero `EnhancementStateUpdate`. In both cases the bag, the slot locks and the persisted record are unchanged. Given a `CancelEnhancement`, sent before any request or after an accepted `EnhancementAttemptRequest`, Then the capture gains no message and no server state changes.
+
+---
+
+**AC-NC-49 (Integration)** — Given a character whose persisted `LastEnhancementRequestID` is `X`, When the client sends an `EnhancementAttemptRequest` with `requestId = X` and otherwise valid slots, Then the owning client's capture contains no `EnhancementRequestReceived` and no `EnhancementAttemptResult`, exactly one `DuplicateEnhancementRequest` anomaly is logged, and the bag (item level, scroll count) is unchanged. *The no-time-window part of the rule is covered by networking-session.md AC-NC-27.*
 
 ---
 
@@ -1871,6 +1889,11 @@ Simulation results must be appended to the Networking ADR before Networking Core
 
 **OQ-NC-SER-4 — BLOCKING (library ADR) — Library-owned vs. application-owned serialization**
 After the library ADR is finalized, the technical director must confirm which CR-NET-7 items are library-owned vs. application-owned. Library-owned layers must be validated against CR-NET-7.2 (no float in authoritative state), CR-NET-7.3 (ID reserved values), CR-NET-7.4 (enum range validation), and CR-NET-7.5 (version discard logic).
+
+**OQ-NC-SER-5 — Equipment state of the owning client on zone entry**
+*Owner:* Equipment System (equipment-system.md) with this document. Recorded 2026-10-09 (lean re-review of the TD-046 amendment).
+
+`InventoryFullSync` gives the owning client its bag on every zone entry. No message in this document gives it its seven gear slots: `EquipResult` reports one slot after a request, and `ZoneStateSnapshot` carries only the appearance flags byte. After a login, reconnect or zone transfer the client therefore has no authoritative item or enhancement level per gear slot. To decide: a dedicated equipment sync message sent with `InventoryFullSync`, or gear-slot fields in `SessionReady` (OQ-NC-SER-2). Not blocking for the Enhancement message set; blocking for the Equipment UI.
 
 ---
 

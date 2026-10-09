@@ -270,7 +270,7 @@ Each failed re-authentication attempt does not reset the session TTL — it cont
 
 The transport layer deduplicates `R-OD` retransmits in the normal case. For cross-session duplicates, the server uses a per-character `LastEnhancementRequestID` field.
 
-The dedup check has **no time window**: if `request.RequestID == character.LastEnhancementRequestID`, the request is rejected unconditionally — regardless of elapsed time. A new legitimate enhancement uses a new `RequestID` incremented by the client; the persisted field is overwritten only when a new enhancement is successfully committed.
+The dedup check has **no time window**: if `request.RequestID == character.LastEnhancementRequestID`, the request is rejected unconditionally — regardless of elapsed time. Rejected means dropped: the server sends no message to the client and logs one `DuplicateEnhancementRequest` anomaly (stated 2026-10-09 with networking-wire-protocol.md; wording only). A new legitimate enhancement uses a new `RequestID` incremented by the client; the persisted field is overwritten only when a new enhancement is successfully committed.
 
 **Dedup scope is per-character:** `LastEnhancementRequestID` is keyed on `CharacterID`. Two characters can independently use `requestId=42` without collision. A character who uses `requestId=42` in session N cannot reuse it in session N+1.
 
@@ -341,7 +341,7 @@ Zone crash recovery for replacement instance routing is a Zone Instancing GDD co
 
 **AC-NC-26** — Given a connected player who sends an explicit disconnect (graceful logout), When the server processes it, Then: (a) the 5-minute session TTL is skipped entirely; (b) final character state is written to persistence immediately; (c) the player's entity is removed from the zone; (d) all other clients receive `PlayerLeftZone` with `disconnectType = graceful`. No `Disconnected_SessionActive` state is entered.
 
-**AC-NC-27** — Given a player who submits enhancement attempt (`RequestID = X`) that is processed successfully, When the same client sends a second request with `RequestID = X` (simulating network retry or reconnect-retransmit), Then the server rejects it as a duplicate — no second enhancement is computed, item state is unchanged. The rejection must occur even when >30 seconds have elapsed (verifies no time window on dedup).
+**AC-NC-27** — Given a player who submits enhancement attempt (`RequestID = X`) that is processed successfully, When the same client sends a second request with `RequestID = X` (simulating network retry or reconnect-retransmit), Then the server rejects it as a duplicate — no second enhancement is computed, item state is unchanged, no message is sent to the client, and one `DuplicateEnhancementRequest` anomaly is logged. The rejection must occur even when >30 seconds have elapsed (verifies no time window on dedup).
 
 **AC-NC-32 (Logic)** — Given a player who enters `Disconnected_SessionActive` at tick T with `GHOST_COMBAT_TTL_MINUTES = 1` and one mob in combat range, When `currentServerTick >= T + (1 × 60 × 20) = T + 1200`, Then: within one tick boundary (≤50ms), the ghost entity's `_cycleTimer` stops advancing, no further Beat events fire for that entity, and the mob stops targeting the ghost entity. TTL expiry evaluated using tick comparison — not wall-clock time. *Unit-testable by injecting a fixed `disconnectTickNumber` and advancing the server tick counter.*
 

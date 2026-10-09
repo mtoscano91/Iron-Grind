@@ -2,7 +2,7 @@
 
 > **Status**: Approved (Pass 2 lean, 2026-05-14)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-10-09 (TD-046: CR-NET-5.2 `EnhancementAttemptRequest` and the CR-NET-5.3 step 3 `EnhancementRequestReceived` body are slot based, following networking-wire-protocol.md; no rule change); 2026-10-09 (note on Cross-Cutting Constraint 3: rate limits are evaluated per dispatch tick, ADR-014; wording only, no rule change, no review pass); 2026-05-29
+> **Last Updated**: 2026-10-09 (TD-046 revision: CR-NET-5.2 — a duplicate `requestId` is dropped with no response; CR-NET-5.3 step 2 — validation includes the scroll consumption, so the step 3 acknowledgment follows it; wording aligned with networking-wire-protocol.md, no other rule change); 2026-10-09 (TD-046: CR-NET-5.2 `EnhancementAttemptRequest` and the CR-NET-5.3 step 3 `EnhancementRequestReceived` body are slot based, following networking-wire-protocol.md; no rule change); 2026-10-09 (note on Cross-Cutting Constraint 3: rate limits are evaluated per dispatch tick, ADR-014; wording only, no rule change, no review pass); 2026-05-29
 > **Implements Pillar**: Pillar 3 — Social Gravity (multiplayer world exists); all pillars require server authority
 
 ## Sub-Documents
@@ -124,11 +124,11 @@ EnhancementAttemptRequest {
 }
 ```
 
-`requestId` must differ from `LastEnhancementRequestID` in the character record. The server rejects any `requestId` matching the persisted value.
+`requestId` must differ from `LastEnhancementRequestID` in the character record. The server rejects any `requestId` matching the persisted value: the request is dropped before validation, no response is sent to the client, and one `DuplicateEnhancementRequest` anomaly is logged (networking-wire-protocol.md, 2026-10-09; networking-session.md EC-NET-9).
 
 **CR-NET-5.3** Enhancement attempt commit-before-broadcast sequence:
 1. Server receives `EnhancementAttemptRequest` from owning client
-2. Server validates the request (item exists, materials present, `requestId != LastEnhancementRequestID`); if invalid, emits a rejection immediately and stops
+2. Server validates the request (item exists, materials present, `requestId != LastEnhancementRequestID`). A duplicate `requestId` is dropped with no response (CR-NET-5.2). On any other failure the server emits a rejection immediately and stops. Validation here runs through the scroll consumption of enhancement-system.md CR-ENH-15 step 4, which can still fail with `RejectedScrollNotFound`; steps 2–4 of that sequence run in one tick
 3. Server emits `EnhancementRequestReceived { uint requestId; byte itemSlotIndex; }` (R-OD, priority path) to owning client — **before** computing the outcome. Client enters a "processing" visual state. This is a request acknowledgment, not an outcome.
 4. Server computes the outcome using Enhancement System logic
 5. Server writes the outcome atomically to persistence; `LastEnhancementRequestID` is updated in the same write. Item's new state is durable.

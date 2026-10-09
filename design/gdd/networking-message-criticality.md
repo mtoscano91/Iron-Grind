@@ -2,7 +2,7 @@
 
 > **Status**: Approved (lean re-review Pass 2, 2026-05-17)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-10-09 (TD-046 amendment: MCR-2 rows for the Enhancement message set and the two inventory sync messages; the schema-pending Enhancement outcome row is replaced; no channel assignment of an existing message changed; lean re-review pending with networking-wire-protocol.md). Previous: 2026-05-17
+> **Last Updated**: 2026-10-09 (TD-046 amendment: MCR-2 rows for the Enhancement message set and the two inventory sync messages; the schema-pending Enhancement outcome row is replaced; no channel assignment of an existing message changed; lean re-review done 2026-10-09 — no MCR-2 row changed by the revision that followed; lean verify pending with networking-wire-protocol.md). Previous: 2026-05-17
 > **Parent**: networking-wire-protocol.md
 
 ## Overview
