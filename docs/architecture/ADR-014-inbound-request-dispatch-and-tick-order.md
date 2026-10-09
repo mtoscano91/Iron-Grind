@@ -71,6 +71,8 @@ ADR-011 Decision 4 relies on "the session's inbound request dispatcher — the s
 | Respec Phase 1 (`leveling-system.md` CR-4.1) | R-OD | request | yes | — | no wire schema yet |
 | `RespecPhase2Request` (`networking-core.md` CR-NET-5.6) | R-OD | request | no | — | no wire schema yet |
 | `EnhancementAttemptRequest` | R-OD | request | no | — | 6 |
+| `EnhancementPreviewRequest` | R-OD | request | no | — | 2 |
+| `CancelEnhancement` | R-OD | request | no | — | 0 |
 | `AllocateFreePointRequest` | R-OD | request | no | `AllocateFreePoint` | no wire schema yet |
 | `SetTarget` | R-OD | request | no | — | 4 |
 | `LootBidRequest` | R-OD | request | no | — | 8 |
@@ -95,7 +97,8 @@ Notes on the table:
 - **`ZoneSnapshotRequest`** is connection-level: it belongs to zone entry, can arrive before the client is session-ready, and carries its own per-connection limit (`zone-instancing.md` CR-ZI-9).
 - **`HeartbeatMessage`** has the 10-byte envelope only, with no `SenderEntityID`. `SessionHandshake` is sent before the client has an entity; its schema is pending. Every other type in the table carries `SenderEntityID`.
 - **`RttProbeEcho`**: its body is the 4-byte `probeSequence` field of `networking-channel-contract.md` (CCR-3, EC-CCR-3). *(Note 2026-10-09: when this ADR was accepted, `networking-wire-protocol.md` still gave the type no body and this row said 0; the wire protocol was corrected the same day and the bound follows it. No decision changes.)*
-- **`EnhancementAttemptRequest`**: its body is 6 bytes — `requestId`, `itemSlotIndex`, `scrollSlotIndex`. *(Note 2026-10-09: when this ADR was accepted the wire protocol still had the item-id based 12-byte body and this row said 12; the TD-046 amendment of `networking-wire-protocol.md` made it slot based the same day and the bound follows it. No decision changes. The same amendment adds two inbound request types this table does not list yet — `EnhancementPreviewRequest` (2-byte body) and `CancelEnhancement` (no body); whether they are held is not decided here and must be before Enhancement Story 010 starts.)*
+- **`EnhancementAttemptRequest`**: its body is 6 bytes — `requestId`, `itemSlotIndex`, `scrollSlotIndex`. *(Note 2026-10-09: when this ADR was accepted the wire protocol still had the item-id based 12-byte body and this row said 12; the TD-046 amendment of `networking-wire-protocol.md` made it slot based the same day and the bound follows it. No decision changes.)*
+- **`EnhancementPreviewRequest` and `CancelEnhancement` are not held** *(rows added 2026-10-09; user decision 2026-10-09; both types come from the TD-046 amendment of `networking-wire-protocol.md`; no decision changes)*. Neither changes a character's bag, equipment or gold. A preview that arrives while the character's own attempt is pending is answered at once: the CR-ENH-15 step 2 checks it runs include the attempt-in-progress check, so the answer is `EnhancementPreviewRejected` with `RejectedConcurrentAttempt` and no uncommitted bag content is sent. `CancelEnhancement` changes no state and has no response. The preview carries no rate-limited tag: the wire protocol cites ADR-001's general limit of 10 requests per second per character for it, as it does for `BuyRequest`, `SellRequest` and `UseItemRequest`, and none of the four has a tag here.
 
 ### Decision 2 — Intake: the adapter and the inbox
 - The adapter is the only code that touches the transport's receive API. In its callback it checks that the message is 10 to `MAX_INBOUND_MESSAGE_BYTES` (default 400) bytes long and calls `IInboundMessageIntake.TryAccept(clientId, message)`. It decodes nothing and calls no game system, no guard and no handler.

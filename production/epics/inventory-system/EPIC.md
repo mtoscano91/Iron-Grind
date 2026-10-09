@@ -3,8 +3,8 @@
 > **Layer**: Core
 > **GDD**: design/gdd/inventory-system.md
 > **Architecture Module**: Inventory
-> **Status**: Complete (11/11 — Stories 001–009 Complete 2026-10-01; Story 010 Complete 2026-10-07; Story 011, the ADR-012 assembly move, Complete 2026-10-08)
-> **Stories**: 9 stories created 2026-09-25 (all Complete 2026-10-01); Story 010 created 2026-10-01 (Complete 2026-10-07); Story 011 created and Complete 2026-10-08
+> **Status**: In Progress (11/12 — Stories 001–009 Complete 2026-10-01; Story 010 Complete 2026-10-07; Story 011, the ADR-012 assembly move, Complete 2026-10-08; Story 012, the owner inventory sync messages of the TD-046 amendment, Not Started — `/story-readiness` pending)
+> **Stories**: 9 stories created 2026-09-25 (all Complete 2026-10-01); Story 010 created 2026-10-01 (Complete 2026-10-07); Story 011 created and Complete 2026-10-08; Story 012 created 2026-10-09
 
 ## Overview
 
@@ -49,13 +49,16 @@ This epic is complete when:
 | 009 | [InventorySnapshot Save/Load & Load Validation](story-009-snapshot-save-load.md) | Logic | Complete | ADR-006, ADR-010 |
 | 010 | [Per-Slot Enhancement Level](story-010-enhancement-level.md) | Logic | Complete | ADR-010, ADR-006 (Amendment 1) |
 | 011 | [Move Inventory to the Server Assembly](story-011-server-assembly-move.md) | Integration | Complete (2026-10-08) | ADR-012 |
+| 012 | [Owner Inventory Sync Messages](story-012-owner-inventory-sync.md) | Integration | Not Started (written 2026-10-09; `/story-readiness` pending) | ADR-012, ADR-010, ADR-004 |
 
 **GDD AC coverage**: 17 of the original 18 blocking ACs are Complete; the GDD now has 24 (AC-INV-17–22 added 2026-10-01 for the per-slot enhancement level — all six belong to Story 010), and Story 010 closed 2026-10-07, so coverage is 23 of 24. **AC-INV-11** (tapping a consumable opens the detail view without consuming) is pure UI — **deferred to a future Inventory UI epic** (Inventory UI GDD and `design/ux/inventory-screen.md` not yet authored). AC-INV-10 is covered on the inventory side only (Story 007); its "equipped item stays equipped" half belongs to the Equipment System epic.
 
 **Open questions to resolve at `/story-readiness`**: ~~(1) Story 001 — `InventoryChangedEvent` payload shape vs ADR-010~~ — RESOLVED 2026-09-25 (reused-buffer `readonly struct` + struct enumerator + re-entrancy guard, see Story 001); ~~(2) Story 006 — moving a consumable onto a different item~~ — RESOLVED 2026-09-27: swap (any category); full-destination merge = no-op success; empty source → InvalidSlot; GDD Rule 7.20 + AC-INV-9 (SourceLocked/DestLocked) updated; plus smaller confirmations noted in Stories 004 (RemoveItem on unlocked slots — RESOLVED 2026-09-26: allowed, required by Enhancement CR-ENH-15 step 4; scroll-stack conflict logged as TD-043), 007 (dedup — RESOLVED 2026-09-26 via Story 003: ForceInsert reuses the shared dedup helper), 008 (RESOLVED 2026-10-01: `SellItem` takes a `quantity` — partial-stack sells per NPC Shop CR-SHOP-7/8, GDD Interactions row + AC-INV-16 updated; `ConsumeItem` skips locked slots — GDD Rule 5.12 updated), 009 (RESOLVED 2026-10-01: import fires no events; `ImportSnapshot` returns `bool` and refuses to run before the Item Database is ready; over-limit quantities load as-is with a warning; `UnregisterCharacter` added to close TD-042; missing per-item `EnhancementLevel` logged as TD-045). Story 003 time source DECIDED 2026-09-26: server ticks via injected `Func<uint>`, window = 600 ticks.
 
-**Out of scope for this epic**: wire-protocol codecs for inventory messages (Networking), Equipment/Loot Table/Persistence/NPC Shop orchestration (their own epics).
+**Out of scope for this epic**: wire-protocol codecs for inventory messages (Networking) — except `InventorySlotUpdate` and `InventoryFullSync`, which are Story 012 (user decision 2026-10-09); Equipment/Loot Table/Persistence/NPC Shop orchestration (their own epics).
 
 ## Next Step
+
+**2026-10-09:** Story 012 (Owner Inventory Sync Messages) was added after the TD-046 wire-protocol amendment; run `/story-readiness` on it. Enhancement Story 015 depends on it.
 
 All ten stories are Complete (001–009 on 2026-10-01, Story 010 — Per-Slot Enhancement Level — on 2026-10-07). The inventory side of the per-slot enhancement level is in code, so the Enhancement and Equipment epics are no longer blocked by this epic. AC-INV-11 remains deferred to the Inventory UI epic.

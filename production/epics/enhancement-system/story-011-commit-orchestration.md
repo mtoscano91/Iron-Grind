@@ -1,7 +1,7 @@
 # Story 011: Commit Orchestration
 
 > **Epic**: Enhancement System
-> **Status**: Blocked — **(1) the Character Persistence implementation of `SaveIrreversibleOutcome` does not exist; (2) for the client-facing criteria, the TD-046 wire-protocol amendment. How tick code consumes the asynchronous commit is decided by ADR-011 (Accepted 2026-10-07).**
+> **Status**: Blocked — **(1) the Character Persistence implementation of `SaveIrreversibleOutcome` does not exist; (2) ~~for the client-facing criteria, the TD-046 wire-protocol amendment~~ — closed in design 2026-10-09; what a client receives is Story 015. How tick code consumes the asynchronous commit is decided by ADR-011 (Accepted 2026-10-07).**
 > **Layer**: Feature
 > **Type**: Integration
 > **Manifest Version**: 2026-06-28
@@ -35,7 +35,7 @@
    - Candidates: (a) an orchestrator over the existing synchronous sequencer (blocks the tick during the write); (b) an asynchronous overload of the sequencer, with a stated rule for where the continuation runs; (c) a small completion queue drained on the tick thread, so the write runs off-thread and `CompleteAttempt` / `RollBackAttempt` are called on the tick.
    - The same question applies to the other callers of `SaveIrreversibleOutcome` (level-up, respec, item consumption) and to OQ-ENH-7 (which layer holds a character's other requests while the write is in flight). It should be decided once — `/architecture-decision`.
 2. **Character Persistence is not implemented** and has no epic. This story can be tested against a fake of its interface, but it cannot be closed against the real one.
-3. **TD-046** blocks the criteria that mention what a client receives. If this story is wanted before TD-046 closes, those criteria can stay with Story 010 and this story can end at "the result is handed to the delivery seam only after a successful commit".
+3. **TD-046** blocks the criteria that mention what a client receives. If this story is wanted before TD-046 closes, those criteria can stay with Story 010 and this story can end at "the result is handed to the delivery seam only after a successful commit". **Update 2026-10-09:** TD-046 is resolved in design (`networking-wire-protocol.md` Approved). The client-facing delivery is Story 015 (split out of Story 010); this story ends at the delivery seam.
 
 ---
 
@@ -70,7 +70,7 @@
 - Story 004 / Story 005: the service's own behaviour in each phase and its rollback
 - Story 007: the events themselves
 - Story 009: holding other inventory-mutating requests during the write (AC-ENH-38) — likely decided by the same ADR
-- Story 010: wire handlers and message encoding
+- Story 010: message encoding and the request handlers; Story 015: what a client receives after the commit
 - Character Persistence epic: the real `SaveIrreversibleOutcome`, CR-CP-5's disconnect and session preservation, AC-ENH-2
 
 ---
@@ -102,5 +102,5 @@
 
 ## Dependencies
 
-- Depends on: **the tick-loop/async-persistence decision (blocking)**; **Character Persistence implementation (blocking for closure)**; Story 005 (`RollBackAttempt`); Story 007 for the event-order check; TD-046 for the client-facing criteria
-- Unlocks: Story 009 (shares the decision), Story 010 (result delivery)
+- Depends on: **the tick-loop/async-persistence decision (blocking)**; **Character Persistence implementation (blocking for closure)**; Story 005 (`RollBackAttempt`); Story 007 for the event-order check
+- Unlocks: Story 015 (result delivery; split out of Story 010 on 2026-10-09). Story 009 no longer depends on this story (Complete 2026-10-09).
