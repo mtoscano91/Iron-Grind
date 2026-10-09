@@ -84,7 +84,7 @@ ADR-011 Decision 4 relies on "the session's inbound request dispatcher — the s
 | `SkillCastRequest` | U-U | request | no | `NotifySkillUsed` | 16 |
 | `SessionHandshake` | R-OD | connection-level | — | — | schema pending (OQ-NC-SER-2) |
 | `HeartbeatMessage` | U-U | connection-level | — | — | 0 |
-| `RttProbeEcho` | U-U | connection-level | — | — | 0 |
+| `RttProbeEcho` | U-U | connection-level | — | — | 4 |
 | `ClientBackgrounded` / `ClientForegrounded` | R-OD | connection-level | — | — | 0 |
 | `ZoneSnapshotRequest` | R-OD | connection-level | — | — | 8 |
 
@@ -94,7 +94,7 @@ Notes on the table:
 - **`AllocateFreePointRequest`** is rate-limited, so it cannot be a held type (Decision 3). It does not touch the bag.
 - **`ZoneSnapshotRequest`** is connection-level: it belongs to zone entry, can arrive before the client is session-ready, and carries its own per-connection limit (`zone-instancing.md` CR-ZI-9).
 - **`HeartbeatMessage`** has the 10-byte envelope only, with no `SenderEntityID`. `SessionHandshake` is sent before the client has an entity; its schema is pending. Every other type in the table carries `SenderEntityID`.
-- **`RttProbeEcho`**: `networking-wire-protocol.md` gives it no body; `networking-channel-contract.md` (line 124) gives it a `probeSequence` field. The body bound follows whichever the GDDs settle on.
+- **`RttProbeEcho`**: its body is the 4-byte `probeSequence` field of `networking-channel-contract.md` (CCR-3, EC-CCR-3). *(Note 2026-10-09: when this ADR was accepted, `networking-wire-protocol.md` still gave the type no body and this row said 0; the wire protocol was corrected the same day and the bound follows it. No decision changes.)*
 
 ### Decision 2 — Intake: the adapter and the inbox
 - The adapter is the only code that touches the transport's receive API. In its callback it checks that the message is 10 to `MAX_INBOUND_MESSAGE_BYTES` (default 400) bytes long and calls `IInboundMessageIntake.TryAccept(clientId, message)`. It decodes nothing and calls no game system, no guard and no handler.

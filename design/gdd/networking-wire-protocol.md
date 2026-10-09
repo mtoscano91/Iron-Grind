@@ -2,7 +2,7 @@
 
 > **Status**: Approved (Pass 4 lean, 2026-05-12; ghost session amendment 2026-05-14; wire schema additions 2026-05-17; Zone Instancing amendment 2026-05-29; CSP amendment 2026-06-14)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-10-03 (`BagFullPickupBlocked` note: also sent for the auction winner grace, loot-table-system.md CR-LT-9.1; `remainingTicks` is then the grace remaining; no schema or size change); 2026-10-03 (`GoldTransactionReason` enum block: `AuctionBid = 9` added; `CompensatingRefund = 8` listed — it was in the registry and the code but missing here; no schema or size change); 2026-10-01 (TD-045 amendment: `MoveResult` gains per-slot enhancement-level bytes (22-byte body); `EquipRequest` gains `inventorySlot` (10-byte body) — an ItemID alone cannot distinguish same-type items at different enhancement levels; `EquipResult` gains `slotEnhancementLevel` (12-byte body); `EquipFailReason` comments aligned with the rewritten equipment-system.md CR-EQS-8.) Previous: 2026-06-14 (CSP amendment: `SelfPositionUpdate` added to R-U batch — per-tick authoritative self-position delivery for client-side prediction reconciliation. Resolves CR-CSP-7 data-source gap. Channel: R-U (not U-U) — reconciliation most critical under packet loss. Body: 10B; batch: 14B; Scenario C R-U batch 332B (no overflow; 180B headroom). F-NET-1/F-NET-2 updated. Prior: Zone Instancing amendment 2026-05-29; OQ-CUS-1 amendment 2026-06-11.)
+> **Last Updated**: 2026-10-09 (`RttProbeEcho` gains the 4-byte `probeSequence` body already defined by networking-channel-contract.md CCR-3 and EC-CCR-3 — propagation fix, 18 bytes standalone; F-NET-7 echo row ~1.8 bytes/s; no status change, no re-review by user decision). Previously: 2026-10-03 (`BagFullPickupBlocked` note: also sent for the auction winner grace, loot-table-system.md CR-LT-9.1; `remainingTicks` is then the grace remaining; no schema or size change); 2026-10-03 (`GoldTransactionReason` enum block: `AuctionBid = 9` added; `CompensatingRefund = 8` listed — it was in the registry and the code but missing here; no schema or size change); 2026-10-01 (TD-045 amendment: `MoveResult` gains per-slot enhancement-level bytes (22-byte body); `EquipRequest` gains `inventorySlot` (10-byte body) — an ItemID alone cannot distinguish same-type items at different enhancement levels; `EquipResult` gains `slotEnhancementLevel` (12-byte body); `EquipFailReason` comments aligned with the rewritten equipment-system.md CR-EQS-8.) Previous: 2026-06-14 (CSP amendment: `SelfPositionUpdate` added to R-U batch — per-tick authoritative self-position delivery for client-side prediction reconciliation. Resolves CR-CSP-7 data-source gap. Channel: R-U (not U-U) — reconciliation most critical under packet loss. Body: 10B; batch: 14B; Scenario C R-U batch 332B (no overflow; 180B headroom). F-NET-1/F-NET-2 updated. Prior: Zone Instancing amendment 2026-05-29; OQ-CUS-1 amendment 2026-06-11.)
 > **Parent**: networking-core.md
 
 ## Overview
@@ -1270,13 +1270,15 @@ RttProbe {
 }
 ```
 
-**RttProbeEcho** (client → server, no body beyond standard extension; 14 bytes standalone):
+**RttProbeEcho** (client → server, 4-byte body; 18 bytes standalone):
 ```
 RttProbeEcho {
-    // No body. Wire size = 14 bytes (10B envelope + 4B SenderEntityID per CR-NET-7.1).
+    uint probeSequence;  // 4 bytes — the envelope SequenceNumber of the RttProbe being echoed
+    // Wire size = 18 bytes (10B envelope + 4B SenderEntityID per CR-NET-7.1 + 4B body).
     // Client echoes immediately on receipt of any RttProbe.
 }
 ```
+*The server correlates an echo with its probe by `probeSequence`, not by the echo's own envelope `SequenceNumber` (which comes from the client's shared per-connection counter, CR-NET-7.1). An echo whose `probeSequence` matches no outstanding probe is discarded silently. Defined by `networking-channel-contract.md` CCR-3 and EC-CCR-3.*
 
 ---
 
@@ -1588,11 +1590,11 @@ Per-client inbound (steady-state combat, client → server direction, 14-byte en
 | Message | Rate | Bytes/s |
 |---------|------|---------|
 | `NotifySkillUsed` | ~1 per beat = ~1/s | ~14 bytes/s |
-| `RttProbe` echo | 1 per `RTT_PROBE_INTERVAL_SECONDS` (10s) | ~1.4 bytes/s |
+| `RttProbe` echo (18 bytes: envelope + `probeSequence`) | 1 per `RTT_PROBE_INTERVAL_SECONDS` (10s) | ~1.8 bytes/s |
 | `HeartbeatMessage` (GAP-1) | ~1 per `HEARTBEAT_INTERVAL_SECONDS` (~3–4s) | ~2.5–3.3 bytes/s |
 | `MovementIntentMessage` | 20 Hz (one per tick; suppressed when no input active) | ~480 bytes/s while moving |
-| **Baseline (no movement)** | — | **~18 bytes/s per client** |
-| **Active movement** | — | **~498 bytes/s per client** |
+| **Baseline (no movement)** | — | **~18–19 bytes/s per client** |
+| **Active movement** | — | **~498–499 bytes/s per client** |
 
 At 50 players (all moving): 498 × 50 = **~24.9 KB/s inbound total per zone** — still negligible relative to outbound (~25.8 KB/s outbound per client at Scenario C). Movement GDD confirmed 20 Hz rate; estimate is now final (2026-05-26).
 
