@@ -28,11 +28,15 @@ namespace IronGrind.Networking
     /// <see cref="ServerTickLoop.RegisterTickDriven"/>).
     /// </para>
     /// <para>
-    /// <b>Zero allocation on the reject path (Performance Budget):</b> every guard is an O(1)
-    /// dictionary/hash-set lookup or a tick-number comparison — no string formatting, boxing, or
-    /// collection allocation occurs until <see cref="Debug.LogWarning(object)"/> is called on a
-    /// rejection, which is expected and accepted (an anomaly log is required by every rejecting AC;
-    /// it is not on any accept-path hot loop).
+    /// <b>Allocation and logging (Performance Budget, ADR-014 Decision 4a):</b> every guard is an
+    /// O(1) dictionary/hash-set lookup or a tick-number comparison, so the accept path allocates
+    /// nothing. A rejection logs an anomaly through <see cref="Debug.LogWarning(object)"/> only the
+    /// first time per <c>(client id, result)</c> pair per tick; every further rejection with the same
+    /// pair on that tick only increments a counter (no string is built). The counts are reported in
+    /// one summary line per tick, by <see cref="FlushRejectionSummary"/> or when
+    /// <see cref="Evaluate"/> first sees a different tick. The throttle storage is created once with
+    /// the chain and reused. Return values and the <c>OnSkillUsedRateLimitRejected</c> observer hook
+    /// are never throttled.
     /// </para>
     /// <para>
     /// <b>Guard order matters and is exercised by this story's own pipeline-ordering tests:</b> an
@@ -108,6 +112,21 @@ namespace IronGrind.Networking
 
         // Guard 3 registry: the last accepted tick per (EntityID, RpcTypeTag) pair.
         private readonly Dictionary<(EntityID entityId, RpcTypeTag rpcTypeTag), uint> _lastAcceptedTick = new();
+
+        // Rejection-log throttle (ADR-014 Decision 4a). Created once, cleared per tick, never
+        // recreated. _throttleTick is the tick the pairs and counts below belong to.
+        // The pair (client id, result) is packed into one ulong — client id in the high bits, the
+        // byte-sized result in the low 8 — so the set never hashes an enum (possible boxing under
+        // IL2CPP, cf. CharacterStats). Pre-sized for every client of a zone rejecting with every
+        // rejecting result, so the set does not grow on a rejection.
+        private const int RejectingResultCount = 4;
+        private const int ThrottlePairCapacity = ZoneBufferPool.MAX_PLAYERS_PER_ZONE * RejectingResultCount;
+        private uint _throttleTick;
+        private readonly HashSet<ulong> _loggedThisTick = new(ThrottlePairCapacity);
+        private int _suppressedUnknownEntity;
+        private int _suppressedSessionNotReady;
+        private int _suppressedRateLimited;
+        private int _suppressedNotOwner;
 
         /// <summary>
         /// Registers <paramref name="entityId"/> as owned by <paramref name="clientId"/> (ADR-004
@@ -191,12 +210,71 @@ namespace IronGrind.Networking
         }
 
         /// <summary>
+        /// Read-only liveness query: true when <paramref name="entityId"/> is registered, owned by
+        /// <paramref name="clientId"/>, and <paramref name="clientId"/> is session-ready. Writes
+        /// nothing and logs nothing, so a caller can re-check a held request without spending a
+        /// rate-limit slot. It does not know about connections a dispatcher has marked removed.
+        /// </summary>
+        /// <param name="clientId">The connection identity expected to own the entity.</param>
+        /// <param name="entityId">The entity to check.</param>
+        /// <example>
+        /// <code>
+        /// if (guardChain.IsLiveOwner(clientId: 7, entityId: myEntityId))
+        /// {
+        ///     // the held request may still be delivered
+        /// }
+        /// </code>
+        /// </example>
+        public bool IsLiveOwner(uint clientId, EntityID entityId)
+        {
+            return _entityOwners.TryGetValue(entityId, out uint ownerClientId)
+                && ownerClientId == clientId
+                && _sessionReadyClients.Contains(clientId);
+        }
+
+        /// <summary>
+        /// Returns whether <paramref name="rpcTypeTag"/> has a rate limit (a required tick gap above 0).
+        /// Throws <see cref="ArgumentOutOfRangeException"/> for a value that is not an
+        /// <see cref="RpcTypeTag"/> member.
+        /// </summary>
+        /// <param name="rpcTypeTag">The tag to query.</param>
+        /// <example>
+        /// <code>
+        /// bool limited = CrossCuttingRpcGuardChain.IsRateLimited(RpcTypeTag.NotifySkillUsed); // true
+        /// </code>
+        /// </example>
+        public static bool IsRateLimited(RpcTypeTag rpcTypeTag)
+        {
+            return GetRequiredTickGap(rpcTypeTag) > 0;
+        }
+
+        /// <summary>
+        /// Logs one warning with the number of rejections whose log was suppressed on the current
+        /// throttle tick, per result, then zeroes the counts. Logs nothing when nothing was
+        /// suppressed. Only the counts are cleared: the <c>(client id, result)</c> pairs already
+        /// logged stay until the tick changes, so a further rejection with the same pair on the same
+        /// tick is counted, not logged in full.
+        /// </summary>
+        /// <example>
+        /// <code>
+        /// // at the end of the tick's dispatch:
+        /// guardChain.FlushRejectionSummary();
+        /// </code>
+        /// </example>
+        public void FlushRejectionSummary()
+        {
+            LogSummaryAndZeroCounts();
+        }
+
+        /// <summary>
         /// Runs <paramref name="descriptor"/> through the four-stage guard pipeline (EntityID
-        /// validity → session-ready → rate limit → ownership) and returns the outcome. Never throws
-        /// on a rejecting path; never forwards to game logic itself (that remains the caller's
-        /// responsibility once <see cref="RpcGuardResult.Accepted"/> is returned). Every rejection
-        /// logs an anomaly via <see cref="Debug.LogWarning(object)"/>, per this story's every
-        /// blocking AC.
+        /// validity → session-ready → rate limit → ownership) and returns the outcome. Throws
+        /// <see cref="ArgumentOutOfRangeException"/> only for an <see cref="RpcTypeTag"/> value that
+        /// is not an enum member; never forwards to game logic itself (that remains the caller's
+        /// responsibility once <see cref="RpcGuardResult.Accepted"/> is returned). A rejection logs
+        /// an anomaly via <see cref="Debug.LogWarning(object)"/> the first time per
+        /// <c>(client id, result)</c> pair per tick; further identical rejections on that tick are
+        /// counted and reported by <see cref="FlushRejectionSummary"/> or when a later tick is seen.
         /// </summary>
         /// <param name="descriptor">The inbound RPC to evaluate.</param>
         /// <param name="observer">
@@ -231,13 +309,25 @@ namespace IronGrind.Networking
 #endif
             )
         {
+            // A different tick starts a new throttle window: report the earlier tick's suppressed
+            // rejections first, then clear the pairs and counts.
+            if (descriptor.CurrentTick != _throttleTick)
+            {
+                LogSummaryAndZeroCounts();
+                _loggedThisTick.Clear();
+                _throttleTick = descriptor.CurrentTick;
+            }
+
             // Guard 1: EntityID validity (Cross-Cutting Constraint 1). Unknown EntityID -> drop,
             // regardless of session-ready/rate-limit/ownership state.
             if (!_entityOwners.TryGetValue(descriptor.SenderEntityId, out uint ownerClientId))
             {
-                Debug.LogWarning($"[CrossCuttingRpcGuardChain] Evaluate: RPC tag={descriptor.RpcTypeTag} from " +
-                    $"clientId={descriptor.ClientId} references unknown EntityID {descriptor.SenderEntityId} — " +
-                    "dropping, not forwarded to game logic (Cross-Cutting Constraint 1).");
+                if (ShouldLogInFull(descriptor.ClientId, RpcGuardResult.RejectedUnknownEntity))
+                {
+                    Debug.LogWarning($"[CrossCuttingRpcGuardChain] Evaluate: RPC tag={descriptor.RpcTypeTag} from " +
+                        $"clientId={descriptor.ClientId} references unknown EntityID {descriptor.SenderEntityId} — " +
+                        "dropping, not forwarded to game logic (Cross-Cutting Constraint 1).");
+                }
                 return RpcGuardResult.RejectedUnknownEntity;
             }
 
@@ -245,25 +335,32 @@ namespace IronGrind.Networking
             // once SessionReady is later sent.
             if (!_sessionReadyClients.Contains(descriptor.ClientId))
             {
-                Debug.LogWarning($"[CrossCuttingRpcGuardChain] Evaluate: RPC tag={descriptor.RpcTypeTag} from " +
-                    $"clientId={descriptor.ClientId} arrived before SessionReady — dropping, not queued " +
-                    "(Cross-Cutting Constraint 2, AC-NC-23).");
+                if (ShouldLogInFull(descriptor.ClientId, RpcGuardResult.RejectedSessionNotReady))
+                {
+                    Debug.LogWarning($"[CrossCuttingRpcGuardChain] Evaluate: RPC tag={descriptor.RpcTypeTag} from " +
+                        $"clientId={descriptor.ClientId} arrived before SessionReady — dropping, not queued " +
+                        "(Cross-Cutting Constraint 2, AC-NC-23).");
+                }
                 return RpcGuardResult.RejectedSessionNotReady;
             }
 
             // Guard 3: rate limit (Cross-Cutting Constraint 3, AC-NC-20, AC-NC-46). Tick-based only —
-            // see class remarks for the StaleDiscardComparer.IsTickExpired reuse.
+            // see class remarks for the StaleDiscardComparer.IsTickExpired reuse. A gap of 0 means
+            // no rate limit: the last-accepted-tick read and write are both skipped.
             var rateLimitKey = (entityId: descriptor.SenderEntityId, rpcTypeTag: descriptor.RpcTypeTag);
             int requiredTickGap = GetRequiredTickGap(descriptor.RpcTypeTag);
-            if (_lastAcceptedTick.TryGetValue(rateLimitKey, out uint lastAcceptedTick))
+            if (requiredTickGap > 0 && _lastAcceptedTick.TryGetValue(rateLimitKey, out uint lastAcceptedTick))
             {
                 uint requiredTick = lastAcceptedTick + (uint)requiredTickGap;
                 if (!StaleDiscardComparer.IsTickExpired(descriptor.CurrentTick, requiredTick))
                 {
-                    Debug.LogWarning($"[CrossCuttingRpcGuardChain] Evaluate: RPC tag={descriptor.RpcTypeTag} from " +
-                        $"clientId={descriptor.ClientId} rejected — RateLimitExceeded (last accepted tick " +
-                        $"{lastAcceptedTick}, required gap {requiredTickGap} ticks, current tick " +
-                        $"{descriptor.CurrentTick}).");
+                    if (ShouldLogInFull(descriptor.ClientId, RpcGuardResult.RejectedRateLimited))
+                    {
+                        Debug.LogWarning($"[CrossCuttingRpcGuardChain] Evaluate: RPC tag={descriptor.RpcTypeTag} from " +
+                            $"clientId={descriptor.ClientId} rejected — RateLimitExceeded (last accepted tick " +
+                            $"{lastAcceptedTick}, required gap {requiredTickGap} ticks, current tick " +
+                            $"{descriptor.CurrentTick}).");
+                    }
 
 #if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
                     if (descriptor.RpcTypeTag == RpcTypeTag.NotifySkillUsed)
@@ -280,21 +377,77 @@ namespace IronGrind.Networking
             // the sending connection.
             if (ownerClientId != descriptor.ClientId)
             {
-                Debug.LogWarning($"[CrossCuttingRpcGuardChain] Evaluate: RPC tag={descriptor.RpcTypeTag} from " +
-                    $"clientId={descriptor.ClientId} references EntityID {descriptor.SenderEntityId} owned by " +
-                    $"clientId={ownerClientId} — dropping, not forwarded to game logic (AC-NC-02).");
+                if (ShouldLogInFull(descriptor.ClientId, RpcGuardResult.RejectedNotOwner))
+                {
+                    Debug.LogWarning($"[CrossCuttingRpcGuardChain] Evaluate: RPC tag={descriptor.RpcTypeTag} from " +
+                        $"clientId={descriptor.ClientId} references EntityID {descriptor.SenderEntityId} owned by " +
+                        $"clientId={ownerClientId} — dropping, not forwarded to game logic (AC-NC-02).");
+                }
                 return RpcGuardResult.RejectedNotOwner;
             }
 
-            _lastAcceptedTick[rateLimitKey] = descriptor.CurrentTick;
+            if (requiredTickGap > 0)
+            {
+                _lastAcceptedTick[rateLimitKey] = descriptor.CurrentTick;
+            }
             return RpcGuardResult.Accepted;
         }
 
+        // Decides between "log in full" and "count". Returns true for the first rejection of a
+        // (client, result) pair on the throttle's tick; otherwise increments that result's counter
+        // and returns false. Callers build the log message only inside the true branch.
+        private bool ShouldLogInFull(uint clientId, RpcGuardResult result)
+        {
+            if (_loggedThisTick.Add(((ulong)clientId << 8) | (byte)result))
+            {
+                return true;
+            }
+
+            switch (result)
+            {
+                case RpcGuardResult.RejectedUnknownEntity:
+                    _suppressedUnknownEntity++;
+                    break;
+                case RpcGuardResult.RejectedSessionNotReady:
+                    _suppressedSessionNotReady++;
+                    break;
+                case RpcGuardResult.RejectedRateLimited:
+                    _suppressedRateLimited++;
+                    break;
+                case RpcGuardResult.RejectedNotOwner:
+                    _suppressedNotOwner++;
+                    break;
+            }
+            return false;
+        }
+
+        // Shared by FlushRejectionSummary and the tick-change path in Evaluate. Logs one line if
+        // anything was suppressed, then zeroes the counts (the logged pairs are left untouched).
+        private void LogSummaryAndZeroCounts()
+        {
+            int total = _suppressedUnknownEntity + _suppressedSessionNotReady
+                + _suppressedRateLimited + _suppressedNotOwner;
+            if (total == 0)
+            {
+                return;
+            }
+
+            Debug.LogWarning($"[CrossCuttingRpcGuardChain] Tick {_throttleTick}: {total} further rejections not logged " +
+                $"(UnknownEntity={_suppressedUnknownEntity}, SessionNotReady={_suppressedSessionNotReady}, " +
+                $"RateLimited={_suppressedRateLimited}, NotOwner={_suppressedNotOwner}).");
+
+            _suppressedUnknownEntity = 0;
+            _suppressedSessionNotReady = 0;
+            _suppressedRateLimited = 0;
+            _suppressedNotOwner = 0;
+        }
+
         /// <summary>
-        /// Resolves the minimum inter-request tick gap for <paramref name="rpcTypeTag"/>. Only the
-        /// two rate-limit buckets this story defines are recognized; an unrecognized value throws
-        /// rather than silently defaulting, since a new <see cref="RpcTypeTag"/> member added later
-        /// without a corresponding rate limit here would otherwise silently bypass rate limiting.
+        /// Resolves the minimum inter-request tick gap for <paramref name="rpcTypeTag"/>; 0 means no
+        /// rate limit. Every <see cref="RpcTypeTag"/> member is listed. A value that is not a member
+        /// throws, and a test enumerates the enum so that a new member without a
+        /// <c>case</c> here fails the suite instead of silently bypassing rate limiting (ADR-014
+        /// Decision 4a).
         /// </summary>
         private static int GetRequiredTickGap(RpcTypeTag rpcTypeTag)
         {
@@ -306,10 +459,9 @@ namespace IronGrind.Networking
                     return NotifySkillUsedRateLimitTicks;
                 case RpcTypeTag.SetTarget:
                     // No rate limit at MVP (networking-core.md Cross-Cutting Constraint 3: "All other
-                    // RPCs: no rate limit specified at MVP", Story 029). A gap of 0 means
-                    // unconstrained: StaleDiscardComparer.IsTickExpired(currentTick, lastAcceptedTick + 0)
-                    // returns true whenever currentTick >= lastAcceptedTick, which always holds for a
-                    // monotonic tick loop — so gap=0 never rejects on rate-limit grounds.
+                    // RPCs: no rate limit specified at MVP", Story 029). A gap of 0 means no rate
+                    // limit: Evaluate neither reads nor writes _lastAcceptedTick for this tag, so it
+                    // never rejects on rate-limit grounds (ADR-014 Decision 4a).
                     return 0;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(rpcTypeTag), rpcTypeTag,

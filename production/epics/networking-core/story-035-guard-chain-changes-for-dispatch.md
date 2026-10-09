@@ -1,7 +1,7 @@
 # Story 035: Guard Chain Changes for the Request Dispatcher
 
 > **Epic**: Networking Core
-> **Status**: Draft
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Logic
 > **Manifest Version**: 2026-10-09
@@ -40,7 +40,7 @@
 - [ ] **Every member is listed**: `GetRequiredTickGap` has one `case` per `RpcTypeTag` member. The `default` branch still throws `ArgumentOutOfRangeException` (a value cast from a number outside the enum).
 - [ ] **Enumeration test**: a test iterates `Enum.GetValues(typeof(RpcTypeTag))`; for each member, `Evaluate` on an owned, session-ready entity returns `Accepted` and does not throw. The test needs no edit when a member is added, and fails if the new member has no `case`.
 - [ ] **Gap 0 skips the rate-limit state**: for a tag whose gap is 0, `Evaluate` neither reads nor writes the last-accepted tick. Any number of requests with that tag, for one entity on one tick, are all `Accepted`.
-- [ ] **`IsRateLimited`**: `public static bool IsRateLimited(RpcTypeTag tag)` is true exactly when the tag's gap is above 0 — true for `AllocateFreePoint` and `NotifySkillUsed`, false for `SetTarget`. *(Not named in ADR-014; added 2026-10-09 because Decision 3 makes the dispatcher refuse a held type that "carries a rate-limited tag", and the gap is private to the chain.)*
+- [ ] **`IsRateLimited`**: `public static bool IsRateLimited(RpcTypeTag tag)` is true exactly when the tag's gap is above 0 — true for `AllocateFreePoint` and `NotifySkillUsed`, false for `SetTarget`. *(Not named in ADR-014; added 2026-10-09 because Decision 3 makes the dispatcher refuse a held type that "carries a rate-limited tag", and the gap is private to the chain. Approved by the user at `/story-readiness` 2026-10-09.)*
 
 **`IsLiveOwner`**
 
@@ -53,7 +53,7 @@
 - [ ] **First in full**: the first rejection for a given (client id, `RpcGuardResult`) on a given tick is logged with the same text as today.
 - [ ] **The rest are counted**: a further rejection with the same (client id, result) on the same tick produces no log message. The return value is the same as today for every rejection.
 - [ ] **Different keys are independent**: on one tick, a second result for the same client, and the same result for a second client, are each logged in full.
-- [ ] **One summary line per tick**: `FlushRejectionSummary()` logs one warning that gives the tick and the number of suppressed rejections per result, and clears the counts. It logs nothing when nothing was suppressed. *(ADR-014 says "reported in one line per tick" and names no trigger; decided 2026-10-09: an explicit method, which the dispatcher of Story 036 calls at the end of `DispatchTick`.)*
+- [ ] **One summary line per tick**: `FlushRejectionSummary()` logs one warning that gives the tick and the number of suppressed rejections per result, and clears the counts. It logs nothing when nothing was suppressed. *(ADR-014 says "reported in one line per tick" and names no trigger; decided 2026-10-09: an explicit method, which the dispatcher of Story 036 calls at the end of `DispatchTick`.)* It clears the counts only: the (client id, result) pairs already logged stay until the tick changes, so a further rejection with the same pair on the same tick, after the flush, is counted and not logged in full. *(User decision at `/story-readiness` 2026-10-09.)*
 - [ ] **A new tick starts again**: when `Evaluate` is called with a `CurrentTick` different from the tick of the stored throttle state, the pending summary of the earlier tick is logged first if any rejection was suppressed, then the state is cleared. The first rejection per (client, result) on the new tick is logged in full.
 - [ ] **The observer hook is not throttled**: `OnSkillUsedRateLimitRejected` fires for every rate-limited `NotifySkillUsed` rejection, including one whose log was suppressed.
 
@@ -74,7 +74,7 @@
 - **Summary line** (one `Debug.LogWarning`): `[CrossCuttingRpcGuardChain] Tick {tick}: {total} further rejections not logged (UnknownEntity={a}, SessionNotReady={b}, RateLimited={c}, NotOwner={d}).`
 - **Order inside `Evaluate`** when the tick changed: log the earlier tick's summary (if any), clear, then run the guards. The explicit `FlushRejectionSummary()` and this path share one private method.
 - **`IsRateLimited`**: `GetRequiredTickGap(tag) > 0`. `GetRequiredTickGap` itself stays private.
-- **Doc comments**: the class remarks say every rejection logs; correct them. Add doc comments with an example to `IsLiveOwner`, `IsRateLimited` and `FlushRejectionSummary`. `GetRequiredTickGap`'s summary still says "only the two rate-limit buckets"; correct it.
+- **Doc comments**: the class remarks say every rejection logs; correct them. Add doc comments with an example to `IsLiveOwner`, `IsRateLimited` and `FlushRejectionSummary`. `GetRequiredTickGap`'s summary still says "only the two rate-limit buckets"; correct it. `Evaluate`'s summary also says "Every rejection logs an anomaly"; correct it.
 - **If an existing test fails**: a test of `TickLoop_CrossCuttingGuards_tests.cs` that expected two full logs for one (client, result, tick) would now fail. None was found when this story was written (the two tests with repeated rejections on one tick set `LogAssert.ignoreFailingMessages`). If one fails, stop and report it; do not edit that file.
 
 ---
@@ -107,6 +107,7 @@
 **Throttle**
 - **Three identical rejections** — one client, not session-ready, three `Evaluate` on tick 10 → three `RejectedSessionNotReady`; 1 warning counted, and it matches the existing "arrived before SessionReady" text.
 - **Flush** — after the case above, `FlushRejectionSummary()` → 1 more warning; it contains `Tick 10`, `2 further rejections` and `SessionNotReady=2`. A second `FlushRejectionSummary()` → no further warning.
+- **Rejection after a flush, same tick** — three identical rejections on tick 10, flush, one more identical rejection on tick 10 → that rejection produces no warning; a second flush → 1 warning that contains `1 further rejections` and `SessionNotReady=1`.
 - **Flush with nothing suppressed** — one rejection, then flush → 1 warning in total.
 - **Two results, one client** — an unknown-entity rejection and a not-owner rejection for the same client on one tick → 2 full warnings.
 - **Two clients, one result** — the same result for clients 7 and 8 on one tick → 2 full warnings.
@@ -123,7 +124,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/Networking/TickLoop_CrossCuttingGuards_Dispatch_tests.cs` — must exist and pass; `tests/EditMode/Networking/TickLoop_CrossCuttingGuards_tests.cs` — unchanged, must still pass. The suite total before this story is 2059; record the total after it at `/story-done`.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — `tests/EditMode/Networking/TickLoop_CrossCuttingGuards_Dispatch_tests.cs` (24 tests); suite 2083 / 2083 on 2026-10-09
 
 ---
 
@@ -131,3 +132,21 @@
 
 - Depends on: Story 010 (Complete — `CrossCuttingRpcGuardChain`), Story 029 (Complete — the `SetTarget` tag). ADR-014 Accepted (2026-10-09).
 - Unlocks: Story 036 (Inbound Request Dispatcher).
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-09
+**Criteria**: 14/14 passing
+- Suite: 2083 total, 2083 passed, 0 failed (totals read from `TestResults.xml`, run of 2026-10-09 10:32 local, after the review fixes). `TickLoop_CrossCuttingGuards_Dispatch_Tests` 24/24; `TickLoop_CrossCuttingGuards_Tests` 23/23 with no diff on its file. No compile error.
+- "Gap 0 skips the rate-limit state": the behaviour (any number of requests accepted) is tested; that `_lastAcceptedTick` is neither read nor written is verified by reading the code only — it is not observable through the public API, and no reflection test was added.
+- Decisions taken at `/story-readiness` 2026-10-09: `IsRateLimited` kept; `FlushRejectionSummary()` clears the counts only.
+**Deviations** (advisory):
+- The story says one private method replaces the four inline `Debug.LogWarning` calls. The code has one private decision method (`ShouldLogInFull`) and the log call stays at the four sites, so each message is built only when it is logged.
+- The throttle key is one `ulong` (client id shifted left 8 bits, the result in the low byte) in a set pre-sized to `ZoneBufferPool.MAX_PLAYERS_PER_ZONE × 4`, not a set of (client id, result) pairs: no enum is hashed. From the code review.
+- 24 tests against 17 QA cases. Added beyond the list: the `default` branch throws (`Evaluate` and `IsRateLimited`), mixed results in one summary, an accepted request on a new tick logs the pending summary, false `IsLiveOwner` results log nothing.
+- `Evaluate` is about 90 lines (review limit 40); not split.
+**Test Evidence**: `tests/EditMode/Networking/TickLoop_CrossCuttingGuards_Dispatch_tests.cs` (24 tests, passing); `tests/EditMode/Networking/TickLoop_CrossCuttingGuards_tests.cs` unchanged, passing.
+**Code Review**: Complete — `/code-review` 2026-10-09 (`unity-specialist`, `qa-tester`; ADR-014 check by the main session): APPROVED WITH SUGGESTIONS, nothing blocking; the nine suggestions were applied and the suite re-run.
+**Tech debt**: TD-064 (`_lastAcceptedTick` key).
+**For Story 036**: every descriptor evaluated in one tick must carry the same `CurrentTick`, or the throttle resets at each change; `Evaluate` throws for a tag value outside the enum, so the dispatcher must not cast raw wire bytes to `RpcTypeTag`.
