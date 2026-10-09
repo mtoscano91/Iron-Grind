@@ -47,7 +47,7 @@ Project Iron Grind is a focused mobile MMORPG built around four design pillars (
 | 25 | Character Persistence | Persistence | MVP | Approved (lean re-review, 2026-05-24) | design/gdd/character-persistence.md | Networking Core, Authentication, Character Stats |
 | 26 | Networking Core | Core | MVP | Approved (Pass 2 lean, 2026-05-14) | design/gdd/networking-core.md | — |
 | 26a | Networking Session Lifecycle | Core | MVP | Approved (Pass 9 lean, 2026-05-11) | design/gdd/networking-session.md | Networking Core |
-| 26b | Networking Wire Protocol | Core | MVP | Approved (Pass 4 lean, 2026-05-12). TD-046 amendment 2026-10-09 (Enhancement message set, inventory sync messages) — lean re-review pending | design/gdd/networking-wire-protocol.md | Networking Core |
+| 26b | Networking Wire Protocol | Core | MVP | Approved (Pass 4 lean, 2026-05-12). TD-046 amendment 2026-10-09 (Enhancement message set, inventory sync messages) — NEEDS REVISION (lean re-review 2026-10-09, 2 blocking) | design/gdd/networking-wire-protocol.md | Networking Core |
 | 26c | Networking Test Harness | Core | MVP | Approved (lean re-review, 2026-05-14) | design/gdd/networking-test-harness.md | Networking Core |
 | 26d | Networking Session Token | Core | MVP | Approved (Pass 1 lean, 2026-05-14) | design/gdd/networking-session-token.md | Networking Session, Networking Wire Protocol |
 | 26e | Networking Ghost Session | Core | MVP | Approved (Pass 3 lean, 2026-05-14) | design/gdd/networking-ghost-session.md | Networking Session, Auto-Attack Combat, Networking Wire Protocol, networking-ghost-character-state |
