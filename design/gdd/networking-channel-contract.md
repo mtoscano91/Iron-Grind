@@ -2,7 +2,7 @@
 
 > **Status**: In Review — Revision Pass 1 (2026-05-18; applying 14-blocker fixes)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-10-09 (TD-046 amendment: CCR-3 rows for the Enhancement message set and the two inventory sync messages; the schema-pending outcome broadcast row is replaced; lean re-review done 2026-10-09; four rows revised the same day — a duplicate `EnhancementAttemptRequest` is dropped, `EnhancementRequestReceived` is sent after the scroll is consumed, the enhancement hold covers `InventoryFullSync`; lean verify pending with networking-wire-protocol.md). Previous: 2026-05-22 (Pass 1 continued: added EquipRequest, EquipResult, AppearanceChangedEvent CCR-3 rows — Equipment System upstream contract, 2026-05-22)
+> **Last Updated**: 2026-10-09 (TD-046 amendment: CCR-3 rows for the Enhancement message set and the two inventory sync messages; the schema-pending outcome broadcast row is replaced; lean re-review done 2026-10-09; four rows revised the same day — a duplicate `EnhancementAttemptRequest` is dropped, `EnhancementRequestReceived` is sent after the scroll is consumed, the enhancement hold covers `InventoryFullSync`; lean verify of networking-wire-protocol.md 2026-10-09: APPROVED — these rows verified with it). Previous: 2026-05-22 (Pass 1 continued: added EquipRequest, EquipResult, AppearanceChangedEvent CCR-3 rows — Equipment System upstream contract, 2026-05-22)
 > **Parent**: networking-wire-protocol.md
 
 ## Overview
