@@ -3612,3 +3612,10 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Loot Table `EPIC.md`: status In Progress (14/15), row 015 added.
 - Uncommitted: the new story, Loot Table `EPIC.md`, this note.
 - Next: `/story-readiness production/epics/loot-table-system/story-015-random-provider-migration.md`, then `/dev-story` in a fresh session. The Enhancement migration story (step 3) is not written yet.
+
+## Session Extract — /story-readiness 2026-10-08 (Loot Table Story 015)
+- Commit status: the Story 015 draft, Loot Table `EPIC.md` and the extract above were committed as `0207a72` (not pushed); the "Uncommitted" note in that extract is superseded.
+- Verdict: READY (lean; QL-STORY-READY skipped). No gap.
+- Checked against the code and written into the story: (1) neither `LootTable_GroundItemLifecycle_tests.cs` nor `LootTable_RoundRobin_integration_tests.cs` asserts a gold amount, so no expected value should change; (2) `LootTableRegistry` is built only through `TryCreate`, which validates first, so `GoldMax + 1` cannot overflow; (3) the `CountingRandom(FIXED_SEED)` tests use drop chances 0.0 and 1.0 only, so they are seed-independent.
+- Story 015 Status: Ready; Loot Table `EPIC.md` row and status line say Ready. Committed with this note.
+- Next: `/dev-story production/epics/loot-table-system/story-015-random-provider-migration.md` in a fresh session. The Enhancement migration story (ADR-013 step 3) is not written yet. PAT rotation still unconfirmed.
