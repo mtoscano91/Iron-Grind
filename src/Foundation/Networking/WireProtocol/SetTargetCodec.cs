@@ -79,7 +79,24 @@ namespace IronGrind.Networking
                 return false;
             }
 
-            ReadOnlySpan<byte> body = source.Slice(ClientEntityMessageEnvelope.WireSize);
+            return TryReadBody(source.Slice(ClientEntityMessageEnvelope.WireSize), out targetEntityId);
+        }
+
+        /// <summary>
+        /// Attempts to decode the 4-byte <see cref="SetTarget"/> body (the bytes after the 14-byte
+        /// envelope) on its own, for a caller that already holds the body (the inbound request
+        /// dispatcher, Story 036). Returns <see langword="false"/> if <paramref name="body"/> is
+        /// shorter than <see cref="SetTarget.BodySize"/>; extra bytes are ignored, as in
+        /// <see cref="TryRead"/>. Like <see cref="TryRead"/>, the value is a raw <see cref="uint"/>
+        /// and does not go through <see cref="WireIdCodec"/>, so 0 (deselect) is valid.
+        /// </summary>
+        /// <example>
+        /// <code>
+        /// bool ok = SetTargetCodec.TryReadBody(body, out uint targetEntityId);
+        /// </code>
+        /// </example>
+        public static bool TryReadBody(ReadOnlySpan<byte> body, out uint targetEntityId)
+        {
             if (body.Length < SetTarget.BodySize)
             {
                 targetEntityId = 0;

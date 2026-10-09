@@ -1,7 +1,7 @@
 # Story 036: Inbound Request Dispatcher — Intake, Dispatch and Hold Queues
 
 > **Epic**: Networking Core
-> **Status**: Draft
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Logic
 > **Manifest Version**: 2026-10-09
@@ -46,68 +46,68 @@
 
 **Registration (Decision 3)**
 
-- [ ] **Register, then seal**: `Register` and `RegisterConnectionLevel` build one type table; `Seal()` closes it. Either registration after `Seal()` throws `InvalidOperationException`. `TryAccept` before `Seal()` returns false.
-- [ ] **Startup failures**: registration throws when the type is already registered (as a request, as a connection-level type, or one of each); when the handler or the sink is null; when `MaxBodyBytes` is above `MAX_INBOUND_MESSAGE_BYTES` less the envelope the type uses (14 bytes with `SenderEntityID`, 10 without); when a held type is U-U, carries a tag whose rate-limit gap is above 0, or has `MaxBodyBytes` above `MAX_HELD_BODY_BYTES`.
-- [ ] **Channel from the routing table**: the channel of a type is read from its routing entry at registration; neither descriptor has a channel field.
-- [ ] **No routing row (AC-MCR-03)**: for a type with no routing entry, or whose entry is not client→server — with `isDevelopmentBuild` true, registration throws `PendingSchemaDispatchException`; with false, the registration is skipped, a server error is logged, and every message of that type is later dropped at intake as `UnknownInboundMessageType`. No exception in the release case.
+- [x] **Register, then seal**: `Register` and `RegisterConnectionLevel` build one type table; `Seal()` closes it. Either registration after `Seal()` throws `InvalidOperationException`. `TryAccept` before `Seal()` returns false.
+- [x] **Startup failures**: registration throws when the type is already registered (as a request, as a connection-level type, or one of each); when the handler or the sink is null; when `MaxBodyBytes` is above `MAX_INBOUND_MESSAGE_BYTES` less the envelope the type uses (14 bytes with `SenderEntityID`, 10 without); when a held type is U-U, carries a tag whose rate-limit gap is above 0, or has `MaxBodyBytes` above `MAX_HELD_BODY_BYTES`; when a request's `RpcTypeTag` is not a member of the enum (`ArgumentOutOfRangeException`; user decision 2026-10-09).
+- [x] **Channel from the routing table**: the channel of a type is read from its routing entry at registration; neither descriptor has a channel field.
+- [x] **No routing row (AC-MCR-03)**: for a type with no routing entry, or whose entry is not client→server — with `isDevelopmentBuild` true, registration throws `PendingSchemaDispatchException`; with false, the registration is skipped, a server error is logged, and every message of that type is later dropped at intake as `UnknownInboundMessageType`. No exception in the release case.
 
 **Connections (Decision 4)**
 
-- [ ] **Known connections only**: `TryAccept` returns false, and reports no activity, for a connection that was never added or has been removed.
-- [ ] **Remove only marks**: `RemoveConnection` frees nothing and may be called from inside a handler. The passes skip that connection's inbox records and discard its held requests; its storage is released at the start of the next `DispatchTick`, or by an `AddConnection` called outside a pass before it.
-- [ ] **Slot reuse in the same tick interval**: with all `MAX_PLAYERS_PER_ZONE` slots taken, `RemoveConnection(a)` followed by `AddConnection(b)` before the next `DispatchTick` returns true; the requests `a` had in the inbox are never dispatched.
-- [ ] **No free slot**: `AddConnection` with `MAX_PLAYERS_PER_ZONE` live connections returns false and logs a server error. Adding a connection that is already live returns false and logs a server error. *(The second case is not in ADR-014; proposed by the author — confirm at `/story-readiness`.)*
+- [x] **Known connections only**: `TryAccept` returns false, and reports no activity, for a connection that was never added or has been removed.
+- [x] **Remove only marks**: `RemoveConnection` frees nothing and may be called from inside a handler. The passes skip that connection's inbox records and discard its held requests; its storage is released at the start of the next `DispatchTick`, or by an `AddConnection` called outside a pass before it.
+- [x] **Slot reuse in the same tick interval**: with all `MAX_PLAYERS_PER_ZONE` slots taken, `RemoveConnection(a)` followed by `AddConnection(b)` before the next `DispatchTick` returns true; the requests `a` had in the inbox are never dispatched.
+- [x] **No free slot**: `AddConnection` with `MAX_PLAYERS_PER_ZONE` live connections returns false and logs a server error. Adding a connection that is already live returns false and logs a server error. *(The second case is not in ADR-014; user decision 2026-10-09.)*
 
 **Intake (Decision 2)**
 
-- [ ] **Activity**: every message of a known connection is reported exactly once to `IConnectionActivitySink.OnInboundActivity(clientId, IServerTickSource.ServerTickNumber)`, before the envelope is decoded. This holds for an accepted request, a connection-level message, and a message then dropped as unknown, malformed, stale or overflowing.
-- [ ] **Unknown type**: a `MessageTypeId` with no entry in the type table is dropped — anomaly `UnknownInboundMessageType`.
-- [ ] **Malformed**: a message shorter than the envelope its type uses, or with a body longer than the type's `MaxBodyBytes`, is dropped — anomaly `InboundMessageMalformed`.
-- [ ] **Stale check, U-U only, per type**: a U-U message is dropped when its `SequenceNumber` is not newer than the highest seen for that type on that connection (`StaleDiscardComparer`); the first message of a type on a connection is never stale. A stale drop is counted in `StaleDropCount` and not logged. The highest-seen value of a type advances only for a message of that type that reached its sink or was accepted into the inbox.
-- [ ] **R-OD is never stale**: an R-OD request whose `SequenceNumber` is lower than that of a U-U message already received from the same connection is accepted and dispatched.
-- [ ] **One U-U type does not affect another**: a U-U request whose `SequenceNumber` is lower than that of a message of a different U-U type already received from the same connection is accepted and dispatched.
-- [ ] **Connection-level messages**: a connection-level message reaches the `IConnectionMessageSink` registered for its type, inside `TryAccept`, and never enters the inbox. A 10-byte `HeartbeatMessage` reaches its sink with `EntityID.Invalid` and an empty body.
-- [ ] **Inbox bounds**: a request is dropped when its connection already has `MAX_INBOX_REQUESTS_PER_CONNECTION` undispatched requests, or when its body does not fit in what is left of the connection's `MAX_INBOX_BYTES_PER_CONNECTION` — anomaly `InboundInboxOverflow`. One connection reaching a bound does not affect another connection.
-- [ ] **Largest message**: a 400-byte message with a 386-byte body, of a type registered with `MaxBodyBytes` 386, is accepted and its handler receives the same 386 bytes.
-- [ ] **Anomaly logs are bounded**: each of `UnknownInboundMessageType`, `InboundMessageMalformed` and `InboundInboxOverflow` is logged at most once per connection per tick interval; further ones are counted and not logged. *(ADR-014 states this for `InboundInboxOverflow` only. For the other two it is proposed by the author, because a formatted log per dropped message would allocate inside `TryAccept` for as many messages as a client cares to send — confirm at `/story-readiness`.)*
-- [ ] **Never throws**: `TryAccept` returns false, and does not throw, for an empty span, a 9-byte span, and a span of any content.
+- [x] **Activity**: every message of a known connection is reported exactly once to `IConnectionActivitySink.OnInboundActivity(clientId, IServerTickSource.ServerTickNumber)`, before the envelope is decoded. This holds for an accepted request, a connection-level message, and a message then dropped as unknown, malformed, stale or overflowing.
+- [x] **Unknown type**: a `MessageTypeId` with no entry in the type table is dropped — anomaly `UnknownInboundMessageType`.
+- [x] **Malformed**: a message shorter than the envelope its type uses, or with a body longer than the type's `MaxBodyBytes`, is dropped — anomaly `InboundMessageMalformed`.
+- [x] **Stale check, U-U only, per type**: a U-U message is dropped when its `SequenceNumber` is not newer than the highest seen for that type on that connection (`StaleDiscardComparer`); the first message of a type on a connection is never stale. A stale drop is counted in `StaleDropCount` and not logged. The highest-seen value of a type advances only for a message of that type that reached its sink or was accepted into the inbox.
+- [x] **R-OD is never stale**: an R-OD request whose `SequenceNumber` is lower than that of a U-U message already received from the same connection is accepted and dispatched.
+- [x] **One U-U type does not affect another**: a U-U request whose `SequenceNumber` is lower than that of a message of a different U-U type already received from the same connection is accepted and dispatched.
+- [x] **Connection-level messages**: a connection-level message reaches the `IConnectionMessageSink` registered for its type, inside `TryAccept`, and never enters the inbox. A 10-byte `HeartbeatMessage` reaches its sink with `EntityID.Invalid` and an empty body.
+- [x] **Inbox bounds**: a request is dropped when its connection already has `MAX_INBOX_REQUESTS_PER_CONNECTION` undispatched requests, or when its body does not fit in what is left of the connection's `MAX_INBOX_BYTES_PER_CONNECTION` — anomaly `InboundInboxOverflow`. One connection reaching a bound does not affect another connection.
+- [x] **Largest message**: a 400-byte message with a 386-byte body, of a type registered with `MaxBodyBytes` 386, is accepted and its handler receives the same 386 bytes.
+- [x] **Anomaly logs are bounded**: each of `UnknownInboundMessageType`, `InboundMessageMalformed` and `InboundInboxOverflow` is logged at most once per connection per tick interval; further ones are counted and not logged. *(ADR-014 states this for `InboundInboxOverflow` only; extended to the other two by user decision 2026-10-09, because a formatted log per dropped message would allocate inside `TryAccept` for as many messages as a client cares to send.)*
+- [x] **Never throws**: `TryAccept` returns false, and does not throw, for an empty span, a 9-byte span, and a span of any content.
 
 **Dispatch — Pass B (Decision 4)**
 
-- [ ] **Arrival order**: requests accepted from several connections and of several types are dispatched in the order `TryAccept` accepted them.
-- [ ] **Context**: the handler receives `ClientId`, `SenderEntityId`, `CharacterId`, `MessageTypeId`, `ArrivalTick` (the tick source's value when `TryAccept` ran), `DispatchTick` (the argument of `DispatchTick`), `WasHeld` false, and a body equal to the bytes after the 14-byte envelope.
-- [ ] **Guard rejection drops**: for each of the four rejecting `RpcGuardResult` values, the request is dropped: the handler is not called and `HeldCount` stays 0, also for a held type whose character's gate is closed.
-- [ ] **No character**: a request that passes the guards but whose connection has no character in `IConnectionCharacterDirectory` is dropped — anomaly `InboundRequestWithoutCharacter`.
-- [ ] **Inbox emptied every tick**: after `DispatchTick` no request is undispatched; a second `DispatchTick` with no new message calls no handler; a connection that reached a bound can send again.
-- [ ] **Guard log summary**: `DispatchTick` calls `CrossCuttingRpcGuardChain.FlushRejectionSummary()` once, after Pass B.
+- [x] **Arrival order**: requests accepted from several connections and of several types are dispatched in the order `TryAccept` accepted them.
+- [x] **Context**: the handler receives `ClientId`, `SenderEntityId`, `CharacterId`, `MessageTypeId`, `ArrivalTick` (the tick source's value when `TryAccept` ran), `DispatchTick` (the argument of `DispatchTick`), `WasHeld` false, and a body equal to the bytes after the 14-byte envelope.
+- [x] **Guard rejection drops**: for each of the four rejecting `RpcGuardResult` values, the request is dropped: the handler is not called and `HeldCount` stays 0, also for a held type whose character's gate is closed.
+- [x] **No character**: a request that passes the guards but whose connection has no character in `IConnectionCharacterDirectory` is dropped — anomaly `InboundRequestWithoutCharacter`.
+- [x] **Inbox emptied every tick**: after `DispatchTick` no request is undispatched; a second `DispatchTick` with no new message calls no handler; a connection that reached a bound can send again.
+- [x] **Guard log summary**: `DispatchTick` calls `CrossCuttingRpcGuardChain.FlushRejectionSummary()` once, after Pass B.
 
 **Hold and release — Pass A and Decision 5**
 
-- [ ] **Held while the gate is closed**: a request of a type with `HeldDuringIrreversibleWrite`, for a character whose gate is closed, is copied to that character's hold queue; its handler is not called; `HeldCount` rises by 1. A request of a type without the flag is dispatched normally for the same character.
-- [ ] **Held behind earlier held requests**: when a character still has held requests after Pass A, a new held-type request of that character is held too, even if the gate is open at that moment.
-- [ ] **Release order and timing**: on the first `DispatchTick` at which the gate is open, the held requests of that character run in arrival order, before any request of that tick's inbox, each with `WasHeld` true, its original `ArrivalTick` and the body it arrived with.
-- [ ] **Polled, not subscribed**: held requests are released when another `OnGateOpened` subscriber throws during `Open`. The dispatcher has no subscription to `OnGateOpened`.
-- [ ] **A handler may close the gate**: when a handler closes the gate in Pass B, later held-type requests of that character in the same pass are held. When a released request closes the gate in Pass A, the remaining held requests of that character stay held, in order.
-- [ ] **Discard on release**: a held request whose connection was removed, no longer owns the entity, or is no longer session-ready (`IsLiveOwner`, Story 035) is discarded when its turn comes, not dispatched.
-- [ ] **Released requests are not guarded again**: release does not call `Evaluate`.
-- [ ] **Hold queue bound**: the 17th held request of a character is dropped — anomaly `HeldRequestOverflow`; the 16 held ones are unaffected.
-- [ ] **Pool accounting**: every hold entry returns to the pool when its request is dispatched or discarded, or when its removed connection's storage is released. After 800 hold-and-release cycles on one dispatcher a request can still be held.
-- [ ] **Characters are independent**: a closed gate for character A does not delay or hold a request of character B.
+- [x] **Held while the gate is closed**: a request of a type with `HeldDuringIrreversibleWrite`, for a character whose gate is closed, is copied to that character's hold queue; its handler is not called; `HeldCount` rises by 1. A request of a type without the flag is dispatched normally for the same character.
+- [x] **Held behind earlier held requests**: when a character still has held requests after Pass A, a new held-type request of that character is held too, even if the gate is open at that moment.
+- [x] **Release order and timing**: on the first `DispatchTick` at which the gate is open, the held requests of that character run in arrival order, before any request of that tick's inbox, each with `WasHeld` true, its original `ArrivalTick` and the body it arrived with.
+- [x] **Polled, not subscribed**: held requests are released when another `OnGateOpened` subscriber throws during `Open`. The dispatcher has no subscription to `OnGateOpened`.
+- [x] **A handler may close the gate**: when a handler closes the gate in Pass B, later held-type requests of that character in the same pass are held. When a released request closes the gate in Pass A, the remaining held requests of that character stay held, in order.
+- [x] **Discard on release**: a held request whose connection was removed, no longer owns the entity, or is no longer session-ready (`IsLiveOwner`, Story 035) is discarded when its turn comes, not dispatched.
+- [x] **Released requests are not guarded again**: release does not call `Evaluate`.
+- [x] **Hold queue bound**: the 17th held request of a character is dropped — anomaly `HeldRequestOverflow`; the 16 held ones are unaffected.
+- [x] **Pool accounting**: every hold entry returns to the pool when its request is dispatched or discarded, or when its removed connection's storage is released. After 800 hold-and-release cycles on one dispatcher a request can still be held.
+- [x] **Characters are independent**: a closed gate for character A does not delay or hold a request of character B.
 
 **Isolation**
 
-- [ ] **One failure does not stop a pass**: when the handler, the guard chain, the directory or the gate throws for one request, a server error is logged with the message type and the client id, that request is dropped (in Pass A its hold entry returns to the pool), and the remaining requests of both passes are processed. `DispatchTick` does not throw.
-- [ ] **The dispatcher sends nothing**: it has no outbound dependency; a dropped or discarded request produces no reply.
+- [x] **One failure does not stop a pass**: when the handler, the guard chain, the directory or the gate throws for one request, a server error is logged with the message type and the client id, that request is dropped (in Pass A its hold entry returns to the pool), and the remaining requests of both passes are processed. `DispatchTick` does not throw. One exception: when the gate poll of Pass A (`gate.IsHeld`) throws, nothing is known about that character's gate, so its held requests stay held, in order, a server error is logged, and Pass A goes on with the next character; they are tried again on the next tick (ADR-014's Isolation rule covers the `IsLiveOwner` check and the handler call in Pass A, not the poll; added at code review 2026-10-09).
+- [x] **The dispatcher sends nothing**: it has no outbound dependency; a dropped or discarded request produces no reply.
 
 **Production registrations (Decision 3, last bullet)**
 
-- [ ] **`SetTarget`**: `NetworkingCoreInboundRegistration.Register` registers `SetTarget` as a request (tag `RpcTypeTag.SetTarget`, not held, `MaxBodyBytes` 4) with `SetTargetRequestHandler`, against the real `MessageRoutingRegistry`. A `SetTarget` message built with `SetTargetCodec.Write` and passed through `TryAccept` and `DispatchTick` sets the target in `TargetSlotTracker`.
-- [ ] **`HeartbeatMessage`**: the same method registers `HeartbeatMessage` as connection-level (`MaxBodyBytes` 0, no `SenderEntityID`) with the sink it is given.
-- [ ] **Only those two**: no other type is registered by this story (user decision 2026-10-09: registrations are part of this story, for the types that have a routing row and a message type in code).
+- [x] **`SetTarget`**: `NetworkingCoreInboundRegistration.Register` registers `SetTarget` as a request (tag `RpcTypeTag.SetTarget`, not held, `MaxBodyBytes` 4) with `SetTargetRequestHandler`, against the real `MessageRoutingRegistry`. A `SetTarget` message built with `SetTargetCodec.Write` and passed through `TryAccept` and `DispatchTick` sets the target in `TargetSlotTracker`.
+- [x] **`HeartbeatMessage`**: the same method registers `HeartbeatMessage` as connection-level (`MaxBodyBytes` 0, no `SenderEntityID`) with the sink it is given.
+- [x] **Only those two**: no other type is registered by this story (user decision 2026-10-09: registrations are part of this story, for the types that have a routing row and a message type in code).
 
 **Source rules**
 
-- [ ] A search of `src/ServerLogic/Networking/InboundDispatch/` finds no `OnGateOpened`, `ArrayPool`, `await`, `async`, `Unity.Netcode`, `requestId` or `RegisterTickDriven`.
+- [x] A search of `src/ServerLogic/Networking/InboundDispatch/` finds no `OnGateOpened`, `ArrayPool`, `await`, `async`, `Unity.Netcode`, `requestId` or `RegisterTickDriven`.
 
 ---
 
@@ -137,7 +137,8 @@
   plus an optional `INetworkTestObserver observer = null` inside `#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD`, passed to `Evaluate` so that `OnSkillUsedRateLimitRejected` still fires (Story 002 release-stripping contract). Null arguments throw `ArgumentNullException`.
 - **Why `routingLookup` is a parameter** (beyond ADR-014 Key Interfaces; decided 2026-10-09): `MessageRoutingRegistry` is static and has two client→server rows, `HeartbeatMessage` (U-U) and `SetTarget` (R-OD, not held). No held type and no U-U request type can be registered against it, so most of the tests of Migration Plan step 1 could not be written. Production passes `MessageRoutingRegistry.TryGetEntry`; tests pass a fake table. The registry is not changed.
 - **Envelope**: decode the first 10 bytes with `MessageEnvelopeCodec.TryRead(…, out ServerMessageEnvelope)`. For a request, and for a connection-level type with `CarriesSenderEntityId`, the next 4 bytes are `SenderEntityID` (little-endian) and the body starts at offset 14; otherwise the body starts at offset 10. A body shorter than the message's codec expects is not the intake's concern: the descriptor has only a maximum, and the handler's codec rejects it.
-- **Rate-limited tag at registration**: "carries a rate-limited tag" is `CrossCuttingRpcGuardChain.IsRateLimited(descriptor.RpcTypeTag)` (Story 035).
+- **Tag check at registration**: `Register` calls `CrossCuttingRpcGuardChain.IsRateLimited(descriptor.RpcTypeTag)` (Story 035) for every request descriptor: it throws `ArgumentOutOfRangeException` for a value outside the enum, and its result is the "carries a rate-limited tag" test for a held type. The tag given to `Evaluate` is always the registered descriptor's; no byte of the message is cast to `RpcTypeTag`.
+- **Guard tick**: Pass B builds every `InboundRpcDescriptor` with the `currentTick` argument of `DispatchTick`, never `ArrivalTick` or the tick source; a different value within one pass resets the guard chain's log throttle (Story 035 review).
 - **Stale check**: stale means `!StaleDiscardComparer.IsNewerVersion(highestSeen, sequenceNumber)`, so an equal value is stale. Use a has-value flag per (connection slot, U-U type), not a sentinel number. `Seal()` gives each registered U-U type an index; the per-slot arrays are sized then and cleared when the slot is given to a new connection. The check covers connection-level U-U types as well (`HeartbeatMessage`).
 - **Inbox**: one record array of `MAX_PLAYERS_PER_ZONE × MAX_INBOX_REQUESTS_PER_CONNECTION` filled in acceptance order, so the array order is the `arrivalIndex` order and Pass B is one loop; a per-slot count and a per-slot arena fill offset enforce the two bounds; all are reset at the end of Pass B.
 - **Connection slots**: 50 slots; a map from client id to slot created once with capacity 50. A removed connection keeps its slot, marked, until release. Release = clear the slot's inbox count, arena offset and stale state, and return its hold entries to the pool.
@@ -178,6 +179,7 @@
 - **Null handler, null sink** → `ArgumentNullException`.
 - **Body bound** — request with `MaxBodyBytes` 387 → throws; 386 → accepted. Connection-level without `SenderEntityID`: 391 → throws; 390 → accepted.
 - **Held type rules** — held and U-U → throws; held with tag `AllocateFreePoint` → throws; held with `MaxBodyBytes` 65 → throws; 64 → accepted.
+- **Undefined tag** — a request descriptor with `(RpcTypeTag)255`, not held → `ArgumentOutOfRangeException`.
 - **No routing row, development build** → `PendingSchemaDispatchException` with the type id.
 - **No routing row, release build** → no exception; one error logged; after `Seal()` a message of that type → false, `UnknownInboundMessageType`.
 - **Row of the wrong direction** — a server→client row → same two results as no row.
@@ -231,6 +233,13 @@
 - **Pool accounting** — 800 cycles of hold then release on one dispatcher → `FreeHoldEntryCount` 800; a further request can be held.
 - **Two characters** — gate closed for A only; A and B each send `HELD_ROD` → B's dispatched, A's held.
 - **Released handler throws** — one error logged; the next held request is dispatched; `FreeHoldEntryCount` restored.
+- **Released handler removes its connection** *(code review 2026-10-09)* — A holds two; the gate opens; the first one's handler calls `RemoveConnection(A)` → one handler call; the second is discarded; `FreeHoldEntryCount` back to 800.
+- **Gate poll throws in Pass A** *(code review 2026-10-09)* — A holds one; the gate opens; the next `IsHeld` call throws → one error logged, no handler call, `HeldCount(A)` 1; the next `DispatchTick` dispatches it with `WasHeld` true.
+
+**Added at code review 2026-10-09**
+- **Inbox-bound drop does not advance the value** (Intake) — 64 `PLAIN_ROD`, then `UU_A` 20 (dropped by the count bound), `DispatchTick`, `UU_A` 15 → accepted.
+- **Connection sink throws** (Intake) — a connection-level sink that throws → `TryAccept` returns false, one `TryAcceptFailed` error, no exception.
+- **`AddConnection` of a removed client inside a handler** (Dispatch) — a handler calls `RemoveConnection(1)` then `AddConnection(1)` → false, one error: inside a pass the removed connection still has its slot.
 
 **Core registration**
 - **`SetTarget` end to end** — the real `MessageRoutingRegistry.TryGetEntry`; `NetworkingCoreInboundRegistration.Register`; `Seal()`; a message from `SetTargetCodec.Write`; `TryAccept`, `DispatchTick` → `TargetSlotTracker.GetTarget(clientId)` returns the target.
@@ -249,11 +258,35 @@
 **Story Type**: Logic
 **Required evidence**: the five `InboundDispatch_*_tests.cs` files in `tests/EditMode/Networking/` — must exist and pass. The suite total before this story is the total recorded by Story 035; record the total after it at `/story-done`.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — `InboundDispatch_Registration_tests.cs` (25), `InboundDispatch_Intake_tests.cs` (32), `InboundDispatch_Dispatch_tests.cs` (21), `InboundDispatch_HoldQueue_tests.cs` (16), `InboundDispatch_CoreRegistration_tests.cs` (5), with `InboundDispatchTestDoubles.cs` — 99 tests; suite 2182 / 2182 on 2026-10-09
 
 ---
 
 ## Dependencies
 
-- Depends on: Story 035 (Draft — `IsLiveOwner`, `IsRateLimited`, gap 0, `FlushRejectionSummary`); Story 030 (Complete — `CharacterMutationGate`); Story 010 (Complete — guard chain); Story 009 (Complete — `ServerTickLoop`); Story 025 (Complete — `MessageRoutingRegistry`); Story 029 (Complete — `SetTarget`, `TargetSlotTracker`); Story 003 and Story 005 (Complete — envelope codec, `StaleDiscardComparer`). ADR-014 Accepted (2026-10-09).
+- Depends on: Story 035 (Complete — `IsLiveOwner`, `IsRateLimited`, gap 0, `FlushRejectionSummary`); Story 030 (Complete — `CharacterMutationGate`); Story 010 (Complete — guard chain); Story 009 (Complete — `ServerTickLoop`); Story 025 (Complete — `MessageRoutingRegistry`); Story 029 (Complete — `SetTarget`, `TargetSlotTracker`); Story 003 and Story 005 (Complete — envelope codec, `StaleDiscardComparer`). ADR-014 Accepted (2026-10-09).
 - Unlocks: the tick pipeline story (ADR-014 Migration Plan step 2); Enhancement Story 009 (Migration Plan step 3).
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-09
+**Criteria**: 41/41 passing
+- Suite: 2182 total, 2182 passed, 0 failed (totals read from `TestResults.xml`, run of 2026-10-09 14:40 local, after the review fixes; 2083 before the story). The five `InboundDispatch_*` fixtures 99/99; `TickLoop_CrossCuttingGuards_Dispatch_Tests` 24/24 with no diff on its file. No compile error.
+- Verified by reading, not by a test: the source search of the last criterion (no hit in `src/ServerLogic/Networking/InboundDispatch/`); "the dispatcher sends nothing" (no outbound dependency); no allocation in `TryAccept` or `DispatchTick` outside a branch that logs (main session and `unity-specialist`).
+- Untested branch: a throwing guard chain (the class is sealed, and registration rejects the only input that makes `Evaluate` throw).
+- Not wired in: nothing in production constructs the dispatcher, calls `TryAccept` or calls `DispatchTick`. The composition root, the transport adapter and the session layer's sinks and directory are later stories.
+- Decisions taken at `/story-readiness` 2026-10-09: unknown-type and malformed logs at most once per connection per tick interval; `AddConnection` of a live client returns false; a tag outside the enum throws at registration.
+- `SetTargetCodec` gained `TryReadBody`; `TryRead` calls it. `ServerTickLoop` implements `IServerTickSource`.
+**Deviations** (advisory):
+- Pass A gate poll: when `gate.IsHeld` throws, the character's held requests stay held and are tried again on the next tick; the request is not dropped. The Isolation criterion was reworded at code review and a test added. The user answered the review list and the `/story-done` report with "continue"; the point was not named explicitly.
+- The once-per-connection-per-tick-interval log bound also covers `InboundRequestWithoutCharacter` and `HeldRequestOverflow` (the story lists three kinds).
+- Extra diagnostics member `SuppressedAnomalyCount`.
+- Two bounds ADR-014 does not mention: the inbox record array is not compacted when a slot is released (TD-065); at most 100 hold queues (two per connection slot).
+- `TryAccept` and `DispatchTick` each wrap their body in a catch-all that logs a server error (`TryAcceptFailed`, `DispatchTickFailed`); a message shorter than 10 bytes logs `InboundMessageMalformed`.
+- Only the `Unreliable` channel gets the stale check; a reliable-unordered type is treated like R-OD. The highest-seen value advances before a connection-level sink is called, so a sink that throws still counts as reached.
+- Five methods of `InboundRequestDispatcher` exceed 40 lines (`TryAcceptCore` about 100, `ReleaseHeldRequests` about 70, `ReleaseSlot` about 60, `Register` about 53, `DispatchInbox` about 48); not split.
+- 99 tests; the QA list gained five cases at code review.
+**Test Evidence**: Logic — the five `InboundDispatch_*_tests.cs` files in `tests/EditMode/Networking/`
+**Code Review**: Complete — `/code-review` 2026-10-09 (`unity-specialist` + `qa-tester`; ADR-014 check by the main session): APPROVED WITH SUGGESTIONS; items 1–6 applied, item 7 (the `observer` parameter doc) left as the sibling classes have it.
+**Tech debt**: TD-065.

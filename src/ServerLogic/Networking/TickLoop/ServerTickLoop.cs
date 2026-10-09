@@ -140,7 +140,7 @@ namespace IronGrind.Networking
     /// tickLoop.AdvanceTick();
     /// </code>
     /// </example>
-    public sealed class ServerTickLoop
+    public sealed class ServerTickLoop : IServerTickSource
     {
         /// <summary>
         /// The fixed server tick rate in Hz (CR-NET-2). ADR-004 Decision 5 requires NGO's
