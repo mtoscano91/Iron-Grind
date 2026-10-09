@@ -3,8 +3,8 @@
 > **Layer**: Foundation
 > **GDD**: design/gdd/networking-core.md + 9 sub-contracts
 > **Architecture Module**: Networking Core
-> **Status**: Complete (34/34 — Stories 032, 033 and 034, the three ADR-012 assembly-move stories, Complete 2026-10-08). Stories 001–031 Complete — Story 031 (added 2026-10-07, ADR-011 Migration step 2) Complete 2026-10-07; full EditMode suite 1900 / 1900 in Unity batch mode. Story 030 (added 2026-10-07 after ADR-011) Complete 2026-10-07. Stories 001–029 Complete (2026-07-22). Not yet confirmed via a full live Unity Editor test run across the whole epic together; see `production/session-state/active.md` for verification status per story.
-> **Stories**: 31 stories created (001–031)
+> **Status**: In Progress (34/36 — Stories 035 and 036 added 2026-10-09 for ADR-014 Migration Plan step 1, both Draft). Stories 032, 033 and 034, the three ADR-012 assembly-move stories, Complete 2026-10-08. Stories 001–031 Complete — Story 031 (added 2026-10-07, ADR-011 Migration step 2) Complete 2026-10-07; full EditMode suite 1900 / 1900 in Unity batch mode. Story 030 (added 2026-10-07 after ADR-011) Complete 2026-10-07. Stories 001–029 Complete (2026-07-22). Not yet confirmed via a full live Unity Editor test run across the whole epic together; see `production/session-state/active.md` for verification status per story.
+> **Stories**: 36 stories created (001–036)
 
 ## Overview
 
@@ -19,6 +19,7 @@ Networking Core is the multiplayer substrate for Project Iron Grind — the modu
 | ADR-009: Scene/Zone-Load Management | Tick loop must not start until `ZoneNavigationService.Initialize()` completes; gateway registration only after tick is active | HIGH (Unity 6.3 `Scene.handle` type change) |
 | ADR-010: Event/Messaging Architecture | NGO RPCs and custom messages are the network boundary; they are NOT "events" in the ADR-010 sense — ADR-010 governs intra-process messaging only | LOW |
 | ADR-011: Asynchronous Persistence in the Server Tick Loop | Tick-driven code never awaits a persistence `Task`; `ITickCompletionQueue.Drain` handles results on the tick thread; `ICharacterMutationGate` records an irreversible write in flight | MEDIUM — where an `await` continuation resumes; headless-build checks gate shipping |
+| ADR-014: Inbound Request Dispatch and Tick Order | One `InboundRequestDispatcher` per zone is the only path from a client message to a game system: intake into a bounded inbox outside the tick; on the tick, release of held requests, then guard chain → character → mutation gate → handler; `ZoneTickPipeline` fixes the tick order | LOW for the dispatcher and the pipeline; HIGH for the transport adapter (NGO receive API, Verification Required 1–6) |
 
 ## GDD Requirements
 
@@ -102,6 +103,10 @@ This epic is complete when:
 | 032 | [Move Networking Server State to the Server Assembly (1 of 3)](story-032-server-assembly-move-state-and-tick.md) | Integration | Complete (2026-10-08) | ADR-012 |
 | 033 | [Move the WireProtocol Server Half to the Server Assembly (2 of 3)](story-033-server-assembly-move-wire-protocol-server-half.md) | Integration | Complete (2026-10-08) | ADR-012 |
 | 034 | [Move the Networking Test Harness; Put the Shared Types on the Allow-List (3 of 3)](story-034-server-assembly-move-test-harness-and-shared-list.md) | Integration | Complete (2026-10-08) | ADR-012 |
+| 035 | [Guard Chain Changes for the Request Dispatcher](story-035-guard-chain-changes-for-dispatch.md) | Logic | Draft | ADR-014 |
+| 036 | [Inbound Request Dispatcher — Intake, Dispatch and Hold Queues](story-036-inbound-request-dispatcher.md) | Logic | Draft | ADR-014 |
+
+*Not written yet (ADR-014 Migration Plan): the tick pipeline story (step 2, after 036) and the transport adapter story (step 4, after ADR-004 OQ-ADR4-3).*
 
 **Scoped out of this epic** (owned by other systems' future epics, using these GDDs as their wire-contract reference): every specific downstream message schema for Auto-Attack Combat, Currency, Leveling, Zone Instancing, Party, Inventory, Equipment, NPC Shop, Consumable Use, Movement, and Skill systems. Networking Core owns the envelope/channel/tick/session/ghost/OWL/relevance-filter/test-harness substrate only.
 
