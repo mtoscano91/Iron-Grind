@@ -386,6 +386,11 @@ Greenfield — no existing cross-system messaging code. Implementation order:
 - [ ] Zero lambda captures in persistent event subscriptions — `grep -rn "+= ctx =>" src/` returns zero matches in non-disposable, non-one-shot contexts
 - [ ] No `ServerRpc` or NGO message handler calls game-logic methods directly — all go through `Queue<T>` (code review gate per ADR-008)
 
+## Clarifications
+
+### 2026-10-09 — Decision 5's example replaced for client requests (no rule change)
+The rule of Decision 5 stands: a network callback enqueues and never calls game logic. Its example — a `[ServerRpc]` and one `Queue<T>` per handler drained by the system's own `Tick()` — is replaced for client requests by ADR-014 (`docs/architecture/ADR-014-inbound-request-dispatch-and-tick-order.md`, Proposed 2026-10-09): one inbox, one dispatcher, one handler per message type, in a fixed tick order. `[ServerRpc]` was already excluded for gameplay messages by ADR-004 Decision 4. The client-side presenter pattern of ADR-008 is unaffected. Until ADR-014 is Accepted this note is a pointer, not a rule.
+
 ## Related Decisions
 
 - ADR-004: Networking Library (NGO) — Tier 3 (network boundary); this ADR governs Tier 1 and Tier 2 only
