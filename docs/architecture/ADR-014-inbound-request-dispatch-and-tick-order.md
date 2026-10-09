@@ -1,7 +1,7 @@
 # ADR-014: Inbound Request Dispatch and Tick Order
 
 ## Status
-Proposed
+Accepted (2026-10-09)
 
 ## Date
 2026-10-09
