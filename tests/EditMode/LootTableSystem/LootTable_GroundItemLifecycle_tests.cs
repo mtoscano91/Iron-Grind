@@ -6,6 +6,7 @@ using IronGrind.Currency;
 using IronGrind.ItemDatabase;
 using IronGrind.LootTableSystem;
 using IronGrind.Tests.EditMode.ItemDatabase;
+using IronGrind.Tests.EditMode.Randomness;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
@@ -44,7 +45,7 @@ namespace IronGrind.Tests.EditMode.LootTableSystem
         private const double MISSING_DRAW = 0.5;
         private const double HITTING_DRAW = 0.0;
         private const int NO_TIER_SHIFT = 0;
-        private const int PRNG_SEED = 4242;
+        private const int GOLD_DRAW = 6; // inside [GOLD_MIN, GOLD_MAX]
 
         private const uint LATER_SPAWN_TICK = SPAWN_TICK + 100u;
         private const uint LATE_FIRST_TICK = SPAWN_TICK + 5u;
@@ -127,18 +128,6 @@ namespace IronGrind.Tests.EditMode.LootTableSystem
             {
                 return category == ItemCategory.Equipment ? _equipment : new List<ItemDefinition>();
             }
-        }
-
-        private sealed class ScriptedRandom : System.Random
-        {
-            private readonly double _draw;
-
-            public ScriptedRandom(double draw) : base(PRNG_SEED)
-            {
-                _draw = draw;
-            }
-
-            public override double NextDouble() => _draw;
         }
 
         private sealed class StubPartyService : IPartyService
@@ -415,9 +404,13 @@ namespace IronGrind.Tests.EditMode.LootTableSystem
         // -----------------------------------------------------------------------
 
         // A real LootTableService over a one-entry table (DROP_CHANCE), with the mob already tagged.
-        // The draw decides the roll: draw < DROP_CHANCE drops the item.
+        // The draw decides the roll: draw < DROP_CHANCE drops the item. One kill is resolved per service,
+        // so the script holds one roll draw (one table entry) and one gold draw.
         private static LootTableService BuildTaggedLootService(GroundItemService ground, double draw)
         {
+            var random = new ScriptedRandomProvider();
+            random.EnqueueDouble(draw);
+            random.EnqueueInt(GOLD_DRAW);
             var table = new LootTableDefinition(new[] { new LootTableEntry(ItemA, DROP_CHANCE) }, GOLD_MIN, GOLD_MAX);
             var tables = new List<KeyValuePair<MobTypeID, LootTableDefinition>>
             {
@@ -429,7 +422,7 @@ namespace IronGrind.Tests.EditMode.LootTableSystem
             var tracker = new PartyTagTracker(parties, mobs, () => SPAWN_TICK);
             var loot = new LootTableService(
                 registry, tracker, parties, mobs, new NullCurrencyService(),
-                new ScriptedRandom(draw), new ForwardingSink(ground));
+                random, new ForwardingSink(ground));
             loot.RecordDamage(Mob, CharA, KILLING_DAMAGE);
             return loot;
         }

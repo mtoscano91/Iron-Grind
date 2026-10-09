@@ -1,7 +1,7 @@
 # Story 015: Migrate Loot Table to `IRandomProvider`
 
 > **Epic**: Loot Table System
-> **Status**: Ready (written 2026-10-08 from ADR-013 Migration Plan step 2; `/story-readiness` 2026-10-08: READY)
+> **Status**: Complete (2026-10-08; written from ADR-013 Migration Plan step 2; `/story-readiness` 2026-10-08: READY)
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-08
@@ -132,7 +132,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/Randomness/RandomProviderFactory_tests.cs` (new), and the four changed Loot Table test files — must exist and pass with the full EditMode suite.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — `RandomProviderFactory_tests.cs` (1 test); the four Loot Table test files changed; EditMode suite 2055/2055 (2026-10-08)
 
 ---
 
@@ -140,3 +140,19 @@
 
 - Depends on: Damage Calculation Story 003 (Complete, 2026-10-08, commit `f22c24b`) — it created `IRandomProvider`, `SystemRandomProvider`, `ScriptedRandomProvider` and `RecordingRandomProvider`; ADR-013 (Accepted 2026-10-08); Loot Table Story 014 (Complete).
 - Unlocks: the Enhancement migration story (ADR-013 Migration Plan step 3), after which the `System.Random` exception list is empty and the reflection test is added.
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-08
+**Criteria**: 11/11 passing. `/story-done` verdict: COMPLETE WITH NOTES.
+**Suite**: EditMode 2055/2055 (2054 + the factory test), run by the user in the Editor's Test Runner after the implementation and again after the review fixes. User report; no results file.
+**Expected values**: none changed in any existing Loot Table test.
+**Test counts**: `LootTable_DropRoll_tests.cs` 15 → 15 (the old factory test removed, `Roll_OneEntryAndNothingQueued_ThrowsInvalidOperationException` added, `Roll_NullRng_...` renamed `Roll_NullRandom_...`); `RandomProviderFactory_tests.cs` new, 1 test; the other three files unchanged in count. In the two scripted-double files each service resolves one kill on a one-entry table, so one `EnqueueDouble` and one `EnqueueInt(GOLD_DRAW)` (6, inside 4..8) are queued.
+**Source searches (2026-10-08, not automated — the reflection test is ADR-013 Migration Plan step 3)**: no `LootRandomFactory` in `src/` or `tests/`; `new Random(` / `new System.Random(` in `src/ServerLogic/` only at `Randomness/RandomProviderFactory.cs:44` (written `new Random(seed)` under `using System;`); no `UnityEngine.Random` in `src/ServerLogic/`; no `System.Random` subclass in the four Loot Table test files; `CreateSeededFromEntropy` is called only by the factory test.
+**Deviations**: none. Manifest Version matches (2026-10-08).
+**Notes**:
+- The factory test asserts the log line with `LogAssert.Expect`; a second `Log`-level line would not fail it.
+- Implemented by `gameplay-programmer`; the diff was reviewed in the main session.
+**Code Review**: Complete — inline, no specialist spawned: APPROVED WITH SUGGESTIONS, all three applied (stale `Next` comments and the rig field `Rng` → `Random` in `LootTable_KillResolution_integration_tests.cs`; `FloatDrawCount == 0` and `IntDrawCount == 0` added to the 2-entry and 0-entry count tests). `QL-TEST-COVERAGE` and `LP-CODE-REVIEW` skipped (lean mode).
+**Tech debt**: none logged.

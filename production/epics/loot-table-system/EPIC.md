@@ -3,7 +3,7 @@
 > **Layer**: Core
 > **GDD**: design/gdd/loot-table-system.md
 > **Architecture Module**: Loot Table
-> **Status**: In Progress (14/15 — Story 015, the ADR-013 `IRandomProvider` migration, added 2026-10-08, Ready). Before that: Complete (14/14 — gameplay Stories 001–013 Complete, 2026-10-02 and 2026-10-03; Story 014, the ADR-012 assembly move, Complete 2026-10-08). The code now lives in `src/ServerLogic/LootTableSystem/` (assembly `IronGrind.ServerLogic`).
+> **Status**: Complete (15/15 — Story 015, the ADR-013 `IRandomProvider` migration, Complete 2026-10-08; gameplay Stories 001–013 Complete, 2026-10-02 and 2026-10-03; Story 014, the ADR-012 assembly move, Complete 2026-10-08). The code now lives in `src/ServerLogic/LootTableSystem/` (assembly `IronGrind.ServerLogic`).
 > **Stories**: 12 stories created (001–012) on 2026-10-02, Story 013 added 2026-10-03 (winner grace, CR-LT-9.1) — 13 Complete (012 and 013 Complete 2026-10-03). Story 014 added 2026-10-08 (move to `IronGrind.ServerLogic`, ADR-012 Migration Plan step 2).
 
 ## Overview
@@ -63,7 +63,7 @@ This epic is complete when:
 | 012 | Zone Teardown Loot Flush | Integration | Complete (2026-10-03) | ADR-010 |
 | 013 | Auction Winner Grace | Integration | Complete (2026-10-03) | ADR-010 |
 | 014 | Move Loot Table to the Server Assembly | Integration | Complete (2026-10-08) | ADR-012 |
-| 015 | Migrate Loot Table to `IRandomProvider` | Logic | Ready (2026-10-08; replaces `LootRandomFactory` with `RandomProviderFactory`) | ADR-013 |
+| 015 | Migrate Loot Table to `IRandomProvider` | Logic | Complete (2026-10-08; `LootRandomFactory` replaced by `RandomProviderFactory`; suite 2055/2055) | ADR-013 |
 
 Work through stories in order — each story's `Depends on:` field tells you what must be Done before you can start it.
 

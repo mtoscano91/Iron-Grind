@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using IronGrind.CharacterStats;
 using IronGrind.Currency;
+using IronGrind.Randomness;
 
 namespace IronGrind.LootTableSystem
 {
@@ -17,7 +18,7 @@ namespace IronGrind.LootTableSystem
         private readonly IPartyService _partyService;
         private readonly IMobInfoProvider _mobInfoProvider;
         private readonly ICurrencyService _currencyService;
-        private readonly Random _rng;
+        private readonly IRandomProvider _random;
         private readonly ILootDropSink _dropSink;
 
         /// <summary>Creates the loot table service.</summary>
@@ -26,7 +27,7 @@ namespace IronGrind.LootTableSystem
         /// <param name="partyService">Supplies the winning party's members.</param>
         /// <param name="mobInfoProvider">Supplies the mob's type and position.</param>
         /// <param name="currencyService">Receives the gold awards.</param>
-        /// <param name="rng">Injected PRNG; see <see cref="LootRandomFactory"/>.</param>
+        /// <param name="random">Injected random provider (ADR-013); see <see cref="RandomProviderFactory"/>.</param>
         /// <param name="dropSink">Receives a non-empty drop list.</param>
         /// <exception cref="ArgumentNullException">Any argument is <see langword="null"/>.</exception>
         public LootTableService(
@@ -35,7 +36,7 @@ namespace IronGrind.LootTableSystem
             IPartyService partyService,
             IMobInfoProvider mobInfoProvider,
             ICurrencyService currencyService,
-            Random rng,
+            IRandomProvider random,
             ILootDropSink dropSink)
         {
             _registry = registry ?? throw new ArgumentNullException(nameof(registry));
@@ -43,7 +44,7 @@ namespace IronGrind.LootTableSystem
             _partyService = partyService ?? throw new ArgumentNullException(nameof(partyService));
             _mobInfoProvider = mobInfoProvider ?? throw new ArgumentNullException(nameof(mobInfoProvider));
             _currencyService = currencyService ?? throw new ArgumentNullException(nameof(currencyService));
-            _rng = rng ?? throw new ArgumentNullException(nameof(rng));
+            _random = random ?? throw new ArgumentNullException(nameof(random));
             _dropSink = dropSink ?? throw new ArgumentNullException(nameof(dropSink));
         }
 
@@ -104,8 +105,8 @@ namespace IronGrind.LootTableSystem
                 UnityEngine.Debug.LogWarning($"[LootTableService] ResolveMobDrop: tierShift={tierShift} for {mobEntityID} is ignored (pending a GDD rule, enemy-ai.md OQ-AI-1).");
             }
 
-            List<ItemID> drops = LootDropRoller.Roll(table, _rng);
-            int baseGold = _rng.Next(table.GoldMin, table.GoldMax + 1);
+            List<ItemID> drops = LootDropRoller.Roll(table, _random);
+            int baseGold = _random.NextInt(table.GoldMin, table.GoldMax + 1);
             DistributeGold(mobEntityID, table, baseGold, members);
 
             if (drops.Count > 0)

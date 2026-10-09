@@ -7,6 +7,7 @@ using IronGrind.ItemDatabase;
 using IronGrind.LootTableSystem;
 using IronGrind.Tests.EditMode.ItemDatabase;
 using IronGrind.Tests.EditMode.LootTableSystem;
+using IronGrind.Tests.EditMode.Randomness;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
@@ -44,7 +45,7 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
         private const float GUARANTEED_DROP = 1.0f;
         private const double HITTING_DRAW = 0.0;
         private const int NO_TIER_SHIFT = 0;
-        private const int PRNG_SEED = 4242;
+        private const int GOLD_DRAW = 6; // inside [GOLD_MIN, GOLD_MAX]
 
         private const int FIRST_INDEX = 0;
         private const int SECOND_INDEX = 1;
@@ -256,18 +257,6 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
             {
                 return new GoldMutationResult(false, 0u, 0u, GoldMutationError.NotImplemented);
             }
-        }
-
-        private sealed class ScriptedRandom : System.Random
-        {
-            private readonly double _draw;
-
-            public ScriptedRandom(double draw) : base(PRNG_SEED)
-            {
-                _draw = draw;
-            }
-
-            public override double NextDouble() => _draw;
         }
 
         private sealed class Rig
@@ -762,9 +751,13 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
             Assert.IsTrue(LootTableRegistry.TryCreate(tables, new EmptyItemDatabase(), LootTableConstants.ALLOW_ENHANCEMENT_SCROLL_DROPS, out LootTableRegistry registry, out _));
             var mobs = new StubMobInfoProvider();
             var tracker = new PartyTagTracker(rig.Parties, mobs, () => TICK);
+            // One kill, one table entry: one roll draw, then one gold draw.
+            var random = new ScriptedRandomProvider();
+            random.EnqueueDouble(HITTING_DRAW);
+            random.EnqueueInt(GOLD_DRAW);
             var loot = new LootTableService(
                 registry, tracker, rig.Parties, mobs, new NullCurrencyService(),
-                new ScriptedRandom(HITTING_DRAW), rig.Distributor);
+                random, rig.Distributor);
             loot.RecordDamage(Mob, CharA, KILLING_DAMAGE);
 
             // Act

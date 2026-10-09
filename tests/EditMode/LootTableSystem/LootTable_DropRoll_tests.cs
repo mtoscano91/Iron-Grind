@@ -1,13 +1,13 @@
 using System;
 using System.Collections.Generic;
-using System.Text.RegularExpressions;
 using IronGrind.CharacterStats;
 using IronGrind.ItemDatabase;
 using IronGrind.LootTableSystem;
+using IronGrind.Randomness;
 using IronGrind.Tests.EditMode.ItemDatabase;
+using IronGrind.Tests.EditMode.Randomness;
 using NUnit.Framework;
 using UnityEngine;
-using UnityEngine.TestTools;
 
 namespace IronGrind.Tests.EditMode.LootTableSystem
 {
@@ -27,7 +27,6 @@ namespace IronGrind.Tests.EditMode.LootTableSystem
         private const uint STEEL_ID = 1003u;
         private const uint DARK_STEEL_ID = 1004u;
         private const uint POTION_ID = 2001u;
-        private const int SEED_SAMPLE_COUNT = 5;
         private const int FIXED_SEED = 12345;
 
         private readonly List<ItemDefinition> _created = new List<ItemDefinition>();
@@ -49,33 +48,21 @@ namespace IronGrind.Tests.EditMode.LootTableSystem
         // Helpers and fakes
         // -----------------------------------------------------------------------
 
-        private sealed class CountingRandom : System.Random
+        // Pseudo-random draws from a fixed seed, with per-method draw counts.
+        private static RecordingRandomProvider CountingRandom()
         {
-            public int NextDoubleCalls { get; private set; }
-
-            public CountingRandom(int seed) : base(seed) { }
-
-            public override double NextDouble()
-            {
-                NextDoubleCalls++;
-                return base.NextDouble();
-            }
+            return new RecordingRandomProvider(new SystemRandomProvider(new System.Random(FIXED_SEED)));
         }
 
         // Returns the queued values in order, so a test controls each draw exactly.
-        private sealed class ScriptedRandom : System.Random
+        private static ScriptedRandomProvider Scripted(params double[] draws)
         {
-            private readonly Queue<double> _draws;
-
-            public ScriptedRandom(params double[] draws)
+            var provider = new ScriptedRandomProvider();
+            foreach (double draw in draws)
             {
-                _draws = new Queue<double>(draws);
+                provider.EnqueueDouble(draw);
             }
-
-            public override double NextDouble()
-            {
-                return _draws.Dequeue();
-            }
+            return provider;
         }
 
         private sealed class FakeItemDatabase : IItemDatabase
@@ -159,16 +146,18 @@ namespace IronGrind.Tests.EditMode.LootTableSystem
                 new LootTableEntry(ItemA, 1.0f),
                 new LootTableEntry(ItemB, 0.0f),
                 new LootTableEntry(ItemC, 1.0f));
-            var rng = new CountingRandom(FIXED_SEED);
+            RecordingRandomProvider random = CountingRandom();
 
             // Act
-            List<ItemID> drops = LootDropRoller.Roll(table, rng);
+            List<ItemID> drops = LootDropRoller.Roll(table, random);
 
             // Assert
             Assert.AreEqual(2, drops.Count);
             Assert.AreEqual(ItemA, drops[0]);
             Assert.AreEqual(ItemC, drops[1]);
-            Assert.AreEqual(3, rng.NextDoubleCalls);
+            Assert.AreEqual(3, random.DoubleDrawCount);
+            Assert.AreEqual(0, random.FloatDrawCount);
+            Assert.AreEqual(0, random.IntDrawCount);
         }
 
         [Test]
@@ -178,15 +167,17 @@ namespace IronGrind.Tests.EditMode.LootTableSystem
             LootTableDefinition table = Table(
                 new LootTableEntry(ItemA, 0.0f),
                 new LootTableEntry(ItemB, 1.0f));
-            var rng = new CountingRandom(FIXED_SEED);
+            RecordingRandomProvider random = CountingRandom();
 
             // Act
-            List<ItemID> drops = LootDropRoller.Roll(table, rng);
+            List<ItemID> drops = LootDropRoller.Roll(table, random);
 
             // Assert
             Assert.AreEqual(1, drops.Count);
             Assert.AreEqual(ItemB, drops[0]);
-            Assert.AreEqual(2, rng.NextDoubleCalls);
+            Assert.AreEqual(2, random.DoubleDrawCount);
+            Assert.AreEqual(0, random.FloatDrawCount);
+            Assert.AreEqual(0, random.IntDrawCount);
         }
 
         [Test]
@@ -194,15 +185,17 @@ namespace IronGrind.Tests.EditMode.LootTableSystem
         {
             // Arrange
             LootTableDefinition table = Table();
-            var rng = new CountingRandom(FIXED_SEED);
+            RecordingRandomProvider random = CountingRandom();
 
             // Act
-            List<ItemID> drops = LootDropRoller.Roll(table, rng);
+            List<ItemID> drops = LootDropRoller.Roll(table, random);
 
             // Assert
             Assert.IsNotNull(drops);
             Assert.AreEqual(0, drops.Count);
-            Assert.AreEqual(0, rng.NextDoubleCalls);
+            Assert.AreEqual(0, random.DoubleDrawCount);
+            Assert.AreEqual(0, random.FloatDrawCount);
+            Assert.AreEqual(0, random.IntDrawCount);
         }
 
         // Comparison rule: an entry drops when draw < DropChance, compared in double.
@@ -216,7 +209,7 @@ namespace IronGrind.Tests.EditMode.LootTableSystem
                 new LootTableEntry(ItemB, 0.51f));
 
             // Act
-            List<ItemID> drops = LootDropRoller.Roll(table, new ScriptedRandom(0.5, 0.5));
+            List<ItemID> drops = LootDropRoller.Roll(table, Scripted(0.5, 0.5));
 
             // Assert
             Assert.AreEqual(1, drops.Count);
@@ -230,7 +223,7 @@ namespace IronGrind.Tests.EditMode.LootTableSystem
             LootTableDefinition table = Table(new LootTableEntry(ItemA, 0.0f));
 
             // Act
-            List<ItemID> drops = LootDropRoller.Roll(table, new ScriptedRandom(0.0));
+            List<ItemID> drops = LootDropRoller.Roll(table, Scripted(0.0));
 
             // Assert
             Assert.AreEqual(0, drops.Count);
@@ -243,7 +236,7 @@ namespace IronGrind.Tests.EditMode.LootTableSystem
             LootTableDefinition table = Table(new LootTableEntry(ItemA, 1.0f));
 
             // Act
-            List<ItemID> drops = LootDropRoller.Roll(table, new ScriptedRandom(0.99999999));
+            List<ItemID> drops = LootDropRoller.Roll(table, Scripted(0.99999999));
 
             // Assert
             Assert.AreEqual(1, drops.Count);
@@ -253,13 +246,23 @@ namespace IronGrind.Tests.EditMode.LootTableSystem
         [Test]
         public void Roll_NullTable_ThrowsArgumentNullException()
         {
-            Assert.Throws<ArgumentNullException>(() => LootDropRoller.Roll(null, new CountingRandom(FIXED_SEED)));
+            Assert.Throws<ArgumentNullException>(() => LootDropRoller.Roll(null, CountingRandom()));
         }
 
         [Test]
-        public void Roll_NullRng_ThrowsArgumentNullException()
+        public void Roll_NullRandom_ThrowsArgumentNullException()
         {
             Assert.Throws<ArgumentNullException>(() => LootDropRoller.Roll(Table(), null));
+        }
+
+        [Test]
+        public void Roll_OneEntryAndNothingQueued_ThrowsInvalidOperationException()
+        {
+            // Arrange — the roller draws once per entry; an empty scripted provider fails on that draw.
+            LootTableDefinition table = Table(new LootTableEntry(ItemA, 1.0f));
+
+            // Act / Assert
+            Assert.Throws<InvalidOperationException>(() => LootDropRoller.Roll(table, new ScriptedRandomProvider()));
         }
 
         // -----------------------------------------------------------------------
@@ -275,7 +278,7 @@ namespace IronGrind.Tests.EditMode.LootTableSystem
             // Act
             var cache = new LootEquipmentCache(database);
             int callsAfterInit = database.GetItemsByCategoryCalls;
-            LootDropRoller.Roll(Table(new LootTableEntry(ItemA, 1.0f)), new CountingRandom(FIXED_SEED));
+            LootDropRoller.Roll(Table(new LootTableEntry(ItemA, 1.0f)), CountingRandom());
             cache.Classify(new ItemID(STEEL_ID));
             cache.Classify(new ItemID(BRONZE_ID));
             cache.Classify(new ItemID(POTION_ID));
@@ -354,28 +357,6 @@ namespace IronGrind.Tests.EditMode.LootTableSystem
         }
 
         // -----------------------------------------------------------------------
-        // CR-LT-1 seeding
-        // -----------------------------------------------------------------------
-
-        [Test]
-        public void Factory_CreateSeededFromEntropy_LogsSeedAndReturnsReproducibleRandom()
-        {
-            // Arrange
-            LogAssert.Expect(LogType.Log, new Regex(@"^\[LootTable\] PRNG seed: -?\d+$"));
-
-            // Act
-            System.Random rng = LootRandomFactory.CreateSeededFromEntropy(out int seed);
-            var reference = new System.Random(seed);
-
-            // Assert
-            Assert.IsNotNull(rng);
-            for (int i = 0; i < SEED_SAMPLE_COUNT; i++)
-            {
-                Assert.AreEqual(reference.NextDouble(), rng.NextDouble());
-            }
-        }
-
-        // -----------------------------------------------------------------------
         // Zero-drop result
         // -----------------------------------------------------------------------
 
@@ -388,7 +369,7 @@ namespace IronGrind.Tests.EditMode.LootTableSystem
                 new LootTableEntry(ItemB, 0.0f));
 
             // Act
-            List<ItemID> drops = LootDropRoller.Roll(table, new CountingRandom(FIXED_SEED));
+            List<ItemID> drops = LootDropRoller.Roll(table, CountingRandom());
 
             // Assert
             Assert.IsNotNull(drops);

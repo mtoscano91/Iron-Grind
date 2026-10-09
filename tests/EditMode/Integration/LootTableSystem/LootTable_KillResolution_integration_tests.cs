@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using IronGrind.CharacterStats;
 using IronGrind.Currency;
 using IronGrind.LootTableSystem;
+using IronGrind.Randomness;
 using IronGrind.Tests.EditMode.LootTableSystem;
 using NUnit.Framework;
 using UnityEngine;
@@ -15,7 +16,7 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
     /// EditMode integration tests for Loot Table Story 004: kill resolution and gold distribution
     /// (design/gdd/loot-table-system.md CR-LT-14, F-LT-1, CR-LT-4; entry point design/gdd/enemy-ai.md),
     /// using a recording currency service, stub party and mob providers, a recording drop sink and a
-    /// PRNG with a fixed <c>Next</c> result.
+    /// random provider with a fixed <c>NextInt</c> result.
     /// </summary>
     [TestFixture]
     internal sealed class LootTable_KillResolution_Integration_Tests
@@ -209,10 +210,12 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
             }
         }
 
-        // Counts every draw and records their order; Next(min, max) returns a fixed value so the
-        // gold draw is controlled, and remembers the bounds it was asked for.
-        private sealed class FixedGoldRandom : System.Random
+        // Counts every draw and records their order; NextInt(min, max) returns a fixed value so the
+        // gold draw is controlled, and remembers the bounds it was asked for. Roll draws come from a
+        // seeded SystemRandomProvider. Loot Table never draws a float, so NextFloat() throws.
+        private sealed class FixedGoldRandom : IRandomProvider
         {
+            private readonly IRandomProvider _inner;
             private readonly int _nextValue;
 
             public int NextDoubleCalls { get; private set; }
@@ -225,27 +228,33 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
 
             public int LastNextMax { get; private set; }
 
-            // One DRAW_ROLL per NextDouble() and one DRAW_GOLD per Next(min, max), in call order.
+            // One DRAW_ROLL per NextDouble() and one DRAW_GOLD per NextInt(min, max), in call order.
             public string DrawOrder { get; private set; } = string.Empty;
 
-            public FixedGoldRandom(int seed, int nextValue) : base(seed)
+            public FixedGoldRandom(int seed, int nextValue)
             {
+                _inner = new SystemRandomProvider(new System.Random(seed));
                 _nextValue = nextValue;
             }
 
-            public override double NextDouble()
+            public float NextFloat()
+            {
+                throw new InvalidOperationException("Loot Table must not draw a float.");
+            }
+
+            public double NextDouble()
             {
                 NextDoubleCalls++;
                 DrawOrder += DRAW_ROLL;
-                return base.NextDouble();
+                return _inner.NextDouble();
             }
 
-            public override int Next(int minValue, int maxValue)
+            public int NextInt(int minInclusive, int maxExclusive)
             {
                 NextCalls++;
                 DrawOrder += DRAW_GOLD;
-                LastNextMin = minValue;
-                LastNextMax = maxValue;
+                LastNextMin = minInclusive;
+                LastNextMax = maxExclusive;
                 return _nextValue;
             }
         }
@@ -258,7 +267,7 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
             public readonly RecordingCurrencyService Currency = new RecordingCurrencyService();
             public readonly RecordingDropSink Sink = new RecordingDropSink();
             public readonly FakeTick Tick = new FakeTick();
-            public readonly FixedGoldRandom Rng;
+            public readonly FixedGoldRandom Random;
             public readonly LootTableRegistry Registry;
             public readonly PartyTagTracker Tracker;
             public readonly LootTableService Service;
@@ -274,9 +283,9 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
 
                 Mobs.Mobs[Mob] = new MobInfo(new MobTypeID(MOB_TYPE_RAW), MOB_MAX_HP, MobPosition);
                 Mobs.Mobs[MobWithoutTable] = new MobInfo(new MobTypeID(MOB_TYPE_WITHOUT_TABLE_RAW), MOB_MAX_HP, MobPosition);
-                Rng = new FixedGoldRandom(PRNG_SEED, goldDraw);
+                Random = new FixedGoldRandom(PRNG_SEED, goldDraw);
                 Tracker = new PartyTagTracker(Parties, Mobs, Tick.Read);
-                Service = new LootTableService(Registry, Tracker, Parties, Mobs, Currency, Rng, Sink);
+                Service = new LootTableService(Registry, Tracker, Parties, Mobs, Currency, Random, Sink);
             }
 
             public void Hit(CharacterID attacker)
@@ -334,7 +343,7 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
         public void ResolveMobDrop_BaseGoldTwoPartyOfFour_PaysNothingAndLogsAuthoringViolation()
         {
             // TryCreate rejects GoldMin < 4, so a baseGold of 2 cannot come from a valid table. The
-            // table stays valid (4..8) and the PRNG returns 2: the service must use whatever rng.Next returns.
+            // table stays valid (4..8) and the provider returns 2: the service must use whatever NextInt returns.
             Rig rig = PartyOf(4, TableWithGuaranteedDrop(GOLD_MIN_ZERO_SHARE, GOLD_MAX_ZERO_SHARE), GOLD_DRAW_2);
             LogAssert.Expect(LogType.Error, new Regex("no payable share"));
 
@@ -363,9 +372,9 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
 
             rig.Service.ResolveMobDrop(Mob, 0);
 
-            Assert.AreEqual(GOLD_MIN_SPLIT, rig.Rng.LastNextMin);
-            Assert.AreEqual(GOLD_MAX_SPLIT + 1, rig.Rng.LastNextMax, "The upper bound is exclusive, so GoldMax + 1 makes GoldMax drawable.");
-            Assert.AreEqual(DRAW_ROLL + DRAW_GOLD, rig.Rng.DrawOrder, "One roll draw for the single entry, then the gold draw.");
+            Assert.AreEqual(GOLD_MIN_SPLIT, rig.Random.LastNextMin);
+            Assert.AreEqual(GOLD_MAX_SPLIT + 1, rig.Random.LastNextMax, "The upper bound is exclusive, so GoldMax + 1 makes GoldMax drawable.");
+            Assert.AreEqual(DRAW_ROLL + DRAW_GOLD, rig.Random.DrawOrder, "One roll draw for the single entry, then the gold draw.");
         }
 
         [Test]
@@ -490,7 +499,7 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
             Assert.AreEqual(baseline.Sink.Calls[0].Party, shifted.Sink.Calls[0].Party);
             CollectionAssert.AreEqual(baseline.Sink.Calls[0].Drops, shifted.Sink.Calls[0].Drops);
             Assert.AreEqual(baseline.Sink.Calls[0].Position, shifted.Sink.Calls[0].Position);
-            Assert.AreEqual(baseline.Rng.DrawOrder, shifted.Rng.DrawOrder, "A tier shift must not consume extra PRNG draws.");
+            Assert.AreEqual(baseline.Random.DrawOrder, shifted.Random.DrawOrder, "A tier shift must not consume extra PRNG draws.");
             Assert.AreEqual(1, _warningCount, "Exactly one warning: the ignored tier shift.");
         }
 
@@ -552,7 +561,7 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
 
             Assert.AreEqual(0, rig.Currency.AddGoldCalls.Count);
             Assert.AreEqual(0, rig.Sink.Calls.Count);
-            Assert.AreEqual(0, rig.Rng.TotalDraws);
+            Assert.AreEqual(0, rig.Random.TotalDraws);
             Assert.AreEqual(1, _warningCount, "Exactly one warning: the empty owner party.");
             Assert.IsFalse(rig.Tracker.TryGetTagOwner(Mob, out _), "The damage record must be cleared on this path too.");
         }
@@ -627,13 +636,13 @@ namespace IronGrind.Tests.EditMode.Integration.LootTableSystem
         {
             Rig rig = SoloRig(TableWithGuaranteedDrop(GOLD_SOLO, GOLD_SOLO), GOLD_SOLO);
 
-            Assert.Throws<ArgumentNullException>(() => new LootTableService(null, rig.Tracker, rig.Parties, rig.Mobs, rig.Currency, rig.Rng, rig.Sink));
-            Assert.Throws<ArgumentNullException>(() => new LootTableService(rig.Registry, null, rig.Parties, rig.Mobs, rig.Currency, rig.Rng, rig.Sink));
-            Assert.Throws<ArgumentNullException>(() => new LootTableService(rig.Registry, rig.Tracker, null, rig.Mobs, rig.Currency, rig.Rng, rig.Sink));
-            Assert.Throws<ArgumentNullException>(() => new LootTableService(rig.Registry, rig.Tracker, rig.Parties, null, rig.Currency, rig.Rng, rig.Sink));
-            Assert.Throws<ArgumentNullException>(() => new LootTableService(rig.Registry, rig.Tracker, rig.Parties, rig.Mobs, null, rig.Rng, rig.Sink));
+            Assert.Throws<ArgumentNullException>(() => new LootTableService(null, rig.Tracker, rig.Parties, rig.Mobs, rig.Currency, rig.Random, rig.Sink));
+            Assert.Throws<ArgumentNullException>(() => new LootTableService(rig.Registry, null, rig.Parties, rig.Mobs, rig.Currency, rig.Random, rig.Sink));
+            Assert.Throws<ArgumentNullException>(() => new LootTableService(rig.Registry, rig.Tracker, null, rig.Mobs, rig.Currency, rig.Random, rig.Sink));
+            Assert.Throws<ArgumentNullException>(() => new LootTableService(rig.Registry, rig.Tracker, rig.Parties, null, rig.Currency, rig.Random, rig.Sink));
+            Assert.Throws<ArgumentNullException>(() => new LootTableService(rig.Registry, rig.Tracker, rig.Parties, rig.Mobs, null, rig.Random, rig.Sink));
             Assert.Throws<ArgumentNullException>(() => new LootTableService(rig.Registry, rig.Tracker, rig.Parties, rig.Mobs, rig.Currency, null, rig.Sink));
-            Assert.Throws<ArgumentNullException>(() => new LootTableService(rig.Registry, rig.Tracker, rig.Parties, rig.Mobs, rig.Currency, rig.Rng, null));
+            Assert.Throws<ArgumentNullException>(() => new LootTableService(rig.Registry, rig.Tracker, rig.Parties, rig.Mobs, rig.Currency, rig.Random, null));
         }
     }
 }
