@@ -281,4 +281,4 @@ Nothing is renamed or moved on acceptance. Each step is a story with the full Ed
 - ADR-011 (asynchronous persistence and the tick loop) — tick code and the game-logic thread.
 - ADR-007 (hosting backend) — one process per zone instance.
 - `design/gdd/damage-calculation.md` OQ-DC-2, Step 8; `design/gdd/loot-table-system.md` CR-LT-1; `design/gdd/enhancement-system.md` outcome roll; `design/gdd/enemy-ai.md` CR-AI-12.
-- ADR-014 (inbound request dispatch and tick order, not yet written).
+- ADR-014 (inbound request dispatch and tick order, Accepted 2026-10-09).

@@ -2,7 +2,7 @@
 
 > **Status**: Approved (Pass 2 lean, 2026-05-14)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-05-29
+> **Last Updated**: 2026-10-09 (note on Cross-Cutting Constraint 3: rate limits are evaluated per dispatch tick, ADR-014; wording only, no rule change, no review pass); 2026-05-29
 > **Implements Pillar**: Pillar 3 — Social Gravity (multiplayer world exists); all pillars require server authority
 
 ## Sub-Documents
@@ -284,7 +284,7 @@ The Networking Core is the transport and authority layer: it owns no game state 
 
 1. **EntityID validity gate.** Networking Core drops any inbound RPC referencing an `EntityID` not present in the current zone session. It does not forward the call to game logic.
 2. **Session-ready gate.** No inbound RPCs from a client are forwarded to game logic until that client's `SessionReady` has been sent. RPCs arriving before session-ready are dropped, not queued.
-3. **Rate limiting.** `AllocateFreePoint` RPCs: minimum `ALLOC_FREE_POINT_RATE_LIMIT_MS` (default 200ms) inter-request per entity. `NotifySkillUsed` RPCs: minimum `NOTIFY_SKILL_USED_RATE_LIMIT_MS` (default 50ms — one per tick at 20Hz) inter-request per entity; excess calls rejected with `RateLimitExceeded`, not queued. All other RPCs: no rate limit specified at MVP.
+3. **Rate limiting.** `AllocateFreePoint` RPCs: minimum `ALLOC_FREE_POINT_RATE_LIMIT_MS` (default 200ms) inter-request per entity. `NotifySkillUsed` RPCs: minimum `NOTIFY_SKILL_USED_RATE_LIMIT_MS` (default 50ms — one per tick at 20Hz) inter-request per entity; excess calls rejected with `RateLimitExceeded`, not queued. All other RPCs: no rate limit specified at MVP. The limits are enforced in server ticks, at the point where the request is dispatched (ADR-014 Decision 4): every request dispatched in one tick is evaluated with that tick's number. Two `NotifySkillUsed` requests that reach the server within the same tick interval are therefore evaluated on the same tick, and the second is rejected with `RateLimitExceeded` even if the client sent them 50 ms apart.
 4. **Commit-before-broadcast policy.** For all irreversible high-stakes outcomes (enhancement result, level-up, gold mutation), the server must not emit the outcome broadcast until the persistence layer has confirmed the write.
 5. **`GoldSyncEvent` absolute balance.** Networking Core must never re-encode `GoldSyncEvent.newBalance` as a delta during transport optimization or compression.
 

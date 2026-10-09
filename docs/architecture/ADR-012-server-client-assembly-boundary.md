@@ -301,7 +301,7 @@ Until a system's move story is done, its code is still in the client build. That
 - ADR-005 (HUD framework), ADR-008 (combat UI framework) — screens built on them read the views of Decision 7, never a service.
 - ADR-009 (scene/zone loading) — zone scenes the server loads must hold no `Client` script, Decision 4.
 - ADR-013 (server random provider, Accepted 2026-10-08) — the server RNG injection decision this ADR lists under Enables.
-- ADR-014 (inbound request dispatch and tick order, not yet written) — owns the dispatcher that Decision 4 leaves open.
+- ADR-014 (inbound request dispatch and tick order, Accepted 2026-10-09) — owns the dispatcher that Decision 4 leaves open.
 - ADR-010 (event messaging) — Tier 1 injection is how `Foundation` shells reach `ServerLogic` implementations; event argument structs the client receives are `Foundation`.
 - `design/gdd/damage-calculation.md` Core Rule 1, AC-DC-I-01; `design/gdd/currency-system.md` Group G; `design/gdd/hit-detection.md`; `design/gdd/enemy-ai.md`.
 - `docs/tech-debt-register.md` TD-002 (local packages and asmdef wiring).
