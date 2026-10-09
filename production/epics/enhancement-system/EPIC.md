@@ -3,7 +3,7 @@
 > **Layer**: Feature
 > **GDD**: design/gdd/enhancement-system.md
 > **Architecture Module**: Enhancement (Feature layer; "irreversible outcome — commit before broadcast" data flow in `architecture.md`)
-> **Status**: In Progress (11/14 — Stories 001–008 Complete 2026-10-07; Story 012, the ADR-012 assembly move, and Story 013, the NPC Interaction assembly move, Complete 2026-10-08; Story 014, the ADR-013 random provider migration, Complete 2026-10-09; 3 Blocked: Story 009 on the request dispatcher, Story 010 on TD-046, Story 011 on Character Persistence)
+> **Status**: In Progress (12/14 — Stories 001–008 Complete 2026-10-07; Story 012, the ADR-012 assembly move, and Story 013, the NPC Interaction assembly move, Complete 2026-10-08; Story 014, the ADR-013 random provider migration, Complete 2026-10-09; Story 009, attempt exclusivity tested against the request dispatcher, Complete 2026-10-09; 2 Blocked: Story 010 on TD-046, Story 011 on Character Persistence)
 > **Stories**: 10 stories created 2026-10-07 (001–010); Story 011 added the same day when Story 005 was split at its readiness check
 
 > **Created ahead of the GDD's stated gate (user decision 2026-10-07).** The GDD header says OQ-ENH-7 and the wire-protocol Enhancement message set (TD-046) should close before `/create-epics`. The epic was created anyway so that the formula and bonus-provider work, which neither gate touches, can be planned alongside the Equipment epic. Every requirement the gates affect is marked below.
@@ -71,14 +71,14 @@ This epic is complete when:
 | 006 | [NPC Interaction Session](story-006-npc-interaction-session.md) | Integration | Complete (2026-10-07) | ADR-010 |
 | 007 | [Outcome Events and +9 Broadcast Trigger](story-007-outcome-events-and-broadcast-trigger.md) | Logic | Complete | ADR-010 |
 | 008 | [Scroll Exclusion Validator Rule (MVP)](story-008-scroll-source-restriction.md) | Logic | Complete (2026-10-07) | ADR-010 |
-| 009 | [Attempt Exclusivity — Held Requests](story-009-attempt-exclusivity.md) | Integration | **Blocked** — request dispatcher not built (Networking Core) | ADR-011 |
+| 009 | [Attempt Exclusivity — Held Requests](story-009-attempt-exclusivity.md) | Integration | Complete (2026-10-09; tested against the dispatcher with a fake write, ADR-014 Migration Plan step 3) | ADR-011, ADR-014 |
 | 010 | [Client Requests and Result Delivery](story-010-client-requests-and-result-delivery.md) | Integration | **Blocked** — TD-046 | ADR-004 |
 | 011 | [Commit Orchestration](story-011-commit-orchestration.md) | Integration | **Blocked** — Character Persistence, TD-046 for the client-facing criteria | ADR-006, ADR-011 |
 | 012 | [Move Enhancement to the Server Assembly](story-012-server-assembly-move.md) | Integration | Complete (2026-10-08) | ADR-012 |
 | 013 | [Move NPC Interaction to the Server Assembly](story-013-npc-interaction-server-assembly-move.md) | Integration | Complete (2026-10-08) | ADR-012 |
 | 014 | [Migrate Enhancement to `IRandomProvider`](story-014-random-provider-migration.md) | Logic | Complete (2026-10-09) | ADR-013 |
 
-**Order**: 014 is independent of the blocked stories (it needs Story 012 and Loot Table Story 015, both Complete). 001 first; 002 and 003 need 001; 004 needs 003; 005 and 007 need 004 (007 also needs 005 for its "nothing on a rollback" check); 006 needs 003; 008 is independent; 011 needs 005 and its blockers; 009 and 010 follow 011.
+**Order**: 014 is independent of the blocked stories (it needs Story 012 and Loot Table Story 015, both Complete). 001 first; 002 and 003 need 001; 004 needs 003; 005 and 007 need 004 (007 also needs 005 for its "nothing on a rollback" check); 006 needs 003; 008 is independent; 011 needs 005 and its blockers; 009 needs 004, 005 and Networking Core Stories 036 and 037 (its test composes the coordinator itself, so it no longer follows 011); 010 follows 011.
 
 **GDD AC coverage**: 30 of the 39 acceptance criteria are assigned to these stories. The other nine are owned elsewhere:
 - **AC-ENH-1** (new item starts at level 0) — already verified by Inventory System Story 010.
@@ -86,7 +86,7 @@ This epic is complete when:
 - **AC-ENH-15, 16, 17, 32** (prestige bits in `equipmentAppearanceFlags`) — the byte is written by the Equipment System; Story 001 covers the level-to-band mapping, the end-to-end check belongs to the Equipment epic (TR-equip-007).
 - **AC-ENH-25, 26, 31** (probability display, heightened warning, acknowledgment) — deferred to the Enhancement UI epic (GDD not yet authored).
 
-Assigned to Blocked stories: **AC-ENH-38** (Story 009), **AC-ENH-6** (Story 010) and **AC-ENH-13** (Story 011). **AC-ENH-23, 34 and 35** are split: their bag-state halves are in Story 005 (Ready), their commit halves in Story 011 (Blocked). Story 010 holds the delivery half of **AC-ENH-18**, whose server-side half is in Story 007. **AC-ENH-8** was moved from Story 005 to Story 004 and is Complete.
+**AC-ENH-38** is in Story 009 (Complete; a bag move stands in for the Helmet unequip until the Equipment System exists). Assigned to Blocked stories: **AC-ENH-6** (Story 010) and **AC-ENH-13** (Story 011). **AC-ENH-23, 34 and 35** are split: their bag-state halves are in Story 005 (Ready), their commit halves in Story 011 (Blocked). Story 010 holds the delivery half of **AC-ENH-18**, whose server-side half is in Story 007. **AC-ENH-8** was moved from Story 005 to Story 004 and is Complete.
 
 **Open points recorded in the stories for `/story-readiness`**:
 - Story 011 (split out of Story 005 on 2026-10-07) — how server tick-loop code consumes the asynchronous `SaveIrreversibleOutcome`. `EnhancementService` is two-phase and synchronous (`BeginAttempt` → the caller commits → `CompleteAttempt` or `RollBackAttempt`) and never calls persistence; the existing `CommitBeforeBroadcastSequencer` is synchronous and would block the tick for the write. Needs a decision, probably an ADR, shared with OQ-ENH-7 and the other irreversible outcomes (level-up, respec, item consumption).
@@ -98,4 +98,4 @@ Assigned to Blocked stories: **AC-ENH-38** (Story 009), **AC-ENH-6** (Story 010)
 
 ## Next Step
 
-Stories 001–008 are Complete (2026-10-07) — config, bonus provider, validation, the two-phase attempt sequence, the rollback, the outcome events, the NPC session and the loot table scroll exclusion rule are in code. No story is Ready. ADR-011 (asynchronous persistence in the tick loop; resolves OQ-ENH-7) was Accepted 2026-10-07. To unblock 009, 010 and 011: build the request dispatcher (Networking Core), the wire-protocol authoring session for TD-046, and a Character Persistence epic.
+Stories 001–008 are Complete (2026-10-07) — config, bonus provider, validation, the two-phase attempt sequence, the rollback, the outcome events, the NPC session and the loot table scroll exclusion rule are in code. Story 009 is Complete (2026-10-09): attempt exclusivity is tested against the request dispatcher (Networking Core Story 036), with no production source change. ADR-011 (asynchronous persistence in the tick loop; resolves OQ-ENH-7) was Accepted 2026-10-07. To unblock 010 and 011: the wire-protocol authoring session for TD-046, and a Character Persistence epic.
