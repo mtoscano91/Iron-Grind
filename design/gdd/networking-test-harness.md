@@ -2,7 +2,7 @@
 
 > **Status**: Approved (lean re-review, 2026-05-14)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-05-29 (OQ-ZI-5: OnZoneGateOpened + GetOutboundMessageCount added to INetworkTestObserver)
+> **Last Updated**: 2026-10-09 (TD-046: `EnhancementOutcomeBroadcast` is now `EnhancementAttemptResult`, owner only — comments and one acceptance criterion renamed; observer signatures unchanged, revision deferred to Enhancement Story 010; no review pass). Previous: 2026-05-29 (OQ-ZI-5: OnZoneGateOpened + GetOutboundMessageCount added to INetworkTestObserver)
 > **Parent**: networking-core.md
 
 ## Overview
@@ -171,8 +171,9 @@ public interface INetworkTestObserver
     // under R-U or R-OD congestion (PA-P7-05 separate-packet fix).
     void OnServerCycleTimerBroadcastSerialized(uint entityId, ushort cyclePositionTicks, uint serverTickNumber);
 
-    // Called when the server serializes an EnhancementOutcomeBroadcast for zone-wide R-OD delivery.
-    // Provisional signature — full schema pending Enhancement System GDD.
+    // Called when the server serializes an EnhancementAttemptResult for R-OD delivery to the owning client
+    // (networking-wire-protocol.md, TD-046 amendment 2026-10-09 — it replaces the former zone-wide outcome placeholder).
+    // Provisional signature — the schema is now defined (slot based, resultCode); the signature is revised with Enhancement Story 010.
     void OnServerEnhancementOutcomeSerialized(uint characterId, uint itemId, bool success, byte newEnhancementLevel);
 
     // Called after the R-U batch for a client is fully serialized each tick.
@@ -201,9 +202,9 @@ public interface INetworkTestObserver
     // Called on the client when a CycleTimerBroadcast is received (U-U path, 0x0103).
     void OnClientCycleTimerBroadcastReceived(uint entityId, ushort cyclePositionTicks);
 
-    // Called on the client when an EnhancementOutcomeBroadcast is received at the transport boundary.
-    // Fires on ALL zone clients (both the enhancing player and all zone observers) — Pillar 3 social signal.
-    // Provisional signature — full schema pending Enhancement System GDD.
+    // Called on the client when an EnhancementAttemptResult is received at the transport boundary.
+    // Fires on the enhancing player's client only (2026-10-09, TD-046); the +9 social signal is the separate ServerBroadcast_Enhancement9.
+    // Provisional signature — the schema is now defined (slot based, resultCode); the signature is revised with Enhancement Story 010.
     void OnClientEnhancementOutcomeReceived(uint characterId, uint itemId, bool success, byte newEnhancementLevel);
 
     // --- Zone entry capture ---
@@ -419,8 +420,8 @@ Given a test client for which the server has 12 R-OD messages queued simultaneou
 - Exactly 4 `OnPriorityPathMessageFlushed` callbacks fire with `tickNumber == T+1` for this client, in the same relative emission order as the deferred messages held in the tick-T queue
 - No message is dropped — all 12 callbacks eventually fire across tick T and tick T+1
 
-Additionally: When the queued 12 messages include at least one `EnhancementOutcomeBroadcast`, Then:
-- The first `OnPriorityPathMessageFlushed` callback in tick T has `messageTypeId` matching `EnhancementOutcomeBroadcast.MessageTypeID`, regardless of that message's position in emission order
+Additionally: When the queued 12 messages include at least one `EnhancementAttemptResult`, Then:
+- The first `OnPriorityPathMessageFlushed` callback in tick T has `messageTypeId` matching `EnhancementAttemptResult.MessageTypeID`, regardless of that message's position in emission order
 - The message that held position 0 in emission order (if it was not the enhancement outcome) appears as the first `OnPriorityPathMessageFlushed` callback in tick T+1
 
 *Unit-testable without physical transport — inject 12 pre-built R-OD message objects into the priority queue and advance one tick.*

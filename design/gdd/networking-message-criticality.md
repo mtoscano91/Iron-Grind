@@ -2,7 +2,7 @@
 
 > **Status**: Approved (lean re-review Pass 2, 2026-05-17)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-05-17
+> **Last Updated**: 2026-10-09 (TD-046 amendment: MCR-2 rows for the Enhancement message set and the two inventory sync messages; the schema-pending Enhancement outcome row is replaced; no channel assignment of an existing message changed; lean re-review pending with networking-wire-protocol.md). Previous: 2026-05-17
 > **Parent**: networking-wire-protocol.md
 
 ## Overview
@@ -88,9 +88,16 @@ None. This document is a pure infrastructure contract. Its correctness is felt i
 | `UseItemRequest` | Pillar 1 | Guaranteed delivery | R-OD | Irreversible item-use action (client → server). Consuming a potion permanently removes it from inventory and changes HP/MP. `requestId` idempotency per ADR-001 prevents double-consumption on retransmit. |
 | `UseItemResult` | Pillar 1 | Guaranteed delivery | R-OD | Authoritative item-use outcome (server → owning client). Carries HP/MP value and updated inventory count. Must arrive — a lost result leaves client display in the predicted state with no self-correction path. |
 | `UseItemRejected` | Pillar 1 | Guaranteed delivery | R-OD | Item-use rejection (server → owning client). Must arrive to release client predict state — a lost rejection permanently greys the hotbar slot and locks the cooldown timer with no self-correction mechanism. |
-| `EnhancementAttemptRequest` | Pillar 1 | Guaranteed delivery | R-OD | Irreversible player action (client → server). |
+| `EnhancementAttemptRequest` | Pillar 1 | Guaranteed delivery | R-OD | Irreversible player action (client → server). Slot based since 2026-10-09 (TD-046); the `ConfirmEnhancement` of enhancement-system.md. |
 | `EnhancementRequestReceived` | Pillar 1 | Guaranteed delivery | R-OD | Acknowledgment of irreversible action. Enhancement-path cap exemption applies. |
-| Enhancement outcome broadcast *(schema pending)* | Pillar 1 + Pillar 3 | Guaranteed delivery | R-OD | Permanent item change (Pillar 1) + social signal (Pillar 3). Schema defined in Enhancement System GDD. |
+| `EnhancementAttemptResult` | Pillar 1 | Guaranteed delivery | R-OD | Permanent item change, or the rejection that releases the client's waiting state (server → owning client). Enhancement-path cap exemption applies. Replaces the schema-pending "Enhancement outcome broadcast" row (2026-10-09, TD-046). |
+| `ServerBroadcast_Enhancement9` | Pillar 3 | Guaranteed delivery | R-OD | One-time social signal: a +9 success announced to every connected client (enhancement-system.md CR-ENH-14). A missed broadcast is never repeated. Not cap-exempt. |
+| `CancelEnhancement` | Infrastructure | Guaranteed delivery | R-OD | Selection cancel before confirm (client → server). No server state changes and no response; R-OD only so that it cannot overtake or be overtaken by an `EnhancementAttemptRequest` on the same connection. |
+| `EnhancementPreviewRequest` | Pillar 1 | Guaranteed delivery | R-OD | Asks for the probabilities of a selection (client → server). Must arrive: the player may not confirm without seeing them (UI-ENH-5). No state change. |
+| `EnhancementStateUpdate` | Pillar 1 | Guaranteed delivery | R-OD | Success and destruction probabilities shown before an irreversible action (server → owning client). A lost update leaves the Confirm button unavailable. |
+| `EnhancementPreviewRejected` | Pillar 1 | Guaranteed delivery | R-OD | Preview rejection (server → owning client). Must arrive to clear a selection the server considers invalid. |
+| `InventorySlotUpdate` | Pillar 1 | Guaranteed delivery | R-OD | Authoritative bag slot state after any server-side change (server → owning client). Absolute state, but not self-correcting: there is no periodic resend, so a lost update leaves the bag wrong until the next zone entry. Held during an enhancement attempt (enhancement-system.md CR-ENH-11). |
+| `InventoryFullSync` | Pillar 1 | Guaranteed delivery | R-OD | Whole bag on zone entry (server → owning client). The base state every later `InventorySlotUpdate` is applied to. |
 | Level-up event + stat snapshot *(schema pending)* | Pillar 1 | Guaranteed delivery | R-OD | Permanent progression event. Schema defined in Leveling System GDD. |
 | `AllocateFreePointRequest` / Response *(schema pending)* | Pillar 1 | Guaranteed delivery | R-OD | Permanent stat change. Schemas defined in Character Stats GDD. |
 | Respec Phase 1/2 *(schemas pending)* | Pillar 1 | Guaranteed delivery | R-OD | Permanent stat respec. Schemas defined in Character Stats GDD. |
@@ -103,7 +110,7 @@ None. This document is a pure infrastructure contract. Its correctness is felt i
 | `HeartbeatMessage` | Infrastructure | Self-correcting | U-U | Keepalive. Dropped heartbeat self-corrects — next heartbeat resets timeout. |
 | `RttProbe` / `RttProbeEcho` | Infrastructure | Self-correcting | U-U | RTT measurement. Loss is acceptable; next probe corrects the OWL estimate. |
 
-**Schema-pending rows:** Five Pillar 1 messages listed above have schemas defined in downstream GDDs (Enhancement System, Leveling System, Character Stats, Inventory System). Each GDD must add the message schema to `networking-wire-protocol.md` and confirm the R-OD channel assignment when that GDD is authored. No schema-pending message may be dispatched in a build until its schema is defined.
+**Schema-pending rows:** Four Pillar 1 messages listed above have schemas defined in downstream GDDs (Leveling System, Character Stats, Inventory System); the Enhancement rows are no longer pending (2026-10-09, TD-046). Each GDD must add the message schema to `networking-wire-protocol.md` and confirm the R-OD channel assignment when that GDD is authored. No schema-pending message may be dispatched in a build until its schema is defined.
 
 ---
 
@@ -113,7 +120,7 @@ When a message serves multiple pillars with conflicting delivery requirements, t
 
 - Pillar 1 (guaranteed) takes precedence over Pillar 2 (self-correcting) and Pillar 3 (self-correcting)
 - Pillar 3 (one-time social event) takes precedence over Pillar 2 (real-time feedback) when both require reliable delivery
-- Enhancement outcome: Pillar 1 + Pillar 3 → R-OD (both require it independently)
+- Enhancement outcome (`EnhancementAttemptResult`, Pillar 1) and the +9 broadcast (`ServerBroadcast_Enhancement9`, Pillar 3) are separate messages since 2026-10-09 (TD-046) — each is R-OD on its own pillar
 - KillEvent: Pillar 1 + Pillar 3 → R-OD (both require it independently)
 
 The resolution applies to guaranteed-delivery messages: any message touching a pillar that requires R-OD must resolve to R-OD. **Exception for self-correcting data:** If a message's content is continuously overwritten by subsequent messages of the same type (every new message fully supersedes the last), it may remain on R-U even when tagged with a Pillar 1 classification, provided the ultimate economic outcome is guaranteed by a separate R-OD message. Such exceptions must be documented explicitly in the MCR-2 rationale column (see `GoldSyncEvent` and `LootBidUpdate`). If a new message's resolution is ambiguous, escalate to the game-designer before the schema is added.
@@ -209,7 +216,7 @@ If a proposed new message serves two pillars where the resolution rule (MCR-3) p
 
 ### EC-MCR-4 — Schema-Pending Message Built Into a Binary
 
-If a schema-pending message (Enhancement outcome, level-up, AllocateFreePoint, Respec, item consumption) is dispatched in a build before its schema is defined in `networking-wire-protocol.md`, the dispatcher must reject it at registration time — a `PendingSchemaDispatch` fatal error must be thrown during server startup, not at runtime dispatch. This prevents silent malformed packets from reaching clients.
+If a schema-pending message (level-up, AllocateFreePoint, Respec, item consumption) is dispatched in a build before its schema is defined in `networking-wire-protocol.md`, the dispatcher must reject it at registration time — a `PendingSchemaDispatch` fatal error must be thrown during server startup, not at runtime dispatch. This prevents silent malformed packets from reaching clients.
 
 ## Dependencies
 

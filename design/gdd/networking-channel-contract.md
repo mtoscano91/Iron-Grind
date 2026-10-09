@@ -2,7 +2,7 @@
 
 > **Status**: In Review — Revision Pass 1 (2026-05-18; applying 14-blocker fixes)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-05-22 (Pass 1 continued: added EquipRequest, EquipResult, AppearanceChangedEvent CCR-3 rows — Equipment System upstream contract, 2026-05-22)
+> **Last Updated**: 2026-10-09 (TD-046 amendment: CCR-3 rows for the Enhancement message set and the two inventory sync messages; the schema-pending outcome broadcast row is replaced; lean re-review pending with networking-wire-protocol.md). Previous: 2026-05-22 (Pass 1 continued: added EquipRequest, EquipResult, AppearanceChangedEvent CCR-3 rows — Equipment System upstream contract, 2026-05-22)
 > **Parent**: networking-wire-protocol.md
 
 ## Overview
@@ -104,9 +104,16 @@ Two distinct session-establishment flows exist. Their naming must not be confuse
 | `UseItemRequest` | C→S | R-OD | P1 | Irreversible item-use action. `requestId` idempotency per ADR-001 A1 — transport retransmit returns cached `UseItemResult` without re-executing. Server deduplicates on `(SenderEntityID, messageType, requestId)` within `SESSION_TTL_SECONDS`. Rate-limited: 10 req/sec per character. |
 | `UseItemResult` | S→C | R-OD | P1 | Authoritative item-use outcome. Carries `newResourceValue` (FloorToInt, CR-NET-7.2) and `newInventoryQuantity`. Client must not apply HP/MP or inventory update until receipt — no optimistic update for resource value (client only predicts cooldown start). |
 | `UseItemRejected` | S→C | R-OD | P1 | Item-use rejection. Must arrive to release client predict state — resets `EffectTypeCooldownRemaining` to 0 and un-greys the hotbar slot. A lost rejection permanently locks the slot in the greyed state. `requestId` correlates to the rejected `UseItemRequest`. |
-| `EnhancementAttemptRequest` | C→S | R-OD | P1 | Client-generated `requestId` is monotonically increasing. Server deduplicates by `requestId` to handle transport-layer retransmits. |
-| `EnhancementRequestReceived` | S→C | R-OD | P1 | **Cap-exempt.** Placed at front of Path 1 queue before tick flush. |
-| Enhancement outcome broadcast *(schema pending)* | S→ALL | R-OD | P1 | **Cap-exempt** (same exemption as EnhancementRequestReceived). Schema in Enhancement System GDD. |
+| `EnhancementAttemptRequest` | C→S | R-OD | P1 | Client-generated `requestId` is monotonically increasing. Server deduplicates by `requestId` to handle transport-layer retransmits. Body is slot based (`itemSlotIndex`, `scrollSlotIndex`) since 2026-10-09 (TD-046); the sender is the envelope's `SenderEntityID`. |
+| `EnhancementRequestReceived` | S→C | R-OD | P1 | **Cap-exempt.** Placed at front of Path 1 queue before tick flush. Sent only for a request that passed validation; echoes its `requestId`. |
+| `EnhancementAttemptResult` | S→C | R-OD | P1 | **Cap-exempt** (same exemption as EnhancementRequestReceived). Sent to the requesting client only. For `Success` / `Destruction`: only after the persistence write succeeds, and never without a preceding `EnhancementRequestReceived` for the same `requestId`. For a `Rejected*` code: sent instead of `EnhancementRequestReceived`. Never re-sent after a reconnect. Replaces the schema-pending outcome broadcast row (2026-10-09, TD-046). |
+| `ServerBroadcast_Enhancement9` | S→ALL (all connected clients, every zone) | R-OD | P1 | Sent once per +8 → +9 success, only after the persistence write succeeds. Not cap-exempt. Each string is at most 24 UTF-8 bytes. |
+| `CancelEnhancement` | C→S | R-OD | P1 | Fire-and-forget — no server response, no state change. Ignored once an `EnhancementAttemptRequest` has been accepted. |
+| `EnhancementPreviewRequest` | C→S | R-OD | P1 | Read-only: locks nothing, consumes nothing. No `requestId`. Exactly one response: `EnhancementStateUpdate` or `EnhancementPreviewRejected`. Rate-limited per ADR-001. |
+| `EnhancementStateUpdate` | S→C | R-OD | P1 | Response to a valid `EnhancementPreviewRequest`; echoes both slot indices. Probabilities are `ushort` × 10,000, each in [0, 10,000]. |
+| `EnhancementPreviewRejected` | S→C | R-OD | P1 | Response to an invalid `EnhancementPreviewRequest`; echoes both slot indices. `resultCode` is a `Rejected*` value, never `Success` or `Destruction`. |
+| `InventorySlotUpdate` | S→C | R-OD | P1 | Sent to the owning client only. Absolute slot state; 1–20 entries; no slot index twice in one message. Never sent before the session's `InventoryFullSync`. Held from the start of an enhancement attempt until its commit; discarded if the commit fails (enhancement-system.md CR-ENH-11). |
+| `InventoryFullSync` | S→C | R-OD | P1 | Sent to the owning client once per zone entry, after `SessionReady`. Always 20 entries in ascending slot order. The client replaces its whole bag. |
 | Level-up event + stat snapshot *(schema pending)* | S→C | R-OD | P1 | Schema in Leveling System GDD. |
 | `AllocateFreePointRequest` *(schema pending)* | C→S | R-OD | P1 | Schema in Character Stats GDD. |
 | `AllocateFreePointResponse` *(schema pending)* | S→C | R-OD | P1 | Schema in Character Stats GDD. |
@@ -163,7 +170,7 @@ PathCapacity_effective = PRIORITY_PATH_CAP + ExemptMessages_queued
 | Scenario | ExemptMessages_queued | PathCapacity_effective |
 |----------|-----------------------|------------------------|
 | Steady-state (no enhancement, no zone entry) | 0 | 8 |
-| Enhancement tick (EnhancementRequestReceived + outcome) | 2 | 10 |
+| Enhancement tick (`EnhancementRequestReceived` + `EnhancementAttemptResult`) | 2 | 10 |
 | Zone entry at n=50 (7 snapshot fragments) | 7 | 15 |
 
 The cap applies per destination client per tick. Zone-entry effective capacity (15) is bounded — once all fragments are sent, the cap returns to PRIORITY_PATH_CAP.

@@ -2,7 +2,7 @@
 
 > **Status**: Approved (Pass 2 lean, 2026-05-14)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-10-09 (note on Cross-Cutting Constraint 3: rate limits are evaluated per dispatch tick, ADR-014; wording only, no rule change, no review pass); 2026-05-29
+> **Last Updated**: 2026-10-09 (TD-046: CR-NET-5.2 `EnhancementAttemptRequest` and the CR-NET-5.3 step 3 `EnhancementRequestReceived` body are slot based, following networking-wire-protocol.md; no rule change); 2026-10-09 (note on Cross-Cutting Constraint 3: rate limits are evaluated per dispatch tick, ADR-014; wording only, no rule change, no review pass); 2026-05-29
 > **Implements Pillar**: Pillar 3 — Social Gravity (multiplayer world exists); all pillars require server authority
 
 ## Sub-Documents
@@ -114,13 +114,13 @@ Two corrections from prior versions of this table that `networking-channel-contr
 
 **CR-NET-5.1** Any outcome that cannot be reversed — item enhancement destruction, item consumption, level-up stat writes, gold mutation — must be fully committed to persistence on the server before any message describing the outcome is transmitted to any client.
 
-**CR-NET-5.2** `EnhancementAttemptRequest` wire schema (R-OD, priority path, 12-byte body):
+**CR-NET-5.2** `EnhancementAttemptRequest` wire schema (R-OD, priority path, 6-byte body — slot based since 2026-10-09, TD-046; authoritative definition in `networking-wire-protocol.md`):
 
 ```
 EnhancementAttemptRequest {
-    EntityID entityId;   // 4 bytes — the requesting player's entity
-    ItemID   itemId;     // 4 bytes — the item being enhanced
-    uint     requestId;  // 4 bytes — client-generated monotonically increasing ID
+    uint requestId;       // 4 bytes — client-generated monotonically increasing ID
+    byte itemSlotIndex;   // 1 byte  — bag slot of the item being enhanced
+    byte scrollSlotIndex; // 1 byte  — bag slot of the Enhancement Scroll
 }
 ```
 
@@ -129,7 +129,7 @@ EnhancementAttemptRequest {
 **CR-NET-5.3** Enhancement attempt commit-before-broadcast sequence:
 1. Server receives `EnhancementAttemptRequest` from owning client
 2. Server validates the request (item exists, materials present, `requestId != LastEnhancementRequestID`); if invalid, emits a rejection immediately and stops
-3. Server emits `EnhancementRequestReceived { EntityID entityId; ItemID itemId; }` (R-OD, priority path) to owning client — **before** computing the outcome. Client enters a "processing" visual state. This is a request acknowledgment, not an outcome.
+3. Server emits `EnhancementRequestReceived { uint requestId; byte itemSlotIndex; }` (R-OD, priority path) to owning client — **before** computing the outcome. Client enters a "processing" visual state. This is a request acknowledgment, not an outcome.
 4. Server computes the outcome using Enhancement System logic
 5. Server writes the outcome atomically to persistence; `LastEnhancementRequestID` is updated in the same write. Item's new state is durable.
 6. Only after the write is confirmed durable does the server emit the outcome message to the owning client and any zone-visible broadcast

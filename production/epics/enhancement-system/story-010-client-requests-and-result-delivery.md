@@ -1,7 +1,7 @@
 # Story 010: Client Requests and Result Delivery
 
 > **Epic**: Enhancement System
-> **Status**: Blocked — **TD-046: the wire-protocol Enhancement message set does not match the GDD. Do not start until `networking-wire-protocol.md` is amended and re-reviewed.**
+> **Status**: Blocked — **TD-046: the wire-protocol amendment was written 2026-10-09 but is not re-reviewed. Do not start until the lean re-review of `networking-wire-protocol.md` passes and ADR-014 lists the two new inbound request types.**
 > **Layer**: Feature
 > **Type**: Integration
 > **Manifest Version**: 2026-06-28
@@ -31,7 +31,9 @@
 2. No wire message carries inventory slot changes to the owning client. After an enhancement success the client has no authoritative slot update. The GDD requires that any such message derived from an attempt's pre-commit inventory events is held until the commit succeeds and dropped if it fails (CR-ENH-11).
 3. The final encoding of `EnhancementAttemptResult` (how `outcome` / `newLevel` are sent on a rejection) is deferred to the same fix (UI-ENH-2).
 
-Fix: a wire-protocol authoring session (align the request to the slot-based contract, define the result and broadcast bodies, add the inventory slot-update message), then a lean re-review. After that, re-run `/story-readiness` on this file.
+**Update 2026-10-09 — amendment written, re-review pending.** `networking-wire-protocol.md` now defines: `EnhancementAttemptRequest { requestId, itemSlotIndex, scrollSlotIndex }` (the GDD's `ConfirmEnhancement` under its wire name), `EnhancementRequestReceived { requestId, itemSlotIndex }`, `EnhancementAttemptResult { requestId, resultCode, newLevel }` (`outcome` is not sent — derived from `resultCode`), `ServerBroadcast_Enhancement9`, `CancelEnhancement`, `EnhancementPreviewRequest` → `EnhancementStateUpdate` (probabilities as `ushort` × 10,000) or `EnhancementPreviewRejected`, and `InventorySlotUpdate` / `InventoryFullSync` with the CR-ENH-11 hold rule. The three points above are answered there; the criteria and test cases below still use the pre-amendment wording and must be re-read against the amended schemas.
+
+Still to do before this story is Ready: (1) lean re-review of `networking-wire-protocol.md` in a fresh session; (2) ADR-014 Decision 1 rows for `EnhancementPreviewRequest` and `CancelEnhancement` (held or not); (3) re-run `/story-readiness` on this file. Code this story must also bring in line: comments naming `EnhancementOutcomeBroadcast` or `(entityId, itemId)` in `INetworkTestObserver.cs`, `CommitBeforeBroadcastSequencer.cs`, `PriorityPathQueue.cs`, `QueuedMessage.cs` and two test files, the `INetworkTestObserver` enhancement callback signatures (still item-id based), and the "provisional values" remark in `EnhancementResultCode.cs`.
 
 ---
 
@@ -54,7 +56,7 @@ Fix: a wire-protocol authoring session (align the request to the slot-based cont
 
 - **Not implementable until TD-046 is fixed.** Server-side behaviour this story will sit on top of already exists by then: validation (003), sequence (004), commit and rollback (005), NPC session (006), events (007).
 - The fourth criterion is the wire half of Story 005's "no delivery before the commit" and the last criterion can be split off if the NPC session handlers are wanted before the Enhancement messages are fixed — those four messages are already defined in the wire protocol's NPC Shop section and are not part of TD-046.
-- `EnhancementStateUpdate`: the GDD says it is "sent when the player selects a valid item and scroll", but UI-ENH-4 defines no selection request that would tell the server about a selection, and EC-ENH-5 says the UI "re-requests `EnhancementStateUpdate`". The request that triggers it is undefined — the TD-046 authoring session has to add it, or the probabilities are computed client-side from shared data. Flag this in that session.
+- `EnhancementStateUpdate`: its trigger is `EnhancementPreviewRequest { itemSlotIndex, scrollSlotIndex }` (user decision 2026-10-09; enhancement-system.md UI-ENH-1 and UI-ENH-4, networking-wire-protocol.md). An invalid selection is answered with `EnhancementPreviewRejected`.
 - Player name for the broadcast: see Story 007's note on name lookup.
 - OQ-ENH-8 (replaying a missed result at next login) is deferred to Enhancement UI design; current rule: no replay (EC-ENH-1).
 
