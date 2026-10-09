@@ -189,6 +189,19 @@ interfaces:
     added: 2026-10-09
     revised: ""
 
+  - contract: random_provider
+    status: active
+    pattern: direct_call
+    producer: the server composition root — exactly one instance per zone process, from RandomProviderFactory.CreateSeededFromEntropy(out int seed), passed to every system it constructs
+    consumers:
+      - every server system that rolls (Damage Calculation, Loot Table, Enhancement, Enemy AI) — constructor-injected; drawn from the game-logic (tick) thread only
+    adr: docs/architecture/ADR-013-server-random-provider.md
+    signal_signature: "IRandomProvider (namespace IronGrind.Randomness, assembly IronGrind.ServerLogic): float NextFloat() uniform in [0.0f, 1.0f); double NextDouble() uniform in [0.0, 1.0); int NextInt(int minInclusive, int maxExclusive) — returns minInclusive when equal, throws ArgumentOutOfRangeException when min > max"
+    referenced_by:
+      - docs/architecture/ADR-013-server-random-provider.md
+    added: 2026-10-09
+    revised: ""
+
 # Example:
 #
 # interfaces:
@@ -368,6 +381,40 @@ api_decisions:
     added: 2026-10-09
     revised: ""
 
+  - purpose: server_client_code_boundary
+    status: active
+    api: "Three assemblies: IronGrind.Foundation (shared, in both builds), IronGrind.ServerLogic (defineConstraints 'UNITY_SERVER || UNITY_EDITOR', absent from a client player), IronGrind.Client (defineConstraints '!UNITY_SERVER || UNITY_EDITOR', absent from a server player); all autoReferenced: false; ServerLogic and Client each reference Foundation only. A type is placed by the classification rule of ADR-012 Decision 3; server-only is the default for game logic, and a type is in Foundation only with a named client consumer."
+    not: "#if UNITY_SERVER around server files as the boundary; a bare UNITY_SERVER define constraint (removes the assembly from the Editor and the EditMode suite); asmdef platform include/exclude lists; relying on IL2CPP managed stripping or the [Server] attribute"
+    adr: docs/architecture/ADR-012-server-client-assembly-boundary.md
+    reason: "Server formulas, probabilities and tuning values must not be in the client binary. A define constraint removes the whole assembly from the client player at compile time, keeps both assemblies compiling in the Editor, and is checked by a boundary test with no build."
+    referenced_by:
+      - docs/architecture/ADR-012-server-client-assembly-boundary.md
+      - docs/architecture/ADR-013-server-random-provider.md
+    added: 2026-10-09
+    revised: ""
+
+  - purpose: client_state_access
+    status: active
+    api: "Client presenters read the local player's state through read-only view interfaces declared in IronGrind.Foundation (implemented on the client by a mirror filled from server messages), send player actions through request interfaces declared in Foundation, and evaluate a display formula from one static Foundation class that ServerLogic also calls (each such formula has its client consumer named)."
+    not: "IronGrind.Client code calling a server service (LevelingService, CharacterStats, TryApplyRespec); a second copy of a formula on the client"
+    adr: docs/architecture/ADR-012-server-client-assembly-boundary.md
+    reason: "Client cannot reference ServerLogic. The server validates and applies; the client only shows state it was sent and formulas whose results the game shows the player anyway."
+    referenced_by:
+      - docs/architecture/ADR-012-server-client-assembly-boundary.md
+    added: 2026-10-09
+    revised: ""
+
+  - purpose: server_randomness
+    status: active
+    api: "IRandomProvider, taken as a constructor parameter and stored in a private readonly field (or as a parameter of a static method that rolls). One provider per zone process, created by RandomProviderFactory. Tests implement IRandomProvider (ScriptedRandomProvider, RecordingRandomProvider) and assert draw counts."
+    not: "UnityEngine.Random; a static or ambient accessor for the provider; new System.Random outside RandomProviderFactory; System.Random as the type of a field, constructor parameter or method parameter outside SystemRandomProvider and RandomProviderFactory; subclassing System.Random in tests"
+    adr: docs/architecture/ADR-013-server-random-provider.md
+    reason: "Rolls must be injectable so that every probability can be tested deterministically, and float thresholds must be compared without the bias a double-to-float cast introduces."
+    referenced_by:
+      - docs/architecture/ADR-013-server-random-provider.md
+    added: 2026-10-09
+    revised: ""
+
 # Example:
 #
 # api_decisions:
@@ -503,6 +550,62 @@ forbidden_patterns:
     description: "The inbound request dispatcher must not subscribe to ICharacterMutationGate.OnGateOpened. Pass A polls IsHeld for each character with held requests."
     why: "A subscriber that throws stops the ones after it, so an opening could be missed and the character's bag requests held for the rest of the session."
     adr: docs/architecture/ADR-014-inbound-request-dispatch-and-tick-order.md
+    added: 2026-10-09
+
+  - pattern: server_rule_in_shared_or_client_assembly
+    status: active
+    description: "No formula, probability, tuning value, roll or validation rule in IronGrind.Foundation or IronGrind.Client (the one exception is a display formula under ADR-012 Decision 7, with its client consumer named). A type that must not ship to the client is moved to IronGrind.ServerLogic, not wrapped in #if. An RPC body, and any message-handling code placed in Foundation, contains nothing but enqueueing through a Foundation interface."
+    why: "Everything in Foundation and Client is compiled into the client binary, where a player can read it or replace it. An RPC's body ships in the client whatever its target; only its execution is server-side."
+    adr: docs/architecture/ADR-012-server-client-assembly-boundary.md
+    added: 2026-10-09
+
+  - pattern: internals_visible_to_between_production_assemblies
+    status: active
+    description: "InternalsVisibleTo may name only the test assembly (IronGrind.Foundation.EditModeTests). If ServerLogic or Client needs a member of a Foundation type, the member becomes public or the type is in the wrong assembly."
+    why: "A friend relationship between production assemblies hides a dependency the asmdef reference lists and the boundary test are meant to show."
+    adr: docs/architecture/ADR-012-server-client-assembly-boundary.md
+    added: 2026-10-09
+
+  - pattern: server_or_client_script_in_the_other_builds_content
+    status: active
+    description: "A MonoBehaviour, ScriptableObject or [SerializeReference] type in IronGrind.ServerLogic must not appear in any scene, prefab, Addressables group or asset included in a client build; a MonoBehaviour or ScriptableObject in IronGrind.Client must not appear in content the Dedicated Server build loads. Such components are created in code by the matching composition root or live in scenes only that build includes."
+    why: "The Editor compiles both assemblies, so the reference serializes without error and becomes a missing script at runtime in the build that lacks the assembly."
+    adr: docs/architecture/ADR-012-server-client-assembly-boundary.md
+    added: 2026-10-09
+
+  - pattern: server_only_network_behaviour_on_shared_prefab
+    status: active
+    description: "A server-only NetworkBehaviour must not be added to a prefab the client also instantiates. A NetworkBehaviour on a shared prefab lives in IronGrind.Foundation as a thin shell that hands server-side calls to a Foundation interface implemented in ServerLogic."
+    why: "NGO addresses behaviours by their index on the NetworkObject, so both sides need the same component list."
+    adr: docs/architecture/ADR-012-server-client-assembly-boundary.md
+    added: 2026-10-09
+
+  - pattern: ambient_or_unity_random_in_server_logic
+    status: active
+    description: "In IronGrind.ServerLogic: no UnityEngine.Random in any form; no static or ambient accessor for the random provider (RandomProvider.Current, a singleton, a service locator); no new System.Random outside RandomProviderFactory; no System.Random as the type of a field, constructor parameter or method parameter outside SystemRandomProvider and RandomProviderFactory. A source search must match the unqualified name Random under 'using System;' too."
+    why: "Global or ambient random state cannot be injected, so a roll cannot be scripted in a test and an unintended extra draw cannot be caught by a draw count."
+    adr: docs/architecture/ADR-013-server-random-provider.md
+    added: 2026-10-09
+
+  - pattern: next_double_cast_to_float
+    status: active
+    description: "The result of IRandomProvider.NextDouble() is never cast to float. A caller whose threshold is a float draws NextFloat(), or widens the threshold to double and draws NextDouble()."
+    why: "The cast can round a draw up to the threshold itself (e.g. up to 0.75f) or to 1.0f, and a redraw on 1.0f breaks 'exactly one draw per call'. Both alternatives are exact."
+    adr: docs/architecture/ADR-013-server-random-provider.md
+    added: 2026-10-09
+
+  - pattern: random_state_outside_the_generator
+    status: active
+    description: "No system stores a previous draw, a draw counter, a streak or a pity value that changes later odds. No random-number state is stored on an entity, a character, a session, the character record or a zone-transfer handoff. No system creates its own generator, re-seeds, or derives a child generator from the process one; the provider is drawn from the tick thread only."
+    why: "Each roll is one independent draw from the one generator of the zone process. State kept outside it would have to be persisted and carried across zones, and per-system generators make the draw order, and so any reproduction from the logged seed, undefined."
+    adr: docs/architecture/ADR-013-server-random-provider.md
+    added: 2026-10-09
+
+  - pattern: random_provider_for_security_values
+    status: active
+    description: "Values that must be unpredictable to an attacker (session tokens, authentication nonces) use System.Security.Cryptography.RandomNumberGenerator and must not use IRandomProvider."
+    why: "IRandomProvider is a seeded, reproducible generator whose seed is logged."
+    adr: docs/architecture/ADR-013-server-random-provider.md
     added: 2026-10-09
 
 # Example:
