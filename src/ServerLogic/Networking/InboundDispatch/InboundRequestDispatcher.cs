@@ -43,7 +43,7 @@ namespace IronGrind.Networking
     /// dispatcher.Seal();
     /// dispatcher.AddConnection(clientId);
     /// bool accepted = dispatcher.TryAccept(clientId, receivedBytes);   // receive callback
-    /// dispatcher.DispatchTick(tickLoop.ServerTickNumber);              // the tick
+    /// // the tick: ZoneTickPipeline.Tick calls DispatchTick once per tick
     /// </code>
     /// </example>
     public sealed class InboundRequestDispatcher : IInboundRequestDispatcher, IInboundMessageIntake

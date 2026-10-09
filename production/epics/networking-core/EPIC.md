@@ -3,8 +3,8 @@
 > **Layer**: Foundation
 > **GDD**: design/gdd/networking-core.md + 9 sub-contracts
 > **Architecture Module**: Networking Core
-> **Status**: In Progress (36/36 stories Complete; the tick pipeline and transport adapter stories of ADR-014 are not written yet — Stories 035 and 036 added 2026-10-09 for ADR-014 Migration Plan step 1; 035 Complete 2026-10-09, full EditMode suite 2083 / 2083; 036 Complete 2026-10-09, full EditMode suite 2182 / 2182). Stories 032, 033 and 034, the three ADR-012 assembly-move stories, Complete 2026-10-08. Stories 001–031 Complete — Story 031 (added 2026-10-07, ADR-011 Migration step 2) Complete 2026-10-07; full EditMode suite 1900 / 1900 in Unity batch mode. Story 030 (added 2026-10-07 after ADR-011) Complete 2026-10-07. Stories 001–029 Complete (2026-07-22). Not yet confirmed via a full live Unity Editor test run across the whole epic together; see `production/session-state/active.md` for verification status per story.
-> **Stories**: 36 stories created (001–036)
+> **Status**: In Progress (37/37 stories Complete; Story 037, the tick pipeline of ADR-014 Migration Plan step 2, added and Complete 2026-10-09, full EditMode suite 2203 / 2203; the transport adapter story of ADR-014 is not written yet — Stories 035 and 036 added 2026-10-09 for ADR-014 Migration Plan step 1; 035 Complete 2026-10-09, full EditMode suite 2083 / 2083; 036 Complete 2026-10-09, full EditMode suite 2182 / 2182). Stories 032, 033 and 034, the three ADR-012 assembly-move stories, Complete 2026-10-08. Stories 001–031 Complete — Story 031 (added 2026-10-07, ADR-011 Migration step 2) Complete 2026-10-07; full EditMode suite 1900 / 1900 in Unity batch mode. Story 030 (added 2026-10-07 after ADR-011) Complete 2026-10-07. Stories 001–029 Complete (2026-07-22). Not yet confirmed via a full live Unity Editor test run across the whole epic together; see `production/session-state/active.md` for verification status per story.
+> **Stories**: 37 stories created (001–037)
 
 ## Overview
 
@@ -105,8 +105,9 @@ This epic is complete when:
 | 034 | [Move the Networking Test Harness; Put the Shared Types on the Allow-List (3 of 3)](story-034-server-assembly-move-test-harness-and-shared-list.md) | Integration | Complete (2026-10-08) | ADR-012 |
 | 035 | [Guard Chain Changes for the Request Dispatcher](story-035-guard-chain-changes-for-dispatch.md) | Logic | Complete | ADR-014 |
 | 036 | [Inbound Request Dispatcher — Intake, Dispatch and Hold Queues](story-036-inbound-request-dispatcher.md) | Logic | Complete | ADR-014 |
+| 037 | [Zone Tick Pipeline — the Order of One Server Tick](story-037-zone-tick-pipeline.md) | Logic | Complete | ADR-014 |
 
-*Not written yet (ADR-014 Migration Plan): the tick pipeline story (step 2, after 036) and the transport adapter story (step 4, after ADR-004 OQ-ADR4-3).*
+*Not written yet (ADR-014 Migration Plan): the transport adapter story (step 4, after ADR-004 OQ-ADR4-3).*
 
 **Scoped out of this epic** (owned by other systems' future epics, using these GDDs as their wire-contract reference): every specific downstream message schema for Auto-Attack Combat, Currency, Leveling, Zone Instancing, Party, Inventory, Equipment, NPC Shop, Consumable Use, Movement, and Skill systems. Networking Core owns the envelope/channel/tick/session/ghost/OWL/relevance-filter/test-harness substrate only.
 

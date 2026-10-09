@@ -59,9 +59,8 @@ namespace IronGrind.Networking
     /// <description>
     /// <b><see cref="PriorityPathQueue{T}"/> genuinely has a stateful <c>Flush(uint tickNumber)</c>
     /// method.</b> A future story that owns a real per-connection <see cref="PriorityPathQueue{T}"/>
-    /// instance can register <c>tickLoop.RegisterTickDriven(dt =&gt; queue.Flush(tickLoop.ServerTickNumber))</c>
-    /// (or an equivalent named-method delegate — see the AOT lambda-capture guard, Story 008) as one
-    /// tick-driven delegate per connection. This story does not itself construct or register any
+    /// instance flushes it in the outbound step of <c>ZoneTickPipeline</c> (ADR-014 Decision 6), not
+    /// through a tick-driven delegate of its own. This story does not itself construct or flush any
     /// <see cref="PriorityPathQueue{T}"/> instance, because no connection/session registry exists
     /// yet to own one — see Risks/Follow-ups.
     /// </description>
@@ -80,12 +79,12 @@ namespace IronGrind.Networking
     /// </item>
     /// </list>
     /// <para>
-    /// <b>Resolution adopted:</b> both cases are satisfied by the exact same generic extension
-    /// point — <see cref="RegisterTickDriven"/>. A future story that builds the R-U accumulator can
-    /// register <c>tickLoop.RegisterTickDriven(dt =&gt; RUBatchWriter.Write(...))</c> the same way a
-    /// future story wires <see cref="PriorityPathQueue{T}.Flush"/>. This story builds only the
-    /// generic dispatch mechanism (<see cref="RegisterTickDriven"/>) — it does not construct, own,
-    /// or fake either system's real content.
+    /// <b>Resolution adopted (amended by ADR-014 Decision 6):</b> this story builds only the generic
+    /// dispatch mechanism (<see cref="RegisterTickDriven"/>). The composition root registers
+    /// <c>ZoneTickPipeline.Tick</c> once, as the one tick-driven delegate; a future R-U accumulator
+    /// writing through <see cref="RUBatchWriter.Write"/>, like a <see cref="PriorityPathQueue{T}.Flush"/>
+    /// wiring, runs in the pipeline's outbound step. A system that ticks runs in the pipeline's
+    /// simulation step. This class does not construct, own, or fake either system's real content.
     /// </para>
     /// <para>
     /// <b>The single most load-bearing invariant in this class (CR-NET-2):</b>
@@ -130,8 +129,9 @@ namespace IronGrind.Networking
     /// <code>
     /// var tickLoop = new ServerTickLoop();
     ///
-    /// // A future system hooks a generic per-tick delegate (e.g. a Beat-cadence advance):
-    /// tickLoop.RegisterTickDriven(deltaTime =&gt; myCombatSystem.AdvanceAllCycleTimers(deltaTime));
+    /// // The composition root registers the zone tick pipeline once; systems that tick
+    /// // (e.g. a Beat-cadence advance) run in the pipeline's simulation step:
+    /// tickLoop.RegisterTickDriven(pipeline.Tick);
     ///
     /// // A future system registers a generic TTL timer (e.g. a respec-scroll or ghost-combat TTL):
     /// tickLoop.RegisterTtlTimer(expiryTick: tickLoop.ServerTickNumber + 100u, onExpired: () =&gt; ReleaseResource());
@@ -215,11 +215,11 @@ namespace IronGrind.Networking
         /// <summary>
         /// Registers a generic tick-driven delegate, invoked once per <see cref="AdvanceTick"/>
         /// call with <see cref="FIXED_DELTA_TIME"/> — never a measured wall-clock delta. This is
-        /// the single generic extension point downstream systems (Auto-Attack Combat cycle timers,
-        /// cooldown/duration counters, a future <see cref="PriorityPathQueue{T}.Flush"/> wiring, a
-        /// future R-U batch accumulator's <see cref="RUBatchWriter.Write"/> wiring) hook into
-        /// without this story needing to know about their specific domain logic (per the story's
-        /// own Implementation Notes). Multiple delegates may be registered; each fires independently
+        /// the generic extension point of the loop. Game logic does not register here (ADR-014
+        /// Decision 6): the composition root registers <c>ZoneTickPipeline.Tick</c> once, and a
+        /// system that ticks (Auto-Attack Combat cycle timers, cooldown/duration counters) runs in
+        /// the pipeline's simulation step, while the per-connection writers flush in its outbound
+        /// step. Multiple delegates may be registered; each fires independently
         /// every tick, in registration order, and an exception thrown by one does not prevent
         /// registration or invocation of the others across separate calls to
         /// <see cref="AdvanceTick"/> (though within a single <see cref="AdvanceTick"/> call, an
@@ -241,7 +241,7 @@ namespace IronGrind.Networking
         /// </param>
         /// <example>
         /// <code>
-        /// tickLoop.RegisterTickDriven(deltaTime =&gt; warrior.AdvanceCycleTimer(deltaTime));
+        /// tickLoop.RegisterTickDriven(pipeline.Tick);
         /// </code>
         /// </example>
         public void RegisterTickDriven(Action<float> callback)
@@ -278,9 +278,9 @@ namespace IronGrind.Networking
         /// <returns><see langword="true"/> if a matching registration was found (and removed, or queued for removal if called during dispatch).</returns>
         /// <example>
         /// <code>
-        /// Action&lt;float&gt; handler = deltaTime =&gt; warrior.AdvanceCycleTimer(deltaTime);
-        /// tickLoop.RegisterTickDriven(handler);
-        /// // ... later, e.g. on despawn ...
+        /// // The pipeline's Tick is registered once by the composition root; unregistering it stops the zone tick.
+        /// Action&lt;float&gt; handler = pipeline.Tick;
+        /// // ... at zone teardown ...
         /// tickLoop.UnregisterTickDriven(handler);
         /// </code>
         /// </example>

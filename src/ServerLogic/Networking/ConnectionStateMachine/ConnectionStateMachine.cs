@@ -214,7 +214,7 @@ namespace IronGrind.Networking
     /// // Every inbound packet resets the heartbeat-silence window:
     /// stateMachine.RecordInboundActivity(accountId: 7, currentTick: 110u);
     ///
-    /// // Once per server tick (a future integration story wires this via ServerTickLoop.RegisterTickDriven):
+    /// // Once per server tick, in the simulation step of ZoneTickPipeline (the composition root registers ZoneTickPipeline.Tick once):
     /// stateMachine.EvaluateTimeouts(currentTick: tickLoop.ServerTickNumber,
     ///     heartbeatTimeoutTicks: 60u, connectingTimeoutTicks: 200u, observer);
     ///
@@ -442,8 +442,8 @@ namespace IronGrind.Networking
         /// call transition to <see cref="SessionState.Disconnected_SessionActive"/>
         /// (<c>"HeartbeatTimeout"</c>, registry entry retained — no resources released). Both
         /// thresholds are boundary-inclusive at equality, via <see cref="StaleDiscardComparer.IsTickExpired"/>.
-        /// Intended to be called exactly once per server tick — the future integration point a later
-        /// story wires via <see cref="ServerTickLoop.RegisterTickDriven"/>.
+        /// Intended to be called exactly once per server tick, from the simulation step of
+        /// <c>ZoneTickPipeline</c> (the composition root registers <c>ZoneTickPipeline.Tick</c> once).
         /// </summary>
         /// <param name="currentTick">The current server tick.</param>
         /// <param name="heartbeatTimeoutTicks">

@@ -24,8 +24,8 @@ namespace IronGrind.Networking
     /// Scope section) is expected to call these registration methods from the real connection
     /// lifecycle; this story proves only the guard chain's own logic against directly-called
     /// registration methods, via test doubles — no real NGO connection/session registry exists yet
-    /// for this class to consume instead (same forward-dependency shape as
-    /// <see cref="ServerTickLoop.RegisterTickDriven"/>).
+    /// for this class to consume instead (same forward-dependency shape as the composition root's
+    /// single registration of <c>ZoneTickPipeline.Tick</c> with <see cref="ServerTickLoop"/>).
     /// </para>
     /// <para>
     /// <b>Allocation and logging (Performance Budget, ADR-014 Decision 4a):</b> every guard is an

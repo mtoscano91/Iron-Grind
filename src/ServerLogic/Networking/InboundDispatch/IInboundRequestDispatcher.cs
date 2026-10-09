@@ -12,7 +12,7 @@ namespace IronGrind.Networking
     /// dispatcher.Register(descriptor, handler);
     /// dispatcher.Seal();
     /// dispatcher.AddConnection(clientId);
-    /// dispatcher.DispatchTick(tickLoop.ServerTickNumber);
+    /// // ZoneTickPipeline.Tick calls DispatchTick once per tick; nothing else does.
     /// </code>
     /// </example>
     public interface IInboundRequestDispatcher
