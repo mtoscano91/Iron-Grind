@@ -2,6 +2,7 @@ using System;
 using IronGrind.CharacterStats;
 using IronGrind.EnhancementSystem;
 using IronGrind.ItemDatabase;
+using IronGrind.Randomness;
 using UnityEngine;
 
 namespace IronGrind.DamageCalculation
@@ -11,11 +12,14 @@ namespace IronGrind.DamageCalculation
     /// F-DC-1, F-DC-2, F-DC-4). Reads stats, never writes them: it fires no event, awards no XP and holds
     /// no Leveling reference. Damage Calculation Story 001 implements Steps 2, 3, 9 and 11; Story 002
     /// adds Steps 4-7 and the elemental fields of Step 11; Story 004 adds Step 10 (kill detection and the
-    /// dead-entity guard); Steps 1 and 8 are marked below for Story 003.
+    /// dead-entity guard); Story 003 adds Step 1 (attacker crit stats) and Step 8 (critical strike roll,
+    /// F-DC-3) with an injected <see cref="IRandomProvider"/> (ADR-013).
     /// </summary>
     /// <remarks>
     /// Server-side only. Nothing in this file references client, UI or networking types, so moving it to a
     /// server-only assembly later is an asmdef change only. Zero heap allocation on the normal path.
+    /// Exactly one <see cref="IRandomProvider.NextFloat"/> draw per accepted <c>Calculate</c> call (also
+    /// when CritChance is 0) and none on a rejected call.
     /// </remarks>
     public sealed class DamageCalculator
     {
@@ -24,6 +28,7 @@ namespace IronGrind.DamageCalculation
         private readonly IItemDatabase _items;
         private readonly IEnhancementBonusProvider _bonuses;
         private readonly DamageCalculationConfig _config;
+        private readonly IRandomProvider _random;
 
         /// <summary>Builds a calculator over injected collaborators and a tuning config.</summary>
         /// <param name="stats">Stat container read for Defense and MagicDefense.</param>
@@ -31,19 +36,22 @@ namespace IronGrind.DamageCalculation
         /// <param name="items">Item Database used to read the weapon's element, base elemental damage and tier.</param>
         /// <param name="bonuses">Enhancement bonus provider (F-ENH-2) giving the enhanced elemental damage.</param>
         /// <param name="config">Tuning values.</param>
+        /// <param name="random">Server random source for the crit roll (ADR-013); one generator per zone process.</param>
         /// <exception cref="ArgumentNullException">Any parameter is null.</exception>
         public DamageCalculator(
             IronGrind.CharacterStats.CharacterStats stats,
             IEquippedWeaponQuery weapons,
             IItemDatabase items,
             IEnhancementBonusProvider bonuses,
-            DamageCalculationConfig config)
+            DamageCalculationConfig config,
+            IRandomProvider random)
         {
             _stats = stats ?? throw new ArgumentNullException(nameof(stats));
             _weapons = weapons ?? throw new ArgumentNullException(nameof(weapons));
             _items = items ?? throw new ArgumentNullException(nameof(items));
             _bonuses = bonuses ?? throw new ArgumentNullException(nameof(bonuses));
             _config = config ?? throw new ArgumentNullException(nameof(config));
+            _random = random ?? throw new ArgumentNullException(nameof(random));
         }
 
         /// <summary>
@@ -61,6 +69,12 @@ namespace IronGrind.DamageCalculation
         /// an event. When the target's current HP is not above 0 (dead entity), IsKill is false, a dev
         /// error is logged (editor and development builds only) and every other field is still computed.
         /// A target with no HP record reads as 0 HP and takes the same path (user decision 2026-10-08).</para>
+        /// <para>Critical strike (Steps 1 and 8): the attacker's CritChance and CritMultiplier are read
+        /// (a stat never set reads 0), one float is drawn from the injected provider and the hit is a crit
+        /// when the roll is strictly below CritChance. A crit multiplies the pre-crit sum once;
+        /// <see cref="DamageResult.PhysicalDamage"/> and <see cref="DamageResult.ElementalDamage"/> stay
+        /// pre-crit. A crit whose CritMultiplier reads below 1.0 uses 1.0 and logs a dev error (editor and
+        /// development builds only); a non-crit hit never checks the multiplier (user decision 2026-10-08).</para>
         /// </remarks>
         /// <param name="baseDamage">Caller-computed physical base (the attacker's AttackPower), in [1, MaxBaseDamage].</param>
         /// <param name="attackerId">The attacking entity.</param>
@@ -78,7 +92,9 @@ namespace IronGrind.DamageCalculation
             if (IsInvalidRequest(baseDamage, attackerId, targetId))
                 return DamageResult.Rejected(context);
 
-            // Step 1 - read attacker crit stats: Story 003.
+            // Step 1 - read attacker crit stats (a stat never set reads 0; Character Stats clamps set values).
+            float critChance = _stats.GetEffectiveStatFloat(attackerId, StatID.CritChance);
+            float critMultiplier = _stats.GetEffectiveStatFloat(attackerId, StatID.CritMultiplier);
 
             // Step 2 - read target physical defense.
             int defense = _stats.GetEffectiveStat(targetId, StatID.Defense);
@@ -96,7 +112,21 @@ namespace IronGrind.DamageCalculation
             float preCritDamage = physicalMitigated + elementalMitigated;
             float damageAfterCrit = preCritDamage;
 
-            // Step 8 - critical strike evaluation: Story 003.
+            // Step 8 - critical strike (F-DC-3): one unconditional draw, strict <, multiplier applied once.
+            bool isCrit = _random.NextFloat() < critChance;
+            if (isCrit)
+            {
+                // Negated so that a NaN multiplier also takes the fallback path.
+                if (!(critMultiplier >= 1f))
+                {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                    Debug.LogError($"[DamageCalculator] Attacker {attackerId} crit with CritMultiplier below 1.0 (got {critMultiplier}); using 1.0.");
+#endif
+                    critMultiplier = 1f;
+                }
+
+                damageAfterCrit = preCritDamage * critMultiplier;
+            }
 
             // Step 9 - floor clamp (F-DC-4).
             int physicalDamage = Mathf.FloorToInt(physicalMitigated);
@@ -110,7 +140,7 @@ namespace IronGrind.DamageCalculation
                 physicalDamage: physicalDamage,
                 elementalDamage: Mathf.FloorToInt(elementalMitigated),
                 finalDamage: finalDamage,
-                isCrit: false,
+                isCrit: isCrit,
                 isKill: isKill,
                 damageContext: context,
                 hasElementalContribution: elementalMitigated > 0f);

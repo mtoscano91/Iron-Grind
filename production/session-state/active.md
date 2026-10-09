@@ -3577,3 +3577,29 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - **Still say "Proposed" and need the follow-up session:** `production/epics/damage-calculation/story-003-critical-strike.md` (lines 4, 16, 92; Status Blocked) and that epic's `EPIC.md` (lines 6, 50, 63, 72).
 - Committed together with the R1–R3 amendment, in the commit after `38cc6b1`. Not pushed. PAT rotation is still unconfirmed.
 - **Next (fresh session, pick in this order):** registry entries (5, listed in the ADR-013 authoring extract); `/create-control-manifest update`; GDD wording pass (ADR-013 Migration Plan step 4, plus R6); Story 003 Implementation Notes and QA cases from the ADR, then `/story-readiness`; create the Loot Table and Enhancement migration stories.
+
+## Session Extract — /dev-story 2026-10-08 (Damage Calculation Story 003)
+- Story: production/epics/damage-calculation/story-003-critical-strike.md — Critical Strike with Injected Server RNG
+- Files changed: src/ServerLogic/Randomness/IRandomProvider.cs (new), src/ServerLogic/Randomness/SystemRandomProvider.cs (new), src/ServerLogic/DamageCalculation/DamageCalculator.cs, tests/EditMode/Randomness/ScriptedRandomProvider.cs (new), tests/EditMode/Randomness/RecordingRandomProvider.cs (new), tests/EditMode/Randomness/SystemRandomProvider_tests.cs (new), tests/EditMode/DamageCalculation/DamageCalculation_CriticalStrike_tests.cs (new), tests/EditMode/Architecture/AssemblyBoundaryLists.cs, the nine construction sites in DamageCalculation_PhysicalMitigation_tests.cs, DamageCalculation_Elemental_tests.cs, DamageCalculation_KillDetection_tests.cs and Integration/DamageCalculation/DamageCalculation_KillSequence_integration_tests.cs
+- Test written: DamageCalculation_CriticalStrike_tests.cs (17 tests), SystemRandomProvider_tests.cs (22 [Test] + one method with 2 [TestCase] = 24 cases, three fixtures)
+- Not verified: nothing compiled or run — the Editor was open and had not imported the new files (no .meta yet). Run the EditMode suite in the Test Runner (expected total 2009 + 41 = 2050); the .meta files it generates must be committed.
+- Notes for /code-review: (1) `_random` null check is first in the constructor, not last in parameter order; (2) the multiplier check is `!(critMultiplier >= 1f)`, so NaN also falls back to 1.0 — beyond the story text; (3) AC-DC-E-05 with SEED 20261008 gives a rate of 0.7602 in a .NET Framework simulation (band [0.737, 0.763]); if Unity's runtime differs and it fails, change the seed, not the band; (4) unity-specialist not spawned (ADR-013 risk LOW, plain C#).
+- Blockers: None
+- Uncommitted: all of the above.
+- Next: run the suite, then /code-review on the six new files and DamageCalculator.cs, then /story-done production/epics/damage-calculation/story-003-critical-strike.md
+
+## Session Extract — /code-review 2026-10-08 (Damage Calculation Story 003)
+- Suite after /dev-story: 2050/2050 passed (Test Runner, 20:53).
+- Verdict: APPROVED WITH SUGGESTIONS (unity-specialist CLEAN; qa-tester GAPS, none blocking; ADR-013 COMPLIANT). No required change.
+- User said "fix all suggestions"; applied: (1) three tests in DamageCalculation_CriticalStrike_tests.cs — crit on a fractional pre-crit sum multiplies before flooring (base 30, Defense 100, x3.0 → 4), crit lifts damage to target HP → IsKill, same hit without crit → no kill; (2) one test in SystemRandomProvider_tests.cs — NextFloat equals ToUnitFloat of one integer draw from a same-seed reference; (3) `random` null check moved to the end of the DamageCalculator constructor; (4) F-14 test also compares IsKill and HasElementalContribution.
+- Test counts now: CriticalStrike 20, SystemRandomProvider file 25 cases. Expected suite total 2054. **Not re-run yet after these edits.**
+- Left as is (qa-tester INFO): no allocation test; no draw-count test on the dead-target and bonus-exception paths; counters of the doubles after a throwing draw.
+- Uncommitted: everything from Story 003, including the generated .meta files.
+- Next: re-run the suite (expect 2054), then /story-done production/epics/damage-calculation/story-003-critical-strike.md
+
+## Session Extract — /story-done 2026-10-08 (Damage Calculation Story 003)
+- Verdict: COMPLETE WITH NOTES (16/16 criteria; EditMode suite 2054/2054 at 20:57, after the review fixes)
+- Story: production/epics/damage-calculation/story-003-critical-strike.md — Critical Strike with Injected Server RNG. Status Complete; EPIC.md now 6/7 (only 007 left, Blocked on the client build pipeline).
+- Tech debt logged: None (user decision 2026-10-08)
+- Uncommitted: all Story 003 code, tests, generated .meta files, the story, EPIC.md, this file. PAT rotation still unconfirmed.
+- Next recommended: no Ready story in this epic. ADR-013 Migration Plan step 2 (Loot Table migration story) and step 3 (Enhancement migration story) are unblocked but not written — `/create-stories` or a hand-written story for Loot Table first.

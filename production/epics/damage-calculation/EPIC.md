@@ -3,7 +3,7 @@
 > **Layer**: Core
 > **GDD**: design/gdd/damage-calculation.md
 > **Architecture Module**: Damage Calc
-> **Status**: In Progress (5/7 — 5 Complete, 1 Ready: 003, 1 Blocked: 007 on the client build pipeline)
+> **Status**: In Progress (6/7 — 6 Complete, 1 Blocked: 007 on the client build pipeline)
 > **Stories**: 6 stories created 2026-10-07 (001–006); 006 rewritten and 007 split from it 2026-10-08
 
 ## Overview
@@ -47,7 +47,7 @@ This epic is complete when:
 |---|-------|------|--------|-----|
 | 001 | Result Types, Tuning Config, Physical Mitigation and Final Floor | Logic | Complete (2026-10-07) | none (design-only) |
 | 002 | Elemental Bonus and Mitigation | Logic | Complete (2026-10-08) | none (design-only) |
-| 003 | Critical Strike with Injected Server RNG | Logic | Ready (2026-10-08; also creates `IRandomProvider`, `SystemRandomProvider` and the shared test doubles) | ADR-013 |
+| 003 | Critical Strike with Injected Server RNG | Logic | Complete (2026-10-08; also created `IRandomProvider`, `SystemRandomProvider` and the shared test doubles) | ADR-013 |
 | 004 | Kill Detection and Dead-Entity Guard | Logic | Complete (2026-10-08) | none (design-only) |
 | 005 | Kill Sequence Against Real Character Stats | Integration | Complete (2026-10-08) | none (design-only) |
 | 006 | Server Assembly Isolation — First Move and Boundary Test | Integration | Complete (2026-10-08) | ADR-012 |
@@ -69,4 +69,4 @@ Work through stories in order — each story's `Depends on:` field tells you wha
 
 ## Next Step
 
-Story 003 is Ready (ADR-013 Accepted 2026-10-08): `/story-readiness production/epics/damage-calculation/story-003-critical-strike.md`, then `/dev-story`. Its code is written in `src/ServerLogic/DamageCalculation/` and `src/ServerLogic/Randomness/`. Story 007 needs a client build pipeline. Damage Calculation lives in `IronGrind.ServerLogic` (Story 006).
+Story 003 is Complete (2026-10-08); its code is in `src/ServerLogic/DamageCalculation/` and `src/ServerLogic/Randomness/`. The only story left is 007, which needs a client build pipeline. The Loot Table and Enhancement migration stories (ADR-013 Migration Plan steps 2 and 3) can now be written. Damage Calculation lives in `IronGrind.ServerLogic` (Story 006).

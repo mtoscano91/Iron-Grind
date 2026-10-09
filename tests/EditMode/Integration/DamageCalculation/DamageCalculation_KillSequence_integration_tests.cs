@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using IronGrind.CharacterStats;
 using IronGrind.DamageCalculation;
 using IronGrind.EnhancementSystem;
+using IronGrind.Randomness;
 using IronGrind.Tests.EditMode.CharacterStats;
 using IronGrind.Tests.EditMode.DamageCalculation;
 using NUnit.Framework;
@@ -42,6 +43,7 @@ namespace IronGrind.Tests.EditMode.Integration.DamageCalculation
         private const float HP_AFTER_NON_KILL = 500f;
         private const float HP_EXACT_LETHAL = 500f; // equals BASE_DAMAGE_500
         private const string DEAD_ENTITY_ERROR = "dead-entity guard";
+        private const int SEED = 20261008; // provider seed; no case here depends on the roll (attackers have no crit stats)
 
         private const string MARKER_XP_AWARD = "xpAward";
         private const string MARKER_ADD_EXPERIENCE = "addExperience";
@@ -112,7 +114,8 @@ namespace IronGrind.Tests.EditMode.Integration.DamageCalculation
                 _weapons,
                 _items,
                 new EnhancementBonusProvider(EnhancementConfig.Default),
-                DamageCalculationConfig.Default);
+                DamageCalculationConfig.Default,
+                new SystemRandomProvider(new System.Random(SEED)));
         }
 
         /// <summary>

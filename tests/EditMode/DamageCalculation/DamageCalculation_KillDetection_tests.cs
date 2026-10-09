@@ -4,6 +4,7 @@ using IronGrind.CharacterStats;
 using IronGrind.DamageCalculation;
 using IronGrind.EnhancementSystem;
 using IronGrind.ItemDatabase;
+using IronGrind.Randomness;
 using IronGrind.Tests.EditMode.CharacterStats;
 using IronGrind.Tests.EditMode.ItemDatabase;
 using NUnit.Framework;
@@ -31,6 +32,7 @@ namespace IronGrind.Tests.EditMode.DamageCalculation
         private const int DEFENSE_900 = 900;
         private const int LEVEL_BELOW_CAP = 1; // AddExperience is a no-op at the level cap
         private const string DEAD_ENTITY_ERROR = "dead-entity guard";
+        private const int SEED = 20261008; // provider seed; no case here depends on the roll (attackers have no crit stats)
 
         private static readonly EntityID Attacker = new EntityID(ATTACKER_RAW_ID);
         private static readonly EntityID Target = new EntityID(TARGET_RAW_ID);
@@ -79,7 +81,8 @@ namespace IronGrind.Tests.EditMode.DamageCalculation
                 _weapons,
                 _items,
                 new EnhancementBonusProvider(EnhancementConfig.Default),
-                DamageCalculationConfig.Default);
+                DamageCalculationConfig.Default,
+                new SystemRandomProvider(new System.Random(SEED)));
         }
 
         /// <summary>Gives the target a MaxHP ceiling first, then the requested current HP (SetCurrentHP clamps).</summary>

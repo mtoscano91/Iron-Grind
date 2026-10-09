@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using IronGrind.CharacterStats;
 using IronGrind.DamageCalculation;
 using IronGrind.EnhancementSystem;
+using IronGrind.Randomness;
 using IronGrind.Tests.EditMode.CharacterStats;
 using NUnit.Framework;
 using UnityEngine;
@@ -32,6 +33,7 @@ namespace IronGrind.Tests.EditMode.DamageCalculation
         private const float DEFAULT_K_MAGIC = 200f;
         private const float DEFAULT_MIN_ELEMENTAL_FRACTION = 0.10f;
         private const int DEFAULT_MAX_BASE_DAMAGE = 99999;
+        private const int SEED = 20261008; // provider seed; no case here depends on the roll (attackers have no crit stats)
 
         private static readonly EntityID Attacker = new EntityID(ATTACKER_RAW_ID);
         private static readonly EntityID Target = new EntityID(TARGET_RAW_ID);
@@ -77,7 +79,8 @@ namespace IronGrind.Tests.EditMode.DamageCalculation
                 new FakeEquippedWeaponQuery(),
                 new CountingItemDatabase(),
                 new EnhancementBonusProvider(EnhancementConfig.Default),
-                config ?? DamageCalculationConfig.Default);
+                config ?? DamageCalculationConfig.Default,
+                new SystemRandomProvider(new System.Random(SEED)));
         }
 
         private void GivenTargetDefense(int defense)
@@ -558,7 +561,8 @@ namespace IronGrind.Tests.EditMode.DamageCalculation
             // Arrange / Act / Assert
             Assert.Throws<ArgumentNullException>(() => new DamageCalculator(
                 null, new FakeEquippedWeaponQuery(), new CountingItemDatabase(),
-                new EnhancementBonusProvider(EnhancementConfig.Default), DamageCalculationConfig.Default));
+                new EnhancementBonusProvider(EnhancementConfig.Default), DamageCalculationConfig.Default,
+                new SystemRandomProvider(new System.Random(SEED))));
         }
 
         [Test]
@@ -567,7 +571,8 @@ namespace IronGrind.Tests.EditMode.DamageCalculation
             // Arrange / Act / Assert
             Assert.Throws<ArgumentNullException>(() => new DamageCalculator(
                 _stats, new FakeEquippedWeaponQuery(), new CountingItemDatabase(),
-                new EnhancementBonusProvider(EnhancementConfig.Default), null));
+                new EnhancementBonusProvider(EnhancementConfig.Default), null,
+                new SystemRandomProvider(new System.Random(SEED))));
         }
     }
 }

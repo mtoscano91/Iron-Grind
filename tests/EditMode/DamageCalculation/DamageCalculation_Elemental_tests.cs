@@ -5,6 +5,7 @@ using IronGrind.CharacterStats;
 using IronGrind.DamageCalculation;
 using IronGrind.EnhancementSystem;
 using IronGrind.ItemDatabase;
+using IronGrind.Randomness;
 using IronGrind.Tests.EditMode.CharacterStats;
 using IronGrind.Tests.EditMode.ItemDatabase;
 using NUnit.Framework;
@@ -45,6 +46,7 @@ namespace IronGrind.Tests.EditMode.DamageCalculation
         private const int BASE_DAMAGE_768 = 768;
         private const int PHYSICAL_374 = 374;
         private const int ELEMENTAL_48 = 48;
+        private const int SEED = 20261008; // provider seed; no case here depends on the roll (attackers have no crit stats)
 
         private static readonly EntityID Attacker = new EntityID(ATTACKER_RAW_ID);
         private static readonly EntityID Target = new EntityID(TARGET_RAW_ID);
@@ -87,7 +89,8 @@ namespace IronGrind.Tests.EditMode.DamageCalculation
                 _weapons,
                 _items,
                 bonuses ?? new EnhancementBonusProvider(EnhancementConfig.Default),
-                config ?? DamageCalculationConfig.Default);
+                config ?? DamageCalculationConfig.Default,
+                new SystemRandomProvider(new System.Random(SEED)));
         }
 
         /// <summary>Registers a weapon with the given element and equips it on the attacker.</summary>
@@ -478,7 +481,7 @@ namespace IronGrind.Tests.EditMode.DamageCalculation
             // Arrange / Act / Assert
             var ex = Assert.Throws<ArgumentNullException>(() => new DamageCalculator(
                 _stats, null, _items, new EnhancementBonusProvider(EnhancementConfig.Default),
-                DamageCalculationConfig.Default));
+                DamageCalculationConfig.Default, new SystemRandomProvider(new System.Random(SEED))));
             Assert.AreEqual("weapons", ex.ParamName);
         }
 
@@ -488,7 +491,7 @@ namespace IronGrind.Tests.EditMode.DamageCalculation
             // Arrange / Act / Assert
             var ex = Assert.Throws<ArgumentNullException>(() => new DamageCalculator(
                 _stats, _weapons, null, new EnhancementBonusProvider(EnhancementConfig.Default),
-                DamageCalculationConfig.Default));
+                DamageCalculationConfig.Default, new SystemRandomProvider(new System.Random(SEED))));
             Assert.AreEqual("items", ex.ParamName);
         }
 
@@ -497,7 +500,8 @@ namespace IronGrind.Tests.EditMode.DamageCalculation
         {
             // Arrange / Act / Assert
             var ex = Assert.Throws<ArgumentNullException>(() => new DamageCalculator(
-                _stats, _weapons, _items, null, DamageCalculationConfig.Default));
+                _stats, _weapons, _items, null, DamageCalculationConfig.Default,
+                new SystemRandomProvider(new System.Random(SEED))));
             Assert.AreEqual("bonuses", ex.ParamName);
         }
     }

@@ -1,7 +1,7 @@
 # Story 003: Critical Strike with Injected Server RNG
 
 > **Epic**: Damage Calculation
-> **Status**: Ready (Implementation Notes completed from ADR-013 on 2026-10-08; run `/story-readiness` before `/dev-story`)
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-08
@@ -127,7 +127,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/DamageCalculation/DamageCalculation_CriticalStrike_tests.cs` and `tests/EditMode/Randomness/SystemRandomProvider_tests.cs` — must exist and pass.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing (2026-10-08, EditMode suite 2054/2054)
 
 ---
 
@@ -135,3 +135,16 @@
 
 - Depends on: Story 002 (Complete); ADR-013 (Accepted 2026-10-08).
 - Unlocks: the Loot Table and Enhancement migration stories (ADR-013 Migration Plan steps 2 and 3), which use the types created here. Auto-Attack Combat and the Skill System need crits before they ship.
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-08
+**Criteria**: 16/16 passing (EditMode suite 2054/2054 in the Editor Test Runner; nothing deferred)
+**Deviations**:
+- ADVISORY: the multiplier check is `!(critMultiplier >= 1f)`, so a NaN `CritMultiplier` on a crit also uses 1.0 and logs the dev error (the story names only values below 1.0).
+- ADVISORY: nine tests beyond the QA list — five from the implementation (`NextInt` equal bounds and min above max, `RecordingRandomProvider` exception pass-through and null inner, `ScriptedRandomProvider` queue independence) and four from `/code-review` (crit on a fractional pre-crit sum multiplies before flooring; crit with `IsKill`, and the same hit without a crit; `NextFloat` equals `ToUnitFloat` of one integer draw).
+- ADVISORY: `TR-dmg-004` is still a placeholder (registry empty), accepted at readiness.
+- Not tested, by decision (not logged as tech debt): no allocation test for `Calculate`; no draw-count test on the dead-target and bonus-exception paths.
+**Test Evidence**: Logic — `tests/EditMode/DamageCalculation/DamageCalculation_CriticalStrike_tests.cs` (20 tests) and `tests/EditMode/Randomness/SystemRandomProvider_tests.cs` (25 cases in three fixtures)
+**Code Review**: Complete — `/code-review` 2026-10-08, APPROVED WITH SUGGESTIONS, all suggestions applied (`unity-specialist` clean; `qa-tester` gaps closed). LP-CODE-REVIEW and QL-TEST-COVERAGE skipped (lean mode).

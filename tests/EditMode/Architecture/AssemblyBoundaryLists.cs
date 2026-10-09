@@ -137,6 +137,7 @@ namespace IronGrind.Tests.EditMode.Architecture
             "IronGrind.LootTableSystem",   // Loot Table Story 014
             "IronGrind.EnhancementSystem", // Enhancement Story 012
             "IronGrind.NpcInteraction",    // Enhancement Story 013
+            "IronGrind.Randomness",        // Damage Calculation Story 003 (ADR-013)
         };
     }
 }
