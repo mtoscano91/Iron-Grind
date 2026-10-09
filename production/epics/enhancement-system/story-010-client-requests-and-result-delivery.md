@@ -1,11 +1,11 @@
 # Story 010: Client Requests — Codecs, Preview, Cancel and Rejections
 
 > **Epic**: Enhancement System
-> **Status**: Not Started — rewritten 2026-10-09 against the TD-046 amendment of `networking-wire-protocol.md` (Approved, lean verify 2026-10-09); `/story-readiness` pending
+> **Status**: Ready (`/story-readiness` 2026-10-09, after three decisions: generic outbox, the code name `EnhancementAttemptResultMessage`, `npcId` validation stays deferred) — rewritten 2026-10-09 against the TD-046 amendment of `networking-wire-protocol.md` (Approved, lean verify 2026-10-09)
 > **Layer**: Feature
 > **Type**: Integration
 > **Manifest Version**: 2026-10-09
-> **Estimate**: not estimated — set at `/story-readiness`
+> **Estimate**: 8 hours
 
 > **Split 2026-10-09 (user decision).** This story was "Client Requests and Result Delivery" and was Blocked on TD-046. The design gate closed 2026-10-09. Everything that needs a commit — the acknowledgment, the result after the commit, the CR-ENH-11 hold, the +9 broadcast delivery, the reconnect cases — moved to **Story 015** (Blocked on Story 011). The inventory sync messages moved to **Inventory Story 012**. This story keeps what needs no commit. The file name is unchanged.
 
@@ -35,7 +35,7 @@
 
 ## Acceptance Criteria
 
-*Wire names and schemas are those of `networking-wire-protocol.md`. `EnhancementAttemptRequest` is the GDD's `ConfirmEnhancement`.*
+*Wire names and schemas are those of `networking-wire-protocol.md`. `EnhancementAttemptRequest` is the GDD's `ConfirmEnhancement`. The criteria use the wire name `EnhancementAttemptResult`; in code that message is the type `EnhancementAttemptResultMessage` (see Implementation Notes). "Receives" and "sends" mean an entry enqueued on `IClientMessageOutbox` for the owning client's connection.*
 
 - [ ] **Fixed-size codecs (AC-NC-40, without `InventoryFullSync`)**: each of the seven messages round-trips every field and its encoded body length is exactly: `EnhancementAttemptRequest` 6, `EnhancementRequestReceived` 5, `EnhancementAttemptResult` 6, `CancelEnhancement` 0, `EnhancementPreviewRequest` 2, `EnhancementStateUpdate` 7, `EnhancementPreviewRejected` 3 bytes. `EnhancementStateUpdate` with `P_s = 0.65`, `P_d = 0.35` encodes `pSuccess = 6500`, `pDestruction = 3500`.
 - [ ] **Broadcast codec (AC-NC-41, broadcast half)**: `ServerBroadcast_Enhancement9` with (a) two empty strings, (b) two 24-byte ASCII strings, (c) a 24-byte ASCII `playerName` and a 30-byte ASCII `itemName`, (d) a 24-byte ASCII `playerName` and an `itemName` of 22 ASCII bytes followed by two 3-byte characters → body lengths 4, 52, 52 and 50 bytes; in (c) the name decodes as its first 24 bytes; in (d) as its first 22 bytes.
@@ -48,7 +48,9 @@
 - [ ] **Rejected request**: an `EnhancementAttemptRequest` that fails a CR-ENH-15 step 2 check → exactly one `EnhancementAttemptResult { requestId, resultCode, newLevel = 0 }` with that check's `Rejected*` code and the request's `requestId`; zero `EnhancementRequestReceived`; the attempt-start seam is not called; the bag is unchanged. A slot index out of range is `RejectedItemNotFound` / `RejectedScrollNotFound`.
 - [ ] **Duplicate request (AC-NC-49)**: with the character's `LastEnhancementRequestID` equal to `X`, an `EnhancementAttemptRequest` with `requestId = X` and otherwise valid slots → no `EnhancementRequestReceived`, no `EnhancementAttemptResult`, exactly one `DuplicateEnhancementRequest` anomaly, the attempt-start seam is not called, and the bag is unchanged. The check runs before validation.
 - [ ] **Valid request is handed on once**: an `EnhancementAttemptRequest` that is not a duplicate and passes the step 2 checks reaches the attempt-start seam exactly once with the sender's `CharacterID`, the `requestId` and the two slot indices; this story sends nothing for it.
-- [ ] **Registration**: the five client→server types have a routing row and are registered with the dispatcher with `HeldDuringIrreversibleWrite` false and the body bounds of ADR-014 Decision 1 (6, 2, 0, 4, 0); registration succeeds in a development build.
+- [ ] **Cap exemption flag**: a rejection `EnhancementAttemptResult` is enqueued with `isCapExempt` true (CR-NET-7.7); `EnhancementStateUpdate`, `EnhancementPreviewRejected`, `NPCInteractionOpened` and `RejectedNotInTownHub` are enqueued with `isCapExempt` false.
+- [ ] **Registration**: the five client→server types have a routing row and are registered with the dispatcher with `HeldDuringIrreversibleWrite` false and the body bounds of ADR-014 Decision 1 (6, 2, 0, 4, 0); registration succeeds in a development build. Each of the five has its own `RpcTypeTag` member with no rate limit, and the existing test that no `RpcTypeTag` member makes `Evaluate` throw passes with them. The seven server→client types have a `MessageRoutingRegistry` row (R-OD, server→client).
+- [ ] **Assembly boundary**: every type this story adds to `IronGrind.Foundation` (the twelve message types, their codecs, and the moved `EnhancementResultCode`) has an entry in the shared allow-list of `AssemblyBoundaryLists.cs` with its client consumer named in a comment; the boundary test passes.
 - [ ] **Stale references removed**: no comment in `src/` names `EnhancementOutcomeBroadcast` or an `(entityId, itemId)` enhancement request, and `EnhancementResultCode.cs` no longer calls its values provisional.
 
 ---
@@ -57,14 +59,14 @@
 
 - **Message types and codecs** go in `src/Foundation/Networking/WireProtocol/`, one type and one codec per message, as `SetTarget` / `SetTargetCodec`. Twelve messages: the eight Enhancement messages and the four NPC interaction messages. The codecs of the three messages this story never sends (`EnhancementRequestReceived`, a `Success` / `Destruction` `EnhancementAttemptResult`, `ServerBroadcast_Enhancement9`) are written here because AC-NC-40 and AC-NC-41 are codec criteria; Story 015 sends them.
 - **`MessageTypeID` values** are not assigned by any ADR. Use the provisional convention of the existing message types (see `SetTarget.MessageTypeId` and its remark) and say so in each type's doc comment.
-- **`EnhancementResultCode` location — confirm at `/story-readiness`.** The enum is in `src/ServerLogic/EnhancementSystem/`. With this story it appears in two server→client messages a client decodes. ADR-012 Decision 3 keeps enums that appear in wire messages in `Foundation`; if that rule applies, the file moves with its `.meta` (`git mv`, namespace unchanged) and the boundary test's lists are updated.
-- **Name collision.** `IronGrind.EnhancementSystem.EnhancementAttemptResult` (the service's result struct, Story 004) and the wire message `EnhancementAttemptResult` have the same name. Decide at `/story-readiness` whether the wire type takes a distinguishing name in code or lives only in the networking namespace.
+- **`EnhancementResultCode` moves to `Foundation`** (settled at `/story-readiness` 2026-10-09). With this story the enum appears in two server→client messages a client decodes, and ADR-012 Decision 3 rule 3 places enums that appear in wire messages in `IronGrind.Foundation`. `git mv` the file with its `.meta` from `src/ServerLogic/EnhancementSystem/` to `src/Foundation/EnhancementSystem/` (a new folder, with its own `.meta`); the namespace `IronGrind.EnhancementSystem` is unchanged. Update the boundary test's lists.
+- **Wire type name in code** (user decision 2026-10-09). `IronGrind.EnhancementSystem.EnhancementAttemptResult` (the service's result struct, Story 004) keeps its name. The wire message `EnhancementAttemptResult` is the type `EnhancementAttemptResultMessage`, with the codec `EnhancementAttemptResultMessageCodec`; its doc comment states the wire name. The other eleven types use their wire names.
 - **Preview needs a public query.** `EnhancementService.ValidateAttempt` is `internal`. Add a public read-only method that returns the validation code and, when valid, the item's level and the two table probabilities. It must not lock, consume or change anything.
 - **`outcome` is not serialized** (UI-ENH-2): the decoder derives it from `resultCode`.
 - **Duplicate check.** `EnhancementRequestDeduplicator` (Networking Core Story 015) exposes the character's `LastEnhancementRequestId`. The handler compares the request's `requestId` with it before validation. Writing the new id with the commit is Story 015's; this story only reads. How the handler finds the character's deduplicator is a small lookup interface defined here.
 - **Attempt-start seam.** One interface with one method (character, `requestId`, item slot, scroll slot), defined here; a recording test double in this story's fixture; the production implementation is Story 015's.
-- **`npcId` validation** was deferred to this story by Story 006 (TD-058, npc-shop.md OQ-NS-1). The wire protocol says the server validates that `npcId` is a shop NPC present in the town hub. No NPC registry exists; decide at `/story-readiness` whether it stays deferred.
-- **Outbound messages.** No transport adapter exists (the adapter story of ADR-014 is not written). Enqueue responses on the R-OD path the way existing server→client messages are, and assert through `INetworkTestObserver` captures. Confirm the exact seam at `/story-readiness`.
+- **`npcId` validation stays deferred** (user decision 2026-10-09). Story 006 deferred it to this story (TD-058 item 5, npc-shop.md OQ-NS-1); no NPC registry exists and the wire protocol defines no rejection for an unknown id. The handler passes any `npcId` to the tracker, as today. TD-058 item 5 stays open, for NPC authoring.
+- **Outbound messages — `IClientMessageOutbox`** (user decision 2026-10-09). No server→client send path exists in code: no handler sends a reply today, and `INetworkTestObserver` has no callback that carries a message body. This story defines the seam in `src/ServerLogic/Networking/Outbound/`: one interface, `IClientMessageOutbox`, with one method, `Enqueue(uint clientId, ushort messageTypeId, ReadOnlySpan<byte> body, bool isCapExempt)`. An implementation copies `body` before it returns; a handler keeps nothing. It is generic on purpose: Story 015 and Inventory Story 012 use the same interface, and the transport adapter story (ADR-014) writes the production implementation. Tests use a recording double (client, type, a copy of the body, the flag) and decode the captured body with the message's codec. `INetworkTestObserver` is not used in this story.
 - **ADR-001's general limit of 10 requests per second per character** is cited by the wire protocol for `EnhancementPreviewRequest`, as for `BuyRequest`, `SellRequest` and `UseItemRequest`. No request type has a rate-limit tag for it (ADR-014 Decision 1; user decision 2026-10-09 for the preview). Nothing to implement here.
 - **Stale comments to fix**: `INetworkTestObserver.cs`, `CommitBeforeBroadcastSequencer.cs`, `PriorityPathQueue.cs`, `QueuedMessage.cs`, `NetworkingTestHarness_Observer_tests.cs`, `WireProtocol_PriorityPathCap_tests.cs`. Comments only — the item-id based `INetworkTestObserver` enhancement callback signatures are replaced by Story 015.
 
@@ -78,7 +80,8 @@
 - Stories 003–007: all server-side behaviour behind the messages
 - Story 009: holding other requests during an attempt
 - Enhancement UI epic: screens, probability display, the heightened destruction warning (AC-ENH-25, 26, 31; UI-ENH-5 to UI-ENH-9)
-- The transport adapter (ADR-014)
+- The transport adapter (ADR-014) and the production implementation of `IClientMessageOutbox`
+- `npcId` validation (TD-058 item 5; NPC authoring)
 
 ---
 
@@ -98,7 +101,8 @@
 - **Rejected request** — tier mismatch → one result with `RejectedTierMismatch`, `newLevel` 0, the request's `requestId`; no acknowledgment; seam not called. Item slot index 20 → `RejectedItemNotFound`.
 - **Duplicate** — as stated in the criterion; then a request with `requestId = X + 1` reaches the seam.
 - **Valid request** — slots (0, 1), `requestId` 7 → seam called once with (sender, 7, 0, 1); capture empty.
-- **Registration** — the five descriptors are present with held false and the stated body bounds; an over-length body is dropped at intake.
+- **Cap exemption flag** — one case per message this story sends: rejection result → true; state update, preview rejection, `NPCInteractionOpened`, `RejectedNotInTownHub` → false.
+- **Registration** — the five descriptors are present with held false, the stated body bounds and their own `RpcTypeTag` member; an over-length body is dropped at intake; all twelve types have a routing row with the expected direction.
 
 ---
 
