@@ -3603,3 +3603,12 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: None (user decision 2026-10-08)
 - Uncommitted: all Story 003 code, tests, generated .meta files, the story, EPIC.md, this file. PAT rotation still unconfirmed.
 - Next recommended: no Ready story in this epic. ADR-013 Migration Plan step 2 (Loot Table migration story) and step 3 (Enhancement migration story) are unblocked but not written — `/create-stories` or a hand-written story for Loot Table first.
+
+## Session Extract — Loot Table Story 015 written, 2026-10-08
+- Commit status: Damage Calculation Story 003 (code, tests, .meta files, story, EPIC.md, the three extracts above) is committed as `f22c24b` on `main`, not pushed. The "Uncommitted" notes in those extracts are superseded. PAT rotation still unconfirmed.
+- New: `production/epics/loot-table-system/story-015-random-provider-migration.md` — Draft, Logic, Manifest Version 2026-10-08, estimate 3 h. ADR-013 Migration Plan step 2: `LootDropRoller.Roll(table, random)` and `LootTableService` take `IRandomProvider`; `RandomProviderFactory` (new, `src/ServerLogic/Randomness/`) replaces `LootRandomFactory` (deleted); log line becomes `[Random] PRNG seed:`; the factory test moves to `tests/EditMode/Randomness/RandomProviderFactory_tests.cs` and asserts the log line only.
+- **User decision 2026-10-08:** `FixedGoldRandom` in `LootTable_KillResolution_integration_tests.cs` is rewritten as a local class implementing `IRandomProvider` (keeps the gold-bounds and draw-order assertions); the other three Loot Table test files use the shared doubles. This differs from the wording of Migration Plan step 2 ("replaced by the shared ones") for one file; the shared doubles and ADR-013 Decision 6 are unchanged.
+- Facts checked while writing: the validator rejects `GoldMax > GOLD_CAP` (9,999,999), so `GoldMax + 1` cannot overflow; no test asserts the null-argument parameter name `rng`; nothing outside the Loot Table folder and `LootTable_DropRoll_tests.cs` names `LootRandomFactory`.
+- Loot Table `EPIC.md`: status In Progress (14/15), row 015 added.
+- Uncommitted: the new story, Loot Table `EPIC.md`, this note.
+- Next: `/story-readiness production/epics/loot-table-system/story-015-random-provider-migration.md`, then `/dev-story` in a fresh session. The Enhancement migration story (step 3) is not written yet.
