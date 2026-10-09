@@ -7,6 +7,7 @@ using IronGrind.InventorySystem;
 using IronGrind.ItemDatabase;
 using IronGrind.Tests.EditMode.InventorySystem;
 using IronGrind.Tests.EditMode.ItemDatabase;
+using IronGrind.Tests.EditMode.Randomness;
 using NUnit.Framework;
 using UnityEngine.TestTools;
 using Object = UnityEngine.Object;
@@ -70,7 +71,7 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
         private InventoryService _inventory;
         private RecordingInventoryDecorator _recording;
         private StubNpcSessions _sessions;
-        private ScriptedRandom _random;
+        private ScriptedRandomProvider _random;
         private EnhancementService _service;
         private List<ItemDefinition> _definitions;
         private int _inventoryEvents;
@@ -109,7 +110,7 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
 
             _recording = new RecordingInventoryDecorator(_inventory);
             _sessions = new StubNpcSessions();
-            _random = new ScriptedRandom();
+            _random = new ScriptedRandomProvider();
             _service = new EnhancementService(_recording, _itemDatabase, EnhancementConfig.Default, _sessions, _random);
         }
 
@@ -143,7 +144,7 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
 
         private EnhancementAttemptStart Begin(double draw)
         {
-            _random.Enqueue(draw);
+            _random.EnqueueDouble(draw);
             return _service.BeginAttempt(Player, ITEM_SLOT, SCROLL_SLOT);
         }
 
@@ -318,7 +319,7 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
             SeedSword(Player, ITEM_SLOT, BronzeSwordId, LEVEL_TWO);
             SeedScrolls(Player, LOW_SCROLL_SLOT, BronzeScrollId, STACK_OF_FIVE);
             SeedScrolls(Player, HIGH_SCROLL_SLOT, BronzeScrollId, STACK_OF_FIVE);
-            _random.Enqueue(DRAW_MINIMUM);
+            _random.EnqueueDouble(DRAW_MINIMUM);
 
             // Act
             var start = _service.BeginAttempt(Player, ITEM_SLOT, HIGH_SCROLL_SLOT);
@@ -343,7 +344,7 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
             _inventoryEvents = 0;
 
             // Act
-            _random.Enqueue(DRAW_MINIMUM);
+            _random.EnqueueDouble(DRAW_MINIMUM);
             var rejected = _service.BeginAttempt(Player, ITEM_SLOT, SCROLL_SLOT);
 
             // Assert: nothing changed, no draw, the item lock was taken back.
@@ -429,6 +430,8 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
             CollectionAssert.AreEqual(
                 new[] { "LockSlot", "ConsumeItem", "SetEnhancementLevel", "UnlockSlot" }, callsAfterComplete, "After CompleteAttempt.");
             Assert.AreEqual(1, _random.DrawCount, "Exactly one draw.");
+            Assert.AreEqual(0, _random.FloatDrawCount, "No NextFloat draw.");
+            Assert.AreEqual(0, _random.IntDrawCount, "No NextInt draw.");
         }
 
         [Test]
@@ -448,6 +451,8 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
             CollectionAssert.AreEqual(
                 new[] { "LockSlot", "ConsumeItem", "RemoveItem", "UnlockSlot" }, callsAfterComplete, "After CompleteAttempt.");
             Assert.AreEqual(1, _random.DrawCount, "Exactly one draw.");
+            Assert.AreEqual(0, _random.FloatDrawCount, "No NextFloat draw.");
+            Assert.AreEqual(0, _random.IntDrawCount, "No NextInt draw.");
         }
 
         [Test]
@@ -541,7 +546,7 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
             int callsAfterFirst = _recording.Calls.Count;
 
             // Act
-            _random.Enqueue(DRAW_MINIMUM);
+            _random.EnqueueDouble(DRAW_MINIMUM);
             var second = _service.BeginAttempt(Player, ITEM_SLOT, SCROLL_SLOT);
 
             // Assert
@@ -615,7 +620,7 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
             Begin(DRAW_MINIMUM);
 
             // Act
-            _random.Enqueue(DRAW_MINIMUM);
+            _random.EnqueueDouble(DRAW_MINIMUM);
             var second = _service.BeginAttempt(Player, SECOND_ITEM_SLOT, SECOND_SCROLL_SLOT);
             var firstResult = _service.CompleteAttempt(Player);
 
@@ -642,7 +647,7 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
             Begin(DRAW_MINIMUM);
 
             // Act
-            _random.Enqueue(DRAW_ABOVE_P_S_2);
+            _random.EnqueueDouble(DRAW_ABOVE_P_S_2);
             var other = _service.BeginAttempt(OtherPlayer, ITEM_SLOT, SCROLL_SLOT);
 
             // Assert
@@ -684,7 +689,7 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
             // Act
             var start = Begin(DRAW_MINIMUM);
             var result = _service.CompleteAttempt(Player);
-            _random.Enqueue(DRAW_MINIMUM);
+            _random.EnqueueDouble(DRAW_MINIMUM);
             var next = _service.BeginAttempt(Player, ITEM_SLOT, SCROLL_SLOT);
 
             // Assert
@@ -708,7 +713,7 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
             // Arrange
             SeedBronzeRequest(LEVEL_TWO, STACK_OF_FIVE);
             _recording.FailSetEnhancementLevel = true;
-            _random.Enqueue(DRAW_MINIMUM);
+            _random.EnqueueDouble(DRAW_MINIMUM);
 
             // Act / Assert
             Assert.Throws<InvalidOperationException>(() => _service.BeginAttempt(Player, ITEM_SLOT, SCROLL_SLOT));
@@ -727,7 +732,7 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
             // Arrange: the inventory lets a subscriber's exception propagate out of ConsumeItem. With
             // nothing pending, only BeginAttempt itself can take the item lock back.
             SeedBronzeRequest(LEVEL_TWO, STACK_OF_FIVE);
-            _random.Enqueue(DRAW_MINIMUM);
+            _random.EnqueueDouble(DRAW_MINIMUM);
             _inventory.OnInventoryChanged += _ => throw new NotSupportedException("Subscriber failure.");
 
             // Act / Assert
@@ -735,6 +740,22 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
             Assert.IsFalse(_inventory.IsSlotLocked(Player, ITEM_SLOT), "Item slot must be unlocked.");
             Assert.IsFalse(_service.IsAttemptInProgress(Player), "IsAttemptInProgress.");
             Assert.AreEqual(0, _random.DrawCount, "No draw: the exception came before it.");
+            CollectionAssert.AreEqual(new[] { "LockSlot", "ConsumeItem", "UnlockSlot" }, _recording.Calls, "Call sequence.");
+        }
+
+        [Test]
+        public void BeginAttempt_ProviderThrows_UnlocksItemNothingPendingAndRethrows()
+        {
+            // Arrange: nothing is queued, so the provider throws at the draw, after the scroll is consumed.
+            SeedBronzeRequest(LEVEL_TWO, STACK_OF_FIVE);
+
+            // Act / Assert
+            Assert.Throws<InvalidOperationException>(() => _service.BeginAttempt(Player, ITEM_SLOT, SCROLL_SLOT));
+            Assert.IsFalse(_inventory.IsSlotLocked(Player, ITEM_SLOT), "Item slot must be unlocked.");
+            Assert.IsFalse(_service.IsAttemptInProgress(Player), "IsAttemptInProgress.");
+            Assert.AreEqual(LEVEL_TWO, _inventory.GetSlot(Player, ITEM_SLOT).EnhancementLevel, "Level unchanged.");
+            Assert.AreEqual(STACK_OF_FIVE_AFTER_ONE_USED, _inventory.GetSlot(Player, SCROLL_SLOT).Quantity, "The scroll is not restored.");
+            Assert.AreEqual(0, _random.DrawCount, "The failed draw is not counted.");
             CollectionAssert.AreEqual(new[] { "LockSlot", "ConsumeItem", "UnlockSlot" }, _recording.Calls, "Call sequence.");
         }
 

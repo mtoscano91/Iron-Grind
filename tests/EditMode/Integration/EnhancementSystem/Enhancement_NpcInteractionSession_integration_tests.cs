@@ -8,6 +8,7 @@ using IronGrind.ItemDatabase;
 using IronGrind.NpcInteraction;
 using IronGrind.Tests.EditMode.InventorySystem;
 using IronGrind.Tests.EditMode.ItemDatabase;
+using IronGrind.Tests.EditMode.Randomness;
 using NUnit.Framework;
 using UnityEngine.TestTools;
 using Object = UnityEngine.Object;
@@ -73,7 +74,7 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
         private StubTownHubQuery _townHub;
         private ManualClock _clock;
         private NpcInteractionSessionTracker _tracker;
-        private ScriptedRandom _random;
+        private ScriptedRandomProvider _random;
         private EnhancementService _service;
         private List<ItemDefinition> _definitions;
         private int _inventoryEvents;
@@ -106,7 +107,7 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
             _townHub = new StubTownHubQuery();
             _clock = new ManualClock { Now = CLOCK_START };
             _tracker = new NpcInteractionSessionTracker(_townHub, () => _clock.Now, SESSION_LIFETIME_SECONDS);
-            _random = new ScriptedRandom();
+            _random = new ScriptedRandomProvider();
             _service = new EnhancementService(_recording, _itemDatabase, EnhancementConfig.Default, _tracker, _random);
         }
 
@@ -130,7 +131,7 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
 
         private EnhancementAttemptStart Begin(double draw)
         {
-            _random.Enqueue(draw);
+            _random.EnqueueDouble(draw);
             return _service.BeginAttempt(Player, ITEM_SLOT, SCROLL_SLOT);
         }
 

@@ -8,6 +8,7 @@ using IronGrind.InventorySystem;
 using IronGrind.ItemDatabase;
 using IronGrind.Tests.EditMode.InventorySystem;
 using IronGrind.Tests.EditMode.ItemDatabase;
+using IronGrind.Tests.EditMode.Randomness;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
@@ -126,7 +127,7 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
             _inventory.OnInventoryChanged += _ => _inventoryEvents++;
 
             _sessions = new StubNpcSessions();
-            _service = new EnhancementService(_inventory, _itemDatabase, EnhancementConfig.Default, _sessions, new System.Random(0));
+            _service = new EnhancementService(_inventory, _itemDatabase, EnhancementConfig.Default, _sessions, new ScriptedRandomProvider());
         }
 
         [TearDown]
@@ -226,28 +227,28 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
         public void Constructor_NullInventory_Throws()
         {
             Assert.Throws<ArgumentNullException>(() =>
-                new EnhancementService(null, _itemDatabase, EnhancementConfig.Default, _sessions, new System.Random(0)));
+                new EnhancementService(null, _itemDatabase, EnhancementConfig.Default, _sessions, new ScriptedRandomProvider()));
         }
 
         [Test]
         public void Constructor_NullItemDatabase_Throws()
         {
             Assert.Throws<ArgumentNullException>(() =>
-                new EnhancementService(_inventory, null, EnhancementConfig.Default, _sessions, new System.Random(0)));
+                new EnhancementService(_inventory, null, EnhancementConfig.Default, _sessions, new ScriptedRandomProvider()));
         }
 
         [Test]
         public void Constructor_NullConfig_Throws()
         {
             Assert.Throws<ArgumentNullException>(() =>
-                new EnhancementService(_inventory, _itemDatabase, null, _sessions, new System.Random(0)));
+                new EnhancementService(_inventory, _itemDatabase, null, _sessions, new ScriptedRandomProvider()));
         }
 
         [Test]
         public void Constructor_NullNpcSessions_Throws()
         {
             Assert.Throws<ArgumentNullException>(() =>
-                new EnhancementService(_inventory, _itemDatabase, EnhancementConfig.Default, null, new System.Random(0)));
+                new EnhancementService(_inventory, _itemDatabase, EnhancementConfig.Default, null, new ScriptedRandomProvider()));
         }
 
         [Test]

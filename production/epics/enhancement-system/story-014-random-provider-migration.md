@@ -1,7 +1,7 @@
 # Story 014: Migrate Enhancement to `IRandomProvider`
 
 > **Epic**: Enhancement System
-> **Status**: Draft (2026-10-08; written from ADR-013 Migration Plan step 3; `/story-readiness` not run yet)
+> **Status**: Complete (2026-10-09; written from ADR-013 Migration Plan step 3; `/story-readiness` 2026-10-09: READY)
 > **Layer**: Feature
 > **Type**: Logic
 > **Manifest Version**: 2026-10-08
@@ -111,7 +111,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/Architecture/RandomTypeRule_tests.cs` (new, 3 tests) and the five changed Enhancement test files — must exist and pass with the full EditMode suite (expected 2058).
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing (2026-10-09)
 
 **Test attribute counts at story creation (2026-10-08)**, for the diff review: attempt sequence 32, attempt validation 37, NPC interaction session 44, rollback 24, outcome events 25. None of these changes.
 
@@ -121,3 +121,23 @@
 
 - Depends on: Loot Table Story 015 (Complete, 2026-10-08, commit `d333f2a`) — after it `EnhancementService` is the only remaining exception; Damage Calculation Story 003 (Complete, commit `f22c24b`) — `IRandomProvider` and the shared doubles; Enhancement Story 012 (Complete) — the service is in `IronGrind.ServerLogic`; ADR-013 (Accepted 2026-10-08).
 - Unlocks: ADR-013 Migration Plan complete (steps 1–5); the ADR's "after Migration Plan step 3" validation criterion can be checked.
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-09
+**Criteria**: 11/11 passing. `/story-done` verdict: COMPLETE WITH NOTES.
+**Suite**: EditMode 2059/2059, run by the user in the Editor's Test Runner after the review fixes; totals read from the Test Runner results file (`TestResults.xml`, 2026-10-09 09:08 local). The run after the implementation and before the review fixes was 2058/2058 (09:03 local). Baseline 2055.
+**Expected values**: none changed in any existing Enhancement test.
+**Deviations (advisory, from review fixes the user approved 2026-10-09)**:
+- Suite total 2059, not 2058: the review added `BeginAttempt_ProviderThrows_UnlocksItemNothingPendingAndRethrows` (the provider throws at the draw, after the scroll is consumed — a path `System.Random` did not have).
+- `Enhancement_AttemptSequence_integration_tests.cs`: 33 tests (story: 32) and 13 `DrawCount` assertions (story: 12), from that test. The two "exactly one draw" call-sequence tests also assert `FloatDrawCount == 0` and `IntDrawCount == 0`. The other four files are unchanged in count (37 / 44 / 24 / 25).
+- `RandomTypeRule_tests.cs` is stricter than the story words it: the checker also matches `ref` / `in` / `out` parameters (`System.Random&`); the probe fixture has six members (static and instance field, constructor parameter, public and private method parameter, `out` parameter), not three; the probe is named `test_checker_reports_every_system_random_field_and_parameter_of_fixture`; the type-rule test also asserts that `EnhancementService` is scanned, that `SystemRandomProvider` is excluded, and that the checker reports `SystemRandomProvider` without the exclusion; the no-subclass test asserts the assembly name and that it has types.
+- Manifest Version matches (2026-10-08).
+**Source searches (2026-10-09)**: `new Random(` / `new System.Random(` in `src/ServerLogic/`: only `Randomness/RandomProviderFactory.cs:44`. `UnityEngine.Random` in `src/ServerLogic/`: none. `ScriptedRandom` not followed by `Provider` in `tests/`: none. `: System.Random` / `: Random` in `tests/`: none. `NextFloat` / `NextInt` under `src/ServerLogic/EnhancementSystem/`: none.
+**Notes**:
+- Implemented by `gameplay-programmer`; the diff was reviewed in the main session. One defect fixed before the first run: the probe expected `.#ctor(...)`, but `ConstructorInfo.Name` is `.ctor`.
+- `docs/architecture/control-manifest.md`: the "Migration status" line and the Forbidden entry on the `System.Random` type rule no longer list exceptions.
+- Review suggestions not applied, by choice: a `System.Random`-subclass check inside `IronGrind.ServerLogic` (beyond ADR-013's wording); renaming `test_test_assembly_has_no_system_random_subclass`.
+**Code Review**: Complete — `/code-review` 2026-10-09 (`unity-specialist`, `qa-tester`; ADR-013 check in the main session): APPROVED WITH SUGGESTIONS, six fixes applied. `QL-TEST-COVERAGE` and `LP-CODE-REVIEW` skipped (lean mode).
+**Tech debt**: TD-063 (reflection helpers duplicated between the two Architecture test files).

@@ -8,35 +8,6 @@ using IronGrind.NpcInteraction;
 
 namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
 {
-    /// <summary>
-    /// Random source for tests: <see cref="NextDouble"/> returns queued values in order and counts
-    /// draws. Asking for a value when none is queued throws, so an unexpected draw fails the test.
-    /// Shared by the Enhancement System integration tests (Story 004 onwards).
-    /// </summary>
-    internal sealed class ScriptedRandom : System.Random
-    {
-        private readonly Queue<double> _values = new Queue<double>();
-
-        /// <summary>Number of values handed out so far.</summary>
-        public int DrawCount { get; private set; }
-
-        /// <summary>Appends a value to the end of the script.</summary>
-        public void Enqueue(double value)
-        {
-            _values.Enqueue(value);
-        }
-
-        /// <inheritdoc />
-        /// <exception cref="InvalidOperationException">No value is queued.</exception>
-        public override double NextDouble()
-        {
-            if (_values.Count == 0)
-                throw new InvalidOperationException("ScriptedRandom: a draw was requested but no value is queued.");
-            DrawCount++;
-            return _values.Dequeue();
-        }
-    }
-
     /// <summary>Settable stand-in for the NPC session query; active by default.</summary>
     internal sealed class StubNpcSessions : INpcInteractionSessions
     {

@@ -8,6 +8,7 @@ using IronGrind.InventorySystem;
 using IronGrind.ItemDatabase;
 using IronGrind.Tests.EditMode.InventorySystem;
 using IronGrind.Tests.EditMode.ItemDatabase;
+using IronGrind.Tests.EditMode.Randomness;
 using NUnit.Framework;
 using UnityEngine.TestTools;
 using Object = UnityEngine.Object;
@@ -63,7 +64,7 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
         private InventoryService _inventory;
         private RecordingInventoryDecorator _recording;
         private StubNpcSessions _sessions;
-        private ScriptedRandom _random;
+        private ScriptedRandomProvider _random;
         private EnhancementService _service;
         private List<ItemDefinition> _definitions;
         private int _inventoryFullEvents;
@@ -101,7 +102,7 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
 
             _recording = new RecordingInventoryDecorator(_inventory);
             _sessions = new StubNpcSessions();
-            _random = new ScriptedRandom();
+            _random = new ScriptedRandomProvider();
             _service = new EnhancementService(_recording, _itemDatabase, EnhancementConfig.Default, _sessions, _random);
         }
 
@@ -135,7 +136,7 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
 
         private EnhancementAttemptStart Begin(double draw)
         {
-            _random.Enqueue(draw);
+            _random.EnqueueDouble(draw);
             return _service.BeginAttempt(Player, ITEM_SLOT, SCROLL_SLOT);
         }
 
@@ -328,7 +329,7 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
             // Arrange: one scroll in slot 1, item in slot 3. Contents only: the two positions may swap.
             SeedScrolls(Player, SCROLL_SLOT, STACK_OF_ONE);
             SeedSword(Player, HIGHER_ITEM_SLOT, LEVEL_TWO);
-            _random.Enqueue(DRAW_DESTRUCTION_AT_LEVEL_TWO);
+            _random.EnqueueDouble(DRAW_DESTRUCTION_AT_LEVEL_TWO);
             var start = _service.BeginAttempt(Player, HIGHER_ITEM_SLOT, SCROLL_SLOT);
             Assert.IsTrue(start.IsPending, "Arrange: the attempt must be pending.");
             Assert.AreEqual(EnhancementOutcome.Destruction, start.Outcome, "Arrange: pending outcome.");

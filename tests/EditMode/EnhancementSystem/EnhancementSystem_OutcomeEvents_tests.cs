@@ -9,6 +9,7 @@ using IronGrind.ItemDatabase;
 using IronGrind.Tests.EditMode.Integration.EnhancementSystem;
 using IronGrind.Tests.EditMode.InventorySystem;
 using IronGrind.Tests.EditMode.ItemDatabase;
+using IronGrind.Tests.EditMode.Randomness;
 using NUnit.Framework;
 using UnityEngine.TestTools;
 using Object = UnityEngine.Object;
@@ -66,7 +67,7 @@ namespace IronGrind.Tests.EditMode.EnhancementSystem
         private InventoryService _inventory;
         private RecordingInventoryDecorator _recording;
         private StubNpcSessions _sessions;
-        private ScriptedRandom _random;
+        private ScriptedRandomProvider _random;
         private EnhancementService _service;
         private List<ItemDefinition> _definitions;
 
@@ -99,7 +100,7 @@ namespace IronGrind.Tests.EditMode.EnhancementSystem
 
             _recording = new RecordingInventoryDecorator(_inventory);
             _sessions = new StubNpcSessions();
-            _random = new ScriptedRandom();
+            _random = new ScriptedRandomProvider();
             _service = new EnhancementService(_recording, _itemDatabase, EnhancementConfig.Default, _sessions, _random);
 
             _successEvents = new List<EnhancementSuccessEventArgs>();
@@ -130,7 +131,7 @@ namespace IronGrind.Tests.EditMode.EnhancementSystem
 
         private EnhancementAttemptStart Begin(double draw)
         {
-            _random.Enqueue(draw);
+            _random.EnqueueDouble(draw);
             return _service.BeginAttempt(Player, ITEM_SLOT, SCROLL_SLOT);
         }
 

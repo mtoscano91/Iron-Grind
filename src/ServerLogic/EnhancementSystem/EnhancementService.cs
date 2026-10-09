@@ -5,6 +5,7 @@ using IronGrind.Currency;
 using IronGrind.InventorySystem;
 using IronGrind.ItemDatabase;
 using IronGrind.NpcInteraction;
+using IronGrind.Randomness;
 using UnityEngine;
 
 namespace IronGrind.EnhancementSystem
@@ -26,7 +27,7 @@ namespace IronGrind.EnhancementSystem
         private readonly IItemDatabase _itemDatabase;
         private readonly EnhancementConfig _config;
         private readonly INpcInteractionSessions _npcSessions;
-        private readonly System.Random _random;
+        private readonly IRandomProvider _random;
         private readonly Dictionary<CharacterID, PendingAttempt> _pending = new Dictionary<CharacterID, PendingAttempt>();
 
         // What Complete (and Story 005's rollback) needs for one in-flight attempt.
@@ -80,11 +81,11 @@ namespace IronGrind.EnhancementSystem
         /// <param name="itemDatabase">Item definitions (upgradeable flag, gear data, scroll data).</param>
         /// <param name="config">Level cap (CR-ENH-2) and outcome resolution (CR-ENH-9, CR-ENH-10).</param>
         /// <param name="npcSessions">NPC session query (CR-ENH-17).</param>
-        /// <param name="random">Random source; exactly one <see cref="System.Random.NextDouble"/> per pending attempt.</param>
+        /// <param name="random">Random source (ADR-013); exactly one <see cref="IRandomProvider.NextDouble"/> per pending attempt, none on a rejected attempt.</param>
         /// <exception cref="ArgumentNullException">Any argument is null.</exception>
         public EnhancementService(
             IInventoryService inventory, IItemDatabase itemDatabase, EnhancementConfig config,
-            INpcInteractionSessions npcSessions, System.Random random)
+            INpcInteractionSessions npcSessions, IRandomProvider random)
         {
             if (inventory == null) throw new ArgumentNullException(nameof(inventory));
             if (itemDatabase == null) throw new ArgumentNullException(nameof(itemDatabase));

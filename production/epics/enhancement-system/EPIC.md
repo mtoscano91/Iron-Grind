@@ -3,7 +3,7 @@
 > **Layer**: Feature
 > **GDD**: design/gdd/enhancement-system.md
 > **Architecture Module**: Enhancement (Feature layer; "irreversible outcome — commit before broadcast" data flow in `architecture.md`)
-> **Status**: In Progress (10/14 — Stories 001–008 Complete 2026-10-07; Story 012, the ADR-012 assembly move, and Story 013, the NPC Interaction assembly move, Complete 2026-10-08; Story 014, the ADR-013 random provider migration, Draft; 3 Blocked: Story 009 on the request dispatcher, Story 010 on TD-046, Story 011 on Character Persistence)
+> **Status**: In Progress (11/14 — Stories 001–008 Complete 2026-10-07; Story 012, the ADR-012 assembly move, and Story 013, the NPC Interaction assembly move, Complete 2026-10-08; Story 014, the ADR-013 random provider migration, Complete 2026-10-09; 3 Blocked: Story 009 on the request dispatcher, Story 010 on TD-046, Story 011 on Character Persistence)
 > **Stories**: 10 stories created 2026-10-07 (001–010); Story 011 added the same day when Story 005 was split at its readiness check
 
 > **Created ahead of the GDD's stated gate (user decision 2026-10-07).** The GDD header says OQ-ENH-7 and the wire-protocol Enhancement message set (TD-046) should close before `/create-epics`. The epic was created anyway so that the formula and bonus-provider work, which neither gate touches, can be planned alongside the Equipment epic. Every requirement the gates affect is marked below.
@@ -76,7 +76,7 @@ This epic is complete when:
 | 011 | [Commit Orchestration](story-011-commit-orchestration.md) | Integration | **Blocked** — Character Persistence, TD-046 for the client-facing criteria | ADR-006, ADR-011 |
 | 012 | [Move Enhancement to the Server Assembly](story-012-server-assembly-move.md) | Integration | Complete (2026-10-08) | ADR-012 |
 | 013 | [Move NPC Interaction to the Server Assembly](story-013-npc-interaction-server-assembly-move.md) | Integration | Complete (2026-10-08) | ADR-012 |
-| 014 | [Migrate Enhancement to `IRandomProvider`](story-014-random-provider-migration.md) | Logic | Draft (2026-10-08) | ADR-013 |
+| 014 | [Migrate Enhancement to `IRandomProvider`](story-014-random-provider-migration.md) | Logic | Complete (2026-10-09) | ADR-013 |
 
 **Order**: 014 is independent of the blocked stories (it needs Story 012 and Loot Table Story 015, both Complete). 001 first; 002 and 003 need 001; 004 needs 003; 005 and 007 need 004 (007 also needs 005 for its "nothing on a rollback" check); 006 needs 003; 008 is independent; 011 needs 005 and its blockers; 009 and 010 follow 011.
 
