@@ -30,7 +30,7 @@
 #   Superseded entries:     Grep pattern="status: superseded"
 
 version: 1
-last_updated: "2026-10-07"
+last_updated: "2026-10-09"
 
 # ─── STATE OWNERSHIP ─────────────────────────────────────────────────────────
 # Who is the authoritative owner of each piece of shared game state.
@@ -145,7 +145,48 @@ interfaces:
     signal_signature: "ICharacterMutationGate: bool IsHeld(CharacterID); void Close(CharacterID); void Open(CharacterID); event Action<CharacterID> OnGateOpened"
     referenced_by:
       - docs/architecture/ADR-011-async-persistence-tick-loop.md
+      - docs/architecture/ADR-014-inbound-request-dispatch-and-tick-order.md
     added: 2026-10-07
+    revised: 2026-10-09   # ADR-014 added to referenced_by (the dispatcher polls IsHeld in Pass A); no change to the contract
+
+  - contract: inbound_request_dispatch
+    status: active
+    pattern: direct_call
+    producer: the transport adapter — in its receive callback it calls IInboundMessageIntake.TryAccept and nothing else
+    consumers:
+      - request handlers registered by game systems (one InboundRequestHandler per message type, run on the tick by DispatchTick)
+      - connection-level sinks (IConnectionMessageSink, called from TryAccept; record only)
+    adr: docs/architecture/ADR-014-inbound-request-dispatch-and-tick-order.md
+    signal_signature: "IInboundMessageIntake.TryAccept(uint clientId, ReadOnlySpan<byte> message) — main thread, outside the tick, never throws; IInboundRequestDispatcher: Register(InboundRequestDescriptor, InboundRequestHandler), RegisterConnectionLevel(ConnectionMessageDescriptor, IConnectionMessageSink), Seal(), bool AddConnection(uint), RemoveConnection(uint), DispatchTick(uint currentTick), int HeldCount(CharacterID); delegate void InboundRequestHandler(in InboundRequestContext context, ReadOnlySpan<byte> body); bounds MAX_INBOX_REQUESTS_PER_CONNECTION = 64, MAX_INBOX_BYTES_PER_CONNECTION = 4096, MAX_INBOUND_MESSAGE_BYTES = 400, MAX_HELD_BODY_BYTES = 64"
+    referenced_by:
+      - docs/architecture/ADR-014-inbound-request-dispatch-and-tick-order.md
+    added: 2026-10-09
+    revised: ""
+
+  - contract: connection_character_directory
+    status: active
+    pattern: direct_call
+    producer: the session layer (owns the connection-to-character mapping)
+    consumers:
+      - inbound request dispatcher (resolves the CharacterID of a request's connection once per request)
+    adr: docs/architecture/ADR-014-inbound-request-dispatch-and-tick-order.md
+    signal_signature: "IConnectionCharacterDirectory: bool TryGetCharacterId(uint clientId, out CharacterID charId)"
+    referenced_by:
+      - docs/architecture/ADR-014-inbound-request-dispatch-and-tick-order.md
+    added: 2026-10-09
+    revised: ""
+
+  - contract: connection_activity_sink
+    status: active
+    pattern: direct_call
+    producer: the inbound request dispatcher's intake — once per message of a known connection, before the message is decoded
+    consumers:
+      - the session layer (implements the sink; records only)
+    adr: docs/architecture/ADR-014-inbound-request-dispatch-and-tick-order.md
+    signal_signature: "IConnectionActivitySink: void OnInboundActivity(uint clientId, uint serverTick) — called from TryAccept, inside the receive callback"
+    referenced_by:
+      - docs/architecture/ADR-014-inbound-request-dispatch-and-tick-order.md
+    added: 2026-10-09
     revised: ""
 
 # Example:
@@ -316,6 +357,17 @@ api_decisions:
     added: 2026-10-07
     revised: ""
 
+  - purpose: server_tick_order
+    status: active
+    api: "ZoneTickPipeline.Tick(float deltaTime): completion drain (ITickCompletionQueue.Drain) -> IInboundRequestDispatcher.DispatchTick -> simulation (IZoneSimulationStep.Run) -> outbound (IZoneOutboundStep.Flush), each step isolated so a throwing step does not skip the later ones. The composition root registers the pipeline once through ServerTickLoop.RegisterTickDriven."
+    not: "a game system registering itself with RegisterTickDriven; a bare DispatchTick call outside the pipeline"
+    adr: docs/architecture/ADR-014-inbound-request-dispatch-and-tick-order.md
+    reason: "One fixed, testable order per server tick: a persistence result is handled before the requests it releases, held requests run before new ones, and outbound messages are flushed after the simulation that produced them."
+    referenced_by:
+      - docs/architecture/ADR-014-inbound-request-dispatch-and-tick-order.md
+    added: 2026-10-09
+    revised: ""
+
 # Example:
 #
 # api_decisions:
@@ -424,6 +476,34 @@ forbidden_patterns:
     why: "A captured UnitySynchronizationContext posts the continuation to the main thread: invisible in EditMode tests, a late or stalled write on the server, and a shutdown drain that waits out its timeout. Game state is single-threaded and is only safe to read in the synchronous prefix, on the tick thread."
     adr: docs/architecture/ADR-011-async-persistence-tick-loop.md
     added: 2026-10-07
+
+  - pattern: game_logic_in_transport_receive_callback
+    status: active
+    description: "The transport's receive callback must not run game logic, RPC guards or handlers. It checks the message length and calls IInboundMessageIntake.TryAccept; everything else happens on the tick, in DispatchTick."
+    why: "A receive callback runs at a point of the frame the tick does not control. Game state changed there is not ordered against the completion drain or the other requests, and guards evaluated at receipt would use a different tick than the one the request is dispatched on."
+    adr: docs/architecture/ADR-014-inbound-request-dispatch-and-tick-order.md
+    added: 2026-10-09
+
+  - pattern: per_system_client_request_queue
+    status: active
+    description: "A game system must not keep its own queue of client requests. The inbound request dispatcher's inbox is the queue for every client request (ADR-014 Decision 7 amends ADR-010 Decision 5)."
+    why: "Per-system queues have no arrival order across message types, so requests of one client could run out of order, and each queue would need its own bounds, guard evaluation and hold-during-write rule."
+    adr: docs/architecture/ADR-014-inbound-request-dispatch-and-tick-order.md
+    added: 2026-10-09
+
+  - pattern: register_tick_driven_for_game_logic
+    status: active
+    description: "Only the composition root calls ServerTickLoop.RegisterTickDriven, and only for ZoneTickPipeline. Game systems that tick run inside the pipeline's simulation step, in an order the composition root lists explicitly."
+    why: "Callbacks registered one by one run in registration order, which nothing states or tests; a system registered that way could run before the completion drain or the request dispatch of the same tick."
+    adr: docs/architecture/ADR-014-inbound-request-dispatch-and-tick-order.md
+    added: 2026-10-09
+
+  - pattern: dispatcher_subscribes_to_on_gate_opened
+    status: active
+    description: "The inbound request dispatcher must not subscribe to ICharacterMutationGate.OnGateOpened. Pass A polls IsHeld for each character with held requests."
+    why: "A subscriber that throws stops the ones after it, so an opening could be missed and the character's bag requests held for the rest of the session."
+    adr: docs/architecture/ADR-014-inbound-request-dispatch-and-tick-order.md
+    added: 2026-10-09
 
 # Example:
 #
