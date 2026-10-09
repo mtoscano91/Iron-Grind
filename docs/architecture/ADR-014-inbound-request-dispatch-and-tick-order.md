@@ -8,6 +8,8 @@ Proposed
 
 Amended 2026-10-09 after `architecture-review-2026-10-09-adr-014.md` (B1, B2, C1–C3, R1–R4): Decision 1 classifies every client→server type; Decision 2 has one intake for requests and connection-level messages, a stale check for U-U types only, and a body arena in place of fixed 64-byte entries; Decision 3 states the release-build registration behaviour. Two findings of the amendment itself: `PartyChatRequest` bodies reach 386 bytes, and `HeartbeatMessage` has no `SenderEntityID`.
 
+Amended a second time 2026-10-09 after `architecture-review-2026-10-09-adr-014-rereview.md` (N1, S1–S4): the intake reports every message of a known connection to an `IConnectionActivitySink` (Decision 2); the highest-seen `SequenceNumber` is kept per U-U type per connection (Decision 2); the dispatcher story registers only the types that have a routing row (Decision 3); one object implements the intake and the dispatcher and takes the development-build switch in its constructor (Decision 3); `AddConnection` releases the storage of removed connections and returns `bool` (Decision 4).
+
 ## Engine Compatibility
 
 | Field | Value |
@@ -49,7 +51,7 @@ ADR-011 Decision 4 relies on "the session's inbound request dispatcher — the s
 
 ## Decision
 
-**One `InboundRequestDispatcher` per zone process, in `IronGrind.ServerLogic`, is the only path from a client message to a game system. A transport adapter passes each message to one intake and does nothing else; the intake copies requests into a bounded inbox and hands connection-level messages to the session layer. On the tick, the dispatcher first releases held requests whose gate is open, then takes the inbox in arrival order and, for each request, runs the guard chain, checks the mutation gate, and calls the one handler registered for that message type. A `ZoneTickPipeline` fixes the order of the tick.**
+**One `InboundRequestDispatcher` per zone process, in `IronGrind.ServerLogic`, is the only path from a client message to a game system. A transport adapter passes each message to one intake and does nothing else; the intake reports the connection's activity, copies requests into a bounded inbox and hands connection-level messages to the session layer. On the tick, the dispatcher first releases held requests whose gate is open, then takes the inbox in arrival order and, for each request, runs the guard chain, checks the mutation gate, and calls the one handler registered for that message type. A `ZoneTickPipeline` fixes the order of the tick.**
 
 ### Decision 1 — Scope: what goes through the dispatcher
 - Every client→server message that reaches a game system is a *request* and goes through the dispatcher.
@@ -96,29 +98,31 @@ Notes on the table:
 
 ### Decision 2 — Intake: the adapter and the inbox
 - The adapter is the only code that touches the transport's receive API. In its callback it checks that the message is 10 to `MAX_INBOUND_MESSAGE_BYTES` (default 400) bytes long and calls `IInboundMessageIntake.TryAccept(clientId, message)`. It decodes nothing and calls no game system, no guard and no handler.
-- The intake is the one component that separates requests from connection-level messages. It holds the sealed type table of Decision 3 and, per connection, the highest `SequenceNumber` seen on U-U types. `TryAccept` runs on the main thread, outside the tick. It:
-  1. drops a message from a connection that was never added or has been removed (`AddConnection` / `RemoveConnection`, Decision 4);
+- The intake is the one component that separates requests from connection-level messages. It holds the sealed type table of Decision 3 and, per connection, the highest `SequenceNumber` seen on each U-U type. `TryAccept` runs on the main thread, outside the tick. It:
+  1. drops a message from a connection that was never added or has been removed (`AddConnection` / `RemoveConnection`, Decision 4). Every other message is reported here, once, to `IConnectionActivitySink.OnInboundActivity(clientId, IServerTickSource.ServerTickNumber)`, before anything is decoded: a message dropped in step 2, 3, 4 or 6 is still a packet from a live client, and any packet resets the heartbeat timeout (`networking-wire-protocol.md` CR-NET-7.10);
   2. decodes the 10-byte CR-NET-7.1 envelope and looks `MessageTypeId` up in the type table; a type with no entry is dropped — anomaly `UnknownInboundMessageType`;
   3. for a type that carries `SenderEntityID`, reads the 4 bytes that follow; a message too short for its type, or with a body longer than the type's `MaxBodyBytes`, is dropped — anomaly `InboundMessageMalformed`;
-  4. for a U-U type only, drops a message whose `SequenceNumber` is stale against the connection's highest seen on U-U types (CR-NET-7.5, `StaleDiscardComparer`). This is ordinary on an unreliable channel: counted, not logged as an anomaly. R-OD types are not checked: the transport delivers each of them once and in order (Verification Required 5), and `SequenceNumber` is one counter per connection shared by all types (`networking-channel-contract.md` CCR-1), so a U-U packet that overtakes a retransmitted R-OD request would otherwise make that request look stale;
+  4. for a U-U type only, drops a message whose `SequenceNumber` is stale against the highest seen for that type on that connection (CR-NET-7.5, `StaleDiscardComparer`); the first message of a type on a connection is never stale. This is ordinary on an unreliable channel: counted, not logged as an anomaly. The value is kept per type (user decision 2026-10-09): with one value per connection, a `SkillCastRequest` overtaken by the `MovementIntentMessage` sent after it would be dropped with no reply. R-OD types are not checked: the transport delivers each of them once and in order (Verification Required 5), and `SequenceNumber` is one counter per connection shared by all types (`networking-channel-contract.md` CCR-1), so a U-U packet that overtakes a retransmitted R-OD request would otherwise make that request look stale;
   5. hands a connection-level message to the `IConnectionMessageSink` registered for its type, and stops. The sink runs inside the receive callback, so it only records (ADR-010 Decision 5): it resets a timeout, stores an echo time, or queues work for the session state machine;
   6. drops a request if that connection already has `MAX_INBOX_REQUESTS_PER_CONNECTION` (default 64) undispatched requests, or if its body does not fit in what is left of the connection's `MAX_INBOX_BYTES_PER_CONNECTION` (default 4,096) for this tick interval — anomaly `InboundInboxOverflow`, logged once per connection per tick;
   7. otherwise copies the body into the connection's segment of the inbox arena and records `(arrivalIndex, clientId, envelope fields, senderEntityId, arrivalTick, body offset, body length)`.
-- The connection's highest seen U-U `SequenceNumber` advances only for a U-U message that reaches step 5 or is accepted in step 7.
+- The highest seen `SequenceNumber` of a U-U type on a connection advances only for a message of that type that reaches step 5 or is accepted in step 7.
+- The activity sink runs inside the receive callback, so it only records, like a connection-level sink. The session layer implements it: it maps the connection to its account and calls `ConnectionStateMachine.RecordInboundActivity`, which does nothing for an account that is not `Connected`. Not reported: a message from a connection that is unknown or removed, and a message the adapter dropped for its length — the adapter still does nothing but the length check.
 - `arrivalIndex` is one zone-wide counter: the order in which the server received the requests, across all connections and all request types. For the R-OD types of one connection, receive order is the client's send order (Verification Required 5). U-U requests (`MovementIntentMessage`, `SkillCastRequest`) can be lost or arrive late, and their order relative to the R-OD requests of the same connection is not guaranteed; no held type is U-U. Between connections it is receive order, which is the only order the server can know.
 - `arrivalTick` is `IServerTickSource.ServerTickNumber` when `TryAccept` ran. `ServerTickLoop` implements the interface with the property it already has.
-- The inbox storage is allocated when the zone is created: a record array of `MAX_PLAYERS_PER_ZONE × MAX_INBOX_REQUESTS_PER_CONNECTION` entries (3,200), and a byte arena with one `MAX_INBOX_BYTES_PER_CONNECTION` segment per connection slot (50 × 4,096 B = 205 KB), filled from its start and reset by each tick's dispatch. `TryAccept` allocates nothing.
+- The inbox storage is allocated when the zone is created: a record array of `MAX_PLAYERS_PER_ZONE × MAX_INBOX_REQUESTS_PER_CONNECTION` entries (3,200), and a byte arena with one `MAX_INBOX_BYTES_PER_CONNECTION` segment per connection slot (50 × 4,096 B = 205 KB), filled from its start and reset by each tick's dispatch. Each connection slot also has one highest-seen `SequenceNumber` per registered U-U type (four types today), cleared when the slot is given to a new connection. `TryAccept` allocates nothing.
 - The inbox is emptied completely by every tick's dispatch (Decision 4), so no backlog carries from one tick to the next. The per-connection bounds limit what one client can add between two ticks.
 - Guards do not run at intake. Guard state is read at one fixed point of the tick (Decision 4).
 
 ### Decision 3 — Registration: one descriptor and one handler per message type
 - The server composition root registers, for each request type, an `InboundRequestDescriptor` and a handler, and for each connection-level type a `ConnectionMessageDescriptor` and an `IConnectionMessageSink`. Then it calls `Seal()`. Registration after `Seal()` throws. The two kinds form one type table, which the intake reads (Decision 2).
+- `InboundRequestDispatcher` implements both `IInboundRequestDispatcher` and `IInboundMessageIntake`: the type table, the connection set and the inbox are fields of one object, and the adapter receives it as `IInboundMessageIntake` only. Its constructor takes `bool isDevelopmentBuild`; the composition root passes `BuildConfiguration.IsDevelopmentBuild`.
 - The request descriptor carries: `MessageTypeId`; `RpcTypeTag` (the rate-limit bucket the guard chain already uses; the enum gains a member per request type, most with no limit); `HeldDuringIrreversibleWrite`; `MaxBodyBytes`. The connection-level descriptor carries `MessageTypeId`, `MaxBodyBytes` and `CarriesSenderEntityId`. Every request carries `SenderEntityID`.
 - The channel of a type (R-OD or U-U) is not in either descriptor: registration reads it from the type's `MessageRoutingRegistry` entry, so it cannot disagree with the routing table.
 - `HeldDuringIrreversibleWrite` is set per type as the table of Decision 1 lists.
 - A held-type request must not carry a rate-limited `RpcTypeTag`: the guard spends the rate-limit slot when it accepts, and a request then dropped by a full hold queue would have spent it for nothing. No bag-mutating request is rate-limited today.
 - Registration fails at startup, not at runtime, when: the type is registered twice (as a request, as a connection-level type, or as both); the handler or the sink is null; `MaxBodyBytes` exceeds `MAX_INBOUND_MESSAGE_BYTES` less the envelope; a held type is U-U, carries a rate-limited tag, or has `MaxBodyBytes` above `MAX_HELD_BODY_BYTES` (64).
-- A type with no `MessageRoutingRegistry` entry of direction client→server follows `networking-message-criticality.md` AC-MCR-03, with the same development-build switch `MessageRoutingRegistry.ValidateAndRoute` takes. In a development build, registration throws `PendingSchemaDispatchException` at startup. In a release build the registration is skipped and logged as a server error; the type is then absent from the table and every message of it is dropped at intake as `UnknownInboundMessageType`. No crash in either build.
+- A type with no `MessageRoutingRegistry` entry of direction client→server follows `networking-message-criticality.md` AC-MCR-03, with the same development-build switch `MessageRoutingRegistry.ValidateAndRoute` takes. In a development build, registration throws `PendingSchemaDispatchException` at startup. In a release build the registration is skipped and logged as a server error; the type is then absent from the table and every message of it is dropped at intake as `UnknownInboundMessageType`. No crash in either build. `MessageRoutingRegistry` has two client→server rows today (`HeartbeatMessage`, `SetTarget`). The dispatcher story registers the types that have a routing row and a message type in code; the story that adds a client→server type adds its routing row, its row in the table of Decision 1 and its registration together.
 - A handler is `void Handle(in InboundRequestContext context, ReadOnlySpan<byte> body)`. It decodes the body with the message's codec and calls its system. It runs on the tick thread. It cannot keep `body` after it returns (a span cannot be stored in a field), must not `await` (ADR-011), and must not read `ICharacterMutationGate`.
 - Request deduplication stays in the handler's system (ADR-001 for shop requests, `EnhancementRequestDeduplicator` for enhancement). The dispatcher never reads a `requestId`. A retransmit that arrives while the original is held is held too; on release the original executes and the retransmit receives the cached result.
 
@@ -127,7 +131,7 @@ Notes on the table:
 
 **Pass A — release.** The dispatcher keeps the list of characters that have a non-empty hold queue, in the order each one's first request was held. For each of them whose gate is not held (`!gate.IsHeld(charId)`), the held requests are dispatched in arrival order. The dispatcher does not subscribe to `ICharacterMutationGate.OnGateOpened`: polling the gate cannot miss an opening (an event subscriber that throws stops the subscribers after it), and it also serves a gate opened outside `Drain`. Before each released request the dispatcher checks that the connection has not been removed, still owns the entity and is still session-ready (`IsLiveOwner`, Decision 4a); a request that fails is discarded. This is how held requests are discarded after a failed write: the failure protocol has disconnected the client by then. Released requests are not rate-limited again. If a released request closes the gate, the remaining ones stay held.
 
-**Pass B — new requests.** The inbox is taken in `arrivalIndex` order. Entries of a removed connection are skipped. For each request:
+**Pass B — new requests.** The inbox is taken in `arrivalIndex` order. Entries of a connection that is removed, or no longer known because an `AddConnection` released its storage, are skipped. For each request:
 1. **Guard chain.** `CrossCuttingRpcGuardChain.Evaluate(new InboundRpcDescriptor(clientId, senderEntityId, descriptor.RpcTypeTag, currentTick))`. Any result other than `Accepted` drops the request. Nothing rejected by a guard is ever held.
 2. **Character.** The dispatcher resolves the connection's `CharacterID` through `IConnectionCharacterDirectory`. No character → dropped, anomaly `InboundRequestWithoutCharacter`.
 3. **Gate.** If `descriptor.HeldDuringIrreversibleWrite` and (`gate.IsHeld(charId)` or that character still has held requests), the body is copied to that character's hold queue. A full hold queue (`MAX_HELD_REQUESTS_PER_CHARACTER` = 16, ADR-011) drops the request — anomaly `HeldRequestOverflow`.
@@ -136,7 +140,7 @@ Notes on the table:
 Rules that follow:
 - **Isolation.** Steps 1–4 of one request in Pass B, and the `IsLiveOwner` check and handler call of one released request in Pass A, run inside one `try`/`catch`: an exception from the guard, the directory, the gate or the handler is logged as a server error with the message type and client id, that request is dropped (in Pass A its hold-queue entry is returned to the pool), and the pass continues — the policy of `TickCompletionQueue` callbacks.
 - A handler may close the gate (by starting an irreversible outcome). Later held-type requests of that character in the same pass are then held.
-- **Connections.** `AddConnection(clientId)` is called when a connection is established. `RemoveConnection(clientId)` — called on disconnect and on zone transfer — only marks the connection removed. It may be called from inside a pass (a handler or a completion callback that disconnects a client can raise the transport's disconnect callback synchronously), so it frees nothing: the passes skip that connection's inbox and hold-queue entries, and their storage is released at the start of the next `DispatchTick`.
+- **Connections.** `AddConnection(clientId)` is called when a connection is established. Called outside a pass, it first releases the storage of the connections removed since the last `DispatchTick`, as the start of `DispatchTick` does, so a slot freed by a disconnect can be taken in the same tick interval; called inside a pass, it releases nothing. It returns false and logs a server error if no slot is free: after the release that means `MAX_PLAYERS_PER_ZONE` live connections, which the capacity check of `zone-instancing.md` rules out, so it is a caller error (user decision 2026-10-09). `RemoveConnection(clientId)` — called on disconnect and on zone transfer — only marks the connection removed. It may be called from inside a pass (a handler or a completion callback that disconnects a client can raise the transport's disconnect callback synchronously), so it frees nothing: the passes skip that connection's inbox and hold-queue entries, and their storage is released at the start of the next `DispatchTick`, or by an `AddConnection` that comes before it.
 - The dispatcher sends nothing to a client. A dropped or discarded request gets no reply; replies are the handler's system's business.
 
 ### Decision 4a — Changes to `CrossCuttingRpcGuardChain`
@@ -146,7 +150,7 @@ The guard chain was written before any request type other than three existed. Th
 3. **Throttled rejection logs.** `Evaluate` logs every rejection with an interpolated string, which allocates and captures a stack trace. At the inbox bound that is up to 64 log calls per client per tick. The first rejection per (client, result) per tick is logged in full; the rest are counted and reported in one line per tick.
 
 ### Decision 5 — Hold queue storage
-Each character with held requests has a hold queue of at most 16 entries, each a copy of the request context and body, taken from a pre-allocated pool sized for `MAX_PLAYERS_PER_ZONE × 16` entries of `MAX_HELD_BODY_BYTES` (64). Registration guarantees that no held type has a longer body (Decision 3); the longest today is 10 bytes. The copy is needed because the inbox arena is reused by the next tick. No allocation when a request is held. An entry returns to the pool when its request is dispatched or discarded, or at the start of the next `DispatchTick` if its connection was removed.
+Each character with held requests has a hold queue of at most 16 entries, each a copy of the request context and body, taken from a pre-allocated pool sized for `MAX_PLAYERS_PER_ZONE × 16` entries of `MAX_HELD_BODY_BYTES` (64). Registration guarantees that no held type has a longer body (Decision 3); the longest today is 10 bytes. The copy is needed because the inbox arena is reused by the next tick. No allocation when a request is held. An entry returns to the pool when its request is dispatched or discarded, or, if its connection was removed, at the start of the next `DispatchTick` or at an `AddConnection` that comes before it.
 
 ### Decision 6 — The order of one server tick
 `ZoneTickPipeline` is one class in `IronGrind.ServerLogic`. The composition root registers its `Tick` as the one tick-driven delegate of `ServerTickLoop`. It reads the tick number from `ServerTickLoop.ServerTickNumber` and runs four steps in this order:
@@ -174,7 +178,7 @@ main thread, outside the tick                 main thread, inside ServerTickLoop
 transport receive callback                    ZoneTickPipeline.Tick   (each step isolated)
   └ adapter: length check only                 1. ITickCompletionQueue.Drain ── callbacks ── gate.Open
       └ IInboundMessageIntake.TryAccept        2. InboundRequestDispatcher.DispatchTick
-          connection? decode envelope             free storage of removed connections
+          connection? → activity sink; envelope   free storage of removed connections
           unknown type? malformed?                Pass A: characters with held requests, gate not held
           U-U only: stale?                          └ IsLiveOwner → handler      (arrival order)
           connection-level → sink (stop)          Pass B: inbox, arrivalIndex order
@@ -232,17 +236,26 @@ namespace IronGrind.Networking   // assembly IronGrind.ServerLogic
         void OnConnectionMessage(uint clientId, ushort messageTypeId, EntityID senderEntityId, ReadOnlySpan<byte> body);
     }
 
+    public interface IConnectionActivitySink
+    {
+        // Called from TryAccept, inside the receive callback, once per message of a known connection,
+        // before the message is decoded. Records only. Implemented by the session layer.
+        void OnInboundActivity(uint clientId, uint serverTick);
+    }
+
     public interface IServerTickSource
     {
         uint ServerTickNumber { get; }           // implemented by ServerTickLoop
     }
 
+    // InboundRequestDispatcher implements this interface and IInboundMessageIntake (Decision 3).
+    // Its constructor takes the IConnectionActivitySink and bool isDevelopmentBuild.
     public interface IInboundRequestDispatcher
     {
         void Register(InboundRequestDescriptor descriptor, InboundRequestHandler handler);
         void RegisterConnectionLevel(ConnectionMessageDescriptor descriptor, IConnectionMessageSink sink);
         void Seal();
-        void AddConnection(uint clientId);
+        bool AddConnection(uint clientId);       // releases removed connections first; false = no free slot
         void RemoveConnection(uint clientId);    // marks only; safe to call inside a pass
         void DispatchTick(uint currentTick);     // tick thread; called by ZoneTickPipeline only
         int HeldCount(CharacterID charId);       // for tests and diagnostics
@@ -310,7 +323,7 @@ Constants: `MAX_INBOX_REQUESTS_PER_CONNECTION = 64`, `MAX_INBOX_BYTES_PER_CONNEC
 - Handlers decode bytes; a handler per request type must be written and registered.
 - `RpcTypeTag` grows with every request type, and `GetRequiredTickGap` with it.
 - The guard chain, a Complete story's code, is changed (Decision 4a).
-- New components: the intake with its inbox, the dispatcher with its hold queues, `ZoneTickPipeline`, `IConnectionCharacterDirectory`, `IConnectionMessageSink`, `IServerTickSource`, the adapter.
+- New components: the intake with its inbox, the dispatcher with its hold queues, `ZoneTickPipeline`, `IConnectionCharacterDirectory`, `IConnectionMessageSink`, `IConnectionActivitySink`, `IServerTickSource`, the adapter.
 - The classification table of Decision 1 must be kept in step with the wire protocol; four of its request types have no wire schema yet.
 
 ### Risks
@@ -322,7 +335,8 @@ Constants: `MAX_INBOX_REQUESTS_PER_CONNECTION = 64`, `MAX_INBOX_BYTES_PER_CONNEC
 - **Phase 3 order between systems is not decided here.** Mitigation: the composition root lists it explicitly; it is decided when the second ticking system exists.
 - **The adapter's assumptions about the transport are unverified** (Verification Required 1–6). Mitigation: the adapter story verifies them; the dispatcher is written so that none of them, if false, corrupts state (it copies always, tolerates a disconnect inside the tick, and drops messages of unknown connections).
 - **Connection-level messages are outside the dispatcher**, so two consumers read inbound messages. Mitigation: both are fed by the one intake, from one sealed type table; Decision 1 lists which types are which.
-- **A connection-level sink runs inside the receive callback.** Mitigation: it only records (Decision 2 step 5); the session story's review checks that no sink calls game logic.
+- **A connection-level sink and the activity sink run inside the receive callback.** Mitigation: they only record (Decision 2); the session story's review checks that no sink calls game logic.
+- **A client that sends only malformed or unknown messages keeps its session alive.** Activity is reported before the message is decoded. Mitigation: each such message is an anomaly log; what to do with a connection that produces them is the session layer's decision, not the intake's.
 - **Outbound writers may still hold messages for a removed connection.** Not this ADR's component. Mitigation: the adapter story states that a send to a removed connection is dropped.
 
 ## GDD Requirements Addressed
@@ -332,7 +346,8 @@ Constants: `MAX_INBOX_REQUESTS_PER_CONNECTION = 64`, `MAX_INBOX_BYTES_PER_CONNEC
 | enhancement-system.md | CR-ENH-18, AC-ENH-38 — other bag-mutating requests are held during an attempt and processed in arrival order afterwards | Decision 4: gate check per request, hold queue, Pass A before new requests. After a failed write the held requests are discarded (ADR-011 Decision 4); AC-ENH-38 says they are processed, and is corrected after acceptance (Migration Plan step 3) |
 | networking-core.md | Cross-Cutting Constraints 1–3 — unknown entity, session-ready gate, rate limits; rejected requests dropped, not queued | Decision 4 step 1: the existing guard chain runs for every request, before the gate |
 | networking-core.md | CR-NET-2 — fixed 20 Hz tick; game logic on the tick | Decision 6: one pipeline, four steps |
-| networking-wire-protocol.md | CR-NET-7.1 client→server envelope; CR-NET-7.5 stale discard; pre-allocated buffers | Decision 2: envelope decoded by the intake, stale check at intake for U-U types, inbox storage allocated per zone |
+| networking-wire-protocol.md | CR-NET-7.1 client→server envelope; CR-NET-7.5 stale discard; pre-allocated buffers | Decision 2: envelope decoded by the intake, stale check at intake for U-U types, per type and connection, inbox storage allocated per zone |
+| networking-wire-protocol.md | CR-NET-7.10 — any packet from the client resets the heartbeat timeout; the client skips its heartbeat while it sends other messages | Decision 2 step 1: every message of a known connection is reported to `IConnectionActivitySink`, including the ones dropped later |
 | networking-channel-contract.md | CCR-1 — one `SequenceNumber` counter per connection, shared by all types | Decision 2 step 4: the stale check is limited to U-U types, so the shared counter cannot make an R-OD request look stale |
 | networking-message-criticality.md | AC-MCR-03 — a type with no routing row raises `PendingSchemaDispatch` in debug builds and is logged in release builds; no crash in either | Decision 3: development build throws at startup; release build skips the registration and logs, and the type is dropped at intake |
 | party-chat.md | `PartyChatRequest` — body up to 386 bytes | Decisions 2 and 3: per-type `MaxBodyBytes`, a byte arena per connection |
@@ -340,7 +355,7 @@ Constants: `MAX_INBOX_REQUESTS_PER_CONNECTION = 64`, `MAX_INBOX_BYTES_PER_CONNEC
 | zone-instancing.md | Runtime Model — single-threaded main loop | Decisions 2 and 4: intake and dispatch both on the main thread, at defined points |
 
 ## Performance Implications
-- **CPU**: per request, one guard evaluation (dictionary lookups, no allocation), one directory lookup, one gate lookup, one delegate call. Pass A scans at most 50 characters. Worst case per tick 50 × 64 = 3,200 requests if every client floods to the bound; expected load is a few requests per client per second.
+- **CPU**: per request, one guard evaluation (dictionary lookups, no allocation), one directory lookup, one gate lookup, one delegate call. Pass A scans at most 50 characters. Worst case per tick 50 × 64 = 3,200 requests if every client floods to the bound; expected load is a few requests per client per second. At intake, one activity-sink call per message.
 - **Memory**: inbox arena 205 KB, inbox records 3,200 × about 32 B ≈ 100 KB, and hold pool 50 × 16 × (64 B + context) ≈ 70 KB per zone, allocated once.
 - **Load Time**: none.
 - **Network**: none. The dispatcher sends nothing.
@@ -348,7 +363,7 @@ Constants: `MAX_INBOX_REQUESTS_PER_CONNECTION = 64`, `MAX_INBOX_BYTES_PER_CONNEC
 ## Migration Plan
 Nothing dispatches client requests today and nothing calls `RegisterTickDriven`, so no behaviour a player can observe changes. One existing class changes: the guard chain (Decision 4a).
 
-1. **Dispatcher story (Networking Core).** `InboundRequestDescriptor`, `ConnectionMessageDescriptor`, `InboundRequestContext`, the intake with its inbox, `IConnectionMessageSink`, `IServerTickSource` (implemented by `ServerTickLoop`), the dispatcher with hold queues, `IConnectionCharacterDirectory` (interface and test fake), and the three guard-chain changes of Decision 4a with their tests (every `RpcTypeTag` member returns a gap; `IsLiveOwner` writes nothing; throttled logs). The table of Decision 1 is its registration list. EditMode tests: arrival order across types and connections; an R-OD request with a lower `SequenceNumber` than a U-U message already received is accepted; a stale U-U message is dropped; a 10-byte `HeartbeatMessage` reaches its sink and never the inbox; a body over the type's `MaxBodyBytes` and a message too short for its type are dropped; each guard rejection drops and never holds; hold while the gate is closed, release order, release before new requests; release when a *different* `OnGateOpened` subscriber throws; discard on release when the connection is gone, with the hold entries back in the pool; `RemoveConnection` called from inside a handler; overflow of inbox (count and bytes) and hold queue; registration failures, and the release-build skip for a type with no routing row; a throwing handler, guard or directory does not stop either pass.
+1. **Dispatcher story (Networking Core).** `InboundRequestDescriptor`, `ConnectionMessageDescriptor`, `InboundRequestContext`, the intake with its inbox, `IConnectionMessageSink`, `IConnectionActivitySink` (interface and test fake; the session layer's implementation is not part of this story), `IServerTickSource` (implemented by `ServerTickLoop`), the dispatcher with hold queues, `IConnectionCharacterDirectory` (interface and test fake), and the three guard-chain changes of Decision 4a with their tests (every `RpcTypeTag` member returns a gap; `IsLiveOwner` writes nothing; throttled logs). Of the table of Decision 1, it registers the types that have a routing row and a message type in code (Decision 3). EditMode tests: arrival order across types and connections; an R-OD request with a lower `SequenceNumber` than a U-U message already received is accepted; a stale U-U message is dropped; a `SkillCastRequest` with a lower `SequenceNumber` than a `MovementIntentMessage` already received is accepted; a request, a stale U-U message, a malformed message and a request dropped by a full inbox each report activity once, and a message from an unknown connection reports none; `AddConnection` after a `RemoveConnection`, with every slot taken and before the next `DispatchTick`, succeeds, and the removed connection's inbox records are not dispatched; `AddConnection` with `MAX_PLAYERS_PER_ZONE` live connections returns false; a 10-byte `HeartbeatMessage` reaches its sink and never the inbox; a body over the type's `MaxBodyBytes` and a message too short for its type are dropped; each guard rejection drops and never holds; hold while the gate is closed, release order, release before new requests; release when a *different* `OnGateOpened` subscriber throws; discard on release when the connection is gone, with the hold entries back in the pool; `RemoveConnection` called from inside a handler; overflow of inbox (count and bytes) and hold queue; registration failures, and the release-build skip for a type with no routing row; a throwing handler, guard or directory does not stop either pass.
 2. **Tick pipeline story (Networking Core).** `ZoneTickPipeline` with the four isolated steps; tests assert the order with recording fakes, and that a throwing step does not skip the later ones.
 3. **Enhancement Story 009.** Unblocked after step 1: its acceptance criteria are tested against the dispatcher with a fake persistence task. Its first criterion lists "pickup" among held requests; under ADR-011 a server pickup is deferred, not held — corrected at its `/story-readiness`. `enhancement-system.md` AC-ENH-38 (lines 698–701) is corrected with it, as a wording fix with no status change (user decision 2026-10-09): after the failed write the held unequip is discarded with the disconnected client and the Helmet is still equipped; a second case covers a successful write, where the held unequip runs after the outcome is delivered.
 4. **Adapter story.** After ADR-004 OQ-ADR4-3. Carries Verification Required 1–6.
@@ -358,6 +373,8 @@ Nothing dispatches client requests today and nothing calls `RegisterTickDriven`,
 - The dispatcher tests of Migration Plan step 1 pass with no network session.
 - AC-ENH-38, as corrected (Migration Plan step 3), passes against the dispatcher in both cases. Failed write: the unequip sent while the write is in flight is never processed — the client is disconnected, the request is discarded in Pass A, and the Helmet is still equipped. Successful write: the unequip runs in Pass A of the tick whose `Drain` delivered the outcome, before any new request of that tick.
 - A reliable request that arrives after a U-U message with a higher `SequenceNumber` from the same connection is dispatched.
+- A `SkillCastRequest` that arrives after a `MovementIntentMessage` with a higher `SequenceNumber` from the same connection is dispatched.
+- A `MovementIntentMessage` reports activity to the `IConnectionActivitySink`; so does a message of a known connection that the intake then drops.
 - A `HeartbeatMessage` and a 386-byte `PartyChatRequest` are both accepted at intake.
 - A source search finds `ICharacterMutationGate` read only in the dispatcher and in the server-originated bag mutators ADR-011 names, and no subscription to `OnGateOpened` in the dispatcher.
 - A source search finds `RegisterTickDriven(` called only by the composition root, for `ZoneTickPipeline`.
