@@ -1,6 +1,6 @@
 # ADR-004: Networking Library Selection — Netcode for GameObjects (NGO)
 
-> **Status**: Accepted (2026-06-15)
+> **Status**: Accepted (2026-06-15) — amended 2026-10-09 (Amendment 1: OQ-ADR4-3 resolved, unnamed custom messages; Decision 2 R-U row corrected; see Amendments)
 > **Date**: 2026-06-15
 > **Deciders**: Technical Director
 > **Affected systems**: Networking Core, Networking Wire Protocol, Networking Session, Client-Side Prediction, Movement System, and all networking sub-documents that reference "library selection deferred to ADR"
@@ -177,4 +177,37 @@ OQ-NET-5 (commit-before-broadcast write latency budget, CR-NET-5) is **out of sc
 
 **OQ-ADR4-2 — Persistence write latency (OQ-NET-5, deferred to Persistence ADR):** the commit-before-broadcast write budget within `ENHANCEMENT_PROCESS_LATENCY_MAX_MS`.
 
-**OQ-ADR4-3 — `CustomMessagingManager` vs. thin custom transport wrapper:** whether to route project messages through NGO's `CustomMessagingManager` or a thinner abstraction over UTP while still using NGO for connection/clock. Resolve during Networking Core implementation spike after API verification items above are confirmed.
+**OQ-ADR4-3 — `CustomMessagingManager` vs. thin custom transport wrapper:** whether to route project messages through NGO's `CustomMessagingManager` or a thinner abstraction over UTP while still using NGO for connection/clock. Resolve during Networking Core implementation spike after API verification items above are confirmed. **Resolved 2026-10-09 — `CustomMessagingManager`, unnamed messages; see Amendment 1.**
+
+---
+
+## Amendments
+
+### Amendment 1 (2026-10-09) — OQ-ADR4-3 resolved; the R-U row of Decision 2 corrected; status of the verification items
+
+**Basis.** Research of 2026-10-09 against the NGO source (GitHub, branch `develop-2.0.0`, 2.13.x) and Unity manual pages, recorded with its sources and its "not verified" list in `docs/engine-reference/unity/modules/networking.md`, section "NGO 2.13 — Custom Messaging, Transport and Frame Timing". It was read, not run: when this amendment was written the package had just been added to `Packages/manifest.json` (2.13.3) and nothing had been compiled against it.
+
+**OQ-ADR4-3 — resolved (user decision 2026-10-09).** Project messages go through NGO's `CustomMessagingManager` as **unnamed messages**: the server subscribes to `OnUnnamedMessage` and sends with `SendUnnamedMessage(clientId, writer, networkDelivery)`. The message body is the project's envelope and payload (Decision 4); the project's `MessageTypeID` is the only message header.
+
+- Unnamed, not named: a named message adds 8 bytes per message and a string hash per send; an unnamed one adds nothing of its own, and the NGO manual describes unnamed messages as the route for "a custom messaging system where you can define your own message headers".
+- The thinner wrapper over Unity Transport is rejected. `UnityTransport` consumes every event of its driver and NGO rejects a payload without its batch header, so a raw send on NGO's connection does not arrive. A custom `NetworkTransport` sees NGO's batches, not project messages. A separate driver would not share NGO's client ids, connection approval or clock — the reasons NGO was chosen (Decision 1).
+- Cost accepted with this route: NGO's framing per message (a bit-packed type and size header, a share of a 16-byte batch header, a 4-byte transport length prefix), and NGO's own work per received message (one native allocation and a copy; an invocation-list read per unnamed message). The project's code on top of it allocates nothing; "pre-allocated buffers" (CR-NET-7) is a statement about the project's code, not about NGO's internals. Not measured.
+
+**Decision 2, R-U row — corrected.** The table maps Reliable Unordered to `NetworkDelivery.Reliable`. On `UnityTransport`, `Reliable`, `ReliableSequenced` and `ReliableFragmentedSequenced` all use one reliable-sequenced pipeline: there is no reliable-unordered delivery. An R-U message is therefore delivered reliably **and in order**. The binding contract of Decision 2 — guaranteed delivery, no ordering *required* — still holds, since ordered delivery satisfies it; what does not hold is any expectation that an R-U message can overtake a delayed reliable message. No GDD rule is known to rely on that; none was searched for when this amendment was written. The mapping stays `Reliable` for R-U so the intent is visible in code.
+
+**Bulk messages.** Confirmed: a message above about 1272 bytes of payload must use `ReliableFragmentedSequenced`; every other delivery is capped at about 1296 bytes including NGO's headers. The 512-byte cap of CR-NET-7.6 is inside that.
+
+**Verification Required — status.**
+
+| Item | Status 2026-10-09 |
+|---|---|
+| (1) `NetworkDelivery` member names | Read from source: `Unreliable`, `UnreliableSequenced`, `Reliable`, `ReliableSequenced`, `ReliableFragmentedSequenced`. To confirm at first compile. |
+| (2) Transport RTT signature | Read from source: `NetworkTransport.GetCurrentRtt(ulong clientId)` returns `ulong`. To confirm at first compile. Seed-only use (Decision 3) unchanged. |
+| (3) Per-send delivery on the custom messaging API | Read from source: `SendUnnamedMessage(ulong clientId, FastBufferWriter messageBuffer, NetworkDelivery networkDelivery = NetworkDelivery.ReliableSequenced)`. To confirm at first compile. |
+| (4) `NetworkConfig.TickRate` accepts 20 | Read from source: `uint`, default 30, no restriction seen. To confirm in a run. |
+
+**Decision unchanged.** NGO as the library, the three-channel guarantee mapping, the project-owned envelope, the RTT rule and the clock source stand.
+
+**New facts the adapter stories must handle** (Networking Core Stories 038 and 039; ADR-014): a reliable send queue that overflows disconnects the client; `DisconnectClient(clientId)` is deferred to the end of the frame; a receive handler can run inside a transport disconnect event; the reader given to a handler is disposed when the handler returns.
+
+**Open after this amendment.** Whether 2.13.3 is a released version for 6000.3 and which Unity Transport version resolves; whether a server with no `NetworkObject` needs `EnableSceneManagement` off; the epic's engine-risk gate (a real Unity 6.3 headless build) is not passed by this amendment.

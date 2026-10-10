@@ -3,8 +3,8 @@
 > **Layer**: Foundation
 > **GDD**: design/gdd/networking-core.md + 9 sub-contracts
 > **Architecture Module**: Networking Core
-> **Status**: In Progress (37/37 stories Complete; Story 037, the tick pipeline of ADR-014 Migration Plan step 2, added and Complete 2026-10-09, full EditMode suite 2203 / 2203; the transport adapter story of ADR-014 is not written yet — Stories 035 and 036 added 2026-10-09 for ADR-014 Migration Plan step 1; 035 Complete 2026-10-09, full EditMode suite 2083 / 2083; 036 Complete 2026-10-09, full EditMode suite 2182 / 2182). Stories 032, 033 and 034, the three ADR-012 assembly-move stories, Complete 2026-10-08. Stories 001–031 Complete — Story 031 (added 2026-10-07, ADR-011 Migration step 2) Complete 2026-10-07; full EditMode suite 1900 / 1900 in Unity batch mode. Story 030 (added 2026-10-07 after ADR-011) Complete 2026-10-07. Stories 001–029 Complete (2026-07-22). Not yet confirmed via a full live Unity Editor test run across the whole epic together; see `production/session-state/active.md` for verification status per story.
-> **Stories**: 37 stories created (001–037)
+> **Status**: In Progress (37/39 stories Complete; Stories 038 and 039, the transport adapter — inbound, then the production `IClientMessageOutbox` — written 2026-10-09 after ADR-004 OQ-ADR4-3 was resolved (Amendment 1: unnamed custom messages), both Not Started, `/story-readiness` pending; Story 037, the tick pipeline of ADR-014 Migration Plan step 2, added and Complete 2026-10-09, full EditMode suite 2203 / 2203 — Stories 035 and 036 added 2026-10-09 for ADR-014 Migration Plan step 1; 035 Complete 2026-10-09, full EditMode suite 2083 / 2083; 036 Complete 2026-10-09, full EditMode suite 2182 / 2182). Stories 032, 033 and 034, the three ADR-012 assembly-move stories, Complete 2026-10-08. Stories 001–031 Complete — Story 031 (added 2026-10-07, ADR-011 Migration step 2) Complete 2026-10-07; full EditMode suite 1900 / 1900 in Unity batch mode. Story 030 (added 2026-10-07 after ADR-011) Complete 2026-10-07. Stories 001–029 Complete (2026-07-22). Not yet confirmed via a full live Unity Editor test run across the whole epic together; see `production/session-state/active.md` for verification status per story.
+> **Stories**: 39 stories created (001–039)
 
 ## Overview
 
@@ -106,8 +106,10 @@ This epic is complete when:
 | 035 | [Guard Chain Changes for the Request Dispatcher](story-035-guard-chain-changes-for-dispatch.md) | Logic | Complete | ADR-014 |
 | 036 | [Inbound Request Dispatcher — Intake, Dispatch and Hold Queues](story-036-inbound-request-dispatcher.md) | Logic | Complete | ADR-014 |
 | 037 | [Zone Tick Pipeline — the Order of One Server Tick](story-037-zone-tick-pipeline.md) | Logic | Complete | ADR-014 |
+| 038 | [Transport Adapter — Inbound Messages and Connections](story-038-transport-adapter-inbound.md) | Integration | Not Started (2026-10-09; `/story-readiness` pending, 5 open decisions; needs the NGO package to resolve) | ADR-014, ADR-004, ADR-012 |
+| 039 | [Client Message Outbox — the Production Send Path for Priority Messages](story-039-client-message-outbox.md) | Integration | Not Started (2026-10-09; `/story-readiness` pending, 6 open decisions; blocked on 038) | ADR-004, ADR-014, ADR-012 |
 
-*Not written yet (ADR-014 Migration Plan): the transport adapter story (step 4, after ADR-004 OQ-ADR4-3).*
+*ADR-014 Migration Plan step 4 (the adapter story) is Story 038; ADR-004 OQ-ADR4-3 was resolved on 2026-10-09 (ADR-004 Amendment 1). Story 039 is the outbound half, split out by user decision 2026-10-09. `com.unity.netcode.gameobjects` 2.13.3 was added to `Packages/manifest.json` the same day; the engine facts both stories rely on are in `docs/engine-reference/unity/modules/networking.md` and were read from source, not run.*
 
 **Scoped out of this epic** (owned by other systems' future epics, using these GDDs as their wire-contract reference): every specific downstream message schema for Auto-Attack Combat, Currency, Leveling, Zone Instancing, Party, Inventory, Equipment, NPC Shop, Consumable Use, Movement, and Skill systems. Networking Core owns the envelope/channel/tick/session/ghost/OWL/relevance-filter/test-harness substrate only.
 
