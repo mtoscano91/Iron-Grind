@@ -202,6 +202,65 @@ interfaces:
     added: 2026-10-09
     revised: ""
 
+  # The four contracts below were defined by stories (user decisions of 2026-10-09 at
+  # /story-readiness and /code-review), not by an ADR, and no ADR names them. Their adr:
+  # is the ADR whose rule they apply — ADR-010, a direct call on an injected interface —
+  # and the comment above each entry names the story that defines it. ADR-014 covers
+  # inbound dispatch only; its transport adapter story is expected to implement
+  # client_message_outbox.
+
+  # Defined by: production/epics/enhancement-system/story-010-client-requests-and-result-delivery.md
+  - contract: client_message_outbox
+    status: active
+    pattern: direct_call
+    producer: any server system or request handler that sends a message to one client (Enhancement and NPC interaction request handlers, OwnerInventorySyncSender; Enhancement Story 015 when written)
+    consumers:
+      - the transport adapter (implements the outbox in production — not written yet; tests use RecordingClientMessageOutbox)
+    adr: docs/architecture/ADR-010-event-messaging-architecture.md
+    signal_signature: "IClientMessageOutbox (namespace IronGrind.Networking, assembly IronGrind.ServerLogic, src/ServerLogic/Networking/Outbound/): void Enqueue(uint clientId, ushort messageTypeId, ReadOnlySpan<byte> body, bool isCapExempt) — tick thread only; the implementation copies body before it returns; isCapExempt is true only for messages exempt from the priority-path cap (CR-NET-7.7). Open: whether Enqueue may throw is not stated — OwnerInventorySyncSender assumes it does not"
+    referenced_by: []
+    added: 2026-10-09
+    revised: ""
+
+  # Defined by: production/epics/enhancement-system/story-010-client-requests-and-result-delivery.md
+  - contract: enhancement_attempt_start
+    status: active
+    pattern: direct_call
+    producer: EnhancementClientRequestHandlers — once per EnhancementAttemptRequest that is not a duplicate and passed the CR-ENH-15 step 2 checks
+    consumers:
+      - the attempt runner of Enhancement Story 015 (acknowledgment, begin, commit, result — not written yet; tests use RecordingAttemptStarter)
+    adr: docs/architecture/ADR-010-event-messaging-architecture.md
+    signal_signature: "IEnhancementAttemptStarter (namespace IronGrind.EnhancementSystem, assembly IronGrind.ServerLogic): void StartAttempt(CharacterID characterId, uint requestId, int itemSlotIndex, int scrollSlotIndex)"
+    referenced_by: []
+    added: 2026-10-09
+    revised: ""
+
+  # Defined by: production/epics/enhancement-system/story-010-client-requests-and-result-delivery.md
+  - contract: enhancement_request_dedup_lookup
+    status: active
+    pattern: direct_call
+    producer: the session layer (owns each character's EnhancementRequestDeduplicator; no production implementation yet — tests use DictionaryDedupLookup)
+    consumers:
+      - EnhancementClientRequestHandlers (reads LastEnhancementRequestId to drop a duplicate request, EC-NET-9; recording a new id is Enhancement Story 015's)
+    adr: docs/architecture/ADR-010-event-messaging-architecture.md
+    signal_signature: "IEnhancementRequestDedupLookup (namespace IronGrind.Networking, assembly IronGrind.ServerLogic): bool TryGetDeduplicator(CharacterID characterId, out EnhancementRequestDeduplicator deduplicator)"
+    referenced_by: []
+    added: 2026-10-09
+    revised: ""
+
+  # Defined by: production/epics/inventory-system/story-012-owner-inventory-sync.md
+  - contract: owner_inventory_sync_hold
+    status: active
+    pattern: direct_call
+    producer: the Enhancement attempt runner of Enhancement Story 015 (not written yet) — OpenHold at CR-ENH-15 step 3; ReleaseHold on a step 4 failure and when the step 6b commit succeeds; DiscardHold only when the commit fails
+    consumers:
+      - OwnerInventorySyncSender (Inventory System; implements the hold — holds InventorySlotUpdate and InventoryFullSync for the character, CR-ENH-11)
+    adr: docs/architecture/ADR-010-event-messaging-architecture.md
+    signal_signature: "IOwnerInventorySyncHold (namespace IronGrind.InventorySystem, assembly IronGrind.ServerLogic): void OpenHold(CharacterID characterId); void ReleaseHold(CharacterID characterId); void DiscardHold(CharacterID characterId) — tick thread only; at most OwnerInventorySyncSender.MAX_HELD_UPDATES_PER_CHARACTER = 8 updates are kept per hold, beyond that the release sends one InventoryFullSync. Not on the interface: OwnerInventorySyncSender.OnSessionReadySent(uint clientId, CharacterID characterId) and OnClientDisconnected(uint clientId), called by the story that sends SessionReady (not written yet)"
+    referenced_by: []
+    added: 2026-10-09
+    revised: ""
+
 # Example:
 #
 # interfaces:

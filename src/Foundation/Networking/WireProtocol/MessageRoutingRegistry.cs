@@ -203,6 +203,12 @@ namespace IronGrind.Networking
             AddPriority(RejectedNotInTownHub.MessageTypeId, nameof(RejectedNotInTownHub), DesignPillar.Infrastructure,
                 MessageDirection.ServerToOwningClient, "Session validation failure response to OpenNPCInteraction; releases the client's pending state.");
 
+            // Inventory Story 012: owner bag sync (TD-046), R-OD priority path.
+            AddPriority(InventorySlotUpdate.MessageTypeId, nameof(InventorySlotUpdate), DesignPillar.EarnedPower,
+                MessageDirection.ServerToOwningClient, "Owning client's authoritative bag view: absolute post-change state of each changed slot; a lost or reordered update leaves the bag wrong.");
+            AddPriority(InventoryFullSync.MessageTypeId, nameof(InventoryFullSync), DesignPillar.EarnedPower,
+                MessageDirection.ServerToOwningClient, "Whole-bag replacement once per zone entry; must arrive before any InventorySlotUpdate of the session.");
+
             return map;
         }
 

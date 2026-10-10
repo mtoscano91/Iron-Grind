@@ -3,7 +3,7 @@
 > **Layer**: Core
 > **GDD**: design/gdd/inventory-system.md
 > **Architecture Module**: Inventory
-> **Status**: In Progress (11/12 — Stories 001–009 Complete 2026-10-01; Story 010 Complete 2026-10-07; Story 011, the ADR-012 assembly move, Complete 2026-10-08; Story 012, the owner inventory sync messages of the TD-046 amendment, Ready 2026-10-09, 6 hours, after Enhancement Story 010)
+> **Status**: Complete (12/12 — Stories 001–009 Complete 2026-10-01; Story 010 Complete 2026-10-07; Story 011, the ADR-012 assembly move, Complete 2026-10-08; Story 012, the owner inventory sync messages of the TD-046 amendment, Complete 2026-10-09; AC-INV-11 remains deferred to the Inventory UI epic)
 > **Stories**: 9 stories created 2026-09-25 (all Complete 2026-10-01); Story 010 created 2026-10-01 (Complete 2026-10-07); Story 011 created and Complete 2026-10-08; Story 012 created 2026-10-09
 
 ## Overview
@@ -49,7 +49,7 @@ This epic is complete when:
 | 009 | [InventorySnapshot Save/Load & Load Validation](story-009-snapshot-save-load.md) | Logic | Complete | ADR-006, ADR-010 |
 | 010 | [Per-Slot Enhancement Level](story-010-enhancement-level.md) | Logic | Complete | ADR-010, ADR-006 (Amendment 1) |
 | 011 | [Move Inventory to the Server Assembly](story-011-server-assembly-move.md) | Integration | Complete (2026-10-08) | ADR-012 |
-| 012 | [Owner Inventory Sync Messages](story-012-owner-inventory-sync.md) | Integration | Ready (2026-10-09; 6 h; depends on Enhancement Story 010 for `IClientMessageOutbox`) | ADR-012, ADR-010, ADR-004 |
+| 012 | [Owner Inventory Sync Messages](story-012-owner-inventory-sync.md) | Integration | Complete (2026-10-09) | ADR-012, ADR-010, ADR-004 |
 
 **GDD AC coverage**: 17 of the original 18 blocking ACs are Complete; the GDD now has 24 (AC-INV-17–22 added 2026-10-01 for the per-slot enhancement level — all six belong to Story 010), and Story 010 closed 2026-10-07, so coverage is 23 of 24. **AC-INV-11** (tapping a consumable opens the detail view without consuming) is pure UI — **deferred to a future Inventory UI epic** (Inventory UI GDD and `design/ux/inventory-screen.md` not yet authored). AC-INV-10 is covered on the inventory side only (Story 007); its "equipped item stays equipped" half belongs to the Equipment System epic.
 
@@ -58,6 +58,8 @@ This epic is complete when:
 **Out of scope for this epic**: wire-protocol codecs for inventory messages (Networking) — except `InventorySlotUpdate` and `InventoryFullSync`, which are Story 012 (user decision 2026-10-09); Equipment/Loot Table/Persistence/NPC Shop orchestration (their own epics).
 
 ## Next Step
+
+**2026-10-09 (later):** Story 012 is Complete (EditMode 2383 / 2383). All twelve stories are Complete. The owning client's bag messages (`InventorySlotUpdate`, `InventoryFullSync`), the sender and the per-character hold (`IOwnerInventorySyncHold`) are in code; `InventoryConstants.INVENTORY_SLOT_COUNT` is in `IronGrind.Foundation`. Nothing calls `OwnerInventorySyncSender.OnSessionReadySent` / `OnClientDisconnected` in production yet — that is the story that sends `SessionReady` — and the hold is driven by Enhancement Story 015 (Blocked on Enhancement Story 011). The earlier notes below are history.
 
 **2026-10-09:** Story 012 (Owner Inventory Sync Messages) was added after the TD-046 wire-protocol amendment and is Ready (`/story-readiness` 2026-10-09). It depends on Enhancement Story 010, which creates `IClientMessageOutbox`: run `/dev-story` on Enhancement Story 010 first, then on this story. It also moves `InventoryConstants.INVENTORY_SLOT_COUNT` to `IronGrind.Foundation`. Enhancement Story 015 depends on it.
 

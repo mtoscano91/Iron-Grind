@@ -1092,7 +1092,7 @@ namespace IronGrind.InventorySystem
         /// <summary>
         /// The single bag-full notification policy (GDD Rule 4.10): fires
         /// <see cref="OnInventoryFull"/> for <paramref name="characterId"/> unless a dedup window
-        /// is active, then opens a new <see cref="InventoryConstants.BAG_FULL_DEDUP_WINDOW_TICKS"/>
+        /// is active, then opens a new <see cref="InventoryServerConstants.BAG_FULL_DEDUP_WINDOW_TICKS"/>
         /// window. Every blocked-for-space path MUST call this — Story 002 <see cref="Pickup"/>
         /// and Story 007 <c>ForceInsert</c> — never fire <see cref="OnInventoryFull"/> directly.
         /// </summary>
@@ -1112,7 +1112,7 @@ namespace IronGrind.InventorySystem
                 && !StaleDiscardComparer.IsTickExpired(now, expiry))
                 return;
 
-            _bagFullWindowExpiry[characterId] = unchecked(now + InventoryConstants.BAG_FULL_DEDUP_WINDOW_TICKS);
+            _bagFullWindowExpiry[characterId] = unchecked(now + InventoryServerConstants.BAG_FULL_DEDUP_WINDOW_TICKS);
 
             _isDispatching = true;
             try

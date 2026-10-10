@@ -1,7 +1,7 @@
 # Story 012: Owner Inventory Sync Messages
 
 > **Epic**: Inventory System
-> **Status**: Ready — written 2026-10-09 from the TD-046 amendment of `networking-wire-protocol.md` (Approved, lean verify 2026-10-09); `/story-readiness` 2026-10-09 (NEEDS WORK, closed the same day by the user decisions recorded below). Implement after Enhancement Story 010.
+> **Status**: Complete (2026-10-09; `/dev-story`, `/code-review` and `/story-done` the same day; EditMode 2383 / 2383) — was Ready — written 2026-10-09 from the TD-046 amendment of `networking-wire-protocol.md` (Approved, lean verify 2026-10-09); `/story-readiness` 2026-10-09 (NEEDS WORK, closed the same day by the user decisions recorded below). Implement after Enhancement Story 010.
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-09
@@ -39,17 +39,17 @@
 
 *From `design/gdd/networking-wire-protocol.md`, scoped to this story. "Sent" and "enqueued" mean one `IClientMessageOutbox.Enqueue` call for the owning client, with `isCapExempt` false.*
 
-- [ ] **`InventorySlotUpdate` codec (AC-NC-41, slot-update half)**: messages with 1, 2 and 20 entries encode to bodies of 11, 21 and 201 bytes and every entry round-trips, including an emptied slot (`itemId = 0`, `quantity = 0`, `enhancementLevel = 0`). `itemId = 0` is written without the CR-NET-7.3 assertion (nullable field).
-- [ ] **`InventoryFullSync` codec (AC-NC-40, AC-NC-42)**: the body is exactly 201 bytes, 20 entries in ascending `slotIndex` order, every field round-trips; a received message whose `count` is 19 is discarded and one anomaly is logged.
-- [ ] **One update per bag change**: each `InventoryChangedEvent` for a character produces exactly one `InventorySlotUpdate` to that character's owning client, with the same entries — the absolute post-change state of each changed slot; no slot index appears twice in one message; no other client receives it.
-- [ ] **Full sync on zone entry (AC-NC-44)**: after `OnSessionReadySent(clientId, characterId)`, exactly one `InventoryFullSync` with 20 entries is enqueued for that client before any `InventorySlotUpdate` of that session, and its entries equal the server's bag for that character.
-- [ ] **Hold**: while a hold is open for a character, zero `InventorySlotUpdate` and zero `InventoryFullSync` are sent for that character; other characters are unaffected.
-- [ ] **Release**: releasing the hold sends the held `InventorySlotUpdate` messages in the order they were raised. If a zone entry completed during the hold, exactly one `InventoryFullSync` built from the bag at release is sent instead, and the held updates are discarded.
-- [ ] **Hold overflow**: when more than `MAX_HELD_UPDATES_PER_CHARACTER` updates are raised during one hold, releasing it sends exactly one `InventoryFullSync` built from the bag at release and no `InventorySlotUpdate`; one server warning is logged for that hold.
-- [ ] **Discard**: discarding the hold sends nothing — neither the held updates, nor updates raised until the discard returns, nor a deferred `InventoryFullSync` on that connection.
-- [ ] **No client connected**: a bag change for a character with no `OnSessionReadySent` since its last disconnect sends nothing and throws nothing.
-- [ ] **Disconnect**: after `OnClientDisconnected(clientId)`, nothing is enqueued for that client; the updates an open hold had collected for its character are dropped. The hold itself stays open until it is released or discarded, and a release with no session-ready client sends nothing.
-- [ ] **Assembly boundary**: `InventoryConstants.INVENTORY_SLOT_COUNT` is in `IronGrind.Foundation`; the codecs read it and the literal 20 is not written in them; the boundary test in `tests/EditMode/Architecture/` passes; the EditMode suite passes with no other test edited than those that name the moved or renamed constants.
+- [x] **`InventorySlotUpdate` codec (AC-NC-41, slot-update half)**: messages with 1, 2 and 20 entries encode to bodies of 11, 21 and 201 bytes and every entry round-trips, including an emptied slot (`itemId = 0`, `quantity = 0`, `enhancementLevel = 0`). `itemId = 0` is written without the CR-NET-7.3 assertion (nullable field).
+- [x] **`InventoryFullSync` codec (AC-NC-40, AC-NC-42)**: the body is exactly 201 bytes, 20 entries in ascending `slotIndex` order, every field round-trips; a received message whose `count` is 19 is discarded and one anomaly is logged.
+- [x] **One update per bag change**: each `InventoryChangedEvent` for a character produces exactly one `InventorySlotUpdate` to that character's owning client, with the same entries — the absolute post-change state of each changed slot; no slot index appears twice in one message; no other client receives it.
+- [x] **Full sync on zone entry (AC-NC-44)**: after `OnSessionReadySent(clientId, characterId)`, exactly one `InventoryFullSync` with 20 entries is enqueued for that client before any `InventorySlotUpdate` of that session, and its entries equal the server's bag for that character.
+- [x] **Hold**: while a hold is open for a character, zero `InventorySlotUpdate` and zero `InventoryFullSync` are sent for that character; other characters are unaffected.
+- [x] **Release**: releasing the hold sends the held `InventorySlotUpdate` messages in the order they were raised. If a zone entry completed during the hold, exactly one `InventoryFullSync` built from the bag at release is sent instead, and the held updates are discarded.
+- [x] **Hold overflow**: when more than `MAX_HELD_UPDATES_PER_CHARACTER` updates are raised during one hold, releasing it sends exactly one `InventoryFullSync` built from the bag at release and no `InventorySlotUpdate`; one server warning is logged for that hold.
+- [x] **Discard**: discarding the hold sends nothing — neither the held updates, nor updates raised until the discard returns, nor a deferred `InventoryFullSync` on that connection.
+- [x] **No client connected**: a bag change for a character with no `OnSessionReadySent` since its last disconnect sends nothing and throws nothing.
+- [x] **Disconnect**: after `OnClientDisconnected(clientId)`, nothing is enqueued for that client; the updates an open hold had collected for its character are dropped. The hold itself stays open until it is released or discarded, and a release with no session-ready client sends nothing.
+- [x] **Assembly boundary**: `InventoryConstants.INVENTORY_SLOT_COUNT` is in `IronGrind.Foundation`; the codecs read it and the literal 20 is not written in them; the boundary test in `tests/EditMode/Architecture/` passes; the EditMode suite passes with no other test edited than those that name the moved or renamed constants.
 
 ---
 
@@ -108,11 +108,35 @@
 **Story Type**: Integration
 **Required evidence**: `tests/EditMode/Integration/InventorySystem/Inventory_OwnerSync_integration_tests.cs` and `tests/EditMode/Networking/WireProtocol_InventorySync_tests.cs` — must exist and pass.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing 2026-10-09 — `WireProtocol_InventorySync_tests.cs` 16 / 16 cases, `Inventory_OwnerSync_integration_tests.cs` 38 / 38 cases (EditMode run of 2026-10-09 21:24 local, 2383 / 2383)
 
 ---
 
 ## Dependencies
 
-- Depends on: **Enhancement Story 010** (`IClientMessageOutbox` and its recording test double) — Ready, not implemented; implement it first. Story 001 (`InventoryChangedEvent`), Story 010 (per-slot enhancement level), Story 011 (the service is in `IronGrind.ServerLogic`) — all Complete. The TD-046 design gate is closed (wire protocol Approved 2026-10-09).
+- Depends on: **Enhancement Story 010** (`IClientMessageOutbox` and its recording test double) — Complete 2026-10-09. Story 001 (`InventoryChangedEvent`), Story 010 (per-slot enhancement level), Story 011 (the service is in `IronGrind.ServerLogic`) — all Complete. The TD-046 design gate is closed (wire protocol Approved 2026-10-09).
 - Unlocks: Enhancement Story 015 (the CR-ENH-11 hold); the Inventory UI epic (the client's authoritative bag)
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-10-09
+**Criteria**: 11 / 11 passing (EditMode 2383 / 2383; no `error CS`)
+**Test Evidence**: `tests/EditMode/Networking/WireProtocol_InventorySync_tests.cs` (16 cases) and `tests/EditMode/Integration/InventorySystem/Inventory_OwnerSync_integration_tests.cs` (38 cases)
+**Code Review**: Complete — `/code-review` 2026-10-09 (unity-specialist and qa-tester), APPROVED WITH SUGGESTIONS, 0 blocking; the fixes were applied the same day. `/story-done` ran in lean mode (QL-TEST-COVERAGE and LP-CODE-REVIEW skipped).
+
+**What exists**: `InventorySlotEntry`, `InventorySlotUpdate` (`MessageTypeId` `0xE120`), `InventoryFullSync` (`0xE121`) and their codecs in `src/Foundation/Networking/WireProtocol/`; `InventoryConstants` in `src/Foundation/InventorySystem/`; `InventoryServerConstants`, `IOwnerInventorySyncHold` and `OwnerInventorySyncSender` in `src/ServerLogic/InventorySystem/`.
+
+**Deviations (advisory)**:
+- Two additions beyond the story's text: two rows in `MessageRoutingRegistry.cs` (the routing table test requires one row per `MessageTypeId` constant) and the interface `IOwnerInventorySyncHold` (`OpenHold`, `ReleaseHold`, `DiscardHold`), which Enhancement Story 015 injects.
+- "The literal 20 is not written in them" was checked by a word-boundary grep of the two codecs and the two message types on 2026-10-09; no automated test scans the sources.
+- The performance note (no allocation per event outside a hold) is met by construction — buffers allocated at construction, struct keys, no interpolation outside warning paths — and is not asserted by a test.
+- A character's state is freed when it has neither a client nor an open hold and is allocated again at its next session-ready or `OpenHold` (user decision at `/code-review`); the Implementation Notes describe the allocation only.
+- `OnSessionReadySent` requires a character registered with the inventory service; this is a documented precondition, not a check (user decision at `/code-review`). For an unregistered character the sync would list every slot empty.
+- `IClientMessageOutbox.Enqueue` is assumed not to throw; a throw during `ReleaseHold` would lose the remaining held updates. Left as is (user decision at `/code-review`) and recorded in the sender's remarks for the transport adapter story (ADR-014).
+- `DiscardHold` after a zone entry during the hold leaves the connected client with no `InventoryFullSync` before later updates. This is the Discard criterion as written; it is correct only because a failed commit disconnects the client (CR-NET-5.5). Enhancement Story 015 carries the note: a step 4 failure calls `ReleaseHold`.
+- Misuse of the hold — opening an open hold, releasing or discarding with none open — logs one warning and changes nothing. The story does not state this.
+- The sender forwards the service's entries unchanged; "no slot index appears twice" rests on `InventoryService` recording each slot once per event. The decoders check the count and the lengths only.
+- The `MessageTypeId` values are provisional; no ADR assigns them.
+- `OnSessionReadySent` and `OnClientDisconnected` are on the concrete class only; the story that sends `SessionReady` may want an interface.

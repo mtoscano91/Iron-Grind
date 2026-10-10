@@ -59,7 +59,7 @@ namespace IronGrind.InventorySystem
         /// Tier 2 broadcast event (ADR-010 Decision 3) fired when a pickup is blocked because the
         /// bag has no room (GDD Rule 4.10) — the network layer turns it into the 0-byte
         /// <c>InventoryFullNotification</c> wire message. Deduplicated: at most one per character
-        /// per <see cref="InventoryConstants.BAG_FULL_DEDUP_WINDOW_TICKS"/>; a successful pickup
+        /// per <see cref="InventoryServerConstants.BAG_FULL_DEDUP_WINDOW_TICKS"/>; a successful pickup
         /// or <see cref="RegisterCharacter"/> resets the window. Invalid requests (bad quantity,
         /// unknown item, unregistered character) never fire it.
         /// </summary>
@@ -416,7 +416,7 @@ namespace IronGrind.InventorySystem
         /// <c>{ slotIndex, itemId, quantity: 1 }</c>; never merges into an existing stack. On a full
         /// bag, no slot is mutated, <see cref="OnInventoryChanged"/> does not fire, and the shared
         /// bag-full notification policy runs — <see cref="OnInventoryFull"/> fires only outside the
-        /// active <see cref="InventoryConstants.BAG_FULL_DEDUP_WINDOW_TICKS"/> dedup window. On an
+        /// active <see cref="InventoryServerConstants.BAG_FULL_DEDUP_WINDOW_TICKS"/> dedup window. On an
         /// item-validation or character-registration failure, no slot is mutated, no event fires,
         /// and <see cref="OnInventoryFull"/> never fires — only a full bag counts as "blocked for
         /// space." Neither a successful call nor a full-bag call ever resets the bag-full dedup

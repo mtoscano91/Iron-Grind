@@ -210,8 +210,8 @@ namespace IronGrind.Tests.EditMode.InventorySystem
         [Test]
         public void DedupWindowTicks_Is30SecondsOfServerTicks_Tuning()
         {
-            Assert.AreEqual(30 * ServerTickLoop.TICK_RATE_HZ, (int)InventoryConstants.BAG_FULL_DEDUP_WINDOW_TICKS);
-            Assert.AreEqual(600u, InventoryConstants.BAG_FULL_DEDUP_WINDOW_TICKS);
+            Assert.AreEqual(30 * ServerTickLoop.TICK_RATE_HZ, (int)InventoryServerConstants.BAG_FULL_DEDUP_WINDOW_TICKS);
+            Assert.AreEqual(600u, InventoryServerConstants.BAG_FULL_DEDUP_WINDOW_TICKS);
         }
 
         [Test]

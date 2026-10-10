@@ -1,7 +1,7 @@
 # Story 015: Attempt Result Delivery
 
 > **Epic**: Enhancement System
-> **Status**: Blocked — **(1) Story 011 (Commit Orchestration), itself Blocked on the Character Persistence implementation; (2) Inventory Story 012 (owner inventory sync), not started.** Story 010 (message types, codecs and the attempt-start seam) is Complete (2026-10-09).
+> **Status**: Blocked — **Story 011 (Commit Orchestration), itself Blocked on the Character Persistence implementation.** Inventory Story 012 (owner inventory sync and the hold) and Story 010 (message types, codecs and the attempt-start seam) are Complete (2026-10-09).
 > **Layer**: Feature
 > **Type**: Integration
 > **Manifest Version**: 2026-10-09
@@ -33,7 +33,7 @@
 ## What is blocking
 
 1. **Story 011** provides the orchestration this story delivers from: `BeginAttempt` on the tick, the commit, then `CompleteAttempt` or `RollBackAttempt` in the completion callback. Story 011 is Blocked on the Character Persistence implementation; it can be tested against a fake of the persistence interface, and so can this story once Story 011's code exists.
-2. **Inventory Story 012** provides `InventorySlotUpdate`, `InventoryFullSync` and the per-character hold this story drives.
+2. ~~**Inventory Story 012**~~ — Complete 2026-10-09. It provides `InventorySlotUpdate`, `InventoryFullSync` and the per-character hold this story drives (`IOwnerInventorySyncHold`).
 3. ~~**Story 010**~~ — Complete 2026-10-09. It provides the message types, the codecs and the attempt-start seam this story implements.
 
 ---
@@ -61,6 +61,7 @@
 - **Broadcast scope (from the Story 010 code review, 2026-10-09).** The routing row of `ServerBroadcast_Enhancement9` has the direction `MessageDirection.ServerToAllZoneClients`, because the enum mirrors the five CCR-3 direction codes and the channel contract codes this message `S→ALL (all connected clients, every zone)`. The sender must enqueue it for every connected client in every zone (AC-ENH-18), not only for the clients of the sender's zone; do not derive the recipient set from the direction value alone.
 - This story implements Story 010's attempt-start seam: it calls `IrreversibleOutcomeCoordinator.Begin` with Story 011's delegates, and adds the client-facing sends around them.
 - The hold starts at CR-ENH-15 step 3 and ends when the step 6b commit returns, or at once on a step 4 failure. The hold, release and discard calls are Inventory Story 012's; this story decides when to call them.
+- **Which call ends the hold (Inventory Story 012 `/code-review`, 2026-10-09).** The hold is injected as `IOwnerInventorySyncHold` (`src/ServerLogic/InventorySystem/`; `OpenHold`, `ReleaseHold`, `DiscardHold`). A step 4 failure and a successful step 6b commit call `ReleaseHold`. `DiscardHold` is only for a failed commit, where the client is disconnected (CR-NET-5.5): it drops a deferred `InventoryFullSync`, so a client that completed a zone entry during the hold and stays connected after a discard would receive `InventorySlotUpdate`s with no full sync before them.
 - The result is cap-exempt and goes to the front of the queue (CR-NET-7.7), so it may arrive before the released `InventorySlotUpdate` messages. Do not assert their relative order.
 - On a failed commit nothing is sent; the client is disconnected (CR-NET-5.5) and gets `InventoryFullSync` on its next zone entry, from the rolled-back bag.
 - Player name and item display name for the broadcast: the +9 trigger of Story 007 carries ids; resolve the names here (see Story 007's note on name lookup). Strings longer than 24 UTF-8 bytes are cut by the codec (Story 010).
@@ -107,5 +108,5 @@
 
 ## Dependencies
 
-- Depends on: **Story 011 (blocking)**; **Inventory Story 012 (blocking)**; Story 010 (Complete 2026-10-09); Stories 005 and 007 (Complete); Networking Core Stories 036 and 037 (Complete)
+- Depends on: **Story 011 (blocking)**; Inventory Story 012 (Complete 2026-10-09); Story 010 (Complete 2026-10-09); Stories 005 and 007 (Complete); Networking Core Stories 036 and 037 (Complete)
 - Unlocks: Enhancement UI epic (result side)

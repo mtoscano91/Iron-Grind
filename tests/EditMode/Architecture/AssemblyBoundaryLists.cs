@@ -49,6 +49,7 @@ namespace IronGrind.Tests.EditMode.Architecture
             // Inventory: enums that networking-wire-protocol.md defines as wire enums.
             "IronGrind.InventorySystem.DiscardFailReason", // consumer (planned): inventory screen (wire enum, DiscardResult message)
             "IronGrind.InventorySystem.MoveFailReason",    // consumer (planned): inventory screen (wire enum, MoveResult message)
+            "IronGrind.InventorySystem.InventoryConstants", // consumer (planned): inventory screen and the InventoryFullSync / InventorySlotUpdate codecs (slot count; Inventory Story 012)
 
             // Enhancement: the result code is a wire enum decoded by clients (Enhancement Story 010).
             "IronGrind.EnhancementSystem.EnhancementResultCode", // consumer (planned): Enhancement UI epic (wire enum, EnhancementAttemptResult and EnhancementPreviewRejected messages)
@@ -97,6 +98,9 @@ namespace IronGrind.Tests.EditMode.Architecture
             "IronGrind.Networking.CloseNPCInteraction",             // consumer (planned): NPC shop and enhancement screens, session close sender (wire schema)
             "IronGrind.Networking.NPCInteractionOpened",            // consumer (planned): NPC shop and enhancement screens, session handler (wire schema)
             "IronGrind.Networking.RejectedNotInTownHub",            // consumer (planned): NPC shop screen, rejection handler (wire schema)
+            "IronGrind.Networking.InventorySlotEntry",              // consumer (planned): Inventory UI epic, client bag model (wire schema; entry of both inventory sync messages)
+            "IronGrind.Networking.InventorySlotUpdate",             // consumer (planned): Inventory UI epic, client bag model (wire schema)
+            "IronGrind.Networking.InventoryFullSync",               // consumer (planned): Inventory UI epic, client bag model (wire schema)
             // Networking: codecs
             "IronGrind.Networking.MessageEnvelopeCodec",        // consumer (planned): client message read and write path (codec)
             "IronGrind.Networking.BatchHeaderCodec",            // consumer (planned): client message read and write path (codec)
@@ -117,6 +121,8 @@ namespace IronGrind.Tests.EditMode.Architecture
             "IronGrind.Networking.CloseNPCInteractionCodec",             // consumer (planned): NPC shop and enhancement screens, session close writer (codec)
             "IronGrind.Networking.NPCInteractionOpenedCodec",            // consumer (planned): NPC shop and enhancement screens, session reader (codec)
             "IronGrind.Networking.RejectedNotInTownHubCodec",            // consumer (planned): NPC shop screen, rejection reader (codec)
+            "IronGrind.Networking.InventorySlotUpdateCodec",             // consumer (planned): Inventory UI epic, bag change reader (codec)
+            "IronGrind.Networking.InventoryFullSyncCodec",               // consumer (planned): Inventory UI epic, bag replacement reader (codec)
             "IronGrind.Networking.WireEnumCodec",               // consumer (planned): client message read and write path (codec)
             "IronGrind.Networking.WireFixedPointCodec",         // consumer (planned): client message read and write path (codec)
             "IronGrind.Networking.WireIdCodec",                 // consumer (planned): client message read and write path (codec)
