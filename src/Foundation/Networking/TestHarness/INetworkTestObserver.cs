@@ -77,8 +77,9 @@ namespace IronGrind.Networking
         void OnServerCycleTimerBroadcastSerialized(uint entityId, ushort cyclePositionTicks, uint serverTickNumber);
 
         /// <summary>
-        /// Called when the server serializes an <c>EnhancementOutcomeBroadcast</c> for zone-wide R-OD
-        /// delivery. Provisional signature — full schema pending the Enhancement System GDD.
+        /// Called when the server serializes an enhancement outcome (the owner-only
+        /// <c>EnhancementAttemptResult</c>, or the <c>ServerBroadcast_Enhancement9</c> +9 broadcast).
+        /// The item-id based signature is provisional; Enhancement Story 015 replaces it.
         /// </summary>
         void OnServerEnhancementOutcomeSerialized(uint characterId, uint itemId, bool success, byte newEnhancementLevel);
 
@@ -122,10 +123,9 @@ namespace IronGrind.Networking
         void OnClientCycleTimerBroadcastReceived(uint entityId, ushort cyclePositionTicks);
 
         /// <summary>
-        /// Called on the client when an <c>EnhancementOutcomeBroadcast</c> is received at the
-        /// transport boundary. Fires on ALL zone clients (both the enhancing player and all zone
-        /// observers) — the Pillar 3 social signal. Provisional signature — full schema pending the
-        /// Enhancement System GDD.
+        /// Called on the client when a <c>ServerBroadcast_Enhancement9</c> (the +9 announcement) is
+        /// received at the transport boundary. Fires on ALL connected clients — the Pillar 3 social
+        /// signal. The item-id based signature is provisional; Enhancement Story 015 replaces it.
         /// </summary>
         void OnClientEnhancementOutcomeReceived(uint characterId, uint itemId, bool success, byte newEnhancementLevel);
 

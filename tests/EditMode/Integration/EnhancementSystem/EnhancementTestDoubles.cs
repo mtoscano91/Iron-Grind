@@ -4,6 +4,7 @@ using IronGrind.CharacterStats;
 using IronGrind.Currency;
 using IronGrind.EnhancementSystem;
 using IronGrind.InventorySystem;
+using IronGrind.Networking;
 using IronGrind.NpcInteraction;
 
 namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
@@ -193,6 +194,113 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
         {
             Calls.Add("UnregisterCharacter");
             _inner.UnregisterCharacter(charId);
+        }
+    }
+
+    /// <summary>One message recorded by <see cref="RecordingClientMessageOutbox"/>; <see cref="Body"/> is a copy.</summary>
+    internal sealed class RecordedClientMessage
+    {
+        /// <summary>The receiving connection.</summary>
+        public uint ClientId { get; }
+
+        /// <summary>The wire message type id.</summary>
+        public ushort MessageTypeId { get; }
+
+        /// <summary>A copy of the body.</summary>
+        public byte[] Body { get; }
+
+        /// <summary>The cap-exemption flag.</summary>
+        public bool IsCapExempt { get; }
+
+        /// <summary>Creates a record.</summary>
+        public RecordedClientMessage(uint clientId, ushort messageTypeId, byte[] body, bool isCapExempt)
+        {
+            ClientId = clientId;
+            MessageTypeId = messageTypeId;
+            Body = body;
+            IsCapExempt = isCapExempt;
+        }
+    }
+
+    /// <summary>Records every <c>Enqueue</c> call, copying the body inside the call.</summary>
+    internal sealed class RecordingClientMessageOutbox : IClientMessageOutbox
+    {
+        /// <summary>All recorded messages, in call order.</summary>
+        public List<RecordedClientMessage> Messages { get; } = new List<RecordedClientMessage>();
+
+        /// <inheritdoc />
+        public void Enqueue(uint clientId, ushort messageTypeId, ReadOnlySpan<byte> body, bool isCapExempt)
+        {
+            Messages.Add(new RecordedClientMessage(clientId, messageTypeId, body.ToArray(), isCapExempt));
+        }
+
+        /// <summary>The messages recorded for <paramref name="clientId"/>.</summary>
+        public List<RecordedClientMessage> ForClient(uint clientId)
+        {
+            return Messages.FindAll(message => message.ClientId == clientId);
+        }
+
+        /// <summary>The messages of <paramref name="messageTypeId"/> recorded for <paramref name="clientId"/>.</summary>
+        public List<RecordedClientMessage> ForClient(uint clientId, ushort messageTypeId)
+        {
+            return Messages.FindAll(message => message.ClientId == clientId && message.MessageTypeId == messageTypeId);
+        }
+    }
+
+    /// <summary>One call recorded by <see cref="RecordingAttemptStarter"/>.</summary>
+    internal readonly struct RecordedAttemptStart
+    {
+        /// <summary>The requesting character.</summary>
+        public readonly CharacterID CharacterId;
+
+        /// <summary>The request id.</summary>
+        public readonly uint RequestId;
+
+        /// <summary>The item slot.</summary>
+        public readonly int ItemSlotIndex;
+
+        /// <summary>The scroll slot.</summary>
+        public readonly int ScrollSlotIndex;
+
+        /// <summary>Creates a record.</summary>
+        public RecordedAttemptStart(CharacterID characterId, uint requestId, int itemSlotIndex, int scrollSlotIndex)
+        {
+            CharacterId = characterId;
+            RequestId = requestId;
+            ItemSlotIndex = itemSlotIndex;
+            ScrollSlotIndex = scrollSlotIndex;
+        }
+    }
+
+    /// <summary>Records every <c>StartAttempt</c> call.</summary>
+    internal sealed class RecordingAttemptStarter : IEnhancementAttemptStarter
+    {
+        /// <summary>All recorded calls, in call order.</summary>
+        public List<RecordedAttemptStart> Calls { get; } = new List<RecordedAttemptStart>();
+
+        /// <inheritdoc />
+        public void StartAttempt(CharacterID characterId, uint requestId, int itemSlotIndex, int scrollSlotIndex)
+        {
+            Calls.Add(new RecordedAttemptStart(characterId, requestId, itemSlotIndex, scrollSlotIndex));
+        }
+    }
+
+    /// <summary>Dictionary-backed <see cref="IEnhancementRequestDedupLookup"/>; a character not set has no deduplicator.</summary>
+    internal sealed class DictionaryDedupLookup : IEnhancementRequestDedupLookup
+    {
+        private readonly Dictionary<CharacterID, EnhancementRequestDeduplicator> _byCharacter =
+            new Dictionary<CharacterID, EnhancementRequestDeduplicator>();
+
+        /// <summary>Sets the deduplicator of a character.</summary>
+        public void Set(CharacterID characterId, EnhancementRequestDeduplicator deduplicator)
+        {
+            _byCharacter[characterId] = deduplicator;
+        }
+
+        /// <inheritdoc />
+        public bool TryGetDeduplicator(CharacterID characterId, out EnhancementRequestDeduplicator deduplicator)
+        {
+            return _byCharacter.TryGetValue(characterId, out deduplicator);
         }
     }
 }

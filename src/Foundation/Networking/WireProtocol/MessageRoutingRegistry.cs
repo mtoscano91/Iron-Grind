@@ -170,6 +170,39 @@ namespace IronGrind.Networking
                            "GDDs since OQ-RFR-2's resolution — first caught by this file's own AC-MCR-04 test, " +
                            "which had never actually been executed by the Unity Test Runner until this session."));
 
+            // Enhancement Story 010: Enhancement and NPC interaction messages (all R-OD priority path;
+            // criticality rows in networking-message-criticality.md, channel rows in networking-channel-contract.md).
+            void AddPriority(ushort id, string name, DesignPillar pillars, MessageDirection direction, string rationale)
+                => Add(new MessageRoutingEntry(id, name, pillars, NetworkChannel.ReliableOrdered, direction,
+                    MessageDeliveryContext.PriorityPath, isMcr3Exception: false, rationale));
+
+            AddPriority(EnhancementAttemptRequest.MessageTypeId, nameof(EnhancementAttemptRequest), DesignPillar.EarnedPower,
+                MessageDirection.ClientToServer, "Irreversible player action (TD-046); slot based; the GDD's ConfirmEnhancement.");
+            AddPriority(EnhancementRequestReceived.MessageTypeId, nameof(EnhancementRequestReceived), DesignPillar.EarnedPower,
+                MessageDirection.ServerToOwningClient, "Acknowledgment of an irreversible action; cap-exempt (CR-NET-7.7).");
+            AddPriority(EnhancementAttemptResultMessage.MessageTypeId, nameof(EnhancementAttemptResultMessage), DesignPillar.EarnedPower,
+                MessageDirection.ServerToOwningClient, "Wire name EnhancementAttemptResult. Permanent item change or the rejection that releases the waiting client; cap-exempt (CR-NET-7.7).");
+            AddPriority(ServerBroadcast_Enhancement9.MessageTypeId, nameof(ServerBroadcast_Enhancement9), DesignPillar.SocialSignals,
+                MessageDirection.ServerToAllZoneClients, "One-time social signal to every connected client; a missed broadcast is never repeated. Not cap-exempt. " +
+                "Scope is every connected client in every zone, not only the sender's zone (CCR-3 qualifier on S→ALL); " +
+                "the sender (Enhancement Story 015) must not scope it to one zone.");
+            AddPriority(CancelEnhancement.MessageTypeId, nameof(CancelEnhancement), DesignPillar.Infrastructure,
+                MessageDirection.ClientToServer, "Selection cancel; no response, no state change; R-OD so it cannot overtake an EnhancementAttemptRequest.");
+            AddPriority(EnhancementPreviewRequest.MessageTypeId, nameof(EnhancementPreviewRequest), DesignPillar.EarnedPower,
+                MessageDirection.ClientToServer, "Read-only probability query; must arrive before the player may confirm (UI-ENH-5).");
+            AddPriority(EnhancementStateUpdate.MessageTypeId, nameof(EnhancementStateUpdate), DesignPillar.EarnedPower,
+                MessageDirection.ServerToOwningClient, "Success and destruction probabilities shown before an irreversible action.");
+            AddPriority(EnhancementPreviewRejected.MessageTypeId, nameof(EnhancementPreviewRejected), DesignPillar.EarnedPower,
+                MessageDirection.ServerToOwningClient, "Preview rejection; must arrive to clear a selection the server considers invalid.");
+            AddPriority(OpenNPCInteraction.MessageTypeId, nameof(OpenNPCInteraction), DesignPillar.EarnedPower,
+                MessageDirection.ClientToServer, "Initiates an economic session; must reach the server to set NPCInteractionActive.");
+            AddPriority(CloseNPCInteraction.MessageTypeId, nameof(CloseNPCInteraction), DesignPillar.Infrastructure,
+                MessageDirection.ClientToServer, "Voluntary session close; fire-and-forget.");
+            AddPriority(NPCInteractionOpened.MessageTypeId, nameof(NPCInteractionOpened), DesignPillar.Infrastructure,
+                MessageDirection.ServerToOwningClient, "Session state signal; must arrive to open the shop window and start the client countdown.");
+            AddPriority(RejectedNotInTownHub.MessageTypeId, nameof(RejectedNotInTownHub), DesignPillar.Infrastructure,
+                MessageDirection.ServerToOwningClient, "Session validation failure response to OpenNPCInteraction; releases the client's pending state.");
+
             return map;
         }
 

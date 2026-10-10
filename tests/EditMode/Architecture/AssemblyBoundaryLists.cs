@@ -50,6 +50,9 @@ namespace IronGrind.Tests.EditMode.Architecture
             "IronGrind.InventorySystem.DiscardFailReason", // consumer (planned): inventory screen (wire enum, DiscardResult message)
             "IronGrind.InventorySystem.MoveFailReason",    // consumer (planned): inventory screen (wire enum, MoveResult message)
 
+            // Enhancement: the result code is a wire enum decoded by clients (Enhancement Story 010).
+            "IronGrind.EnhancementSystem.EnhancementResultCode", // consumer (planned): Enhancement UI epic (wire enum, EnhancementAttemptResult and EnhancementPreviewRejected messages)
+
             // Class definitions shown by the respec flow.
             "IronGrind.LevelingSystem.ClassDefinition", // consumer: RespecScreenPresenter
             "IronGrind.LevelingSystem.IClassRegistry",  // consumer: RespecScreenPresenter
@@ -82,6 +85,18 @@ namespace IronGrind.Tests.EditMode.Architecture
             "IronGrind.Networking.PartyMemberHealthUpdate",     // consumer (planned): client message handlers (wire schema)
             "IronGrind.Networking.HeartbeatMessage",            // consumer (planned): client message handlers (wire schema)
             "IronGrind.Networking.SetTarget",                   // consumer (planned): client message handlers (wire schema)
+            "IronGrind.Networking.EnhancementAttemptRequest",       // consumer (planned): Enhancement UI epic, confirm-enhancement request sender (wire schema)
+            "IronGrind.Networking.EnhancementRequestReceived",      // consumer (planned): Enhancement UI epic, acknowledgment handler (wire schema)
+            "IronGrind.Networking.EnhancementAttemptResultMessage", // consumer (planned): Enhancement UI epic, result handler (wire schema; wire name EnhancementAttemptResult)
+            "IronGrind.Networking.CancelEnhancement",               // consumer (planned): Enhancement UI epic, selection cancel sender (wire schema)
+            "IronGrind.Networking.EnhancementPreviewRequest",       // consumer (planned): Enhancement UI epic, preview request sender (wire schema)
+            "IronGrind.Networking.EnhancementStateUpdate",          // consumer (planned): Enhancement UI epic, probability display (wire schema)
+            "IronGrind.Networking.EnhancementPreviewRejected",      // consumer (planned): Enhancement UI epic, selection-cleared message (wire schema)
+            "IronGrind.Networking.ServerBroadcast_Enhancement9",    // consumer (planned): Enhancement UI epic, +9 announcement display (wire schema)
+            "IronGrind.Networking.OpenNPCInteraction",              // consumer (planned): NPC shop and enhancement screens, session open sender (wire schema)
+            "IronGrind.Networking.CloseNPCInteraction",             // consumer (planned): NPC shop and enhancement screens, session close sender (wire schema)
+            "IronGrind.Networking.NPCInteractionOpened",            // consumer (planned): NPC shop and enhancement screens, session handler (wire schema)
+            "IronGrind.Networking.RejectedNotInTownHub",            // consumer (planned): NPC shop screen, rejection handler (wire schema)
             // Networking: codecs
             "IronGrind.Networking.MessageEnvelopeCodec",        // consumer (planned): client message read and write path (codec)
             "IronGrind.Networking.BatchHeaderCodec",            // consumer (planned): client message read and write path (codec)
@@ -90,6 +105,18 @@ namespace IronGrind.Tests.EditMode.Architecture
             "IronGrind.Networking.GoldSyncForcedDeliveryCodec", // consumer (planned): client message read and write path (codec)
             "IronGrind.Networking.SelfDamageEventCodec",        // consumer (planned): client message read and write path (codec)
             "IronGrind.Networking.SetTargetCodec",              // consumer (planned): client message read and write path (codec)
+            "IronGrind.Networking.EnhancementAttemptRequestCodec",       // consumer (planned): Enhancement UI epic, request writer (codec)
+            "IronGrind.Networking.EnhancementRequestReceivedCodec",      // consumer (planned): Enhancement UI epic, acknowledgment reader (codec)
+            "IronGrind.Networking.EnhancementAttemptResultMessageCodec", // consumer (planned): Enhancement UI epic, result reader (codec)
+            "IronGrind.Networking.CancelEnhancementCodec",               // consumer (planned): Enhancement UI epic, cancel writer (codec)
+            "IronGrind.Networking.EnhancementPreviewRequestCodec",       // consumer (planned): Enhancement UI epic, preview request writer (codec)
+            "IronGrind.Networking.EnhancementStateUpdateCodec",          // consumer (planned): Enhancement UI epic, probability reader (codec)
+            "IronGrind.Networking.EnhancementPreviewRejectedCodec",      // consumer (planned): Enhancement UI epic, preview rejection reader (codec)
+            "IronGrind.Networking.ServerBroadcast_Enhancement9Codec",    // consumer (planned): Enhancement UI epic, +9 announcement reader (codec)
+            "IronGrind.Networking.OpenNPCInteractionCodec",              // consumer (planned): NPC shop and enhancement screens, session open writer (codec)
+            "IronGrind.Networking.CloseNPCInteractionCodec",             // consumer (planned): NPC shop and enhancement screens, session close writer (codec)
+            "IronGrind.Networking.NPCInteractionOpenedCodec",            // consumer (planned): NPC shop and enhancement screens, session reader (codec)
+            "IronGrind.Networking.RejectedNotInTownHubCodec",            // consumer (planned): NPC shop screen, rejection reader (codec)
             "IronGrind.Networking.WireEnumCodec",               // consumer (planned): client message read and write path (codec)
             "IronGrind.Networking.WireFixedPointCodec",         // consumer (planned): client message read and write path (codec)
             "IronGrind.Networking.WireIdCodec",                 // consumer (planned): client message read and write path (codec)
@@ -135,7 +162,6 @@ namespace IronGrind.Tests.EditMode.Architecture
         {
             "IronGrind.DamageCalculation", // Damage Calculation Story 006
             "IronGrind.LootTableSystem",   // Loot Table Story 014
-            "IronGrind.EnhancementSystem", // Enhancement Story 012
             "IronGrind.NpcInteraction",    // Enhancement Story 013
             "IronGrind.Randomness",        // Damage Calculation Story 003 (ADR-013)
         };

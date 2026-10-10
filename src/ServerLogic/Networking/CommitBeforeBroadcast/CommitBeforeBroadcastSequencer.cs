@@ -124,11 +124,11 @@ namespace IronGrind.Networking
     /// CommitBeforeBroadcastResult result = CommitBeforeBroadcastSequencer.Execute(
     ///     clientId: 7,
     ///     validateRequest: () =&gt; itemExists &amp;&amp; materialsPresent,
-    ///     emitAcknowledgment: () =&gt; SendEnhancementRequestReceived(entityId, itemId),
-    ///     computeOutcome: () =&gt; EnhancementSystem.ComputeOutcome(itemId),
+    ///     emitAcknowledgment: () =&gt; SendEnhancementRequestReceived(requestId, itemSlotIndex),
+    ///     computeOutcome: () =&gt; EnhancementSystem.ComputeOutcome(itemSlotIndex),
     ///     persistOutcome: outcome =&gt; CharacterPersistence.SaveIrreversibleOutcome(outcome),
-    ///     broadcastOutcome: outcome =&gt; SendEnhancementOutcomeBroadcast(outcome),
-    ///     revertOnFailure: () =&gt; EnhancementSystem.RevertInMemoryMutation(itemId),
+    ///     broadcastOutcome: outcome =&gt; SendEnhancementAttemptResult(outcome),
+    ///     revertOnFailure: () =&gt; EnhancementSystem.RevertInMemoryMutation(itemSlotIndex),
     ///     disconnectClient: (id, reason) =&gt; connectionManager.Disconnect(id, reason),
     ///     preserveSessionForTtl: (id, ttlSeconds) =&gt; sessionRegistry.PreserveForTtl(id, ttlSeconds));
     /// </code>

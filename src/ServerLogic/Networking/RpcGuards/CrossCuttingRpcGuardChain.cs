@@ -461,7 +461,13 @@ namespace IronGrind.Networking
                     // No rate limit at MVP (networking-core.md Cross-Cutting Constraint 3: "All other
                     // RPCs: no rate limit specified at MVP", Story 029). A gap of 0 means no rate
                     // limit: Evaluate neither reads nor writes _lastAcceptedTick for this tag, so it
-                    // never rejects on rate-limit grounds (ADR-014 Decision 4a).
+                    // never rejects on rate-limit grounds (ADR-014 Decision 4a). The five Enhancement
+                    // Story 010 request tags below are unlimited in the same way (ADR-014 Decision 1).
+                case RpcTypeTag.EnhancementAttemptRequest:
+                case RpcTypeTag.EnhancementPreviewRequest:
+                case RpcTypeTag.CancelEnhancement:
+                case RpcTypeTag.OpenNPCInteraction:
+                case RpcTypeTag.CloseNPCInteraction:
                     return 0;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(rpcTypeTag), rpcTypeTag,

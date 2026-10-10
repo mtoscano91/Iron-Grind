@@ -9,10 +9,9 @@ namespace IronGrind.Networking
     /// <typeparamref name="T"/> together with the exemption flag it was enqueued with.
     /// </summary>
     /// <typeparam name="T">
-    /// The message payload type. This story does not define a concrete message schema — no real
-    /// <c>EnhancementOutcomeBroadcast</c> type exists yet in this codebase (that arrives with
-    /// Story 011 and future Enhancement/Leveling epics) — so callers supply whatever payload type
-    /// is appropriate at their call site.
+    /// The message payload type. This story does not define a concrete message schema; callers
+    /// supply whatever payload type is appropriate at their call site (for example the
+    /// <c>EnhancementAttemptResult</c> owner-only result, which is cap-exempt).
     /// </typeparam>
     /// <remarks>
     /// <see langword="readonly struct"/> — no heap allocation for the wrapper itself; only the

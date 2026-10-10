@@ -50,5 +50,25 @@ namespace IronGrind.Networking
         /// this tag.
         /// </summary>
         SetTarget = 2,
+
+        /// <summary>
+        /// <c>EnhancementAttemptRequest</c> (Enhancement Story 010, ADR-014 Decision 1). No rate limit.
+        /// </summary>
+        EnhancementAttemptRequest = 3,
+
+        /// <summary>
+        /// <c>EnhancementPreviewRequest</c> (Enhancement Story 010, ADR-014 Decision 1). No rate limit
+        /// (the wire protocol's general ADR-001 10 req/s note has no tag).
+        /// </summary>
+        EnhancementPreviewRequest = 4,
+
+        /// <summary><c>CancelEnhancement</c> (Enhancement Story 010, ADR-014 Decision 1). No rate limit.</summary>
+        CancelEnhancement = 5,
+
+        /// <summary><c>OpenNPCInteraction</c> (Enhancement Story 010, ADR-014 Decision 1). No rate limit.</summary>
+        OpenNPCInteraction = 6,
+
+        /// <summary><c>CloseNPCInteraction</c> (Enhancement Story 010, ADR-014 Decision 1). No rate limit.</summary>
+        CloseNPCInteraction = 7,
     }
 }

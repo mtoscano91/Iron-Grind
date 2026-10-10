@@ -1,7 +1,7 @@
 # Story 015: Attempt Result Delivery
 
 > **Epic**: Enhancement System
-> **Status**: Blocked — **(1) Story 011 (Commit Orchestration), itself Blocked on the Character Persistence implementation; (2) Inventory Story 012 (owner inventory sync), not started; (3) Story 010 (message types, codecs and the attempt-start seam), not started.**
+> **Status**: Blocked — **(1) Story 011 (Commit Orchestration), itself Blocked on the Character Persistence implementation; (2) Inventory Story 012 (owner inventory sync), not started.** Story 010 (message types, codecs and the attempt-start seam) is Complete (2026-10-09).
 > **Layer**: Feature
 > **Type**: Integration
 > **Manifest Version**: 2026-10-09
@@ -34,7 +34,7 @@
 
 1. **Story 011** provides the orchestration this story delivers from: `BeginAttempt` on the tick, the commit, then `CompleteAttempt` or `RollBackAttempt` in the completion callback. Story 011 is Blocked on the Character Persistence implementation; it can be tested against a fake of the persistence interface, and so can this story once Story 011's code exists.
 2. **Inventory Story 012** provides `InventorySlotUpdate`, `InventoryFullSync` and the per-character hold this story drives.
-3. **Story 010** provides the message types, the codecs and the attempt-start seam this story implements.
+3. ~~**Story 010**~~ — Complete 2026-10-09. It provides the message types, the codecs and the attempt-start seam this story implements.
 
 ---
 
@@ -58,6 +58,7 @@
 ## Implementation Notes
 
 - **Not implementable until the three blockers clear.** The server-side behaviour underneath exists: validation (003), sequence (004), rollback (005), NPC session (006), events (007), exclusivity (009).
+- **Broadcast scope (from the Story 010 code review, 2026-10-09).** The routing row of `ServerBroadcast_Enhancement9` has the direction `MessageDirection.ServerToAllZoneClients`, because the enum mirrors the five CCR-3 direction codes and the channel contract codes this message `S→ALL (all connected clients, every zone)`. The sender must enqueue it for every connected client in every zone (AC-ENH-18), not only for the clients of the sender's zone; do not derive the recipient set from the direction value alone.
 - This story implements Story 010's attempt-start seam: it calls `IrreversibleOutcomeCoordinator.Begin` with Story 011's delegates, and adds the client-facing sends around them.
 - The hold starts at CR-ENH-15 step 3 and ends when the step 6b commit returns, or at once on a step 4 failure. The hold, release and discard calls are Inventory Story 012's; this story decides when to call them.
 - The result is cap-exempt and goes to the front of the queue (CR-NET-7.7), so it may arrive before the released `InventorySlotUpdate` messages. Do not assert their relative order.
@@ -106,5 +107,5 @@
 
 ## Dependencies
 
-- Depends on: **Story 011 (blocking)**; **Inventory Story 012 (blocking)**; **Story 010 (blocking)**; Stories 005 and 007 (Complete); Networking Core Stories 036 and 037 (Complete)
+- Depends on: **Story 011 (blocking)**; **Inventory Story 012 (blocking)**; Story 010 (Complete 2026-10-09); Stories 005 and 007 (Complete); Networking Core Stories 036 and 037 (Complete)
 - Unlocks: Enhancement UI epic (result side)

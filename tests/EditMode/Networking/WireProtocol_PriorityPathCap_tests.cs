@@ -73,7 +73,7 @@ namespace IronGrind.Tests.EditMode.Networking
 
         // -----------------------------------------------------------------------
         // AC-NC-35: queue already at 8 queued non-exempt R-OD messages for the
-        // current (not-yet-flushed) tick; an EnhancementOutcomeBroadcast-style
+        // current (not-yet-flushed) tick; an EnhancementAttemptResult-style
         // exempt message is enqueued before that tick's flush. It is placed at
         // position 1 of the current tick's capture, displacing the oldest
         // non-exempt message to the next tick; the displaced message appears at

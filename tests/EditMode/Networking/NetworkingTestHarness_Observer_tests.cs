@@ -439,7 +439,7 @@ namespace IronGrind.Tests.EditMode.Networking
             const uint CharacterId = 42u;
             const uint TickT = 2000u;
             const int EnhancementQueuePosition = 5;
-            const ushort EnhancementMessageTypeId = 0x0104; // stand-in for EnhancementOutcomeBroadcast.MessageTypeID
+            const ushort EnhancementMessageTypeId = 0x0104; // stand-in for a cap-exempt enhancement message's MessageTypeID (EnhancementAttemptResult)
 
             var observer = new NetworkTestObserver();
             var pending = new List<QueuedTestMessage>();

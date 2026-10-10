@@ -301,6 +301,27 @@ namespace IronGrind.EnhancementSystem
         }
 
         /// <summary>
+        /// Read-only preview of an attempt (UI-ENH-1, AC-NC-48): runs the CR-ENH-15 step 2 checks of
+        /// <see cref="ValidateAttempt"/> (including the pending-attempt check, which yields
+        /// <see cref="EnhancementResultCode.RejectedConcurrentAttempt"/>) and, when valid, returns the
+        /// item's level and the F-ENH-4 probabilities. Locks, consumes and changes nothing; no draw.
+        /// </summary>
+        /// <param name="charId">The requesting character.</param>
+        /// <param name="itemSlotIndex">Bag slot of the item to enhance.</param>
+        /// <param name="scrollSlotIndex">Bag slot of the scroll.</param>
+        public EnhancementPreview PreviewAttempt(CharacterID charId, int itemSlotIndex, int scrollSlotIndex)
+        {
+            EnhancementAttemptValidation validation = ValidateAttempt(charId, itemSlotIndex, scrollSlotIndex);
+            if (!validation.IsValid)
+                return EnhancementPreview.Rejected(validation.RejectionCode);
+
+            return EnhancementPreview.Valid(
+                validation.CurrentLevel,
+                _config.GetSuccessProbability(validation.CurrentLevel),
+                _config.GetDestructionProbability(validation.CurrentLevel));
+        }
+
+        /// <summary>
         /// Validates an attempt (CR-ENH-15 step 2). Check order, first failure wins (decided at
         /// readiness 2026-10-07): NPC session, attempt in progress, item exists, slot unlocked,
         /// upgradeable, not an accessory, below max level, scroll exists, tier match. Reads only;

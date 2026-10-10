@@ -5,8 +5,9 @@ namespace IronGrind.EnhancementSystem
     /// codes from CR-ENH-15 step 2). Member order follows the GDD. Enhancement Story 003.
     /// </summary>
     /// <remarks>
-    /// The numeric values are provisional until the wire encoding is fixed by TD-046; do not
-    /// persist or transmit them as raw numbers before then.
+    /// The numeric values 0-9 are fixed by <c>networking-wire-protocol.md</c> (TD-046 amendment,
+    /// 2026-10-09) and are the wire encoding of <c>resultCode</c>. The enum lives in <c>IronGrind.Foundation</c>
+    /// because clients decode it (ADR-012 Decision 3 rule 3).
     /// </remarks>
     public enum EnhancementResultCode : byte
     {
