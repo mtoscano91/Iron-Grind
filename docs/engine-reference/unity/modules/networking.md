@@ -1,6 +1,6 @@
 # Unity 6.3 — Networking Module Reference
 
-**Last verified:** 2026-02-13 (general sections); 2026-10-09 for the section "NGO 2.13 — Custom Messaging, Transport and Frame Timing", researched from source and manual pages, not run
+**Last verified:** 2026-02-13 (general sections); 2026-10-09 for the section "NGO 2.13 — Custom Messaging, Transport and Frame Timing", researched from source and manual pages; part of it confirmed in a run on 2026-10-12 (see "Confirmed in a run, 2026-10-12")
 **Knowledge Gap:** Unity 6 uses Netcode for GameObjects (UNet deprecated)
 
 ---
@@ -349,7 +349,7 @@ void OnClientDisconnected(ulong clientId) {
 ## NGO 2.13 — Custom Messaging, Transport and Frame Timing
 
 **Researched:** 2026-10-09, for ADR-004 OQ-ADR4-3 and the ADR-014 transport adapter.
-**Evidence:** read from the NGO source on GitHub (branch `develop-2.0.0`, `package.json` 2.13.4 unreleased; latest changelog entry `[2.13.3] - 2026-09-14`) and from Unity manual pages. The files were not compared with the `v2.13.3` tag one by one. **Nothing here was compiled or run**, and no installed package was read. Where a statement comes from source and no manual page says it, it is marked *(source)*; treat it as true for 2.13.x and re-check on a package upgrade.
+**Evidence:** read from the NGO source on GitHub (branch `develop-2.0.0`, `package.json` 2.13.4 unreleased; latest changelog entry `[2.13.3] - 2026-09-14`) and from Unity manual pages. The files were not compared with the `v2.13.3` tag one by one. **On 2026-10-09 nothing here had been compiled or run**, and no installed package had been read; what a run has confirmed since is listed in "Confirmed in a run, 2026-10-12" below, and every other statement is still source-only. Where a statement comes from source and no manual page says it, it is marked *(source)*; treat it as true for 2.13.x and re-check on a package upgrade.
 
 The sections above this one describe the `NetworkObject` / `NetworkVariable` / RPC model. This project does not use it for gameplay messages (ADR-004 Decision 4): it sends its own binary messages through `CustomMessagingManager`.
 
@@ -408,7 +408,7 @@ Members: `Unreliable`, `UnreliableSequenced`, `Reliable`, `ReliableSequenced`, `
 - A message sent with `SendUnnamedMessage` is queued; it goes on the wire in `PostLateUpdate`.
 
 ### Connections *(source: `Runtime/Connection/NetworkConnectionManager.cs`)*
-- Client ids are `ulong`. The server is `NetworkManager.ServerClientId` = 0; clients get 1, 2, 3 … from a counter that is never decremented or reset in that file. Whether the counter survives a shutdown and restart in one process: not checked. The NGO client id is not the transport's connection id.
+- Client ids are `ulong`. The server is `NetworkManager.ServerClientId` = 0; clients get 1, 2, 3 … from a counter that is never decremented or reset in that file. Across a `Shutdown()` and `StartServer()` on the same `NetworkManager` instance the counter is **not reset** (run 2026-10-12: ids 1, 2, 3, then 4 after the restart); a new instance in the same process was not tried. The NGO client id is not the transport's connection id.
 - `event Action<ulong> OnClientConnectedCallback`, `event Action<ulong> OnClientDisconnectCallback`, `event Action<NetworkManager, ConnectionEventData> OnConnectionEvent`.
 - ⚠️ **`DisconnectClient(ulong clientId)` is deferred**: it sends a reason message and the disconnect and its callback happen in `PostLateUpdate` of that frame. `DisconnectClient(clientId, null)` (empty reason) disconnects and raises the callback inside the call.
 - After a server-initiated disconnect, messages of that client already in the incoming queue can still reach handlers for the rest of that frame. After a transport-initiated disconnect, later data of that connection is dropped.
@@ -432,12 +432,38 @@ Members: `Unreliable`, `UnreliableSequenced`, `Reliable`, `ReliableSequenced`, `
 - `NetcodeIntegrationTest` (`Unity.Netcode.TestHelpers.Runtime`, assembly `Unity.Netcode.Runtime.Tests`) runs a server and clients in one process. It is coroutine-based (`[UnitySetUp]`), so it is shaped for PlayMode, and the assembly needs a `testables` entry in the manifest. No manual page documents it.
 - `NetworkManager.NetworkUpdate(NetworkUpdateStage)` is public, so the stages can be stepped by hand; nothing documents doing so.
 
-### Not verified (as of 2026-10-09)
-- Whether 2.13.3 is released for 6000.3, and which transport version resolves.
+### Confirmed in a run, 2026-10-12
+Networking Core Story 038, PlayMode tests in a batch-mode Editor (6000.3.10f1), NGO 2.13.3 with Unity Transport 2.6.0, a server and client `NetworkManager`s in one process on 127.0.0.1. Observations: `production/qa/evidence/networking-core-038-ngo-verification.md`. Loopback: no loss, no reordering. The run contradicted no statement of this section.
+
+- **Compiles as written** — `NetworkManager.CustomMessagingManager`; `OnUnnamedMessage` with `(ulong clientId, FastBufferReader reader)`; `SendUnnamedMessage(ulong, FastBufferWriter, NetworkDelivery)`; `FastBufferReader.Length`, `Position`, `ReadBytesSafe(ref byte[], int, int)`; `new FastBufferWriter(int, Allocator)` with `Allocator.Temp` inside `using`, and `WriteBytesSafe(byte[], int, int)`; `OnClientConnectedCallback` / `OnClientDisconnectCallback` as `Action<ulong>` on `NetworkManager`; `NetworkManager.DisconnectClient(ulong)`; `NetworkManager.ServerClientId`.
+- **Versions** — 2.13.3 resolves on 6000.3 with `com.unity.transport` 2.6.0.
+- **Reading without allocating** — `ReadBytesSafe(ref existingArray, reader.Length - reader.Position)` into an array allocated once: 0 `GC.Alloc` samples over 500 messages in the handler (profiler marker, scoped to the handler).
+- **Handlers are called in subscription order**, with a `Seek` back to the message start before each one (`InvokeUnnamedMessage`, installed source), so every handler sees the whole message.
+- **Reliable ordered** — 200 `ReliableSequenced` messages from one client arrived in order, each once.
+- **Frame position** — with a tick driven from `Update`, no unnamed-message handler ran inside the tick, across a client-side disconnect and a server-initiated one. The tick did no transport work in that run.
+- **`DisconnectClient(ulong)` is deferred, and queued messages still arrive** — called from inside the handler of the first message of a 40-message burst, the other 39 messages of that client still reached the handlers in the same frame; the disconnect callback came later in that frame.
+- **Client ids** — 1, 2, 3 for three successive connections, no reuse after a disconnect; 4 after a `Shutdown()` / `StartServer()` of the same instance.
+- **A server with no `NetworkObject`** — a server with no player prefab, `ConnectionApproval` off and `EnableSceneManagement` off starts and exchanges unnamed messages; none of the three had to change. `ForceSamePrefabs` was left at its default (true).
+- **Two `NetworkManager`s in one process** work when each is reached through its own reference: the first enabled becomes `NetworkManager.Singleton`, the second does not replace it.
+- **`NetworkConfig` is a public field of `NetworkManager`**, read in `Awake`: when a manager is created in code, create the `GameObject` inactive, add the components, assign `NetworkConfig`, then activate it.
+- **Assemblies** — `UnityTransport` (namespace `Unity.Netcode.Transports.UTP`) is in `Unity.Netcode.Runtime`. An assembly that calls `UnityTransport.SetConnectionData` must also reference `Unity.Networking.Transport` (an overload takes a `NetworkEndpoint`; `error CS0012` without it), and `Unity.Collections` for `Allocator`.
+- **Measuring allocations** — `GC.GetAllocatedBytesForCurrentThread` read 0 for every window in this Editor, an idle one included: do not use it. Use `Is.Not.AllocatingGCMemory()` or a `UnityEngine.Profiling.Recorder` on `GC.Alloc`.
+- **`CustomMessagingManager` is `null` on a `NetworkManager` that was never started** (run, same day, after the Story 038 code review). An unnamed message of 400 and of 401 bytes went through `ReliableSequenced` on loopback.
+
+Read in the installed 2.13.3 source during the Story 038 code review, 2026-10-12, **not run**:
+- `NetworkManager.CustomMessagingManager` is a new instance after each start and is set to `null` in shutdown: a subscription to `OnUnnamedMessage` does not survive a restart. `OnClientConnectedCallback` / `OnClientDisconnectCallback` subscriptions do survive it.
+- `NetworkManager.DisconnectClient(ulong)` throws `NotServerException` when the manager is not a server (before start, after shutdown); for the server's own id it logs a warning and returns.
+- NGO wraps each connect / disconnect callback subscriber in a `try` / `catch` that logs the exception.
+- Each unnamed message gets its own `FastBufferReader` sized to that message, also when messages are batched: `Length - Position` is the payload length. `ReadBytesSafe(ref byte[] ...)` does not replace the array.
+- On a host, `OnClientConnectedCallback` is raised for the server's own id (0).
+
+### Not verified (as of 2026-10-12)
 - Any manual statement on: reader lifetime, where in the frame messages are dispatched, client id reuse, exactly-once delivery, the valid `TickRate` range.
+- That NGO catches an exception thrown by a handler: `InvokeUnnamedMessage` itself has no `try`; the catch, if any, is further up and was not exercised.
 - Managed allocations of NGO's full send and receive path.
+- Ordering and exactly-once delivery under packet loss; a disconnect caused by a send-queue overflow.
+- The same behaviour in a headless server build (the run was in the Editor).
 - Whether `NetcodeIntegrationTest` ships in the registry package and whether it can run in EditMode.
-- Everything that needs the package installed and a real run.
 
 ---
 

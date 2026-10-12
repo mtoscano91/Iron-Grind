@@ -2,7 +2,8 @@
     "name": "IronGrind.ServerLogic",
     "rootNamespace": "",
     "references": [
-        "IronGrind.Foundation"
+        "IronGrind.Foundation",
+        "Unity.Netcode.Runtime"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

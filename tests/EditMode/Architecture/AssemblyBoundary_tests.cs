@@ -24,6 +24,8 @@ namespace IronGrind.Tests.EditMode.Architecture
         private const string SERVER_LOGIC = "IronGrind.ServerLogic";
         private const string CLIENT = "IronGrind.Client";
         private const string DEV_HARNESS = "IronGrind.DevHarness";
+        // ServerLogic declares NGO types (ADR-012 Decision 1; Networking Core Story 038).
+        private const string NETCODE_RUNTIME = "Unity.Netcode.Runtime";
         private const string SERVER_CONSTRAINT = "UNITY_SERVER || UNITY_EDITOR";
         private const string CLIENT_CONSTRAINT = "!UNITY_SERVER || UNITY_EDITOR";
         private const BindingFlags ALL_DECLARED = BindingFlags.Public | BindingFlags.NonPublic
@@ -71,7 +73,10 @@ namespace IronGrind.Tests.EditMode.Architecture
             }
         }
 
-        /// <summary>Reference lists of the three asmdefs match ADR-012 Decision 1.</summary>
+        /// <summary>
+        /// Reference lists of the three asmdefs match ADR-012 Decision 1: ServerLogic references Foundation and
+        /// Unity.Netcode.Runtime; Client references Foundation alone.
+        /// </summary>
         [Test]
         public void test_reference_lists_match_adr012()
         {
@@ -79,7 +84,7 @@ namespace IronGrind.Tests.EditMode.Architecture
             AsmdefData server = LoadAsmdef(SERVER_LOGIC);
             AsmdefData client = LoadAsmdef(CLIENT);
 
-            CollectionAssert.AreEqual(new[] { FOUNDATION }, Safe(server.references), "ServerLogic references");
+            CollectionAssert.AreEqual(new[] { FOUNDATION, NETCODE_RUNTIME }, Safe(server.references), "ServerLogic references");
             foreach (string dll in Safe(server.precompiledReferences))
             {
                 CollectionAssert.Contains(ServerOnlyDlls, dll, "ServerLogic precompiled reference outside the named list");

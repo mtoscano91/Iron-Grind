@@ -1,0 +1,26 @@
+{
+    "name": "IronGrind.PlayModeTests",
+    "rootNamespace": "IronGrind.PlayModeTests",
+    "references": [
+        "UnityEngine.TestRunner",
+        "IronGrind.Foundation",
+        "IronGrind.ServerLogic",
+        "Unity.Netcode.Runtime",
+        "Unity.Networking.Transport",
+        "Unity.Collections"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS",
+        "UNITY_SERVER || UNITY_EDITOR"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

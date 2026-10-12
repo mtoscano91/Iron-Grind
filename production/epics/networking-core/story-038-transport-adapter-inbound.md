@@ -1,7 +1,7 @@
 # Story 038: Transport Adapter — Inbound Messages and Connections
 
 > **Epic**: Networking Core
-> **Status**: Ready — written 2026-10-09; `/story-readiness` 2026-10-09 (NEEDS WORK, closed the same day by the user decisions recorded below). `com.unity.netcode.gameobjects` 2.13.3 resolves with `com.unity.transport` 2.6.0 and the project compiles with them (EditMode 2383 / 2383, 2026-10-09).
+> **Status**: Complete — 2026-10-12 (`/dev-story`, `/code-review` with its fixes applied, `/story-done`; see Completion Notes). Written 2026-10-09; `/story-readiness` 2026-10-09 (NEEDS WORK, closed the same day by the user decisions recorded below). `com.unity.netcode.gameobjects` 2.13.3 resolves with `com.unity.transport` 2.6.0 and the project compiles with them (EditMode 2383 / 2383, 2026-10-09).
 > **Layer**: Foundation
 > **Type**: Integration
 > **Manifest Version**: 2026-10-09
@@ -134,7 +134,7 @@
 **Story Type**: Integration
 **Required evidence**: `tests/EditMode/Networking/InboundTransportAdapter_tests.cs` — must exist and pass; `tests/PlayMode/Networking/InboundTransportAdapter_ngo_run_tests.cs` — must exist and have been run; `production/qa/evidence/networking-core-038-ngo-verification.md` — every VR item PASS or FAIL with its observation, none NOT RUN.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and run 2026-10-12 — EditMode 2420 / 2420, PlayMode 12 / 12 (Unity batch mode); evidence document: every VR item PASS
 
 ---
 
@@ -142,3 +142,18 @@
 
 - Depends on: Story 036 (`IInboundMessageIntake`, `IInboundRequestDispatcher`, `InboundDispatchConstants`) and Story 037 (`ZoneTickPipeline`) — Complete. ADR-004 Amendment 1 (2026-10-09). The NGO package resolves (2.13.3, 2026-10-09).
 - Unlocks: Story 039 (the same `NetworkManager` and id mapping); the session layer stories; the server composition root; the epic's headless-build engine-risk gate
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-12
+**Criteria**: 18/18 passing (11 core and shell criteria, VR-1 to VR-6, "Reference updated"). None deferred, no VR item NOT RUN or FAIL.
+**Files**: `src/ServerLogic/Networking/Transport/` — `InboundTransportAdapter.cs` (core), `NgoInboundTransportShell.cs`, `IInboundTransportDisconnector.cs`; `IronGrind.ServerLogic.asmdef`; `tests/EditMode/Networking/InboundTransportAdapter_tests.cs`; `tests/EditMode/Architecture/AssemblyBoundary_tests.cs`; `tests/PlayMode/PlayModeTests.asmdef`, `tests/PlayMode/Networking/TestTickDriver.cs`, `InboundTransportAdapter_ngo_run_tests.cs`.
+**Deviations** (advisory, accepted by the user 2026-10-12):
+- *No allocation*: asserted with `Is.Not.AllocatingGCMemory()`, not `GC.GetAllocatedBytesForCurrentThread` — that call read 0 for every window in this Editor, an idle one included. `TickLoop_CompletionQueue_tests.cs` uses the constraint too; the criterion's reference to it was wrong.
+- *VR-2*: the profiler's `GC.Alloc` marker was read by code, scoped to the shell's handler, with a control (0 samples over 500 messages; control 20 of 20). No one looked at a Profiler window, and NGO's own allocations were not measured.
+- *Dispatcher refuses*: the adapter logs one error; the real dispatcher logs its own as well, so a refusal gives two log lines.
+- *Limits of the run*: loopback (no loss, no reordering), batch-mode Editor, the tick did no transport work in VR-1, a send-queue-overflow disconnect was not exercised. The headless-build gate stays open on the epic.
+**Behaviour beyond the criteria** (from `/code-review`): a refused connect records nothing, so the disconnect event that follows calls `RemoveConnection`; an exception from the intake, the dispatcher or the transport seam is logged and goes no further; the pending set of `Disconnect` holds 128 ids and overwrites its oldest when full; `NgoInboundTransportShell.Start()` throws on a `NetworkManager` that is not started, and after a restart of the manager the caller calls `Stop()` then `Start()`.
+**Test Evidence**: Integration — `tests/EditMode/Networking/InboundTransportAdapter_tests.cs` (EditMode 2420 / 2420), `tests/PlayMode/Networking/InboundTransportAdapter_ngo_run_tests.cs` (12 / 12), `production/qa/evidence/networking-core-038-ngo-verification.md`.
+**Code Review**: Complete — `/code-review` 2026-10-12, CHANGES REQUIRED (four small defects), all fixed and re-run the same day; not re-reviewed after the fixes.
