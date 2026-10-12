@@ -25,11 +25,11 @@ namespace IronGrind.InventorySystem
     /// disconnect, on release or discard of the hold, or when another character takes over its client id); a state
     /// with an open hold is always kept, also across a disconnect. Outside a hold a bag-change event allocates
     /// nothing.</para>
-    /// <para><b>Outbox contract.</b> <see cref="IClientMessageOutbox.Enqueue"/> is assumed not to throw. If it threw
-    /// during <see cref="ReleaseHold"/> the remaining held updates would be lost, and if it threw in the
-    /// <see cref="IInventoryService.OnInventoryChanged"/> handler later subscribers would be skipped. The transport
-    /// adapter story (ADR-014), which writes the production outbox, must state whether it can throw (code review
-    /// 2026-10-09, left as is by user decision).</para>
+    /// <para><b>Outbox contract.</b> <see cref="IClientMessageOutbox.Enqueue"/> does not throw: Networking Core
+    /// Story 039 makes that an acceptance criterion of the production outbox (<c>ClientMessageOutbox</c>) and of the
+    /// interface's doc comment. If it threw during <see cref="ReleaseHold"/> the remaining held updates would be lost,
+    /// and if it threw in the <see cref="IInventoryService.OnInventoryChanged"/> handler later subscribers would be
+    /// skipped.</para>
     /// <para><b>Slot indices.</b> The sender forwards the service's entries unchanged and does not remove a repeated
     /// slot index; "no slot index twice in one message" rests on <c>InventoryService</c> recording each slot once per
     /// event.</para>

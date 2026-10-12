@@ -19,7 +19,8 @@ namespace IronGrind.Networking
     {
         /// <summary>
         /// Enqueues a message for a client. An implementation copies <paramref name="body"/> before it
-        /// returns; the caller keeps nothing and may reuse or free the span at once (ADR-014).
+        /// returns; the caller keeps nothing and may reuse or free the span at once (ADR-014). An implementation
+        /// does not throw (Networking Core Story 039): a refused message is logged and not sent.
         /// </summary>
         /// <param name="clientId">The connection that receives the message.</param>
         /// <param name="messageTypeId">The wire <c>MessageTypeID</c> of the message.</param>

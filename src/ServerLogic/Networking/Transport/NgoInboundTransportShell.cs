@@ -41,11 +41,12 @@ namespace IronGrind.Networking
         /// <param name="networkManager">The started server <see cref="NetworkManager"/>; not null.</param>
         /// <param name="intake">Receives each accepted message.</param>
         /// <param name="dispatcher">Receives connection changes.</param>
+        /// <param name="clientListener">Told of added and removed clients (the outbox); null means none.</param>
         public NgoInboundTransportShell(NetworkManager networkManager, IInboundMessageIntake intake,
-            IInboundRequestDispatcher dispatcher)
+            IInboundRequestDispatcher dispatcher, IClientConnectionListener clientListener = null)
         {
             _networkManager = networkManager ?? throw new ArgumentNullException(nameof(networkManager));
-            _adapter = new InboundTransportAdapter(intake, dispatcher, this);
+            _adapter = new InboundTransportAdapter(intake, dispatcher, this, clientListener);
         }
 
         /// <summary>The core this shell feeds.</summary>

@@ -112,6 +112,10 @@ namespace IronGrind.Networking
         private readonly List<QueuedMessage<T>> _pendingNonExempt = new List<QueuedMessage<T>>();
         private List<QueuedMessage<T>> _deferredNonExempt = new List<QueuedMessage<T>>();
 
+        // Working lists of the allocation-free Flush overload; reused, never recreated.
+        private readonly List<QueuedMessage<T>> _combinedScratch = new List<QueuedMessage<T>>();
+        private List<QueuedMessage<T>> _spareDeferred = new List<QueuedMessage<T>>();
+
         /// <summary>
         /// Enqueues <paramref name="message"/> for the current (not-yet-flushed) tick.
         /// </summary>
@@ -222,6 +226,125 @@ namespace IronGrind.Networking
             _pendingNonExempt.Clear();
 
             return result;
+        }
+
+        /// <summary>
+        /// Number of messages waiting: pending this tick (exempt and non-exempt) plus deferred from earlier ticks.
+        /// </summary>
+        public int Count => _pendingExempt.Count + _pendingNonExempt.Count + _deferredNonExempt.Count;
+
+        /// <summary>
+        /// Allocation-free form of <see cref="Flush(uint)"/> (Networking Core Story 039): clears
+        /// <paramref name="destination"/> and fills it with exactly the messages, in exactly the order, that
+        /// <see cref="Flush(uint)"/> would return for the same state, and leaves the queue in the same state.
+        /// Reuses the queue's own working lists (two deferred lists are swapped, none is created), so it
+        /// allocates nothing once the internal lists have grown (see <see cref="Reserve"/>).
+        /// </summary>
+        /// <param name="tickNumber">The server tick; accepted for symmetry with <see cref="Flush(uint)"/>.</param>
+        /// <param name="destination">The list the caller owns; cleared first. Not null.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="destination"/> is null.</exception>
+        /// <example>
+        /// <code>
+        /// var tickMessages = new List&lt;QueuedMessage&lt;string&gt;&gt;(16);
+        /// queue.Flush(tickNumber: 100, tickMessages);
+        /// </code>
+        /// </example>
+        public void Flush(uint tickNumber, List<QueuedMessage<T>> destination)
+        {
+            if (destination == null)
+            {
+                throw new ArgumentNullException(nameof(destination));
+            }
+
+            destination.Clear();
+
+            List<QueuedMessage<T>> combined = FillCombinedScratch();
+            int baselineCount = Math.Min(PRIORITY_PATH_CAP, combined.Count);
+            int exemptCount = _pendingExempt.Count;
+            int availableForNonExempt = Math.Max(0, PRIORITY_PATH_CAP - exemptCount);
+            int evictedCount = Math.Max(0, baselineCount - availableForNonExempt);
+
+            for (int i = 0; i < exemptCount; i++)
+            {
+                destination.Add(_pendingExempt[i]);
+            }
+            for (int i = evictedCount; i < baselineCount; i++)
+            {
+                destination.Add(combined[i]);
+            }
+
+            SwapInNextDeferred(combined, evictedCount, baselineCount);
+            _pendingExempt.Clear();
+            _pendingNonExempt.Clear();
+            combined.Clear();
+        }
+
+        // Oldest first: the deferred backlog, then this tick's non-exempt messages.
+        private List<QueuedMessage<T>> FillCombinedScratch()
+        {
+            List<QueuedMessage<T>> combined = _combinedScratch;
+            combined.Clear();
+            for (int i = 0; i < _deferredNonExempt.Count; i++)
+            {
+                combined.Add(_deferredNonExempt[i]);
+            }
+            for (int i = 0; i < _pendingNonExempt.Count; i++)
+            {
+                combined.Add(_pendingNonExempt[i]);
+            }
+
+            return combined;
+        }
+
+        // The next backlog is the evicted front items, then whatever lay beyond the baseline. It is built in
+        // the spare list, which then trades places with the current one.
+        private void SwapInNextDeferred(List<QueuedMessage<T>> combined, int evictedCount, int baselineCount)
+        {
+            List<QueuedMessage<T>> nextDeferred = _spareDeferred;
+            nextDeferred.Clear();
+            for (int i = 0; i < evictedCount; i++)
+            {
+                nextDeferred.Add(combined[i]);
+            }
+            for (int i = baselineCount; i < combined.Count; i++)
+            {
+                nextDeferred.Add(combined[i]);
+            }
+
+            _spareDeferred = _deferredNonExempt;
+            _spareDeferred.Clear();
+            _deferredNonExempt = nextDeferred;
+        }
+
+        /// <summary>Discards every pending and deferred message.</summary>
+        public void Clear()
+        {
+            _pendingExempt.Clear();
+            _pendingNonExempt.Clear();
+            _deferredNonExempt.Clear();
+        }
+
+        /// <summary>
+        /// Grows the internal lists to hold at least <paramref name="capacity"/> messages each, so that
+        /// <see cref="Flush(uint, List{QueuedMessage{T}})"/> and <see cref="Enqueue"/> never allocate while the
+        /// queue holds no more than that. Never shrinks.
+        /// </summary>
+        /// <param name="capacity">The most messages the queue will hold at once.</param>
+        public void Reserve(int capacity)
+        {
+            GrowTo(_pendingExempt, capacity);
+            GrowTo(_pendingNonExempt, capacity);
+            GrowTo(_deferredNonExempt, capacity);
+            GrowTo(_combinedScratch, capacity);
+            GrowTo(_spareDeferred, capacity);
+        }
+
+        private static void GrowTo(List<QueuedMessage<T>> list, int capacity)
+        {
+            if (list.Capacity < capacity)
+            {
+                list.Capacity = capacity;
+            }
         }
     }
 }

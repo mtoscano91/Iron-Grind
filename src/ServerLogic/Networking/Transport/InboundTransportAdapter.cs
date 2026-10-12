@@ -28,6 +28,11 @@ namespace IronGrind.Networking
     /// which does nothing for an id the dispatcher never added and, if the refusal was "already known",
     /// removes the connection the transport has just closed. The dispatcher also logs its own error when
     /// <c>AddConnection</c> returns false; the adapter's error is a second, separate log line.
+    /// <b>Client list (Story 039).</b> An optional <see cref="IClientConnectionListener"/> is told
+    /// <c>AddClient</c> after <c>AddConnection</c> returns true and <c>RemoveClient</c> beside each
+    /// <c>RemoveConnection</c> call (and nowhere the adapter skips it). An exception from the listener is logged
+    /// as one error and changes nothing else. The class is also the <see cref="IClientDisconnectRequester"/>
+    /// of the outbox.
     /// </remarks>
     /// <example>
     /// <code>
@@ -37,7 +42,7 @@ namespace IronGrind.Networking
     /// adapter.Disconnect(1u);
     /// </code>
     /// </example>
-    public sealed class InboundTransportAdapter
+    public sealed class InboundTransportAdapter : IClientDisconnectRequester
     {
         /// <summary>Shortest message the core passes on: the 10-byte server-format envelope (CR-NET-7.1).</summary>
         public const int MIN_INBOUND_MESSAGE_BYTES = 10;
@@ -51,18 +56,21 @@ namespace IronGrind.Networking
         private readonly IInboundRequestDispatcher _dispatcher;
         private readonly IInboundTransportDisconnector _transport;
         private readonly ulong[] _pendingDisconnects = new ulong[PENDING_DISCONNECT_CAPACITY];
+        private readonly IClientConnectionListener _clientListener;
         private int _pendingCount;
 
-        /// <summary>Creates the core. None of the arguments may be null.</summary>
+        /// <summary>Creates the core. The first three arguments may not be null.</summary>
         /// <param name="intake">Receives each accepted message.</param>
         /// <param name="dispatcher">Receives connection changes.</param>
         /// <param name="transport">Asked to disconnect clients.</param>
+        /// <param name="clientListener">Told of added and removed clients (the outbox); null means none.</param>
         public InboundTransportAdapter(IInboundMessageIntake intake, IInboundRequestDispatcher dispatcher,
-            IInboundTransportDisconnector transport)
+            IInboundTransportDisconnector transport, IClientConnectionListener clientListener = null)
         {
             _intake = intake ?? throw new ArgumentNullException(nameof(intake));
             _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
             _transport = transport ?? throw new ArgumentNullException(nameof(transport));
+            _clientListener = clientListener;
         }
 
         /// <summary>
@@ -130,7 +138,10 @@ namespace IronGrind.Networking
             {
                 Debug.LogError($"{LOG_PREFIX} ConnectRefused: transportClientId={transportClientId} - the dispatcher did not add the connection.");
                 RequestTransportDisconnect(transportClientId);
+                return;
             }
+
+            NotifyClientAdded(transportClientId);
         }
 
         /// <summary>
@@ -160,6 +171,8 @@ namespace IronGrind.Networking
             {
                 Debug.LogError($"{LOG_PREFIX} RemoveConnectionThrew: transportClientId={transportClientId} - {ex.GetType().Name}: {ex.Message}");
             }
+
+            NotifyClientRemoved(transportClientId);
         }
 
         /// <summary>
@@ -181,12 +194,49 @@ namespace IronGrind.Networking
                 Debug.LogError($"{LOG_PREFIX} RemoveConnectionThrew: transportClientId={clientId} - {ex.GetType().Name}: {ex.Message}");
             }
 
+            NotifyClientRemoved(clientId);
+
             // Recorded before the transport call: the transport may raise its event inside the call.
             AddPending(clientId);
             if (!RequestTransportDisconnect(clientId))
             {
                 // No disconnect was requested, so no event will consume the entry.
                 RemovePending(clientId);
+            }
+        }
+
+        // The listener calls never throw and change nothing else: one error per failure.
+        private void NotifyClientAdded(ulong transportClientId)
+        {
+            if (_clientListener == null)
+            {
+                return;
+            }
+
+            try
+            {
+                _clientListener.AddClient((uint)transportClientId);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"{LOG_PREFIX} ClientListenerThrew: transportClientId={transportClientId} - {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        private void NotifyClientRemoved(ulong transportClientId)
+        {
+            if (_clientListener == null)
+            {
+                return;
+            }
+
+            try
+            {
+                _clientListener.RemoveClient((uint)transportClientId);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"{LOG_PREFIX} ClientListenerThrew: transportClientId={transportClientId} - {ex.GetType().Name}: {ex.Message}");
             }
         }
 

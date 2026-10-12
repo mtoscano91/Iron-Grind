@@ -4,7 +4,8 @@
     "references": [
         "IronGrind.Foundation",
         "IronGrind.ServerLogic",
-        "IronGrind.Client"
+        "IronGrind.Client",
+        "Unity.Netcode.Runtime"
     ],
     "includePlatforms": [
         "Editor"

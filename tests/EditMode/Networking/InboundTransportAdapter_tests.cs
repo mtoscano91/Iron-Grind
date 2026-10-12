@@ -664,6 +664,155 @@ namespace IronGrind.Tests.EditMode.Networking
             return Directory.GetParent(Application.dataPath).FullName;
         }
 
+        // =========================================================================================
+        // Client list (Networking Core Story 039).
+        // =========================================================================================
+
+        private OutboxAdapterListenerFake NewListener() => new OutboxAdapterListenerFake(_log);
+
+        [Test]
+        public void test_client_list_connect_calls_add_client_once()
+        {
+            OutboxAdapterListenerFake listener = NewListener();
+            var adapter = new InboundTransportAdapter(_intake, _dispatcher, _transport, listener);
+
+            adapter.OnClientConnected(IdSeven);
+
+            CollectionAssert.AreEqual(new[] { ClientSeven }, listener.Added);
+            Assert.AreEqual(0, listener.Removed.Count);
+            CollectionAssert.AreEqual(new[] { "Add:7", "ClientAdd:7" }, _log.Entries, "After AddConnection returned.");
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_client_list_refused_connect_adds_no_client()
+        {
+            OutboxAdapterListenerFake listener = NewListener();
+            var adapter = new InboundTransportAdapter(_intake, _dispatcher, _transport, listener);
+            _dispatcher.AddResult = false;
+            LogAssert.Expect(LogType.Error, AdapterErrorRegex("ConnectRefused", IdFive));
+
+            adapter.OnClientConnected(IdFive);
+
+            Assert.AreEqual(0, listener.Added.Count);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_client_list_disconnect_event_calls_remove_client_once()
+        {
+            OutboxAdapterListenerFake listener = NewListener();
+            var adapter = new InboundTransportAdapter(_intake, _dispatcher, _transport, listener);
+            adapter.OnClientConnected(IdSeven);
+
+            adapter.OnClientDisconnected(IdSeven);
+
+            CollectionAssert.AreEqual(new[] { ClientSeven }, listener.Removed);
+            CollectionAssert.AreEqual(new[] { "Add:7", "ClientAdd:7", "Remove:7", "ClientRemove:7" }, _log.Entries);
+        }
+
+        [Test]
+        public void test_client_list_server_disconnect_then_its_event_calls_remove_client_once()
+        {
+            OutboxAdapterListenerFake listener = NewListener();
+            var adapter = new InboundTransportAdapter(_intake, _dispatcher, _transport, listener);
+            adapter.OnClientConnected(IdSeven);
+
+            adapter.Disconnect(ClientSeven);
+            adapter.OnClientDisconnected(IdSeven);
+
+            CollectionAssert.AreEqual(new[] { ClientSeven }, listener.Removed);
+            CollectionAssert.AreEqual(new[] { "Add:7", "ClientAdd:7", "Remove:7", "ClientRemove:7", "Disconnect:7" }, _log.Entries);
+        }
+
+        [Test]
+        public void test_client_list_throwing_listener_logs_one_error_and_changes_nothing_else()
+        {
+            OutboxAdapterListenerFake listener = NewListener();
+            listener.ThrowOnAdd = true;
+            listener.ThrowOnRemove = true;
+            var adapter = new InboundTransportAdapter(_intake, _dispatcher, _transport, listener);
+            LogAssert.Expect(LogType.Error, AdapterErrorRegex("ClientListenerThrew", IdSeven));
+
+            Assert.DoesNotThrow(() => adapter.OnClientConnected(IdSeven));
+
+            CollectionAssert.AreEqual(new[] { ClientSeven }, _dispatcher.Added);
+            Assert.AreEqual(0, _transport.Disconnected.Count, "A listener exception does not disconnect the client.");
+            LogAssert.NoUnexpectedReceived();
+
+            LogAssert.Expect(LogType.Error, AdapterErrorRegex("ClientListenerThrew", IdSeven));
+            Assert.DoesNotThrow(() => adapter.OnClientDisconnected(IdSeven));
+            CollectionAssert.AreEqual(new[] { ClientSeven }, _dispatcher.Removed);
+
+            LogAssert.Expect(LogType.Error, AdapterErrorRegex("ClientListenerThrew", IdSeven));
+            Assert.DoesNotThrow(() => adapter.Disconnect(ClientSeven));
+            CollectionAssert.AreEqual(new[] { IdSeven }, _transport.Disconnected, "Disconnect still asks the transport.");
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_client_list_id_above_uint_makes_no_listener_call()
+        {
+            OutboxAdapterListenerFake listener = NewListener();
+            var adapter = new InboundTransportAdapter(_intake, _dispatcher, _transport, listener);
+            LogAssert.Expect(LogType.Error, AdapterErrorRegex("ConnectRefused", IdAboveUint));
+
+            adapter.OnClientConnected(IdAboveUint);
+            adapter.OnClientDisconnected(IdAboveUint);
+
+            Assert.AreEqual(0, listener.Added.Count);
+            Assert.AreEqual(0, listener.Removed.Count);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_client_list_adapter_is_the_disconnect_requester_of_the_outbox()
+        {
+            var adapter = new InboundTransportAdapter(_intake, _dispatcher, _transport);
+
+            IClientDisconnectRequester requester = adapter;
+            requester.Disconnect(ClientSeven);
+
+            CollectionAssert.AreEqual(new[] { "Remove:7", "Disconnect:7" }, _log.Entries);
+        }
+
+        /// <summary>A client listener that records its calls in the shared log and can throw.</summary>
+        private sealed class OutboxAdapterListenerFake : IClientConnectionListener
+        {
+            private readonly TransportAdapterCallLog _log;
+
+            public readonly List<uint> Added = new List<uint>();
+            public readonly List<uint> Removed = new List<uint>();
+
+            public bool ThrowOnAdd;
+            public bool ThrowOnRemove;
+
+            public OutboxAdapterListenerFake(TransportAdapterCallLog log)
+            {
+                _log = log;
+            }
+
+            public void AddClient(uint clientId)
+            {
+                Added.Add(clientId);
+                _log.Entries.Add("ClientAdd:" + clientId);
+                if (ThrowOnAdd)
+                {
+                    throw new InvalidOperationException("listener fake");
+                }
+            }
+
+            public void RemoveClient(uint clientId)
+            {
+                Removed.Add(clientId);
+                _log.Entries.Add("ClientRemove:" + clientId);
+                if (ThrowOnRemove)
+                {
+                    throw new InvalidOperationException("listener fake");
+                }
+            }
+        }
+
         /// <summary>A transport seam whose disconnect raises the transport's disconnect event inside the call.</summary>
         private sealed class TransportAdapterReentrantTransport : IInboundTransportDisconnector
         {

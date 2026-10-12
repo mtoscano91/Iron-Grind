@@ -2,6 +2,8 @@ using System.Collections.Generic;
 using System.Linq;
 using IronGrind.Networking;
 using NUnit.Framework;
+using UnityEngine.TestTools.Constraints;
+using Is = NUnit.Framework.Is;
 
 namespace IronGrind.Tests.EditMode.Networking
 {
@@ -206,6 +208,185 @@ namespace IronGrind.Tests.EditMode.Networking
             // Assert — pins the tuning-knob value so a future edit cannot silently drift it
             // without this test failing.
             Assert.AreEqual(8, PriorityPathQueue<string>.PRIORITY_PATH_CAP, "PRIORITY_PATH_CAP must be 8 per CR-NET-7.7.");
+        }
+
+        // -----------------------------------------------------------------------
+        // Networking Core Story 039: the allocation-free Flush(uint, List) overload
+        // must return the same messages in the same order as Flush(uint).
+        // -----------------------------------------------------------------------
+
+        private static List<string> Describe(IEnumerable<QueuedMessage<string>> messages)
+        {
+            return messages.Select(m => m.Payload + (m.IsExempt ? "!" : string.Empty)).ToList();
+        }
+
+        private static List<string> OverloadFlush(PriorityPathQueue<string> queue, uint tick)
+        {
+            var destination = new List<QueuedMessage<string>>();
+            queue.Flush(tick, destination);
+            return Describe(destination);
+        }
+
+        [Test]
+        public void FlushOverload_TwelveNonExemptOverTwoTicks_ReturnsSameMessagesAsFlushUint()
+        {
+            var reference = new PriorityPathQueue<string>();
+            var overload = new PriorityPathQueue<string>();
+            for (int i = 1; i <= 12; i++)
+            {
+                reference.Enqueue($"Msg#{i}", isExempt: false);
+                overload.Enqueue($"Msg#{i}", isExempt: false);
+            }
+
+            CollectionAssert.AreEqual(Describe(reference.Flush(100u)), OverloadFlush(overload, 100u));
+            CollectionAssert.AreEqual(Describe(reference.Flush(101u)), OverloadFlush(overload, 101u));
+        }
+
+        [Test]
+        public void FlushOverload_EightNonExemptPlusOneExempt_ReturnsSameMessagesAsFlushUint()
+        {
+            var reference = new PriorityPathQueue<string>();
+            var overload = new PriorityPathQueue<string>();
+            for (int i = 1; i <= 8; i++)
+            {
+                reference.Enqueue($"NonExempt#{i}", isExempt: false);
+                overload.Enqueue($"NonExempt#{i}", isExempt: false);
+            }
+            reference.Enqueue("Exempt", isExempt: true);
+            overload.Enqueue("Exempt", isExempt: true);
+
+            List<string> expectedFirst = Describe(reference.Flush(200u));
+            List<string> actualFirst = OverloadFlush(overload, 200u);
+
+            CollectionAssert.AreEqual(expectedFirst, actualFirst);
+            Assert.AreEqual("Exempt!", actualFirst[0]);
+            Assert.AreEqual(8, actualFirst.Count);
+            CollectionAssert.AreEqual(Describe(reference.Flush(201u)), OverloadFlush(overload, 201u));
+        }
+
+        [Test]
+        public void FlushOverload_ThreeTickSequenceWithExemptAndBacklog_ReturnsSameMessagesAsFlushUint()
+        {
+            var reference = new PriorityPathQueue<string>();
+            var overload = new PriorityPathQueue<string>();
+            void Both(string payload, bool exempt)
+            {
+                reference.Enqueue(payload, exempt);
+                overload.Enqueue(payload, exempt);
+            }
+
+            for (int i = 1; i <= 10; i++) { Both($"T1#{i}", false); }
+            Both("T1Exempt#1", true);
+            Both("T1Exempt#2", true);
+            CollectionAssert.AreEqual(Describe(reference.Flush(1u)), OverloadFlush(overload, 1u));
+
+            for (int i = 1; i <= 3; i++) { Both($"T2#{i}", false); }
+            Both("T2Exempt", true);
+            CollectionAssert.AreEqual(Describe(reference.Flush(2u)), OverloadFlush(overload, 2u));
+
+            CollectionAssert.AreEqual(Describe(reference.Flush(3u)), OverloadFlush(overload, 3u));
+            CollectionAssert.AreEqual(Describe(reference.Flush(4u)), OverloadFlush(overload, 4u));
+        }
+
+        [Test]
+        public void FlushOverload_DestinationHoldsOldContent_IsClearedFirst()
+        {
+            var queue = new PriorityPathQueue<string>();
+            queue.Enqueue("Msg#1", isExempt: false);
+            var destination = new List<QueuedMessage<string>> { new QueuedMessage<string>("Stale", false) };
+
+            queue.Flush(1u, destination);
+
+            CollectionAssert.AreEqual(new[] { "Msg#1" }, Describe(destination));
+        }
+
+        [Test]
+        public void FlushOverload_NullDestination_Throws()
+        {
+            var queue = new PriorityPathQueue<string>();
+
+            Assert.Throws<System.ArgumentNullException>(() => queue.Flush(1u, null));
+        }
+
+        [Test]
+        public void CountAndClear_ReportPendingPlusDeferredAndDiscardAll()
+        {
+            var queue = new PriorityPathQueue<string>();
+            for (int i = 1; i <= 10; i++)
+            {
+                queue.Enqueue($"Msg#{i}", isExempt: false);
+            }
+            queue.Enqueue("Exempt", isExempt: true);
+            Assert.AreEqual(11, queue.Count);
+
+            queue.Flush(1u, new List<QueuedMessage<string>>());
+            Assert.AreEqual(3, queue.Count, "Eight sent (the exempt one and seven others); three deferred.");
+
+            queue.Clear();
+            Assert.AreEqual(0, queue.Count);
+            Assert.AreEqual(0, OverloadFlush(queue, 2u).Count);
+        }
+
+        [Test]
+        public void FlushOverload_ThousandFlushesAfterReserve_AllocateNothing()
+        {
+            var queue = new PriorityPathQueue<int>();
+            queue.Reserve(16);
+            var destination = new List<QueuedMessage<int>>(16);
+            for (int i = 0; i < 20; i++)
+            {
+                queue.Enqueue(i, isExempt: i % 2 == 0);
+                queue.Enqueue(i, isExempt: false);
+                queue.Flush((uint)i, destination);
+            }
+
+            Assert.That(() =>
+            {
+                for (int i = 0; i < 1000; i++)
+                {
+                    queue.Enqueue(i, isExempt: true);
+                    queue.Enqueue(i, isExempt: false);
+                    queue.Flush((uint)i, destination);
+                }
+            }, UnityEngine.TestTools.Constraints.Is.Not.AllocatingGCMemory());
+            Assert.AreEqual(2, destination.Count);
+        }
+
+        [Test]
+        public void FlushOverload_MixedWithFlushUintOnOneInstanceOverFourTicks_MatchesAnInstanceDrivenByFlushUintOnly()
+        {
+            var reference = new PriorityPathQueue<string>();
+            var mixed = new PriorityPathQueue<string>();
+            void Both(string payload, bool exempt)
+            {
+                reference.Enqueue(payload, exempt);
+                mixed.Enqueue(payload, exempt);
+            }
+
+            // Tick 1 (Flush(uint) on the mixed instance): a backlog of 12 non-exempt and an exempt message.
+            for (int i = 1; i <= 12; i++) { Both($"T1#{i}", false); }
+            Both("T1Exempt", true);
+            List<string> expected1 = Describe(reference.Flush(1u));
+            CollectionAssert.AreEqual(expected1, Describe(mixed.Flush(1u)));
+
+            // Tick 2 (overload): more messages and another exempt one on top of the deferred backlog.
+            for (int i = 1; i <= 4; i++) { Both($"T2#{i}", false); }
+            Both("T2Exempt", true);
+            List<string> expected2 = Describe(reference.Flush(2u));
+            CollectionAssert.AreEqual(expected2, OverloadFlush(mixed, 2u));
+
+            // Tick 3 (Flush(uint) again, after the overload swapped the working lists).
+            for (int i = 1; i <= 2; i++) { Both($"T3#{i}", false); }
+            List<string> expected3 = Describe(reference.Flush(3u));
+            CollectionAssert.AreEqual(expected3, Describe(mixed.Flush(3u)));
+
+            // Tick 4 (overload): the rest of the backlog drains.
+            List<string> expected4 = Describe(reference.Flush(4u));
+            CollectionAssert.AreEqual(expected4, OverloadFlush(mixed, 4u));
+
+            Assert.AreEqual(reference.Count, mixed.Count);
+            Assert.AreEqual(8, expected1.Count, "Precondition: the first tick sent 8, with the exempt message first.");
+            Assert.AreEqual("T1Exempt!", expected1[0]);
         }
     }
 }
