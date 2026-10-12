@@ -3,8 +3,8 @@
 > **Layer**: Core
 > **GDD**: design/gdd/character-persistence.md
 > **Architecture Module**: Character Persistence — `CharacterPersistenceService : ICharacterPersistence` (async), PostgreSQL via Npgsql and Dapper
-> **Status**: Ready (created 2026-10-12; no stories yet)
-> **Stories**: Not yet created — run `/create-stories character-persistence`
+> **Status**: Ready (created 2026-10-12; 16 stories written 2026-10-12, none started — 10 Not Started pending `/story-readiness`, 6 Blocked)
+> **Stories**: 16 stories created 2026-10-12 (001–016)
 > **Manifest Version**: 2026-10-09
 
 ## Overview
@@ -68,6 +68,44 @@ This epic is complete when:
 - All Logic and Integration stories have passing test files in `tests/`
 - ADR-006 Verification Required 1–3 are recorded as run, with evidence in `production/qa/evidence/`
 
+## Stories
+
+*Part A (001–011) is plain C# and needs no database; Part B (012–016) is the PostgreSQL side. Stories 001, 002, 006, 007, 008 and 009 are the path to Enhancement Story 011.*
+
+| # | Story | Type | Status | ADR |
+|---|-------|------|--------|-----|
+| 001 | [The Persistence Contract — `ICharacterPersistence`, Result Types, `CharacterRecord`](story-001-persistence-contract.md) | Logic | Not Started (2026-10-12; `/story-readiness` pending, 3 open decisions) | ADR-006, ADR-011, ADR-012 |
+| 002 | [Record Store Seam, In-Memory Store, `CreateStub`](story-002-record-store-and-create-stub.md) | Logic | Not Started (2026-10-12; 3 open decisions) | ADR-006, ADR-011 |
+| 003 | [`LoadCharacter` — Validation, Account Check, Base Stats, Timeout](story-003-load-validation-and-base-stats.md) | Integration | Not Started (2026-10-12; 3 open decisions) | ADR-006, ADR-011 |
+| 004 | [`LoadCharacter` — Inventory, Gold, At-Cap, HP/MP Clamp, Client Events](story-004-load-inventory-gold-clamp-events.md) | Integration | Not Started (2026-10-12; 4 open decisions) | ADR-011, ADR-010 |
+| 005 | [`LoadCharacter` — Equipment Re-registration](story-005-load-equipment-reregistration.md) | Integration | Blocked (the Equipment System has no code; 3 open decisions) | ADR-011, ADR-010 |
+| 006 | [Per-Character Save Queue](story-006-per-character-save-queue.md) | Logic | Not Started (2026-10-12; 2 open decisions) | ADR-006, ADR-011 |
+| 007 | [`SaveSession` — the Step Sequence](story-007-save-session.md) | Integration | Not Started (2026-10-12; 5 open decisions) | ADR-011, ADR-006 |
+| 008 | [`SaveIrreversibleOutcome`](story-008-save-irreversible-outcome.md) | Integration | Not Started (2026-10-12; 2 open decisions) | ADR-006, ADR-011 |
+| 009 | [The Irreversible-Outcome Persist Step and the Level-Up Path](story-009-irreversible-persist-step-and-level-up.md) | Integration | Not Started (2026-10-12; 3 open decisions) | ADR-011, ADR-010 |
+| 010 | [Session-End Triggers — Clean Logout and TTL Expiry](story-010-session-end-triggers.md) | Integration | Not Started (2026-10-12; 3 open decisions) | ADR-011 |
+| 011 | [`PendingPurchase` Lifecycle on the Store Seam](story-011-pending-purchase-lifecycle.md) | Logic | Not Started (2026-10-12; 3 open decisions; no caller yet) | ADR-001, ADR-006 |
+| 012 | [Npgsql and Dapper in the Project](story-012-npgsql-and-dapper-in-the-project.md) | Integration | Blocked (the libraries and a PostgreSQL instance are the user's decision) | ADR-006, ADR-012 |
+| 013 | [SQL Migrations for `character_records` and `pending_purchases`](story-013-sql-migrations.md) | Config/Data | Blocked (needs a PostgreSQL instance to run) | ADR-006 |
+| 014 | [The Npgsql Character Record Store](story-014-npgsql-character-record-store.md) | Integration | Blocked (012, 013) | ADR-006, ADR-011 |
+| 015 | [The Npgsql Pending-Purchase Store](story-015-npgsql-pending-purchase-store.md) | Integration | Blocked (012–014) | ADR-006, ADR-001 |
+| 016 | [The Real-Database Verification Run](story-016-real-database-verification-run.md) | Integration | Blocked (012–015 and Part A) | ADR-006 |
+
+**Acceptance criteria owned outside this epic**: AC-CP-27 (enhancement commit before broadcast) — Enhancement Story 011. AC-CP-28 (respec failure with its compensating `AddGold`) and AC-CP-29 (item consumption) — the Respec and Consumable Use systems, which have no code.
+
+### Design conflicts found while writing the stories (2026-10-12)
+
+Each is an open decision in the story named; several need a line in the GDD.
+
+1. **`SaveSession`'s step order against ADR-011.** CR-CP-10 step 1 acquires the save slot, which can wait, before steps 2–6 read live state; ADR-011 Decision 3 requires the snapshot before the first `await`. A queued save then holds an expected `SaveVersion` taken before its turn: AC-CP-21 expects two queued writes to give N + 1 and N + 2, AC-CP-20 expects the second of two to conflict. — Stories 006, 007.
+2. **What `SaveIrreversibleOutcome` writes is not stated.** CR-CP-10 gives the step sequence of `SaveSession` only. — Story 008.
+3. **Gear slots on save.** The Interactions table says "reads `GearSlots` directly from record — Equipment System does not provide a save API"; CR-CP-10 step 3 says "from Equipment System". The Equipment System has no code. — Stories 005, 007.
+4. **`LoadCharacter` against ADR-011.** Steps 3 onward mutate game state after the fetch, which is the first `await`; they must run on the tick thread, in the completion callback. Whether the interface stays one method is open. — Story 003.
+5. **Mocks named by the acceptance criteria**: `IEventBus` (forbidden by ADR-010), `ISavePersistence`, `ISaveCoordinator`, `ICriticalAlertService`, `ISessionConfiguration`. None exists; the stories restate the criteria against the completion queue, the coordinator, the mutation gate and the record store seam. — Stories 006, 009, 010.
+6. **Types and APIs not in code**: `AccountID`, `ZoneID`, `ClassType`, `StatSnapshotEvent`; a critical-alert service; a Currency restore call and a balance-with-version read (`GetBalance` returns the balance only); Character Stats is keyed by `EntityID`, not `CharacterID`. — Stories 001, 003, 004, 005, 007.
+7. **A timed-out write has an unknown outcome**, and the TTL-expiry save that CR-CP-5 relies on carries an expected version that may be one behind. — Story 008.
+8. **Gold in two places during a purchase** (the Currency System's memory and `character_records.gold_balance`), and whether a purchase advances `save_version`. — Stories 011, 015.
+
 ## Next Step
 
-Run `/create-stories character-persistence` to break this epic into implementable stories.
+Run `/story-readiness production/epics/character-persistence/story-001-persistence-contract.md`. Work through the stories in order — each story's `Depends on:` line says what must be done first.
