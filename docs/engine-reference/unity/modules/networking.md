@@ -1,6 +1,6 @@
 # Unity 6.3 — Networking Module Reference
 
-**Last verified:** 2026-02-13 (general sections); 2026-10-09 for the section "NGO 2.13 — Custom Messaging, Transport and Frame Timing", researched from source and manual pages; part of it confirmed in a run on 2026-10-12 (see "Confirmed in a run, 2026-10-12")
+**Last verified:** 2026-02-13 (general sections); 2026-10-09 for the section "NGO 2.13 — Custom Messaging, Transport and Frame Timing", researched from source and manual pages; part of it confirmed in two runs on 2026-10-12 (see "Confirmed in a run, 2026-10-12" for receiving and connections, and "Confirmed in a run, 2026-10-12 — sending (Story 039)")
 **Knowledge Gap:** Unity 6 uses Netcode for GameObjects (UNet deprecated)
 
 ---
@@ -392,7 +392,7 @@ public void SendNamedMessage(string messageName, ulong clientId, FastBufferWrite
 Members: `Unreliable`, `UnreliableSequenced`, `Reliable`, `ReliableSequenced`, `ReliableFragmentedSequenced`.
 
 - ⚠️ **`UnityTransport` has no reliable-unordered delivery.** `Reliable`, `ReliableSequenced` and `ReliableFragmentedSequenced` all use the one reliable-sequenced pipeline. `Reliable` is ordered in practice.
-- Size: every delivery except `ReliableFragmentedSequenced` is capped at about 1296 bytes per message including NGO's headers (`NetworkManager.MaximumTransmissionUnitSize`, default 1296) — about 1272 bytes of payload for an unnamed message (computed from the source, not quoted anywhere). Larger messages need `ReliableFragmentedSequenced`.
+- Size: every delivery except `ReliableFragmentedSequenced` is capped at about 1296 bytes per message including NGO's headers (`NetworkManager.MaximumTransmissionUnitSize`, default 1296) — 1272 bytes of payload for an unnamed message (first computed from the source; NGO's own exception text stated "1272 bytes" in the run of 2026-10-12). Larger messages need `ReliableFragmentedSequenced`.
 - A reliable send queue that overflows **disconnects the client** ("Closing connection … as reliability guarantees can't be maintained").
 - Defaults: reliable window 64 packets; max packet queue 128; send queue sized dynamically.
 - Reliable ordered: the Unity Transport manual says the reliable sequenced stage "will guarantee the delivery and order of their packets". Exactly-once is not stated on the pages read.
@@ -446,7 +446,7 @@ Networking Core Story 038, PlayMode tests in a batch-mode Editor (6000.3.10f1), 
 - **A server with no `NetworkObject`** — a server with no player prefab, `ConnectionApproval` off and `EnableSceneManagement` off starts and exchanges unnamed messages; none of the three had to change. `ForceSamePrefabs` was left at its default (true).
 - **Two `NetworkManager`s in one process** work when each is reached through its own reference: the first enabled becomes `NetworkManager.Singleton`, the second does not replace it.
 - **`NetworkConfig` is a public field of `NetworkManager`**, read in `Awake`: when a manager is created in code, create the `GameObject` inactive, add the components, assign `NetworkConfig`, then activate it.
-- **Assemblies** — `UnityTransport` (namespace `Unity.Netcode.Transports.UTP`) is in `Unity.Netcode.Runtime`. An assembly that calls `UnityTransport.SetConnectionData` must also reference `Unity.Networking.Transport` (an overload takes a `NetworkEndpoint`; `error CS0012` without it), and `Unity.Collections` for `Allocator`.
+- **Assemblies** — `UnityTransport` (namespace `Unity.Netcode.Transports.UTP`) is in `Unity.Netcode.Runtime`. An assembly that calls `UnityTransport.SetConnectionData` must also reference `Unity.Networking.Transport` (an overload takes a `NetworkEndpoint`; `error CS0012` without it), and `Unity.Collections` for `Allocator` *(wrong on `Allocator`: see the Story 039 run below)*.
 - **Measuring allocations** — `GC.GetAllocatedBytesForCurrentThread` read 0 for every window in this Editor, an idle one included: do not use it. Use `Is.Not.AllocatingGCMemory()` or a `UnityEngine.Profiling.Recorder` on `GC.Alloc`.
 - **`CustomMessagingManager` is `null` on a `NetworkManager` that was never started** (run, same day, after the Story 038 code review). An unnamed message of 400 and of 401 bytes went through `ReliableSequenced` on loopback.
 
@@ -457,12 +457,37 @@ Read in the installed 2.13.3 source during the Story 038 code review, 2026-10-12
 - Each unnamed message gets its own `FastBufferReader` sized to that message, also when messages are batched: `Length - Position` is the payload length. `ReadBytesSafe(ref byte[] ...)` does not replace the array.
 - On a host, `OnClientConnectedCallback` is raised for the server's own id (0).
 
+### Confirmed in a run, 2026-10-12 — sending (Story 039)
+Networking Core Story 039, PlayMode tests in the Editor's Test Runner (6000.3.10f1, not batch mode, not a headless build), same versions and loopback setup as above, one client. Observations: `production/qa/evidence/networking-core-039-ngo-send-verification.md`. The run contradicted one statement of the section above (the `Allocator` reference; corrected below).
+
+- **Server → client unnamed messages arrive intact** — one 40-byte message on each of `Unreliable`, `Reliable` and `ReliableSequenced`; a 211-byte then a 21-byte `ReliableSequenced` message byte for byte and in order.
+- **Messages queued in successive frames arrived in successive frames** — eight queued in one frame all arrived in client frame 146, three queued in the next frame in frame 147, order kept (loopback, both managers in one process).
+- **Writing without `Unity.Collections` and without unsafe code** — `new FastBufferWriter(n, Allocator.Temp)` inside `using`, `TryBeginWrite(n)`, then `WriteByte` n times, compiles and works in an assembly that references `Unity.Netcode.Runtime` only. **`Allocator` needs no `Unity.Collections` reference**: the enum is in the engine's core module (the "and `Unity.Collections` for `Allocator`" of the assemblies note above is wrong on that point).
+- **The writer can be disposed as soon as `SendUnnamedMessage` returns** — every message above was sent from a `Temp` writer disposed in the same call.
+- **Oversize message, Editor** — a 1,300-byte unnamed message on `ReliableSequenced` threw `OverflowException` from `SendUnnamedMessage`: "Given message size (1300 bytes) is greater than the maximum allowed for the selected delivery method (1272 bytes). Try using ReliableFragmentedSequenced delivery method instead." Nothing was sent, nothing was logged, the client stayed connected and the server kept listening. So the Editor compiles NGO with `DEBUG`, and **1272 bytes is the payload limit NGO itself states** for an unnamed message.
+- **Send to a client id NGO does not know** (999) — no exception, no log at the default log level, nothing arrives anywhere.
+- **Server-initiated disconnect** — after `DisconnectClient(ulong)` NGO logged no error or warning on the server side, and the client was disconnected within the 60 frames waited.
+- **Allocation on the send side** — a window around the project's flush that makes 8 `SendUnnamedMessage` calls from `Temp` writers: 0 `GC.Alloc` samples over 504 messages on the main thread (control: 24 of 24). The window ends before `PostLateUpdate`, so NGO's actual send is outside it.
+- **Test framework: one `Recorder` per window** — two objects from `Recorder.Get("GC.Alloc")` are distinct references, but with one disabled and the other enabled inside the first one's window, both read 0, a control of 24 deliberate allocations included. Use one recorder: enable, run the code, disable, read `sampleBlockCount` at once. Why the two interfere was not established.
+- **Test framework: `LogAssert.NoUnexpectedReceived()` fails on an unexpected warning too** ("Unhandled log message: '[Warning] …'"), not only on errors. `LogAssert.Expect` each warning the code is meant to log, or do not call it in a test that logs warnings on purpose.
+- **A test assembly limited to the Editor platform can reference `Unity.Netcode.Runtime`** and use `NetworkDelivery` and a `null` `NetworkManager` argument without a session.
+
+Read in the installed 2.13.3 source during the Story 039 work, 2026-10-12, **not run** unless a line above says so:
+- `SendUnnamedMessage` serializes the caller's writer into NGO's own per-client send queue before it returns (`NetworkMessageManager`), which is why the caller's writer can be disposed at once.
+- The size check (`ValidateMessageSize`, `CustomMessageManager.cs`) is inside `#if DEBUG`: in a build without `DEBUG` it is compiled out. What then happens to an oversize message was not traced.
+- For an unknown client id, `GetMessageVersion` returns -1 and the message is skipped; NGO logs it only at `LogLevel.Developer`. A client id in the message manager's disconnected set is skipped the same way.
+- `SendUnnamedMessage` called on a client `NetworkManager` with an id other than the server's throws `ArgumentException`.
+- `FastBufferWriter.WriteBytesSafe` has overloads for `byte[]`, `NativeArray<byte>`, `NativeList<byte>` and `byte*`. `NativeList<T>` is in the `Unity.Collections` package assembly, so a call to `WriteBytesSafe` from an assembly without that reference is expected to fail with `error CS0012` — **not tried**. `FastBufferReader.ReadBytesSafe` has only the `byte*` and `ref byte[]` overloads, which is why it compiles there.
+- `FastBufferWriter.WriteByte` checks, in `DEBUG`, that `TryBeginWrite` reserved the bytes, and throws `OverflowException` otherwise.
+
 ### Not verified (as of 2026-10-12)
 - Any manual statement on: reader lifetime, where in the frame messages are dispatched, client id reuse, exactly-once delivery, the valid `TickRate` range.
 - That NGO catches an exception thrown by a handler: `InvokeUnnamedMessage` itself has no `try`; the catch, if any, is further up and was not exercised.
 - Managed allocations of NGO's full send and receive path.
 - Ordering and exactly-once delivery under packet loss; a disconnect caused by a send-queue overflow.
-- The same behaviour in a headless server build (the run was in the Editor).
+- The same behaviour in a headless server build (the runs were in the Editor).
+- An oversize message in a build without `DEBUG`; `WriteBytesSafe(byte[])` from an assembly without `Unity.Collections`.
+- Which delivery NGO actually used on the wire for a given `NetworkDelivery` argument (the tests saw arrival, not the pipeline).
 - Whether `NetcodeIntegrationTest` ships in the registry package and whether it can run in EditMode.
 
 ---
