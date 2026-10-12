@@ -3,7 +3,7 @@
 > **Layer**: Core
 > **GDD**: design/gdd/character-persistence.md
 > **Architecture Module**: Character Persistence — `CharacterPersistenceService : ICharacterPersistence` (async), PostgreSQL via Npgsql and Dapper
-> **Status**: In Progress (created 2026-10-12; 16 stories written 2026-10-12 — 1 Complete (001), 9 Not Started pending `/story-readiness`, 6 Blocked)
+> **Status**: In Progress (created 2026-10-12; 16 stories written 2026-10-12 — 2 Complete (001, 002), 8 Not Started pending `/story-readiness`, 6 Blocked)
 > **Stories**: 16 stories created 2026-10-12 (001–016)
 > **Manifest Version**: 2026-10-09
 
@@ -75,7 +75,7 @@ This epic is complete when:
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
 | 001 | [The Persistence Contract — `ICharacterPersistence`, Result Types, `CharacterRecord`](story-001-persistence-contract.md) | Logic | Complete (2026-10-12; 36 tests, EditMode 2523 / 2523; COMPLETE WITH NOTES) | ADR-006, ADR-011, ADR-012 |
-| 002 | [Record Store Seam, In-Memory Store, `CreateStub`](story-002-record-store-and-create-stub.md) | Logic | Not Started (2026-10-12; 3 open decisions) | ADR-006, ADR-011 |
+| 002 | [Record Store Seam, In-Memory Store, `CreateStub`](story-002-record-store-and-create-stub.md) | Logic | Complete (2026-10-12; 67 test cases, EditMode 2590 / 2590; COMPLETE WITH NOTES) | ADR-006, ADR-011 |
 | 003 | [`LoadCharacter` — Validation, Account Check, Base Stats, Timeout](story-003-load-validation-and-base-stats.md) | Integration | Not Started (2026-10-12; 3 open decisions) | ADR-006, ADR-011 |
 | 004 | [`LoadCharacter` — Inventory, Gold, At-Cap, HP/MP Clamp, Client Events](story-004-load-inventory-gold-clamp-events.md) | Integration | Not Started (2026-10-12; 4 open decisions) | ADR-011, ADR-010 |
 | 005 | [`LoadCharacter` — Equipment Re-registration](story-005-load-equipment-reregistration.md) | Integration | Blocked (the Equipment System has no code; 3 open decisions) | ADR-011, ADR-010 |
@@ -105,6 +105,8 @@ Each is an open decision in the story named; several need a line in the GDD.
 6. **Types and APIs not in code**: `AccountID`, `ZoneID`, `ClassType`, `StatSnapshotEvent`; a critical-alert service; a Currency restore call and a balance-with-version read (`GetBalance` returns the balance only); Character Stats is keyed by `EntityID`, not `CharacterID`. — Stories 001, 003, 004, 005, 007.
 7. **A timed-out write has an unknown outcome**, and the TTL-expiry save that CR-CP-5 relies on carries an expected version that may be one behind. — Story 008.
 8. **Gold in two places during a purchase** (the Currency System's memory and `character_records.gold_balance`), and whether a purchase advances `save_version`. — Stories 011, 015.
+9. **A character's name has no source.** `CharacterName` is a CR-CP-2 field (max 26 bytes UTF-8), but `CreateStub` takes no name and the CR-CP-9 stub table does not list it; no other rule writes it. The stub writes the empty string. — Story 002 (decision 5).
+10. **`CreateStub` cannot be passed to `Track` as it is.** The control manifest lists `CreateStub` among the calls tick code passes to `ITickCompletionQueue.Track`, but `Track<T>` takes a `Task<T>` and CR-CP-1 gives `CreateStub` a plain `Task`. The caller (Authentication, CR-AUTH-8 step 6) needs a wrapper, a second `Track` overload, or a result type on `CreateStub`. — found at the Story 002 code review; for the Authentication epic.
 
 ## Next Step
 
