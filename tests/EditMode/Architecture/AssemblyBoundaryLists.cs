@@ -23,6 +23,8 @@ namespace IronGrind.Tests.EditMode.Architecture
             "IronGrind.CharacterStats.ItemID",     // consumer (planned): inventory and item tooltip screens
             "IronGrind.CharacterStats.StatID",     // consumer: RespecScreenPresenter, PlayerResourceClusterPresenter
             "IronGrind.Currency.CharacterID",      // consumer (planned): client session and gold display (wire id)
+            "IronGrind.CharacterPersistence.AccountID", // consumer (planned): client login and session (wire id)
+            "IronGrind.CharacterPersistence.ZoneID",    // consumer (planned): client session and zone transition messages (wire id)
             "IronGrind.Currency.GoldTransactionReason", // consumer (planned): gold sync event display (wire enum)
 
             // Item Database: static definition data both sides load (whole folder is shared, ADR-012

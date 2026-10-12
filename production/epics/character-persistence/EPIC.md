@@ -3,7 +3,7 @@
 > **Layer**: Core
 > **GDD**: design/gdd/character-persistence.md
 > **Architecture Module**: Character Persistence — `CharacterPersistenceService : ICharacterPersistence` (async), PostgreSQL via Npgsql and Dapper
-> **Status**: Ready (created 2026-10-12; 16 stories written 2026-10-12, none started — 10 Not Started pending `/story-readiness`, 6 Blocked)
+> **Status**: In Progress (created 2026-10-12; 16 stories written 2026-10-12 — 1 Complete (001), 9 Not Started pending `/story-readiness`, 6 Blocked)
 > **Stories**: 16 stories created 2026-10-12 (001–016)
 > **Manifest Version**: 2026-10-09
 
@@ -74,7 +74,7 @@ This epic is complete when:
 
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
-| 001 | [The Persistence Contract — `ICharacterPersistence`, Result Types, `CharacterRecord`](story-001-persistence-contract.md) | Logic | Not Started (2026-10-12; `/story-readiness` pending, 3 open decisions) | ADR-006, ADR-011, ADR-012 |
+| 001 | [The Persistence Contract — `ICharacterPersistence`, Result Types, `CharacterRecord`](story-001-persistence-contract.md) | Logic | Complete (2026-10-12; 36 tests, EditMode 2523 / 2523; COMPLETE WITH NOTES) | ADR-006, ADR-011, ADR-012 |
 | 002 | [Record Store Seam, In-Memory Store, `CreateStub`](story-002-record-store-and-create-stub.md) | Logic | Not Started (2026-10-12; 3 open decisions) | ADR-006, ADR-011 |
 | 003 | [`LoadCharacter` — Validation, Account Check, Base Stats, Timeout](story-003-load-validation-and-base-stats.md) | Integration | Not Started (2026-10-12; 3 open decisions) | ADR-006, ADR-011 |
 | 004 | [`LoadCharacter` — Inventory, Gold, At-Cap, HP/MP Clamp, Client Events](story-004-load-inventory-gold-clamp-events.md) | Integration | Not Started (2026-10-12; 4 open decisions) | ADR-011, ADR-010 |
