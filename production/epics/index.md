@@ -1,6 +1,6 @@
 # Epics Index
 
-Last Updated: 2026-10-07
+Last Updated: 2026-10-12
 Engine: Unity 6.3 LTS (6000.3)
 Control Manifest Version: 2026-06-28
 
@@ -17,6 +17,7 @@ Control Manifest Version: 2026-06-28
 | [Loot Table System](loot-table-system/EPIC.md) | Core | Loot Table System | design/gdd/loot-table-system.md | Not yet created | Ready |
 | [Status Effects / Buffs](status-effects/EPIC.md) | Core | Status Effects | design/gdd/status-effects.md | Not yet created | Ready |
 | [Equipment System](equipment-system/EPIC.md) | Core | Equipment System | design/gdd/equipment-system.md | Not yet created | Ready — **design gate OQ-EQS-9 open before `/create-stories`** |
+| [Character Persistence](character-persistence/EPIC.md) | Core | Character Persistence | design/gdd/character-persistence.md | Not yet created — run `/create-stories character-persistence` | Ready (created 2026-10-12; six known gaps listed in the epic) |
 | [Enhancement System](enhancement-system/EPIC.md) | Feature | Enhancement System | design/gdd/enhancement-system.md | 15 stories (001-010 and 012-014 Complete; 011 Blocked on Character Persistence; 015 Blocked on 011) | In Progress |
 
 ## Notes
@@ -33,6 +34,6 @@ Control Manifest Version: 2026-06-28
 | Layer | Epics Created | Remaining |
 |-------|--------------|-----------|
 | Foundation | 4 / 4 (all Complete) | — |
-| Core | 7 created (Equipment added 2026-10-07) | Character Persistence, Hit Detection, Movement and Skill System have no epic yet; run `/create-stories [epic-slug]` per created epic |
+| Core | 8 created (Equipment added 2026-10-07, Character Persistence 2026-10-12) | Hit Detection, Movement and Skill System have no epic yet; run `/create-stories [epic-slug]` per created epic |
 | Feature | 1 (Enhancement, created 2026-10-07 ahead of its two gates) | Run `/create-epics layer: feature` for the rest after Core is nearly complete |
 | Presentation | 0 | Run `/create-epics layer: presentation` after Feature is nearly complete |
