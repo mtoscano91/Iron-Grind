@@ -31,6 +31,7 @@
 - [ ] **Refused import**: if `ImportSnapshot` returns false the load fails — it does not continue with an empty bag. The code returned is open decision 3.
 - [ ] **Gold (step 6)**: `GoldBalance` and `GoldVersion` are written into the Currency System as a state restore, not through `AddGold`: no gold transaction event is raised, and afterwards the balance and the version both equal the record's.
 - [ ] **AC-CP-10 (step 7)**: for a record with `Level == 60` the Leveling System reports at-cap after the load, and no level-up event is raised; for Level 59 it does not report at-cap.
+- [ ] **CurrentHP / CurrentMP restore (step 8; moved from Story 003, readiness decision 3 of 2026-10-15)**: `CurrentHP` and `CurrentMP` are written here, inside `ApplyLoadedRecord`, through `SetCurrentHP` / `SetCurrentMP` — not in step 3, because those setters clamp to the *effective* maximum, which is final only after step 4. Story 003 writes neither.
 - [ ] **Dead-on-load (step 8, EC-DR-2)**: a record with `CurrentHP <= 0` loads with `CurrentHP = MaxHP`.
 - [ ] **AC-CP-25 / F-CP-4 (step 8)**: `CurrentHP` is clamped to [0, MaxHP] and `CurrentMP` to [0, MaxMP], using the maxima as they stand after the equipment step; saved 300 of 400 loads as 300; saved 650 with a MaxHP of 500 loads as 500, with no error and no alert. The clamp runs on every load.
 - [ ] **AC-CP-8 (step 9)**: one `GoldSyncEvent` with reason `GoldTransactionReason.Other` goes to the client, carrying the restored balance and version.
@@ -44,6 +45,7 @@
 
 - `IInventoryService.ImportSnapshot`, `ExportSnapshot` and `UnregisterCharacter` exist (`src/ServerLogic/InventorySystem/IInventoryService.cs`). `LevelingService.RestoreLevelingState` exists. `GoldSyncEvent` exists as a wire type.
 - **Not in code (checked 2026-10-12)**: a Currency restore call that sets balance and version without a transaction (`ICurrencyService.GetBalance` returns the balance only); a `StatSnapshotEvent` type; the path by which a server system sends these two messages to one client — Networking Core Story 039's `IClientMessageOutbox` is that path now.
+- **Shape set by Story 003 (readiness 2026-10-15):** `LoadCharacter` only fetches and validates; every step of this story is added to the synchronous `ApplyLoadedRecord(EntityID, CharacterRecord)`, run on the tick thread from the caller's `Track` callback. A failure inside it (refused import) therefore needs a return value on `ApplyLoadedRecord` — today it is `void`; decide with open decision 3.
 - Steps 9 and 10 are sends to the client that is still connecting: check `networking-session.md` for whether they are queued before `SessionReady` or sent after it.
 
 **Open decisions for `/story-readiness`**
@@ -86,5 +88,5 @@
 
 ## Dependencies
 
-- Depends on: Story 003 (and its open decision 1); Networking Core Story 039 (`IClientMessageOutbox`) — Complete
+- Depends on: Story 003 (its open decision 1 settled 2026-10-15: fetch, then apply); Networking Core Story 039 (`IClientMessageOutbox`) — Complete
 - Unlocks: Story 016
