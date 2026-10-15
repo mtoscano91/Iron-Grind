@@ -18,6 +18,15 @@ namespace IronGrind.CharacterPersistence
         /// <summary>A stored item id is not in the Item Database.</summary>
         ItemDatabaseMiss = 4,
 
+        /// <summary>
+        /// The Item Database was not ready, so <c>IInventoryService.ImportSnapshot</c> refused the bag
+        /// (returned false). Returned by <c>ApplyLoadedRecord</c>; retry the load or reject the login.
+        /// The caller must discard the entity: the stat writes and the Leveling registration (class type,
+        /// held free points) before the import have already happened, and an inventory that failed to load
+        /// is never treated as an empty one.
+        /// </summary>
+        InventoryNotRestored = 5,
+
         /// <summary>The database failed, timed out or was cancelled.</summary>
         DatabaseError = 255,
     }

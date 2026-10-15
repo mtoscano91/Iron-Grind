@@ -3,7 +3,7 @@
 > **Layer**: Core
 > **GDD**: design/gdd/character-persistence.md
 > **Architecture Module**: Character Persistence — `CharacterPersistenceService : ICharacterPersistence` (async), PostgreSQL via Npgsql and Dapper
-> **Status**: In Progress (created 2026-10-12; 16 stories written 2026-10-12 — 3 Complete (001–003), 7 Not Started pending `/story-readiness`, 6 Blocked)
+> **Status**: In Progress (created 2026-10-12; 16 stories written 2026-10-12 — 4 Complete (001–004), 6 Not Started pending `/story-readiness`, 6 Blocked)
 > **Stories**: 16 stories created 2026-10-12 (001–016)
 > **Manifest Version**: 2026-10-09
 
@@ -77,7 +77,7 @@ This epic is complete when:
 | 001 | [The Persistence Contract — `ICharacterPersistence`, Result Types, `CharacterRecord`](story-001-persistence-contract.md) | Logic | Complete (2026-10-12; 36 tests, EditMode 2523 / 2523; COMPLETE WITH NOTES) | ADR-006, ADR-011, ADR-012 |
 | 002 | [Record Store Seam, In-Memory Store, `CreateStub`](story-002-record-store-and-create-stub.md) | Logic | Complete (2026-10-12; 67 test cases, EditMode 2590 / 2590; COMPLETE WITH NOTES) | ADR-006, ADR-011 |
 | 003 | [`LoadCharacter` — Validation, Account Check, Base Stats, Timeout](story-003-load-validation-and-base-stats.md) | Integration | Complete (2026-10-15; 82 test cases, EditMode 2671 / 2671; COMPLETE WITH NOTES) | ADR-006, ADR-011 |
-| 004 | [`LoadCharacter` — Inventory, Gold, At-Cap, HP/MP Clamp](story-004-load-inventory-gold-clamp-events.md) | Integration | Ready (readiness 2026-10-15; decisions recorded; client events moved out) | ADR-011, ADR-010 |
+| 004 | [`LoadCharacter` — Inventory, Gold, At-Cap, HP/MP Clamp](story-004-load-inventory-gold-clamp-events.md) | Integration | Complete (2026-10-15; 20 test cases, EditMode 2701 / 2701; COMPLETE WITH NOTES) | ADR-011, ADR-010 |
 | 005 | [`LoadCharacter` — Equipment Re-registration](story-005-load-equipment-reregistration.md) | Integration | Blocked (the Equipment System has no code; 3 open decisions) | ADR-011, ADR-010 |
 | 006 | [Per-Character Save Queue](story-006-per-character-save-queue.md) | Logic | Not Started (2026-10-12; 2 open decisions) | ADR-006, ADR-011 |
 | 007 | [`SaveSession` — the Step Sequence](story-007-save-session.md) | Integration | Not Started (2026-10-12; 5 open decisions) | ADR-011, ADR-006 |

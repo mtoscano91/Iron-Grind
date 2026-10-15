@@ -84,7 +84,8 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
         }
 
         private static readonly TimeSpan WAIT_LIMIT = TimeSpan.FromSeconds(5);
-        private const int APPLY_STAT_EVENTS = 16;
+        // Story 003's base writes: 11 int + 5 float stats.
+        private const int BASE_STAT_EVENTS = 16;
         private const int GEAR_INDEX = 2;
         private const uint GEAR_ITEM = 77u;
         private const byte GEAR_ENHANCEMENT = 3;
@@ -109,7 +110,9 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             _leveling = new LevelingService(new int[] { 0, 0, 999999 }, CreateClassRegistry());
             _stats = CharacterStatsFixture.CreateWithLeveling(_leveling);
             _leveling.AttachCharacterStats(_stats);
-            _service = new CharacterPersistenceService(_counting, _stats, _leveling);
+            // Story 004: ApplyLoadedRecord also needs Inventory and Currency; a permissive fake and a real CurrencySystem.
+            _service = new CharacterPersistenceService(
+                _counting, _stats, _leveling, new RecordingInventory(), new CurrencySystem());
             _entity = CharacterStatsFixture.PlayerEntityId;
             _statEvents = 0;
         }
@@ -650,31 +653,59 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
         [Test]
         public void ApplyLoadedRecord_DistinctValues_RaisesOneStatEventPerWrite()
         {
-            // Positive control for the "no write" tests: the counter does count writes.
+            // Positive control for the "no write" tests: the counter does count writes. Story 003's 16 base-stat
+            // writes are counted by StatID, apart from CurrentHP / CurrentMP (Story 004), so later steps don't move it.
             Store(MakeDistinctRecord());
             CharacterLoadResult result = Load(CHAR_A, ACCOUNT_A);
-            CountStatEvents();
+            var stats = new List<StatID>();
+            _stats.Subscribe(new IronGrind.CharacterStats.CharacterStats.StatChangedHandler((e, s) => stats.Add(s)));
 
             _service.ApplyLoadedRecord(_entity, result.Record);
 
-            Assert.AreEqual(APPLY_STAT_EVENTS, _statEvents);
+            Assert.AreEqual(BASE_STAT_EVENTS, stats.Count(s => s != StatID.CurrentHP && s != StatID.CurrentMP));
+            Assert.AreEqual(BASE_STAT_EVENTS, stats.Where(s => s != StatID.CurrentHP && s != StatID.CurrentMP).Distinct().Count());
         }
 
-        [Test]
-        public void ApplyLoadedRecord_LeavesCurrentHpAndMpUntouched()
+        [TestCase(9999999u, true)]
+        [TestCase(10000000u, false)]
+        [TestCase(uint.MaxValue, false)]
+        public void LoadCharacter_GoldBalanceAtAndAboveCap_ValidatesAsExpected(uint balance, bool expectedValid)
         {
-            _stats.SetBaseStat(_entity, StatID.MaxHP, 1000);
-            _stats.SetBaseStat(_entity, StatID.MaxMP, 1000);
-            _stats.SetCurrentHP(_entity, 300f);
-            _stats.SetCurrentMP(_entity, 200f);
-            Store(MakeDistinctRecord());
+            Assert.AreEqual(9999999u, CurrencySystem.GOLD_CAP, "the at-cap row assumes this cap");
+            CharacterRecord r = MakeRecord();
+            r.GoldBalance = balance;
+            Store(r);
+
             CharacterLoadResult result = Load(CHAR_A, ACCOUNT_A);
 
-            _service.ApplyLoadedRecord(_entity, result.Record);
-
-            Assert.AreEqual(300f, _stats.GetCurrentHP(_entity));
-            Assert.AreEqual(200f, _stats.GetCurrentMP(_entity));
+            Assert.AreEqual(expectedValid ? CharacterLoadCode.Success : CharacterLoadCode.CorruptRecord, result.Code);
         }
+
+        [TestCase("CurrentHP", float.NaN, false)]
+        [TestCase("CurrentMP", float.NaN, false)]
+        [TestCase("CurrentHP", -5f, true)]
+        [TestCase("CurrentMP", 1000000f, true)]
+        public void LoadCharacter_CurrentHpOrMp_RejectsOnlyNaN(string field, float value, bool expectedValid)
+        {
+            CharacterRecord r = MakeRecord();
+            if (field == "CurrentHP")
+            {
+                r.CurrentHP = value;
+            }
+            else
+            {
+                r.CurrentMP = value;
+            }
+
+            Store(r);
+
+            CharacterLoadResult result = Load(CHAR_A, ACCOUNT_A);
+
+            Assert.AreEqual(expectedValid ? CharacterLoadCode.Success : CharacterLoadCode.CorruptRecord, result.Code);
+        }
+
+        // Story 003's ApplyLoadedRecord_LeavesCurrentHpAndMpUntouched was removed in Story 004: step 8 now writes
+        // CurrentHP / CurrentMP; CharacterPersistence_LoadRestore_Tests covers that behaviour.
 
         [Test]
         public void ApplyLoadedRecord_HeldFreePointsAboveClassMaximum_ClampedByLevelingWithError()

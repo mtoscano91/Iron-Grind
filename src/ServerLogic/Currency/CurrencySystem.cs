@@ -37,7 +37,7 @@ namespace IronGrind.Currency
     /// concurrency, but this is a pure in-memory stand-in — see
     /// <c>docs/architecture/ADR-006-persistence-layer.md</c>).</para>
     /// </remarks>
-    public sealed class CurrencySystem : ICurrencyService
+    public sealed class CurrencySystem : ICurrencyService, ICurrencyStateRestore
     {
         /// <summary>
         /// Maximum gold balance per character. Public so other systems (e.g. Loot Table
@@ -93,6 +93,24 @@ namespace IronGrind.Currency
         {
             _balances[charId] = initialBalance;
             _versions[charId] = 0u;
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>
+        /// Character Persistence Story 004 (CR-CP-3 step 6). Sets the balance and the version together
+        /// under the per-character lock (see <see cref="GetLockFor"/>), registering the character if
+        /// new. Raises no <see cref="OnGoldSync"/> and writes no transaction. The balance is stored as
+        /// given, not clamped: the caller must pass a balance no greater than <see cref="GOLD_CAP"/>, or
+        /// <see cref="AddGold"/>'s cap arithmetic wraps. Character Persistence's load rejects a record above
+        /// the cap as corrupt before it gets here.
+        /// </remarks>
+        public void RestoreCharacter(CharacterID charId, uint balance, uint version)
+        {
+            lock (GetLockFor(charId))
+            {
+                _balances[charId] = balance;
+                _versions[charId] = version;
+            }
         }
 
         /// <inheritdoc/>

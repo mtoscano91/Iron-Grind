@@ -33,7 +33,7 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
         public void CharacterLoadCode_ValuesPinned()
         {
             AssertEnum(typeof(CharacterLoadCode), ("Success", 0), ("CharacterNotFound", 1), ("AccountMismatch", 2),
-                ("CorruptRecord", 3), ("ItemDatabaseMiss", 4), ("DatabaseError", 255));
+                ("CorruptRecord", 3), ("ItemDatabaseMiss", 4), ("InventoryNotRestored", 5), ("DatabaseError", 255));
         }
 
         [Test]

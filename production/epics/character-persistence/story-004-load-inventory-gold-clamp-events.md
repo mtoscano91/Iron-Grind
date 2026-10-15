@@ -1,7 +1,7 @@
 # Story 004: `LoadCharacter` — Inventory, Gold, At-Cap, HP/MP Clamp
 
 > **Epic**: Character Persistence
-> **Status**: Ready — `/story-readiness` 2026-10-15 (NEEDS WORK → decisions taken, see "Readiness decisions")
+> **Status**: Complete — 2026-10-15 (COMPLETE WITH NOTES; see Completion Notes)
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-09
@@ -89,7 +89,7 @@
 **Story Type**: Integration
 **Required evidence**: `tests/EditMode/CharacterPersistence/CharacterPersistence_LoadRestore_tests.cs` — must exist and pass.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 20 cases (12 `[Test]`, 8 `[TestCase]`), EditMode 2701 / 2701 (batch mode, 2026-10-15)
 
 ---
 
@@ -97,3 +97,30 @@
 
 - Depends on: Story 003 (Complete)
 - Unlocks: Story 016
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-10-15
+**Criteria**: 10/10 passing (nine by automated test; "Doc comments" by reading)
+**Test Evidence**: Integration — `tests/EditMode/CharacterPersistence/CharacterPersistence_LoadRestore_tests.cs`, 20 cases (12 `[Test]`, 8 `[TestCase]`); also `tests/EditMode/Currency/Currency_StateRestore_tests.cs` (4) and 7 new cases in `CharacterPersistence_LoadCore_tests.cs`; EditMode 2701 / 2701 (batch mode)
+**Code Review**: Complete — `/code-review` 2026-10-15 (`unity-specialist`, `qa-tester`): CHANGES REQUIRED; "fix all" applied and re-run
+**Gates**: QL-TEST-COVERAGE and LP-CODE-REVIEW skipped — lean mode
+
+**Files**: `src/ServerLogic/Currency/ICurrencyStateRestore.cs` (new), `src/ServerLogic/Currency/CurrencySystem.cs` (`RestoreCharacter`), `src/ServerLogic/CharacterPersistence/CharacterLoadCode.cs` (`InventoryNotRestored = 5`), `src/ServerLogic/CharacterPersistence/CharacterPersistenceService.cs` (5-argument constructor; `ApplyLoadedRecord` returns `CharacterLoadCode`; inventory, gold, HP / MP; gold-cap and NaN checks in `IsInRange`); tests: the LoadRestore file, `CharacterPersistenceTestFakes.cs` (shared `RecordingInventory`), `Currency_StateRestore_tests.cs`; edited: the Story 001 contract test (enum pin), the Story 003 LoadCore file (SetUp, the stat-event control counted by `StatID`, gold-cap and NaN cases; `ApplyLoadedRecord_LeavesCurrentHpAndMpUntouched` deleted — its intent is now the HP/MP-at-import probe).
+
+**Deviations (advisory, accepted by the user 2026-10-15)**
+1. CR-CP-3 steps 9–10 and AC-CP-8 / AC-CP-9 not implemented — moved to the session handshake (readiness decision 2; epic design conflict 12).
+2. `CharacterLoadCode.InventoryNotRestored = 5` is not in CR-CP-1 (design conflict 13).
+3. Beyond CR-CP-3 step 3: `GoldBalance > CurrencySystem.GOLD_CAP` and a NaN `CurrentHP` / `CurrentMP` give `CorruptRecord` (found at code review).
+4. A refused import, or an exception part-way through `ApplyLoadedRecord`, leaves the stat writes and the Leveling registration in place; nothing rolls back — the caller discards the entity.
+5. `RestoreCharacter` does not clamp the balance; it relies on its caller (the load rejects above-cap records first).
+6. Dead-on-load against an effective MaxHP that differs from the base is not exercised (no gear before Story 005) — recorded in Story 005 as a test obligation.
+
+**For later stories**
+- Story 005: insert step 4 between the stat writes and the inventory import inside `ApplyLoadedRecord`; return `ItemDatabaseMiss` through its return value; the dead-on-load test obligation above.
+- Authentication / zone spawn (the caller): track `LoadCharacter`'s task, then call `ApplyLoadedRecord` and discard the entity on any code other than `Success` / `ItemDatabaseMiss`; deliver gold and stats through the session handshake (AC-CP-8 / AC-CP-9).
+- GDD: lines for epic design conflicts 12 and 13.
+
+**Tech debt logged**: none (user's choice)
