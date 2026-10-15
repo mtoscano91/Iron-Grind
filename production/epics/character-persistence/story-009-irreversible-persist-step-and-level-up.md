@@ -1,11 +1,11 @@
 # Story 009: The Irreversible-Outcome Persist Step and the Level-Up Path
 
 > **Epic**: Character Persistence
-> **Status**: Not Started — written 2026-10-12; `/story-readiness` pending (3 open decisions, listed below)
+> **Status**: Ready — 2026-10-15 (`/story-readiness`: the 3 open decisions decided, scope cut to the persist step proven with a test caller; the level-up wiring moved to a Leveling follow-up story)
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-09
-> **Estimate**: 8 hours (provisional — confirm at `/story-readiness`)
+> **Estimate**: 5 hours
 
 ## Context
 
@@ -16,24 +16,36 @@
 **ADR Decision Summary**: no production caller of `SaveIrreversibleOutcome` awaits it or uses the synchronous sequencer; each goes through `IIrreversibleOutcomeCoordinator.Begin`, whose `startWrite` argument is the persistence call.
 
 **Engine**: Unity 6.3 LTS | **Risk**: LOW
-**Engine Notes**: none.
+**Engine Notes**: none — no engine API involved.
 
 **Control Manifest Rules (this layer)**:
 - Required: tick code passes the task of a persistence call, in the same statement, to `ITickCompletionQueue.Track` — ADR-011
 - Forbidden: `await`, `.Result`, `.Wait()`, `GetResult()`, `ContinueWith` in tick-driven code — ADR-011
 - Forbidden: a central EventBus — ADR-010
 
+**Performance**: no tick-time impact expected — the write runs off the tick thread; the persist step adds two delegate allocations per irreversible outcome.
+
+---
+
+## Decisions (`/story-readiness`, 2026-10-15)
+
+1. **The level-up wiring is not in this story.** The only caller of `NotifyExperienceCrossedThreshold` is `CharacterStats.AddExperience` (`CharacterStats.cs:1010`), synchronously inside an XP gain; moving it behind the coordinator edits two Complete epics (Leveling, Character Stats). This story delivers the persist step and proves AC-CP-13 / 14 / 17 through the coordinator with a **test caller**. The wiring is a Leveling follow-up story (see Out of Scope).
+2. **What reverts a level-up — moved with the wiring.** No revert exists today: `LevelingStateSnapshot` holds only `HeldFreePoints`, `RestoreLevelingState` only clamps, and `ExecuteLevelUpSequence` writes Level, the auto-allocated base stats, held points, the derived stats and CurrentHP / CurrentMP (CR-2.7). A pre-level-up capture and restore of all of these is the follow-up story's work. Here, the test caller captures and restores its own values.
+3. **OQ-CP-1 stays open; `DisconnectReason.Other` is kept.** The shared `IrreversibleWriteFailureProtocol` already uses `Other`; promoting it touches every irreversible-outcome caller and is a pre-launch item.
+
+Two questions found at readiness also go to the follow-up story, since they only arise with the real level-up path: what "Experience at its pre-level-up value" means in AC-CP-14 (before or after the triggering XP gain), and what happens to an XP gain that crosses the next threshold while a level-up write is in flight (`Begin` returns `RejectedWriteInFlight`; `AddExperience` does not check the gate).
+
 ---
 
 ## Acceptance Criteria
 
-*The GDD's criteria name an `ISavePersistence` mock, an `IEventBus` mock, an `ICriticalAlertService` spy and an `ISessionConfiguration`. None exists, and ADR-010 forbids an event bus. They are restated here against what exists: a controllable fake of `ICharacterPersistence` (or the in-memory store with a held operation), the level-up event of `LevelingService`, the coordinator's own callbacks, and a log assertion for the alert.*
+*The GDD's criteria name an `ISavePersistence` mock, an `IEventBus` mock, an `ICriticalAlertService` spy and an `ISessionConfiguration`. None exists, and ADR-010 forbids an event bus. They are restated here against what exists: a controllable fake of `ICharacterPersistence` (or the in-memory store with a held operation), the coordinator's own delegates, and a log assertion for the alert. The level-up is played by a test caller that applies a level-up in memory in `computeAndApplyOutcome` and restores its captured values in `revertOnFailure`.*
 
-- [ ] **Persist step**: one place builds the coordinator's `startWrite` and `isSuccess` arguments from `ICharacterPersistence.SaveIrreversibleOutcome` for a given trigger; `isSuccess` is true for `CharacterSaveResult.Success` only.
-- [ ] **AC-CP-13**: a level-up whose write is held open delivers no level-up outcome to the client; when the write is released as `Success`, the outcome is delivered on the next tick's drain.
-- [ ] **AC-CP-14**: a level-up from Level 10 whose write fails — the outcome is not delivered; Level and Experience are back at their pre-level-up values; the client is disconnected with `DisconnectReason.Other`; one critical alert is logged; the session is handed to `preserveSessionForTtl` with `SESSION_TTL_SECONDS`, not torn down. Each happens exactly once.
+- [ ] **Persist step**: one place builds the coordinator's `startWrite` and `isSuccess` arguments from `ICharacterPersistence.SaveIrreversibleOutcome` for a given `IrreversibleOutcomeTrigger`; `isSuccess` is true for `CharacterSaveResult.Success` only. The persist step does not await or block.
+- [ ] **AC-CP-13**: a test-caller level-up whose write is held open delivers no outcome; when the write is released as `Success`, the outcome is delivered on the next tick's drain.
+- [ ] **AC-CP-14**: a test-caller level-up from Level 10 whose write returns `DatabaseError` — the outcome is not delivered; the caller's revert runs, leaving Level 10 and the test caller's captured Experience; the client is disconnected with `DisconnectReason.Other`; one critical alert is logged; the session is handed to `preserveSessionForTtl` with `SESSION_TTL_SECONDS`, not torn down. Each happens exactly once.
 - [ ] **The same for a fault, a cancellation and a watchdog timeout** of the write, and for `ConcurrencyConflict` and `CharacterNotFound`.
-- [ ] **AC-CP-17**: two level-ups granted in one tick make one `SaveIrreversibleOutcome(LevelUp)` call, with the final level in the record.
+- [ ] **AC-CP-17**: a test caller that applies two level-ups in one `computeAndApplyOutcome` makes one `SaveIrreversibleOutcome(LevelUp)` call, and the written record holds the final level.
 - [ ] **Gate**: the character's mutation gate is closed from `Begin` until the result has been handled, and open afterwards on both branches.
 - [ ] **No await**: a source search of the files this story adds or edits outside the persistence layer finds no `await`, `.Result`, `.Wait(`, `GetResult(` or `ContinueWith`.
 - [ ] **After the failure**: the rolled-back state is what a later `SaveSession(SessionTTLExpiry)` writes (shown with the in-memory store).
@@ -42,21 +54,18 @@
 
 ## Implementation Notes
 
-- `IIrreversibleOutcomeCoordinator.Begin<TOutcome, TResult>` exists (`src/ServerLogic/Networking/IrreversibleOutcome/`); its `startWrite` is `Func<TOutcome, CancellationToken, Task<TResult>>`. `LevelingService` raises `OnLevelUp` and has `ExecuteLevelUpSequence`; it does not use the coordinator today (read 2026-10-12, by grep only).
-- The rollback is the caller's (CR-CP-5 step 2): the Leveling System reverts Level, Experience and the derived stats.
+- `IIrreversibleOutcomeCoordinator.Begin<TOutcome, TResult>` exists (`src/ServerLogic/Networking/IrreversibleOutcome/`); its `startWrite` is `Func<TOutcome, CancellationToken, Task<TResult>>`, and its failure steps go through `IrreversibleWriteFailureProtocol` (`Other`, critical alert, `SESSION_TTL_SECONDS`).
+- `ICharacterPersistence.SaveIrreversibleOutcome(CharacterID, IrreversibleOutcomeTrigger, CancellationToken)` returns `Task<CharacterSaveResult>` (Story 008). The persist step adapts it: `startWrite = (_, token) => persistence.SaveIrreversibleOutcome(charId, trigger, token)`, `isSuccess = r => r == CharacterSaveResult.Success`. Enhancement Story 011 is its next caller.
+- The rollback is the caller's (CR-CP-5 step 2).
 - AC-CP-27 (enhancement) is Enhancement Story 011. AC-CP-28 (respec, with its compensating `AddGold`) and AC-CP-29 (item consumption) belong to systems with no code; this story does not cover them.
-
-**Open decisions for `/story-readiness`**
-
-1. **Does the level-up path belong here.** Moving `LevelingService`'s level-up behind the coordinator edits the Leveling System (a Complete epic) from this epic. The alternative: this story delivers the persist step and proves AC-CP-13 / 14 / 17 with a test caller, and a Leveling story does the wiring.
-2. **What reverts a level-up.** Whether `LevelingService` can restore the pre-level-up state today, and the HP/MP restore of CR-2.7 that a level-up applies.
-3. **OQ-CP-1** (GDD, recommended): a dedicated `DisconnectReason.PersistenceFailure` in place of `Other` — a wire-visible change to `DisconnectReason`.
 
 ---
 
 ## Out of Scope
 
 - Story 008: the save itself
+- **The real level-up path** — a Leveling follow-up story (not yet written): `LevelingService`'s level-up behind the coordinator, the pre-level-up capture and revert (decision 2), the AC-CP-14 Experience reading and the in-flight XP-gain rule (above). AC-CP-13 / 14 / 17 are re-proven there against `LevelingService`.
+- OQ-CP-1 (`DisconnectReason.PersistenceFailure`)
 - Enhancement Story 011 (AC-CP-27); the Respec and Consumable Use systems (AC-CP-28, AC-CP-29)
 - Story 010: the TTL-expiry save that follows a failure
 
@@ -64,10 +73,10 @@
 
 ## QA Test Cases
 
-- **Held write** — Given a level-up with the write held, Then no outcome delivered across three ticks; When released as Success, Then delivered on the next drain.
-- **Failed write** — Given Level 10 and a failing write, Then Level 10 and the old Experience, one disconnect with `Other`, one critical log, one `preserveSessionForTtl(…, 300)`, zero deliveries.
+- **Held write** — Given a test-caller level-up with the write held, Then no outcome delivered across three ticks; When released as Success, Then delivered on the next drain.
+- **Failed write** — Given Level 10 and a write returning `DatabaseError`, Then Level 10 and the captured Experience, one disconnect with `Other`, one critical log, one `preserveSessionForTtl(…, 300)`, zero deliveries.
 - **Each failure kind** — `ConcurrencyConflict`, `CharacterNotFound`, `DatabaseError`, fault, cancellation, watchdog timeout → the same five effects, once.
-- **Two level-ups, one tick** — Then the persistence fake records one call, and the written Level is the final one.
+- **Two level-ups, one outcome** — Then the persistence fake records one call with `LevelUp`, and the written Level is the final one.
 - **Gate** — Closed during the write; open after success and after failure.
 - **Edge** — a write already complete when tracked is handled by the next drain.
 
@@ -85,4 +94,4 @@
 ## Dependencies
 
 - Depends on: Story 008; Networking Core's coordinator, completion queue and mutation gate — Complete
-- Unlocks: Enhancement Story 011 (with Story 008)
+- Unlocks: Enhancement Story 011 (with Story 008); the Leveling follow-up story (the real level-up path)
