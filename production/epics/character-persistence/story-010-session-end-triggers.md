@@ -41,6 +41,7 @@
 
 ## Implementation Notes
 
+- **From Story 007 readiness (2026-10-15):** the service keeps a session table (`CharacterID → { EntityID, identity fields, gear, SaveVersion }`, filled by `ApplyLoadedRecord`). Releasing a session after its save must remove the character's entry (a new service method — decide its name here), alongside `Inventory.UnregisterCharacter`.
 - `SESSION_TTL_SECONDS = 300` is declared in `CommitBeforeBroadcastSequencer`; the connection state machine and the ghost-session cleanup hold the session side (`src/ServerLogic/Networking/ConnectionStateMachine/`, `GhostSession/`). Read them before deciding where the trigger lives.
 - CR-CP-11 keeps the two reasons apart: a failed logout save is the caller's to retry; a failed TTL save releases anyway — the player's unsaved session state is lost, which is why the save logs a critical error.
 - The `ZoneClosed` reason is called by Zone Instancing's teardown (CR-ZI-12 step 2), which has no code; this story does not add that caller.
