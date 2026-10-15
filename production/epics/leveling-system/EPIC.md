@@ -3,7 +3,7 @@
 > **Layer**: Core
 > **GDD**: design/gdd/leveling-system.md
 > **Architecture Module**: Leveling
-> **Status**: Complete (15/15 — Story 014, the ADR-012 client read model, and Story 015, the assembly move, Complete 2026-10-08). Stories 001–013 Complete — Story 010 closed 2026-09-25 (economy-designer sign-off granted on the array/curve; the "205h/per-tier mob XP" sub-clause split out to TD-039 pending unpopulated mob-XP data)
+> **Status**: In Progress (15/16 — Story 016, the level-up behind the irreversible-outcome coordinator, Ready 2026-10-15; handed off by Character Persistence Story 009. Previously Complete 15/15: Story 014, the ADR-012 client read model, and Story 015, the assembly move, Complete 2026-10-08). Stories 001–013 Complete — Story 010 closed 2026-09-25 (economy-designer sign-off granted on the array/curve; the "205h/per-tier mob XP" sub-clause split out to TD-039 pending unpopulated mob-XP data)
 > **Stories**: 13 stories created (001–013; Story 007 Complete with AC-LS-18b sub-case partially Blocked on OQ-LS-3; Story 010 Complete 2026-09-25); Story 014 created and Complete 2026-10-08
 
 ## Overview
@@ -68,6 +68,7 @@ This epic is complete when:
 | 013 | [HUD/UI Display & Manual Verification](story-013-hud-ui-display.md) | Visual/Feel | Complete | ADR-005 |
 | 014 | [Client Read Model — the HUD Stops Referencing `LevelingService`](story-014-client-read-model.md) | Integration | Complete (2026-10-08) | ADR-012 |
 | 015 | [Move Leveling to the Server Assembly](story-015-server-assembly-move.md) | Integration | Complete (2026-10-08) | ADR-012 |
+| 016 | [Level-Up Behind the Irreversible-Outcome Coordinator](story-016-level-up-commit-before-broadcast.md) | Integration | Ready (2026-10-15) | ADR-011, ADR-010 |
 
 ## Next Step
 

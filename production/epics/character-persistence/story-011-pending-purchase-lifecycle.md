@@ -1,7 +1,7 @@
 # Story 011: `PendingPurchase` Lifecycle on the Store Seam
 
 > **Epic**: Character Persistence
-> **Status**: Not Started — written 2026-10-12; `/story-readiness` pending (3 open decisions, listed below). Its only caller, the NPC Shop, has no code: this story is not on the path to Enhancement Story 011 and can wait.
+> **Status**: Deferred — `/story-readiness` 2026-10-15: NEEDS WORK (3 open decisions, provisional estimate, no performance note). Deferred until the NPC Shop epic, its only caller. Recommended answer to decision 1: in-memory Currency is the authority during a session; the store's `BeginPurchase` / `RefundPurchase` also write the stored balance in the same transaction but do not advance `save_version`, and the caller mirrors them with `TrySpendGold` / `AddGold(CompensatingRefund)` in memory, so the next `SaveSession` writes the same value — needs an ADR-001 amendment (it orders "record, then a separate debit").
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-09
