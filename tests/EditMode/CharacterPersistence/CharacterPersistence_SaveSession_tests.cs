@@ -847,7 +847,8 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             Assert.IsFalse(task.IsCanceled);
             Assert.AreEqual(1, _counting.UpdateCount);
 
-            // Nothing was torn down and the version did not move: the next save succeeds.
+            // Nothing was torn down: the next save re-reads the stored version (the outcome was unknown) and succeeds.
+            LogAssert.Expect(LogType.Warning, new Regex(@"re-read the stored SaveVersion"));
             Assert.AreEqual(CharacterSaveResult.Success, Complete(_rig.Service.SaveSession(CHAR_A, reason, CancellationToken.None)));
             LogAssert.NoUnexpectedReceived();
         }
@@ -870,10 +871,10 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             LogAssert.NoUnexpectedReceived();
         }
 
-        // R3: pins and documents the stale-version behaviour (ADR-011 Decision 2, epic design conflict 7; recovery is
-        // Stories 008 and 010). The abandoned update commits after the timeout, so the entry is behind the stored row.
+        // R3, updated by Story 008 (CR-CP-6, EC-CP-5): the abandoned update commits after the timeout, so the entry is
+        // behind the stored row; the unknown-version mark makes the next save re-read the stored version instead of conflicting.
         [Test]
-        public void SaveSession_TimedOutUpdateLaterCommits_StaleEntryGivesConflictUntilReload_BehaviourPinnedAndDocumented()
+        public void SaveSession_TimedOutUpdateLaterCommits_NextSaveReReadsTheStoredVersionAndSucceeds()
         {
             Rig rig = BuildRig(TimeSpan.FromMilliseconds(100), null);
             CharacterRecord loaded = SeedAndLoad(rig, MakeSeed());
@@ -886,12 +887,12 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             Assert.AreEqual(CharacterSaveResult.DatabaseError, timedOut);
             release();
             WaitUntil(() => Stored().SaveVersion == n + 1u, "the abandoned update to commit");
-            LogAssert.Expect(LogType.Warning, new Regex(@"CR-CP-6.*EC-CP-4"));
+            LogAssert.Expect(LogType.Warning, new Regex(@"re-read the stored SaveVersion"));
 
             CharacterSaveResult next = Complete(rig.Service.SaveSession(CHAR_A, SessionEndReason.CleanLogout, CancellationToken.None));
 
-            Assert.AreEqual(CharacterSaveResult.ConcurrencyConflict, next, "The entry still expects n, the stored row is n + 1.");
-            Assert.AreEqual(n + 1u, Stored().SaveVersion);
+            Assert.AreEqual(CharacterSaveResult.Success, next, "The entry expected n, the stored row was n + 1: the mark made the save re-read it.");
+            Assert.AreEqual(n + 2u, Stored().SaveVersion);
             LogAssert.NoUnexpectedReceived();
         }
 

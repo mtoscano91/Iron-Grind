@@ -1,7 +1,7 @@
 # Story 008: `SaveIrreversibleOutcome`
 
 > **Epic**: Character Persistence
-> **Status**: Ready — written 2026-10-12; both open decisions settled at `/story-readiness` 2026-10-15 (GDD lines written); TR-IDs registered 2026-10-15; readiness re-run 2026-10-15 (NEEDS WORK: two stale lines, fixed)
+> **Status**: Complete — 2026-10-15 (COMPLETE WITH NOTES; see Completion Notes)
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-09
@@ -27,22 +27,22 @@
 
 ## Acceptance Criteria
 
-- [ ] **Success**: with the store available, `SaveIrreversibleOutcome(id, trigger, ct)` returns `Success` for each of the four triggers; the stored `SaveVersion` is the previous value + 1, and the stored record holds the state the caller had applied in memory when it made the call.
-- [ ] **AC-CP-32 (the whole record)**: after gold, inventory and `CurrentHP` changed since the load with no save, `SaveIrreversibleOutcome(id, LevelUp, ct)` makes one store update whose record holds all 23 fields as they were in memory at the call (the new level, gold balance and version, inventory, HP); the record is the same for every trigger.
-- [ ] **AC-CP-21 (version at its turn)**: two `SaveIrreversibleOutcome` calls for one character, the first held open, both return `Success` with the stored `SaveVersion` N + 1 then N + 2; the expected version is read from the session entry at the write's turn in the queue.
-- [ ] **Snapshot before the first await**: a change to game state made after the call returns its task is not in the written record.
-- [ ] **The task completes only after the store has confirmed**: with the store held open the task is not complete; it completes when the store is released.
-- [ ] **AC-CP-19 (in-memory store)**: with the row's `SaveVersion` advanced behind the service before the write, the result is `ConcurrencyConflict` and exactly one CRITICAL log is written. No retry.
-- [ ] **Store failure**: a faulting store gives `DatabaseError`; the task itself does not fault.
-- [ ] **Timeout**: a store update not complete after `PERSISTENCE_WRITE_TIMEOUT_SECONDS` gives `DatabaseError` (injected short timeout).
-- [ ] **Cancellation**: when the caller's token is cancelled (the watchdog), the task completes with `DatabaseError` and does not fault or complete as cancelled (the same as `SaveSession`); the service's own state for that character stays usable.
-- [ ] **AC-CP-33 (unknown outcome that committed)**: an irreversible write times out (injected short timeout) but the store commits it (N → N + 1); the in-memory state is rolled back; then `SaveSession(id, SessionTTLExpiry, ct)` returns `Success`, the stored record holds the rolled-back state, `SaveVersion` = N + 2, one WARNING for the re-read, no CRITICAL from the second call.
-- [ ] **AC-CP-34 (unknown outcome that did not commit)**: the same, but the timed-out write never commits: `SaveSession` returns `Success`, `SaveVersion` = N + 1, one WARNING for the re-read.
-- [ ] **The mark (CR-CP-6)**: a `DatabaseError` after the store update started (timeout, cancel, store fault) marks the version unknown, for both save methods; the next write fetches the stored `SaveVersion` at its turn; a fetch failure gives `DatabaseError` with nothing written and the mark kept; `Success` clears the mark; a `ConcurrencyConflict`, and a save cancelled while still waiting in the queue, do not set it.
-- [ ] **Unknown character**: `CharacterNotFound` without a store call.
-- [ ] **Queue (CR-CP-7)**: a `SaveSession` issued while an irreversible write is in flight starts its store operation only after it.
-- [ ] **Latency log**: ≥ 50 ms a warning, ≥ 100 ms a critical alert (injected clock).
-- [ ] **The method disconnects no one and reverts nothing**: CR-CP-5's protocol belongs to the caller.
+- [x] **Success**: with the store available, `SaveIrreversibleOutcome(id, trigger, ct)` returns `Success` for each of the four triggers; the stored `SaveVersion` is the previous value + 1, and the stored record holds the state the caller had applied in memory when it made the call.
+- [x] **AC-CP-32 (the whole record)**: after gold, inventory and `CurrentHP` changed since the load with no save, `SaveIrreversibleOutcome(id, LevelUp, ct)` makes one store update whose record holds all 23 fields as they were in memory at the call (the new level, gold balance and version, inventory, HP); the record is the same for every trigger.
+- [x] **AC-CP-21 (version at its turn)**: two `SaveIrreversibleOutcome` calls for one character, the first held open, both return `Success` with the stored `SaveVersion` N + 1 then N + 2; the expected version is read from the session entry at the write's turn in the queue.
+- [x] **Snapshot before the first await**: a change to game state made after the call returns its task is not in the written record.
+- [x] **The task completes only after the store has confirmed**: with the store held open the task is not complete; it completes when the store is released.
+- [x] **AC-CP-19 (in-memory store)**: with the row's `SaveVersion` advanced behind the service before the write, the result is `ConcurrencyConflict` and exactly one CRITICAL log is written. No retry.
+- [x] **Store failure**: a faulting store gives `DatabaseError`; the task itself does not fault.
+- [x] **Timeout**: a store update not complete after `PERSISTENCE_WRITE_TIMEOUT_SECONDS` gives `DatabaseError` (injected short timeout).
+- [x] **Cancellation**: when the caller's token is cancelled (the watchdog), the task completes with `DatabaseError` and does not fault or complete as cancelled (the same as `SaveSession`); the service's own state for that character stays usable.
+- [x] **AC-CP-33 (unknown outcome that committed)**: an irreversible write times out (injected short timeout) but the store commits it (N → N + 1); the in-memory state is rolled back; then `SaveSession(id, SessionTTLExpiry, ct)` returns `Success`, the stored record holds the rolled-back state, `SaveVersion` = N + 2, one WARNING for the re-read, no CRITICAL from the second call.
+- [x] **AC-CP-34 (unknown outcome that did not commit)**: the same, but the timed-out write never commits: `SaveSession` returns `Success`, `SaveVersion` = N + 1, one WARNING for the re-read.
+- [x] **The mark (CR-CP-6)**: a `DatabaseError` after the store update started (timeout, cancel, store fault) marks the version unknown, for both save methods; the next write fetches the stored `SaveVersion` at its turn; a fetch failure gives `DatabaseError` with nothing written and the mark kept; `Success` clears the mark; a `ConcurrencyConflict`, and a save cancelled while still waiting in the queue, do not set it.
+- [x] **Unknown character**: `CharacterNotFound` without a store call.
+- [x] **Queue (CR-CP-7)**: a `SaveSession` issued while an irreversible write is in flight starts its store operation only after it.
+- [x] **Latency log**: ≥ 50 ms a warning, ≥ 100 ms a critical alert (injected clock).
+- [x] **The method disconnects no one and reverts nothing**: CR-CP-5's protocol belongs to the caller.
 
 ---
 
@@ -89,7 +89,7 @@
 **Story Type**: Integration
 **Required evidence**: `tests/EditMode/CharacterPersistence/CharacterPersistence_SaveIrreversible_tests.cs` — must exist and pass.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 42 cases (34 `[Test]`, 8 `[TestCase]`), all passing
 
 ---
 
@@ -97,3 +97,18 @@
 
 - Depends on: Stories 002, 006, 007
 - Unlocks: Story 009; **Enhancement Story 011** (the real `SaveIrreversibleOutcome`)
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-10-15
+**Criteria**: 16/16 passing (all by automated test; "disconnects no one, reverts nothing" also by reading)
+**Test Evidence**: Integration — `tests/EditMode/CharacterPersistence/CharacterPersistence_SaveIrreversible_tests.cs`, 42 cases (34 `[Test]`, 8 `[TestCase]`), EditMode 2815 / 2815 (batch mode, run twice)
+**Code Review**: Complete — `/code-review` 2026-10-15 (`unity-specialist`, `qa-tester`): APPROVED WITH SUGGESTIONS; "fix all" applied and re-run (35 → 42 cases): a reload while a write is in flight advances / marks the new session entry when it holds the expected version; `WriteAsync` split under 40 lines (log text and order unchanged); clock reads guarded; `ICharacterPersistence.SaveIrreversibleOutcome` doc written; edge-case tests G1–G5.
+**Deviations** (advisory):
+- `SaveSession` now re-reads the stored version after an unknown outcome instead of conflicting until reload (the story's decision 2). Two Story 007 tests updated (R3 renamed `SaveSession_TimedOutUpdateLaterCommits_NextSaveReReadsTheStoredVersionAndSucceeds`); the Story 002 placeholder `CharacterPersistenceService_SaveIrreversibleOutcome_ReturnsFaultedTaskNamingStory008` removed.
+- A `SaveSession` whose entry is removed before its turn still writes with its call-time version (pinned by `Test_SessionSaveWithEntryRemovedAtItsTurn_WritesWithCallTimeVersion`); an irreversible write gives `CharacterNotFound`. Release semantics belong to Story 010.
+- A `ConcurrencyConflict` after a re-read keeps the unknown-version mark; only `Success` clears it (the GDD is silent; conservative; pinned by `Test_ReReadThenConflict_MarkKeptNextWriteFetchesAgain`).
+**Out-of-list files**: `CharacterPersistence_SaveSession_tests.cs`, `CharacterPersistence_RecordStore_tests.cs` (above); `ICharacterPersistence.cs` (doc comment only).
+**Tech debt logged**: none.

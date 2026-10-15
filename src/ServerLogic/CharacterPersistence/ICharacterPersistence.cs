@@ -24,10 +24,20 @@ namespace IronGrind.CharacterPersistence
         /// <param name="ct">Cancellation token.</param>
         Task<CharacterLoadResult> LoadCharacter(CharacterID id, AccountID ownerAccountID, CancellationToken ct);
 
-        /// <summary>Saves a character after an irreversible outcome.</summary>
+        /// <summary>Saves a character after an irreversible outcome, completing only after the store confirmed the write.</summary>
+        /// <remarks>
+        /// Writes the whole record (CR-CP-4); the expected <c>SaveVersion</c> is read at the write's turn in the
+        /// per-character queue. The returned task never faults and is never cancelled. A conflict is critical (one
+        /// error log) and is not retried. This method disconnects no one and reverts nothing: the caller owns the
+        /// revert or disconnect on any result other than <see cref="CharacterSaveResult.Success"/> (CR-CP-5, ADR-011 Decision 5).
+        /// </remarks>
         /// <param name="id">The character to save.</param>
-        /// <param name="trigger">The outcome that triggered the save.</param>
-        /// <param name="ct">Cancellation token.</param>
+        /// <param name="trigger">The outcome that triggered the save (log lines only).</param>
+        /// <param name="ct">Cancellation token for the queued write.</param>
+        /// <returns>
+        /// <see cref="CharacterSaveResult.Success"/> once the store confirmed; <see cref="CharacterSaveResult.ConcurrencyConflict"/>
+        /// (critical), <see cref="CharacterSaveResult.DatabaseError"/> or <see cref="CharacterSaveResult.CharacterNotFound"/> otherwise.
+        /// </returns>
         Task<CharacterSaveResult> SaveIrreversibleOutcome(CharacterID id, IrreversibleOutcomeTrigger trigger, CancellationToken ct);
 
         /// <summary>Saves a character at the end of a session.</summary>

@@ -13,11 +13,13 @@ namespace IronGrind.CharacterPersistence
     /// <remarks>
     /// Built over the store seam so it runs and is tested with no database. Implemented so far: <c>CreateStub</c>, <c>LoadCharacter</c> (Story 003)
     /// and the synchronous <c>ApplyLoadedRecord</c> (Story 003 base stats; Story 004 inventory, gold and current HP / MP),
-    /// and both <c>SaveSession</c> overloads (Story 007: snapshot on the tick thread, then the per-character write queue). Each of the other methods returns a task faulted with <see cref="NotSupportedException"/> naming the
+    /// both <c>SaveSession</c> overloads (Story 007: snapshot on the tick thread, then the per-character write queue)
+    /// and <c>SaveIrreversibleOutcome</c> (Story 008: the same snapshot and queued write, with the version read at its turn).
+    /// Each of the purchase methods (Story 011) returns a task faulted with <see cref="NotSupportedException"/> naming the
     /// story that implements it — a faulted task, not a throw, so that tick code passing the call to
     /// <c>ITickCompletionQueue.Track</c> gets it through the normal failure path (ADR-011).
     /// <para>The one exception to "returns a task, never throws" is a wiring error: a service built without the
-    /// dependencies a method needs (<c>ApplyLoadedRecord</c> without Inventory and Currency, <c>SaveSession</c> without
+    /// dependencies a method needs (<c>ApplyLoadedRecord</c> without Inventory and Currency, a save method without
     /// the zone locator, write queue and clock) throws <see cref="InvalidOperationException"/> synchronously.</para>
     /// </remarks>
     public sealed class CharacterPersistenceService : ICharacterPersistence
@@ -47,6 +49,10 @@ namespace IronGrind.CharacterPersistence
             public ZoneID LastZoneId;
             public GearSlotRecord[] GearSlots;
             public uint SaveVersion;
+
+            // CR-CP-6: set after a DatabaseError whose store update had started (the write may or may not have committed);
+            // the next write re-reads the stored SaveVersion. Guarded by _sessionLock; removed with the entry (Story 010).
+            public bool VersionUnknown;
         }
 
         /// <summary>Creates the service over a store, with no game-state wiring (<c>ApplyLoadedRecord</c> then throws).</summary>
@@ -439,11 +445,37 @@ namespace IronGrind.CharacterPersistence
             return entries.Count == 0 ? InventorySnapshot.Empty : new InventorySnapshot(entries);
         }
 
-        /// <inheritdoc/>
-        /// <remarks>Not implemented yet (Character Persistence Story 008): returns a task faulted with <see cref="NotSupportedException"/>.</remarks>
+        /// <summary>
+        /// Saves the whole character record after an irreversible outcome (CR-CP-4, CR-CP-6, CR-CP-10 steps 2-7;
+        /// Character Persistence Story 008) and completes only after the store has confirmed the write.
+        /// </summary>
+        /// <remarks>
+        /// Writes the same record as <see cref="SaveSession(CharacterID, SessionEndReason, CancellationToken)"/> (all 23
+        /// fields, no HP override): the same synchronous snapshot taken on the calling (tick) thread before the queue is
+        /// entered, then the same queued, timed, version-checked update. <paramref name="trigger"/> changes only the log
+        /// lines. The caller (the irreversible-outcome coordinator) delivers nothing to the player until the result is
+        /// <see cref="CharacterSaveResult.Success"/> and never retries; this method disconnects no one and reverts
+        /// nothing (CR-CP-5 belongs to the caller).
+        /// <para>Version rule: unlike <c>SaveSession</c>, the expected <c>SaveVersion</c> is read from the session entry
+        /// at this write's turn in the per-character queue, so two irreversible writes for one character give N + 1 then
+        /// N + 2 (AC-CP-21). If the entry has gone by then (the character was released) the result is
+        /// <see cref="CharacterSaveResult.CharacterNotFound"/> with no store call.</para>
+        /// <para>A conflict (no row matched the version) is logged once as a critical error (<c>Debug.LogError</c>,
+        /// CR-CP-6) and returned as <see cref="CharacterSaveResult.ConcurrencyConflict"/>; there is no retry.
+        /// A store fault, a timeout, a cancelled token or a failure while taking the snapshot gives
+        /// <see cref="CharacterSaveResult.DatabaseError"/>; the returned task never faults and is never cancelled.
+        /// After a <see cref="CharacterSaveResult.DatabaseError"/> whose store update had started, the stored version is
+        /// unknown and the next write for the character (either method) re-reads it once (see
+        /// <see cref="SaveSession(CharacterID, SessionEndReason, CancellationToken)"/>).</para>
+        /// </remarks>
+        /// <param name="id">The character to save.</param>
+        /// <param name="trigger">The outcome that triggered the save (log lines only).</param>
+        /// <param name="ct">Cancellation token for the queued write (the watchdog).</param>
+        /// <returns>A task with the save outcome; never faulted or cancelled.</returns>
+        /// <exception cref="InvalidOperationException">The service was built without the zone locator and write queue (a wiring bug).</exception>
         public Task<CharacterSaveResult> SaveIrreversibleOutcome(CharacterID id, IrreversibleOutcomeTrigger trigger, CancellationToken ct)
         {
-            return Task.FromException<CharacterSaveResult>(new NotSupportedException("SaveIrreversibleOutcome is implemented by Character Persistence Story 008."));
+            return SaveCore(id, new WriteKind("SaveIrreversibleOutcome", trigger.ToString(), true), null, ct);
         }
 
         /// <summary>
@@ -466,11 +498,15 @@ namespace IronGrind.CharacterPersistence
         /// and no store call, when Currency has no state for the character, or when a <c>hpOverride</c> is NaN.
         /// A save cancelled by its token while still waiting in the queue (its write never ran) gives
         /// <see cref="CharacterSaveResult.DatabaseError"/> with one warning log.</para>
-        /// <para>Stale version after an unknown outcome: after a <see cref="CharacterSaveResult.DatabaseError"/> from a
-        /// timeout, from a cancel after the write started, or from a store fault, the outcome of the write is unknown
-        /// (ADR-011 Decision 2). If it did commit, the stored <c>SaveVersion</c> is ahead of the session entry, and every
-        /// later <c>SaveSession</c> for that character returns <see cref="CharacterSaveResult.ConcurrencyConflict"/>
-        /// until the character is reloaded. The recovery policy belongs to Stories 008 and 010 (epic design conflict 7).</para>
+        /// <para>Unknown outcome and the re-read (CR-CP-6, EC-CP-5; Story 008): after a
+        /// <see cref="CharacterSaveResult.DatabaseError"/> from a timeout, from a cancel after the store update started, or
+        /// from a store fault, the outcome of that write is unknown (ADR-011 Decision 2) and the session entry's version is
+        /// marked unknown. A conflict, and a save cancelled while still waiting in the queue, do not set the mark. At its
+        /// turn, the next write for the character (this method or <c>SaveIrreversibleOutcome</c>) first fetches the stored
+        /// <c>SaveVersion</c> under the write timeout and the token, uses it as the expected version and logs one warning.
+        /// If that fetch fails the result is <see cref="CharacterSaveResult.DatabaseError"/> with one error log, nothing is
+        /// written and the mark stays, so the following write fetches again. <see cref="CharacterSaveResult.Success"/>
+        /// clears the mark.</para>
         /// </remarks>
         /// <param name="id">The character to save.</param>
         /// <param name="reason">Why the session ended; the same handling for every reason.</param>
@@ -479,7 +515,7 @@ namespace IronGrind.CharacterPersistence
         /// <exception cref="InvalidOperationException">The service was built without the zone locator and write queue (a wiring bug).</exception>
         public Task<CharacterSaveResult> SaveSession(CharacterID id, SessionEndReason reason, CancellationToken ct)
         {
-            return SaveSessionCore(id, reason, null, ct);
+            return SaveCore(id, new WriteKind("SaveSession", reason.ToString(), false), null, ct);
         }
 
         /// <summary>
@@ -490,21 +526,39 @@ namespace IronGrind.CharacterPersistence
         /// </summary>
         /// <param name="id">The character to save.</param>
         /// <param name="reason">Why the session ended.</param>
-        /// <param name="hpOverride">The HP to write. NaN gives <see cref="CharacterSaveResult.DatabaseError"/> with one error log and nothing written; a negative or infinite value is written as given. See the other overload's remarks for the stale-version case after an unknown write outcome.</param>
+        /// <param name="hpOverride">The HP to write. NaN gives <see cref="CharacterSaveResult.DatabaseError"/> with one error log and nothing written; a negative or infinite value is written as given. See the other overload's remarks for the re-read after an unknown write outcome.</param>
         /// <param name="ct">Cancellation token for the queued write.</param>
         /// <returns>A task with the save outcome; never faulted or cancelled.</returns>
         /// <exception cref="InvalidOperationException">The service was built without the zone locator and write queue (a wiring bug).</exception>
         public Task<CharacterSaveResult> SaveSession(CharacterID id, SessionEndReason reason, float hpOverride, CancellationToken ct)
         {
-            return SaveSessionCore(id, reason, hpOverride, ct);
+            return SaveCore(id, new WriteKind("SaveSession", reason.ToString(), false), hpOverride, ct);
+        }
+
+        // Which public method a write belongs to: the label for log lines, and the version rule (irreversible writes read
+        // the expected version at their queue turn; SaveSession takes it at call time).
+        private sealed class WriteKind
+        {
+            public readonly string Name;
+            public readonly string Detail;
+            public readonly bool Irreversible;
+
+            public WriteKind(string name, string detail, bool irreversible)
+            {
+                Name = name;
+                Detail = detail;
+                Irreversible = irreversible;
+            }
+
+            public string Label => Name + " (" + Detail + ")";
         }
 
         // Synchronous prefix: not async, so every live read happens on the caller's thread before the queue is entered.
-        private Task<CharacterSaveResult> SaveSessionCore(CharacterID id, SessionEndReason reason, float? hpOverride, CancellationToken ct)
+        private Task<CharacterSaveResult> SaveCore(CharacterID id, WriteKind kind, float? hpOverride, CancellationToken ct)
         {
             if (_stats == null || _leveling == null || _inventory == null || _currency == null || _zones == null || _queue == null || _utcNow == null)
             {
-                throw new InvalidOperationException("SaveSession needs the service to be built with Character Stats, Leveling, Inventory, Currency, a zone locator and a write queue.");
+                throw new InvalidOperationException(kind.Name + " needs the service to be built with Character Stats, Leveling, Inventory, Currency, a zone locator and a write queue.");
             }
 
             CharacterRecord snapshot;
@@ -518,28 +572,28 @@ namespace IronGrind.CharacterPersistence
             }
             catch (Exception e)
             {
-                UnityEngine.Debug.LogError("[CharacterPersistence] SaveSession (" + reason + ") for " + id + " could not take its snapshot: " + e.Message);
+                UnityEngine.Debug.LogError("[CharacterPersistence] " + kind.Label + " for " + id + " could not take its snapshot: " + e.Message);
                 return Task.FromResult(CharacterSaveResult.DatabaseError);
             }
 
             Task<CharacterSaveResult> queued;
             try
             {
-                queued = _queue.Enqueue(id, ct2 => WriteAsync(id, snapshot, expected, reason, ct2), ct);
+                queued = _queue.Enqueue(id, ct2 => WriteAsync(id, snapshot, expected, kind, ct2), ct);
             }
             catch (Exception e)
             {
-                UnityEngine.Debug.LogError("[CharacterPersistence] SaveSession (" + reason + ") for " + id + " could not be queued: " + e.Message);
+                UnityEngine.Debug.LogError("[CharacterPersistence] " + kind.Label + " for " + id + " could not be queued: " + e.Message);
                 return Task.FromResult(CharacterSaveResult.DatabaseError);
             }
 
-            return ObserveOutcomeAsync(queued, id, reason);
+            return ObserveOutcomeAsync(queued, id, kind);
         }
 
         // The only async wrapper: awaits the queue's task and maps any fault or cancellation to DatabaseError.
         // WriteAsync logs its own failures and returns normally, so a faulted queue task needs no second log here.
         // Only a task cancelled before its write ran (WriteAsync never started, so it logged nothing) is logged here.
-        private static async Task<CharacterSaveResult> ObserveOutcomeAsync(Task<CharacterSaveResult> queued, CharacterID id, SessionEndReason reason)
+        private static async Task<CharacterSaveResult> ObserveOutcomeAsync(Task<CharacterSaveResult> queued, CharacterID id, WriteKind kind)
         {
             try
             {
@@ -547,7 +601,7 @@ namespace IronGrind.CharacterPersistence
             }
             catch (OperationCanceledException) when (queued.IsCanceled)
             {
-                UnityEngine.Debug.LogWarning("[CharacterPersistence] SaveSession (" + reason + ") for " + id + " was cancelled before its write ran; nothing written.");
+                UnityEngine.Debug.LogWarning("[CharacterPersistence] " + kind.Label + " for " + id + " was cancelled before its write ran; nothing written.");
                 return CharacterSaveResult.DatabaseError;
             }
             catch (Exception)
@@ -571,7 +625,7 @@ namespace IronGrind.CharacterPersistence
                 expected = entry.SaveVersion;
             }
 
-            // Thrown to SaveSessionCore, which logs it once as an error and returns DatabaseError; no store call, no queue entry.
+            // Thrown to SaveCore, which logs it once as an error and returns DatabaseError; no store call, no queue entry.
             if (hpOverride.HasValue && float.IsNaN(hpOverride.Value))
             {
                 throw new InvalidOperationException("hpOverride is NaN; nothing written");
@@ -644,55 +698,197 @@ namespace IronGrind.CharacterPersistence
             return true;
         }
 
+        // What WriteAsync read at its queue turn: the session entry instance, the expected version, and whether the
+        // entry carried the unknown-version mark (so the stored version is re-read first).
+        private sealed class WriteTurn
+        {
+            public SessionEntry Entry;
+            public uint Expected;
+            public bool Reread;
+        }
+
         // Runs at the write's queue turn, possibly on a pool thread. Touches only the snapshot, the store, the session
         // table (under its lock), the clock and the log.
-        private async Task<CharacterSaveResult> WriteAsync(CharacterID id, CharacterRecord snapshot, uint expected, SessionEndReason reason, CancellationToken ct)
+        // Version rule: SaveSession expects the version taken at call time (callExpected); an irreversible write reads
+        // the entry's version here, at its turn; a write whose entry carries the unknown-version mark (CR-CP-6) first
+        // fetches the stored SaveVersion and expects that. The entry instance is looked up once, at the turn. A reload
+        // while the update is in flight installs a NEW entry for the id; on completion that current entry is advanced
+        // (Success) or marked unknown (DatabaseError after the update started) too, when it still holds the version this
+        // write expected, so the store row and the table cannot drift apart.
+        private async Task<CharacterSaveResult> WriteAsync(CharacterID id, CharacterRecord snapshot, uint callExpected, WriteKind kind, CancellationToken ct)
         {
-            DateTime start = _utcNow();
-            int rows;
-            try
+            WriteTurn turn = ReadTurn(id, callExpected, kind);
+            if (kind.Irreversible && turn.Entry == null)
             {
-                rows = await UpdateObservingTimeoutAndTokenAsync(snapshot, expected, ct).ConfigureAwait(false);
+                // Released before its turn: nothing to write.
+                return CharacterSaveResult.CharacterNotFound;
             }
-            catch (Exception e)
+
+            if (turn.Reread && !await ReReadVersionAsync(id, turn, kind, ct).ConfigureAwait(false))
             {
-                // CR-CP-11: one error for every reason alike. Nobody is disconnected, nothing is torn down.
-                UnityEngine.Debug.LogError("[CharacterPersistence] SaveSession (" + reason + ") for " + id + " failed: " + e.GetType().Name + ": " + e.Message);
                 return CharacterSaveResult.DatabaseError;
             }
 
-            double elapsedMs = (_utcNow() - start).TotalMilliseconds;
-            if (elapsedMs >= CharacterPersistenceConstants.PERSISTENCE_WRITE_CRITICAL_MS)
+            snapshot.SaveVersion = turn.Expected;
+            DateTime? start = ReadClock();
+            int rows;
+            try
             {
-                UnityEngine.Debug.LogError("[CharacterPersistence] SaveSession for " + id + " took " + elapsedMs + " ms (critical at " + CharacterPersistenceConstants.PERSISTENCE_WRITE_CRITICAL_MS + " ms).");
+                rows = await RaceAsync(t => _store.UpdateAsync(snapshot, turn.Expected, t), ct).ConfigureAwait(false);
             }
-            else if (elapsedMs >= CharacterPersistenceConstants.PERSISTENCE_WRITE_WARNING_MS)
+            catch (Exception e)
             {
-                UnityEngine.Debug.LogWarning("[CharacterPersistence] SaveSession for " + id + " took " + elapsedMs + " ms (warning at " + CharacterPersistenceConstants.PERSISTENCE_WRITE_WARNING_MS + " ms).");
+                // The update had started: whether it committed is unknown (ADR-011 Decision 2), so the next write re-reads.
+                RecordUnknownOutcome(id, turn);
+
+                // CR-CP-11: one error for every reason alike. Nobody is disconnected, nothing is torn down.
+                UnityEngine.Debug.LogError("[CharacterPersistence] " + kind.Label + " for " + id + " failed: " + e.GetType().Name + ": " + e.Message);
+                return CharacterSaveResult.DatabaseError;
             }
 
+            LogLatency(id, kind, start, ReadClock());
             if (rows == 1)
             {
-                lock (_sessionLock)
-                {
-                    if (_sessions.TryGetValue(id, out SessionEntry entry) && entry.SaveVersion == expected)
-                    {
-                        entry.SaveVersion = unchecked(expected + 1u);
-                    }
-                }
-
+                RecordSuccess(id, turn, kind);
                 return CharacterSaveResult.Success;
             }
 
-            UnityEngine.Debug.LogWarning("[CharacterPersistence] SaveSession (" + reason + ") for " + id + " conflicted: no stored row matched CharacterID " + id + " with SaveVersion " + expected + " (CR-CP-6, EC-CP-4). Not retried.");
+            LogConflict(id, turn.Expected, kind);
             return CharacterSaveResult.ConcurrencyConflict;
         }
 
-        // Races the store update against the write timeout and the token. Throws TimeoutException or
-        // OperationCanceledException when the race is lost; the abandoned update's fault is observed.
-        private async Task<int> UpdateObservingTimeoutAndTokenAsync(CharacterRecord snapshot, uint expected, CancellationToken ct)
+        private WriteTurn ReadTurn(CharacterID id, uint callExpected, WriteKind kind)
         {
-            Task<int> update = _store.UpdateAsync(snapshot, expected, ct);
+            var turn = new WriteTurn { Expected = callExpected };
+            lock (_sessionLock)
+            {
+                _sessions.TryGetValue(id, out turn.Entry);
+                if (turn.Entry != null)
+                {
+                    turn.Reread = turn.Entry.VersionUnknown;
+                    if (kind.Irreversible)
+                    {
+                        turn.Expected = turn.Entry.SaveVersion;
+                    }
+                }
+            }
+
+            return turn;
+        }
+
+        // Fetches the stored SaveVersion under the write timeout and the token. Returns false (after one error log, mark
+        // kept so the following write fetches again, nothing written) when the fetch fails.
+        private async Task<bool> ReReadVersionAsync(CharacterID id, WriteTurn turn, WriteKind kind, CancellationToken ct)
+        {
+            CharacterRecord stored;
+            try
+            {
+                stored = await RaceAsync(t => _store.FetchAsync(id, t), ct).ConfigureAwait(false);
+                if (stored == null)
+                {
+                    throw new InvalidOperationException("The store has no record for " + id + ".");
+                }
+            }
+            catch (Exception e)
+            {
+                UnityEngine.Debug.LogError("[CharacterPersistence] " + kind.Label + " for " + id + " could not re-read the stored SaveVersion after an unknown write outcome; nothing written: " + e.GetType().Name + ": " + e.Message);
+                return false;
+            }
+
+            turn.Expected = stored.SaveVersion;
+            UnityEngine.Debug.LogWarning("[CharacterPersistence] " + kind.Label + " for " + id + " re-read the stored SaveVersion " + turn.Expected + " after an unknown write outcome (CR-CP-6, EC-CP-5).");
+            return true;
+        }
+
+        // The injected clock can throw; it must never fault a write that may already have committed.
+        private DateTime? ReadClock()
+        {
+            try
+            {
+                return _utcNow();
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static void LogLatency(CharacterID id, WriteKind kind, DateTime? start, DateTime? end)
+        {
+            if (!start.HasValue || !end.HasValue)
+            {
+                return;
+            }
+
+            double elapsedMs = (end.Value - start.Value).TotalMilliseconds;
+            if (elapsedMs >= CharacterPersistenceConstants.PERSISTENCE_WRITE_CRITICAL_MS)
+            {
+                UnityEngine.Debug.LogError("[CharacterPersistence] " + kind.Name + " for " + id + " took " + elapsedMs + " ms (critical at " + CharacterPersistenceConstants.PERSISTENCE_WRITE_CRITICAL_MS + " ms).");
+            }
+            else if (elapsedMs >= CharacterPersistenceConstants.PERSISTENCE_WRITE_WARNING_MS)
+            {
+                UnityEngine.Debug.LogWarning("[CharacterPersistence] " + kind.Name + " for " + id + " took " + elapsedMs + " ms (warning at " + CharacterPersistenceConstants.PERSISTENCE_WRITE_WARNING_MS + " ms).");
+            }
+        }
+
+        private static void LogConflict(CharacterID id, uint expected, WriteKind kind)
+        {
+            if (kind.Irreversible)
+            {
+                // CR-CP-6: an irreversible outcome that could not be stored is critical. Not retried; the caller aborts.
+                UnityEngine.Debug.LogError("[CharacterPersistence] CRITICAL: " + kind.Label + " for " + id + " conflicted: no stored row matched CharacterID " + id + " with SaveVersion " + expected + " (CR-CP-6). Not retried.");
+            }
+            else
+            {
+                UnityEngine.Debug.LogWarning("[CharacterPersistence] " + kind.Label + " for " + id + " conflicted: no stored row matched CharacterID " + id + " with SaveVersion " + expected + " (CR-CP-6, EC-CP-4). Not retried.");
+            }
+        }
+
+        // Success bookkeeping. The turn entry is advanced from the version this write used when that version was read at
+        // the turn (irreversible, or re-read); any other current entry (a SaveSession's call-time version, or a new entry
+        // installed by a reload in flight) is advanced only if it still holds the version this write expected.
+        // Advancing clears the mark.
+        private void RecordSuccess(CharacterID id, WriteTurn turn, WriteKind kind)
+        {
+            lock (_sessionLock)
+            {
+                if (!_sessions.TryGetValue(id, out SessionEntry current))
+                {
+                    return;
+                }
+
+                bool readAtTurn = ReferenceEquals(current, turn.Entry) && (kind.Irreversible || turn.Reread);
+                if (readAtTurn || current.SaveVersion == turn.Expected)
+                {
+                    current.SaveVersion = unchecked(turn.Expected + 1u);
+                    current.VersionUnknown = false;
+                }
+            }
+        }
+
+        // DatabaseError after the update started: mark the turn entry, and a different current entry (a reload in flight)
+        // that still holds the version this write expected.
+        private void RecordUnknownOutcome(CharacterID id, WriteTurn turn)
+        {
+            lock (_sessionLock)
+            {
+                if (turn.Entry != null)
+                {
+                    turn.Entry.VersionUnknown = true;
+                }
+
+                if (_sessions.TryGetValue(id, out SessionEntry current) && !ReferenceEquals(current, turn.Entry) && current.SaveVersion == turn.Expected)
+                {
+                    current.VersionUnknown = true;
+                }
+            }
+        }
+
+        // Starts a store call and races it against the write timeout and the token. Throws TimeoutException or
+        // OperationCanceledException when the race is lost; the abandoned call's fault is observed.
+        private async Task<T> RaceAsync<T>(Func<CancellationToken, Task<T>> start, CancellationToken ct)
+        {
+            Task<T> call = start(ct);
             using (var timerCts = new CancellationTokenSource())
             {
                 try
@@ -701,21 +897,21 @@ namespace IronGrind.CharacterPersistence
                     var cancelled = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                     using (CancellationTokenRegistration registration = ct.CanBeCanceled ? ct.Register(() => cancelled.TrySetResult(true)) : default)
                     {
-                        Task winner = await Task.WhenAny(update, timeout, cancelled.Task).ConfigureAwait(false);
-                        if (winner == update)
+                        Task winner = await Task.WhenAny(call, timeout, cancelled.Task).ConfigureAwait(false);
+                        if (winner == call)
                         {
-                            return await update.ConfigureAwait(false);
+                            return await call.ConfigureAwait(false);
                         }
 
-                        // The update is abandoned (it may still commit); observe its exception if it faults later.
-                        update.ContinueWith(
+                        // The call is abandoned (it may still commit); observe its exception if it faults later.
+                        call.ContinueWith(
                             t => { Exception ignored = t.Exception; },
                             CancellationToken.None,
                             TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
                             TaskScheduler.Default);
                         if (winner == timeout)
                         {
-                            throw new TimeoutException("The store update did not complete within " + _writeTimeout.TotalMilliseconds + " ms.");
+                            throw new TimeoutException("The store call did not complete within " + _writeTimeout.TotalMilliseconds + " ms.");
                         }
 
                         throw new OperationCanceledException(ct);

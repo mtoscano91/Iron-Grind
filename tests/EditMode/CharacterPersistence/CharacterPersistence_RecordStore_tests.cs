@@ -640,12 +640,6 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
         }
 
         [Test]
-        public void CharacterPersistenceService_SaveIrreversibleOutcome_ReturnsFaultedTaskNamingStory008()
-        {
-            AssertFaultedNotSupported(_service.SaveIrreversibleOutcome(CHAR_A, IrreversibleOutcomeTrigger.LevelUp, CancellationToken.None), "Story 008");
-        }
-
-        [Test]
         public void CharacterPersistenceService_BeginPurchase_ReturnsFaultedTaskNamingStory011()
         {
             AssertFaultedNotSupported(_service.BeginPurchase(CHAR_A, default(PendingPurchaseRecord), CancellationToken.None), "Story 011");

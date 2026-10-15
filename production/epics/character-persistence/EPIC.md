@@ -3,7 +3,7 @@
 > **Layer**: Core
 > **GDD**: design/gdd/character-persistence.md
 > **Architecture Module**: Character Persistence — `CharacterPersistenceService : ICharacterPersistence` (async), PostgreSQL via Npgsql and Dapper
-> **Status**: In Progress (created 2026-10-12; 16 stories written 2026-10-12 — 6 Complete (001–004, 006, 007), 1 Ready (008), 3 Not Started pending `/story-readiness`, 6 Blocked)
+> **Status**: In Progress (created 2026-10-12; 16 stories written 2026-10-12 — 7 Complete (001–004, 006–008), 3 Not Started pending `/story-readiness`, 6 Blocked)
 > **Stories**: 16 stories created 2026-10-12 (001–016)
 > **Manifest Version**: 2026-10-09
 
@@ -32,9 +32,9 @@ This epic is what unblocks Enhancement Story 011 (the real `SaveIrreversibleOutc
 | TR-cp-001 | CR-CP-1 — the `ICharacterPersistence` async interface (`LoadCharacter`, `CreateStub`, `SaveSession`, `SaveIrreversibleOutcome`) and its result types | ADR-006 ✅, ADR-011 ✅ |
 | TR-cp-002 | CR-CP-2 — the character record schema: 23 logical fields, some not persisted | ADR-006 ✅ (Amendment 1: `inventory_slots` entries carry `enhancement_level`) |
 | TR-cp-003 | CR-CP-3 — the load sequence, in its exact order (stat initialisation before equipment re-registration) | ADR-006 ✅ (the interface); the order is a design rule |
-| TR-cp-004 | CR-CP-4 — save triggers: all saves are event-driven, no periodic save | ADR-011 ✅ |
+| TR-cp-004 | CR-CP-4 — save triggers: all saves are event-driven, no periodic save; every `SaveIrreversibleOutcome` writes the whole record | ADR-011 ✅ |
 | TR-cp-005 | CR-CP-5 — the `SaveIrreversibleOutcome` failure protocol: caller rollback, session preservation, disconnect | ADR-011 ✅ |
-| TR-cp-006 | CR-CP-6 — one transaction per save; `SaveVersion` + 1 on every write; zero rows affected → `ConcurrencyConflict`; no partial write, no retry | ADR-006 ✅ |
+| TR-cp-006 | CR-CP-6 — one transaction per save; `SaveVersion` + 1 on every write; zero rows affected → `ConcurrencyConflict`; no partial write, no retry; after a write with an unknown outcome the next write re-reads the stored `SaveVersion` | ADR-006 ✅ |
 | TR-cp-007 | CR-CP-7 — at most one save in flight per `CharacterID`; a second call is queued | ADR-006 ✅ |
 | TR-cp-008 | CR-CP-8 — `CHARACTER_LOAD_TIMEOUT_SECONDS = 10` on `LoadCharacter` | ADR-006 ✅ |
 | TR-cp-009 | CR-CP-9 — `CreateStub` writes a complete Level 1 record at registration; no first-login path in `LoadCharacter` | ADR-006 ✅ (the interface) |
@@ -81,7 +81,7 @@ This epic is complete when:
 | 005 | [`LoadCharacter` — Equipment Re-registration](story-005-load-equipment-reregistration.md) | Integration | Blocked (the Equipment System has no code; 3 open decisions) | ADR-011, ADR-010 |
 | 006 | [Per-Character Save Queue](story-006-per-character-save-queue.md) | Logic | Complete (2026-10-15; 28 test cases, EditMode 2729 / 2729; COMPLETE WITH NOTES) | ADR-006, ADR-011 |
 | 007 | [`SaveSession` — the Step Sequence](story-007-save-session.md) | Integration | Complete (2026-10-15; 47 test cases, EditMode 2774 / 2774; COMPLETE WITH NOTES) | ADR-011, ADR-006 |
-| 008 | [`SaveIrreversibleOutcome`](story-008-save-irreversible-outcome.md) | Integration | Ready (2026-10-15; estimate 8 h) | ADR-006, ADR-011 |
+| 008 | [`SaveIrreversibleOutcome`](story-008-save-irreversible-outcome.md) | Integration | Complete (2026-10-15; 42 test cases, EditMode 2815 / 2815; COMPLETE WITH NOTES) | ADR-006, ADR-011 |
 | 009 | [The Irreversible-Outcome Persist Step and the Level-Up Path](story-009-irreversible-persist-step-and-level-up.md) | Integration | Not Started (2026-10-12; 3 open decisions) | ADR-011, ADR-010 |
 | 010 | [Session-End Triggers — Clean Logout and TTL Expiry](story-010-session-end-triggers.md) | Integration | Not Started (2026-10-12; 3 open decisions) | ADR-011 |
 | 011 | [`PendingPurchase` Lifecycle on the Store Seam](story-011-pending-purchase-lifecycle.md) | Logic | Not Started (2026-10-12; 3 open decisions; no caller yet) | ADR-001, ADR-006 |
