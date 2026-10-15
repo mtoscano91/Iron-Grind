@@ -2,7 +2,7 @@
 
 > **Status**: In Review
 > **Author**: Manuel Toscano + Claude Code agents
-> **Last Updated**: 2026-10-15 (implementation-driven corrections from Character Persistence Stories 003–007, epic design conflicts 1, 3, 4, 11, 12, 13: the load splits into `LoadCharacter` (validation, async) and `ApplyLoadedRecord` (writes, on the tick thread); 19 restored fields through four setters, CurrentHP / MP written at step 8; `CharacterLoadCode.InventoryNotRestored`; load steps 9–10 moved to the session handshake; saves take their snapshot before the CR-CP-7 queue; save gear written back as loaded until an Equipment System supplies it; gold balance and version through Currency's persistence seam.) Previous: 2026-10-01 (TD-045: `InventoryEnhancementLevels[20]` added — bag items persist their enhancement level; inventory restore/save go through the Inventory System's `ImportSnapshot`/`ExportSnapshot`; a refused inventory load fails the login; session release calls `UnregisterCharacter`. The logical field count stays 23 — the levels are stored inside the existing inventory-slots field / `inventory_slots` JSONB column.) Previous: 2026-05-29 (OQ-ZI-6: ZoneClosed added to SessionEndReason; SaveSession HP-override overload added)
+> **Last Updated**: 2026-10-15, second revision (epic design conflicts 2 and 7, Story 008 readiness: `SaveIrreversibleOutcome` writes the whole record — CR-CP-4, CR-CP-10; after a write with an unknown outcome the next write re-reads the stored `SaveVersion` — CR-CP-6, EC-CP-5; AC-CP-32 to AC-CP-34 added.) Earlier the same day: (implementation-driven corrections from Character Persistence Stories 003–007, epic design conflicts 1, 3, 4, 11, 12, 13: the load splits into `LoadCharacter` (validation, async) and `ApplyLoadedRecord` (writes, on the tick thread); 19 restored fields through four setters, CurrentHP / MP written at step 8; `CharacterLoadCode.InventoryNotRestored`; load steps 9–10 moved to the session handshake; saves take their snapshot before the CR-CP-7 queue; save gear written back as loaded until an Equipment System supplies it; gold balance and version through Currency's persistence seam.) Previous: 2026-10-01 (TD-045: `InventoryEnhancementLevels[20]` added — bag items persist their enhancement level; inventory restore/save go through the Inventory System's `ImportSnapshot`/`ExportSnapshot`; a refused inventory load fails the login; session release calls `UnregisterCharacter`. The logical field count stays 23 — the levels are stored inside the existing inventory-slots field / `inventory_slots` JSONB column.) Previous: 2026-05-29 (OQ-ZI-6: ZoneClosed added to SessionEndReason; SaveSession HP-override overload added)
 > **Implements Pillar**: Earned Power (every stat, every item, every enhancement level is permanently remembered — the world holds the record of what the player earned)
 
 ## Overview
@@ -177,6 +177,8 @@ All saves are event-driven. There is no periodic or heartbeat save.
 
 Consecutive level-ups within a single tick: one atomic write for the final state after all levels are granted. No intermediate writes.
 
+*What an irreversible save writes (2026-10-15):* `SaveIrreversibleOutcome` writes the whole record. It takes the same snapshot as `SaveSession` (CR-CP-10 steps 2–6: the 19 base fields, the gear slots, the inventory, gold balance and version, `LastZoneID`) and makes the same single `UPDATE` of all 23 persisted fields (step 7). There is no per-trigger subset. The `trigger` is recorded in the log lines and does not change which fields are written. Gold and other state gained since the last save are written with the outcome. The HP-override path does not apply: `CurrentHP` is read from Character Stats.
+
 **CR-CP-5 — SaveIrreversibleOutcome Failure Protocol**
 
 If `SaveIrreversibleOutcome` returns any non-Success code:
@@ -199,6 +201,8 @@ Every save is a single database transaction. `SaveVersion` is incremented by 1 o
 `ConcurrencyConflict` log severity depends on the triggering method:
 - `SaveIrreversibleOutcome` → `ConcurrencyConflict`: log a **CRITICAL** error and abort the session. No expected same-session double-call scenario exists for irreversible commits — this indicates an unexpected external write or a persistence layer bug.
 - `SaveSession` → `ConcurrencyConflict`: log a **WARNING**. The clean-logout + TTL double-call race (EC-CP-4) is the expected cause; character data is not corrupted.
+
+*Version after an unknown outcome (2026-10-15, ADR-011 Decision 2):* a write that ends in `DatabaseError` after its store update started (a timeout, a cancel, or a store fault) may or may not have committed. The service then marks the character's version as unknown and does not advance it. At its turn in the CR-CP-7 queue, the next write for that character first fetches the stored `SaveVersion`, uses it as the expected version, and logs one WARNING. A successful write clears the mark. If the fetch fails, the write returns `DatabaseError`, writes nothing, and the mark stays. A `ConcurrencyConflict` does not set the mark: the store answered, and the conflict stands. If the timed-out command is still running when the next write fetches, the database row lock makes the next update wait and then match zero rows. That update returns `ConcurrencyConflict`, and the committed state is kept. This is acceptable because a character has one writer, the zone process holding its session (ADR-007).
 
 **CR-CP-7 — Concurrent Save Invariant**
 
@@ -245,7 +249,7 @@ Stub default values (all classes identical at Level 1):
 
 **CR-CP-10 — SaveSession Step Sequence**
 
-Executed by `SaveSession` in this exact order. Steps 2–6 gather in-memory state; step 7 commits atomically. *(Reordered 2026-10-15, ADR-011 Decision 3: steps 2–6 and the expected `SaveVersion` are read first, on the tick thread; only then does the write take its place in the queue of step 1 — see CR-CP-7.)*
+Executed by `SaveSession` in this exact order. Steps 2–6 gather in-memory state; step 7 commits atomically. *(Reordered 2026-10-15, ADR-011 Decision 3: steps 2–6 and the expected `SaveVersion` are read first, on the tick thread; only then does the write take its place in the queue of step 1 — see CR-CP-7.)* `SaveIrreversibleOutcome` runs steps 2–7 the same way (CR-CP-4). It differs in three places: the expected version is read at its turn (CR-CP-7), a conflict is CRITICAL (CR-CP-6), and failures go to CR-CP-5 instead of steps 9–10.
 
 | Step | Action | Error path |
 |------|--------|-----------|
@@ -414,7 +418,7 @@ A player disconnects while `IsTransitioning` is true in the Equipment System (a 
 
 The DB write for an irreversible outcome fails or times out.
 
-*What happens*: Per CR-CP-5 — the outcome is not broadcast. The **calling system reverts its own in-memory mutations** (caller-owns rollback). For `RespecCommit`: the caller also issues a compensating `AddGold()` to refund the gold debit before disconnect. The client is disconnected (`DisconnectReason.Other`). A critical infrastructure alert fires. The server **preserves the session's rolled-back in-memory state for `SESSION_TTL_SECONDS`** — it does not tear down the session immediately. When the TTL fires, `SaveSession(SessionTTLExpiry)` writes the rolled-back state to DB, protecting mid-session gold and other non-irreversible session state accumulated before the failed outcome. The DB record reflects the state before the failed outcome. On re-authentication, the character loads from the last successfully written state; the outcome is absent as if it never occurred. No duplication; no phantom progress.
+*What happens*: Per CR-CP-5 — the outcome is not broadcast. The **calling system reverts its own in-memory mutations** (caller-owns rollback). For `RespecCommit`: the caller also issues a compensating `AddGold()` to refund the gold debit before disconnect. The client is disconnected (`DisconnectReason.Other`). A critical infrastructure alert fires. The server **preserves the session's rolled-back in-memory state for `SESSION_TTL_SECONDS`** — it does not tear down the session immediately. When the TTL fires, `SaveSession(SessionTTLExpiry)` writes the rolled-back state to DB, protecting mid-session gold and other non-irreversible session state accumulated before the failed outcome. The DB record reflects the state before the failed outcome. On re-authentication, the character loads from the last successfully written state; the outcome is absent as if it never occurred. No duplication; no phantom progress. *A timeout that did commit (2026-10-15):* the outcome is unknown, so the service re-reads the version before the next write (CR-CP-6). The TTL save then writes the rolled-back state over the committed one, and the database again holds the state from before the failed outcome.
 
 *What does not happen*: The outcome is never broadcast before the write succeeds. The Commit-Before-Broadcast rule (CR-NET-5) is the mechanical guarantee of this invariant. The session is not immediately torn down — the 300s TTL save still fires.
 
@@ -524,6 +528,9 @@ None. Character Persistence exposes no UI surface. The `CharacterLoadResult.Code
 | ID | Scenario | Pass condition |
 |----|----------|---------------|
 | AC-CP-21 | Two `SaveIrreversibleOutcome` calls issued for same `CharacterID`; first write is held open via injected Task delay (500ms) | Second call does not begin its DB operation until first completes — verified via `ISaveCoordinator` spy recording `(CharacterID, write-started-timestamp, write-completed-timestamp)` with no timestamp overlap. Both writes complete with SaveVersion N+1 then N+2. Zero parallel DB writes for same `CharacterID`. **Requires**: `ISaveCoordinator` spy interface defined in the persistence layer. |
+| AC-CP-32 | Since the load, gold, inventory and `CurrentHP` have changed with no save; then `SaveIrreversibleOutcome(id, LevelUp, ct)` | `Success`. One store update. The stored record holds all 23 fields as they were in memory at the call: the new level, gold balance and version, inventory, HP. `SaveVersion` = N+1. *(Added 2026-10-15, CR-CP-4.)* |
+| AC-CP-33 | `SaveIrreversibleOutcome` times out (injected short timeout) but the store commits it (N → N+1). The caller rolls back, then `SaveSession(id, SessionTTLExpiry, ct)` | The first call returns `DatabaseError`. The `SaveSession` returns `Success`, and the stored record holds the rolled-back in-memory state. `SaveVersion` = N+2. One WARNING for the re-read, and no CRITICAL from the second call. *(Added 2026-10-15, CR-CP-6.)* |
+| AC-CP-34 | Same as AC-CP-33, but the timed-out write never commits | `SaveSession` returns `Success`, `SaveVersion` = N+1, one WARNING for the re-read. *(Added 2026-10-15, CR-CP-6.)* |
 
 **CreateStub**
 

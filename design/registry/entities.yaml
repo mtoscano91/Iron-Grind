@@ -1106,7 +1106,7 @@ constants:
       - design/gdd/character-persistence.md
     type: "enum : byte"
     values: "{Success=0, CharacterNotFound=1, ConcurrencyConflict=2, DatabaseError=255}"
-    note: "Return type of ICharacterPersistence.SaveIrreversibleOutcome() and SaveSession(). On SaveIrreversibleOutcome: any non-Success code triggers CR-CP-5 (caller rollback + client disconnect + session TTL preserved + critical alert). On SaveSession: ConcurrencyConflict is a WARNING (EC-CP-4 expected double-call race); DatabaseError is a critical alert (CleanLogout: client may retry; TTLExpiry: release resources). ConcurrencyConflict severity is method-dependent per CR-CP-6."
+    note: "Return type of ICharacterPersistence.SaveIrreversibleOutcome() and SaveSession(). On SaveIrreversibleOutcome: any non-Success code triggers CR-CP-5 (caller rollback + client disconnect + session TTL preserved + critical alert). On SaveSession: ConcurrencyConflict is a WARNING (EC-CP-4 expected double-call race); DatabaseError is a critical alert (CleanLogout: client may retry; TTLExpiry: release resources). ConcurrencyConflict severity is method-dependent per CR-CP-6. A DatabaseError whose store update had started leaves the outcome unknown; the next write for that character re-reads the stored SaveVersion (CR-CP-6, 2026-10-15)."
     added: "2026-05-24"
     revised: ""
 
@@ -1118,7 +1118,7 @@ constants:
       - design/gdd/consumable-use-system.md
     type: "enum : byte"
     values: "{LevelUp=0, EnhancementResult=1, RespecCommit=2, ItemConsumption=3}"
-    note: "Identifies which irreversible outcome caused a SaveIrreversibleOutcome call. Used for structured logging and monitoring dashboards — the server logs which trigger fired on every critical alert. Leveling System must pass LevelUp; Enhancement System must pass EnhancementResult; Respec System must pass RespecCommit; Item Consumption System must pass ItemConsumption."
+    note: "Identifies which irreversible outcome caused a SaveIrreversibleOutcome call. Used for structured logging and monitoring dashboards — the server logs which trigger fired on every critical alert. Leveling System must pass LevelUp; Enhancement System must pass EnhancementResult; Respec System must pass RespecCommit; Item Consumption System must pass ItemConsumption. The trigger does not change which fields are written — every SaveIrreversibleOutcome writes the whole record (CR-CP-4, 2026-10-15)."
     added: "2026-05-24"
     revised: ""
 
