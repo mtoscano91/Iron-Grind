@@ -48,6 +48,7 @@
 ## Implementation Notes
 
 - The write goes through Story 006's queue.
+- **Version rule, settled at Story 006 readiness (2026-10-15):** `SaveSession` takes its expected `SaveVersion` **at call time** (with its snapshot, before the first `await`), so a second `SaveSession` queued behind the first finds the version already advanced and returns `ConcurrencyConflict` — EC-CP-4, AC-CP-20 (WARNING per CR-CP-6). The queue (`CharacterWriteQueue.Enqueue`) is generic and knows nothing about versions.
 - `Inventory.UnregisterCharacter` (step 4's second sentence) belongs to the release of the session after the save: Story 010.
 - EC-CP-3: `IsTransitioning` is not read and not written.
 

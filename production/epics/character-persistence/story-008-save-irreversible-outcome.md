@@ -43,6 +43,7 @@
 
 ## Implementation Notes
 
+- **Version rule, settled at Story 006 readiness (2026-10-15):** `SaveIrreversibleOutcome` reads the **latest** `SaveVersion` **at its turn** in Story 006's queue, so two irreversible writes for one character give N+1 then N+2 — AC-CP-21's version clause, moved here from Story 006 (add it as a criterion at this story's readiness). Where "the latest version" lives (an in-memory per-character version the service updates after each successful write, or a fetch at its turn) is for this story's readiness.
 - "Session aborted" in AC-CP-19 is the caller's act (the coordinator's failure branch), not this method's.
 - After a failed or cancelled write the outcome in the database is unknown (ADR-011: "cancelling the token does not abort a command already running"). The in-memory expected version must not be advanced on anything but `Success`; what a later save then meets is in open decision 2.
 
