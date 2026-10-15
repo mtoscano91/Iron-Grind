@@ -1237,6 +1237,38 @@ namespace IronGrind.Networking
         }
 
         /// <summary>
+        /// Returns the <c>characterId</c> recorded for <paramref name="accountId"/> by
+        /// <see cref="CompleteAuthSuccess"/>, if the account is registered. Read-only: changes no state.
+        /// Exists so a caller that starts an asynchronous session-end save (Character Persistence
+        /// Story 010) can address the character without keeping a second account-to-character map.
+        /// </summary>
+        /// <param name="accountId">The account to query.</param>
+        /// <param name="characterId">
+        /// The account's character, if registered; otherwise <see langword="default"/>. <c>0</c> while the
+        /// account is still <see cref="SessionState.Connecting"/> (not known until <see cref="CompleteAuthSuccess"/>).
+        /// </param>
+        /// <returns><see langword="true"/> if <paramref name="accountId"/> has a registry entry.</returns>
+        /// <example>
+        /// <code>
+        /// if (stateMachine.TryGetCharacterId(accountId: 7, out uint characterId))
+        /// {
+        ///     // ...
+        /// }
+        /// </code>
+        /// </example>
+        public bool TryGetCharacterId(uint accountId, out uint characterId)
+        {
+            if (_sessions.TryGetValue(accountId, out AccountSessionRecord record))
+            {
+                characterId = record.CharacterId;
+                return true;
+            }
+
+            characterId = default;
+            return false;
+        }
+
+        /// <summary>
         /// (Story 013) Returns the frozen <c>sessionExpiryTick</c> value stored on
         /// <paramref name="accountId"/>'s registry entry, if registered — <c>0</c> for any account
         /// that has never entered <see cref="SessionState.Reconnecting"/> via <see cref="EnterReconnecting"/>.

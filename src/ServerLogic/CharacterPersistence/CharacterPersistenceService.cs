@@ -22,7 +22,7 @@ namespace IronGrind.CharacterPersistence
     /// dependencies a method needs (<c>ApplyLoadedRecord</c> without Inventory and Currency, a save method without
     /// the zone locator, write queue and clock) throws <see cref="InvalidOperationException"/> synchronously.</para>
     /// </remarks>
-    public sealed class CharacterPersistenceService : ICharacterPersistence
+    public sealed class CharacterPersistenceService : ICharacterPersistence, ICharacterSessionRelease
     {
         private readonly ICharacterRecordStore _store;
         private readonly IronGrind.CharacterStats.CharacterStats _stats;
@@ -427,6 +427,28 @@ namespace IronGrind.CharacterPersistence
             }
 
             return CharacterLoadCode.Success;
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>
+        /// Takes the same lock as the rest of the session table. A write already queued for the character is not
+        /// cancelled: it finds no entry at its turn (an irreversible write then gives
+        /// <see cref="CharacterSaveResult.CharacterNotFound"/>). Calling it twice is safe; the second call returns false.
+        /// </remarks>
+        public bool ReleaseSession(CharacterID id, out EntityID entityId)
+        {
+            lock (_sessionLock)
+            {
+                if (_sessions.TryGetValue(id, out SessionEntry entry))
+                {
+                    entityId = entry.EntityId;
+                    _sessions.Remove(id);
+                    return true;
+                }
+            }
+
+            entityId = EntityID.Invalid;
+            return false;
         }
 
         private static InventorySnapshot BuildInventorySnapshot(CharacterRecord record)

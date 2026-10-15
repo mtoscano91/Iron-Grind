@@ -153,6 +153,9 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             return ExportResult ?? throw new NotSupportedException("RecordingInventory.ExportResult was not set.");
         }
 
-        public void UnregisterCharacter(CharacterID charId) => throw new NotSupportedException();
+        /// <summary>Every <see cref="UnregisterCharacter"/> call, in call order (Story 010).</summary>
+        public List<CharacterID> UnregisterCalls { get; } = new List<CharacterID>();
+
+        public void UnregisterCharacter(CharacterID charId) => UnregisterCalls.Add(charId);
     }
 }

@@ -1,7 +1,7 @@
 # Story 010: Session-End Triggers — Clean Logout and TTL Expiry
 
 > **Epic**: Character Persistence
-> **Status**: Ready — written 2026-10-12; `/story-readiness` 2026-10-15 (3 decisions settled, below)
+> **Status**: Complete (2026-10-15) — written 2026-10-12; `/story-readiness` 2026-10-15 (3 decisions settled, below)
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-09
@@ -29,16 +29,16 @@
 
 "Release" below means, in this order: the persistence service's session-table entry is removed (the new service method), `IInventoryService.UnregisterCharacter(charId)`, `LevelingService.UnregisterPlayerEntity(entityId)`, then the existing `ConnectionStateMachine` method (`ProcessExplicitDisconnect` for a logout, `CompleteSessionActiveTTLExpiry` for a TTL expiry) called with a no-op persist delegate, which removes the entity, broadcasts `PlayerLeftZone` and removes the session. Each of these runs exactly once per release.
 
-- [ ] **AC-CP-16**: when a `Disconnected_SessionActive` session's TTL expires, `SaveSession(id, SessionTTLExpiry, ct)` is called once and its task is passed to `Track`; with the in-memory store, the record's `LastSavedAtUtc` is new and its `SaveVersion` is incremented. The test injects the expiry tick; it does not wait 300 seconds.
-- [ ] **Clean logout entry point**: `BeginCleanLogout(accountId, onResult)` on a `Connected` session calls `SaveSession(id, CleanLogout, ct)` once and passes its task to `Track`. Nothing is released before the save completes.
-- [ ] **Release after success**: after `Success`, for either reason, the release runs once (every step above once) and, for a logout, `onResult` receives `Success` once.
-- [ ] **CleanLogout failure (CR-CP-10 step 9)**: on `DatabaseError` (and on a fault, cancellation or watchdog timeout) no release step runs, the session stays `Connected`, and `onResult` receives the failure once so the client can retry. A retry that then succeeds releases once.
-- [ ] **TTL-expiry failure (step 10)**: on any non-`Success` the release runs regardless, with one critical log (from the save itself).
-- [ ] **No double end (EC-CP-4)**: while a session end is in flight for a character, a second `BeginCleanLogout` or a TTL expiry for the same character starts no second save and runs no second release; a logout started after a failed logout's callback has run starts a new save.
-- [ ] **TTL save in flight**: the TTL save starts on the first tick at or after the expiry tick, and only for a session that is `Disconnected_SessionActive` on that tick. From then on the reconnect window is closed (Networking Core refuses a reconnect after the expiry tick), so the session is still `Disconnected_SessionActive` when the callback runs; the callback calls `CompleteSessionActiveTTLExpiry` with the drain tick and the same expiry tick, and its expiry check passes. A test holds the save across several ticks and asserts the release runs once, on the drain after completion.
-- [ ] **After a failed irreversible save (CR-CP-5 step 5)**: the session preserved by the coordinator is saved by the TTL expiry like any other, with its rolled-back state.
-- [ ] **No await**: the session-end code contains no `await`, `.Result`, `.Wait(`, `GetResult(` or `ContinueWith`.
-- [ ] **Shutdown**: a save in flight when the zone shuts down gets its callback from the shutdown drain (ADR-011 Decision 2); the release runs once.
+- [x] **AC-CP-16**: when a `Disconnected_SessionActive` session's TTL expires, `SaveSession(id, SessionTTLExpiry, ct)` is called once and its task is passed to `Track`; with the in-memory store, the record's `LastSavedAtUtc` is new and its `SaveVersion` is incremented. The test injects the expiry tick; it does not wait 300 seconds.
+- [x] **Clean logout entry point**: `BeginCleanLogout(accountId, onResult)` on a `Connected` session calls `SaveSession(id, CleanLogout, ct)` once and passes its task to `Track`. Nothing is released before the save completes.
+- [x] **Release after success**: after `Success`, for either reason, the release runs once (every step above once) and, for a logout, `onResult` receives `Success` once.
+- [x] **CleanLogout failure (CR-CP-10 step 9)**: on `DatabaseError` (and on a fault, cancellation or watchdog timeout) no release step runs, the session stays `Connected`, and `onResult` receives the failure once so the client can retry. A retry that then succeeds releases once.
+- [x] **TTL-expiry failure (step 10)**: on any non-`Success` the release runs regardless, with one critical log (from the save itself).
+- [x] **No double end (EC-CP-4)**: while a session end is in flight for a character, a second `BeginCleanLogout` or a TTL expiry for the same character starts no second save and runs no second release; a logout started after a failed logout's callback has run starts a new save.
+- [x] **TTL save in flight**: the TTL save starts on the first tick at or after the expiry tick, and only for a session that is `Disconnected_SessionActive` on that tick. From then on the reconnect window is closed (Networking Core refuses a reconnect after the expiry tick), so the session is still `Disconnected_SessionActive` when the callback runs; the callback calls `CompleteSessionActiveTTLExpiry` with the drain tick and the same expiry tick, and its expiry check passes. A test holds the save across several ticks and asserts the release runs once, on the drain after completion.
+- [x] **After a failed irreversible save (CR-CP-5 step 5)**: the session preserved by the coordinator is saved by the TTL expiry like any other, with its rolled-back state.
+- [x] **No await**: the session-end code contains no `await`, `.Result`, `.Wait(`, `GetResult(` or `ContinueWith`.
+- [x] **Shutdown**: a save in flight when the zone shuts down gets its callback from the shutdown drain (ADR-011 Decision 2); the release runs once.
 
 ---
 
@@ -89,7 +89,7 @@
 **Story Type**: Integration
 **Required evidence**: `tests/EditMode/CharacterPersistence/CharacterPersistence_SessionEnd_tests.cs` — must exist and pass.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 28 cases (22 `[Test]` methods plus two `[TestCase]` methods run over 3 failure kinds each), all passing
 
 ---
 
@@ -97,3 +97,23 @@
 
 - Depends on: Story 007; Story 009 for the "after a failed irreversible save" criterion (both Complete); Networking Core's `ConnectionStateMachine` (Complete epic, used unchanged)
 - Unlocks: Story 016
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-10-15
+**Criteria**: 10/10 passing (all automated; "No await" by source scan of `SessionEndCoordinator.cs`)
+**Deviations** (advisory):
+- `ConnectionStateMachine.TryGetCharacterId` (read-only, no behavior change) was added. It is the one user-approved exception to "no `ConnectionStateMachine` changes"; nothing else maps an account to its character.
+- The session-table release is `ICharacterSessionRelease.ReleaseSession(charId, out entityId)`, implemented by `CharacterPersistenceService`. It is kept off `ICharacterPersistence`, whose method set is the CR-CP-1 contract enforced by the contract tests.
+- Nothing in Networking Core refuses a reconnect after the expiry tick, which the "TTL save in flight" criterion assumed. The completion callback therefore re-checks the session state; if it changed, no release step runs and one error is logged. Logged as TD-067.
+- The TTL callback cannot see the drain tick, so it passes the expiry tick as both ticks to `CompleteSessionActiveTTLExpiry` (an equal tick counts as expired).
+- Choices made at implementation:
+  - A fault, cancellation or watchdog timeout on a logout save is reported as `DatabaseError`.
+  - A second logout while one is in flight returns false and its `onResult` is never called.
+  - A release step that throws is logged once and the remaining steps are skipped; a logout still reports Success.
+  - A timed-out save's token source is not disposed.
+  - Leveling's `UnregisterPlayerEntity` is injected as an `Action<EntityID>`, because `ILevelingService` does not declare it.
+**Test Evidence**: Integration — `tests/EditMode/CharacterPersistence/CharacterPersistence_SessionEnd_tests.cs` (28 cases); EditMode 2865 / 2865 in batch mode
+**Code Review**: Complete — CHANGES REQUIRED, all 6 items fixed (token source kept for a timed-out save, exception-safe release, token source disposed on a synchronous start failure, character-id assert, `onResult` docs, 11 added test cases)
