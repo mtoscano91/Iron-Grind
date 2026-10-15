@@ -1,7 +1,7 @@
 # Story 009: The Irreversible-Outcome Persist Step and the Level-Up Path
 
 > **Epic**: Character Persistence
-> **Status**: Ready — 2026-10-15 (`/story-readiness`: the 3 open decisions decided, scope cut to the persist step proven with a test caller; the level-up wiring moved to a Leveling follow-up story)
+> **Status**: Complete — 2026-10-15 (COMPLETE WITH NOTES; see Completion Notes)
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-09
@@ -41,14 +41,14 @@ Two questions found at readiness also go to the follow-up story, since they only
 
 *The GDD's criteria name an `ISavePersistence` mock, an `IEventBus` mock, an `ICriticalAlertService` spy and an `ISessionConfiguration`. None exists, and ADR-010 forbids an event bus. They are restated here against what exists: a controllable fake of `ICharacterPersistence` (or the in-memory store with a held operation), the coordinator's own delegates, and a log assertion for the alert. The level-up is played by a test caller that applies a level-up in memory in `computeAndApplyOutcome` and restores its captured values in `revertOnFailure`.*
 
-- [ ] **Persist step**: one place builds the coordinator's `startWrite` and `isSuccess` arguments from `ICharacterPersistence.SaveIrreversibleOutcome` for a given `IrreversibleOutcomeTrigger`; `isSuccess` is true for `CharacterSaveResult.Success` only. The persist step does not await or block.
-- [ ] **AC-CP-13**: a test-caller level-up whose write is held open delivers no outcome; when the write is released as `Success`, the outcome is delivered on the next tick's drain.
-- [ ] **AC-CP-14**: a test-caller level-up from Level 10 whose write returns `DatabaseError` — the outcome is not delivered; the caller's revert runs, leaving Level 10 and the test caller's captured Experience; the client is disconnected with `DisconnectReason.Other`; one critical alert is logged; the session is handed to `preserveSessionForTtl` with `SESSION_TTL_SECONDS`, not torn down. Each happens exactly once.
-- [ ] **The same for a fault, a cancellation and a watchdog timeout** of the write, and for `ConcurrencyConflict` and `CharacterNotFound`.
-- [ ] **AC-CP-17**: a test caller that applies two level-ups in one `computeAndApplyOutcome` makes one `SaveIrreversibleOutcome(LevelUp)` call, and the written record holds the final level.
-- [ ] **Gate**: the character's mutation gate is closed from `Begin` until the result has been handled, and open afterwards on both branches.
-- [ ] **No await**: a source search of the files this story adds or edits outside the persistence layer finds no `await`, `.Result`, `.Wait(`, `GetResult(` or `ContinueWith`.
-- [ ] **After the failure**: the rolled-back state is what a later `SaveSession(SessionTTLExpiry)` writes (shown with the in-memory store).
+- [x] **Persist step**: one place builds the coordinator's `startWrite` and `isSuccess` arguments from `ICharacterPersistence.SaveIrreversibleOutcome` for a given `IrreversibleOutcomeTrigger`; `isSuccess` is true for `CharacterSaveResult.Success` only. The persist step does not await or block.
+- [x] **AC-CP-13**: a test-caller level-up whose write is held open delivers no outcome; when the write is released as `Success`, the outcome is delivered on the next tick's drain.
+- [x] **AC-CP-14**: a test-caller level-up from Level 10 whose write returns `DatabaseError` — the outcome is not delivered; the caller's revert runs, leaving Level 10 and the test caller's captured Experience; the client is disconnected with `DisconnectReason.Other`; one critical alert is logged; the session is handed to `preserveSessionForTtl` with `SESSION_TTL_SECONDS`, not torn down. Each happens exactly once.
+- [x] **The same for a fault, a cancellation and a watchdog timeout** of the write, and for `ConcurrencyConflict` and `CharacterNotFound`.
+- [x] **AC-CP-17**: a test caller that applies two level-ups in one `computeAndApplyOutcome` makes one `SaveIrreversibleOutcome(LevelUp)` call, and the written record holds the final level.
+- [x] **Gate**: the character's mutation gate is closed from `Begin` until the result has been handled, and open afterwards on both branches.
+- [x] **No await**: a source search of the files this story adds or edits outside the persistence layer finds no `await`, `.Result`, `.Wait(`, `GetResult(` or `ContinueWith`.
+- [x] **After the failure**: the rolled-back state is what a later `SaveSession(SessionTTLExpiry)` writes (shown with the in-memory store).
 
 ---
 
@@ -87,7 +87,7 @@ Two questions found at readiness also go to the follow-up story, since they only
 **Story Type**: Integration
 **Required evidence**: `tests/EditMode/CharacterPersistence/CharacterPersistence_IrreversibleOutcome_tests.cs` — must exist and pass.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 22 cases (18 `[Test]` methods, two run over every enum value via `[ValueSource]`), all passing
 
 ---
 
@@ -95,3 +95,14 @@ Two questions found at readiness also go to the follow-up story, since they only
 
 - Depends on: Story 008; Networking Core's coordinator, completion queue and mutation gate — Complete
 - Unlocks: Enhancement Story 011 (with Story 008); the Leveling follow-up story (the real level-up path)
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-10-15
+**Criteria**: 8/8 passing (all automated; "No await" by source search of `IrreversibleOutcomePersistStep.cs`)
+**Deviations** (advisory):
+- AC-CP-13 / 14 / 17 are proven with a test caller, not `LevelingService`, as decided at readiness. They are to be re-proven against the real level-up in the Leveling follow-up story (not yet written), which also owns the level-up revert, the AC-CP-14 Experience reading and the in-flight XP-gain rule.
+**Test Evidence**: Integration — `tests/EditMode/CharacterPersistence/CharacterPersistence_IrreversibleOutcome_tests.cs` (22 cases); EditMode 2837 / 2837 in batch mode
+**Code Review**: Complete — APPROVED WITH SUGGESTIONS; all suggestions applied (conflict log regex, stored row unchanged after a failed write, in-flight count and no-failure checks on success paths, every enum value, held-write release in `finally`, doc wording)
