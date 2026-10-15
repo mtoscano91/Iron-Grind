@@ -2,7 +2,7 @@
 
 > **Status**: In Review
 > **Author**: Manuel Toscano + Claude Code agents
-> **Last Updated**: 2026-10-01 (TD-045: `InventoryEnhancementLevels[20]` added — bag items persist their enhancement level; inventory restore/save go through the Inventory System's `ImportSnapshot`/`ExportSnapshot`; a refused inventory load fails the login; session release calls `UnregisterCharacter`. The logical field count stays 23 — the levels are stored inside the existing inventory-slots field / `inventory_slots` JSONB column.) Previous: 2026-05-29 (OQ-ZI-6: ZoneClosed added to SessionEndReason; SaveSession HP-override overload added)
+> **Last Updated**: 2026-10-15 (implementation-driven corrections from Character Persistence Stories 003–007, epic design conflicts 1, 3, 4, 11, 12, 13: the load splits into `LoadCharacter` (validation, async) and `ApplyLoadedRecord` (writes, on the tick thread); 19 restored fields through four setters, CurrentHP / MP written at step 8; `CharacterLoadCode.InventoryNotRestored`; load steps 9–10 moved to the session handshake; saves take their snapshot before the CR-CP-7 queue; save gear written back as loaded until an Equipment System supplies it; gold balance and version through Currency's persistence seam.) Previous: 2026-10-01 (TD-045: `InventoryEnhancementLevels[20]` added — bag items persist their enhancement level; inventory restore/save go through the Inventory System's `ImportSnapshot`/`ExportSnapshot`; a refused inventory load fails the login; session release calls `UnregisterCharacter`. The logical field count stays 23 — the levels are stored inside the existing inventory-slots field / `inventory_slots` JSONB column.) Previous: 2026-05-29 (OQ-ZI-6: ZoneClosed added to SessionEndReason; SaveSession HP-override overload added)
 > **Implements Pillar**: Earned Power (every stat, every item, every enhancement level is permanently remembered — the world holds the record of what the player earned)
 
 ## Overview
@@ -64,15 +64,21 @@ struct PendingPurchaseRecord
 }
 ```
 
-struct CharacterLoadResult { CharacterLoadCode Code; ZoneID LastZoneID; }
+struct CharacterLoadResult { CharacterLoadCode Code; ZoneID LastZoneID; CharacterRecord Record; }   // Record: set only on Success (2026-10-15)
+
+// Service method, not on the interface (2026-10-15, ADR-011 Decision 3): the load's writes to game state.
+// Called by the caller from its ITickCompletionQueue callback, on the tick thread, with LoadCharacter's Record;
+// the caller allocates the EntityID. Returns the outcome of CR-CP-3 steps 4–8.
+CharacterLoadCode ApplyLoadedRecord(EntityID entityId, CharacterRecord record);
 
 enum CharacterLoadCode : byte
 {
-    Success            = 0,
-    CharacterNotFound  = 1,
-    AccountMismatch    = 2,
-    CorruptRecord      = 3,
-    ItemDatabaseMiss   = 4,
+    Success              = 0,
+    CharacterNotFound    = 1,
+    AccountMismatch      = 2,
+    CorruptRecord        = 3,
+    ItemDatabaseMiss     = 4,
+    InventoryNotRestored = 5,   // CR-CP-3 step 5: the Item Database was not ready; retry or reject the login (2026-10-15)
     DatabaseError      = 255,
 }
 
@@ -136,21 +142,23 @@ Fields **not persisted** (server memory only, never written to DB):
 
 **CR-CP-3 — Load Sequence**
 
-Executed by `LoadCharacter` in this exact order. Step 3 (stat init) must complete before step 4 (equipment re-registration).
+Executed in this exact order. Step 3 (stat init) must complete before step 4 (equipment re-registration).
+
+*Split (2026-10-15, ADR-011 Decision 3):* `LoadCharacter` runs steps 1–3 as **validation only**, on the fetched record (the fetch is its first `await`, so it may not touch game state). Every write — step 3's onward — runs in `ApplyLoadedRecord`, synchronously on the tick thread, from the caller's completion callback. Validation that belongs to a later step's data (step 4's `EnhancementLevel`) may move into `LoadCharacter`.
 
 | Step | Action | Error path |
 |------|--------|-----------|
 | 1 | Validate `CharacterID != CharacterID.Invalid` | Return `CorruptRecord` |
 | 2 | Fetch record; verify `AccountID` FK matches `ownerAccountID` | `CharacterNotFound` or `AccountMismatch` |
-| 3 | Pre-validate all persisted int/float fields against their schema ranges before calling `SetBaseStat()`: Level ∈ [1, 60]; Experience ≥ 0; HeldFreePoints ≥ 0; STR/DEX/VIT/INT ∈ [1, 999]; MaxHP/MaxMP ∈ [1, 99999]; AttackPower/Defense/MagicDefense ≥ 0; all float stats > 0. If any field violates its range → return `CorruptRecord` immediately without calling `SetBaseStat()`. Then call `SetBaseStat()` for all 20 fields. | `CorruptRecord` if range validation fails or any `SetBaseStat()` call rejects |
+| 3 | Pre-validate the record before any write: Level ∈ [1, 60]; Experience ≥ 0; HeldFreePoints ≥ 0; STR/DEX/VIT/INT ∈ [1, 999]; MaxHP/MaxMP ∈ [1, 99999]; AttackPower/Defense/MagicDefense ≥ 0; all float stats > 0 and finite; `GoldBalance` ≤ `GOLD_CAP`; `CurrentHP` and `CurrentMP` not NaN; the record's `CharacterID` equals the requested one. If any check fails → return `CorruptRecord` without any write. Then (in `ApplyLoadedRecord`) restore the base fields through their owners: the 11 int stats via `SetBaseStat`, the 5 float stats via `SetBaseStatFloat`, `HeldFreePoints` via Leveling's `RegisterPlayerClassType` then `RestoreLevelingState` (no `StatID` exists for it). `CurrentHP` / `CurrentMP` are written at step 8, not here. *(Corrected 2026-10-15: 19 restored fields, not 20; `SetBaseStat` never rejects, so that error path is removed.)* | `CorruptRecord` if validation fails |
 | 4 | Re-register equipment modifiers: for each occupied GearSlot, validate `slot.EnhancementLevel ≤ MAX_ENHANCEMENT_LEVEL (10)` first — if violated, return `CorruptRecord` (out-of-range level must not reach IEnhancementBonusProvider). Then call `TryGetItem()` on Item Database, `GetFlatBonus()` / `GetElementalBonus()` on IEnhancementBonusProvider, `AddEquipmentModifier()`. On ItemDatabaseMiss: remove slot, log alert, set Code = `ItemDatabaseMiss`, continue. | `CorruptRecord` on invalid EnhancementLevel. ItemDatabaseMiss is non-blocking (load continues). |
-| 5 | Restore inventory: build an `InventorySnapshot` from the 20 slots, counts and enhancement levels (dense-to-sparse translation: iterate slots 0–19, skip slots where ItemID = ItemID.Invalid; each entry is `{SlotIndex, ItemId, Quantity, EnhancementLevel}`) and call `Inventory.ImportSnapshot(charId, snapshot)`. If it returns `false` (Item Database not ready) the load **fails** — retry or reject the login; a refused import must never be treated as an empty inventory (inventory-system.md Persistence and Load Edge Cases). | Updated 2026-10-01 |
-| 6 | Restore gold: write `GoldBalance` and `GoldVersion` directly into Currency System (state restore — not `AddGold()`). Both fields are required: `GoldBalance` for the correct balance; `GoldVersion` for the `GoldSyncEvent` sent in step 9. | |
-| 7 | AtCap check: if `Level == 60`, notify Leveling System (no formula re-evaluation, no level-up events) | |
-| 8 | **Dead-on-load correction (EC-DR-2, death-and-respawn.md):** If `savedCurrentHP <= 0`, set `RestoredHP = MaxHP` before applying the clamp — a player whose session TTL expired during a Death & Respawn DEAD state must load alive, not dead. Then clamp `CurrentHP` to `[0, MaxHP]`; clamp `CurrentMP` to `[0, MaxMP]` — after step 4 so MaxHP/MaxMP are final. | |
-| 9 | Emit `GoldSyncEvent` (reason: `GoldTransactionReason.Other`) to client | |
-| 10 | Emit `StatSnapshotEvent` to client to establish baseline | |
-| 11 | Return `CharacterLoadResult { Code, LastZoneID }` | |
+| 5 | Restore inventory: build an `InventorySnapshot` from the 20 slots, counts and enhancement levels (dense-to-sparse translation: iterate slots 0–19, skip slots where ItemID = ItemID.Invalid; each entry is `{SlotIndex, ItemId, Quantity, EnhancementLevel}`) and call `Inventory.ImportSnapshot(charId, snapshot)`. If it returns `false` (Item Database not ready) the load **fails** — retry or reject the login; a refused import must never be treated as an empty inventory (inventory-system.md Persistence and Load Edge Cases). | `InventoryNotRestored` (2026-10-15); nothing after this step is written; the caller discards the entity |
+| 6 | Restore gold: write `GoldBalance` and `GoldVersion` into Currency System through its persistence seam (state restore — not `AddGold()`; no `GoldSyncEvent`). Both fields are required: `GoldBalance` for the correct balance; `GoldVersion` so the optimistic-concurrency counter continues across sessions. | |
+| 7 | AtCap: no call. Leveling keeps no at-cap flag; it derives at-cap from `GetBaseStat(Level) == 60`, written at step 3 (no formula re-evaluation, no level-up events). *(Corrected 2026-10-15.)* | |
+| 8 | Write `CurrentHP` / `CurrentMP` through `SetCurrentHP` / `SetCurrentMP` — here, not at step 3, because those setters clamp to the **effective** maximum, final only after step 4. **Dead-on-load correction (EC-DR-2, death-and-respawn.md):** if `savedCurrentHP <= 0`, write the effective MaxHP instead — a player whose session TTL expired during a Death & Respawn DEAD state must load alive, not dead. The setters clamp `CurrentHP` to `[0, MaxHP]` and `CurrentMP` to `[0, MaxMP]` (F-CP-4). | |
+| 9 | *Removed 2026-10-15:* the gold seed (`GoldVersion`) reaches the client in the session handshake (`networking-session.md` CR-NET-6, `SessionHandshakeData`), not as a `GoldSyncEvent` from the load. | |
+| 10 | *Removed 2026-10-15:* the stat baseline reaches the client through the session handshake / `SessionReady` flow (`networking-core.md` session-ready row), not from the load. | |
+| 11 | `LoadCharacter` returns `CharacterLoadResult { Code, LastZoneID, Record }` — `Code` is the outcome of steps 1–3. `ApplyLoadedRecord` returns the outcome of steps 4–8 (`Success`, `ItemDatabaseMiss` or `InventoryNotRestored`). *(2026-10-15.)* | |
 
 **CR-CP-4 — Save Triggers**
 
@@ -196,6 +204,8 @@ Every save is a single database transaction. `SaveVersion` is incremented by 1 o
 
 At most one in-flight save per `CharacterID` at any moment. A second save call while one is in flight is queued, never executed in parallel. This is enforced by the persistence layer; callers do not need to coordinate.
 
+*Snapshot and version (2026-10-15, ADR-011 Decision 3):* every save copies what it needs from live game state on the tick thread **before** entering the queue; a queued write never reads live state at its turn. Which `SaveVersion` a queued write expects depends on the method: `SaveSession` takes it at call time, so a second `SaveSession` queued behind the first conflicts (EC-CP-4, WARNING per CR-CP-6); `SaveIrreversibleOutcome` reads the latest version at its turn, so two irreversible writes give N + 1 then N + 2 (AC-CP-21). The service holds each loaded character's current `SaveVersion` and advances it after every successful write.
+
 **CR-CP-8 — CHARACTER_LOAD_TIMEOUT_SECONDS = 10**
 
 `LoadCharacter` receives a `CancellationToken` that fires after 10 seconds. This is less than the networking layer's `CONNECTING_TIMEOUT_SECONDS` (30s), so a load timeout is surfaced to the auth layer before the connection itself times out.
@@ -235,15 +245,15 @@ Stub default values (all classes identical at Level 1):
 
 **CR-CP-10 — SaveSession Step Sequence**
 
-Executed by `SaveSession` in this exact order. Steps 1–6 gather in-memory state; step 7 commits atomically.
+Executed by `SaveSession` in this exact order. Steps 2–6 gather in-memory state; step 7 commits atomically. *(Reordered 2026-10-15, ADR-011 Decision 3: steps 2–6 and the expected `SaveVersion` are read first, on the tick thread; only then does the write take its place in the queue of step 1 — see CR-CP-7.)*
 
 | Step | Action | Error path |
 |------|--------|-----------|
-| 1 | Acquire the per-`CharacterID` save slot (CR-CP-7 queue invariant — at-most-one write in flight) | Waits if a save is already in flight |
-| 2 | Read all 20 base stat values from Character Stats: `GetBaseStat()` for each field. **HP-override path:** if the HP-override overload was called, replace the `CurrentHP` value read from Character Stats with `hpOverride` before step 7. `CurrentMP` is read normally from Character Stats regardless. | — |
-| 3 | Read GearSlots: for each of the 7 slots, read `{ItemID, EnhancementLevel}` from Equipment System (explicitly excludes `IsTransitioning`) | — |
+| 1 | Take the per-`CharacterID` save slot (CR-CP-7 queue invariant — at-most-one write in flight), **after** steps 2–6 have been read (2026-10-15) | Waits if a save is already in flight |
+| 2 | Read the base fields from their owners: the 11 int stats with `GetBaseStat()`, the 5 float stats with `GetBaseStatFloat()`, `CurrentHP` / `CurrentMP` with `GetCurrentHP()` / `GetCurrentMP()`, `HeldFreePoints` with Leveling's `GetLevelingState()` (corrected 2026-10-15 — 19 fields through four getters, not 20 `GetBaseStat()` calls). **HP-override path:** if the HP-override overload was called, replace the `CurrentHP` value read from Character Stats with `hpOverride` before step 7. `CurrentMP` is read normally from Character Stats regardless. | — |
+| 3 | Read GearSlots: for each of the 7 slots, `{ItemID, EnhancementLevel}` (explicitly excludes `IsTransitioning`). *Until an Equipment System provides live gear state, the gear slots kept from the load are written back unchanged (the Interactions table's "reads `GearSlots` directly from record"); 2026-10-15.* | — |
 | 4 | Read InventorySlots, InventoryItemCounts and InventoryEnhancementLevels: call `Inventory.ExportSnapshot(charId)` and expand its entries `{SlotIndex, ItemId, Quantity, EnhancementLevel}` into the 20-slot dense layout; slots absent from the snapshot are written as empty (`ItemID.Invalid`, count = 0, level = 0). When the session's resources are released after the save (clean logout or TTL expiry), call `Inventory.UnregisterCharacter(charId)`. | Updated 2026-10-01 |
-| 5 | Read `GoldBalance` and `GoldVersion` from Currency System via `GetBalance(CharacterID)` → `(Balance: uint, Version: uint)` | — |
+| 5 | Read `GoldBalance` and `GoldVersion` from Currency System through its persistence seam (`TryGetState(CharacterID, out balance, out version)`; `GetBalance` returns the balance only — corrected 2026-10-15). A character Currency has no state for fails the save with `DatabaseError` and nothing written. | `DatabaseError` |
 | 6 | Read `LastZoneID` from Zone Instancing for the character's current zone | — |
 | 7 | Write DB transaction: `UPDATE` character record with all 23 persisted fields; include `LastSavedAtUtc = UtcNow`, `SaveVersion = SaveVersion + 1`; predicate: `WHERE CharacterID = @id AND SaveVersion = @expected` | 0 rows affected → `ConcurrencyConflict` (CR-CP-6). DB error → `DatabaseError`. |
 | 8 | On `ConcurrencyConflict`: log per CR-CP-6 severity rule; return `ConcurrencyConflict` to caller | See EC-CP-4 for the expected double-call race |
@@ -307,14 +317,14 @@ A character record passes through the following lifecycle states on the server:
 
 | System | Direction | Contract |
 |--------|-----------|---------|
-| **Authentication** | Upstream caller | Calls `LoadCharacter` on Auth_Success; calls `CreateStub` at registration (CR-AUTH-8 step 6) |
-| **Character Stats** | Downstream | Load: calls `SetBaseStat()` for all 20 base-stat fields (step 3). Save: calls `GetBaseStat()` to read current values. Must not call `GetEffectiveStat()` — persists base values only |
-| **Equipment System** | Downstream | Load: calls `AddEquipmentModifier()` per occupied slot after stat init (step 4). Save: reads `GearSlots` directly from record — Equipment System does not provide a save API |
+| **Authentication** | Upstream caller | Calls `LoadCharacter` on Auth_Success, then — from its tick completion callback — `ApplyLoadedRecord(entityId, result.Record)` with an `EntityID` it allocates, discarding the entity on any code other than `Success` / `ItemDatabaseMiss`; calls `CreateStub` at registration (CR-AUTH-8 step 6). The client receives gold and stats through the session handshake, not from the load (2026-10-15) |
+| **Character Stats** | Downstream | Load: `SetBaseStat()` for the 11 int stats and `SetBaseStatFloat()` for the 5 float stats (step 3); `SetCurrentHP()` / `SetCurrentMP()` (step 8). Save: the matching getters (`GetBaseStat`, `GetBaseStatFloat`, `GetCurrentHP`, `GetCurrentMP`). Must not call `GetEffectiveStat()` — persists base values only. Keyed by `EntityID`: the caller allocates it at load; the service keeps `CharacterID → EntityID` for the session (corrected 2026-10-15) |
+| **Equipment System** | Downstream | Load: calls `AddEquipmentModifier()` per occupied slot after stat init (step 4). Save: reads `GearSlots` directly from record — Equipment System does not provide a save API (until it supplies live gear, the slots kept from the load are written back unchanged — 2026-10-15) |
 | **Item Database** | Downstream | Load: calls `TryGetItem(ItemID)` to resolve each occupied gear slot for modifier re-registration |
 | **IEnhancementBonusProvider** | Downstream | Load: calls `GetFlatBonus(level, baseFlatBonus, gearTier)` and `GetElementalBonus(level, baseElementalDamage, gearTier, isWeapon)` per slot during equipment re-registration (signatures per enhancement-system.md, corrected 2026-10-01) |
 | **Inventory System** | Downstream | Load: `ImportSnapshot(charId, snapshot)` — item, count and enhancement level per slot (state restore; fires no events). Save: `ExportSnapshot(charId)`. Session release: `UnregisterCharacter(charId)` |
-| **Currency System** | Downstream | Load: writes `GoldBalance` directly (state restore, not `AddGold()`); emits `GoldSyncEvent`. Save: reads current balance |
-| **Leveling System** | Downstream | Load: notifies at-cap if `Level == 60` (step 7). Save trigger: `LevelUp` irreversible outcome fires after level is granted |
+| **Currency System** | Downstream | Through its persistence seam (2026-10-15). Load: restores `GoldBalance` and `GoldVersion` (state restore, not `AddGold()`; no `GoldSyncEvent` — the session handshake delivers the gold seed). Save: reads balance and version |
+| **Leveling System** | Downstream | Load: `RegisterPlayerClassType` then `RestoreLevelingState` for `HeldFreePoints` (step 3); at-cap needs no call — it is derived from `Level == 60` (step 7, corrected 2026-10-15). Save: `GetLevelingState` for `HeldFreePoints`. Save trigger: `LevelUp` irreversible outcome fires after level is granted |
 | **Networking Core** | Upstream trigger | CR-NET-2: session TTL expiry triggers `SaveSession(SessionTTLExpiry)`. CR-NET-5: irreversible outcome events trigger `SaveIrreversibleOutcome` before any broadcast |
 | **Zone Instancing** | Bidirectional | Downstream consumer: receives `LastZoneID` from `CharacterLoadResult` for zone placement. Upstream caller: calls `SaveSession(ZoneClosed)` per slot during zone teardown (CR-ZI-12 step 2); calls `SaveSession(ZoneClosed, hpOverride: 0f)` for Dead/Respawning slots |
 | **NPC Shop** | Upstream caller | Calls `BeginPurchase` (atomic PendingPurchase INSERT + gold debit), `CompletePurchase` (PickupRequest success), `RefundPurchase` (PickupRequest failure). Reconnect reconciliation calls `LoadOutstandingPurchases` + `RefundPurchase` per outstanding record (ADR-001 Decisions 2–4; CR-CP-12; `networking-session.md` CR-NET-6.4 step 2) |
@@ -475,15 +485,15 @@ None. Character Persistence exposes no UI surface. The `CharacterLoadResult.Code
 | AC-CP-5 | `LoadCharacter` called; DB responds after 10.5 seconds (injected delay) | Returns `Code = DatabaseError` before `CONNECTING_TIMEOUT_SECONDS` (30s) elapses |
 | AC-CP-6 | After `LoadCharacter` succeeds, `GetBaseStat(MaxHP)` | Returns the value stored in the DB record |
 | AC-CP-7 | After `LoadCharacter` succeeds, `GetEffectiveStat(AttackPower)` | Equals `GetBaseStat(AttackPower)` + weapon flat bonus for the loaded enhancement level |
-| AC-CP-8 | After `LoadCharacter` succeeds | `GoldSyncEvent` received by the client |
-| AC-CP-9 | After `LoadCharacter` succeeds | `StatSnapshotEvent` received by the client |
+| AC-CP-8 | *Moved 2026-10-15 (CR-CP-3 step 9 removed):* after a successful load, the client receives the gold seed (balance and `GoldVersion`) | Verified by the session-handshake work (Networking / Authentication), not by Character Persistence |
+| AC-CP-9 | *Moved 2026-10-15 (CR-CP-3 step 10 removed):* after a successful load, the client receives its stat baseline | Verified by the session-handshake work (Networking / Authentication), not by Character Persistence |
 | AC-CP-10 | `LoadCharacter` for a character with `Level == 60` | Leveling System reports at-cap; no level-up event emitted |
 
 **Gear slot load — step ordering**
 
 | ID | Scenario | Pass condition |
 |----|----------|---------------|
-| AC-CP-11 | Character has gear in slot 0; `TryGetItem` returns the item | All 20 `SetBaseStat` calls complete before first `AddEquipmentModifier` call |
+| AC-CP-11 | Character has gear in slot 0; `TryGetItem` returns the item | All of step 3's writes (11 `SetBaseStat`, 5 `SetBaseStatFloat`, `RestoreLevelingState`) complete before the first `AddEquipmentModifier` call (corrected 2026-10-15) |
 | AC-CP-12 | Gear slot references an ItemID not in Item Database (injected: item deleted) | Slot removed from in-memory record; `Code = ItemDatabaseMiss`; load completes; client not disconnected |
 
 **Save triggers**

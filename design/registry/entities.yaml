@@ -227,7 +227,7 @@ constants:
       - design/gdd/hud.md
     type: "struct"
     fields: "{CharacterID: CharacterID, NewBalance: uint, Version: uint, Reason: GoldTransactionReason}"
-    note: "Emitted by Currency System to the owning client connection after every successful AddGold or TrySpendGold. GoldTransactionReason enum wire format declared in networking-core.md CR-NET-7 (see GoldTransactionReason entry). NewBalance MUST be transmitted as absolute balance (never delta) — EC-CS-7 stale-discard correctness depends on this. Client discards events where Version <= cachedVersion (stale out-of-order delivery). HUD GDD consumes this. Character Persistence GDD emits this to client after load. Transport mechanism resolved by Networking Core GDD (OQ-CS-3 closed)."
+    note: "Emitted by Currency System to the owning client connection after every successful AddGold or TrySpendGold. GoldTransactionReason enum wire format declared in networking-core.md CR-NET-7 (see GoldTransactionReason entry). NewBalance MUST be transmitted as absolute balance (never delta) — EC-CS-7 stale-discard correctness depends on this. Client discards events where Version <= cachedVersion (stale out-of-order delivery). HUD GDD consumes this. Character Persistence restores balance and version on load without emitting this event; the session handshake delivers the gold seed (character-persistence.md CR-CP-3 step 9 removed 2026-10-15; currency-system.md and hud.md reconciled the same day). Transport mechanism resolved by Networking Core GDD (OQ-CS-3 closed)."
     added: "2026-04-26"
     revised: "2026-05-06"
 

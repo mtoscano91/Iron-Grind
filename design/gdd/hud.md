@@ -295,7 +295,7 @@ When `activeBuffCount = 7` and the 7th effect expires, `activeBuffCount` drops t
 When `IsSoloParty` changes from true to false, party frames and chat panel appear simultaneously. This layout shift MUST NOT displace active loot notifications or the joystick area. Party frames and chat panel animate in from their anchored positions.
 
 **EC-HUD-7: Gold cachedGoldVersion at Session Start**
-Initialize `cachedGoldVersion = 0` at session start. Character Persistence sends a `GoldSyncEvent` on load with Version ≥ 1 — always accepted. Gold display shows 0 until this event arrives; it is never blank or missing.
+Initialize `cachedGoldVersion = 0` at session start. The session handshake's gold seed (`goldBalance`, `goldVersion`) sets the gold display and `cachedGoldVersion` on connect and reconnect — always accepted. *(2026-10-15: previously a load-time `GoldSyncEvent` from Character Persistence, removed in character-persistence.md CR-CP-3 step 9.)* Gold display shows 0 until the seed arrives; it is never blank or missing.
 
 **EC-HUD-8: Active Loot Notification Picked Up**
 When the active notification's item is picked up, `GroundItemDespawned` fires immediately. The notification dismisses and the next queued notification (if any) appears without delay.
