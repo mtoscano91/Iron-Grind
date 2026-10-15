@@ -1,7 +1,7 @@
 # Story 007: `SaveSession` — the Step Sequence
 
 > **Epic**: Character Persistence
-> **Status**: Ready — `/story-readiness` 2026-10-15 (NEEDS WORK → decisions taken, see "Readiness decisions")
+> **Status**: Complete — 2026-10-15 (COMPLETE WITH NOTES; see Completion Notes)
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-09
@@ -104,7 +104,7 @@
 **Story Type**: Integration
 **Required evidence**: `tests/EditMode/CharacterPersistence/CharacterPersistence_SaveSession_tests.cs` — must exist and pass.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 47 cases (38 `[Test]`, 9 `[TestCase]`), EditMode 2774 / 2774 (batch mode, twice, 2026-10-15)
 
 ---
 
@@ -112,3 +112,33 @@
 
 - Depends on: Stories 002, 003, 004, 006 (all Complete)
 - Unlocks: Stories 008, 010, 016
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-10-15
+**Criteria**: 18/18 passing (seventeen by automated test; "Doc comments" by reading)
+**Test Evidence**: Integration — `tests/EditMode/CharacterPersistence/CharacterPersistence_SaveSession_tests.cs`, 47 cases (38 `[Test]`, 9 `[TestCase]`), EditMode 2774 / 2774 (batch mode, run twice)
+**Code Review**: Complete — `/code-review` 2026-10-15 (`unity-specialist`, `qa-tester`): CHANGES REQUIRED; "fix all" applied and re-run (35 → 47 cases). Before the review the main session removed a `DateTime.UtcNow` default the subagent had added (caught by Story 002's `PersistenceSources_NeverReadTheSystemClock` guard).
+**Gates**: QL-TEST-COVERAGE and LP-CODE-REVIEW skipped — lean mode
+
+**Files**: `src/ServerLogic/CharacterPersistence/CharacterPersistenceService.cs` (session table; both `SaveSession` overloads; 7- and 9-argument constructors), `src/ServerLogic/CharacterPersistence/ICharacterZoneLocator.cs` (new), `src/ServerLogic/Currency/ICurrencyStateRestore.cs` + `CurrencySystem.cs` (`TryGetState`); tests: the SaveSession file, `CharacterPersistenceTestFakes.cs` (`ExportResult`, `FakeZoneLocator`, `CountingStore`), LoadRestore (`TryGetState` forwarding); outside the story, as for Story 003: the two Story 002 "SaveSession faults naming Story 007" placeholder tests deleted.
+
+**Deviations (advisory, accepted by the user 2026-10-15)**
+1. CR-CP-10's step order reversed: the snapshot is taken first, then the write is queued (epic design conflict 1).
+2. Gear is written back as loaded — no Equipment System yet (design conflict 3).
+3. New API: `ICurrencyStateRestore.TryGetState`, `ICharacterZoneLocator` (no production implementation), a session table in the service, 7- and 9-argument constructors.
+4. Beyond the GDD (code review): Currency knowing no state for the character → `DatabaseError`, nothing written; NaN `hpOverride` → `DatabaseError`, nothing written; a snapshot that throws → `DatabaseError`; a save cancelled while waiting in the queue → `DatabaseError` + warning.
+5. After a write with an unknown outcome (timeout, cancel or store fault mid-write), the session entry's `SaveVersion` can be behind the store; later saves then conflict until reload. Documented on `SaveSession` and pinned by a test; the recovery policy is for Stories 008 / 010 (design conflict 7).
+6. "Critical" is `Debug.LogError` — no alert service exists (design conflict 6); the method disconnects no one (the callers' job).
+7. Two tests wait a real 100 ms injected timeout (every wait capped at 5 s); no flakiness in two full runs.
+
+**For later stories**
+- Story 008: read "the latest version" from the session entry at the write's queue turn; decide the recovery after an unknown outcome (deviation 5).
+- Story 010: remove the session entry on session release, alongside `Inventory.UnregisterCharacter`; decide what a session end does after a stale-version conflict.
+- Zone Instancing: implement `ICharacterZoneLocator`.
+- Story 005 / Equipment System: replace the gear source.
+- GDD: lines for design conflicts 1 and 3.
+
+**Tech debt logged**: none (user's choice)

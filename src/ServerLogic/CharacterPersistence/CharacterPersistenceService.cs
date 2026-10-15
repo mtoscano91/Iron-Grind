@@ -12,9 +12,13 @@ namespace IronGrind.CharacterPersistence
     /// <summary>ADR-006's <c>CharacterPersistenceService</c>, built over <see cref="ICharacterRecordStore"/>.</summary>
     /// <remarks>
     /// Built over the store seam so it runs and is tested with no database. Implemented so far: <c>CreateStub</c>, <c>LoadCharacter</c> (Story 003)
-    /// and the synchronous <c>ApplyLoadedRecord</c> (Story 003 base stats; Story 004 inventory, gold and current HP / MP). Each of the other methods returns a task faulted with <see cref="NotSupportedException"/> naming the
+    /// and the synchronous <c>ApplyLoadedRecord</c> (Story 003 base stats; Story 004 inventory, gold and current HP / MP),
+    /// and both <c>SaveSession</c> overloads (Story 007: snapshot on the tick thread, then the per-character write queue). Each of the other methods returns a task faulted with <see cref="NotSupportedException"/> naming the
     /// story that implements it — a faulted task, not a throw, so that tick code passing the call to
     /// <c>ITickCompletionQueue.Track</c> gets it through the normal failure path (ADR-011).
+    /// <para>The one exception to "returns a task, never throws" is a wiring error: a service built without the
+    /// dependencies a method needs (<c>ApplyLoadedRecord</c> without Inventory and Currency, <c>SaveSession</c> without
+    /// the zone locator, write queue and clock) throws <see cref="InvalidOperationException"/> synchronously.</para>
     /// </remarks>
     public sealed class CharacterPersistenceService : ICharacterPersistence
     {
@@ -23,6 +27,27 @@ namespace IronGrind.CharacterPersistence
         private readonly LevelingService _leveling;
         private readonly IInventoryService _inventory;
         private readonly ICurrencyStateRestore _currency;
+        private readonly ICharacterZoneLocator _zones;
+        private readonly CharacterWriteQueue _queue;
+        // Always injected: Character Persistence never reads the system clock (Story 002 rule).
+        private readonly Func<DateTime> _utcNow;
+        private readonly TimeSpan _writeTimeout = TimeSpan.FromSeconds(CharacterPersistenceConstants.PERSISTENCE_WRITE_TIMEOUT_SECONDS);
+
+        // Persistence-layer session table (Story 007 readiness decision 2): lock-guarded, holds no game state.
+        private readonly Dictionary<CharacterID, SessionEntry> _sessions = new Dictionary<CharacterID, SessionEntry>();
+        private readonly object _sessionLock = new object();
+
+        private sealed class SessionEntry
+        {
+            public EntityID EntityId;
+            public AccountID AccountId;
+            public string CharacterName;
+            public byte ClassType;
+            public DateTime CreatedAtUtc;
+            public ZoneID LastZoneId;
+            public GearSlotRecord[] GearSlots;
+            public uint SaveVersion;
+        }
 
         /// <summary>Creates the service over a store, with no game-state wiring (<c>ApplyLoadedRecord</c> then throws).</summary>
         /// <param name="store">The record store.</param>
@@ -60,6 +85,82 @@ namespace IronGrind.CharacterPersistence
         {
             _inventory = inventory ?? throw new ArgumentNullException(nameof(inventory));
             _currency = currency ?? throw new ArgumentNullException(nameof(currency));
+        }
+
+        /// <summary>
+        /// Creates the fully wired service including the save path (Story 007): the zone locator, the per-character
+        /// write queue, the clock used to measure write latency, and the write timeout.
+        /// </summary>
+        /// <remarks>
+        /// The earlier constructors leave the zone locator and queue unset; on such a service
+        /// <see cref="SaveSession(CharacterID, SessionEndReason, CancellationToken)"/> throws
+        /// <see cref="InvalidOperationException"/> synchronously (a wiring bug, like <see cref="ApplyLoadedRecord"/>).
+        /// </remarks>
+        /// <param name="store">The record store.</param>
+        /// <param name="stats">Character Stats.</param>
+        /// <param name="leveling">The Leveling service.</param>
+        /// <param name="inventory">The Inventory service (import on load, export on save).</param>
+        /// <param name="currency">The Currency persistence seam (restore on load, read on save).</param>
+        /// <param name="zones">Tells the save which zone the character is in.</param>
+        /// <param name="queue">The per-character write queue (Story 006).</param>
+        /// <param name="utcNow">The UTC clock used to measure write latency.</param>
+        /// <param name="writeTimeout">How long a store update may take before the save gives up with <see cref="CharacterSaveResult.DatabaseError"/>; must be greater than zero.</param>
+        /// <exception cref="ArgumentNullException">A dependency is null.</exception>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="writeTimeout"/> is zero or negative.</exception>
+        public CharacterPersistenceService(
+            ICharacterRecordStore store,
+            IronGrind.CharacterStats.CharacterStats stats,
+            LevelingService leveling,
+            IInventoryService inventory,
+            ICurrencyStateRestore currency,
+            ICharacterZoneLocator zones,
+            CharacterWriteQueue queue,
+            Func<DateTime> utcNow,
+            TimeSpan writeTimeout)
+            : this(store, stats, leveling, inventory, currency)
+        {
+            _zones = zones ?? throw new ArgumentNullException(nameof(zones));
+            _queue = queue ?? throw new ArgumentNullException(nameof(queue));
+            _utcNow = utcNow ?? throw new ArgumentNullException(nameof(utcNow));
+            if (writeTimeout <= TimeSpan.Zero)
+            {
+                throw new ArgumentOutOfRangeException(nameof(writeTimeout), "The write timeout must be greater than zero.");
+            }
+
+            _writeTimeout = writeTimeout;
+        }
+
+        /// <summary>
+        /// Creates the fully wired service with a new write queue and the default write timeout
+        /// (<see cref="CharacterPersistenceConstants.PERSISTENCE_WRITE_TIMEOUT_SECONDS"/>). The clock is still
+        /// injected: Character Persistence never reads the system clock.
+        /// </summary>
+        /// <param name="store">The record store.</param>
+        /// <param name="stats">Character Stats.</param>
+        /// <param name="leveling">The Leveling service.</param>
+        /// <param name="inventory">The Inventory service.</param>
+        /// <param name="currency">The Currency persistence seam.</param>
+        /// <param name="zones">Tells the save which zone the character is in.</param>
+        /// <param name="utcNow">The UTC clock used to measure write latency.</param>
+        public CharacterPersistenceService(
+            ICharacterRecordStore store,
+            IronGrind.CharacterStats.CharacterStats stats,
+            LevelingService leveling,
+            IInventoryService inventory,
+            ICurrencyStateRestore currency,
+            ICharacterZoneLocator zones,
+            Func<DateTime> utcNow)
+            : this(
+                store,
+                stats,
+                leveling,
+                inventory,
+                currency,
+                zones,
+                new CharacterWriteQueue(),
+                utcNow,
+                TimeSpan.FromSeconds(CharacterPersistenceConstants.PERSISTENCE_WRITE_TIMEOUT_SECONDS))
+        {
         }
 
         /// <summary>
@@ -223,7 +324,10 @@ namespace IronGrind.CharacterPersistence
         /// restore (step 6) and current HP / MP (step 8) (Story 004). Step 7 (at-cap) has no call: Leveling keeps no
         /// at-cap flag and derives it from Level == 60, which is already written. Story 005 inserts step 4 (equipment)
         /// between the stat writes and the inventory import and returns <see cref="CharacterLoadCode.ItemDatabaseMiss"/>
-        /// through this return value. Held free points above the class maximum, or a class type Leveling does not
+        /// through this return value. Any existing session entry for <c>record.CharacterID</c> is removed first (after
+        /// the argument and wiring checks, before any write), so a reload that returns early or throws leaves no stale
+        /// entry: <c>SaveSession</c> then returns <see cref="CharacterSaveResult.CharacterNotFound"/> until a load succeeds.
+        /// Held free points above the class maximum, or a class type Leveling does not
         /// know, are clamped by <c>RestoreLevelingState</c> with a logged error (Leveling AC-LS-30), not rejected.
         /// <para>Current HP / MP are written last, after the gold, because the setters clamp to the effective maximum
         /// (F-CP-4, no code of its own here); a saved HP of 0 or less (dead on load, EC-DR-2) loads as the effective
@@ -252,6 +356,12 @@ namespace IronGrind.CharacterPersistence
             if (_stats == null || _leveling == null || _inventory == null || _currency == null)
             {
                 throw new InvalidOperationException("ApplyLoadedRecord needs the service to be built with Character Stats, Leveling, Inventory and Currency.");
+            }
+
+            // Story 007 review: a reload that fails part-way must not leave the previous session's entry behind.
+            lock (_sessionLock)
+            {
+                _sessions.Remove(record.CharacterID);
             }
 
             _leveling.RegisterPlayerClassType(entityId, record.ClassType);
@@ -293,6 +403,23 @@ namespace IronGrind.CharacterPersistence
             _stats.SetCurrentHP(entityId, hp);
             _stats.SetCurrentMP(entityId, record.CurrentMP);
 
+            // Story 007: the session entry exists only for a character that loaded fully.
+            var entry = new SessionEntry
+            {
+                EntityId = entityId,
+                AccountId = record.AccountID,
+                CharacterName = record.CharacterName,
+                ClassType = record.ClassType,
+                CreatedAtUtc = record.CreatedAtUtc,
+                LastZoneId = record.LastZoneID,
+                GearSlots = (GearSlotRecord[])record.GearSlots.Clone(),
+                SaveVersion = record.SaveVersion,
+            };
+            lock (_sessionLock)
+            {
+                _sessions[record.CharacterID] = entry;
+            }
+
             return CharacterLoadCode.Success;
         }
 
@@ -319,18 +446,287 @@ namespace IronGrind.CharacterPersistence
             return Task.FromException<CharacterSaveResult>(new NotSupportedException("SaveIrreversibleOutcome is implemented by Character Persistence Story 008."));
         }
 
-        /// <inheritdoc/>
-        /// <remarks>Not implemented yet (Character Persistence Story 007): returns a task faulted with <see cref="NotSupportedException"/>.</remarks>
+        /// <summary>
+        /// Saves a character's session state (CR-CP-10, Story 007): the current game state is copied on the calling
+        /// (tick) thread, then one version-checked update is queued on the character's write queue.
+        /// </summary>
+        /// <remarks>
+        /// Everything read from live game state (stats, leveling, inventory, gold, zone) is read in the synchronous
+        /// prefix, before the queue is entered; the queued write touches only that copy, the store, the session table,
+        /// the clock and the log (ADR-011 Decision 3). The expected <c>SaveVersion</c> is taken from the session entry
+        /// at call time, so a second call queued behind the first carries the same version and ends with
+        /// <see cref="CharacterSaveResult.ConcurrencyConflict"/> (EC-CP-4, AC-CP-20). Gear is written as loaded.
+        /// <c>IsTransitioning</c> is neither read nor written (EC-CP-3).
+        /// <para>The returned task never faults and is never cancelled: a store fault, a timeout, a cancelled token or
+        /// a failure while taking the snapshot gives <see cref="CharacterSaveResult.DatabaseError"/> (one error log
+        /// where the write ran); no one is disconnected and nothing is torn down (CR-CP-11). A character with no
+        /// session entry (never fully loaded, or released) gives <see cref="CharacterSaveResult.CharacterNotFound"/> with no
+        /// store call. A write slower than the warning / critical thresholds logs a warning / error (ADR-006 Decision 4).</para>
+        /// <para>Nothing is written, and <see cref="CharacterSaveResult.DatabaseError"/> is returned with one error log
+        /// and no store call, when Currency has no state for the character, or when a <c>hpOverride</c> is NaN.
+        /// A save cancelled by its token while still waiting in the queue (its write never ran) gives
+        /// <see cref="CharacterSaveResult.DatabaseError"/> with one warning log.</para>
+        /// <para>Stale version after an unknown outcome: after a <see cref="CharacterSaveResult.DatabaseError"/> from a
+        /// timeout, from a cancel after the write started, or from a store fault, the outcome of the write is unknown
+        /// (ADR-011 Decision 2). If it did commit, the stored <c>SaveVersion</c> is ahead of the session entry, and every
+        /// later <c>SaveSession</c> for that character returns <see cref="CharacterSaveResult.ConcurrencyConflict"/>
+        /// until the character is reloaded. The recovery policy belongs to Stories 008 and 010 (epic design conflict 7).</para>
+        /// </remarks>
+        /// <param name="id">The character to save.</param>
+        /// <param name="reason">Why the session ended; the same handling for every reason.</param>
+        /// <param name="ct">Cancellation token for the queued write.</param>
+        /// <returns>A task with the save outcome.</returns>
+        /// <exception cref="InvalidOperationException">The service was built without the zone locator and write queue (a wiring bug).</exception>
         public Task<CharacterSaveResult> SaveSession(CharacterID id, SessionEndReason reason, CancellationToken ct)
         {
-            return Task.FromException<CharacterSaveResult>(new NotSupportedException("SaveSession is implemented by Character Persistence Story 007."));
+            return SaveSessionCore(id, reason, null, ct);
         }
 
-        /// <inheritdoc/>
-        /// <remarks>Not implemented yet (Character Persistence Story 007): returns a task faulted with <see cref="NotSupportedException"/>.</remarks>
+        /// <summary>
+        /// Same as <see cref="SaveSession(CharacterID, SessionEndReason, CancellationToken)"/>, but writes
+        /// <paramref name="hpOverride"/> as <c>CurrentHP</c> instead of the value read from Character Stats
+        /// (AC-CP-30, e.g. 0 for a zone closed on a living character). The override is written as given, without a
+        /// clamp; the next load clamps it (F-CP-4). <c>CurrentMP</c> is still read from Character Stats.
+        /// </summary>
+        /// <param name="id">The character to save.</param>
+        /// <param name="reason">Why the session ended.</param>
+        /// <param name="hpOverride">The HP to write. NaN gives <see cref="CharacterSaveResult.DatabaseError"/> with one error log and nothing written; a negative or infinite value is written as given. See the other overload's remarks for the stale-version case after an unknown write outcome.</param>
+        /// <param name="ct">Cancellation token for the queued write.</param>
+        /// <returns>A task with the save outcome; never faulted or cancelled.</returns>
+        /// <exception cref="InvalidOperationException">The service was built without the zone locator and write queue (a wiring bug).</exception>
         public Task<CharacterSaveResult> SaveSession(CharacterID id, SessionEndReason reason, float hpOverride, CancellationToken ct)
         {
-            return Task.FromException<CharacterSaveResult>(new NotSupportedException("SaveSession is implemented by Character Persistence Story 007."));
+            return SaveSessionCore(id, reason, hpOverride, ct);
+        }
+
+        // Synchronous prefix: not async, so every live read happens on the caller's thread before the queue is entered.
+        private Task<CharacterSaveResult> SaveSessionCore(CharacterID id, SessionEndReason reason, float? hpOverride, CancellationToken ct)
+        {
+            if (_stats == null || _leveling == null || _inventory == null || _currency == null || _zones == null || _queue == null || _utcNow == null)
+            {
+                throw new InvalidOperationException("SaveSession needs the service to be built with Character Stats, Leveling, Inventory, Currency, a zone locator and a write queue.");
+            }
+
+            CharacterRecord snapshot;
+            uint expected;
+            try
+            {
+                if (!TryBuildSnapshot(id, hpOverride, out snapshot, out expected))
+                {
+                    return Task.FromResult(CharacterSaveResult.CharacterNotFound);
+                }
+            }
+            catch (Exception e)
+            {
+                UnityEngine.Debug.LogError("[CharacterPersistence] SaveSession (" + reason + ") for " + id + " could not take its snapshot: " + e.Message);
+                return Task.FromResult(CharacterSaveResult.DatabaseError);
+            }
+
+            Task<CharacterSaveResult> queued;
+            try
+            {
+                queued = _queue.Enqueue(id, ct2 => WriteAsync(id, snapshot, expected, reason, ct2), ct);
+            }
+            catch (Exception e)
+            {
+                UnityEngine.Debug.LogError("[CharacterPersistence] SaveSession (" + reason + ") for " + id + " could not be queued: " + e.Message);
+                return Task.FromResult(CharacterSaveResult.DatabaseError);
+            }
+
+            return ObserveOutcomeAsync(queued, id, reason);
+        }
+
+        // The only async wrapper: awaits the queue's task and maps any fault or cancellation to DatabaseError.
+        // WriteAsync logs its own failures and returns normally, so a faulted queue task needs no second log here.
+        // Only a task cancelled before its write ran (WriteAsync never started, so it logged nothing) is logged here.
+        private static async Task<CharacterSaveResult> ObserveOutcomeAsync(Task<CharacterSaveResult> queued, CharacterID id, SessionEndReason reason)
+        {
+            try
+            {
+                return await queued.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (queued.IsCanceled)
+            {
+                UnityEngine.Debug.LogWarning("[CharacterPersistence] SaveSession (" + reason + ") for " + id + " was cancelled before its write ran; nothing written.");
+                return CharacterSaveResult.DatabaseError;
+            }
+            catch (Exception)
+            {
+                return CharacterSaveResult.DatabaseError;
+            }
+        }
+
+        private bool TryBuildSnapshot(CharacterID id, float? hpOverride, out CharacterRecord record, out uint expected)
+        {
+            SessionEntry entry;
+            lock (_sessionLock)
+            {
+                if (!_sessions.TryGetValue(id, out entry))
+                {
+                    record = null;
+                    expected = 0u;
+                    return false;
+                }
+
+                expected = entry.SaveVersion;
+            }
+
+            // Thrown to SaveSessionCore, which logs it once as an error and returns DatabaseError; no store call, no queue entry.
+            if (hpOverride.HasValue && float.IsNaN(hpOverride.Value))
+            {
+                throw new InvalidOperationException("hpOverride is NaN; nothing written");
+            }
+
+            EntityID e = entry.EntityId;
+            record = new CharacterRecord
+            {
+                CharacterID = id,
+                AccountID = entry.AccountId,
+                CharacterName = entry.CharacterName,
+                ClassType = entry.ClassType,
+                CreatedAtUtc = entry.CreatedAtUtc,
+                SaveVersion = expected,
+            };
+
+            // Step 2: the four getters. GetEffectiveStat is never used; modifiers are not persisted.
+            record.Level = _stats.GetBaseStat(e, StatID.Level);
+            record.Experience = _stats.GetBaseStat(e, StatID.Experience);
+            record.STR = _stats.GetBaseStat(e, StatID.Strength);
+            record.DEX = _stats.GetBaseStat(e, StatID.Dexterity);
+            record.VIT = _stats.GetBaseStat(e, StatID.Vitality);
+            record.INT = _stats.GetBaseStat(e, StatID.Intelligence);
+            record.MaxHP = _stats.GetBaseStat(e, StatID.MaxHP);
+            record.MaxMP = _stats.GetBaseStat(e, StatID.MaxMP);
+            record.AttackPower = _stats.GetBaseStat(e, StatID.AttackPower);
+            record.Defense = _stats.GetBaseStat(e, StatID.Defense);
+            record.MagicDefense = _stats.GetBaseStat(e, StatID.MagicDefense);
+            record.CritChance = _stats.GetBaseStatFloat(e, StatID.CritChance);
+            record.CritMultiplier = _stats.GetBaseStatFloat(e, StatID.CritMultiplier);
+            record.AttackRange = _stats.GetBaseStatFloat(e, StatID.AttackRange);
+            record.AttackSpeedMultiplier = _stats.GetBaseStatFloat(e, StatID.AttackSpeedMultiplier);
+            record.MovementSpeed = _stats.GetBaseStatFloat(e, StatID.MovementSpeed);
+            record.CurrentHP = hpOverride ?? _stats.GetCurrentHP(e);
+            record.CurrentMP = _stats.GetCurrentMP(e);
+            record.HeldFreePoints = _leveling.GetLevelingState(e).HeldFreePoints;
+
+            // Step 3: gear is written as loaded (no Equipment System yet).
+            Array.Copy(entry.GearSlots, record.GearSlots, record.GearSlots.Length);
+
+            // Step 4: sparse snapshot to the dense 20-slot layout. Absent slots stay ItemID.Invalid / 0 / 0.
+            InventorySnapshot inventory = _inventory.ExportSnapshot(id);
+            if (inventory != null)
+            {
+                foreach (InventorySnapshotEntry slot in inventory.Slots)
+                {
+                    if (slot.SlotIndex >= InventoryConstants.INVENTORY_SLOT_COUNT)
+                    {
+                        continue;
+                    }
+
+                    record.InventorySlots[slot.SlotIndex] = new ItemID(slot.ItemId);
+                    record.InventoryItemCounts[slot.SlotIndex] = slot.Quantity;
+                    record.InventoryEnhancementLevels[slot.SlotIndex] = slot.EnhancementLevel;
+                }
+            }
+
+            // Step 5: gold. A character Currency does not know must not be written as 0 / 0: the save is refused.
+            if (!_currency.TryGetState(id, out uint balance, out uint version))
+            {
+                throw new InvalidOperationException("Currency has no state for " + id + "; nothing written");
+            }
+
+            record.GoldBalance = balance;
+            record.GoldVersion = version;
+
+            // Step 6: the current zone; Invalid keeps the loaded one.
+            ZoneID zone = _zones.GetCurrentZone(id);
+            record.LastZoneID = zone == ZoneID.Invalid ? entry.LastZoneId : zone;
+            return true;
+        }
+
+        // Runs at the write's queue turn, possibly on a pool thread. Touches only the snapshot, the store, the session
+        // table (under its lock), the clock and the log.
+        private async Task<CharacterSaveResult> WriteAsync(CharacterID id, CharacterRecord snapshot, uint expected, SessionEndReason reason, CancellationToken ct)
+        {
+            DateTime start = _utcNow();
+            int rows;
+            try
+            {
+                rows = await UpdateObservingTimeoutAndTokenAsync(snapshot, expected, ct).ConfigureAwait(false);
+            }
+            catch (Exception e)
+            {
+                // CR-CP-11: one error for every reason alike. Nobody is disconnected, nothing is torn down.
+                UnityEngine.Debug.LogError("[CharacterPersistence] SaveSession (" + reason + ") for " + id + " failed: " + e.GetType().Name + ": " + e.Message);
+                return CharacterSaveResult.DatabaseError;
+            }
+
+            double elapsedMs = (_utcNow() - start).TotalMilliseconds;
+            if (elapsedMs >= CharacterPersistenceConstants.PERSISTENCE_WRITE_CRITICAL_MS)
+            {
+                UnityEngine.Debug.LogError("[CharacterPersistence] SaveSession for " + id + " took " + elapsedMs + " ms (critical at " + CharacterPersistenceConstants.PERSISTENCE_WRITE_CRITICAL_MS + " ms).");
+            }
+            else if (elapsedMs >= CharacterPersistenceConstants.PERSISTENCE_WRITE_WARNING_MS)
+            {
+                UnityEngine.Debug.LogWarning("[CharacterPersistence] SaveSession for " + id + " took " + elapsedMs + " ms (warning at " + CharacterPersistenceConstants.PERSISTENCE_WRITE_WARNING_MS + " ms).");
+            }
+
+            if (rows == 1)
+            {
+                lock (_sessionLock)
+                {
+                    if (_sessions.TryGetValue(id, out SessionEntry entry) && entry.SaveVersion == expected)
+                    {
+                        entry.SaveVersion = unchecked(expected + 1u);
+                    }
+                }
+
+                return CharacterSaveResult.Success;
+            }
+
+            UnityEngine.Debug.LogWarning("[CharacterPersistence] SaveSession (" + reason + ") for " + id + " conflicted: no stored row matched CharacterID " + id + " with SaveVersion " + expected + " (CR-CP-6, EC-CP-4). Not retried.");
+            return CharacterSaveResult.ConcurrencyConflict;
+        }
+
+        // Races the store update against the write timeout and the token. Throws TimeoutException or
+        // OperationCanceledException when the race is lost; the abandoned update's fault is observed.
+        private async Task<int> UpdateObservingTimeoutAndTokenAsync(CharacterRecord snapshot, uint expected, CancellationToken ct)
+        {
+            Task<int> update = _store.UpdateAsync(snapshot, expected, ct);
+            using (var timerCts = new CancellationTokenSource())
+            {
+                try
+                {
+                    Task timeout = Task.Delay(_writeTimeout, timerCts.Token);
+                    var cancelled = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    using (CancellationTokenRegistration registration = ct.CanBeCanceled ? ct.Register(() => cancelled.TrySetResult(true)) : default)
+                    {
+                        Task winner = await Task.WhenAny(update, timeout, cancelled.Task).ConfigureAwait(false);
+                        if (winner == update)
+                        {
+                            return await update.ConfigureAwait(false);
+                        }
+
+                        // The update is abandoned (it may still commit); observe its exception if it faults later.
+                        update.ContinueWith(
+                            t => { Exception ignored = t.Exception; },
+                            CancellationToken.None,
+                            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                            TaskScheduler.Default);
+                        if (winner == timeout)
+                        {
+                            throw new TimeoutException("The store update did not complete within " + _writeTimeout.TotalMilliseconds + " ms.");
+                        }
+
+                        throw new OperationCanceledException(ct);
+                    }
+                }
+                finally
+                {
+                    // Every exit path stops the timer, so no delay outlives the call.
+                    timerCts.Cancel();
+                }
+            }
         }
 
         /// <inheritdoc/>

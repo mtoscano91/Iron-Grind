@@ -53,6 +53,11 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
                 (HpAtCall, MpAtCall) = _resources();
                 _inner.RestoreCharacter(charId, balance, version);
             }
+
+            public bool TryGetState(CharacterID charId, out uint balance, out uint version)
+            {
+                return _inner.TryGetState(charId, out balance, out version);
+            }
         }
 
         private List<string> _log;

@@ -7,6 +7,55 @@ using IronGrind.InventorySystem;
 
 namespace IronGrind.Tests.EditMode.CharacterPersistence
 {
+    /// <summary>An <see cref="ICharacterZoneLocator"/> that returns a settable zone and counts calls.</summary>
+    internal sealed class FakeZoneLocator : ICharacterZoneLocator
+    {
+        public ZoneID Zone { get; set; } = ZoneID.Invalid;
+
+        public int CallCount { get; private set; }
+
+        public ZoneID GetCurrentZone(CharacterID charId)
+        {
+            CallCount++;
+            return Zone;
+        }
+    }
+
+    /// <summary>An <see cref="ICharacterRecordStore"/> that forwards to an inner store and counts each kind of call.</summary>
+    internal sealed class CountingStore : ICharacterRecordStore
+    {
+        private readonly ICharacterRecordStore _inner;
+
+        public CountingStore(ICharacterRecordStore inner)
+        {
+            _inner = inner;
+        }
+
+        public int FetchCount { get; private set; }
+
+        public int InsertCount { get; private set; }
+
+        public int UpdateCount { get; private set; }
+
+        public System.Threading.Tasks.Task<CharacterRecord> FetchAsync(CharacterID id, System.Threading.CancellationToken ct)
+        {
+            FetchCount++;
+            return _inner.FetchAsync(id, ct);
+        }
+
+        public System.Threading.Tasks.Task<bool> InsertAsync(CharacterRecord record, System.Threading.CancellationToken ct)
+        {
+            InsertCount++;
+            return _inner.InsertAsync(record, ct);
+        }
+
+        public System.Threading.Tasks.Task<int> UpdateAsync(CharacterRecord record, uint expectedSaveVersion, System.Threading.CancellationToken ct)
+        {
+            UpdateCount++;
+            return _inner.UpdateAsync(record, expectedSaveVersion, ct);
+        }
+    }
+
     /// <summary>
     /// An <see cref="IInventoryService"/> for the Character Persistence load tests: records each <c>ImportSnapshot</c>
     /// call into an optional shared call log, samples the current HP / MP at that moment through an optional probe,
@@ -92,7 +141,17 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
 
         public ConsumeItemResult ConsumeItem(CharacterID charId, ItemID itemId, int quantity) => throw new NotSupportedException();
 
-        public InventorySnapshot ExportSnapshot(CharacterID charId) => throw new NotSupportedException();
+        /// <summary>What <see cref="ExportSnapshot"/> returns; null until a test sets it, in which case the call throws.</summary>
+        public InventorySnapshot ExportResult { get; set; }
+
+        /// <summary>Number of <see cref="ExportSnapshot"/> calls.</summary>
+        public int ExportCallCount { get; private set; }
+
+        public InventorySnapshot ExportSnapshot(CharacterID charId)
+        {
+            ExportCallCount++;
+            return ExportResult ?? throw new NotSupportedException("RecordingInventory.ExportResult was not set.");
+        }
 
         public void UnregisterCharacter(CharacterID charId) => throw new NotSupportedException();
     }

@@ -115,6 +115,27 @@ namespace IronGrind.Currency
 
         /// <inheritdoc/>
         /// <remarks>
+        /// Character Persistence Story 007 (CR-CP-10 step 5). Reads balance and version under the per-character
+        /// lock (see <see cref="GetLockFor"/>), so the pair is consistent. Returns <c>false</c> with 0 / 0 for a
+        /// character that was never registered or restored. Raises no event.
+        /// </remarks>
+        public bool TryGetState(CharacterID charId, out uint balance, out uint version)
+        {
+            lock (GetLockFor(charId))
+            {
+                if (_balances.TryGetValue(charId, out balance) && _versions.TryGetValue(charId, out version))
+                {
+                    return true;
+                }
+            }
+
+            balance = 0u;
+            version = 0u;
+            return false;
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>
         /// Guard order (fail fast, first match wins): (1) <see cref="GoldMutationError.CharacterNotFound"/>
         /// if <paramref name="charId"/> was never registered, (2) <see cref="GoldMutationError.InvalidAmount"/>
         /// if <paramref name="amount"/> is zero, (3) F-CS-1 cap-safe addition — subtraction-first

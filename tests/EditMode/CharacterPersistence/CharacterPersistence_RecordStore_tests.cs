@@ -640,18 +640,6 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
         }
 
         [Test]
-        public void CharacterPersistenceService_SaveSession_ReturnsFaultedTaskNamingStory007()
-        {
-            AssertFaultedNotSupported(_service.SaveSession(CHAR_A, SessionEndReason.CleanLogout, CancellationToken.None), "Story 007");
-        }
-
-        [Test]
-        public void CharacterPersistenceService_SaveSessionWithHpOverride_ReturnsFaultedTaskNamingStory007()
-        {
-            AssertFaultedNotSupported(_service.SaveSession(CHAR_A, SessionEndReason.CleanLogout, 1f, CancellationToken.None), "Story 007");
-        }
-
-        [Test]
         public void CharacterPersistenceService_SaveIrreversibleOutcome_ReturnsFaultedTaskNamingStory008()
         {
             AssertFaultedNotSupported(_service.SaveIrreversibleOutcome(CHAR_A, IrreversibleOutcomeTrigger.LevelUp, CancellationToken.None), "Story 008");
