@@ -3,7 +3,7 @@
 > **Layer**: Core
 > **GDD**: design/gdd/character-persistence.md
 > **Architecture Module**: Character Persistence — `CharacterPersistenceService : ICharacterPersistence` (async), PostgreSQL via Npgsql and Dapper
-> **Status**: In Progress (created 2026-10-12; 16 stories written 2026-10-12 — 6 Complete (001–004, 006, 007), 4 Not Started pending `/story-readiness`, 6 Blocked)
+> **Status**: In Progress (created 2026-10-12; 16 stories written 2026-10-12 — 6 Complete (001–004, 006, 007), 1 Ready (008), 3 Not Started pending `/story-readiness`, 6 Blocked)
 > **Stories**: 16 stories created 2026-10-12 (001–016)
 > **Manifest Version**: 2026-10-09
 
@@ -81,7 +81,7 @@ This epic is complete when:
 | 005 | [`LoadCharacter` — Equipment Re-registration](story-005-load-equipment-reregistration.md) | Integration | Blocked (the Equipment System has no code; 3 open decisions) | ADR-011, ADR-010 |
 | 006 | [Per-Character Save Queue](story-006-per-character-save-queue.md) | Logic | Complete (2026-10-15; 28 test cases, EditMode 2729 / 2729; COMPLETE WITH NOTES) | ADR-006, ADR-011 |
 | 007 | [`SaveSession` — the Step Sequence](story-007-save-session.md) | Integration | Complete (2026-10-15; 47 test cases, EditMode 2774 / 2774; COMPLETE WITH NOTES) | ADR-011, ADR-006 |
-| 008 | [`SaveIrreversibleOutcome`](story-008-save-irreversible-outcome.md) | Integration | Not Started (2026-10-12; 2 open decisions) | ADR-006, ADR-011 |
+| 008 | [`SaveIrreversibleOutcome`](story-008-save-irreversible-outcome.md) | Integration | Ready (2026-10-15; estimate 8 h) | ADR-006, ADR-011 |
 | 009 | [The Irreversible-Outcome Persist Step and the Level-Up Path](story-009-irreversible-persist-step-and-level-up.md) | Integration | Not Started (2026-10-12; 3 open decisions) | ADR-011, ADR-010 |
 | 010 | [Session-End Triggers — Clean Logout and TTL Expiry](story-010-session-end-triggers.md) | Integration | Not Started (2026-10-12; 3 open decisions) | ADR-011 |
 | 011 | [`PendingPurchase` Lifecycle on the Store Seam](story-011-pending-purchase-lifecycle.md) | Logic | Not Started (2026-10-12; 3 open decisions; no caller yet) | ADR-001, ADR-006 |

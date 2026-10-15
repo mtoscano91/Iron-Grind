@@ -1,7 +1,7 @@
 # Story 008: `SaveIrreversibleOutcome`
 
 > **Epic**: Character Persistence
-> **Status**: Not Started — written 2026-10-12; both open decisions settled at `/story-readiness` 2026-10-15 (GDD lines written); re-run `/story-readiness` (the TR-IDs are not yet in the registry)
+> **Status**: Ready — written 2026-10-12; both open decisions settled at `/story-readiness` 2026-10-15 (GDD lines written); TR-IDs registered 2026-10-15; readiness re-run 2026-10-15 (NEEDS WORK: two stale lines, fixed)
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-09
@@ -48,7 +48,7 @@
 
 ## Implementation Notes
 
-- **Version rule, settled at Story 006 readiness (2026-10-15):** `SaveIrreversibleOutcome` reads the **latest** `SaveVersion` **at its turn** in Story 006's queue, so two irreversible writes for one character give N+1 then N+2 — AC-CP-21's version clause, moved here from Story 006 (add it as a criterion at this story's readiness). Where "the latest version" lives (an in-memory per-character version the service updates after each successful write, or a fetch at its turn) is for this story's readiness. *Story 007 readiness (2026-10-15): the service now keeps a session table — `CharacterID → { EntityID, identity fields, gear, SaveVersion }`, filled by `ApplyLoadedRecord`, advanced after each successful write — so "the latest version" can be read from that entry at this write's turn in the queue.*
+- **Version rule, settled at Story 006 readiness (2026-10-15):** `SaveIrreversibleOutcome` reads the **latest** `SaveVersion` **at its turn** in Story 006's queue, so two irreversible writes for one character give N+1 then N+2 — AC-CP-21's version clause, moved here from Story 006 and now in the criteria. The expected version is the session-table entry's `SaveVersion` (Story 007: `CharacterID → { EntityID, identity fields, gear, SaveVersion }`, filled by `ApplyLoadedRecord`), read at this write's turn in the queue and advanced only on `Success`; after an unknown outcome the next write re-reads the stored value instead (decision 2).
 - "Session aborted" in AC-CP-19 is the caller's act (the coordinator's failure branch), not this method's.
 - After a failed or cancelled write the outcome in the database is unknown (ADR-011: "cancelling the token does not abort a command already running"). The in-memory expected version must not be advanced on anything but `Success`; what a later save then meets is decision 2 below.
 
