@@ -1,8 +1,8 @@
 # Architecture Traceability Index
 
-> **Last Updated:** 2026-10-09
+> **Last Updated:** 2026-10-15
 > **Engine:** Unity 6.3 LTS (6000.3)
-> **Source review:** `docs/architecture/architecture-review-2026-10-07.md` (full); `docs/architecture/architecture-review-2026-10-08.md` (ADR-012 only); `docs/architecture/architecture-review-2026-10-08-rereview.md` (ADR-012 lean re-review); `docs/architecture/architecture-review-2026-10-08-adr-013.md` (ADR-013 only); `docs/architecture/architecture-review-2026-10-09-adr-014.md` (ADR-014 only); `docs/architecture/architecture-review-2026-10-09-adr-014-rereview.md` (ADR-014 lean re-review)
+> **Source review:** `docs/architecture/architecture-review-2026-10-15-tr-registry.md` (TR registry registration only); `docs/architecture/architecture-review-2026-10-07.md` (full); `docs/architecture/architecture-review-2026-10-08.md` (ADR-012 only); `docs/architecture/architecture-review-2026-10-08-rereview.md` (ADR-012 lean re-review); `docs/architecture/architecture-review-2026-10-08-adr-013.md` (ADR-013 only); `docs/architecture/architecture-review-2026-10-09-adr-014.md` (ADR-014 only); `docs/architecture/architecture-review-2026-10-09-adr-014-rereview.md` (ADR-014 lean re-review)
 
 ## Coverage Summary (domain-level)
 
@@ -13,7 +13,7 @@
   - Partial or in conflict: 8 (shop transactions, persistence, hosting, zone load/teardown, messaging — inbound requests, async persistence, server/client code isolation — code moved, build-pipeline checks open, server randomness — ADR Accepted, nothing implemented)
 - Schema gaps: 2 (hotbar assignments, respec reservation state)
 - Cross-ADR conflicts: 2 (C1 zone process supervision, C2 teardown order)
-- Per-requirement TR-IDs in `tr-registry.yaml`: **0** — the 12 EPIC files use 94 TR-IDs that are not registered
+- Per-requirement TR-IDs in `tr-registry.yaml`: **107** (registered 2026-10-15 from the 13 EPIC tables; 7 with revised text). Unregistered: CR-LT-16 (loot validation needs a ready Item Database) — candidate `TR-loot-013`
 
 ## Domain Coverage Matrix
 

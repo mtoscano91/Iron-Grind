@@ -24,33 +24,781 @@
 #
 # STATUS VALUES: active | deprecated | superseded-by: TR-[system]-NNN
 
-version: 1
-last_updated: ""
+version: 2
+last_updated: "2026-10-15"  # 107 TR-IDs registered from the 13 EPIC.md tables (/architecture-review, docs/architecture/architecture-review-2026-10-15-tr-registry.md); 7 carry a revised date
 
-requirements: []
+requirements:
+  # --- auth: design/gdd/authentication.md (production/epics/authentication/EPIC.md) ---
+  - id: TR-auth-001
+    system: auth
+    gdd: design/gdd/authentication.md
+    requirement: "Full authentication = credential verification + AccountID→CharacterID resolution + session token issuance, all three complete before any game operation is permitted (CR-AUTH-1)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-auth-002
+    system: auth
+    gdd: design/gdd/authentication.md
+    requirement: "`AccountID` is a `readonly struct` wrapping `uint`; `AccountID(0)` reserved/invalid; monotonic server-side counter, never reused, persisted independently from `CharacterID`'s counter (CR-AUTH-2/3)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-auth-003
+    system: auth
+    gdd: design/gdd/authentication.md
+    requirement: "Authentication runs as a standalone .NET sidecar process (not the Unity IL2CPP binary), communicating via internal IPC named pipes (CR-AUTH-4)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-auth-004
+    system: auth
+    gdd: design/gdd/authentication.md
+    requirement: "Password hashing via Argon2id (`Konscious.Security.Cryptography`), minimum `iterations=2, memorySize=19456KB, parallelism=1`, PHC string storage, 16-byte salt; bcrypt explicitly rejected (72-byte truncation defect) (CR-AUTH-5)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-auth-005
+    system: auth
+    gdd: design/gdd/authentication.md
+    requirement: "Client sends plaintext credentials over TLS only; server hashes on receipt; client MUST NOT pre-hash; server MUST reject non-TLS connections (CR-AUTH-6)"
+    created: 2026-08-11
+    revised: ""
+    status: active
 
-# --- EXAMPLE ENTRIES (remove when first real entries are added) ---
-#
-# - id: TR-combat-001
-#   system: combat
-#   gdd: design/gdd/combat-system.md
-#   requirement: "Player takes damage from enemies based on attack power minus defence"
-#   created: 2026-03-10
-#   revised: ""
-#   status: active
-#
-# - id: TR-combat-002
-#   system: combat
-#   gdd: design/gdd/combat-system.md
-#   requirement: "Combo window timing is 0.4 seconds between hits"
-#   created: 2026-03-10
-#   revised: "2026-04-01"
-#   status: active
-#
-# - id: TR-combat-003
-#   system: combat
-#   gdd: design/gdd/combat-system.md
-#   requirement: "Old damage formula using raw stats"
-#   created: 2026-03-10
-#   revised: ""
-#   status: superseded-by: TR-combat-001
+  # --- cp: design/gdd/character-persistence.md (production/epics/character-persistence/EPIC.md) ---
+  - id: TR-cp-001
+    system: cp
+    gdd: design/gdd/character-persistence.md
+    requirement: "CR-CP-1 — the `ICharacterPersistence` async interface (`LoadCharacter`, `CreateStub`, `SaveSession`, `SaveIrreversibleOutcome`) and its result types"
+    created: 2026-10-12
+    revised: ""
+    status: active
+  - id: TR-cp-002
+    system: cp
+    gdd: design/gdd/character-persistence.md
+    requirement: "CR-CP-2 — the character record schema: 23 logical fields, some not persisted"
+    created: 2026-10-12
+    revised: ""
+    status: active
+  - id: TR-cp-003
+    system: cp
+    gdd: design/gdd/character-persistence.md
+    requirement: "CR-CP-3 — the load sequence, in its exact order (stat initialisation before equipment re-registration); `LoadCharacter` fetches and validates only (async), `ApplyLoadedRecord` does every write synchronously on the tick thread"
+    created: 2026-10-12
+    revised: "2026-10-15"
+    status: active
+  - id: TR-cp-004
+    system: cp
+    gdd: design/gdd/character-persistence.md
+    requirement: "CR-CP-4 — save triggers: all saves are event-driven, no periodic save; every `SaveIrreversibleOutcome` writes the whole record"
+    created: 2026-10-12
+    revised: "2026-10-15"
+    status: active
+  - id: TR-cp-005
+    system: cp
+    gdd: design/gdd/character-persistence.md
+    requirement: "CR-CP-5 — the `SaveIrreversibleOutcome` failure protocol: caller rollback, session preservation, disconnect"
+    created: 2026-10-12
+    revised: ""
+    status: active
+  - id: TR-cp-006
+    system: cp
+    gdd: design/gdd/character-persistence.md
+    requirement: "CR-CP-6 — one transaction per save; `SaveVersion` + 1 on every write; zero rows affected → `ConcurrencyConflict`; no partial write, no retry; after a write with an unknown outcome the next write re-reads the stored `SaveVersion`"
+    created: 2026-10-12
+    revised: "2026-10-15"
+    status: active
+  - id: TR-cp-007
+    system: cp
+    gdd: design/gdd/character-persistence.md
+    requirement: "CR-CP-7 — at most one save in flight per `CharacterID`; a second call is queued; the snapshot is taken before the queue; `SaveSession` takes its expected `SaveVersion` at call time, `SaveIrreversibleOutcome` at its turn"
+    created: 2026-10-12
+    revised: "2026-10-15"
+    status: active
+  - id: TR-cp-008
+    system: cp
+    gdd: design/gdd/character-persistence.md
+    requirement: "CR-CP-8 — `CHARACTER_LOAD_TIMEOUT_SECONDS = 10` on `LoadCharacter`"
+    created: 2026-10-12
+    revised: ""
+    status: active
+  - id: TR-cp-009
+    system: cp
+    gdd: design/gdd/character-persistence.md
+    requirement: "CR-CP-9 — `CreateStub` writes a complete Level 1 record at registration; no first-login path in `LoadCharacter`"
+    created: 2026-10-12
+    revised: ""
+    status: active
+  - id: TR-cp-010
+    system: cp
+    gdd: design/gdd/character-persistence.md
+    requirement: "CR-CP-10 — the `SaveSession` step sequence: steps 2–6 read in-memory state on the tick thread, then step 1 takes the save slot, then step 7 commits atomically; `SaveIrreversibleOutcome` runs steps 2–7 the same way"
+    created: 2026-10-12
+    revised: "2026-10-15"
+    status: active
+  - id: TR-cp-011
+    system: cp
+    gdd: design/gdd/character-persistence.md
+    requirement: "CR-CP-11 — CR-CP-5 applies to `SaveIrreversibleOutcome` failures only; `SaveSession` failures follow CR-NET-5.5"
+    created: 2026-10-12
+    revised: ""
+    status: active
+  - id: TR-cp-012
+    system: cp
+    gdd: design/gdd/character-persistence.md
+    requirement: "CR-CP-12 — `PendingPurchase` in its own `pending_purchases` table, outside the character record"
+    created: 2026-10-12
+    revised: ""
+    status: active
+  - id: TR-cp-013
+    system: cp
+    gdd: design/gdd/character-persistence.md
+    requirement: "F-CP-2 — `SaveVersion` increment on every write"
+    created: 2026-10-12
+    revised: ""
+    status: active
+
+  # --- stats: design/gdd/character-stats.md (production/epics/character-stats/EPIC.md) ---
+  - id: TR-stats-001
+    system: stats
+    gdd: design/gdd/character-stats.md
+    requirement: "Modifier stack applies flat bonuses first, then percentage bonuses multiplicatively; result clamped to StatMin/StatMax last"
+    created: 2026-07-02
+    revised: ""
+    status: active
+  - id: TR-stats-002
+    system: stats
+    gdd: design/gdd/character-stats.md
+    requirement: "Percentage bonuses within the same modifier layer are additive (not compounding): two +10% bonuses = +20%, not +21%"
+    created: 2026-07-02
+    revised: ""
+    status: active
+  - id: TR-stats-003
+    system: stats
+    gdd: design/gdd/character-stats.md
+    requirement: "CurrentHP and CurrentMP are protected from the modifier stack; MaxHP decrease immediately clamps CurrentHP; MaxHP increase grants no HP restoration"
+    created: 2026-07-02
+    revised: ""
+    status: active
+  - id: TR-stats-004
+    system: stats
+    gdd: design/gdd/character-stats.md
+    requirement: "`ApplyDamage` at CurrentHP=0 is a no-op; `OnEntityDied` fires exactly once at CurrentHP=0.0; overkill clamps at 0.0, never negative"
+    created: 2026-07-02
+    revised: ""
+    status: active
+  - id: TR-stats-005
+    system: stats
+    gdd: design/gdd/character-stats.md
+    requirement: "`OnStatChanged` broadcast uses C# `event Action<StatChangedArgs>` with struct args — no per-emit heap allocation on the server tick path"
+    created: 2026-07-02
+    revised: ""
+    status: active
+  - id: TR-stats-006
+    system: stats
+    gdd: design/gdd/character-stats.md
+    requirement: "All gameplay systems query stats live on demand at point of use; no system other than HUD holds a cached stat value"
+    created: 2026-07-02
+    revised: ""
+    status: active
+
+  # --- currency: design/gdd/currency-system.md (production/epics/currency-system/EPIC.md) ---
+  - id: TR-currency-001
+    system: currency
+    gdd: design/gdd/currency-system.md
+    requirement: "`TrySpendGold(amount)` — server-side, atomic; returns false without modifying balance if `gold_balance < amount` (no overdraft)"
+    created: 2026-07-02
+    revised: ""
+    status: active
+  - id: TR-currency-002
+    system: currency
+    gdd: design/gdd/currency-system.md
+    requirement: "`AddGold(amount, GoldTransactionReason)` — logs reason enum on every call; `CompensatingRefund` used for reconnect refunds and failure rollbacks"
+    created: 2026-07-02
+    revised: ""
+    status: active
+  - id: TR-currency-003
+    system: currency
+    gdd: design/gdd/currency-system.md
+    requirement: "`gold_version` provides optimistic concurrency for concurrent save conflicts; `rows-affected = 0` → `ConcurrencyConflict` result"
+    created: 2026-07-02
+    revised: ""
+    status: active
+  - id: TR-currency-004
+    system: currency
+    gdd: design/gdd/currency-system.md
+    requirement: "Client holds read-only display copy of gold balance, received via state sync — client never writes gold balance"
+    created: 2026-07-02
+    revised: ""
+    status: active
+  - id: TR-currency-005
+    system: currency
+    gdd: design/gdd/currency-system.md
+    requirement: "Gold balance persisted in `character_records.gold_balance`; persistence write budget ≤50ms P95 under normal load"
+    created: 2026-07-02
+    revised: ""
+    status: active
+
+  # --- dmg: design/gdd/damage-calculation.md (production/epics/damage-calculation/EPIC.md) ---
+  - id: TR-dmg-001
+    system: dmg
+    gdd: design/gdd/damage-calculation.md
+    requirement: "`DamageCalculation(BaseDamage, AttackerID, TargetID, DamageContext) → DamageResult` is server-only; no client code path calls it; enforced by placing the resolver in `IronGrind.ServerLogic`, which is excluded from client builds"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-dmg-002
+    system: dmg
+    gdd: design/gdd/damage-calculation.md
+    requirement: "`DamageContext` (`PhysicalAuto`/`PhysicalSkill`/`MagicalSkill`) is echoed in `DamageResult` for VFX routing only; at MVP all three contexts produce identical formula output for the same `BaseDamage` — any divergence is the caller's responsibility, never a formula branch here"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-dmg-003
+    system: dmg
+    gdd: design/gdd/damage-calculation.md
+    requirement: "`BaseDamage` is caller-precomputed (`GetEffectiveStat(AttackerID, AttackPower)`); this system never re-queries AttackPower itself"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-dmg-004
+    system: dmg
+    gdd: design/gdd/damage-calculation.md
+    requirement: "Resolution executes as a fixed 11-step sequence (crit stats read → defense read → physical mitigation → ... ); no step may be reordered"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-dmg-005
+    system: dmg
+    gdd: design/gdd/damage-calculation.md
+    requirement: "`PhysicalMitigated = max(BaseDamage × MIN_DAMAGE_FRACTION, BaseDamage − Defense)` — damage floor guarantees non-zero chip damage regardless of defense stacking"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-dmg-006
+    system: dmg
+    gdd: design/gdd/damage-calculation.md
+    requirement: "Kill detection is owned here: `FinalDamage` reducing target `CurrentHP` to ≤0 sets `IsKill = true` in the returned result; callers act on it (XP award via Leveling, `CharacterStats.ApplyDamage`) — this system never fires events itself"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  # --- enh: design/gdd/enhancement-system.md (production/epics/enhancement-system/EPIC.md) ---
+  - id: TR-enh-001
+    system: enh
+    gdd: design/gdd/enhancement-system.md
+    requirement: "`IEnhancementBonusProvider`: `GetFlatBonus(level, baseFlatBonus, gearTier)` and `GetElementalBonus(level, baseElementalDamage, gearTier, isWeapon)`, with the tier parity constraint (a +5 item ≈ an unenhanced item of the next tier) (F-ENH-1, F-ENH-2, F-ENH-3)"
+    created: 2026-10-07
+    revised: ""
+    status: active
+  - id: TR-enh-002
+    system: enh
+    gdd: design/gdd/enhancement-system.md
+    requirement: "Level storage and range: a per-instance `byte`, default 0, valid 0 to `MAX_ENHANCEMENT_LEVEL` (10); not an Item Database field; prestige thresholds `PRESTIGE_MID_THRESHOLD = 5`, `ENHANCEMENT_GLOW_THRESHOLD = 7`, `PRESTIGE_HIGH_THRESHOLD = 8` owned here as tuning data (CR-ENH-1, CR-ENH-2, CR-ENH-12)"
+    created: 2026-10-07
+    revised: ""
+    status: active
+  - id: TR-enh-003
+    system: enh
+    gdd: design/gdd/enhancement-system.md
+    requirement: "Probability table and resolution: one uniform draw `r ∈ [0, 1)`; success when `r < P_s[k]`, otherwise destruction at every level including +0; the ten `P_s[k]` values are tuning knobs; RNG injectable for tests (CR-ENH-9, CR-ENH-10, F-ENH-4, F-ENH-5)"
+    created: 2026-10-07
+    revised: ""
+    status: active
+  - id: TR-enh-004
+    system: enh
+    gdd: design/gdd/enhancement-system.md
+    requirement: "Attempt validation with no state change on rejection: item present and unlocked, `IsUpgradeable`, not a Ring / Necklace, below the maximum level, scroll present with `TargetGearTier` matching the item's `GearTier`, no concurrent attempt, NPC session active (CR-ENH-2 to CR-ENH-5, CR-ENH-8, CR-ENH-15 step 2)"
+    created: 2026-10-07
+    revised: ""
+    status: active
+  - id: TR-enh-005
+    system: enh
+    gdd: design/gdd/enhancement-system.md
+    requirement: "Attempt sequence: lock the slot, consume one scroll with `ConsumeItem`, draw, apply to the bag (`SetEnhancementLevel` or `RemoveItem`), then unlock; the lock never outlives the attempt (CR-ENH-6, CR-ENH-7, CR-ENH-15 steps 3–7)"
+    created: 2026-10-07
+    revised: ""
+    status: active
+  - id: TR-enh-006
+    system: enh
+    gdd: design/gdd/enhancement-system.md
+    requirement: "Commit-then-deliver: the outcome becomes durable through one `SaveIrreversibleOutcome` write before any result is sent; on a failed write the caller restores the item (previous level, or `ForceInsert`) and the scroll, unlocks, and logs `CriticalEnhancementWriteFailed` (CR-ENH-11, CR-ENH-15 step 6b and Rollback)"
+    created: 2026-10-07
+    revised: ""
+    status: active
+  - id: TR-enh-007
+    system: enh
+    gdd: design/gdd/enhancement-system.md
+    requirement: "Attempt exclusivity: from the lock until the attempt is idle, no other inventory-mutating request for that character is processed; held requests run in arrival order afterwards, or are discarded with the disconnect when the write fails (CR-ENH-18, ADR-011 Decision 4)"
+    created: 2026-10-07
+    revised: "2026-10-15"
+    status: active
+  - id: TR-enh-008
+    system: enh
+    gdd: design/gdd/enhancement-system.md
+    requirement: "NPC interaction session: `NPCInteractionActive` per session, opened only in the town hub, shared with the NPC Shop, 300 s wall-clock lifetime, read only at validation; clearing it never cancels an attempt past validation (CR-ENH-16, CR-ENH-17)"
+    created: 2026-10-07
+    revised: ""
+    status: active
+  - id: TR-enh-009
+    system: enh
+    gdd: design/gdd/enhancement-system.md
+    requirement: "Client messages: `ConfirmEnhancement(itemSlotIndex, scrollSlotIndex)`, `CancelEnhancement`, `EnhancementStateUpdate`, `EnhancementAttemptResult { outcome, newLevel, resultCode }`; client-facing inventory changes from an attempt are held until the commit succeeds (CR-ENH-6, CR-ENH-11, CR-ENH-15 step 9)"
+    created: 2026-10-07
+    revised: ""
+    status: active
+  - id: TR-enh-010
+    system: enh
+    gdd: design/gdd/enhancement-system.md
+    requirement: "Server broadcast at +9: `ServerBroadcast_Enhancement9 { playerName, itemName }` to all online players, once per successful +9 transition, only after the commit (CR-ENH-14, CR-ENH-15 step 8)"
+    created: 2026-10-07
+    revised: ""
+    status: active
+  - id: TR-enh-011
+    system: enh
+    gdd: design/gdd/enhancement-system.md
+    requirement: "Outcome signals for presentation: `OnEnhancementSuccess(newLevel)`, `OnEnhancementDestruction()`, `OnPrestigeBandChange(band)`; the glow itself is rendered by the VFX System from `equipmentAppearanceFlags` (CR-ENH-13, Downstream Dependencies)"
+    created: 2026-10-07
+    revised: ""
+    status: active
+
+  # --- equip: design/gdd/equipment-system.md (production/epics/equipment-system/EPIC.md) ---
+  - id: TR-equip-001
+    system: equip
+    gdd: design/gdd/equipment-system.md
+    requirement: "Slot registry: fixed array of 7 `EquipmentSlotEntry { ItemId, IsTransitioning, EnhancementLevel }` indexed by `(int)GearSlot`, no Dictionary; the system never changes a level, it only carries it (CR-EQS-1)"
+    created: 2026-10-07
+    revised: ""
+    status: active
+  - id: TR-equip-002
+    system: equip
+    gdd: design/gdd/equipment-system.md
+    requirement: "Validation before any mutation: slot type match (`SlotMismatch`), stat gate on `GetBaseStat` (`StatRequirementNotMet`; accessories ungated), same-item guard on `ItemID` and level via `Inventory.GetSlot` (`NoChange`), and entry-point input validation (CR-EQS-2, CR-EQS-3, CR-EQS-4, CR-EQS-13, F-EQS-3)"
+    created: 2026-10-07
+    revised: ""
+    status: active
+  - id: TR-equip-003
+    system: equip
+    gdd: design/gdd/equipment-system.md
+    requirement: "Enhanced modifier registration: every `AddEquipmentModifier` call passes `IEnhancementBonusProvider.GetFlatBonus(enhancementLevel, modifier.FlatBonus, item.GearTier)`, never the raw Item Database value (modifier registration rule, F-EQS-1, F-EQS-2, F-EQS-5)"
+    created: 2026-10-07
+    revised: ""
+    status: active
+  - id: TR-equip-004
+    system: equip
+    gdd: design/gdd/equipment-system.md
+    requirement: "Equip into an empty slot and unequip, through `MoveItemOut` / `MoveItemIn` carrying the level; unequip restores modifiers and returns `InventoryError` when the bag refuses the item; a missing item definition on unequip clears the slot with a critical error (CR-EQS-5, CR-EQS-7)"
+    created: 2026-10-07
+    revised: ""
+    status: active
+  - id: TR-equip-005
+    system: equip
+    gdd: design/gdd/equipment-system.md
+    requirement: "Auto-swap into an occupied slot with rollback: free-slot check, old modifiers removed, old item to the bag, new item out, new modifiers added; a failed `MoveItemIn` aborts in place with the old item still equipped and no `ForceInsert` retry (CR-EQS-6, CR-EQS-8)"
+    created: 2026-10-07
+    revised: ""
+    status: active
+  - id: TR-equip-006
+    system: equip
+    gdd: design/gdd/equipment-system.md
+    requirement: "Transitioning guard: `IsSlotTransitioning(GearSlot)` is true for the whole swap window; the flag is never saved, and no stat transaction API is used (`OnStatChanged` fires twice during a swap) (CR-EQS-9, CR-EQS-15)"
+    created: 2026-10-07
+    revised: ""
+    status: active
+  - id: TR-equip-007
+    system: equip
+    gdd: design/gdd/equipment-system.md
+    requirement: "`equipmentAppearanceFlags` byte re-encoded after every equip, unequip and swap: WeaponTier [7:6], ElementType [5:3], PrestigeBand [2:1] from the **Weapon slot's** level only, ArmorTier [0] (CR-EQS-11)"
+    created: 2026-10-07
+    revised: ""
+    status: active
+  - id: TR-equip-008
+    system: equip
+    gdd: design/gdd/equipment-system.md
+    requirement: "Read surface for other systems: `GetEquippedWeaponItemID()`, `GetEquippedWeaponEnhancementLevel()`, `GetSlotEnhancementLevel(GearSlot)`, `GetEquipmentSlotState(GearSlot)`; no elemental data is written to Character Stats (CR-EQS-12)"
+    created: 2026-10-07
+    revised: ""
+    status: active
+  - id: TR-equip-009
+    system: equip
+    gdd: design/gdd/equipment-system.md
+    requirement: "Accessory Merge: `RequestMerge(slotIdx1, slotIdx2, slotIdx3)` consumes three identical Ring / Necklace items and inserts `MergeResultItemID` at level 0, atomically, with rollback and a critical log if the rollback itself fails (CR-EQS-14)"
+    created: 2026-10-07
+    revised: ""
+    status: active
+  - id: TR-equip-010
+    system: equip
+    gdd: design/gdd/equipment-system.md
+    requirement: "Save and load: state is fully reconstructible from 7 `{ItemID, EnhancementLevel}` pairs; on load modifiers are re-registered at each slot's saved level and `IsTransitioning` is false; no startup cleanup pass (CR-EQS-15, AC-EQS-25)"
+    created: 2026-10-07
+    revised: ""
+    status: active
+  - id: TR-equip-011
+    system: equip
+    gdd: design/gdd/equipment-system.md
+    requirement: "Wire request handling: `EquipRequest` (`gearSlot`, `itemId`, `inventorySlot`; `itemId = 0` routes to `Unequip`) answered by `EquipResult` with the stated `EquipResult` → `EquipFailReason` mapping (CR-EQS-13) — **the source of `ItemLocked` and `ItemNotInInventory` is undecided (OQ-EQS-9)**"
+    created: 2026-10-07
+    revised: ""
+    status: active
+
+  # --- inv: design/gdd/inventory-system.md (production/epics/inventory-system/EPIC.md) ---
+  - id: TR-inv-001
+    system: inv
+    gdd: design/gdd/inventory-system.md
+    requirement: "Fixed 20-slot array (indices 0–19); each slot holds one `ItemID` + `Quantity` + `EnhancementLevel: byte` (level added 2026-10-01, Rule 1.4); empty = `ItemID.Invalid` with `Quantity = 0`; slot indices are stable across sessions — no repacking on login (Rule 1)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-inv-002
+    system: inv
+    gdd: design/gdd/inventory-system.md
+    requirement: "Equipment items always `StackLimit = 1` (never stack); Consumables stack up to their authored `StackLimit` (max 99); multiple stacks of the same `ItemID` may coexist in different slots (Rule 2)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-inv-003
+    system: inv
+    gdd: design/gdd/inventory-system.md
+    requirement: "Pickup resolution is a single atomic transaction: fill partial stacks first (ascending slot order), then open new slots (ascending slot order); if no empty slot exists and remainder > 0, the entire pickup fails and all partial fills roll back — no partial pickups exist (Rule 3)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-inv-004
+    system: inv
+    gdd: design/gdd/inventory-system.md
+    requirement: "Inventory provides the data interface Equipment System, Enhancement System, and NPC Shop read when a player interacts with items — Inventory does not own equipped gear, gold, or item property definitions"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  # --- itemdb: design/gdd/item-database.md (production/epics/item-database/EPIC.md) ---
+  - id: TR-itemdb-001
+    system: itemdb
+    gdd: design/gdd/item-database.md
+    requirement: "`GetItem(ItemID)` returns single authoritative `ItemDefinition` reference; `GetItem(ItemID.Invalid)` returns null, no exception"
+    created: 2026-07-02
+    revised: ""
+    status: active
+  - id: TR-itemdb-002
+    system: itemdb
+    gdd: design/gdd/item-database.md
+    requirement: "Import validator rejects: duplicate ItemIDs, equipment with StackLimit ≠ 1, consumables with GearSlot/GearTier ≠ None, equipment with GearTier = None, zero-flat-bonus StatModifier entries, > 2 StatModifier entries per item"
+    created: 2026-07-02
+    revised: ""
+    status: active
+  - id: TR-itemdb-003
+    system: itemdb
+    gdd: design/gdd/item-database.md
+    requirement: "`GetItemsByCategory()` returns filtered `IReadOnlyList<ItemDefinition>`; unknown category enum value returns empty list + dev-build warning, no exception"
+    created: 2026-07-02
+    revised: ""
+    status: active
+  - id: TR-itemdb-004
+    system: itemdb
+    gdd: design/gdd/item-database.md
+    requirement: "Database is read-only at runtime — no system may write or mutate item definitions after initialization"
+    created: 2026-07-02
+    revised: ""
+    status: active
+  - id: TR-itemdb-005
+    system: itemdb
+    gdd: design/gdd/item-database.md
+    requirement: "MVP loader initializes exactly 38 item records (28 Equipment, 10 Consumable — 6 potions, 4 Enhancement Scrolls); any validation failure aborts loading — game does not enter gameplay with a corrupt database"
+    created: 2026-07-02
+    revised: "2026-10-02"
+    status: active
+  - id: TR-itemdb-006
+    system: itemdb
+    gdd: design/gdd/item-database.md
+    requirement: "`ScrollData { TargetGearTier }` sub-schema on `ItemDefinition`; a Consumable record carries exactly one of `ConsumableData` / `ScrollData`; import validator rejects: Consumable with neither or both, Equipment with `ScrollData`, `TargetGearTier` of `None` or undefined; a well-formed scroll (`SellPriceGold = 0`) validates with zero issues"
+    created: 2026-10-02
+    revised: ""
+    status: active
+
+  # --- lvl: design/gdd/leveling-system.md (production/epics/leveling-system/EPIC.md) ---
+  - id: TR-lvl-001
+    system: lvl
+    gdd: design/gdd/leveling-system.md
+    requirement: "`AddExperience(EntityID, amount)` is owned by Character Stats; it fires `OnStatChanged(Experience)` then synchronously calls `ILevelingSystemListener.OnExperienceThresholdCrossed` if the new total crosses the next level's threshold; only one listener may ever register (CR-1.1/1.2)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-lvl-002
+    system: lvl
+    gdd: design/gdd/leveling-system.md
+    requirement: "XP is a monotonic running total in `StatID.Experience`; no \"XP within level\" value is stored — HUD fill is derived at display time via float-cast division (CR-1.3)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-lvl-003
+    system: lvl
+    gdd: design/gdd/leveling-system.md
+    requirement: "`AddExperience` with `amount ≤ 0` is rejected with an error log, no write; targeting a mob entity is a no-op (CR-1.4)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-lvl-004
+    system: lvl
+    gdd: design/gdd/leveling-system.md
+    requirement: "Party XP bonus computation is owned by the Party System (not yet an epic) — Leveling receives only final per-player XP grants and is not party-aware (CR-1.5)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-lvl-005
+    system: lvl
+    gdd: design/gdd/leveling-system.md
+    requirement: "Level-up sequence executes as a fixed, non-reorderable step sequence (CR-2), including an at-cap guard: `Level == 60` aborts level-up, Experience clamps to `XpThreshold[60]`"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-lvl-006
+    system: lvl
+    gdd: design/gdd/leveling-system.md
+    requirement: "At milestone levels 20/40/60, `LevelTierMultiplier` advances and all dependent base stats are fully re-derived from accumulated totals (F-LS-3)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-lvl-007
+    system: lvl
+    gdd: design/gdd/leveling-system.md
+    requirement: "Free point allocation: `AllocateFreePoint` guards (heldFreePoints==0, invalid StatID), decrement-then-write ordering, no HP/MP restore (CR-3)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-lvl-008
+    system: lvl
+    gdd: design/gdd/leveling-system.md
+    requirement: "Respec two-phase commit: Inventory System owns `ItemReservation`/combat gate (Phase 1), `TryApplyRespec` executes the transacted stat rewrite (Phase 2); exception safety guarantees the item is never lost (CR-4)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-lvl-009
+    system: lvl
+    gdd: design/gdd/leveling-system.md
+    requirement: "Level cap behavior: Level never exceeds 60; XP clamps at cap; sentinel array entry prevents out-of-bounds access (CR-5)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-lvl-010
+    system: lvl
+    gdd: design/gdd/leveling-system.md
+    requirement: "Spawn/load initialization: `InitializeAtL1` and `RestoreLevelingState` never fire level-up events; corrupted-value clamping on load (CR-6, EC-LS-38)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-lvl-011
+    system: lvl
+    gdd: design/gdd/leveling-system.md
+    requirement: "F-LS-1 XP threshold formula and cumulative table; F-LS-4 auto-alloc L60 snapshots"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-lvl-012
+    system: lvl
+    gdd: design/gdd/leveling-system.md
+    requirement: "F-PS-1 party XP detriment integration (`party-system.md`, supersedes this GDD's own F-LS-2)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-lvl-013
+    system: lvl
+    gdd: design/gdd/leveling-system.md
+    requirement: "HUD/UI display requirements: XP bar fill, level badge, stat screen, respec screen visual/audio cues (Visual/Audio Requirements, UI Requirements sections)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+
+  # --- loot: design/gdd/loot-table-system.md (production/epics/loot-table-system/EPIC.md) ---
+  - id: TR-loot-001
+    system: loot
+    gdd: design/gdd/loot-table-system.md
+    requirement: "Independent per-entry Bernoulli rolls at mob death; single process-level `System.Random` seeded once at startup from system entropy, seed logged for auditability; tests must inject a seeded instance via DI (CR-LT-1)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-loot-002
+    system: loot
+    gdd: design/gdd/loot-table-system.md
+    requirement: "Equipment definitions cached once at server startup via `IItemDatabase.GetItemsByCategory`; loot table data is static, immutable at runtime (CR-LT-2)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-loot-003
+    system: loot
+    gdd: design/gdd/loot-table-system.md
+    requirement: "Party tag: damage accumulated per-party in `damageRecord`; solo players treated as a party of size 1 with a unique `PartyID` (CR-LT-3)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-loot-004
+    system: loot
+    gdd: design/gdd/loot-table-system.md
+    requirement: "Party tag locks to the first party crossing `Mathf.CeilToInt(mob.MaxHP × TAG_THRESHOLD_FRACTION)` (default 0.33); fallback to highest cumulative damage at death, ties break by earliest first-damage tick; empty `damageRecord` at death = no drops (CR-LT-4)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-loot-005
+    system: loot
+    gdd: design/gdd/loot-table-system.md
+    requirement: "Drop tier classification: Bronze/Iron/None (Consumables) = Common drop via round-robin (CR-LT-6); Steel/DarkSteel = Rare drop via gold bid auction (CR-LT-8) (CR-LT-5)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-loot-006
+    system: loot
+    gdd: design/gdd/loot-table-system.md
+    requirement: "Kill resolution entry point `ResolveMobDrop(EntityID, tierShift)` (enemy-ai.md); gold drawn uniformly from `[GoldMin, GoldMax]`, split `floor(baseGold / N)` per winning-party member via `AddGold(…, MonsterDrop)`, no call when the share is 0; no attacker = no drops, no gold (CR-LT-14, F-LT-1)"
+    created: 2026-10-02
+    revised: ""
+    status: active
+  - id: TR-loot-007
+    system: loot
+    gdd: design/gdd/loot-table-system.md
+    requirement: "Ground item lifecycle: `Spawning → Assigned / Auctioning → Claiming → Inventory / Despawned`; `expiryTick = spawnTick + GROUND_ITEM_TTL_TICKS`; outcome events only, server-authoritative (CR-LT-12, CR-LT-15, States)"
+    created: 2026-10-02
+    revised: ""
+    status: active
+  - id: TR-loot-008
+    system: loot
+    gdd: design/gdd/loot-table-system.md
+    requirement: "Common drops assigned by the Party System's round-robin cursor — read via `IPartyService`, advanced via `AdvanceRrNextIndex`; a solo player's rare drop takes the common path (CR-LT-6, CR-LT-11)"
+    created: 2026-10-02
+    revised: ""
+    status: active
+  - id: TR-loot-009
+    system: loot
+    gdd: design/gdd/loot-table-system.md
+    requirement: "Proximity auto-pickup for the assigned character; bag-full drop fate: item stays assigned, retry on re-entry or in-radius after a slot frees, blocked notice, expiry warning, TTL pause on app background with a per-assignment budget (CR-LT-7, CR-LT-13, CR-LT-13.1–13.3)"
+    created: 2026-10-02
+    revised: ""
+    status: active
+  - id: TR-loot-010
+    system: loot
+    gdd: design/gdd/loot-table-system.md
+    requirement: "Rare drop gold-bid auction for parties of 2+: 600-tick window, floor = `SellPriceGold`, transparent bids, resolution by highest bid then earliest tick, `TrySpendGold` with disqualification, pool split `floor(bid / N)`, zero-bid fallback to round-robin (CR-LT-8, CR-LT-9, CR-LT-10, F-LT-2)"
+    created: 2026-10-02
+    revised: ""
+    status: active
+  - id: TR-loot-011
+    system: loot
+    gdd: design/gdd/loot-table-system.md
+    requirement: "Zone teardown: open auctions resolve immediately, remaining ground items despawn, no double award (Edge Cases)"
+    created: 2026-10-02
+    revised: ""
+    status: active
+  - id: TR-loot-012
+    system: loot
+    gdd: design/gdd/loot-table-system.md
+    requirement: "Auction winner grace: a bidder whose bag is full is not charged and has `AUCTION_WINNER_GRACE_TICKS` (600) to free a slot; otherwise the next bid is tried; all disqualified → round-robin with a fresh TTL; no grace at zone teardown, for a bidder who cannot afford their bid, or for a disconnected bidder (CR-LT-9.1, CR-LT-12, AC-LT-25)"
+    created: 2026-10-03
+    revised: ""
+    status: active
+
+  # --- net: design/gdd/networking-core.md (production/epics/networking-core/EPIC.md) ---
+  - id: TR-net-001
+    system: net
+    gdd: design/gdd/networking-core.md
+    requirement: "10-byte project envelope: `messageType:ushort` (2B), `charId:uint` (4B), `sequenceNum:uint` (4B); all messages use this envelope"
+    created: 2026-07-02
+    revised: ""
+    status: active
+  - id: TR-net-002
+    system: net
+    gdd: design/gdd/networking-core.md
+    requirement: "Server tick at exactly 20Hz via `NetworkManager.ServerTime.Tick`; `Application.targetFrameRate = 20` on server (bounds NavMeshAgent sim, ADR-002)"
+    created: 2026-07-02
+    revised: ""
+    status: active
+  - id: TR-net-003
+    system: net
+    gdd: design/gdd/networking-core.md
+    requirement: "Per-client batch ≤512B per tick; relevance-filtered before send; batch built server-side (networking-relevance-filter sub-contract)"
+    created: 2026-07-02
+    revised: ""
+    status: active
+  - id: TR-net-004
+    system: net
+    gdd: design/gdd/networking-core.md
+    requirement: "R-OD dedup key = `(charId, messageType, requestId)`; TTL = SESSION_TTL_SECONDS (300s); `messageType` resolved from envelope field, never hardcoded numerically"
+    created: 2026-07-02
+    revised: ""
+    status: active
+  - id: TR-net-005
+    system: net
+    gdd: design/gdd/networking-core.md
+    requirement: "Channel routing: U-U for movement, R-OD for combat/economy (with dedup), R-U for critical state — per criticality classification (networking-message-criticality sub-contract)"
+    created: 2026-07-02
+    revised: ""
+    status: active
+  - id: TR-net-006
+    system: net
+    gdd: design/gdd/networking-core.md
+    requirement: "Session state machine ST-NET-1/2; ghost entity policy on disconnect; NSCRT token issues/validates session identity (networking-session, networking-session-token, networking-ghost-session sub-contracts)"
+    created: 2026-07-02
+    revised: ""
+    status: active
+  - id: TR-net-007
+    system: net
+    gdd: design/gdd/networking-core.md
+    requirement: "OWL latency compensation algorithm with `LastBeatServerTick` per entity slot; tick-window constraint proven correct (networking-owl-compensation sub-contract)"
+    created: 2026-07-02
+    revised: ""
+    status: active
+  - id: TR-net-008
+    system: net
+    gdd: design/gdd/networking-core.md
+    requirement: "Tick loop start gated on `ZoneNavigationService.Initialize()` completion; tick loop must be active before gateway registration"
+    created: 2026-07-02
+    revised: ""
+    status: active
+  - id: TR-net-009
+    system: net
+    gdd: design/gdd/networking-core.md
+    requirement: "`ITransportFaultInjector`, `IServerCrashInjector`, `INetworkTestObserver` test harness present; harness code stripped from release builds (networking-test-harness sub-contract)"
+    created: 2026-07-02
+    revised: ""
+    status: active
+
+  # --- se: design/gdd/status-effects.md (production/epics/status-effects/EPIC.md) ---
+  - id: TR-se-001
+    system: se
+    gdd: design/gdd/status-effects.md
+    requirement: "`BuffDefinition`/`StatModifier`/`ActiveEffect` are fully value-type structs, no reference-type fields, no managed heap allocation on copy/storage — IL2CPP-safe (CR-SE-1)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-se-002
+    system: se
+    gdd: design/gdd/status-effects.md
+    requirement: "Any `StatID` except `Level`, `Experience`, `CurrentHP`, `CurrentMP` may be targeted by a modifier; `MaxHP`/`MaxMP` permitted with expiry clamping; `CurrentHP`/`CurrentMP` prohibited — resource restoration is regen-only, never modifier-layer (CR-SE-2)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-se-003
+    system: se
+    gdd: design/gdd/status-effects.md
+    requirement: "Exactly two public entry points exist; no external caller may invoke `CharacterStats.AddBuffModifier()`/`ApplyRegen()` directly — all buff/regen traffic routes through Status Effects (CR-SE-3)"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-se-004
+    system: se
+    gdd: design/gdd/status-effects.md
+    requirement: "On expiry, `RemoveBuffModifier()` is called and `OnStatChanged` fires so subscribers see the updated effective value without polling"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-se-005
+    system: se
+    gdd: design/gdd/status-effects.md
+    requirement: "`ApplyInstantHeal(EntityID, float amount)` delivers one-shot HP restoration without creating an `ActiveEffect` entry — distinct code path from the duration-tracked buff system"
+    created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-se-006
+    system: se
+    gdd: design/gdd/status-effects.md
+    requirement: "The wire protocol does not yet define buff-state broadcast messages; client display of buff icons/durations is a provisional dependency on future networking additions, not resolved in this GDD"
+    created: 2026-08-11
+    revised: ""
+    status: active
