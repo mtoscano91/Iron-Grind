@@ -1,7 +1,7 @@
 # Story 006: Per-Character Save Queue
 
 > **Epic**: Character Persistence
-> **Status**: Ready — `/story-readiness` 2026-10-15 (NEEDS WORK → decisions taken, see "Readiness decisions")
+> **Status**: Complete — 2026-10-15 (COMPLETE WITH NOTES; see Completion Notes)
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-09
@@ -93,7 +93,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/CharacterPersistence/CharacterPersistence_SaveQueue_tests.cs` — must exist and pass.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 28 cases (22 `[Test]`, 6 `[TestCase]`), EditMode 2729 / 2729 (batch mode, twice, 2026-10-15)
 
 ---
 
@@ -101,3 +101,27 @@
 
 - Depends on: Story 002 (Complete)
 - Unlocks: Stories 007, 008
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-10-15
+**Criteria**: 10/10 passing (nine by automated test; "Doc comments" by reading)
+**Test Evidence**: Logic — `tests/EditMode/CharacterPersistence/CharacterPersistence_SaveQueue_tests.cs`, 28 cases (22 `[Test]`, 6 `[TestCase]`), EditMode 2729 / 2729 (batch mode, run twice)
+**Code Review**: Complete — `/code-review` 2026-10-15 (`unity-specialist`, `qa-tester`): CHANGES REQUIRED; "fix all" applied and re-run (17 → 28 cases). Before the review the main session fixed one bug in the subagent's version: the wait-time cancel registration stayed live while the write ran, so a cancel during a write reported a possibly-committed write as Canceled.
+**Gates**: QL-TEST-COVERAGE and LP-CODE-REVIEW skipped — lean mode
+
+**Files**: `src/ServerLogic/CharacterPersistence/CharacterWriteQueue.cs` (new, public: `Enqueue<T>`, `ActiveCharacterCount`); the test file.
+
+**Deviations (advisory, accepted by the user 2026-10-15)**
+1. AC-CP-21 covered in its no-overlap half only; the version half (N+1, N+2) moved to Story 008 (readiness decision 1); no `ISaveCoordinator` — the write function is the spy seam (decision 3).
+2. The queue has no production caller: it is not wired into `CharacterPersistenceService` until Stories 007 and 008.
+3. Beyond the criteria (code review): a multi-exception fault passes every inner exception; a cancelled write keeps its token; a synchronous `OperationCanceledException` gives Canceled; a cancel after the write started does not cancel the caller's task.
+4. A few negative ("has not started") checks wait 50 ms; they can only miss a bug, never fail spuriously, and each is backed by an exact assertion.
+
+**For later stories**
+- Stories 007 / 008: wire the queue into the service; **take the snapshot (ADR-011 Decision 3) before calling `Enqueue` — a queued write function runs off the tick thread and must not read live game state**; the first write (nothing queued) runs its synchronous prefix inline on the caller's thread. Version rules: `SaveSession` at call time (Story 007), `SaveIrreversibleOutcome` the latest at its turn (Story 008).
+- Story 014: the same invariant against PostgreSQL.
+
+**Tech debt logged**: none (user's choice)
