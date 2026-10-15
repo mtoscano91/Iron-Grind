@@ -17,7 +17,7 @@ Control Manifest Version: 2026-06-28
 | [Loot Table System](loot-table-system/EPIC.md) | Core | Loot Table System | design/gdd/loot-table-system.md | Not yet created | Ready |
 | [Status Effects / Buffs](status-effects/EPIC.md) | Core | Status Effects | design/gdd/status-effects.md | Not yet created | Ready |
 | [Equipment System](equipment-system/EPIC.md) | Core | Equipment System | design/gdd/equipment-system.md | Not yet created | Ready — **design gate OQ-EQS-9 open before `/create-stories`** |
-| [Character Persistence](character-persistence/EPIC.md) | Core | Character Persistence | design/gdd/character-persistence.md | 16 stories (001-016, written 2026-10-12): 001-002 Complete (2026-10-12), 8 Not Started pending `/story-readiness`, 6 Blocked (005 on the Equipment System; 012-016 on Npgsql, Dapper and a PostgreSQL instance) | In Progress |
+| [Character Persistence](character-persistence/EPIC.md) | Core | Character Persistence | design/gdd/character-persistence.md | 16 stories (001-016, written 2026-10-12): 001-003 Complete (2026-10-12 to 2026-10-15), 7 Not Started pending `/story-readiness`, 6 Blocked (005 on the Equipment System; 012-016 on Npgsql, Dapper and a PostgreSQL instance) | In Progress |
 | [Enhancement System](enhancement-system/EPIC.md) | Feature | Enhancement System | design/gdd/enhancement-system.md | 15 stories (001-010 and 012-014 Complete; 011 Blocked on Character Persistence; 015 Blocked on 011) | In Progress |
 
 ## Notes

@@ -640,12 +640,6 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
         }
 
         [Test]
-        public void CharacterPersistenceService_LoadCharacter_ReturnsFaultedTaskNamingStory003()
-        {
-            AssertFaultedNotSupported(_service.LoadCharacter(CHAR_A, ACCOUNT_A, CancellationToken.None), "Story 003");
-        }
-
-        [Test]
         public void CharacterPersistenceService_SaveSession_ReturnsFaultedTaskNamingStory007()
         {
             AssertFaultedNotSupported(_service.SaveSession(CHAR_A, SessionEndReason.CleanLogout, CancellationToken.None), "Story 007");

@@ -237,7 +237,8 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
         {
             AssertField(typeof(CharacterLoadResult), "Code", typeof(CharacterLoadCode));
             AssertField(typeof(CharacterLoadResult), "LastZoneID", typeof(ZoneID));
-            Assert.AreEqual(2, typeof(CharacterLoadResult).GetFields(BindingFlags.Public | BindingFlags.Instance).Length);
+            AssertField(typeof(CharacterLoadResult), "Record", typeof(CharacterRecord));
+            Assert.AreEqual(3,typeof(CharacterLoadResult).GetFields(BindingFlags.Public | BindingFlags.Instance).Length);
         }
 
         [Test]

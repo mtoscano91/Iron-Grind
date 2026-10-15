@@ -1,7 +1,7 @@
 # Story 003: `LoadCharacter` — Validation, Account Check, Base Stats, Timeout
 
 > **Epic**: Character Persistence
-> **Status**: Ready — `/story-readiness` 2026-10-15 (NEEDS WORK → decisions taken, see "Readiness decisions")
+> **Status**: Complete — 2026-10-15 (COMPLETE WITH NOTES; see Completion Notes)
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-09
@@ -94,7 +94,7 @@
 **Story Type**: Integration
 **Required evidence**: `tests/EditMode/CharacterPersistence/CharacterPersistence_LoadCore_tests.cs` — must exist and pass.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 82 cases (22 `[Test]`, 60 `[TestCase]`), EditMode 2671 / 2671 (batch mode, 2026-10-15)
 
 ---
 
@@ -102,3 +102,30 @@
 
 - Depends on: Stories 001, 002 (both Complete)
 - Unlocks: Stories 004, 005
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-10-15
+**Criteria**: 11/11 passing (ten by automated test; "Doc comments" by reading)
+**Test Evidence**: Integration — `tests/EditMode/CharacterPersistence/CharacterPersistence_LoadCore_tests.cs`, 82 cases (22 `[Test]`, 60 `[TestCase]`), in the EditMode run of 2671 / 2671 (batch mode)
+**Code Review**: Complete — `/code-review` 2026-10-15 (`unity-specialist`, `qa-tester`): CHANGES REQUIRED, tests only; "fix all" applied and re-run (64 → 82 cases)
+**Gates**: QL-TEST-COVERAGE and LP-CODE-REVIEW skipped — lean mode
+
+**Files** (`src/ServerLogic/CharacterPersistence/`): `CharacterPersistenceService.cs` (`LoadCharacter`, `ApplyLoadedRecord`, the 3-argument constructor), `CharacterLoadResult.cs` (`Record`), `CharacterPersistenceConstants.cs` (`LOAD_*` bounds); the test file. Outside the story, with the user's approval: `CharacterPersistence_Contract_tests.cs` (`CharacterLoadResult` now has 3 fields) and `CharacterPersistence_RecordStore_tests.cs` (the "LoadCharacter faults naming Story 003" placeholder test deleted).
+
+**Deviations (advisory, accepted by the user 2026-10-15)**
+1. Beyond CR-CP-3 step 3: a fetched record whose `CharacterID` is not the requested one, and an infinite float stat, give `CorruptRecord` (added at code review).
+2. `HeldFreePoints` above the class maximum, and a `ClassType` Leveling does not know, pass the load; `RestoreLevelingState` clamps the points (to the maximum, or to 0) with a logged error (Leveling AC-LS-30). Pinned by tests.
+3. The load bounds are compile-time constants in `CharacterPersistenceConstants`, not external config; the level maximum of 60 is also in `PlayerResourceClusterPresenter.MaxLevel` (client).
+4. The service depends on the concrete `CharacterStats` and `LevelingService` (no interface covers `SetBaseStatFloat`, `RegisterPlayerClassType`, `RestoreLevelingState`).
+5. `ApplyLoadedRecord` has no production caller yet, and is declared on the service, not on an interface.
+
+**For later stories**
+- Story 004: steps 5–10 and the CurrentHP / CurrentMP restore go into `ApplyLoadedRecord`, which is `void` today — a refused import needs a return value. `ApplyLoadedRecord` raises 16 `OnStatChanged` events (pinned); no transaction is opened.
+- Story 005: the `EnhancementLevel ≤ 10` check can sit in `LoadCharacter` beside `IsInRange`; `ItemDatabaseMiss` must come back from `ApplyLoadedRecord`. AC-CP-11 reads "Story 003's writes".
+- Authentication / zone spawn: allocates the `EntityID`, passes `LoadCharacter`'s task to `Track`, and calls `ApplyLoadedRecord` from the callback when `Code == Success`.
+- GDD: epic design conflicts 4 and 11 need lines.
+
+**Tech debt logged**: none (user's choice)
