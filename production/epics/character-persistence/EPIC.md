@@ -3,7 +3,7 @@
 > **Layer**: Core
 > **GDD**: design/gdd/character-persistence.md
 > **Architecture Module**: Character Persistence — `CharacterPersistenceService : ICharacterPersistence` (async), PostgreSQL via Npgsql and Dapper
-> **Status**: In Progress (created 2026-10-12; 16 stories written 2026-10-12 — 8 Complete (001–004, 006–009), 2 Not Started pending `/story-readiness`, 6 Blocked)
+> **Status**: In Progress (created 2026-10-12; 16 stories written 2026-10-12 — 8 Complete (001–004, 006–009), 1 Ready (010), 1 Not Started pending `/story-readiness` (011), 6 Blocked)
 > **Stories**: 16 stories created 2026-10-12 (001–016)
 > **Manifest Version**: 2026-10-09
 
@@ -83,7 +83,7 @@ This epic is complete when:
 | 007 | [`SaveSession` — the Step Sequence](story-007-save-session.md) | Integration | Complete (2026-10-15; 47 test cases, EditMode 2774 / 2774; COMPLETE WITH NOTES) | ADR-011, ADR-006 |
 | 008 | [`SaveIrreversibleOutcome`](story-008-save-irreversible-outcome.md) | Integration | Complete (2026-10-15; 42 test cases, EditMode 2815 / 2815; COMPLETE WITH NOTES) | ADR-006, ADR-011 |
 | 009 | [The Irreversible-Outcome Persist Step and the Level-Up Path](story-009-irreversible-persist-step-and-level-up.md) | Integration | Complete (2026-10-15; level-up proven with a test caller, real wiring moved to a Leveling follow-up story) | ADR-011, ADR-010 |
-| 010 | [Session-End Triggers — Clean Logout and TTL Expiry](story-010-session-end-triggers.md) | Integration | Not Started (2026-10-12; 3 open decisions) | ADR-011 |
+| 010 | [Session-End Triggers — Clean Logout and TTL Expiry](story-010-session-end-triggers.md) | Integration | Ready (2026-10-15; new session-end component, Networking Core unchanged; logout as a callable entry point; estimate 8 h) | ADR-011 |
 | 011 | [`PendingPurchase` Lifecycle on the Store Seam](story-011-pending-purchase-lifecycle.md) | Logic | Not Started (2026-10-12; 3 open decisions; no caller yet) | ADR-001, ADR-006 |
 | 012 | [Npgsql and Dapper in the Project](story-012-npgsql-and-dapper-in-the-project.md) | Integration | Blocked (the libraries and a PostgreSQL instance are the user's decision) | ADR-006, ADR-012 |
 | 013 | [SQL Migrations for `character_records` and `pending_purchases`](story-013-sql-migrations.md) | Config/Data | Blocked (needs a PostgreSQL instance to run) | ADR-006 |
