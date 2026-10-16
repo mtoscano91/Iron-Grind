@@ -489,14 +489,14 @@ api_decisions:
 
   - purpose: cross_zone_message_relay
     status: active
-    api: "PostgreSQL LISTEN / pg_notify through Npgsql: one unpooled NpgsqlConnection (Pooling=false, Multiplexing=false, Tcp Keepalive=true) blocking in NpgsqlConnection.Wait(int) on a dedicated background Thread per zone process; publish by ExecuteNonQueryAsync tracked by ITickCompletionQueue with a RELAY_PUBLISH_TIMEOUT_MS cancellation, never awaited"
+    api: "PostgreSQL LISTEN / pg_notify through Npgsql: one unpooled NpgsqlConnection (Pooling=false, Multiplexing=false, Tcp Keepalive=true) blocking in NpgsqlConnection.Wait(int) on a dedicated background Thread per zone process; publish by NpgsqlDataSource.CreateCommand(...).ExecuteNonQueryAsync (connection opened inside the task, never a synchronous Open() on the tick) tracked by ITickCompletionQueue with a RELAY_PUBLISH_TIMEOUT_MS cancellation, never awaited; listener stopped by ADR-009 teardown step 2a and by the server host OnDestroy"
     not: "the ADR-007 gateway Unix socket; a message broker (Redis pub/sub, NATS); polling a relay table; NOTIFY inside the persistence transaction of a commit; a thread-pool thread or await for the listener"
     adr: docs/architecture/ADR-015-cross-zone-message-relay.md
     reason: "PostgreSQL and Npgsql already run with every zone (ADR-006, ADR-007), so no new service or library is needed; works across machines that share the database; the tick never blocks."
     referenced_by:
       - docs/architecture/ADR-015-cross-zone-message-relay.md
     added: 2026-10-16
-    revised: ""
+    revised: 2026-10-16
 
 # Example:
 #

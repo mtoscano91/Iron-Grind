@@ -10,6 +10,8 @@ Amended 2026-10-09 after `architecture-review-2026-10-09-adr-014.md` (B1, B2, C1
 
 Amended a second time 2026-10-09 after `architecture-review-2026-10-09-adr-014-rereview.md` (N1, S1–S4): the intake reports every message of a known connection to an `IConnectionActivitySink` (Decision 2); the highest-seen `SequenceNumber` is kept per U-U type per connection (Decision 2); the dispatcher story registers only the types that have a routing row (Decision 3); one object implements the intake and the dispatcher and takes the development-build switch in its constructor (Decision 3); `AddConnection` releases the storage of removed connections and returns `bool` (Decision 4).
 
+Note 2026-10-16 (ADR-015 Accepted): ADR-015 Decision 7 amends Decision 6. `ZoneTickPipeline` gains step **1a — Relay** between Completion and Requests: `ICrossZoneRelayInbox.Drain(currentTick, handler)` hands each relayed body to `IZoneClientBroadcastSink.EnqueueToAllClients(..., isCapExempt: false)`, in its own `try`/`catch` (`STEP_RELAY`). The pipeline takes `ICrossZoneRelayInbox` and `ICrossZoneRelayHandler` as constructor arguments; "four steps" in this ADR reads as five. No other decision changes.
+
 ## Engine Compatibility
 
 | Field | Value |
@@ -172,7 +174,7 @@ The guard chain was written before any request type other than three existed. Th
 Each character with held requests has a hold queue of at most 16 entries, each a copy of the request context and body, taken from a pre-allocated pool sized for `MAX_PLAYERS_PER_ZONE × 16` entries of `MAX_HELD_BODY_BYTES` (64). Registration guarantees that no held type has a longer body (Decision 3); the longest today is 10 bytes. The copy is needed because the inbox arena is reused by the next tick. No allocation when a request is held. An entry returns to the pool when its request is dispatched or discarded, or, if its connection was removed, at the start of the next `DispatchTick` or at an `AddConnection` that comes before it.
 
 ### Decision 6 — The order of one server tick
-`ZoneTickPipeline` is one class in `IronGrind.ServerLogic`. The composition root registers its `Tick` as the one tick-driven delegate of `ServerTickLoop`. It reads the tick number from `ServerTickLoop.ServerTickNumber` and runs four steps in this order:
+`ZoneTickPipeline` is one class in `IronGrind.ServerLogic`. The composition root registers its `Tick` as the one tick-driven delegate of `ServerTickLoop`. It reads the tick number from `ServerTickLoop.ServerTickNumber` and runs four steps in this order (five since ADR-015 Decision 7, 2026-10-16: step 1a — Relay, after Completion; see the note under Date):
 
 1. **Completion** — `ITickCompletionQueue.Drain(currentTick)` (ADR-011: before any game logic; callbacks open gates).
 2. **Requests** — `InboundRequestDispatcher.DispatchTick(currentTick)`: Pass A, then Pass B.

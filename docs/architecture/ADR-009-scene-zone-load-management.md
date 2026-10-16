@@ -6,6 +6,8 @@ Accepted (2026-06-27)
 ## Date
 2026-06-27
 
+Note 2026-10-16 (ADR-015 Accepted): Decision 3 gains step 2a — stop the cross-zone relay listener (`NpgsqlRelayListener.Stop()`) after the tick loop has stopped. The listener is also stopped from the server host `MonoBehaviour.OnDestroy`, because this teardown does not run when the Editor leaves Play mode (ADR-015 Decision 3). This adds to the open teardown-order item C2 in `architecture-traceability.md`.
+
 ## Engine Compatibility
 
 | Field | Value |
@@ -127,6 +129,7 @@ On zone `Closed` state entry (T-5 or T-6 triggers):
 ```
 1. _tickLoop.Active = false                       // ADR-002 D3: block new tick cycles
 2. WaitForCurrentTickToComplete()                 // tick loop is synchronous — check flag
+2a. NpgsqlRelayListener.Stop()                    // ADR-015 (2026-10-16): join ≤ RELAY_LISTENER_STOP_TIMEOUT_MS
 3. ZoneNavigationService.Teardown()               // NavMesh.RemoveNavMeshData(_navMeshDataInstance)
 4. [CR-ZI-12 teardown steps — save sessions, notify party system, free slots]
 5. Process.Exit(0)
