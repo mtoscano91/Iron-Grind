@@ -5,7 +5,8 @@ namespace IronGrind.Networking
     /// <summary>
     /// Finds a character's <see cref="EnhancementRequestDeduplicator"/> (Enhancement Story 010; EC-NET-9).
     /// The request handler only reads <see cref="EnhancementRequestDeduplicator.LastEnhancementRequestId"/>
-    /// through it; recording a new id is Story 015's.
+    /// through it; <c>EnhancementAttemptStarter</c> (Story 015) records a committed id with
+    /// <see cref="EnhancementRequestDeduplicator.RecordCommitted"/>.
     /// </summary>
     /// <example>
     /// <code>

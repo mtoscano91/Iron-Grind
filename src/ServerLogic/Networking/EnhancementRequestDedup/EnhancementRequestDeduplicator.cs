@@ -138,6 +138,24 @@ namespace IronGrind.Networking
         public uint? LastEnhancementRequestId => _lastEnhancementRequestId;
 
         /// <summary>
+        /// Records <paramref name="requestId"/> as the character's <c>LastEnhancementRequestID</c> after a committed attempt
+        /// (Enhancement Story 015; EC-NET-9). Called from the attempt's delivery callback, after the persistence write
+        /// succeeded and before the result is enqueued. <see cref="TryProcess{TOutcome}"/> is not involved.
+        /// </summary>
+        /// <remarks>In memory only: the value is lost on a server restart. The durable write in the same transaction as the
+        /// outcome is TD-069.</remarks>
+        /// <param name="requestId">The committed request's <c>RequestID</c>.</param>
+        /// <example>
+        /// <code>
+        /// dedup.RecordCommitted(requestId: 7u); // dedup.LastEnhancementRequestId == 7
+        /// </code>
+        /// </example>
+        public void RecordCommitted(uint requestId)
+        {
+            _lastEnhancementRequestId = requestId;
+        }
+
+        /// <summary>
         /// Processes one enhancement request through the EC-NET-9 dedup check and, if not a duplicate,
         /// the compute → persist → broadcast sequence (mirroring
         /// <see cref="CommitBeforeBroadcastSequencer.Execute{TOutcome}"/>'s validate-before-compute

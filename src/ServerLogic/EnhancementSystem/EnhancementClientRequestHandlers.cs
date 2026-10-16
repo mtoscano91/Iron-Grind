@@ -13,8 +13,8 @@ namespace IronGrind.EnhancementSystem
     /// <c>body</c> after it returns, suspends, or reads the mutation gate (ADR-014, ADR-011).
     /// </summary>
     /// <remarks>
-    /// This story never sends <see cref="EnhancementRequestReceived"/> and never writes the
-    /// <c>LastEnhancementRequestID</c>: both belong to Story 015 (the accepted-attempt path).
+    /// These handlers never send <see cref="EnhancementRequestReceived"/> and never write the
+    /// <c>LastEnhancementRequestID</c>: both belong to <see cref="EnhancementAttemptStarter"/> (Story 015, the accepted-attempt path).
     /// </remarks>
     /// <example>
     /// <code>

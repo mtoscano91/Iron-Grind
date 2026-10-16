@@ -5,7 +5,7 @@ namespace IronGrind.EnhancementSystem
     /// <summary>
     /// The attempt-start seam (Enhancement Story 010): the request handler hands a request that is
     /// not a duplicate and passed the CR-ENH-15 step 2 checks to whoever runs the attempt. The
-    /// production implementation (acknowledgment, begin, commit, result) is Story 015's.
+    /// production implementation (acknowledgment, begin, commit, result) is <see cref="EnhancementAttemptStarter"/> (Story 015).
     /// </summary>
     /// <example>
     /// <code>

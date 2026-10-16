@@ -29,7 +29,7 @@ namespace IronGrind.EnhancementSystem
     /// exception is logged by the tick completion queue, the gate is reopened by the coordinator, and the client gets no
     /// result; the callback must therefore be exception-safe.</para>
     /// <para>Tick thread only. Nothing here awaits or blocks. The production starter (acknowledgment message, result
-    /// messages, deduplication) is Enhancement Story 015's, built on this class.</para>
+    /// messages, deduplication) is <see cref="EnhancementAttemptStarter"/> (Enhancement Story 015), built on this class.</para>
     /// </remarks>
     /// <example>
     /// <code>
@@ -83,6 +83,8 @@ namespace IronGrind.EnhancementSystem
         /// <param name="scrollSlotIndex">Bag slot of the scroll.</param>
         /// <param name="emitAcknowledgment">Request acknowledgment; runs after the attempt is accepted and the gate closed, never for a rejection.</param>
         /// <param name="deliverResult">Receives the final result, once, after the write succeeded and <see cref="EnhancementService.CompleteAttempt"/> ran.
+        /// If <see cref="EnhancementService.CompleteAttempt"/> throws, the exception is logged and the result is built from the pending
+        /// attempt (its outcome and new level), so the callback still runs.
         /// If it throws, the commit stands: there is no rollback and no disconnect (the write succeeded). The exception goes to the
         /// tick completion queue's logger, the coordinator's finally reopens the gate, and the client receives no result, so the
         /// callback must be exception-safe.</param>
@@ -118,6 +120,43 @@ namespace IronGrind.EnhancementSystem
             Action<EnhancementAttemptResult> deliverResult,
             out EnhancementResultCode rejectionCode)
         {
+            return Begin(clientId, charId, itemSlotIndex, scrollSlotIndex, emitAcknowledgment, deliverResult, () => { }, out rejectionCode);
+        }
+
+        /// <summary>
+        /// Same as the seven-argument <see cref="Begin(uint, CharacterID, int, int, Action, Action{EnhancementAttemptResult}, out EnhancementResultCode)"/>,
+        /// plus a failure hook (Enhancement Story 015, decision D2): <paramref name="onCommitFailed"/> runs once, inside the
+        /// attempt's revert step, right after <see cref="EnhancementService.RollBackAttempt"/>, in the coordinator's failure
+        /// protocol (CR-NET-5.5). It therefore fires for a failed or faulted write, a cancelled or timed-out write, and for
+        /// <see cref="IrreversibleOutcomeBeginResult.PersistenceFailed"/> (the write could not start). It does not run on
+        /// success, on <see cref="IrreversibleOutcomeBeginResult.RejectedInvalidRequest"/>, on
+        /// <see cref="IrreversibleOutcomeBeginResult.RejectedWriteInFlight"/>, or on the path where an exception before the write
+        /// started rolls the pending attempt back (that exception is rethrown to the caller instead).
+        /// </summary>
+        /// <param name="clientId">The requesting connection.</param>
+        /// <param name="charId">The requesting character.</param>
+        /// <param name="itemSlotIndex">Bag slot of the item to enhance.</param>
+        /// <param name="scrollSlotIndex">Bag slot of the scroll.</param>
+        /// <param name="emitAcknowledgment">See the seven-argument overload.</param>
+        /// <param name="deliverResult">See the seven-argument overload.</param>
+        /// <param name="onCommitFailed">Runs once after the rollback of a failed commit, for example to discard the owner-sync hold. It runs
+        /// even if <see cref="EnhancementService.RollBackAttempt"/> throws (that exception then continues to the completion queue's logger).
+        /// It must not throw; an exception it throws is logged and swallowed so the coordinator's failure protocol (disconnect,
+        /// session preservation) still completes.</param>
+        /// <param name="rejectionCode">See the seven-argument overload.</param>
+        /// <returns>See the seven-argument overload.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="emitAcknowledgment"/>, <paramref name="deliverResult"/> or <paramref name="onCommitFailed"/> is null.</exception>
+        /// <exception cref="Exception">As the seven-argument overload.</exception>
+        public IrreversibleOutcomeBeginResult Begin(
+            uint clientId,
+            CharacterID charId,
+            int itemSlotIndex,
+            int scrollSlotIndex,
+            Action emitAcknowledgment,
+            Action<EnhancementAttemptResult> deliverResult,
+            Action onCommitFailed,
+            out EnhancementResultCode rejectionCode)
+        {
             if (emitAcknowledgment == null)
             {
                 throw new ArgumentNullException(nameof(emitAcknowledgment));
@@ -128,8 +167,13 @@ namespace IronGrind.EnhancementSystem
                 throw new ArgumentNullException(nameof(deliverResult));
             }
 
+            if (onCommitFailed == null)
+            {
+                throw new ArgumentNullException(nameof(onCommitFailed));
+            }
+
             rejectionCode = EnhancementResultCode.Success;
-            var attempt = new Attempt(_service, _persistence, charId, itemSlotIndex, scrollSlotIndex, deliverResult);
+            var attempt = new Attempt(_service, _persistence, charId, itemSlotIndex, scrollSlotIndex, deliverResult, onCommitFailed);
 
             IrreversibleOutcomeBeginResult result;
             try
@@ -171,6 +215,7 @@ namespace IronGrind.EnhancementSystem
             private readonly int _itemSlotIndex;
             private readonly int _scrollSlotIndex;
             private readonly Action<EnhancementAttemptResult> _deliverResult;
+            private readonly Action _onCommitFailed;
             private EnhancementAttemptStart _start;
             private bool _pending;
 
@@ -184,9 +229,11 @@ namespace IronGrind.EnhancementSystem
                 CharacterID charId,
                 int itemSlotIndex,
                 int scrollSlotIndex,
-                Action<EnhancementAttemptResult> deliverResult)
+                Action<EnhancementAttemptResult> deliverResult,
+                Action onCommitFailed)
             {
                 _service = service;
+                _onCommitFailed = onCommitFailed;
                 _persistStart = IrreversibleOutcomePersistStep.StartWrite<EnhancementAttemptStart>(
                     persistence, charId, IrreversibleOutcomeTrigger.EnhancementResult);
                 _charId = charId;
@@ -218,9 +265,44 @@ namespace IronGrind.EnhancementSystem
                 return _persistStart(outcome, token);
             }
 
-            public void Deliver(EnhancementAttemptStart outcome) => _deliverResult(_service.CompleteAttempt(_charId));
+            public void Deliver(EnhancementAttemptStart outcome)
+            {
+                EnhancementAttemptResult result;
+                try
+                {
+                    result = _service.CompleteAttempt(_charId);
+                }
+                catch (Exception exception)
+                {
+                    // The write succeeded, so the commit stands and the result is the pending one. Without this the
+                    // caller would never get its result (and a caller holding something until then would hold it for good).
+                    Debug.LogException(exception);
+                    result = new EnhancementAttemptResult(_start.Outcome, _start.NewLevel,
+                        _start.Outcome == EnhancementOutcome.Success ? EnhancementResultCode.Success : EnhancementResultCode.Destruction);
+                }
 
-            public void Revert() => _service.RollBackAttempt(_charId);
+                _deliverResult(result);
+            }
+
+            public void Revert()
+            {
+                try
+                {
+                    _service.RollBackAttempt(_charId);
+                }
+                finally
+                {
+                    try
+                    {
+                        _onCommitFailed();
+                    }
+                    catch (Exception exception)
+                    {
+                        // The hook must not throw; if it does, the coordinator's disconnect and preserve steps still have to run.
+                        Debug.LogException(exception);
+                    }
+                }
+            }
 
             // An exception escaped the coordinator. If this attempt is pending and the write was never invoked (for
             // example the acknowledgment threw), nothing else would end it: roll it back. If BeginAttempt itself threw,
