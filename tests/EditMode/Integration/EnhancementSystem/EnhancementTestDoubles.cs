@@ -73,6 +73,9 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
         /// <summary>When true, <see cref="ForceInsert"/> records the call and returns false without forwarding.</summary>
         public bool FailForceInsert { get; set; }
 
+        /// <summary>When true, <see cref="ConsumeItem"/> records the call and returns a failed result without forwarding (Story 011).</summary>
+        public bool FailConsumeItem { get; set; }
+
         /// <summary>When true, <see cref="Pickup"/> records the call and returns a failed (inventory full) result without forwarding.</summary>
         public bool FailPickup { get; set; }
 
@@ -177,6 +180,8 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
         public ConsumeItemResult ConsumeItem(CharacterID charId, ItemID itemId, int quantity)
         {
             Calls.Add("ConsumeItem");
+            if (FailConsumeItem)
+                return ConsumeItemResult.Fail(ConsumeItemFailReason.InsufficientQuantity);
             return _inner.ConsumeItem(charId, itemId, quantity);
         }
 
@@ -250,6 +255,9 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
     /// <summary>One call recorded by <see cref="RecordingAttemptStarter"/>.</summary>
     internal readonly struct RecordedAttemptStart
     {
+        /// <summary>The requesting connection.</summary>
+        public readonly uint ClientId;
+
         /// <summary>The requesting character.</summary>
         public readonly CharacterID CharacterId;
 
@@ -263,8 +271,9 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
         public readonly int ScrollSlotIndex;
 
         /// <summary>Creates a record.</summary>
-        public RecordedAttemptStart(CharacterID characterId, uint requestId, int itemSlotIndex, int scrollSlotIndex)
+        public RecordedAttemptStart(uint clientId, CharacterID characterId, uint requestId, int itemSlotIndex, int scrollSlotIndex)
         {
+            ClientId = clientId;
             CharacterId = characterId;
             RequestId = requestId;
             ItemSlotIndex = itemSlotIndex;
@@ -279,9 +288,9 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
         public List<RecordedAttemptStart> Calls { get; } = new List<RecordedAttemptStart>();
 
         /// <inheritdoc />
-        public void StartAttempt(CharacterID characterId, uint requestId, int itemSlotIndex, int scrollSlotIndex)
+        public void StartAttempt(uint clientId, CharacterID characterId, uint requestId, int itemSlotIndex, int scrollSlotIndex)
         {
-            Calls.Add(new RecordedAttemptStart(characterId, requestId, itemSlotIndex, scrollSlotIndex));
+            Calls.Add(new RecordedAttemptStart(clientId, characterId, requestId, itemSlotIndex, scrollSlotIndex));
         }
     }
 

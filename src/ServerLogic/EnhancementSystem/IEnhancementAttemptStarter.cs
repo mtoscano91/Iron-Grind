@@ -9,16 +9,17 @@ namespace IronGrind.EnhancementSystem
     /// </summary>
     /// <example>
     /// <code>
-    /// starter.StartAttempt(context.CharacterId, requestId, itemSlotIndex: 0, scrollSlotIndex: 1);
+    /// starter.StartAttempt(context.ClientId, context.CharacterId, requestId, itemSlotIndex: 0, scrollSlotIndex: 1);
     /// </code>
     /// </example>
     public interface IEnhancementAttemptStarter
     {
         /// <summary>Starts an attempt for a validated, non-duplicate request (CR-ENH-15).</summary>
+        /// <param name="clientId">The requesting connection; the commit orchestrator needs it for the write-failure protocol (Story 011, D2).</param>
         /// <param name="characterId">The requesting character.</param>
         /// <param name="requestId">The client's <c>requestId</c> (EC-NET-9).</param>
         /// <param name="itemSlotIndex">Bag slot of the item to enhance.</param>
         /// <param name="scrollSlotIndex">Bag slot of the scroll.</param>
-        void StartAttempt(CharacterID characterId, uint requestId, int itemSlotIndex, int scrollSlotIndex);
+        void StartAttempt(uint clientId, CharacterID characterId, uint requestId, int itemSlotIndex, int scrollSlotIndex);
     }
 }

@@ -88,7 +88,7 @@ namespace IronGrind.EnhancementSystem
                 return;
             }
 
-            _starter.StartAttempt(context.CharacterId, requestId, itemSlotIndex, scrollSlotIndex);
+            _starter.StartAttempt(context.ClientId, context.CharacterId, requestId, itemSlotIndex, scrollSlotIndex);
         }
 
         /// <summary>

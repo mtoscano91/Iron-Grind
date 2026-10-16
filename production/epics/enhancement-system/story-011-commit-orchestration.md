@@ -1,7 +1,7 @@
 # Story 011: Commit Orchestration
 
 > **Epic**: Enhancement System
-> **Status**: Ready — `/story-readiness` 2026-10-16 (rewritten from the pre-decision placeholder; decisions D1–D5 below, user-approved). Blockers cleared: ADR-011 Accepted 2026-10-07; `SaveIrreversibleOutcome` implemented and proven through the coordinator (Character Persistence Stories 008, 009); TD-046 closed in design 2026-10-09.
+> **Status**: Complete (2026-10-16) — `/story-done` COMPLETE WITH NOTES (lean). Readiness 2026-10-16: decisions D1–D5 user-approved. Note: the release half of D5 is blocked by TD-070.
 > **Layer**: Feature
 > **Type**: Integration
 > **Manifest Version**: 2026-10-09
@@ -46,17 +46,17 @@
 
 *The GDD's persistence and alert mocks are restated against what exists (as in Character Persistence Story 009): the in-memory store with a held operation, or a controllable `ICharacterPersistence` fake; a log assertion for each alert. Unless a criterion says otherwise, the setup is the real `EnhancementService`, `InventoryService`, `IrreversibleOutcomeCoordinator`, `TickCompletionQueue`, `CharacterMutationGate` and `CharacterPersistenceService` over the in-memory store.*
 
-- [ ] **One commit per attempt (AC-ENH-35)**: a pending attempt makes exactly one `SaveIrreversibleOutcome` call with trigger `EnhancementResult`; `Begin` returns `Started` and the character's gate is closed until the drain that handles the result.
-- [ ] **Rejected attempt (D1)**: a request that `BeginAttempt` rejects (validation failure, or the step-4 scroll consumption forced to fail) → `Begin` returns `RejectedInvalidRequest`, the caller receives the rejection code, and there is no acknowledgment, no write, no draw and no gate change.
-- [ ] **The committed record holds the outcome (AC-ENH-35)**: after a successful write, the stored record shows the item at its new enhancement level (or no item after a destruction) and one scroll fewer.
-- [ ] **Success path**: with the write held open, `IsAttemptInProgress` is true, the item slot is locked, and no `OnEnhancementSuccess` / `OnEnhancementDestruction` is raised and the delivery callback is not called. When the write is released as `Success`, the next drain calls `CompleteAttempt` once and hands its `EnhancementAttemptResult` to the delivery callback once; the slot is unlocked.
-- [ ] **Failure path (AC-ENH-23, AC-ENH-34)**: for `DatabaseError`, `ConcurrencyConflict` and `CharacterNotFound`, and for a faulted task, a cancelled task and a watchdog timeout → `RollBackAttempt` runs once (bag restored, slot unlocked); the delivery callback is not called and no outcome event is raised; the client is disconnected with `DisconnectReason.Other` once and the session preserved for `SESSION_TTL_SECONDS` once; the coordinator's critical alert and `CriticalEnhancementWriteFailed` are each logged once.
-- [ ] **Write fails to start**: a `SaveIrreversibleOutcome` that throws synchronously → `Begin` returns `PersistenceFailed`, the same rollback, disconnect and preserve each happen once, and the gate is open again.
-- [ ] **No retry (CR-NET-5.5)**: after any failure the persistence service has received exactly one `SaveIrreversibleOutcome` call for the attempt.
-- [ ] **Throw after `BeginAttempt`**: if the acknowledgment delegate throws, the pending attempt is rolled back (`IsAttemptInProgress` false, bag restored, slot unlocked), no write starts, the gate is open, and the exception reaches the caller.
-- [ ] **AC-ENH-13 / EC-ENH-2 (D5)**: a disconnect, and a clean logout started, while the write is in flight do not abort it: on `Success` the outcome stands (item at its new level, scroll gone, slot unlocked) and `CompleteAttempt` runs before the logout save's release; the stored record after the logout save holds the outcome.
-- [ ] **Seam signature (D2)**: `IEnhancementAttemptStarter.StartAttempt` takes the `clientId`, the handler passes `context.ClientId`, and Story 010's handler tests pass with only the signature change.
-- [ ] **No await**: a source search of the files this story adds or edits finds no `await`, `async`, `.Result`, `.Wait(`, `GetResult(` or `ContinueWith`.
+- [x] **One commit per attempt (AC-ENH-35)**: a pending attempt makes exactly one `SaveIrreversibleOutcome` call with trigger `EnhancementResult`; `Begin` returns `Started` and the character's gate is closed until the drain that handles the result.
+- [x] **Rejected attempt (D1)**: a request that `BeginAttempt` rejects (validation failure, or the step-4 scroll consumption forced to fail) → `Begin` returns `RejectedInvalidRequest`, the caller receives the rejection code, and there is no acknowledgment, no write, no draw and no gate change.
+- [x] **The committed record holds the outcome (AC-ENH-35)**: after a successful write, the stored record shows the item at its new enhancement level (or no item after a destruction) and one scroll fewer.
+- [x] **Success path**: with the write held open, `IsAttemptInProgress` is true, the item slot is locked, and no `OnEnhancementSuccess` / `OnEnhancementDestruction` is raised and the delivery callback is not called. When the write is released as `Success`, the next drain calls `CompleteAttempt` once and hands its `EnhancementAttemptResult` to the delivery callback once; the slot is unlocked.
+- [x] **Failure path (AC-ENH-23, AC-ENH-34)**: for `DatabaseError`, `ConcurrencyConflict` and `CharacterNotFound`, and for a faulted task, a cancelled task and a watchdog timeout → `RollBackAttempt` runs once (bag restored, slot unlocked); the delivery callback is not called and no outcome event is raised; the client is disconnected with `DisconnectReason.Other` once and the session preserved for `SESSION_TTL_SECONDS` once; the coordinator's critical alert and `CriticalEnhancementWriteFailed` are each logged once.
+- [x] **Write fails to start**: a `SaveIrreversibleOutcome` that throws synchronously → `Begin` returns `PersistenceFailed`, the same rollback, disconnect and preserve each happen once, and the gate is open again.
+- [x] **No retry (CR-NET-5.5)**: after any failure the persistence service has received exactly one `SaveIrreversibleOutcome` call for the attempt.
+- [x] **Throw after `BeginAttempt`**: if the acknowledgment delegate throws, the pending attempt is rolled back (`IsAttemptInProgress` false, bag restored, slot unlocked), no write starts, the gate is open, and the exception reaches the caller.
+- [x] **AC-ENH-13 / EC-ENH-2 (D5)**: a disconnect, and a clean logout started, while the write is in flight do not abort it: on `Success` the outcome stands (item at its new level, scroll gone, slot unlocked) and `CompleteAttempt` runs before the logout save's release; the stored record after the logout save holds the outcome.
+- [x] **Seam signature (D2)**: `IEnhancementAttemptStarter.StartAttempt` takes the `clientId`, the handler passes `context.ClientId`, and Story 010's handler tests pass with only the signature change.
+- [x] **No await**: a source search of the files this story adds or edits finds no `await`, `async`, `.Result`, `.Wait(`, `GetResult(` or `ContinueWith`.
 
 ---
 
@@ -107,7 +107,7 @@
 **Story Type**: Integration
 **Required evidence**: `tests/EditMode/Integration/EnhancementSystem/Enhancement_CommitOrchestration_integration_tests.cs` — must exist and pass; the full EditMode suite passes.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 18 test methods, passing (EditMode 2916 / 2916, batch mode 2026-10-16)
 
 ---
 
@@ -115,3 +115,13 @@
 
 - Depends on: Enhancement Stories 004, 005, 007, 010 (Complete); Character Persistence Stories 008, 009, 010 (Complete); Networking Core Stories 030, 031 (gate, coordinator — Complete)
 - Unlocks: Story 015 (result delivery; split out of Story 010 on 2026-10-09)
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-16
+**Criteria**: 11/11 passing. The AC-ENH-13 / EC-ENH-2 (D5) criterion passes with a note: a disconnect or clean logout during the write does not abort it, the outcome stands and `CompleteAttempt` runs before the logout result is handled, but the logout `SaveSession` queued behind the enhancement write returns `ConcurrencyConflict` (it takes its expected `SaveVersion` at call time, irreversible writes at their queue turn), so the logout is reported failed and no release happens. The test pins today's behaviour with a FINDING comment naming TD-070; when TD-070 is fixed it should expect `Success` and the release after the delivery.
+**Deviations**: Advisory — the D5 release half above (TD-070, user-accepted). Test hook added to `EnhancementTestDoubles.cs` (`FailConsumeItem`) for the step-4 rejection case.
+**Test Evidence**: Integration — `tests/EditMode/Integration/EnhancementSystem/Enhancement_CommitOrchestration_integration_tests.cs` (18 test methods), plus the D2 assertion in `Enhancement_ClientMessages_integration_tests.cs`; EditMode 2916 / 2916 in batch mode.
+**Code Review**: Complete — `/code-review` 2026-10-16 APPROVED WITH SUGGESTIONS (Unity specialist clean, QA testability all criteria covered); all 9 items applied: docs (delivery callback throwing, the three exception cases, the rollback log comment), 6 more tests (write-in-flight rejection, null guards, second attempt after success / failure, destruction delivery, ack throw after a destruction draw), tightened assertions, and `Begin` refactored into a per-call private `Attempt` class (≤40 lines). QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean mode).
+**Implementation**: `EnhancementCommitOrchestrator` (new) — `Begin(clientId, charId, itemSlot, scrollSlot, emitAcknowledgment, deliverResult, out rejectionCode)`; `IEnhancementAttemptStarter.StartAttempt` takes `uint clientId` (D2) and `EnhancementClientRequestHandlers` passes `context.ClientId`.

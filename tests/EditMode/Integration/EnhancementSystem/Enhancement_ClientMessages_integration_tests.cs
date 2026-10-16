@@ -691,6 +691,7 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
 
             // Assert
             Assert.AreEqual(1, _starter.Calls.Count);
+            Assert.AreEqual(CLIENT, _starter.Calls[0].ClientId, "Story 011 D2: the handler passes context.ClientId.");
             Assert.AreEqual(Player, _starter.Calls[0].CharacterId);
             Assert.AreEqual(REQUEST_ID, _starter.Calls[0].RequestId);
             Assert.AreEqual(ITEM_SLOT, _starter.Calls[0].ItemSlotIndex);

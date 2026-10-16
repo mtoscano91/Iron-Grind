@@ -3912,3 +3912,19 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Story: production/epics/leveling-system/story-016-level-up-commit-before-broadcast.md — Level-Up Behind the Irreversible-Outcome Coordinator
 - Tech debt logged: 1 item (TD-068)
 - Next recommended: Enhancement Story 011 — production/epics/enhancement-system/story-011-commit-orchestration.md (status Blocked, but blocker 1 is now resolved; run /story-readiness)
+
+## Session Extract — /dev-story 2026-10-16
+- Story: production/epics/enhancement-system/story-011-commit-orchestration.md — Commit Orchestration
+- Files changed: src/ServerLogic/EnhancementSystem/EnhancementCommitOrchestrator.cs (new), IEnhancementAttemptStarter.cs (clientId, D2), EnhancementClientRequestHandlers.cs (passes context.ClientId), tests/EditMode/Integration/EnhancementSystem/EnhancementTestDoubles.cs (ClientId recorded, FailConsumeItem flag), Enhancement_ClientMessages_integration_tests.cs (+1 assertion), plus .meta files
+- Test written: tests/EditMode/Integration/EnhancementSystem/Enhancement_CommitOrchestration_integration_tests.cs (14 test methods, 18 cases); EditMode 2905 / 2905 batch mode
+- Blockers: FINDING (Character Persistence, out of scope) — SaveSession takes its expected SaveVersion at call time, irreversible writes at their queue turn, so a clean logout started while an enhancement write is in flight returns ConcurrencyConflict (logout fails, session stays Connected, no release). Enhancement outcome itself is unaffected. D5's "release after CompleteAttempt" half cannot be shown end to end; the test asserts current behaviour with a FINDING comment. Awaiting user decision: tech-debt entry vs fix.
+- Next: decide on the finding; /code-review the touched files; /story-done story 011
+- /code-review 2026-10-16: APPROVED WITH SUGGESTIONS (unity-specialist CLEAN, qa-tester all 11 criteria covered); user said "fix all, including 9" -> 9 items applied (docs: deliverResult throw, exception doc, rollback-log comment; tests: write-in-flight rejection, null guards, second attempt after success/failure, destruction delivery + ack-throws-after-destruction, tightened step-4/no-retry/logout/source-scan; Begin refactored into a per-call private Attempt class, ~37 lines). TD-070 logged in docs/tech-debt-register.md. EditMode 2916 / 2916 batch mode.
+- Next: /story-done production/epics/enhancement-system/story-011-commit-orchestration.md, then commit (incl. .meta files)
+
+## Session Extract — /story-done 2026-10-16
+- Verdict: COMPLETE WITH NOTES (lean)
+- Story: production/epics/enhancement-system/story-011-commit-orchestration.md — Commit Orchestration
+- Tech debt logged: 1 (TD-070 — SaveSession takes its expected SaveVersion at call time; a logout/TTL save queued behind an irreversible write conflicts; blocks D5 release half)
+- EPIC.md: row 011 Complete, status 14/15, Story 015 unblocked (Not Started, needs /story-readiness)
+- Next recommended: fix TD-070 (small Character Persistence change + flip the Story 011 logout test), then /story-readiness production/epics/enhancement-system/story-015-attempt-result-delivery.md
