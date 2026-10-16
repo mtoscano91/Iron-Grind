@@ -4019,3 +4019,19 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Next recommended: /story-readiness production/epics/enhancement-system/story-016-enhancement9-broadcast-delivery.md. PAT rotation still unconfirmed.
 
 > **Enhancement Story 016 `/story-readiness` 2026-10-16: NEEDS WORK → rewritten → Ready (8 h, LOW, manifest 2026-10-16).** User decisions: (1) new `Enhancement9BroadcastSender` subscribes (method group) to `EnhancementService.OnEnhancementBroadcastLevelReached` (raised in `CompleteAttempt`, after the commit) and calls `IServerWideBroadcaster.Broadcast`; Story 015 code untouched; (2) new `ICharacterNameLookup.TryGetCharacterName` in `src/ServerLogic/CharacterPersistence/`, implemented by `CharacterPersistenceService` from its session entry; missing name or item definition → no broadcast, one warning; (3) observer-callback criterion moved to a follow-up line in the Enhancement EPIC (needs `networking-test-harness.md` edit). **Next:** `/dev-story` Story 016. PAT rotation still unconfirmed.
+
+## Session Extract — /dev-story 2026-10-16
+- Story: production/epics/enhancement-system/story-016-enhancement9-broadcast-delivery.md — ServerBroadcast_Enhancement9 delivery
+- Files changed: src/ServerLogic/EnhancementSystem/Enhancement9BroadcastSender.cs (new), src/ServerLogic/CharacterPersistence/ICharacterNameLookup.cs (new), src/ServerLogic/CharacterPersistence/CharacterPersistenceService.cs (implements the lookup under _sessionLock), tests/EditMode/Integration/EnhancementSystem/Enhancement_Broadcast_integration_tests.cs (new; doubles nested in it, shared doubles untouched)
+- Test written: Enhancement_Broadcast_integration_tests.cs, 28 cases by the runner; EditMode 3081 / 3081 (18:55Z). First run 3080/3081: the AC-NC-47 test expected the result first, but the acknowledgment is also in that flush (start and commit before the first flush) — assertion corrected by the main session (ack, result, then broadcast).
+- Deviations (agent): owner client id 7 (Story 015's alert regex), reconnect id 9; sword is the Bronze-tier test item renamed "Dark Steel Sword"; seam-throw test uses OutboxRecordingSendSeam.AfterSend (client 2's send is recorded, then throws).
+- Blockers: None. Not committed.
+- Next: /code-review Story 016, then /story-done
+- /code-review Story 016 2026-10-16: CHANGES REQUIRED (tests only; unity-specialist CLEAN — its early-logout concern refuted: SessionEndCoordinator waits for the mutation gate, so the session outlives CompleteAttempt; qa-tester GAPS). User: "fix all". Applied: empty/null DisplayName = missing, NameMissing warning gains nameFound/itemFound, unused using removed; tests tightened (AC-NC-47 owner queue full, exact-id warning counted once, empty/null name, publish count, held-write proof, reconnect cumulative, SendThrew once, multi-byte cut, zone-B commit). Story 016 Missing criterion updated. EditMode 3088 / 3088 (19:03Z). Not committed. Next: /story-done Story 016.
+
+## Session Extract — /story-done 2026-10-16
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/enhancement-system/story-016-enhancement9-broadcast-delivery.md — ServerBroadcast_Enhancement9 delivery (11/11; EditMode 3088 / 3088)
+- Tech debt logged: None
+- Updated: Enhancement EPIC 16/16 (row 016 Complete; epic stays In Progress for its DoD and the observer-callback follow-up)
+- Next recommended: none Ready in these two epics — Networking Core Story 041 Blocked on Character Persistence Story 012 (Npgsql not in the project, open decision 1). Candidates: decide CP Story 012 open decision 1; write the observer-callback follow-up story; the server composition-root / ADR-009 teardown story. PAT rotation still unconfirmed.

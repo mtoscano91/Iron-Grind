@@ -1,7 +1,7 @@
 # Story 016: `ServerBroadcast_Enhancement9` Delivery
 
 > **Epic**: Enhancement System
-> **Status**: Ready — `/story-readiness` 2026-10-16: NEEDS WORK, closed the same day by the user decisions below. Unblocked 2026-10-16 when Networking Core Story 040 (the ADR-015 Migration Plan step 1 relay) was Complete.
+> **Status**: Complete — 2026-10-16 (`/story-done`, COMPLETE WITH NOTES; see Completion Notes). Was Ready: `/story-readiness` 2026-10-16: NEEDS WORK, closed the same day by the user decisions below. Implemented 2026-10-16 (`/dev-story`, EditMode 3081 / 3081); `/code-review` 2026-10-16 CHANGES REQUIRED (tests only) — all fixes and suggestions applied ("fix all"). Unblocked 2026-10-16 when Networking Core Story 040 (the ADR-015 Migration Plan step 1 relay) was Complete.
 > **Layer**: Feature
 > **Type**: Integration
 > **Manifest Version**: 2026-10-16
@@ -52,7 +52,7 @@
 - [ ] **Delivery failure isolated (EC-ENH-8)**: (a) a send seam that throws for client 2 → client 1 and client 3 still receive the broadcast and the owner still receives its `EnhancementAttemptResult`; (b) a publisher that throws → A's clients still receive it, the outcome and the result message are unchanged; neither throws out of the tick.
 - [ ] **Not cap-exempt (AC-NC-47)**: client 2's priority queue holds exactly 8 non-exempt messages when the +9 commits → A's flush of that tick sends client 2 the 8 and no broadcast; the broadcast is in client 2's next flush. The owner's cap-exempt `EnhancementAttemptResult` is unaffected.
 - [ ] **Names**: `playerName` is `ICharacterNameLookup.TryGetCharacterName(charId)` and `itemName` is `IItemDatabase.TryGetItem(itemId)`'s `DisplayName`. A 30-byte item name arrives cut to 24 UTF-8 bytes by `ServerBroadcast_Enhancement9Codec` (Story 010); a name of 24 bytes arrives whole.
-- [ ] **Missing name or item**: the lookup returns false for the character, or the item database has no definition → no broadcast to any client, one warning naming the character and item ids, and the outcome and the owner's result message are unchanged.
+- [ ] **Missing name or item**: the lookup returns false, or returns true with an empty or null name, or the item database has no definition, or the definition's `DisplayName` is empty or null → no broadcast to any client, exactly one warning naming the character and item ids and which lookup failed (`nameFound=` / `itemFound=`), and the outcome and the owner's result message are unchanged. *(Empty `DisplayName` treated as missing: code review 2026-10-16, user decision.)*
 - [ ] **Subscription**: `Enhancement9BroadcastSender` subscribes to `OnEnhancementBroadcastLevelReached` with a method group in its constructor and unsubscribes in `Dispose`; after `Dispose` a +9 commit sends no broadcast. A sender that throws inside its handler does not change the outcome (the service's `Raise` contains it, EC-ENH-8) — asserted with a throwing broadcaster.
 - [ ] **Name lookup**: `CharacterPersistenceService.TryGetCharacterName` returns the loaded character's name while its session entry exists and false after the session is released; the existing `CharacterPersistence` tests pass unedited.
 - [ ] **Existing tests**: the tests of `Enhancement_ResultDelivery_integration_tests.cs`, `EnhancementSystem_OutcomeEvents_tests.cs` and Story 040's `CrossZoneRelay_tests.cs` pass unedited.
@@ -95,7 +95,7 @@
 - **Publisher throws** — A's clients receive; B's do not; outcome and result unchanged.
 - **AC-NC-47** — 8 queued for client 2 → broadcast in client 2's next flush; owner's exempt result in the commit tick.
 - **Names** — 24-byte names whole; 30-byte item name cut to 24 bytes.
-- **Missing** — no name → no broadcast, one warning; no item definition → the same.
+- **Missing** — no name, an empty or null name, no item definition, an empty `DisplayName` → no broadcast, exactly one warning with the ids and `nameFound` / `itemFound`.
 - **Dispose** — after `Dispose`, a +9 commit → nothing.
 - **Throwing broadcaster** — outcome and result unchanged; the service logs the contained exception.
 - **Lookup** — loaded → the name; released → false; unknown id → false.
@@ -107,7 +107,7 @@
 **Story Type**: Integration
 **Required evidence**: `tests/EditMode/Integration/EnhancementSystem/Enhancement_Broadcast_integration_tests.cs` — must exist and pass, with the full EditMode suite.
 
-**Status**: [ ] Not yet created
+**Status**: [x] `tests/EditMode/Integration/EnhancementSystem/Enhancement_Broadcast_integration_tests.cs` (35 cases), EditMode 3088 / 3088 (2026-10-16 19:03Z, Unity batch mode)
 
 ---
 
@@ -115,3 +115,20 @@
 
 - Depends on: Networking Core Story 040 (Complete 2026-10-16); Story 015 (Complete); Story 007 (Complete); Story 010 (Complete); ADR-015 (Accepted 2026-10-16)
 - Unlocks: Enhancement UI epic (broadcast presentation)
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-16
+**Criteria**: 11/11 passing. None deferred.
+**Files**: `src/ServerLogic/EnhancementSystem/Enhancement9BroadcastSender.cs` (new); `src/ServerLogic/CharacterPersistence/ICharacterNameLookup.cs` (new); `src/ServerLogic/CharacterPersistence/CharacterPersistenceService.cs` (implements `ICharacterNameLookup` under `_sessionLock`); `tests/EditMode/Integration/EnhancementSystem/Enhancement_Broadcast_integration_tests.cs` (35 cases).
+**Deviations** (advisory, accepted by the user 2026-10-16):
+- *Client ids*: the owner is client 7 (Story 015's coordinator alert check is written for it), the reconnected owner 9, zone B's client 3; in the zone-B commit test client 7 is also a zone B client.
+- *Item*: the Bronze-tier test sword of Story 015's doubles, renamed "Dark Steel Sword".
+- *Doubles*: nested in the new test file (`RecordingNameLookup`, `ThrowingBroadcaster`, `NullDefinitionDatabase`, a trimmed `ControlledPersistence`); the shared doubles files are untouched.
+- *AC-NC-47 ordering*: acknowledgment before result, both in the first flush, broadcast in the second — asserted by relative index, not "acknowledgment at position 0".
+- *Not wired*: no composition root creates the sender yet.
+- *Code review finding refuted*: the unity-specialist's "broadcast lost if the owner logs out before `CompleteAttempt`" cannot happen — `SessionEndCoordinator` starts the session-end save only after the mutation gate opens, which is after the outcome is delivered (ADR-011 Decision 4, Character Persistence Story 017).
+**Test Evidence**: Integration — `tests/EditMode/Integration/EnhancementSystem/Enhancement_Broadcast_integration_tests.cs`.
+**Code Review**: Complete — CHANGES REQUIRED (tests only; unity-specialist CLEAN, qa-tester GAPS), all applied ("fix all"): empty or null `DisplayName` counts as missing, `NameMissing` names the failed lookup. LP-CODE-REVIEW and QL-TEST-COVERAGE skipped — lean mode.
+**Tech debt logged**: none (user's choice).

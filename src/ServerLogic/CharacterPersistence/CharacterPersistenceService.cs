@@ -22,7 +22,7 @@ namespace IronGrind.CharacterPersistence
     /// dependencies a method needs (<c>ApplyLoadedRecord</c> without Inventory and Currency, a save method without
     /// the zone locator, write queue and clock) throws <see cref="InvalidOperationException"/> synchronously.</para>
     /// </remarks>
-    public sealed class CharacterPersistenceService : ICharacterPersistence, ICharacterSessionRelease
+    public sealed class CharacterPersistenceService : ICharacterPersistence, ICharacterSessionRelease, ICharacterNameLookup
     {
         private readonly ICharacterRecordStore _store;
         private readonly IronGrind.CharacterStats.CharacterStats _stats;
@@ -448,6 +448,27 @@ namespace IronGrind.CharacterPersistence
             }
 
             entityId = EntityID.Invalid;
+            return false;
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>
+        /// Enhancement Story 016 (CR-ENH-14, UI-ENH-3): reads the name from the session entry, so it is true from a successful
+        /// <see cref="ApplyLoadedRecord"/> until <see cref="ReleaseSession"/>, and false for an unknown or released character
+        /// or an empty name. Intended for the tick thread; it takes the session lock like the other session readers.
+        /// </remarks>
+        public bool TryGetCharacterName(CharacterID id, out string name)
+        {
+            lock (_sessionLock)
+            {
+                if (_sessions.TryGetValue(id, out SessionEntry entry) && !string.IsNullOrEmpty(entry.CharacterName))
+                {
+                    name = entry.CharacterName;
+                    return true;
+                }
+            }
+
+            name = string.Empty;
             return false;
         }
 
