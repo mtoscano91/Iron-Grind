@@ -47,7 +47,7 @@ namespace IronGrind.Tests.EditMode.CharacterStats
         {
             public bool IsPlayerEntity(EntityID entityId) => false;
             public int GetExperienceThreshold(EntityID entityId) => int.MaxValue;
-            public void NotifyExperienceCrossedThreshold(EntityID entityId) { }
+            public void NotifyExperienceCrossedThreshold(EntityID entityId, int experienceBeforeGain) { }
         }
 
         // -----------------------------------------------------------------------

@@ -1007,7 +1007,7 @@ namespace IronGrind.CharacterStats
             SetBaseStat(entityId, StatID.Experience, current + amount);
 
             if (current + amount >= _levelingService.GetExperienceThreshold(entityId))
-                _levelingService.NotifyExperienceCrossedThreshold(entityId);
+                _levelingService.NotifyExperienceCrossedThreshold(entityId, current); // Leveling Story 016: pass the pre-gain Experience for a possible revert.
         }
 
         // -----------------------------------------------------------------------

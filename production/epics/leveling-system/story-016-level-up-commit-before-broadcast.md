@@ -1,7 +1,7 @@
 # Story 016: Level-Up Behind the Irreversible-Outcome Coordinator
 
 > **Epic**: Leveling System
-> **Status**: Ready — written 2026-10-15 (follow-up handed off by Character Persistence Story 009; decisions taken at authoring, listed below)
+> **Status**: Complete — 2026-10-16 (written 2026-10-15, follow-up handed off by Character Persistence Story 009; decisions taken at authoring, listed below)
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-09
@@ -41,17 +41,17 @@
 
 *As in Character Persistence Story 009, the GDD's `ISavePersistence` / `IEventBus` / `ICriticalAlertService` mocks are restated against what exists: a controllable fake of `ICharacterPersistence` (or the in-memory store with a held operation), `OnLevelUp` subscribers, and a log assertion for the alert. These criteria use the real `LevelingService` and `CharacterStats`, with the coordinator-backed seam.*
 
-- [ ] **AC-CP-13**: an `AddExperience` that crosses the threshold, with the write held open, applies the level-up in memory but fires no `OnLevelUp`; when the write is released as `Success`, `OnLevelUp` fires on the next drain, once per level gained and in ascending order.
-- [ ] **AC-CP-14**: a level-up from Level 10 whose write returns `DatabaseError` fires no `OnLevelUp`. After the drain: Level 10; `Experience` equal to its value before the triggering `AddExperience`; Strength, Dexterity, Vitality and Intelligence, the held free points and the seven derived stats (MaxHP, MaxMP, AttackPower, Defense, MagicDefense, CritChance, AttackSpeedMultiplier) equal their pre-level-up values; CurrentHP and CurrentMP at most the reverted maxima. The client is disconnected with `DisconnectReason.Other`, one critical alert is logged, and the session goes to `preserveSessionForTtl`. Each happens exactly once.
-- [ ] **The same revert** for a fault, a cancellation and a watchdog timeout of the write, and for `ConcurrencyConflict` and `CharacterNotFound`.
-- [ ] **AC-CP-17**: one `AddExperience` that crosses two thresholds makes one `SaveIrreversibleOutcome(LevelUp)` call; the written record holds the final level; `OnLevelUp` fires twice after success.
-- [ ] **59 → 60**: a failed write of the level-up to 60 also reverts the CR-2.2a Experience clamp (decision 1's value is restored).
-- [ ] **In flight (decision 2)**: a second `AddExperience` crossing the next threshold while the write is in flight adds its XP and starts no second write; after the first write succeeds, the next `AddExperience` starts the next level-up.
-- [ ] **HP / MP (decision 3)**: damage applied while the write is in flight is still applied after a revert, with CurrentHP clamped to the reverted MaxHP.
-- [ ] **Unresolved session (decision 5)**: when the resolver fails, no level-up is applied, no write starts, one error is logged and the XP is kept.
-- [ ] **Immediate default (decision 4)**: with no seam injected, `OnLevelUp` fires inside the `AddExperience` call as before; the existing Leveling, Character Stats and HUD tests pass unchanged.
-- [ ] **After a failure**: the rolled-back state is what a later `SaveSession(SessionTTLExpiry)` writes (shown with the in-memory store).
-- [ ] **No await**: a source search of the files this story adds or edits finds no `await`, `.Result`, `.Wait(`, `GetResult(` or `ContinueWith`.
+- [x] **AC-CP-13**: an `AddExperience` that crosses the threshold, with the write held open, applies the level-up in memory but fires no `OnLevelUp`; when the write is released as `Success`, `OnLevelUp` fires on the next drain, once per level gained and in ascending order.
+- [x] **AC-CP-14**: a level-up from Level 10 whose write returns `DatabaseError` fires no `OnLevelUp`. After the drain: Level 10; `Experience` equal to its value before the triggering `AddExperience`; Strength, Dexterity, Vitality and Intelligence, the held free points and the seven derived stats (MaxHP, MaxMP, AttackPower, Defense, MagicDefense, CritChance, AttackSpeedMultiplier) equal their pre-level-up values; CurrentHP and CurrentMP at most the reverted maxima. The client is disconnected with `DisconnectReason.Other`, one critical alert is logged, and the session goes to `preserveSessionForTtl`. Each happens exactly once.
+- [x] **The same revert** for a fault, a cancellation and a watchdog timeout of the write, and for `ConcurrencyConflict` and `CharacterNotFound`.
+- [x] **AC-CP-17**: one `AddExperience` that crosses two thresholds makes one `SaveIrreversibleOutcome(LevelUp)` call; the written record holds the final level; `OnLevelUp` fires twice after success.
+- [x] **59 → 60**: a failed write of the level-up to 60 also reverts the CR-2.2a Experience clamp (decision 1's value is restored).
+- [x] **In flight (decision 2)**: a second `AddExperience` crossing the next threshold while the write is in flight adds its XP and starts no second write; after the first write succeeds, the next `AddExperience` starts the next level-up.
+- [x] **HP / MP (decision 3)**: damage applied while the write is in flight is still applied after a revert, with CurrentHP clamped to the reverted MaxHP.
+- [x] **Unresolved session (decision 5)**: when the resolver fails, no level-up is applied, no write starts, one error is logged and the XP is kept.
+- [x] **Immediate default (decision 4)**: with no seam injected, `OnLevelUp` fires inside the `AddExperience` call as before; the existing Leveling, Character Stats and HUD tests pass unchanged.
+- [x] **After a failure**: the rolled-back state is what a later `SaveSession(SessionTTLExpiry)` writes (shown with the in-memory store).
+- [x] **No await**: a source search of the files this story adds or edits finds no `await`, `.Result`, `.Wait(`, `GetResult(` or `ContinueWith`.
 
 ---
 
@@ -92,7 +92,7 @@
 **Story Type**: Integration
 **Required evidence**: `tests/EditMode/LevelingSystem/LevelingSystem_LevelUpCommit_tests.cs` — must exist and pass; the full EditMode suite passes unchanged.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 17 `[Test]` methods, 22 cases (AC-CP-14 over 6 failure kinds); EditMode 2887 / 2887
 
 ---
 
@@ -100,3 +100,15 @@
 
 - Depends on: Leveling Stories 002, 003, 004 (Complete); Character Persistence Stories 008, 009, 010 (Complete)
 - Unlocks: AC-CP-13 / 14 / 17 proven on the real level-up path (Character Persistence Story 009's handoff)
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-16
+**Criteria**: 11/11 passing (all automated; none deferred)
+**Deviations** (advisory):
+- No production `ILevelUpSessionResolver` exists — nothing constructs the coordinator in a server composition yet, so `CoordinatedLevelUpCommit` is exercised by tests only. Logged as TD-068.
+- The test rig uses its own XP threshold table (`i * 100`); Story 009's rig table could not be reused. Test-only.
+- Beyond the story text: one revert snapshot per `NotifyExperienceCrossedThreshold` call (a single service field overwrote across entities — found during implementation, regression test `Test_TwoEntitiesInFlight_…`); a throw part-way through the level-up loop is reverted; the revert is skipped for an entity released during the write; `wouldLevelUp` is checked before the resolver.
+**Test Evidence**: Integration — `tests/EditMode/LevelingSystem/LevelingSystem_LevelUpCommit_tests.cs` (17 tests, 22 cases); full EditMode suite 2887 / 2887 in batch mode, 2026-10-16
+**Code Review**: Complete — `/code-review` CHANGES REQUIRED, all 7 items fixed (2026-10-15); LP-CODE-REVIEW and QL-TEST-COVERAGE skipped (lean mode)

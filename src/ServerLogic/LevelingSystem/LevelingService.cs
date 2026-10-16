@@ -109,6 +109,9 @@ namespace IronGrind.LevelingSystem
 
         private IronGrind.CharacterStats.CharacterStats _stats;
 
+        // Story 016 commit seam; the default commits immediately (decision 4).
+        private ILevelUpCommit _levelUpCommit = ImmediateLevelUpCommit.Instance;
+
         /// <summary>
         /// True while a CR-2.9 consecutive-level-up loop is actively executing inside
         /// <see cref="NotifyExperienceCrossedThreshold"/> — set immediately after that method's
@@ -373,16 +376,25 @@ namespace IronGrind.LevelingSystem
         /// <item>The OUTER call's loop keeps iterating — its own fresh
         /// <see cref="GetExperienceThreshold"/>/<c>Experience</c> reads, unaffected by the
         /// RE-ENTRANT call's early return — until no further level is gained, then falls out of
-        /// the loop and clears <see cref="_levelingUpInProgress"/> in the <c>finally</c> block,
-        /// then fires <see cref="OnLevelUp"/> once per level actually gained, in ascending order
-        /// (AC-LS-08).</item>
+        /// the loop and clears <see cref="_levelingUpInProgress"/> in the <c>finally</c> block;
+        /// the commit seam then fires <see cref="OnLevelUp"/> once per level actually gained, in
+        /// ascending order (AC-LS-08).</item>
         /// </list>
         /// </para>
+        /// <para><b>Commit seam (Story 016).</b> After the re-entrancy guard, the apply / deliver / revert
+        /// steps are handed to the attached <see cref="ILevelUpCommit"/>. The default,
+        /// <see cref="ImmediateLevelUpCommit"/>, applies and broadcasts within this call. A coordinator-backed
+        /// seam applies the level-up now, persists it, and broadcasts <see cref="OnLevelUp"/> only after the
+        /// write succeeds; on failure it calls the revert step, which restores the snapshot taken by this call's
+        /// apply step. Each call owns its snapshot, so level-ups of different entities in flight at the same
+        /// time cannot overwrite each other's.</para>
         /// </remarks>
+        /// <param name="entityId">The entity whose Experience crossed the threshold.</param>
+        /// <param name="experienceBeforeGain">Experience before the triggering gain; restored by a revert (decision 1).</param>
         /// <exception cref="InvalidOperationException">
         /// <see cref="AttachCharacterStats"/> has not been called yet.
         /// </exception>
-        public void NotifyExperienceCrossedThreshold(IronGrind.CharacterStats.EntityID entityId)
+        public void NotifyExperienceCrossedThreshold(IronGrind.CharacterStats.EntityID entityId, int experienceBeforeGain)
         {
             NotifyExperienceCrossedThresholdCallCount++;
             LastNotifiedEntityId = entityId;
@@ -397,8 +409,162 @@ namespace IronGrind.LevelingSystem
             if (_levelingUpInProgress)
                 return;
 
+            // One snapshot per call: filled by the apply step, read by this call's revert step only.
+            var snapshot = new LevelUpRevertSnapshot();
+            _levelUpCommit.Commit(
+                entityId,
+                () => WouldLevelUp(entityId),
+                () => ApplyLevelUp(entityId, experienceBeforeGain, snapshot),
+                levels => DeliverLevelUp(entityId, levels),
+                () => RevertLevelUp(entityId, snapshot));
+        }
+
+        /// <summary>
+        /// Convenience overload for callers that have no pre-gain value: forwards with the entity's current
+        /// stored Experience. Counted once, by the two-argument method.
+        /// </summary>
+        /// <param name="entityId">The entity whose Experience crossed the threshold.</param>
+        public void NotifyExperienceCrossedThreshold(IronGrind.CharacterStats.EntityID entityId)
+        {
+            int experience = _stats != null
+                ? _stats.GetBaseStat(entityId, IronGrind.CharacterStats.StatID.Experience)
+                : 0;
+            NotifyExperienceCrossedThreshold(entityId, experience);
+        }
+
+        /// <summary>
+        /// Wires the commit seam. Setter rather than constructor argument because the coordinator-backed seam
+        /// depends on the persistence service, which depends on this service (a construction cycle). Default:
+        /// <see cref="ImmediateLevelUpCommit.Instance"/>.
+        /// </summary>
+        /// <param name="commit">The seam to use from now on.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="commit"/> is null.</exception>
+        public void AttachLevelUpCommit(ILevelUpCommit commit)
+        {
+            _levelUpCommit = commit ?? throw new ArgumentNullException(nameof(commit));
+        }
+
+        // The pre-level-up state a revert restores (Story 016, decisions 1 and 3).
+        private sealed class LevelUpRevertSnapshot
+        {
+            public bool Captured;
+            public int Level;
+            public int Experience;
+            public int Strength;
+            public int Dexterity;
+            public int Vitality;
+            public int Intelligence;
+            public int HeldFreePoints;
+            public int MaxHP;
+            public int MaxMP;
+            public int AttackPower;
+            public int Defense;
+            public int MagicDefense;
+            public float CritChance;
+            public float AttackSpeedMultiplier;
+        }
+
+        private bool WouldLevelUp(IronGrind.CharacterStats.EntityID entityId)
+        {
+            if (_stats.GetBaseStat(entityId, IronGrind.CharacterStats.StatID.Level) >= 60)
+                return false;
+            return _stats.GetBaseStat(entityId, IronGrind.CharacterStats.StatID.Experience) >= GetExperienceThreshold(entityId);
+        }
+
+        private void DeliverLevelUp(IronGrind.CharacterStats.EntityID entityId, IReadOnlyList<int> levels)
+        {
+            // CR-2.10 / AC-LS-08 — one call per level gained, ascending order, after the loop completed.
+            for (int i = 0; i < levels.Count; i++)
+                FireOnLevelUp(entityId, levels[i]);
+        }
+
+        private void RevertLevelUp(IronGrind.CharacterStats.EntityID entityId, LevelUpRevertSnapshot s)
+        {
+            // Nothing was applied (the apply step never ran or threw before capturing), or already reverted.
+            if (!s.Captured)
+                return;
+            s.Captured = false;
+
+            // The session may have been released while the write was in flight; writing now would
+            // re-create stat and free-point entries for an entity that no longer exists.
+            if (!IsPlayerEntity(entityId))
+            {
+                Debug.LogWarning(
+                    $"[LevelingService] Level-up revert skipped: entity={entityId} is no longer a registered player.");
+                return;
+            }
+
+            _stats.BeginStatTransaction();
+            try
+            {
+                _stats.SetBaseStat(entityId, IronGrind.CharacterStats.StatID.Level, s.Level);
+                _stats.SetBaseStat(entityId, IronGrind.CharacterStats.StatID.Experience, s.Experience);
+                _stats.SetBaseStat(entityId, IronGrind.CharacterStats.StatID.Strength, s.Strength);
+                _stats.SetBaseStat(entityId, IronGrind.CharacterStats.StatID.Dexterity, s.Dexterity);
+                _stats.SetBaseStat(entityId, IronGrind.CharacterStats.StatID.Vitality, s.Vitality);
+                _stats.SetBaseStat(entityId, IronGrind.CharacterStats.StatID.Intelligence, s.Intelligence);
+                _stats.SetBaseStat(entityId, IronGrind.CharacterStats.StatID.MaxHP, s.MaxHP);
+                _stats.SetBaseStat(entityId, IronGrind.CharacterStats.StatID.MaxMP, s.MaxMP);
+                _stats.SetBaseStat(entityId, IronGrind.CharacterStats.StatID.AttackPower, s.AttackPower);
+                _stats.SetBaseStat(entityId, IronGrind.CharacterStats.StatID.Defense, s.Defense);
+                _stats.SetBaseStat(entityId, IronGrind.CharacterStats.StatID.MagicDefense, s.MagicDefense);
+                _stats.SetBaseStatFloat(entityId, IronGrind.CharacterStats.StatID.CritChance, s.CritChance);
+                _stats.SetBaseStatFloat(entityId, IronGrind.CharacterStats.StatID.AttackSpeedMultiplier, s.AttackSpeedMultiplier);
+                _heldFreePoints[entityId] = s.HeldFreePoints;
+
+                // Decision 3: keep the current HP / MP, clamped down to the reverted maxima.
+                _stats.SetCurrentHP(entityId, _stats.GetCurrentHP(entityId));
+                _stats.SetCurrentMP(entityId, _stats.GetCurrentMP(entityId));
+            }
+            finally
+            {
+                _stats.EndStatTransaction();
+            }
+        }
+
+        // Captures the revert snapshot, then runs the CR-2.9 loop. If the loop throws part-way, the
+        // partial level-up is reverted before the exception propagates, so no half-applied state stays
+        // in memory for a later save to write.
+        private IReadOnlyList<int> ApplyLevelUp(
+            IronGrind.CharacterStats.EntityID entityId, int experienceBeforeGain, LevelUpRevertSnapshot snap)
+        {
+            CaptureRevertSnapshot(entityId, experienceBeforeGain, snap);
+            try
+            {
+                return RunConsecutiveLevelUps(entityId);
+            }
+            catch
+            {
+                RevertLevelUp(entityId, snap);
+                throw;
+            }
+        }
+
+        private void CaptureRevertSnapshot(
+            IronGrind.CharacterStats.EntityID entityId, int experienceBeforeGain, LevelUpRevertSnapshot snap)
+        {
+            snap.Level = _stats.GetBaseStat(entityId, IronGrind.CharacterStats.StatID.Level);
+            snap.Experience = experienceBeforeGain;
+            snap.Strength = _stats.GetBaseStat(entityId, IronGrind.CharacterStats.StatID.Strength);
+            snap.Dexterity = _stats.GetBaseStat(entityId, IronGrind.CharacterStats.StatID.Dexterity);
+            snap.Vitality = _stats.GetBaseStat(entityId, IronGrind.CharacterStats.StatID.Vitality);
+            snap.Intelligence = _stats.GetBaseStat(entityId, IronGrind.CharacterStats.StatID.Intelligence);
+            snap.HeldFreePoints = GetHeldFreePoints(entityId);
+            snap.MaxHP = _stats.GetBaseStat(entityId, IronGrind.CharacterStats.StatID.MaxHP);
+            snap.MaxMP = _stats.GetBaseStat(entityId, IronGrind.CharacterStats.StatID.MaxMP);
+            snap.AttackPower = _stats.GetBaseStat(entityId, IronGrind.CharacterStats.StatID.AttackPower);
+            snap.Defense = _stats.GetBaseStat(entityId, IronGrind.CharacterStats.StatID.Defense);
+            snap.MagicDefense = _stats.GetBaseStat(entityId, IronGrind.CharacterStats.StatID.MagicDefense);
+            snap.CritChance = _stats.GetBaseStatFloat(entityId, IronGrind.CharacterStats.StatID.CritChance);
+            snap.AttackSpeedMultiplier = _stats.GetBaseStatFloat(entityId, IronGrind.CharacterStats.StatID.AttackSpeedMultiplier);
+            snap.Captured = true;
+        }
+
+        // CR-2.9 consecutive level-up loop under the re-entrancy guard; returns the levels gained, ascending.
+        private List<int> RunConsecutiveLevelUps(IronGrind.CharacterStats.EntityID entityId)
+        {
             _levelingUpInProgress = true;
-            List<int> levelsGained = null;
+            List<int> levelsGained = new List<int>();
             try
             {
                 // CR-2.9 — consecutive level-up loop. Each iteration re-reads Level/Experience
@@ -423,7 +589,7 @@ namespace IronGrind.LevelingSystem
                         break; // No level gained this iteration (at-cap guard fired inside
                                // ExecuteLevelUpSequence) — stop rather than looping forever.
 
-                    (levelsGained ??= new List<int>()).Add(levelAfter);
+                    levelsGained.Add(levelAfter);
                 }
             }
             finally
@@ -431,13 +597,7 @@ namespace IronGrind.LevelingSystem
                 _levelingUpInProgress = false;
             }
 
-            // CR-2.10 / AC-LS-08 — broadcast only AFTER the loop has fully completed and
-            // _levelingUpInProgress has been cleared, one call per level gained, ascending order.
-            if (levelsGained != null)
-            {
-                for (int i = 0; i < levelsGained.Count; i++)
-                    FireOnLevelUp(entityId, levelsGained[i]);
-            }
+            return levelsGained;
         }
 
         /// <summary>

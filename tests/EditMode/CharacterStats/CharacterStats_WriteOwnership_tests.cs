@@ -46,7 +46,7 @@ namespace IronGrind.Tests.EditMode.CharacterStats
 
             public int GetExperienceThreshold(EntityID entityId) => _threshold;
 
-            public void NotifyExperienceCrossedThreshold(EntityID entityId)
+            public void NotifyExperienceCrossedThreshold(EntityID entityId, int experienceBeforeGain)
             {
                 NotificationCount++;
                 NotifiedEntities.Add(entityId);

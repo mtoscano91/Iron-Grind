@@ -166,6 +166,6 @@ namespace IronGrind.Tests.EditMode.DamageCalculation
         public int GetExperienceThreshold(EntityID entityId) => int.MaxValue;
 
         /// <inheritdoc/>
-        public void NotifyExperienceCrossedThreshold(EntityID entityId) { }
+        public void NotifyExperienceCrossedThreshold(EntityID entityId, int experienceBeforeGain) { }
     }
 }

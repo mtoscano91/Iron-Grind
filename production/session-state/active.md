@@ -1,3 +1,5 @@
+> **Leveling Story 016 `/story-done` 2026-10-16 (uncommitted):** verdict COMPLETE WITH NOTES (lean: QL-TEST-COVERAGE and LP-CODE-REVIEW skipped; `/code-review` done earlier, 7 items fixed). 11/11 criteria, 22 test cases, EditMode 2887 / 2887 re-run in batch mode this session. Story file: Status Complete, criteria ticked, Completion Notes. Leveling EPIC.md Complete 16/16; epics/index.md row 16 stories. Tech debt: TD-068 (no production `ILevelUpSessionResolver`; nothing attaches `CoordinatedLevelUpCommit` in a server composition, so CR-NET-5 does not hold outside tests). **Next:** commit Story 016 (incl. the new .meta files); then `/story-readiness` Enhancement Story 011 — its blocker (1), `SaveIrreversibleOutcome` missing, is resolved by CP Stories 008/009, the status line still says Blocked. PAT rotation still unconfirmed.
+
 > **Leveling Story 016 written + Character Persistence Story 011 deferred 2026-10-15 (uncommitted):** CP Story 011 `/story-readiness` → NEEDS WORK (3 open decisions); deferred until the NPC Shop epic (Status line records the recommended decision-1 answer, which needs an ADR-001 amendment). Wrote `production/epics/leveling-system/story-016-level-up-commit-before-broadcast.md` (Ready, Integration, 8 h) — the Story 009 handoff: level-up behind `IIrreversibleOutcomeCoordinator`. Decisions (user-approved): failed write reverts Experience to before the triggering gain; an XP gain during an in-flight write keeps the XP and the next gain retries; CurrentHP/MP kept, clamped to the reverted maxima; an injected commit seam whose default commits immediately (existing tests unchanged); an injected EntityID → (clientId, CharacterID) resolver, failure = no level-up + one error. Leveling EPIC.md reopened (15/16, row 016). **Next:** commit; then `/dev-story` Leveling Story 016. PAT rotation still unconfirmed.
 
 > **Character Persistence Story 010 `/story-done` 2026-10-15 (uncommitted):** verdict COMPLETE WITH NOTES (lean: QL-TEST-COVERAGE and LP-CODE-REVIEW skipped; `/code-review` done, 6 items fixed). 10/10 criteria, 28 test cases, EditMode 2865 / 2865. Story file: Status Complete, criteria ticked, Completion Notes (5 advisory deviations: TryGetCharacterId; ICharacterSessionRelease; reconnect-after-expiry not refused → state re-check; TTL callback passes the expiry tick; implementation choices). EPIC.md: 010 row Complete, status line 9 Complete. Tech debt logged: TD-067 (refuse EnterReconnecting at or after the expiry tick, with the reconnect handler). **Next:** commit Story 010 (incl. new .meta files); then `/story-readiness` Story 011 (pending purchase lifecycle); write the Leveling follow-up story. PAT rotation still unconfirmed.
@@ -3892,3 +3894,19 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Notes: suite 2083/2083 from the results file; four log sites behind one decision method; packed `ulong` throttle key; 24 tests against 17 QA cases.
 - Tech debt logged: 1 item (TD-064)
 - Next recommended: Story 036 — production/epics/networking-core/story-036-inbound-request-dispatcher.md (Draft; run /story-readiness first)
+
+## Session Extract — /dev-story 2026-10-15
+- Story: production/epics/leveling-system/story-016-level-up-commit-before-broadcast.md — Level-Up Behind the Irreversible-Outcome Coordinator
+- Files changed: src/ServerLogic/LevelingSystem/{ILevelUpCommit,ImmediateLevelUpCommit}.cs (new), src/ServerLogic/CharacterPersistence/{CoordinatedLevelUpCommit,ILevelUpSessionResolver}.cs (new), LevelingService.cs, ILevelingService.cs (+experienceBeforeGain), CharacterStats.cs (AddExperience call), 3 test fakes (signature only)
+- Test written: tests/EditMode/LevelingSystem/LevelingSystem_LevelUpCommit_tests.cs — 17 [Test] (one over 6 FailureKind values) = 22 cases; EditMode 2887 / 2887 (batch mode) after /code-review fix all (7 items)
+- Orchestrator fix: revert snapshot was a single service field (cross-entity overwrite) → one snapshot per NotifyExperienceCrossedThreshold call; regression test Test_TwoEntitiesInFlight_...
+- Deviations for /story-done: no production ILevelUpSessionResolver (nothing constructs the coordinator yet) → tech-debt entry; test rig uses its own XpThreshold table (i*100), Story 009's is unusable
+- Blockers: None
+- /code-review done (CHANGES REQUIRED → fix all applied: HP/MP clamp test, CharacterStats.cs in scan list, revert on a throw part-way through the loop, revert skipped for a released entity, wouldLevelUp before the resolver, 5 more tests, ctor summary)
+- Next: /story-done Story 016; commit incl. .meta files. PAT rotation still unconfirmed.
+
+## Session Extract — /story-done 2026-10-16
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/leveling-system/story-016-level-up-commit-before-broadcast.md — Level-Up Behind the Irreversible-Outcome Coordinator
+- Tech debt logged: 1 item (TD-068)
+- Next recommended: Enhancement Story 011 — production/epics/enhancement-system/story-011-commit-orchestration.md (status Blocked, but blocker 1 is now resolved; run /story-readiness)

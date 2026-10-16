@@ -25,6 +25,11 @@ namespace IronGrind.CharacterStats
         /// the threshold returned by <see cref="GetExperienceThreshold"/>. The Leveling
         /// System handles all level-up side effects (stat gains, threshold reset, etc.).
         /// </summary>
-        void NotifyExperienceCrossedThreshold(EntityID entityId);
+        /// <param name="entityId">The entity whose Experience crossed the threshold.</param>
+        /// <param name="experienceBeforeGain">
+        /// The entity's Experience before the gain that triggered this call. A level-up that is
+        /// later rolled back (Leveling Story 016, decision 1) restores Experience to this value.
+        /// </param>
+        void NotifyExperienceCrossedThreshold(EntityID entityId, int experienceBeforeGain);
     }
 }
