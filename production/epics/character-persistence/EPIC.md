@@ -85,7 +85,7 @@ This epic is complete when:
 | 009 | [The Irreversible-Outcome Persist Step and the Level-Up Path](story-009-irreversible-persist-step-and-level-up.md) | Integration | Complete (2026-10-15; level-up proven with a test caller, real wiring moved to a Leveling follow-up story) | ADR-011, ADR-010 |
 | 010 | [Session-End Triggers — Clean Logout and TTL Expiry](story-010-session-end-triggers.md) | Integration | Complete (2026-10-15; 28 test cases, EditMode 2865 / 2865; COMPLETE WITH NOTES) | ADR-011 |
 | 011 | [`PendingPurchase` Lifecycle on the Store Seam](story-011-pending-purchase-lifecycle.md) | Logic | Not Started (2026-10-12; 3 open decisions; no caller yet) | ADR-001, ADR-006 |
-| 012 | [Npgsql and Dapper in the Project](story-012-npgsql-and-dapper-in-the-project.md) | Integration | Blocked (the libraries and a PostgreSQL instance are the user's decision) | ADR-006, ADR-012 |
+| 012 | [Npgsql and Dapper in the Project](story-012-npgsql-and-dapper-in-the-project.md) | Integration | Not yet Ready (2026-10-16: unblocked — user decisions: pinned DLLs under `Assets/Plugins/Server/`, local Docker PostgreSQL, build items carried by the epic; `/story-readiness` next) | ADR-006, ADR-012 |
 | 013 | [SQL Migrations for `character_records` and `pending_purchases`](story-013-sql-migrations.md) | Config/Data | Blocked (needs a PostgreSQL instance to run) | ADR-006 |
 | 014 | [The Npgsql Character Record Store](story-014-npgsql-character-record-store.md) | Integration | Blocked (012, 013) | ADR-006, ADR-011 |
 | 015 | [The Npgsql Pending-Purchase Store](story-015-npgsql-pending-purchase-store.md) | Integration | Blocked (012–014) | ADR-006, ADR-001 |

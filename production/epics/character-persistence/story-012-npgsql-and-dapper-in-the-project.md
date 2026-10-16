@@ -1,7 +1,7 @@
 # Story 012: Npgsql and Dapper in the Project
 
 > **Epic**: Character Persistence
-> **Status**: Blocked — written 2026-10-12. **Neither library is in the project** (not in `Packages/manifest.json`, nothing under `Assets/`), and how they get there is not decided (open decision 1).
+> **Status**: Not yet Ready — written 2026-10-12; unblocked 2026-10-16 when the user closed open decisions 1–3 (below). Neither library is in the project yet. Run `/story-readiness` (exact versions, dependency list, manifest rules).
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-09
@@ -42,7 +42,12 @@
 - This story writes no persistence behaviour; it ends when a query round-trips.
 - ADR-012's Verification Required items on server and client builds overlap with (b) and (c): one build run can serve both.
 
-**Open decisions for `/story-readiness`**
+**User decisions 2026-10-16** (close open decisions 1–3 below):
+1. **Manual DLLs, pinned.** The .NET Standard DLLs are taken from the NuGet packages and committed under `Assets/Plugins/Server/` — Npgsql from the 7.0.x line (Npgsql 8 dropped .NET Standard; to confirm at `/story-readiness`, with the exact version and every dependency DLL it needs), Dapper 2.1.x — versions and sources recorded in a file under `docs/`. No NuGet-for-Unity tool. Both are now in the Allowed Libraries of `.claude/docs/technical-preferences.md`.
+2. **PostgreSQL for development: a local Docker container** (ADR-006's validation), started from a compose file under `tools/`. Docker 20.10 and Compose v2.3 are installed on the development machine. CI later uses a service container (not this story).
+3. **Items (b)–(d) do not block `/story-done`.** The story closes on the Editor round trip (a) and the boundary tests; (b)–(d) are recorded NOT RUN and carried by the epic's headless-build gate, as Networking Core's are.
+
+**Open decisions for `/story-readiness`** *(closed 2026-10-16, see above)*
 
 1. **How the libraries get in**: DLLs taken from NuGet packages and placed under `Assets/Plugins/` (which versions, which dependencies), or a NuGet-for-Unity tool. This is the user's call — it adds third-party binaries to the repository, and "Allowed Libraries" in the technical preferences is empty.
 2. **Where PostgreSQL runs for development and CI**: a local install, a container, or a hosted instance; ADR-006's validation names "a local PostgreSQL Docker container". Nothing is set up.
@@ -78,5 +83,5 @@
 
 ## Dependencies
 
-- Depends on: **the user's decision on open decisions 1 and 2 (blocking)**
+- Depends on: the user's decisions on open decisions 1–3 — made 2026-10-16 (see Implementation Notes)
 - Unlocks: Stories 014, 015, 016
