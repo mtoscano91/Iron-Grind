@@ -1,7 +1,7 @@
 # Story 016: `ServerBroadcast_Enhancement9` Delivery
 
 > **Epic**: Enhancement System
-> **Status**: Blocked — **ADR-015 (cross-zone message relay, PostgreSQL `LISTEN` / `NOTIFY`) Accepted 2026-10-16; waiting for the ADR-015 Migration Plan step 1 relay story (Networking Core, not written).** Before ADR-015, ADR-002 (one zone server process per active zone, line 189) left no way for a message to reach the clients of other zone processes.
+> **Status**: Blocked — **ADR-015 (cross-zone message relay, PostgreSQL `LISTEN` / `NOTIFY`) Accepted 2026-10-16; waiting for Networking Core Story 040 (the ADR-015 Migration Plan step 1 relay, Ready 2026-10-16).** Before ADR-015, ADR-002 (one zone server process per active zone, line 189) left no way for a message to reach the clients of other zone processes.
 > **Layer**: Feature
 > **Type**: Integration
 > **Manifest Version**: 2026-10-09
@@ -29,7 +29,7 @@
 
 ## What is blocking
 
-1. ADR-015 Accepted — done 2026-10-16. Remaining: the relay of its Migration Plan step 1 (the game-side relay, EditMode-testable, no database) built by a Networking Core story. Step 2 (the Npgsql transport) is not needed for this story's tests.
+1. ADR-015 Accepted — done 2026-10-16. Remaining: the relay of its Migration Plan step 1 (the game-side relay, EditMode-testable, no database) — Networking Core Story 040 (`story-040-cross-zone-relay-game-side.md`, Ready 2026-10-16). Step 2 is Networking Core Story 041. Step 2 (the Npgsql transport) is not needed for this story's tests.
 2. ~~**Story 015**~~ (Complete 2026-10-16) provides the commit-success delivery point this story hooks into.
 
 ---
@@ -87,5 +87,5 @@
 
 ## Dependencies
 
-- Depends on: ADR-015 (Accepted 2026-10-16); **the ADR-015 Migration Plan step 1 relay story (blocking, not written)**; Story 015 (Complete); Story 007 (Complete); Story 010 (Complete)
+- Depends on: ADR-015 (Accepted 2026-10-16); **Networking Core Story 040 (blocking, Ready 2026-10-16)**; Story 015 (Complete); Story 007 (Complete); Story 010 (Complete)
 - Unlocks: Enhancement UI epic (broadcast presentation)
