@@ -1,7 +1,7 @@
 # Story 015: Attempt Result Delivery
 
 > **Epic**: Enhancement System
-> **Status**: Ready (2026-10-16, `/story-readiness`) — all dependencies Complete: Story 011 (commit orchestration, 2026-10-16), Inventory Story 012 and Story 010 (2026-10-09).
+> **Status**: Complete (2026-10-16, `/story-done`; commit `ee6c149`)
 > **Layer**: Feature
 > **Type**: Integration
 > **Manifest Version**: 2026-10-09
@@ -42,14 +42,14 @@
 
 ## Acceptance Criteria
 
-- [ ] **Acknowledgment after step 4**: an accepted `EnhancementAttemptRequest` (validation passed, scroll consumed — CR-ENH-15 steps 2–4) → exactly one `EnhancementRequestReceived { requestId, itemSlotIndex }` to the owning client, before the outcome is computed. A `Rejected*` result never follows an acknowledgment for the same `requestId`.
-- [ ] **Step 4 failure (AC-NC-43, step 4 case)**: with `Inventory.ConsumeItem` forced to fail at step 4, the capture contains zero `EnhancementRequestReceived` and exactly one `EnhancementAttemptResult` with `RejectedScrollNotFound`; an `InventorySlotUpdate` raised later in the same tick is sent, not held.
-- [ ] **Result only after the commit (CR-ENH-11, AC-NC-43)**: with the commit held open, the owning client's capture contains zero `InventorySlotUpdate` and zero `EnhancementAttemptResult`. When the commit returns `Success`, it contains the held `InventorySlotUpdate` messages in the order they were raised and exactly one `EnhancementAttemptResult` (`Success` with the new level, or `Destruction` with `newLevel` 0); their order relative to each other is not asserted. When the commit returns a non-Success code, it contains neither message type, including after the rollback.
-- [ ] **Cap exemption (AC-NC-35)**: with the owning client's Path 1 queue at its cap of 8, an `EnhancementAttemptResult` enqueued before the flush is at position 1 of that tick's capture and the displaced message is at position 1 of the next tick's; the same holds for `EnhancementRequestReceived`.
-- [ ] **Reconnect during the commit (AC-NC-43, reconnect case; EC-ENH-1)**: the owning client disconnected after step 3 and, while the commit is held open, the new connection is announced with `OwnerInventorySyncSender.OnSessionReadySent` (nothing in `src/` sends `SessionReady` yet; the test calls it) → that connection's capture contains zero `InventoryFullSync`; when the commit returns `Success`, exactly one `InventoryFullSync` follows, its entries equal the committed bag, no `InventorySlotUpdate` raised before the commit appears after it, and the new connection's capture contains zero `EnhancementAttemptResult`; when the commit returns a non-Success code, no `InventoryFullSync` appears on that connection.
-- [ ] **AC-ENH-13 (disconnect after commit)**: the connection drops after the commit and before the result is sent → after `OnSessionReadySent` for the new connection, its `InventoryFullSync` shows the committed level, the scroll is gone, the slot is unlocked, and no `EnhancementAttemptResult` is sent on the new connection.
-- [ ] **`LastEnhancementRequestID` (EC-NET-9, in memory)**: after a committed attempt with `requestId = X`, the character's `EnhancementRequestDeduplicator.LastEnhancementRequestId` is `X` (set by `RecordCommitted` before the result is enqueued) and a second `EnhancementAttemptRequest` with `requestId = X` is dropped as Story 010's duplicate criterion states; after a failed commit, a rejection or a step 4 failure it is unchanged. Not durable across a restart (TD-069).
-- [ ] **`RecordCommitted`**: `EnhancementRequestDeduplicator.RecordCommitted(uint requestId)` sets `LastEnhancementRequestId` to `requestId`; `TryProcess` behaves as before (its existing tests pass unchanged). A character with no deduplicator (`IEnhancementRequestDedupLookup.TryGetDeduplicator` returns false) still gets its result, and one warning is logged.
+- [x] **Acknowledgment after step 4**: an accepted `EnhancementAttemptRequest` (validation passed, scroll consumed — CR-ENH-15 steps 2–4) → exactly one `EnhancementRequestReceived { requestId, itemSlotIndex }` to the owning client, before the outcome is computed. A `Rejected*` result never follows an acknowledgment for the same `requestId`.
+- [x] **Step 4 failure (AC-NC-43, step 4 case)**: with `Inventory.ConsumeItem` forced to fail at step 4, the capture contains zero `EnhancementRequestReceived` and exactly one `EnhancementAttemptResult` with `RejectedScrollNotFound`; an `InventorySlotUpdate` raised later in the same tick is sent, not held.
+- [x] **Result only after the commit (CR-ENH-11, AC-NC-43)**: with the commit held open, the owning client's capture contains zero `InventorySlotUpdate` and zero `EnhancementAttemptResult`. When the commit returns `Success`, it contains the held `InventorySlotUpdate` messages in the order they were raised and exactly one `EnhancementAttemptResult` (`Success` with the new level, or `Destruction` with `newLevel` 0); their order relative to each other is not asserted. When the commit returns a non-Success code, it contains neither message type, including after the rollback.
+- [x] **Cap exemption (AC-NC-35)**: with the owning client's Path 1 queue at its cap of 8, an `EnhancementAttemptResult` enqueued before the flush is at position 1 of that tick's capture and the displaced message is at position 1 of the next tick's; the same holds for `EnhancementRequestReceived`.
+- [x] **Reconnect during the commit (AC-NC-43, reconnect case; EC-ENH-1)**: the owning client disconnected after step 3 and, while the commit is held open, the new connection is announced with `OwnerInventorySyncSender.OnSessionReadySent` (nothing in `src/` sends `SessionReady` yet; the test calls it) → that connection's capture contains zero `InventoryFullSync`; when the commit returns `Success`, exactly one `InventoryFullSync` follows, its entries equal the committed bag, no `InventorySlotUpdate` raised before the commit appears after it, and the new connection's capture contains zero `EnhancementAttemptResult`; when the commit returns a non-Success code, no `InventoryFullSync` appears on that connection.
+- [x] **AC-ENH-13 (disconnect after commit)**: the connection drops after the commit and before the result is sent → after `OnSessionReadySent` for the new connection, its `InventoryFullSync` shows the committed level, the scroll is gone, the slot is unlocked, and no `EnhancementAttemptResult` is sent on the new connection.
+- [x] **`LastEnhancementRequestID` (EC-NET-9, in memory)**: after a committed attempt with `requestId = X`, the character's `EnhancementRequestDeduplicator.LastEnhancementRequestId` is `X` (set by `RecordCommitted` before the result is enqueued) and a second `EnhancementAttemptRequest` with `requestId = X` is dropped as Story 010's duplicate criterion states; after a failed commit, a rejection or a step 4 failure it is unchanged. Not durable across a restart (TD-069).
+- [x] **`RecordCommitted`**: `EnhancementRequestDeduplicator.RecordCommitted(uint requestId)` sets `LastEnhancementRequestId` to `requestId`; `TryProcess` behaves as before (its existing tests pass unchanged). A character with no deduplicator (`IEnhancementRequestDedupLookup.TryGetDeduplicator` returns false) still gets its result, and one warning is logged.
 
 ---
 
@@ -101,7 +101,7 @@
 **Story Type**: Integration
 **Required evidence**: `tests/EditMode/Integration/EnhancementSystem/Enhancement_ResultDelivery_integration_tests.cs` — must exist and pass.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 42 test cases, all passing (EditMode 2974 / 2974)
 
 ---
 
@@ -109,3 +109,18 @@
 
 - Depends on: Story 011 (Complete 2026-10-16); Inventory Story 012 (Complete 2026-10-09); Story 010 (Complete 2026-10-09); Stories 005 and 007 (Complete); Networking Core Stories 036 and 037 (Complete)
 - Unlocks: Story 016 (the +9 broadcast hooks into this story's commit-success delivery); Enhancement UI epic (result side)
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-16
+**Criteria**: 8/8 passing (none deferred)
+**Deviations** (advisory):
+- `EnhancementCommitOrchestrator.cs` (Story 011) gained the 8-argument `Begin` with `onCommitFailed` (user decision D2), plus two `/code-review` hardening fixes: a `CompleteAttempt` exception is logged and the result is built from the pending start; the hook runs in a `finally` around `RollBackAttempt`.
+- `RejectedWriteInFlight` (another system's irreversible write in flight; ADR-014 Decision 3) sends `RejectedConcurrentAttempt`, newLevel 0.
+- The starter keeps a per-character hold-ownership set, so an attempt opens and ends only a hold it owns.
+- The test file's source scan reads source files (`File.ReadAllText`), as six sibling test files do.
+- ADR-004 is not exercised (no NGO code).
+- TD-072 logged: the coordinator's failure protocol skips the disconnect and session-preserve steps when the revert throws (Story 011 behaviour, not new).
+**Test Evidence**: Integration: `tests/EditMode/Integration/EnhancementSystem/Enhancement_ResultDelivery_integration_tests.cs` (42 cases)
+**Code Review**: Complete (2026-10-16, `/code-review`: CHANGES REQUIRED, all fixes applied; review mode lean, so the LP-CODE-REVIEW and QL-TEST-COVERAGE gates were skipped)
