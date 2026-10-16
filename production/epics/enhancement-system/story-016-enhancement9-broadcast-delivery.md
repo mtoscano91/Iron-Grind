@@ -43,6 +43,7 @@
 - [ ] **Delivery failure isolated (EC-ENH-8)**: a send failure to some clients (or to a whole zone, once the relay exists) does not change the outcome, and the other clients still receive the broadcast.
 - [ ] **Broadcast is not cap-exempt (AC-NC-47)**: client A's Path 1 queue holds exactly 8 non-exempt messages and a +8 → +9 commits before the flush → that tick's capture holds the 8 messages and no broadcast; the broadcast is in the next tick's capture.
 - [ ] **Names**: `playerName` is the character's name and `itemName` the item's `ItemDefinition.DisplayName`; strings longer than 24 UTF-8 bytes are cut by the codec (Story 010).
+- [ ] **Observer callbacks (moved from Story 015 on 2026-10-16)**: `INetworkTestObserver.OnServerEnhancementOutcomeSerialized` and `OnClientEnhancementOutcomeReceived` drop the provisional `itemId` and carry the fields of the messages they observe; `networking-test-harness.md` gives the new signatures; the existing harness tests pass with them. The fields are named at this story's `/story-readiness`.
 
 ---
 
