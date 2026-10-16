@@ -73,7 +73,7 @@ This epic is complete when:
 | 008 | [Scroll Exclusion Validator Rule (MVP)](story-008-scroll-source-restriction.md) | Logic | Complete (2026-10-07) | ADR-010 |
 | 009 | [Attempt Exclusivity — Held Requests](story-009-attempt-exclusivity.md) | Integration | Complete (2026-10-09; tested against the dispatcher with a fake write, ADR-014 Migration Plan step 3) | ADR-011, ADR-014 |
 | 010 | [Client Requests — Codecs, Preview, Cancel and Rejections](story-010-client-requests-and-result-delivery.md) | Integration | Complete (2026-10-09) | ADR-014, ADR-012, ADR-004 |
-| 011 | [Commit Orchestration](story-011-commit-orchestration.md) | Integration | **Blocked** — Character Persistence | ADR-006, ADR-011 |
+| 011 | [Commit Orchestration](story-011-commit-orchestration.md) | Integration | Ready (2026-10-16) | ADR-006, ADR-011 |
 | 012 | [Move Enhancement to the Server Assembly](story-012-server-assembly-move.md) | Integration | Complete (2026-10-08) | ADR-012 |
 | 013 | [Move NPC Interaction to the Server Assembly](story-013-npc-interaction-server-assembly-move.md) | Integration | Complete (2026-10-08) | ADR-012 |
 | 014 | [Migrate Enhancement to `IRandomProvider`](story-014-random-provider-migration.md) | Logic | Complete (2026-10-09) | ADR-013 |
