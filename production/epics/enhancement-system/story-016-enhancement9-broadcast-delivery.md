@@ -1,7 +1,7 @@
 # Story 016: `ServerBroadcast_Enhancement9` Delivery
 
 > **Epic**: Enhancement System
-> **Status**: Blocked — **no cross-zone message relay is decided.** ADR-002 runs one zone server process per active zone (ADR-002 "Implication", line 189), and no ADR defines how a message reaches the clients of other zone processes. Run `/architecture-decision` for a cross-zone relay first.
+> **Status**: Blocked — **ADR-015 (cross-zone message relay, PostgreSQL `LISTEN` / `NOTIFY`) written 2026-10-16, Proposed; waiting for `/architecture-review` in a fresh session to accept it.** Before ADR-015, ADR-002 (one zone server process per active zone, line 189) left no way for a message to reach the clients of other zone processes.
 > **Layer**: Feature
 > **Type**: Integration
 > **Manifest Version**: 2026-10-09
@@ -19,7 +19,7 @@
 - **ADR-007: Hosting Backend** — every zone process on one VPS, PostgreSQL at localhost from each; input to the relay decision.
 - **ADR-011** — the broadcast is raised from the commit-success delivery, on the tick, after the write.
 - **ADR-004 (NGO)** — transport and envelope.
-- **Missing: an ADR for cross-zone message relay** (candidates to evaluate there: PostgreSQL `LISTEN` / `NOTIFY`, a coordinator / gateway process, a message broker).
+- **ADR-015: Cross-Zone Message Relay** (Proposed 2026-10-16) — the story calls `IServerWideBroadcaster.Broadcast` from Story 015's commit-success delivery; the broadcaster enqueues for this zone's clients (`IZoneClientBroadcastSink`, not cap-exempt) and publishes to the other zones; EditMode tests use `InMemoryCrossZoneRelayBus` (two zones, no database). The relay itself is built by Networking Core stories (ADR-015 Migration Plan steps 1–2), not here.
 
 **Engine**: Unity 6.3 LTS | **Risk**: to be set at `/story-readiness` (depends on the relay ADR; ADR-004's NGO risk is HIGH)
 
@@ -29,8 +29,8 @@
 
 ## What is blocking
 
-1. **A cross-zone relay ADR** (not written). Without it the sender can reach only the committing zone's clients.
-2. **Story 015** (Not Started) provides the commit-success delivery point this story hooks into.
+1. **ADR-015 Accepted** (written 2026-10-16, Proposed), and the relay of its Migration Plan step 1 (the game-side relay, EditMode-testable, no database) built by a Networking Core story. Step 2 (the Npgsql transport) is not needed for this story's tests.
+2. ~~**Story 015**~~ (Complete 2026-10-16) provides the commit-success delivery point this story hooks into.
 
 ---
 
@@ -87,5 +87,5 @@
 
 ## Dependencies
 
-- Depends on: **a cross-zone relay ADR (blocking, not written)**; **Story 015 (blocking)**; Story 007 (Complete); Story 010 (Complete)
+- Depends on: **ADR-015 Accepted (blocking; Proposed 2026-10-16)**; **the ADR-015 Migration Plan step 1 relay story (blocking, not written)**; Story 015 (Complete); Story 007 (Complete); Story 010 (Complete)
 - Unlocks: Enhancement UI epic (broadcast presentation)

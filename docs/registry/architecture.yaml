@@ -30,7 +30,7 @@
 #   Superseded entries:     Grep pattern="status: superseded"
 
 version: 1
-last_updated: "2026-10-09"
+last_updated: "2026-10-16"
 
 # ─── STATE OWNERSHIP ─────────────────────────────────────────────────────────
 # Who is the authoritative owner of each piece of shared game state.
@@ -261,6 +261,19 @@ interfaces:
     added: 2026-10-09
     revised: ""
 
+  - contract: cross_zone_relay
+    status: active
+    pattern: pub_sub_between_zone_processes
+    producer: tick-thread commit-success callbacks that raise an allowlisted S→ALL message (today only ServerBroadcast_Enhancement9) through IServerWideBroadcaster.Broadcast
+    consumers:
+      - every other zone process — NpgsqlRelayListener → CrossZoneRelayInbox → ZoneTickPipeline step 1a → IZoneClientBroadcastSink.EnqueueToAllClients
+    adr: docs/architecture/ADR-015-cross-zone-message-relay.md
+    signal_signature: "bool IServerWideBroadcaster.Broadcast(ushort messageTypeId, ReadOnlySpan<byte> body) — local IZoneClientBroadcastSink.EnqueueToAllClients(isCapExempt: false) first, then pg_notify('irongrind_relay', 'v1:{typeId}:{originId hex16}:{base64 body}'); at most once, no replay; a zone drops its own originId"
+    referenced_by:
+      - docs/architecture/ADR-015-cross-zone-message-relay.md
+    added: 2026-10-16
+    revised: ""
+
 # Example:
 #
 # interfaces:
@@ -474,6 +487,17 @@ api_decisions:
     added: 2026-10-09
     revised: ""
 
+  - purpose: cross_zone_message_relay
+    status: active
+    api: "PostgreSQL LISTEN / pg_notify through Npgsql: one unpooled NpgsqlConnection (Pooling=false, Multiplexing=false, Tcp Keepalive=true) blocking in NpgsqlConnection.Wait(int) on a dedicated background Thread per zone process; publish by ExecuteNonQueryAsync tracked by ITickCompletionQueue with a RELAY_PUBLISH_TIMEOUT_MS cancellation, never awaited"
+    not: "the ADR-007 gateway Unix socket; a message broker (Redis pub/sub, NATS); polling a relay table; NOTIFY inside the persistence transaction of a commit; a thread-pool thread or await for the listener"
+    adr: docs/architecture/ADR-015-cross-zone-message-relay.md
+    reason: "PostgreSQL and Npgsql already run with every zone (ADR-006, ADR-007), so no new service or library is needed; works across machines that share the database; the tick never blocks."
+    referenced_by:
+      - docs/architecture/ADR-015-cross-zone-message-relay.md
+    added: 2026-10-16
+    revised: ""
+
 # Example:
 #
 # api_decisions:
@@ -666,6 +690,20 @@ forbidden_patterns:
     why: "IRandomProvider is a seeded, reproducible generator whose seed is logged."
     adr: docs/architecture/ADR-013-server-random-provider.md
     added: 2026-10-09
+
+  - pattern: cross_zone_relay_as_event_bus
+    status: active
+    description: "The cross-zone relay carries only already-encoded S→ALL message bodies whose MessageTypeId is on CrossZoneRelayAllowlist. Never relay a request, a reply to one client, state for a game system to apply, or a call between systems. A type is added to the allowlist only by a story naming the GDD rule that needs cross-zone delivery."
+    why: "A relay that carries arbitrary payloads becomes the central publish-subscribe bus ADR-010 forbids, across processes and without ordering or delivery guarantees."
+    adr: docs/architecture/ADR-015-cross-zone-message-relay.md
+    added: 2026-10-16
+
+  - pattern: relay_listener_calls_game_code
+    status: active
+    description: "The Npgsql Notification handler (listener thread) only validates the envelope and adds the body to the bounded CrossZoneRelayInbox. It never calls a game system, the outbox, or anything else on the tick's state; delivery happens in ZoneTickPipeline step 1a."
+    why: "Game state is single-threaded (ADR-007, ADR-011); a network-side callback only records (ADR-010 Decision 5, ADR-014 Decision 7)."
+    adr: docs/architecture/ADR-015-cross-zone-message-relay.md
+    added: 2026-10-16
 
 # Example:
 #
