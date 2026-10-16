@@ -51,7 +51,7 @@ namespace IronGrind.Networking
     /// outbox.Flush(currentTick: 100u);   // sends envelope + body to client 7
     /// </code>
     /// </example>
-    public sealed class ClientMessageOutbox : IClientMessageOutbox, IClientConnectionListener, IZoneOutboundStep
+    public sealed class ClientMessageOutbox : IClientMessageOutbox, IClientConnectionListener, IZoneOutboundStep, IZoneClientBroadcastSink
     {
         /// <summary>Most messages one client may have queued at once (queued and deferred).</summary>
         public const int OUTBOX_MAX_QUEUED_MESSAGES = 128;
@@ -198,6 +198,51 @@ namespace IronGrind.Networking
             catch (Exception ex)
             {
                 Debug.LogError($"{LOG_PREFIX} EnqueueThrew: clientId={clientId} - {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Queues one message for every client present in the outbox (Networking Core Story 040, ADR-015 Decision 1):
+        /// calls <see cref="Enqueue"/> once per client added and not removed, with the given flag, in the order the
+        /// clients were added. With no client it does nothing. Never throws.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// The recipient set is every client in the outbox, which includes a client still loading, before
+        /// <c>SessionReady</c> (accepted, ADR-015 Decision 1). The walk runs under the same deferred-removal guard as
+        /// <see cref="Flush"/>: a full queue makes <see cref="Enqueue"/> request a disconnect, which re-enters
+        /// <see cref="RemoveClient"/>; inside the walk that call only marks the client removed, and the list is
+        /// compacted when the outermost walk ends. Allocates nothing.
+        /// </para>
+        /// </remarks>
+        /// <param name="messageTypeId">The wire message type.</param>
+        /// <param name="body">The encoded body; copied per client before this returns.</param>
+        /// <param name="isCapExempt">True when the message is exempt from the priority-path cap.</param>
+        public void EnqueueToAllClients(ushort messageTypeId, ReadOnlySpan<byte> body, bool isCapExempt)
+        {
+            bool outermost = !_flushing;
+            _flushing = true;
+            try
+            {
+                int count = _clients.Count;
+                for (int i = 0; i < count; i++)
+                {
+                    ClientState state = _clients[i];
+                    if (state.IsRemoved)
+                    {
+                        continue;
+                    }
+
+                    Enqueue(state.ClientId, messageTypeId, body, isCapExempt);
+                }
+            }
+            finally
+            {
+                if (outermost)
+                {
+                    _flushing = false;
+                    DropRemovedClients();
+                }
             }
         }
 

@@ -4001,3 +4001,19 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Top items: A1 Editor listener stop / ADR-009 teardown step; A2 async connection open on publish; R1–R4
 
 - Report: docs/architecture/architecture-review-2026-10-16-adr-015.md
+
+## Session Extract — /dev-story 2026-10-16
+- Story: production/epics/networking-core/story-040-cross-zone-relay-game-side.md — Cross-Zone Relay, game side
+- Files changed: src/ServerLogic/Networking/CrossZoneRelay/ (12 new files + folder .meta), src/ServerLogic/Networking/Outbound/ClientMessageOutbox.cs (IZoneClientBroadcastSink, EnqueueToAllClients under the _flushing/_listDirty guard), src/ServerLogic/Networking/TickLoop/ZoneTickPipeline.cs (7-arg ctor, step 1a STEP_RELAY), tests/EditMode/Networking/CrossZoneRelayTestDoubles.cs, tests/EditMode/Networking/CrossZoneRelay_tests.cs
+- Test written: tests/EditMode/Networking/CrossZoneRelay_tests.cs (53 methods, 69 cases); full EditMode suite 3043 / 3043 in batch mode (2026-10-16 18:28Z)
+- Deviations (agent): Broadcast also refuses a body over the type's MaxBodyBytes; receiver decode buffer 54 bytes (base64 padding) so a 53-byte body is rejected as BodyTooLong; own-origin echo and full inbox counted, not logged by the receiver; CrossZoneRelayOrigin(ulong) test ctor, CrossZoneRelayAllowlist.CreateProduction(); tests reuse Outbox*/Inbound* doubles of the same test assembly
+- Blockers: None. Not committed.
+- Next: /code-review the changed files, then /story-done Story 040
+- /code-review Story 040 2026-10-16: CHANGES REQUIRED (no blocking; unity-specialist 1 should-fix + 4 suggestions, qa-tester GAPS). User: "fix all", minimum body length left to the message codec (story note). Applied: receiver refusal-log throttle (first per reason, then every 100th; REFUSAL_LOG_EVERY), codec BodyTooLong pre-decode, inbox maxBodyBytes required, origin InvariantCulture, 10 new tests + threading timeout/order, origin RNG source check; story criteria updated. EditMode 3053 / 3053 (18:37Z). Not committed. Next: /story-done Story 040.
+
+## Session Extract — /story-done 2026-10-16
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/networking-core/story-040-cross-zone-relay-game-side.md — Cross-Zone Relay, game side (25/25; EditMode 3053 / 3053)
+- Tech debt logged: None
+- Updated: Networking Core EPIC (40/41, row 040 Complete); Enhancement Story 016 and Enhancement EPIC row 016 → Not yet Ready (unblocked)
+- Next recommended: /story-readiness production/epics/enhancement-system/story-016-enhancement9-broadcast-delivery.md. PAT rotation still unconfirmed.

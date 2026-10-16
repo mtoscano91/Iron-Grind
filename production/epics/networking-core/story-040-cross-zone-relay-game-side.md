@@ -1,7 +1,7 @@
 # Story 040: Cross-Zone Relay — the Game Side, on an In-Memory Bus
 
 > **Epic**: Networking Core
-> **Status**: Ready — written 2026-10-16 (`/create-stories`, ADR-015 Migration Plan step 1). `/story-readiness` 2026-10-16: NEEDS WORK (2 gaps), both fixed the same day at the user's request — `EnqueueToAllClients` under the outbox's deferred-removal guard; the in-memory bus placed in `tests/`.
+> **Status**: Complete — 2026-10-16 (`/story-done`, COMPLETE WITH NOTES; see Completion Notes). Was Ready: written 2026-10-16 (`/create-stories`, ADR-015 Migration Plan step 1). `/story-readiness` 2026-10-16: NEEDS WORK (2 gaps), both fixed the same day at the user's request — `EnqueueToAllClients` under the outbox's deferred-removal guard; the in-memory bus placed in `tests/`. Implemented 2026-10-16 (`/dev-story`, EditMode 3043 / 3043); `/code-review` 2026-10-16 CHANGES REQUIRED (no blocking finding) — all fixes and suggestions applied at the user's request ("fix all"; minimum body length left to the message codec, see Implementation Notes).
 > **Layer**: Foundation
 > **Type**: Integration
 > **Manifest Version**: 2026-10-16
@@ -50,10 +50,12 @@ Also: **ADR-014** Decision 6 (the tick order, amended by ADR-015 Decision 7); **
 - [ ] **Allowlist on send**: `Broadcast` with a type not on `CrossZoneRelayAllowlist` returns false, logs one error, enqueues nothing locally and publishes nothing.
 - [ ] **Allowlist and size on receive**: an envelope with a type not on the allowlist, or a body longer than the type's `MaxBodyBytes`, is dropped and logged; nothing reaches the inbox.
 - [ ] **Malformed**: a payload with an unknown version prefix (`v2:`), a missing field, a non-decimal type, an `originId` that is not 16 hex digits, invalid base64, or a length above the longest valid envelope is dropped and logged, and never throws.
+- [ ] **Body size on send** *(added 2026-10-16, code review)*: `Broadcast` with a body longer than the type's `MaxBodyBytes` returns false, logs one error, enqueues nothing locally and publishes nothing — the same refusal every receiver would apply.
+- [ ] **Refusal logging is throttled** *(added 2026-10-16, code review)*: the receiver logs the first refusal of each reason in full, then one summary line per 100 refusals of that reason; every refusal is still counted. 250 refusals of one reason give exactly 3 lines.
 - [ ] **Inbox full**: with `RELAY_INBOX_CAPACITY` entries waiting, `TryAdd` returns false and the entry is dropped and counted; the drops are logged once per tick (one line with the count), not once per entry. The entries already in the inbox are delivered by the next step 1a.
 
 **Failure isolation (ADR-015 Validation 3)**
-- [ ] **Failing publisher**: a publisher that throws, or reports a failure, leaves A's local delivery and `Broadcast`'s return value unchanged; one warning is logged; `Broadcast` does not throw.
+- [ ] **Failing publisher**: a publisher that throws leaves A's local delivery and `Broadcast`'s return value unchanged; one warning is logged; `Broadcast` does not throw.
 - [ ] **Failing sink in step 1a**: a relay handler that throws for one entry does not stop the rest of step 1a (the remaining entries are still delivered) nor the later steps of the tick; the failure is logged.
 
 **Tick order (ADR-015 Decision 7)**
@@ -89,6 +91,7 @@ Also: **ADR-014** Decision 6 (the tick order, amended by ADR-015 Decision 7); **
 - **Origin.** `CrossZoneRelayOrigin` draws 8 bytes from `RandomNumberGenerator` once at construction and exposes the `ulong` and its 16-hex-digit form; the composition root creates one per process.
 - **Tuning knobs** (server config, not hardcoded): `RELAY_INBOX_CAPACITY` (64) is the only one this story uses; take it as a constructor argument with that default. `RELAY_CHANNEL_NAME` and the others are Story 041's.
 - **Clients before `SessionReady`.** `EnqueueToAllClients` reaches every client in the outbox, which includes clients still loading (ADR-015 Decision 1, accepted 2026-10-16). Nothing to do here; say so in the remarks of `EnqueueToAllClients`.
+- **Minimum body length is the message codec's job** *(user decision 2026-10-16, code review)*. The allowlist holds a maximum only. `ServerBroadcast_Enhancement9`'s wire minimum (4 bytes, AC-NC-47) is enforced by its own codec, which is the only producer of the body; the relay does not check it, and a 0- to 3-byte body would be relayed as is.
 - **Not done here:** no `Npgsql`, no thread of its own, no composition root. The story provides the objects and tests them by constructing them.
 
 **Performance**: per broadcast, one copy per local client (the outbox), one envelope encode (a string, allocates) per publish; per relayed message, one decode into the receiver's buffer and one copy into the inbox off the tick, one copy per client at step 1a. Empty step 1a: one locked count read.
@@ -139,7 +142,7 @@ Also: **ADR-014** Decision 6 (the tick order, amended by ADR-015 Decision 7); **
 **Story Type**: Integration
 **Required evidence**: `tests/EditMode/Networking/CrossZoneRelay_tests.cs` — must exist and pass, with the full EditMode suite (Unity batch mode or the Editor's Test Runner).
 
-**Status**: [ ] Not yet created
+**Status**: [x] `tests/EditMode/Networking/CrossZoneRelay_tests.cs` (60 test methods, 79 cases), EditMode 3053 / 3053 (2026-10-16 18:37Z, Unity batch mode)
 
 ---
 
@@ -147,3 +150,20 @@ Also: **ADR-014** Decision 6 (the tick order, amended by ADR-015 Decision 7); **
 
 - Depends on: ADR-015 (Accepted 2026-10-16); Story 039 (`ClientMessageOutbox`), Story 037 (`ZoneTickPipeline`) — Complete. No database.
 - Unlocks: Enhancement Story 016 (`ServerBroadcast_Enhancement9` delivery); Story 041 (the Npgsql transport implements `ICrossZoneRelayPublisher` and feeds `CrossZoneRelayReceiver`)
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-16
+**Criteria**: 25/25 passing (23 written at readiness plus the two added by the code review: body size on send, throttled refusal logging). None deferred.
+**Files**: `src/ServerLogic/Networking/CrossZoneRelay/` — `IServerWideBroadcaster.cs`, `IZoneClientBroadcastSink.cs`, `ICrossZoneRelayPublisher.cs`, `ICrossZoneRelayInbox.cs`, `ICrossZoneRelayHandler.cs`, `ServerWideBroadcaster.cs`, `CrossZoneRelayInbox.cs`, `CrossZoneRelayAllowlist.cs`, `RelayEnvelopeCodec.cs`, `CrossZoneRelayReceiver.cs`, `CrossZoneRelayOrigin.cs`, `ZoneClientRelayHandler.cs`; `src/ServerLogic/Networking/Outbound/ClientMessageOutbox.cs` (`IZoneClientBroadcastSink`, `EnqueueToAllClients` under the `_flushing` / `_listDirty` guard); `src/ServerLogic/Networking/TickLoop/ZoneTickPipeline.cs` (7-argument constructor, step 1a `STEP_RELAY`); `tests/EditMode/Networking/CrossZoneRelay_tests.cs`, `CrossZoneRelayTestDoubles.cs`.
+**Deviations** (advisory, accepted by the user 2026-10-16):
+- *No allocation, step 1a draining 8*: asserted on `CrossZoneRelayInbox.Drain` directly, not through `ZoneTickPipeline` with a real outbox; the send half is covered by the local-broadcast allocation test.
+- *Threading test*: sets `LogAssert.ignoreFailingMessages` for its duration — a 64-slot inbox under 10,000 writes logs a nondeterministic number of `EntriesDropped` warnings.
+- *API beyond the story*: `CrossZoneRelayOrigin(ulong)` (tests), `CrossZoneRelayAllowlist.CreateProduction()`, `CrossZoneRelayAllowlistRow`, `RelayEnvelopeDecodeResult` (with `BodyTooLong`), public `OwnOriginDropCount` / `RefusedPayloadCount`, `CrossZoneRelayReceiver.REFUSAL_LOG_EVERY = 100`; `CrossZoneRelayInbox` requires `maxBodyBytes` (the composition root passes `allowlist.LargestMaxBodyBytes`).
+- *Receiver decode buffer*: 54 bytes (base64 padding of the 52-byte maximum); a 53- or 54-byte body is refused after decoding as `BodyTooLong`, a larger one by the codec before decoding.
+- *Tests reuse doubles* of the same test assembly (`OutboxRecordingSendSeam`, `OutboxRecordingDisconnectRequester`, `OutboxCountingSendSeam`, `InboundSettableTickSource`).
+- *Not wired*: no composition root exists; these objects are constructed only by tests until the composition-root story.
+**Test Evidence**: Integration — `tests/EditMode/Networking/CrossZoneRelay_tests.cs`.
+**Code Review**: Complete — CHANGES REQUIRED (no blocking; unity-specialist 1 should-fix + 4 suggestions, qa-tester GAPS), all applied ("fix all"); not re-run after the fixes. LP-CODE-REVIEW and QL-TEST-COVERAGE skipped — lean mode.
+**Tech debt logged**: none (user's choice).

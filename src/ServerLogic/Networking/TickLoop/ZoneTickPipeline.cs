@@ -6,8 +6,9 @@ namespace IronGrind.Networking
     /// <summary>
     /// The order of one server tick (ADR-014 Decision 6, Networking Core Story 037). Its
     /// <see cref="Tick"/> is the one tick-driven delegate of <see cref="ServerTickLoop"/>. It runs
-    /// four steps in a fixed order: (1) completion, <see cref="ITickCompletionQueue.Drain"/>;
-    /// (2) requests, <see cref="IInboundRequestDispatcher.DispatchTick"/>; (3) simulation,
+    /// five steps in a fixed order: (1) completion, <see cref="ITickCompletionQueue.Drain"/>;
+    /// (1a) relay, <see cref="ICrossZoneRelayInbox.Drain"/> (ADR-015 Decision 7); (2) requests,
+    /// <see cref="IInboundRequestDispatcher.DispatchTick"/>; (3) simulation,
     /// <see cref="IZoneSimulationStep.Run"/>; (4) outbound, <see cref="IZoneOutboundStep.Flush"/>.
     /// </summary>
     /// <remarks>
@@ -22,7 +23,7 @@ namespace IronGrind.Networking
     /// </para>
     /// <para>
     /// <b>One tick number:</b> the tick is read from the <see cref="IServerTickSource"/> once, before
-    /// the first step, and the same value goes to all four steps.
+    /// the first step, and the same value goes to all five steps.
     /// </para>
     /// <para>
     /// <b>Allocation:</b> none per tick when no step throws. The error message is built only inside
@@ -42,11 +43,32 @@ namespace IronGrind.Networking
     public sealed class ZoneTickPipeline
     {
         private const string STEP_COMPLETION = "Completion";
+        private const string STEP_RELAY = "Relay";
         private const string STEP_REQUESTS = "Requests";
         private const string STEP_SIMULATION = "Simulation";
         private const string STEP_OUTBOUND = "Outbound";
 
+        private sealed class EmptyRelayInbox : ICrossZoneRelayInbox
+        {
+            public static readonly EmptyRelayInbox Instance = new EmptyRelayInbox();
+
+            public bool TryAdd(ushort messageTypeId, ReadOnlySpan<byte> body) => false;
+
+            public int Drain(uint currentTick, ICrossZoneRelayHandler handler) => 0;
+        }
+
+        private sealed class NoOpRelayHandler : ICrossZoneRelayHandler
+        {
+            public static readonly NoOpRelayHandler Instance = new NoOpRelayHandler();
+
+            public void OnRelayed(ushort messageTypeId, ReadOnlySpan<byte> body)
+            {
+            }
+        }
+
         private readonly ITickCompletionQueue _completionQueue;
+        private readonly ICrossZoneRelayInbox _relayInbox;
+        private readonly ICrossZoneRelayHandler _relayHandler;
         private readonly IInboundRequestDispatcher _dispatcher;
         private readonly IZoneSimulationStep _simulation;
         private readonly IZoneOutboundStep _outbound;
@@ -70,8 +92,39 @@ namespace IronGrind.Networking
             IZoneSimulationStep simulation,
             IZoneOutboundStep outbound,
             IServerTickSource tickSource)
+            : this(completionQueue, EmptyRelayInbox.Instance, NoOpRelayHandler.Instance, dispatcher, simulation, outbound, tickSource)
+        {
+        }
+
+        /// <summary>
+        /// Creates the pipeline with the cross-zone relay step (ADR-015 Decision 7, step 1a). The
+        /// five-argument constructor forwards an empty inbox and a handler that does nothing. No argument may be null.
+        /// </summary>
+        /// <param name="completionQueue">Step 1: drained first.</param>
+        /// <param name="relayInbox">Step 1a: drained right after step 1.</param>
+        /// <param name="relayHandler">Receives each relayed entry in step 1a (production: <see cref="ZoneClientRelayHandler"/>).</param>
+        /// <param name="dispatcher">Step 2: Pass A and Pass B.</param>
+        /// <param name="simulation">Step 3: ADR-002 phases 1 to 4.</param>
+        /// <param name="outbound">Step 4: the per-connection writers.</param>
+        /// <param name="tickSource">Where the tick number is read; usually the <see cref="ServerTickLoop"/>.</param>
+        /// <exception cref="ArgumentNullException">An argument is null; the exception names the parameter.</exception>
+        /// <example>
+        /// <code>
+        /// var pipeline = new ZoneTickPipeline(completionQueue, relayInbox, relayHandler, dispatcher, simulationStep, outboundStep, tickLoop);
+        /// </code>
+        /// </example>
+        public ZoneTickPipeline(
+            ITickCompletionQueue completionQueue,
+            ICrossZoneRelayInbox relayInbox,
+            ICrossZoneRelayHandler relayHandler,
+            IInboundRequestDispatcher dispatcher,
+            IZoneSimulationStep simulation,
+            IZoneOutboundStep outbound,
+            IServerTickSource tickSource)
         {
             _completionQueue = completionQueue ?? throw new ArgumentNullException(nameof(completionQueue));
+            _relayInbox = relayInbox ?? throw new ArgumentNullException(nameof(relayInbox));
+            _relayHandler = relayHandler ?? throw new ArgumentNullException(nameof(relayHandler));
             _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
             _simulation = simulation ?? throw new ArgumentNullException(nameof(simulation));
             _outbound = outbound ?? throw new ArgumentNullException(nameof(outbound));
@@ -79,7 +132,7 @@ namespace IronGrind.Networking
         }
 
         /// <summary>
-        /// Runs one tick: completion, requests, simulation, outbound, in that order, each in its own
+        /// Runs one tick: completion, relay, requests, simulation, outbound, in that order, each in its own
         /// <c>try</c>/<c>catch</c>. Never throws for a step failure; a failed step logs one error
         /// (<c>[ZoneTickPipeline] StepFailed: step=NAME tick=N - ExceptionType: message</c>) and the
         /// next step still runs. Has the shape of <c>Action&lt;float&gt;</c>, so it is registered
@@ -102,6 +155,15 @@ namespace IronGrind.Networking
             catch (Exception ex)
             {
                 LogStepFailed(STEP_COMPLETION, currentTick, ex);
+            }
+
+            try
+            {
+                _relayInbox.Drain(currentTick, _relayHandler);
+            }
+            catch (Exception ex)
+            {
+                LogStepFailed(STEP_RELAY, currentTick, ex);
             }
 
             try

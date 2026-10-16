@@ -78,7 +78,7 @@ This epic is complete when:
 | 013 | [Move NPC Interaction to the Server Assembly](story-013-npc-interaction-server-assembly-move.md) | Integration | Complete (2026-10-08) | ADR-012 |
 | 014 | [Migrate Enhancement to `IRandomProvider`](story-014-random-provider-migration.md) | Logic | Complete (2026-10-09) | ADR-013 |
 | 015 | [Attempt Result Delivery](story-015-attempt-result-delivery.md) | Integration | Complete (2026-10-16) | ADR-011, ADR-014, ADR-004 |
-| 016 | [`ServerBroadcast_Enhancement9` Delivery](story-016-enhancement9-broadcast-delivery.md) | Integration | Blocked (2026-10-16: ADR-015 Accepted 2026-10-16; waiting for the ADR-015 Migration Plan step 1 relay story in Networking Core) | ADR-015, ADR-002, ADR-007, ADR-011, ADR-004 |
+| 016 | [`ServerBroadcast_Enhancement9` Delivery](story-016-enhancement9-broadcast-delivery.md) | Integration | Not yet Ready (2026-10-16: unblocked — Networking Core Story 040, the ADR-015 relay, Complete; `/story-readiness` next) | ADR-015, ADR-002, ADR-007, ADR-011, ADR-004 |
 
 **Order**: 014 is independent of the blocked stories (it needs Story 012 and Loot Table Story 015, both Complete). 001 first; 002 and 003 need 001; 004 needs 003; 005 and 007 need 004 (007 also needs 005 for its "nothing on a rollback" check); 006 needs 003; 008 is independent; 011 needs 005 and its blockers; 009 needs 004, 005 and Networking Core Stories 036 and 037 (its test composes the coordinator itself, so it no longer follows 011); 010 needs 003, 004 and 006 and Networking Core Stories 015 and 036 (since the split of 2026-10-09 it no longer follows 011).
 
