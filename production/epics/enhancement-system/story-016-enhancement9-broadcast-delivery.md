@@ -1,85 +1,111 @@
 # Story 016: `ServerBroadcast_Enhancement9` Delivery
 
 > **Epic**: Enhancement System
-> **Status**: Not yet Ready — unblocked 2026-10-16: Networking Core Story 040 (the ADR-015 Migration Plan step 1 relay) is Complete. Run `/story-readiness` (criteria, estimate, risk and manifest rules still to set). Before ADR-015, ADR-002 (one zone server process per active zone, line 189) left no way for a message to reach the clients of other zone processes.
+> **Status**: Ready — `/story-readiness` 2026-10-16: NEEDS WORK, closed the same day by the user decisions below. Unblocked 2026-10-16 when Networking Core Story 040 (the ADR-015 Migration Plan step 1 relay) was Complete.
 > **Layer**: Feature
 > **Type**: Integration
-> **Manifest Version**: 2026-10-09
-> **Estimate**: not estimated — set at `/story-readiness` once the relay ADR is Accepted
+> **Manifest Version**: 2026-10-16
+> **Estimate**: 8 hours
 
 > **Created 2026-10-16 by splitting Story 015 (user decision).** Story 015 keeps everything the owning client receives because its attempt was committed; this story is the +9 broadcast every online player receives.
 
+> **User decisions 2026-10-16 (`/story-readiness`).**
+> 1. **Trigger: subscribe to the existing event.** A new `Enhancement9BroadcastSender` subscribes, with a method group, to `EnhancementService.OnEnhancementBroadcastLevelReached` (Story 007), which `CompleteAttempt` raises only after a successful write. Story 015's `EnhancementAttemptStarter` is not edited.
+> 2. **Names: a new lookup; a missing name skips the broadcast.** `ICharacterNameLookup.TryGetCharacterName(CharacterID, out string)`, implemented by `CharacterPersistenceService` from its session entry. No character name, or no item definition, → no broadcast, one warning logged; the outcome is unaffected (EC-ENH-8).
+> 3. **The observer-callback criterion moves out** of this story (it concerns `EnhancementAttemptResult`, not the broadcast, and needs a GDD edit to `networking-test-harness.md`). It is a follow-up item in the Enhancement `EPIC.md`.
+
 ## Context
 
-**GDD**: `design/gdd/enhancement-system.md` — CR-ENH-14 (the +9 server broadcast), CR-ENH-15 step 8 (broadcast only after the commit), UI-ENH-3 (`ServerBroadcast_Enhancement9`), EC-ENH-8 (a delivery failure does not affect the outcome), AC-ENH-18 (delivery half; its server-side half is in Story 007). `design/gdd/networking-wire-protocol.md` — `ServerBroadcast_Enhancement9` (R-OD, server → all connected clients; 4–52 byte body), AC-NC-47 (the broadcast is not cap-exempt).
+**GDD**: `design/gdd/enhancement-system.md` — CR-ENH-14 (the +9 server broadcast to all online players), CR-ENH-15 step 8 (broadcast only after the commit), UI-ENH-3 (`ServerBroadcast_Enhancement9 { playerName, itemName }`), EC-ENH-8 (a delivery failure does not affect the outcome), AC-ENH-18 (delivery half; the server-side trigger is Story 007). `design/gdd/networking-wire-protocol.md` — `ServerBroadcast_Enhancement9` (R-OD, server → all connected clients; body 4–52 bytes, two strings of at most 24 UTF-8 bytes), AC-NC-47 (not cap-exempt). `design/gdd/networking-channel-contract.md` — its row (`S→ALL`, every zone; ADR-015 is the cross-zone path).
 **Requirement**: `TR-enh-010` — "Server broadcast at +9: `ServerBroadcast_Enhancement9 { playerName, itemName }` to all online players, once per successful +9 transition, only after the commit (CR-ENH-14, CR-ENH-15 step 8)"
+*(Requirement text lives in `docs/architecture/tr-registry.yaml` — read fresh at review time)*
 
 **ADR Governing Implementation**:
-- **ADR-002: NavMesh Service Execution Contract** — one zone process per active zone (the reason this story is blocked).
-- **ADR-007: Hosting Backend** — every zone process on one VPS, PostgreSQL at localhost from each; input to the relay decision.
-- **ADR-011** — the broadcast is raised from the commit-success delivery, on the tick, after the write.
-- **ADR-004 (NGO)** — transport and envelope.
-- **ADR-015: Cross-Zone Message Relay** (Accepted 2026-10-16) — the story calls `IServerWideBroadcaster.Broadcast` from Story 015's commit-success delivery; the broadcaster enqueues for this zone's clients (`IZoneClientBroadcastSink`, not cap-exempt) and publishes to the other zones; EditMode tests use `InMemoryCrossZoneRelayBus` (two zones, no database). Clients not yet sent `SessionReady` also receive the broadcast (ADR-015 Decision 1, accepted). The relay itself is built by Networking Core stories (ADR-015 Migration Plan steps 1–2), not here.
+- **ADR-015: Cross-Zone Message Relay** — Decision 1: the sender calls `IServerWideBroadcaster.Broadcast` on the tick; local delivery through the zone outbox (not cap-exempt), then publish; `Broadcast` never throws. Decision 6: called only after the commit. Built by Networking Core Story 040 (Complete).
+- **ADR-011** — the event is raised from `CompleteAttempt`, which runs in the commit-success path on the tick, after the write.
+- **ADR-010** — a direct subscription to a typed event; `readonly struct` args; no lambda capture for a persistent subscription.
+- **ADR-004** — envelope and channel (the outbox of Networking Core Story 039).
+- **ADR-012** — the sender and the lookup are `IronGrind.ServerLogic`.
 
-**Engine**: Unity 6.3 LTS | **Risk**: to be set at `/story-readiness` (depends on the relay ADR; ADR-004's NGO risk is HIGH)
+**ADR Decision Summary**: on a committed +8 → +9 success, `EnhancementService` raises `OnEnhancementBroadcastLevelReached`; the sender resolves the two names, encodes the body, and calls `IServerWideBroadcaster.Broadcast`, which delivers to this zone's clients and relays to every other zone.
 
-**Control Manifest Rules**: to be listed at `/story-readiness`. Known to apply: never use class-typed event args — ADR-010; never use lambda captures for persistent event subscriptions — ADR-010; no `await` in tick-driven code — ADR-011.
+**Engine**: Unity 6.3 LTS | **Risk**: LOW — no engine API; tests run on Story 040's `InMemoryCrossZoneRelayBus` and Story 039's outbox with a recording send seam. The Npgsql transport (Networking Core Story 041) is not needed.
+**Engine Notes**: N/A — no engine API involved.
 
----
-
-## What is blocking
-
-1. ADR-015 Accepted — done 2026-10-16. Remaining: the relay of its Migration Plan step 1 (the game-side relay, EditMode-testable, no database) — Networking Core Story 040 (`story-040-cross-zone-relay-game-side.md`) — **Complete 2026-10-16**. Step 2 is Networking Core Story 041. Step 2 (the Npgsql transport) is not needed for this story's tests.
-2. ~~**Story 015**~~ (Complete 2026-10-16) provides the commit-success delivery point this story hooks into.
+**Control Manifest Rules (v2026-10-16)**:
+- Required (Feature): a feature that announces to every player of every zone calls `IServerWideBroadcaster.Broadcast` from the commit-success path of its irreversible outcome (ADR-011), never from `BeginAttempt`; its type must be on `CrossZoneRelayAllowlist` — ADR-015, ADR-011
+- Required (Foundation): the recipient set is every client in the zone's outbox; it is never derived from `MessageDirection` alone — ADR-015
+- Forbidden: lambda captures for persistent event subscriptions; class-typed event args — ADR-010
+- Forbidden: `await` in tick-driven code — ADR-011
+- Presentation rule, **not this story**: the client handler of `ServerBroadcast_Enhancement9` tolerates arrival before `SessionReady` — ADR-015 (its own client story)
 
 ---
 
 ## Acceptance Criteria
 
-*To be re-checked at `/story-readiness` once the relay ADR is Accepted.*
+*Every test runs in EditMode with two zones, A and B, each a `RelayTestZone` (Story 040's doubles: outbox with a recording send seam, `ServerWideBroadcaster`, inbox, pipeline) connected through one `InMemoryCrossZoneRelayBus`. The enhancement attempt runs in zone A through the real `EnhancementService` and `EnhancementCommitOrchestrator` with a controllable persistence double (Story 015's integration doubles). "Receives" means sent by that zone's outbox flush.*
 
-- [ ] **AC-ENH-18 (broadcast delivery)**: on a committed +8 → +9 success every connected client, in every zone, receives exactly one `ServerBroadcast_Enhancement9 { playerName: "TestPlayer", itemName: "Dark Steel Sword" }`, the owner's new connection included if it reconnected during the commit; none is sent for +7 → +8 or +9 → +10.
-- [ ] **Only after the commit (CR-ENH-15 step 8)**: with the commit held open no client receives the broadcast; a commit that returns a non-Success code sends none.
-- [ ] **Delivery failure isolated (EC-ENH-8)**: a send failure to some clients (or to a whole zone, once the relay exists) does not change the outcome, and the other clients still receive the broadcast.
-- [ ] **Broadcast is not cap-exempt (AC-NC-47)**: client A's Path 1 queue holds exactly 8 non-exempt messages and a +8 → +9 commits before the flush → that tick's capture holds the 8 messages and no broadcast; the broadcast is in the next tick's capture.
-- [ ] **Names**: `playerName` is the character's name and `itemName` the item's `ItemDefinition.DisplayName`; strings longer than 24 UTF-8 bytes are cut by the codec (Story 010).
-- [ ] **Observer callbacks (moved from Story 015 on 2026-10-16)**: `INetworkTestObserver.OnServerEnhancementOutcomeSerialized` and `OnClientEnhancementOutcomeReceived` drop the provisional `itemId` and carry the fields of the messages they observe; `networking-test-harness.md` gives the new signatures; the existing harness tests pass with them. The fields are named at this story's `/story-readiness`.
+- [ ] **AC-ENH-18 (delivery)**: zone A has clients 1 (the owner) and 2, zone B has client 3. A committed +8 → +9 success of `"TestPlayer"`'s `"Dark Steel Sword"` → clients 1 and 2 each receive exactly one `ServerBroadcast_Enhancement9 { playerName: "TestPlayer", itemName: "Dark Steel Sword" }` in A's tick of the commit, and client 3 exactly one in B's next tick; nothing more over 3 further ticks.
+- [ ] **Owner reconnected during the commit**: the owner's client is removed from A's outbox and added back under a new id while the write is held; on commit the new id receives the broadcast once and the old id receives nothing.
+- [ ] **Only +9**: a committed +7 → +8 success, a +9 → +10 success, and a destruction each send no broadcast to any client.
+- [ ] **Only after the commit (CR-ENH-15 step 8)**: while the write is held, no client in either zone receives the broadcast; a write that completes with a non-Success code sends none, ever.
+- [ ] **Delivery failure isolated (EC-ENH-8)**: (a) a send seam that throws for client 2 → client 1 and client 3 still receive the broadcast and the owner still receives its `EnhancementAttemptResult`; (b) a publisher that throws → A's clients still receive it, the outcome and the result message are unchanged; neither throws out of the tick.
+- [ ] **Not cap-exempt (AC-NC-47)**: client 2's priority queue holds exactly 8 non-exempt messages when the +9 commits → A's flush of that tick sends client 2 the 8 and no broadcast; the broadcast is in client 2's next flush. The owner's cap-exempt `EnhancementAttemptResult` is unaffected.
+- [ ] **Names**: `playerName` is `ICharacterNameLookup.TryGetCharacterName(charId)` and `itemName` is `IItemDatabase.TryGetItem(itemId)`'s `DisplayName`. A 30-byte item name arrives cut to 24 UTF-8 bytes by `ServerBroadcast_Enhancement9Codec` (Story 010); a name of 24 bytes arrives whole.
+- [ ] **Missing name or item**: the lookup returns false for the character, or the item database has no definition → no broadcast to any client, one warning naming the character and item ids, and the outcome and the owner's result message are unchanged.
+- [ ] **Subscription**: `Enhancement9BroadcastSender` subscribes to `OnEnhancementBroadcastLevelReached` with a method group in its constructor and unsubscribes in `Dispose`; after `Dispose` a +9 commit sends no broadcast. A sender that throws inside its handler does not change the outcome (the service's `Raise` contains it, EC-ENH-8) — asserted with a throwing broadcaster.
+- [ ] **Name lookup**: `CharacterPersistenceService.TryGetCharacterName` returns the loaded character's name while its session entry exists and false after the session is released; the existing `CharacterPersistence` tests pass unedited.
+- [ ] **Existing tests**: the tests of `Enhancement_ResultDelivery_integration_tests.cs`, `EnhancementSystem_OutcomeEvents_tests.cs` and Story 040's `CrossZoneRelay_tests.cs` pass unedited.
 
 ---
 
 ## Implementation Notes
 
-- **Broadcast scope (moved from Story 015; from the Story 010 code review, 2026-10-09).** The routing row of `ServerBroadcast_Enhancement9` has the direction `MessageDirection.ServerToAllZoneClients`, because the enum mirrors the five CCR-3 direction codes and the channel contract codes this message `S→ALL (all connected clients, every zone)`. The sender must enqueue it for every connected client in every zone (AC-ENH-18), not only for the clients of the sender's zone; do not derive the recipient set from the direction value alone.
-- `ClientMessageOutbox` is per zone (`IZoneOutboundStep`): delivery inside a zone goes through it; delivery to other zones goes through the relay the ADR defines.
-- **Names (moved from Story 015).** The +9 trigger of Story 007 (`EnhancementBroadcastEventArgs`) carries ids; resolve the names here (see Story 007's note on name lookup). The character name is held in the persistence session entry; the item name is `ItemDefinition.DisplayName`.
-- The broadcast is raised from Story 015's commit-success delivery, never from `BeginAttempt`.
+- **The sender.** `Enhancement9BroadcastSender : IDisposable` in `src/ServerLogic/EnhancementSystem/`. Constructor: `(EnhancementService service, IServerWideBroadcaster broadcaster, ICharacterNameLookup names, IItemDatabase items)`; subscribes `service.OnEnhancementBroadcastLevelReached += OnLevelReached` (a method, not a lambda). `OnLevelReached(EnhancementBroadcastEventArgs e)`: resolve both names (on failure log one warning and return), encode with `ServerBroadcast_Enhancement9Codec.WriteBody` into a buffer of `ServerBroadcast_Enhancement9.MaxBodySize` (a field, or `stackalloc` — no allocation per broadcast beyond what the name strings already are), call `broadcaster.Broadcast(ServerBroadcast_Enhancement9.MessageTypeId, body)`. `Broadcast` never throws; the service's `Raise` contains anything else (EC-ENH-8).
+- **Why this point is after the commit.** `CompleteAttempt` raises the event; the orchestrator calls `CompleteAttempt` only from the commit-success completion callback on the tick (ADR-011, Story 015), before `DeliverResult`. So the owner receives the broadcast, in the same flush, before or with its own result: the result is cap-exempt and goes first; the broadcast follows the cap. `BeginAttempt` never raises it.
+- **Name lookup.** `ICharacterNameLookup` in `src/ServerLogic/CharacterPersistence/` (provider-owned; both sides are `ServerLogic`), one method `bool TryGetCharacterName(CharacterID id, out string name)`. `CharacterPersistenceService` implements it from `_sessions[id].CharacterName` (tick thread only, like the rest of the service). Return false for an unknown id or an empty name.
+- **Item name.** `ItemID` in the event args is the item definition id the item database knows; `IItemDatabase.TryGetItem(ItemID, out ItemDefinition?)` → `DisplayName`. A false return or a null definition is "missing".
+- **Recipient set.** Do not filter by `MessageDirection` or by session state: `Broadcast` reaches every client in each zone's outbox, clients still loading included (ADR-015 Decision 1, accepted).
+- **Composition.** No composition root exists yet; tests construct the sender. The composition-root story wires one sender per zone.
+
+**Performance**: one broadcast per +9 success (a few per hour server-wide); per broadcast, two lookups, one encode of ≤ 52 bytes, then Story 040's cost. No per-tick work.
 
 ---
 
 ## Out of Scope
 
 - Story 015: acknowledgment, result, held inventory updates, reconnect full sync, `LastEnhancementRequestID`
-- Story 007: the +9 trigger event itself
-- The relay infrastructure beyond what the ADR assigns to this story
-- Enhancement UI, VFX and Audio epics: how the broadcast is presented
+- Story 007: the +9 trigger event itself (unchanged)
+- Networking Core Stories 040 (Complete) and 041: the relay and its Npgsql transport
+- The client handler for `ServerBroadcast_Enhancement9` and its presentation (Enhancement UI, VFX and Audio epics), including tolerating arrival before `SessionReady`
+- The observer-callback signatures (`INetworkTestObserver.OnServerEnhancementOutcomeSerialized`, `OnClientEnhancementOutcomeReceived`; `networking-test-harness.md`) — follow-up item in the Enhancement `EPIC.md` (user decision 3)
+- The server composition root
 
 ---
 
 ## QA Test Cases
 
-**File**: `tests/EditMode/Integration/EnhancementSystem/Enhancement_Broadcast_integration_tests.cs` (to be created).
+**Files** — to be created: `src/ServerLogic/EnhancementSystem/Enhancement9BroadcastSender.cs`, `src/ServerLogic/CharacterPersistence/ICharacterNameLookup.cs`, `tests/EditMode/Integration/EnhancementSystem/Enhancement_Broadcast_integration_tests.cs`. To be edited: `src/ServerLogic/CharacterPersistence/CharacterPersistenceService.cs` (implements the lookup); new tests for the lookup in the existing CharacterPersistence test file or the new file. Doubles from `EnhancementTestDoubles.cs` and `CrossZoneRelayTestDoubles.cs` (extend only by adding).
 
-- **AC-ENH-18** — three connected clients in two zones → each receives one broadcast with the two names; +7 → +8 → none; one client's send fails → the outcome stands and the others receive it.
-- **Commit held / failed** — no broadcast while held; none after a non-Success commit.
-- **AC-NC-47** — as stated in the criterion.
-- **Long names** — a 30-byte item name arrives cut to 24 UTF-8 bytes.
+- **AC-ENH-18** — A {1, 2}, B {3}: +8 → +9 commit → 1 and 2 once in A's tick, 3 once in B's next tick; 3 more ticks → nothing else; body decodes to the two names.
+- **Reconnect** — owner removed and re-added as a new id during the held write → new id once, old id nothing.
+- **Only +9** — +7 → +8, +9 → +10, a destruction → no broadcast anywhere.
+- **Held / failed** — held write → nothing in either zone; release with a non-Success code → nothing, then 3 more ticks → nothing.
+- **Seam throws for client 2** — 1 and 3 receive; owner's result still sent.
+- **Publisher throws** — A's clients receive; B's do not; outcome and result unchanged.
+- **AC-NC-47** — 8 queued for client 2 → broadcast in client 2's next flush; owner's exempt result in the commit tick.
+- **Names** — 24-byte names whole; 30-byte item name cut to 24 bytes.
+- **Missing** — no name → no broadcast, one warning; no item definition → the same.
+- **Dispose** — after `Dispose`, a +9 commit → nothing.
+- **Throwing broadcaster** — outcome and result unchanged; the service logs the contained exception.
+- **Lookup** — loaded → the name; released → false; unknown id → false.
 
 ---
 
 ## Test Evidence
 
 **Story Type**: Integration
-**Required evidence**: `tests/EditMode/Integration/EnhancementSystem/Enhancement_Broadcast_integration_tests.cs` — must exist and pass.
+**Required evidence**: `tests/EditMode/Integration/EnhancementSystem/Enhancement_Broadcast_integration_tests.cs` — must exist and pass, with the full EditMode suite.
 
 **Status**: [ ] Not yet created
 
@@ -87,5 +113,5 @@
 
 ## Dependencies
 
-- Depends on: ADR-015 (Accepted 2026-10-16); Networking Core Story 040 (Complete 2026-10-16); Story 015 (Complete); Story 007 (Complete); Story 010 (Complete)
+- Depends on: Networking Core Story 040 (Complete 2026-10-16); Story 015 (Complete); Story 007 (Complete); Story 010 (Complete); ADR-015 (Accepted 2026-10-16)
 - Unlocks: Enhancement UI epic (broadcast presentation)
