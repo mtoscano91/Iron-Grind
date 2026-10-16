@@ -9,10 +9,12 @@
 
 > **Created 2026-10-09 by splitting Story 010 (user decision).** Story 010 keeps the codecs and the requests that need no commit. This story is everything a client receives because an attempt was accepted and committed.
 
+> **Split again 2026-10-16 (user decision).** The +9 broadcast (`ServerBroadcast_Enhancement9`, AC-ENH-18 delivery half, AC-NC-47, TR-enh-010) moved to Story 016, which is Blocked on a cross-zone relay ADR (ADR-002 runs one process per zone).
+
 ## Context
 
-**GDD**: `design/gdd/enhancement-system.md` — CR-ENH-11 (pre-commit inventory events must not reach the client before the commit), CR-ENH-14, CR-ENH-15 steps 3, 4, 6b, 8 and 9, UI-ENH-2 (`EnhancementAttemptResult`), UI-ENH-3 (`ServerBroadcast_Enhancement9`), EC-ENH-1, EC-ENH-8, AC-ENH-13 (delivery half), AC-ENH-18 (delivery half). `design/gdd/networking-wire-protocol.md` — `EnhancementRequestReceived`, `EnhancementAttemptResult`, `ServerBroadcast_Enhancement9`, the Enhancement hold notes of `InventorySlotUpdate` and `InventoryFullSync`, CR-NET-7.7, AC-NC-35, AC-NC-43, AC-NC-47. `design/gdd/networking-core.md` — CR-NET-5.1 to CR-NET-5.5. `design/gdd/networking-session.md` — EC-NET-9.
-**Requirement**: `TR-enh-009` (delivery half), `TR-enh-010` (delivery)
+**GDD**: `design/gdd/enhancement-system.md` — CR-ENH-11 (pre-commit inventory events must not reach the client before the commit), CR-ENH-15 steps 3, 4, 6b and 9, UI-ENH-2 (`EnhancementAttemptResult`), EC-ENH-1, AC-ENH-13 (delivery half). `design/gdd/networking-wire-protocol.md` — `EnhancementRequestReceived`, `EnhancementAttemptResult`, the Enhancement hold notes of `InventorySlotUpdate` and `InventoryFullSync`, CR-NET-7.7, AC-NC-35, AC-NC-43. `design/gdd/networking-core.md` — CR-NET-5.1 to CR-NET-5.5. `design/gdd/networking-session.md` — EC-NET-9.
+**Requirement**: `TR-enh-009` (delivery half)
 *(Requirement text lives in `docs/architecture/tr-registry.yaml` — registry is currently empty; TR-IDs are the epic's placeholders)*
 
 **ADR Governing Implementation**:
@@ -48,8 +50,6 @@
 - [ ] **Cap exemption (AC-NC-35)**: with the owning client's Path 1 queue at its cap of 8, an `EnhancementAttemptResult` enqueued before the flush is at position 1 of that tick's capture and the displaced message is at position 1 of the next tick's; the same holds for `EnhancementRequestReceived`.
 - [ ] **Reconnect during the commit (AC-NC-43, reconnect case; EC-ENH-1)**: the owning client disconnected after step 3 and completes a new zone entry while the commit is held open → its capture contains `SessionReady` and zero `InventoryFullSync`; when the commit returns `Success`, exactly one `InventoryFullSync` follows, its entries equal the committed bag, no `InventorySlotUpdate` raised before the commit appears after it, and the new connection's capture contains zero `EnhancementAttemptResult`; when the commit returns a non-Success code, no `InventoryFullSync` appears on that connection.
 - [ ] **AC-ENH-13 (disconnect after commit)**: the connection drops after the commit and before the result is sent → on reconnect the bag shows the committed level, the scroll is gone, the slot is unlocked, and no `EnhancementAttemptResult` is sent on the new connection.
-- [ ] **AC-ENH-18 (broadcast delivery)**: on a committed +8 → +9 success every connected client, in every zone, receives exactly one `ServerBroadcast_Enhancement9 { playerName: "TestPlayer", itemName: "Dark Steel Sword" }`, the owner's new connection included if it reconnected during the commit; none is sent for +7 → +8 or +9 → +10; a delivery failure to some clients does not affect the outcome (EC-ENH-8).
-- [ ] **Broadcast is not cap-exempt (AC-NC-47)**: client A's Path 1 queue holds exactly 8 non-exempt messages and a +8 → +9 commits before the flush → that tick's capture holds the 8 messages and no broadcast; the broadcast is in the next tick's capture.
 - [ ] **`LastEnhancementRequestID` (EC-NET-9)**: after a committed attempt with `requestId = X`, the character's `LastEnhancementRequestID` is `X` and a second `EnhancementAttemptRequest` with `requestId = X` is dropped as Story 010's duplicate criterion states; after a failed commit it is unchanged.
 - [ ] **Observer callbacks**: the `INetworkTestObserver` enhancement callbacks carry the amended fields (no `itemId`) and the existing harness tests pass with them.
 
@@ -58,13 +58,11 @@
 ## Implementation Notes
 
 - **Not implementable until the three blockers clear.** The server-side behaviour underneath exists: validation (003), sequence (004), rollback (005), NPC session (006), events (007), exclusivity (009).
-- **Broadcast scope (from the Story 010 code review, 2026-10-09).** The routing row of `ServerBroadcast_Enhancement9` has the direction `MessageDirection.ServerToAllZoneClients`, because the enum mirrors the five CCR-3 direction codes and the channel contract codes this message `S→ALL (all connected clients, every zone)`. The sender must enqueue it for every connected client in every zone (AC-ENH-18), not only for the clients of the sender's zone; do not derive the recipient set from the direction value alone.
 - This story implements Story 010's attempt-start seam: it calls `IrreversibleOutcomeCoordinator.Begin` with Story 011's delegates, and adds the client-facing sends around them.
 - The hold starts at CR-ENH-15 step 3 and ends when the step 6b commit returns, or at once on a step 4 failure. The hold, release and discard calls are Inventory Story 012's; this story decides when to call them.
 - **Which call ends the hold (Inventory Story 012 `/code-review`, 2026-10-09).** The hold is injected as `IOwnerInventorySyncHold` (`src/ServerLogic/InventorySystem/`; `OpenHold`, `ReleaseHold`, `DiscardHold`). A step 4 failure and a successful step 6b commit call `ReleaseHold`. `DiscardHold` is only for a failed commit, where the client is disconnected (CR-NET-5.5): it drops a deferred `InventoryFullSync`, so a client that completed a zone entry during the hold and stays connected after a discard would receive `InventorySlotUpdate`s with no full sync before them.
 - The result is cap-exempt and goes to the front of the queue (CR-NET-7.7), so it may arrive before the released `InventorySlotUpdate` messages. Do not assert their relative order.
 - On a failed commit nothing is sent; the client is disconnected (CR-NET-5.5) and gets `InventoryFullSync` on its next zone entry, from the rolled-back bag.
-- Player name and item display name for the broadcast: the +9 trigger of Story 007 carries ids; resolve the names here (see Story 007's note on name lookup). Strings longer than 24 UTF-8 bytes are cut by the codec (Story 010).
 - Where `LastEnhancementRequestID` is written with the outcome is shared with Story 011 (one transaction, EC-NET-9). Settle the boundary at `/story-readiness`.
 - OQ-ENH-8 (replaying a missed result at next login) is deferred to Enhancement UI design; current rule: no replay (EC-ENH-1).
 
@@ -76,6 +74,7 @@
 - Story 011: the commit, the rollback call, the disconnect and session preservation on a failed write
 - Inventory Story 012: `InventorySlotUpdate` / `InventoryFullSync` codecs, their sending for bag changes in general, and the hold mechanism
 - Story 009: holding other requests during an attempt
+- Story 016: the +9 broadcast (`ServerBroadcast_Enhancement9`, AC-ENH-18 delivery half, AC-NC-47, name lookup)
 - Enhancement UI, VFX and Audio epics: result presentation
 
 ---
@@ -91,8 +90,6 @@
 - **Cap exemption** — AC-NC-35 (a)–(d) with the real message types.
 - **Reconnect** — the three outcomes of the reconnect criterion.
 - **AC-ENH-13** — drop the connection between commit and send → no result on the new connection; bag as committed.
-- **AC-ENH-18** — three connected clients in two zones → each receives one broadcast with the two names; +7 → +8 → none; one client's send fails → the outcome stands and the others receive it.
-- **AC-NC-47** — as stated in the criterion.
 - **Duplicate after commit** — commit `requestId` 7, resend 7 → dropped, one anomaly; after a failed commit, resend 7 → processed.
 
 ---
@@ -109,4 +106,4 @@
 ## Dependencies
 
 - Depends on: **Story 011 (blocking)**; Inventory Story 012 (Complete 2026-10-09); Story 010 (Complete 2026-10-09); Stories 005 and 007 (Complete); Networking Core Stories 036 and 037 (Complete)
-- Unlocks: Enhancement UI epic (result side)
+- Unlocks: Story 016 (the +9 broadcast hooks into this story's commit-success delivery); Enhancement UI epic (result side)

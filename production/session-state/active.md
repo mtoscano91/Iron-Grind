@@ -3947,3 +3947,10 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt: TD-070 and TD-060 Closed; TD-071 added
 - Also updated: Character Persistence EPIC.md (017 Complete), Enhancement EPIC.md (Story 011 D5 release half works), Networking Core Story 030 gate note
 - Next recommended: /story-readiness production/epics/enhancement-system/story-015-attempt-result-delivery.md
+
+## Session Extract — Enhancement Story 015 readiness / estimate / split 2026-10-16
+- /story-readiness Story 015: NEEDS WORK (stale Blocked status and wording, no estimate, engine notes and manifest rules missing, `LastEnhancementRequestID` criterion assumes a durable value — Story 011 D3 / TD-069 say in-memory only)
+- /estimate: 2.5 days, Medium confidence; main risk the all-zone +9 broadcast
+- Split (user decision): new Story 016 `ServerBroadcast_Enhancement9` Delivery (AC-ENH-18 delivery half, AC-NC-47, TR-enh-010, name lookup) — Blocked: ADR-002 runs one process per zone and no ADR defines a cross-zone relay; also needs Story 015. Story 015 keeps 8 criteria (~2 days)
+- Files: story-016 (new), story-015 (broadcast removed), Enhancement EPIC.md (row 016, 14/16, AC-ENH-18 mapping, update note)
+- Next: finish Story 015 readiness gaps (status, estimate 16 h, engine notes, manifest rules, `LastEnhancementRequestID` restated in-memory); later `/architecture-decision` cross-zone relay for Story 016
