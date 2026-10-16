@@ -165,7 +165,8 @@ namespace IronGrind.Tests.EditMode.Networking
             SendHeld(h, InboundTestIds.ClientOne, InboundTestIds.SeedTwo);
             h.Dispatcher.DispatchTick(FirstDispatchTick);
             h.Gate.OnGateOpened += openedCharacter => throw new InvalidOperationException("Test subscriber failure.");
-            Assert.Throws<InvalidOperationException>(() => h.Gate.Open(CharA));
+            LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex("subscriber threw"));
+            h.Gate.Open(CharA);
 
             // Act
             h.Dispatcher.DispatchTick(SecondDispatchTick);

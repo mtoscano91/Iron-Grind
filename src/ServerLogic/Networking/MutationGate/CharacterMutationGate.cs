@@ -7,9 +7,10 @@ namespace IronGrind.Networking
     /// <summary>
     /// Default <see cref="ICharacterMutationGate"/> backed by a <see cref="HashSet{T}"/> of closed
     /// characters (ADR-011 Decision 4, Networking Core Story 030). No thread assertion (the ADR has
-    /// none). An exception thrown by an <see cref="OnGateOpened"/> subscriber propagates to the
-    /// caller of <see cref="Open"/>; the gate is already open at that point. Not wired in: nothing
-    /// in production constructs it yet.
+    /// none). Each <see cref="OnGateOpened"/> subscriber is invoked in its own
+    /// try/catch: an exception is logged with <c>Debug.LogError</c>, the later subscribers still run
+    /// and <see cref="Open"/> does not throw (the gate is already open at that point). Not wired in:
+    /// nothing in production constructs it yet.
     /// </summary>
     /// <example>
     /// <code>
@@ -48,7 +49,24 @@ namespace IronGrind.Networking
                 return;
             }
 
-            OnGateOpened?.Invoke(charId);
+            Action<CharacterID> handlers = OnGateOpened;
+            if (handlers == null)
+            {
+                return;
+            }
+
+            // Each subscriber runs in its own try/catch so one failure neither stops the later ones nor reaches the caller (TD-060).
+            foreach (Delegate d in handlers.GetInvocationList())
+            {
+                try
+                {
+                    ((Action<CharacterID>)d)(charId);
+                }
+                catch (Exception ex)
+                {
+                    UnityEngine.Debug.LogError($"[CharacterMutationGate] An OnGateOpened subscriber threw while opening the gate for {charId}; the remaining subscribers still ran: {ex}");
+                }
+            }
         }
     }
 }

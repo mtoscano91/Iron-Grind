@@ -410,8 +410,6 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
 
         private static void ExpectError(string pattern) => LogAssert.Expect(LogType.Error, new Regex(pattern));
 
-        private static void ExpectWarning(string pattern) => LogAssert.Expect(LogType.Warning, new Regex(pattern));
-
         private static void ExpectCoordinatorAlert(string cause) => LogAssert.Expect(LogType.Error, new Regex(COORDINATOR_ALERT_PREFIX + cause));
 
         private void AssertBagBeforeAttempt()
@@ -840,6 +838,7 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
                 persistence,
                 persistence,
                 _queue,
+                _gate,
                 _connection,
                 _inventory,
                 entity => _order.Add("release"),
@@ -855,29 +854,23 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
                 _order.Add("logout-result");
             }));
             Assert.AreEqual(1, persistence.Calls.Count);
+            Assert.IsNull(persistence.LastSessionTask, "No logout save while the mutation gate is held (Story 017).");
             ReleaseWrite();
             WaitUntil(() => persistence.LastTask.IsCompleted, "the enhancement write to complete");
+            DrainNextTick(); // delivers, opens the gate; the logout save starts then
+            Assert.IsNotNull(persistence.LastSessionTask, "The logout save starts when the gate opens.");
             WaitUntil(() => persistence.LastSessionTask.IsCompleted, "the logout save to complete");
-            // FINDING TD-070 (docs/tech-debt-register.md, Character Persistence): SaveSession takes its expected SaveVersion when it is called, not at its
-            // queue turn (only irreversible writes read it at their turn), so a logout save queued behind the in-flight
-            // enhancement write conflicts. The logout is reported as failed and the session stays Connected (no release),
-            // but the enhancement write itself is unaffected. Once SaveSession reads its version at its turn this test
-            // should expect Success and the "release" entry after "delivered".
-            ExpectWarning(@"SaveSession \(CleanLogout\) for .* conflicted");
-            ExpectWarning(@"\[SessionEndCoordinator\] Clean logout save for .* did not succeed");
-            DrainNextTick();
             DrainNextTick();
 
             Assert.AreEqual(CharacterSaveResult.Success, persistence.LastTask.Result, "The enhancement write committed.");
-            Assert.AreEqual(1, results.Count);
-            Assert.AreEqual(CharacterSaveResult.ConcurrencyConflict, results[0], "The queued logout save currently conflicts (see FINDING, TD-070).");
+            CollectionAssert.AreEqual(new[] { CharacterSaveResult.Success }, results);
             CollectionAssert.AreEqual(
-                new[] { "ack", "success-event", "delivered", "logout-result" },
+                new[] { "ack", "success-event", "delivered", "release", "logout-result" },
                 _order,
-                "CompleteAttempt and the delivery run before the logout's result is handled and before any release.");
+                "CompleteAttempt and the delivery run before the logout save starts; the release follows the logout save.");
             Assert.AreEqual(1, _deliveries.Count);
             Assert.IsFalse(_service.IsAttemptInProgress(CHAR_A));
-            Assert.IsFalse(_inventory.IsSlotLocked(CHAR_A, ITEM_SLOT));
+            Assert.IsFalse(_connection.TryGetSessionState(ACCOUNT, out _), "The logout released the session (the inventory is unregistered too).");
             CharacterRecord stored = Stored();
             Assert.AreEqual(BronzeSwordId, stored.InventorySlots[ITEM_SLOT]);
             Assert.AreEqual(LEVEL_THREE, stored.InventoryEnhancementLevels[ITEM_SLOT], "The stored record holds the outcome.");

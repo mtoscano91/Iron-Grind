@@ -39,11 +39,24 @@ namespace IronGrind.CharacterPersistence
     /// the new owner of that state), one error is logged, and the in-flight entry is cleared; a logout still reports the save's own
     /// result. The TTL callback cannot see the drain tick, so it passes the expiry tick itself as the current tick to
     /// <see cref="ConnectionStateMachine.CompleteSessionActiveTTLExpiry"/> (an equal tick counts as expired).</para>
+    /// <para><b>Waiting for the mutation gate (Story 017, ADR-011 Decision 4)</b>: a session-end save is started only while the
+    /// character's <see cref="ICharacterMutationGate"/> is open. If an end is requested while the gate is held (an irreversible write
+    /// is in flight), nothing is started, the account is marked in flight and the end waits for
+    /// <see cref="ICharacterMutationGate.OnGateOpened"/>; the save then takes its snapshot and version after the outcome was delivered
+    /// or rolled back, with no write ahead of it in the queue. At the open the account state is re-checked: a waiting logout whose
+    /// account is no longer Connected (the failed write's failure protocol disconnected and preserved it) is dropped, with
+    /// <c>onResult(DatabaseError)</c> and no release, and the TTL expiry saves the preserved session later; a waiting TTL end whose
+    /// account is no longer Disconnected_SessionActive starts nothing and logs one warning if the player reconnected (Connected), one
+    /// error otherwise.</para>
+    /// <para><b>Lifetime and shutdown</b>: the constructor subscribes to the gate's <see cref="ICharacterMutationGate.OnGateOpened"/>
+    /// and nothing unsubscribes, so the coordinator is meant to live as long as the gate (one per zone server). An end still waiting
+    /// on a gate when the server shuts down is never started and nothing is logged for it; a save started from a gate opened during
+    /// the shutdown drain is reported by <see cref="ITickCompletionQueue"/>'s shutdown alert with no callback (TD-071).</para>
     /// <para>Not thread-safe: tick thread only, like <see cref="ITickCompletionQueue"/>.</para>
     /// </remarks>
     /// <example>
     /// <code>
-    /// var ends = new SessionEndCoordinator(persistence, persistence, queue, stateMachine, inventory,
+    /// var ends = new SessionEndCoordinator(persistence, persistence, queue, gate, stateMachine, inventory,
     ///     leveling.UnregisterPlayerEntity, zone.RemoveEntity, zone.BroadcastPlayerLeftZone);
     /// ends.BeginCleanLogout(accountId, result =&gt; { if (result != CharacterSaveResult.Success) NotifyClientToRetry(); });
     /// // each tick, for each Disconnected_SessionActive account:
@@ -65,13 +78,27 @@ namespace IronGrind.CharacterPersistence
         private readonly Action<uint> _removeEntityFromZone;
         private readonly Action<uint, DisconnectType> _broadcastPlayerLeftZone;
 
-        // Accounts with a session end in flight (EC-CP-4). Tick thread only.
+        private readonly ICharacterMutationGate _gate;
+
+        // Accounts with a session end in flight (EC-CP-4), started or waiting on the gate. Tick thread only.
         private readonly HashSet<uint> _inFlight = new HashSet<uint>();
 
-        /// <summary>Creates the coordinator.</summary>
+        // Session ends requested while the character's gate was held, keyed by character (one account <-> one character).
+        private readonly Dictionary<CharacterID, PendingEnd> _pending = new Dictionary<CharacterID, PendingEnd>();
+
+        private sealed class PendingEnd
+        {
+            public uint AccountId;
+            public bool IsLogout;
+            public uint SessionExpiryTick;
+            public Action<CharacterSaveResult> OnResult;
+        }
+
+        /// <summary>Creates the coordinator and subscribes once to <see cref="ICharacterMutationGate.OnGateOpened"/>.</summary>
         /// <param name="persistence">The persistence service (the session-end save).</param>
         /// <param name="sessionRelease">The persistence session-table release (normally the same service).</param>
         /// <param name="queue">The tick completion queue that hands each save result back on the tick thread.</param>
+        /// <param name="gate">The per-character mutation gate; a session-end save waits while the character's gate is held.</param>
         /// <param name="stateMachine">The connection state machine that owns the account sessions.</param>
         /// <param name="inventory">The Inventory service (<c>UnregisterCharacter</c>).</param>
         /// <param name="unregisterPlayerEntity">Leveling's <c>UnregisterPlayerEntity</c> (not on <c>ILevelingService</c>, so a seam).</param>
@@ -82,6 +109,7 @@ namespace IronGrind.CharacterPersistence
             ICharacterPersistence persistence,
             ICharacterSessionRelease sessionRelease,
             ITickCompletionQueue queue,
+            ICharacterMutationGate gate,
             ConnectionStateMachine stateMachine,
             IInventoryService inventory,
             Action<EntityID> unregisterPlayerEntity,
@@ -91,14 +119,16 @@ namespace IronGrind.CharacterPersistence
             _persistence = persistence ?? throw new ArgumentNullException(nameof(persistence));
             _sessionRelease = sessionRelease ?? throw new ArgumentNullException(nameof(sessionRelease));
             _queue = queue ?? throw new ArgumentNullException(nameof(queue));
+            _gate = gate ?? throw new ArgumentNullException(nameof(gate));
             _stateMachine = stateMachine ?? throw new ArgumentNullException(nameof(stateMachine));
             _inventory = inventory ?? throw new ArgumentNullException(nameof(inventory));
             _unregisterPlayerEntity = unregisterPlayerEntity ?? throw new ArgumentNullException(nameof(unregisterPlayerEntity));
             _removeEntityFromZone = removeEntityFromZone ?? throw new ArgumentNullException(nameof(removeEntityFromZone));
             _broadcastPlayerLeftZone = broadcastPlayerLeftZone ?? throw new ArgumentNullException(nameof(broadcastPlayerLeftZone));
+            _gate.OnGateOpened += OnGateOpened;
         }
 
-        /// <summary>Number of session ends started and not yet handled by their completion callback.</summary>
+        /// <summary>Number of session ends started and not yet handled by their completion callback, or waiting on the mutation gate.</summary>
         public int InFlightCount => _inFlight.Count;
 
         /// <summary>
@@ -109,10 +139,12 @@ namespace IronGrind.CharacterPersistence
         /// Called once from <c>Drain</c> with <see cref="CharacterSaveResult.Success"/> after the release, or with the failure
         /// (<see cref="CharacterSaveResult.DatabaseError"/> for a fault, cancellation or watchdog timeout) with the session still
         /// <see cref="SessionState.Connected"/>. A release step that throws is logged and still gives Success, since the save
-        /// committed. Not called when this method returns <see langword="false"/>. An exception it throws is caught and logged by
-        /// the tick completion queue; the session end is already finished by then.
+        /// committed. A logout that waited on the mutation gate and finds the session no longer Connected when it opens is dropped:
+        /// <see cref="CharacterSaveResult.DatabaseError"/>, called from the gate's <c>Open</c>, with no release. Not called when this
+        /// method returns <see langword="false"/>. An exception it throws is caught and logged by the tick completion queue (or by the
+        /// gate, for a dropped logout); the session end is already finished by then.
         /// </param>
-        /// <returns><see langword="true"/> if a save was started; <see langword="false"/> if a session end is already in flight for the account (nothing started, <paramref name="onResult"/> never called).</returns>
+        /// <returns><see langword="true"/> if a save was started, or is waiting for the character's mutation gate to open; <see langword="false"/> if a session end is already in flight for the account (nothing started, <paramref name="onResult"/> never called).</returns>
         /// <exception cref="ArgumentNullException"><paramref name="onResult"/> is null.</exception>
         /// <exception cref="InvalidOperationException">The account is not currently <see cref="SessionState.Connected"/>.</exception>
         /// <example>
@@ -137,6 +169,20 @@ namespace IronGrind.CharacterPersistence
             }
 
             CharacterID charId = CharacterOf(accountId);
+            if (_gate.IsHeld(charId))
+            {
+                // An irreversible write is in flight: wait for the gate (Story 017).
+                _pending[charId] = new PendingEnd { AccountId = accountId, IsLogout = true, OnResult = onResult };
+                _inFlight.Add(accountId);
+                return true;
+            }
+
+            StartLogoutSave(accountId, charId, onResult);
+            return true;
+        }
+
+        private void StartLogoutSave(uint accountId, CharacterID charId, Action<CharacterSaveResult> onResult)
+        {
             var cts = new CancellationTokenSource();
             try
             {
@@ -152,7 +198,6 @@ namespace IronGrind.CharacterPersistence
             }
 
             _inFlight.Add(accountId);
-            return true;
         }
 
         /// <summary>
@@ -178,6 +223,20 @@ namespace IronGrind.CharacterPersistence
             }
 
             CharacterID charId = CharacterOf(accountId);
+            if (_gate.IsHeld(charId))
+            {
+                // An irreversible write is in flight: wait for the gate (Story 017).
+                _pending[charId] = new PendingEnd { AccountId = accountId, IsLogout = false, SessionExpiryTick = sessionExpiryTick };
+                _inFlight.Add(accountId);
+                return true;
+            }
+
+            StartTtlSave(accountId, charId, sessionExpiryTick);
+            return true;
+        }
+
+        private void StartTtlSave(uint accountId, CharacterID charId, uint sessionExpiryTick)
+        {
             var cts = new CancellationTokenSource();
             try
             {
@@ -193,7 +252,87 @@ namespace IronGrind.CharacterPersistence
             }
 
             _inFlight.Add(accountId);
-            return true;
+        }
+
+        // Runs inside the gate's Open. IrreversibleOutcomeCoordinator.OnCompleted runs deliver-or-failure-protocol (revert,
+        // disconnect, preserve), then token disposal, then gate.Open, so at this point a delivered write left the account
+        // Connected and a failed one left it Disconnected_SessionActive (Story 017 decision 1 relies on this order).
+        // Runs inside a Drain callback, so a failure to start the save is logged here rather than rethrown.
+        private void OnGateOpened(CharacterID charId)
+        {
+            if (!_pending.TryGetValue(charId, out PendingEnd end))
+            {
+                return;
+            }
+
+            if (_gate.IsHeld(charId))
+            {
+                return; // an earlier subscriber closed the gate again; keep waiting for the next open
+            }
+
+            _pending.Remove(charId);
+            bool stateFound = _stateMachine.TryGetSessionState(end.AccountId, out SessionState state);
+            if (end.IsLogout)
+            {
+                ResumeLogout(end, charId, stateFound, state);
+            }
+            else
+            {
+                ResumeTtl(end, charId, stateFound, state);
+            }
+        }
+
+        // The in-flight mark is cleared before onResult runs, so a throwing onResult (logged by the gate) leaves no stale state.
+        private void ResumeLogout(PendingEnd end, CharacterID charId, bool stateFound, SessionState state)
+        {
+            if (!stateFound || state != SessionState.Connected)
+            {
+                _inFlight.Remove(end.AccountId);
+                Debug.LogWarning($"{LOG_PREFIX} Clean logout for {charId} was dropped: the session is no longer {SessionState.Connected} when the mutation gate opened (the irreversible write it waited on failed, or the session ended); a preserved session is saved by its TTL expiry.");
+                end.OnResult(CharacterSaveResult.DatabaseError);
+                return;
+            }
+
+            try
+            {
+                StartLogoutSave(end.AccountId, charId, end.OnResult);
+            }
+            catch (Exception ex)
+            {
+                _inFlight.Remove(end.AccountId);
+                Debug.LogError($"{LOG_PREFIX} Starting the clean logout save for {charId} after the mutation gate opened threw: {ex}");
+                end.OnResult(CharacterSaveResult.DatabaseError);
+            }
+        }
+
+        // A reconnect during the wait (state Connected) is a legitimate race and logs a warning; any other state is an error.
+        private void ResumeTtl(PendingEnd end, CharacterID charId, bool stateFound, SessionState state)
+        {
+            if (!stateFound || state != SessionState.Disconnected_SessionActive)
+            {
+                _inFlight.Remove(end.AccountId);
+                string message = $"{LOG_PREFIX} Session TTL end for account {end.AccountId} / {charId} was waiting on the mutation gate but the session is no longer {SessionState.Disconnected_SessionActive}; nothing was started.";
+                if (stateFound && state == SessionState.Connected)
+                {
+                    Debug.LogWarning(message);
+                }
+                else
+                {
+                    Debug.LogError(message);
+                }
+
+                return;
+            }
+
+            try
+            {
+                StartTtlSave(end.AccountId, charId, end.SessionExpiryTick);
+            }
+            catch (Exception ex)
+            {
+                _inFlight.Remove(end.AccountId);
+                Debug.LogError($"{LOG_PREFIX} Starting the TTL expiry save for {charId} after the mutation gate opened threw: {ex}");
+            }
         }
 
         // The account's state was checked just before, so it is registered and has a character.

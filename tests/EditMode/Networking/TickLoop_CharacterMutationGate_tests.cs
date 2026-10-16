@@ -1,8 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using IronGrind.Currency;
 using IronGrind.Networking;
 using NUnit.Framework;
+using UnityEngine;
+using UnityEngine.TestTools;
 
 namespace IronGrind.Tests.EditMode.Networking
 {
@@ -131,16 +134,22 @@ namespace IronGrind.Tests.EditMode.Networking
         }
 
         [Test]
-        public void Open_SubscriberThrows_ExceptionPropagatesAndGateIsAlreadyOpen()
+        public void Open_SubscriberThrows_LogsErrorRunsLaterSubscribersAndGateIsOpen()
         {
             // Arrange
             _gate.OnGateOpened += ThrowingHandler;
+            _gate.OnGateOpened += OnGateOpenedHandler;
             _gate.Close(_charA);
+            LogAssert.Expect(LogType.Error, new Regex("subscriber threw"));
 
-            // Act / Assert
-            Assert.Throws<InvalidOperationException>(() => _gate.Open(_charA));
+            // Act
+            Assert.DoesNotThrow(() => _gate.Open(_charA));
+
+            // Assert
             Assert.IsFalse(_gate.IsHeld(_charA));
+            CollectionAssert.AreEqual(new[] { _charA }, _openedEvents, "The later subscriber still ran.");
             _gate.OnGateOpened -= ThrowingHandler;
+            _gate.OnGateOpened -= OnGateOpenedHandler;
         }
     }
 }

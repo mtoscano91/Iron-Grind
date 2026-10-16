@@ -1,7 +1,7 @@
 # Story 017: Session-End Saves Wait for the Mutation Gate
 
 > **Epic**: Character Persistence
-> **Status**: Ready (2026-10-16) — written 2026-10-16 to resolve TD-070; decisions settled with the user (below)
+> **Status**: Complete (2026-10-16) — written 2026-10-16 to resolve TD-070; decisions settled with the user (below)
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-09
@@ -35,17 +35,17 @@
 
 ## Acceptance Criteria
 
-- [ ] **Gate open: unchanged behaviour.** When the gate is not held, `BeginCleanLogout` and `EvaluateSessionTTL` start `SaveSession` and `Track` it in the same call, exactly as in Story 010 (all Story 010 tests pass unchanged apart from the constructor argument).
-- [ ] **Logout waits.** `BeginCleanLogout` on a `Connected` account whose character's gate is held starts no save, returns `true` and marks the account in flight. When the gate opens and the account is still `Connected`, `SaveSession(CleanLogout)` is started and tracked once; release and `onResult` follow as in Story 010.
-- [ ] **TTL waits.** `EvaluateSessionTTL` at or after the expiry tick on a `Disconnected_SessionActive` account whose gate is held starts no save, returns `true` and marks the account in flight. When the gate opens and the account is still `Disconnected_SessionActive`, `SaveSession(SessionTTLExpiry)` is started once; the release follows as in Story 010, with the original expiry tick.
-- [ ] **Re-held on open.** If the gate is held again when the `OnGateOpened` handler runs (an earlier subscriber closed it), nothing is started and the account keeps waiting for the next open.
-- [ ] **Logout after a failed write (decision 1).** A logout waiting on a write that fails: the failure protocol disconnects and preserves the session before the gate opens, so at the open the account is no longer `Connected`. No save is started, the in-flight mark is cleared, `onResult` receives `DatabaseError` once, one warning is logged, and no release step runs. The preserved session is later saved by its TTL expiry with the rolled-back state.
-- [ ] **TTL wait and a state change.** A TTL end waiting on the gate whose account is no longer `Disconnected_SessionActive` at the open (e.g. a reconnect) starts nothing, clears the in-flight mark and logs one error (the same rule as Story 010's completion re-check).
-- [ ] **No double end (EC-CP-4).** While an account waits on the gate, a second `BeginCleanLogout` or `EvaluateSessionTTL` for it starts nothing and returns `false`; one open starts exactly one save.
-- [ ] **TD-070 closed end to end.** `Enhancement_CommitOrchestration_integration_tests.Commit_CleanLogoutStartedWhileTheWriteIsInFlight_…` expects `Success`, the order `ack, success-event, delivered, logout-result` with the release after `delivered`, the stored record holding the outcome, and the session released; the FINDING comment is removed. No `ConcurrencyConflict` warning is expected.
-- [ ] **Gate subscribers isolated (TD-060, decision 2).** `CharacterMutationGate.Open` invokes each `OnGateOpened` subscriber in its own `try`/`catch`; a throwing subscriber is logged once with `Debug.LogError` and the later subscribers still run; `Open` does not throw. The test `Open_SubscriberThrows_ExceptionPropagatesAndGateIsAlreadyOpen` is replaced by one asserting this.
-- [ ] **No await.** `SessionEndCoordinator.cs` contains no `await`, `.Result`, `.Wait(`, `GetResult(` or `ContinueWith`.
-- [ ] **AC-CP-20 still holds.** The existing Story 007 double-`SaveSession` conflict test passes unchanged.
+- [x] **Gate open: unchanged behaviour.** When the gate is not held, `BeginCleanLogout` and `EvaluateSessionTTL` start `SaveSession` and `Track` it in the same call, exactly as in Story 010 (all Story 010 tests pass unchanged apart from the constructor argument).
+- [x] **Logout waits.** `BeginCleanLogout` on a `Connected` account whose character's gate is held starts no save, returns `true` and marks the account in flight. When the gate opens and the account is still `Connected`, `SaveSession(CleanLogout)` is started and tracked once; release and `onResult` follow as in Story 010.
+- [x] **TTL waits.** `EvaluateSessionTTL` at or after the expiry tick on a `Disconnected_SessionActive` account whose gate is held starts no save, returns `true` and marks the account in flight. When the gate opens and the account is still `Disconnected_SessionActive`, `SaveSession(SessionTTLExpiry)` is started once; the release follows as in Story 010, with the original expiry tick.
+- [x] **Re-held on open.** If the gate is held again when the `OnGateOpened` handler runs (an earlier subscriber closed it), nothing is started and the account keeps waiting for the next open.
+- [x] **Logout after a failed write (decision 1).** A logout waiting on a write that fails: the failure protocol disconnects and preserves the session before the gate opens, so at the open the account is no longer `Connected`. No save is started, the in-flight mark is cleared, `onResult` receives `DatabaseError` once, one warning is logged, and no release step runs. The preserved session is later saved by its TTL expiry with the rolled-back state.
+- [x] **TTL wait and a state change.** A TTL end waiting on the gate whose account is no longer `Disconnected_SessionActive` at the open (e.g. a reconnect) starts nothing, clears the in-flight mark and logs one error (the same rule as Story 010's completion re-check).
+- [x] **No double end (EC-CP-4).** While an account waits on the gate, a second `BeginCleanLogout` or `EvaluateSessionTTL` for it starts nothing and returns `false`; one open starts exactly one save.
+- [x] **TD-070 closed end to end.** `Enhancement_CommitOrchestration_integration_tests.Commit_CleanLogoutStartedWhileTheWriteIsInFlight_…` expects `Success`, the order `ack, success-event, delivered, logout-result` with the release after `delivered`, the stored record holding the outcome, and the session released; the FINDING comment is removed. No `ConcurrencyConflict` warning is expected.
+- [x] **Gate subscribers isolated (TD-060, decision 2).** `CharacterMutationGate.Open` invokes each `OnGateOpened` subscriber in its own `try`/`catch`; a throwing subscriber is logged once with `Debug.LogError` and the later subscribers still run; `Open` does not throw. The test `Open_SubscriberThrows_ExceptionPropagatesAndGateIsAlreadyOpen` is replaced by one asserting this.
+- [x] **No await.** `SessionEndCoordinator.cs` contains no `await`, `.Result`, `.Wait(`, `GetResult(` or `ContinueWith`.
+- [x] **AC-CP-20 still holds.** The existing Story 007 double-`SaveSession` conflict test passes unchanged.
 
 ---
 
@@ -95,7 +95,7 @@
 **Story Type**: Integration
 **Required evidence**: `tests/EditMode/CharacterPersistence/CharacterPersistence_SessionEnd_tests.cs` (new cases), `tests/EditMode/Networking/TickLoop_CharacterMutationGate_tests.cs` (TD-060), `tests/EditMode/Integration/EnhancementSystem/Enhancement_CommitOrchestration_integration_tests.cs` (updated) — must exist and pass; full EditMode suite green.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 16 new `[Test]` methods in `CharacterPersistence_SessionEnd_tests.cs`; the gate test replaced; the HoldQueue and Story 011 logout tests updated; EditMode 2932 / 2932
 
 ---
 
@@ -103,3 +103,19 @@
 
 - Depends on: Story 010 (Complete); Networking Core `CharacterMutationGate` and `IrreversibleOutcomeCoordinator` (Complete); Enhancement Story 011 (Complete; its test is updated here)
 - Unlocks: the release half of Enhancement Story 011 decision D5; closes TD-070 and TD-060
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-10-16
+**Criteria**: 11/11 passing (all automated; "No await" by the existing source scan)
+**Test Evidence**: Integration — `tests/EditMode/CharacterPersistence/CharacterPersistence_SessionEnd_tests.cs` (16 new cases), `tests/EditMode/Networking/TickLoop_CharacterMutationGate_tests.cs`, `tests/EditMode/Networking/InboundDispatch_HoldQueue_tests.cs`, `tests/EditMode/Integration/EnhancementSystem/Enhancement_CommitOrchestration_integration_tests.cs`; EditMode 2932 / 2932 (batch mode)
+**Code Review**: Complete (`/code-review` 2026-10-16, `unity-specialist` + `qa-tester`, APPROVED WITH SUGGESTIONS; all 10 items applied)
+**Deviations** (advisory):
+- Two files beyond the story's evidence list: `ICharacterMutationGate.cs` (docs only) and `InboundDispatch_HoldQueue_tests.cs` (it asserted that `Open` throws, which TD-060 removes).
+- A waiting TTL end that finds the player reconnected (`Connected`) logs a warning, not an error (review item); other state changes still log an error.
+- The `OnGateOpened` handler is split into `ResumeLogout` / `ResumeTtl` (40-line limit).
+- The Story 011 logout test asserts the session was released instead of `IsSlotLocked` (the released character is no longer registered with Inventory).
+- Session ends still waiting on a gate at server shutdown are lost without a log — documented in the class remarks, logged as TD-071.
+- TD-070 and TD-060 closed in the register.

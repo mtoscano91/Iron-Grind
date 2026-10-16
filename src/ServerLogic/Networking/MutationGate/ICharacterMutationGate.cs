@@ -28,12 +28,13 @@ namespace IronGrind.Networking
 
         /// <summary>
         /// Opens the gate and then raises <see cref="OnGateOpened"/>. Opening a gate that is not
-        /// closed does nothing and raises no event.
+        /// closed does nothing and raises no event. Subscribers are isolated: one that throws is logged and
+        /// the later ones still run; this method does not throw because of a subscriber.
         /// </summary>
         /// <param name="charId">The character.</param>
         void Open(CharacterID charId);
 
-        /// <summary>Raised once per closed-to-open transition, after <see cref="IsHeld"/> has become false.</summary>
+        /// <summary>Raised once per closed-to-open transition, after <see cref="IsHeld"/> has become false. Each subscriber runs in isolation: an exception is logged and does not stop later subscribers. The subscriber list is read once per open, so a subscriber removed during that open is still called in it.</summary>
         event Action<CharacterID> OnGateOpened;
     }
 }

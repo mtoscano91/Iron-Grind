@@ -3930,3 +3930,20 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: 1 (TD-070 — SaveSession takes its expected SaveVersion at call time; a logout/TTL save queued behind an irreversible write conflicts; blocks D5 release half)
 - EPIC.md: row 011 Complete, status 14/15, Story 015 unblocked (Not Started, needs /story-readiness)
 - Next recommended: fix TD-070 (small Character Persistence change + flip the Story 011 logout test), then /story-readiness production/epics/enhancement-system/story-015-attempt-result-delivery.md
+
+## Session Extract — /dev-story 2026-10-16
+- Story: production/epics/character-persistence/story-017-session-end-waits-for-the-mutation-gate.md — Session-End Saves Wait for the Mutation Gate
+- Docs changeset committed: 424d416
+- Files changed: src/ServerLogic/CharacterPersistence/SessionEndCoordinator.cs, src/ServerLogic/Networking/MutationGate/CharacterMutationGate.cs, src/ServerLogic/Networking/MutationGate/ICharacterMutationGate.cs, tests/EditMode/CharacterPersistence/CharacterPersistence_SessionEnd_tests.cs, tests/EditMode/Networking/TickLoop_CharacterMutationGate_tests.cs, tests/EditMode/Networking/InboundDispatch_HoldQueue_tests.cs, tests/EditMode/Integration/EnhancementSystem/Enhancement_CommitOrchestration_integration_tests.cs
+- Test written: CharacterPersistence_SessionEnd_tests.cs (+9 [Test]); gate throwing-subscriber test replaced; HoldQueue and Story 011 logout tests updated (logout now Success + release after delivery; TD-070 FINDING removed)
+- EditMode 2925 / 2925 (batch mode). First run: 1 failure — the Story 011 logout test asserted IsSlotLocked on a now-released character; replaced by a session-released assertion
+- Blockers: None
+- Next: /code-review on the 7 files, then /story-done story 017 (close TD-070 and TD-060 in the register; Networking Core Story 030 note on subscriber exceptions is now stale)
+
+## Session Extract — /code-review + /story-done 2026-10-16
+- /code-review Story 017 (unity-specialist + qa-tester): APPROVED WITH SUGGESTIONS; all 10 items applied (handler split into ResumeLogout / ResumeTtl; reconnected-to-Connected TTL end logs a warning; docs for InFlightCount, onResult, lifetime/shutdown; 7 more tests; NoUnexpectedReceived on 4 tests); TD-071 logged (no shutdown flush for waiting ends)
+- Verdict: COMPLETE WITH NOTES — 11/11 criteria, EditMode 2932 / 2932
+- Story: production/epics/character-persistence/story-017-session-end-waits-for-the-mutation-gate.md — Session-End Saves Wait for the Mutation Gate
+- Tech debt: TD-070 and TD-060 Closed; TD-071 added
+- Also updated: Character Persistence EPIC.md (017 Complete), Enhancement EPIC.md (Story 011 D5 release half works), Networking Core Story 030 gate note
+- Next recommended: /story-readiness production/epics/enhancement-system/story-015-attempt-result-delivery.md

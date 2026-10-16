@@ -3,7 +3,7 @@
 > **Layer**: Core
 > **GDD**: design/gdd/character-persistence.md
 > **Architecture Module**: Character Persistence — `CharacterPersistenceService : ICharacterPersistence` (async), PostgreSQL via Npgsql and Dapper
-> **Status**: In Progress (created 2026-10-12; 16 stories written 2026-10-12 — 9 Complete (001–004, 006–010), 1 Ready (017, added 2026-10-16 for TD-070 / TD-060), 1 Not Started pending `/story-readiness` (011), 6 Blocked)
+> **Status**: In Progress (created 2026-10-12; 16 stories written 2026-10-12 — 10 Complete (001–004, 006–010, 017 — added and Complete 2026-10-16 for TD-070 / TD-060), 1 Not Started pending `/story-readiness` (011), 6 Blocked)
 > **Stories**: 16 stories created 2026-10-12 (001–016); Story 017 added 2026-10-16
 > **Manifest Version**: 2026-10-09
 
@@ -90,7 +90,7 @@ This epic is complete when:
 | 014 | [The Npgsql Character Record Store](story-014-npgsql-character-record-store.md) | Integration | Blocked (012, 013) | ADR-006, ADR-011 |
 | 015 | [The Npgsql Pending-Purchase Store](story-015-npgsql-pending-purchase-store.md) | Integration | Blocked (012–014) | ADR-006, ADR-001 |
 | 016 | [The Real-Database Verification Run](story-016-real-database-verification-run.md) | Integration | Blocked (012–015 and Part A) | ADR-006 |
-| 017 | [Session-End Saves Wait for the Mutation Gate](story-017-session-end-waits-for-the-mutation-gate.md) | Integration | Ready (2026-10-16; resolves TD-070 and TD-060; 5 h) | ADR-011 |
+| 017 | [Session-End Saves Wait for the Mutation Gate](story-017-session-end-waits-for-the-mutation-gate.md) | Integration | Complete (2026-10-16; 16 new test cases, EditMode 2932 / 2932; COMPLETE WITH NOTES; closes TD-070 and TD-060, adds TD-071) | ADR-011 |
 
 **Acceptance criteria owned outside this epic**: AC-CP-27 (enhancement commit before broadcast) — Enhancement Story 011. AC-CP-28 (respec failure with its compensating `AddGold`) and AC-CP-29 (item consumption) — the Respec and Consumable Use systems, which have no code.
 

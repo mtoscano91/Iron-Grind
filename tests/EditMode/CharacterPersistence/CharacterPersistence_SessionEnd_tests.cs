@@ -129,6 +129,7 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
         private TickCompletionQueue _queue;
         private ConnectionStateMachine _sm;
         private SessionEndCoordinator _ends;
+        private CharacterMutationGate _gate;
         private uint _tick;
 
         private readonly List<EntityID> _unregisteredEntities = new List<EntityID>();
@@ -155,6 +156,7 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             _results.Clear();
             _steps.Clear();
             _levelingThrows = false;
+            _gate = new CharacterMutationGate();
             BuildEnds(LONG_WATCHDOG_TICKS);
         }
 
@@ -165,6 +167,7 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
                 _persist,
                 _persist,
                 _queue,
+                _gate,
                 _sm,
                 _rig.Inventory,
                 entity =>
@@ -860,6 +863,441 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
 
             Assert.Throws<ArgumentNullException>(() => _ends.BeginCleanLogout(ACCOUNT, null));
             Assert.AreEqual(0, _persist.SaveCalls.Count);
+        }
+
+        // ---------------------------------------------------------------- Story 017: session-end saves wait for the mutation gate
+
+        [Test]
+        public void BeginCleanLogout_GateHeld_StartsNothingUntilOpenThenSavesOnceAndReleasesAfterDrain()
+        {
+            // Arrange
+            SeedAndLoad();
+            ConnectAccount();
+            _gate.Close(CHAR_A);
+
+            // Act
+            BeginLogout();
+
+            // Assert — waiting
+            Assert.AreEqual(0, _persist.SaveCalls.Count, "No SaveSession while the gate is held.");
+            Assert.AreEqual(0, _queue.InFlightCount);
+            Assert.AreEqual(1, _ends.InFlightCount, "The account is marked in flight while it waits.");
+
+            // Act — the gate opens
+            _gate.Open(CHAR_A);
+
+            // Assert
+            Assert.AreEqual(1, _persist.SaveCalls.Count);
+            Assert.AreEqual(SessionEndReason.CleanLogout, _persist.SaveCalls[0].Reason);
+            Assert.AreEqual(1, _queue.InFlightCount, "The save task must be tracked.");
+            WaitUntil(() => _persist.LastTask.IsCompleted, "the logout save to complete");
+            AssertNoReleaseSteps();
+            Assert.AreEqual(0, _results.Count);
+            DrainNextTick();
+            CollectionAssert.AreEqual(new[] { CharacterSaveResult.Success }, _results);
+            AssertReleasedOnce(DisconnectType.Graceful);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void BeginCleanLogout_GateHeldAndAccountDisconnectedBeforeOpen_DroppedWithDatabaseErrorNoReleaseAndTtlSavesLater()
+        {
+            // Arrange
+            SeedAndLoad();
+            ConnectAccount();
+            _gate.Close(CHAR_A);
+            BeginLogout();
+            DisconnectByHeartbeat(); // the failure protocol disconnected and preserved the session before the gate opens
+            ExpectWarning("was dropped");
+
+            // Act
+            _gate.Open(CHAR_A);
+
+            // Assert
+            Assert.AreEqual(0, _persist.SaveCalls.Count);
+            CollectionAssert.AreEqual(new[] { CharacterSaveResult.DatabaseError }, _results);
+            Assert.AreEqual(0, _ends.InFlightCount);
+            AssertNoReleaseSteps();
+
+            // The preserved session is saved later by its TTL expiry.
+            Assert.IsTrue(_ends.EvaluateSessionTTL(ACCOUNT, EXPIRY_TICK, EXPIRY_TICK));
+            WaitUntil(() => _persist.LastTask.IsCompleted, "the TTL save to complete");
+            DrainNextTick();
+            Assert.AreEqual(1, _persist.SaveCalls.Count);
+            Assert.AreEqual(SessionEndReason.SessionTTLExpiry, _persist.SaveCalls[0].Reason);
+            Assert.AreEqual(1, _results.Count, "The dropped logout reports once.");
+            AssertReleasedOnce(DisconnectType.Timeout);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void EvaluateSessionTTL_GateHeld_StartsNothingUntilOpenThenSavesOnceAndReleasesAfterDrain()
+        {
+            // Arrange
+            SeedAndLoad();
+            ConnectAccount();
+            DisconnectByHeartbeat();
+            _gate.Close(CHAR_A);
+
+            // Act
+            bool waiting = _ends.EvaluateSessionTTL(ACCOUNT, EXPIRY_TICK, EXPIRY_TICK);
+
+            // Assert — waiting
+            Assert.IsTrue(waiting);
+            Assert.AreEqual(0, _persist.SaveCalls.Count);
+            Assert.AreEqual(1, _ends.InFlightCount);
+
+            // Act
+            _gate.Open(CHAR_A);
+
+            // Assert
+            Assert.AreEqual(1, _persist.SaveCalls.Count);
+            Assert.AreEqual(SessionEndReason.SessionTTLExpiry, _persist.SaveCalls[0].Reason);
+            WaitUntil(() => _persist.LastTask.IsCompleted, "the TTL save to complete");
+            AssertNoReleaseSteps();
+            DrainNextTick();
+            AssertReleasedOnce(DisconnectType.Timeout);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void EvaluateSessionTTL_GateHeldAndAccountReconnectsBeforeOpen_StartsNothingClearsInFlightLogsOneError()
+        {
+            // Arrange
+            SeedAndLoad();
+            ConnectAccount();
+            DisconnectByHeartbeat();
+            _gate.Close(CHAR_A);
+            Assert.IsTrue(_ends.EvaluateSessionTTL(ACCOUNT, EXPIRY_TICK, EXPIRY_TICK));
+            _sm.EnterReconnecting(ACCOUNT, EXPIRY_TICK);
+            ExpectError(NO_LONGER_LOG);
+
+            // Act
+            _gate.Open(CHAR_A);
+
+            // Assert
+            Assert.AreEqual(0, _persist.SaveCalls.Count);
+            Assert.AreEqual(0, _ends.InFlightCount);
+            AssertNoReleaseSteps();
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void BeginCleanLogout_GateReClosedByEarlierSubscriberOnOpen_KeepsWaitingUntilTheNextOpen()
+        {
+            // Arrange — a subscriber registered before the coordinator runs first and closes the gate again.
+            bool reClose = true;
+            _gate = new CharacterMutationGate();
+            _gate.OnGateOpened += charId =>
+            {
+                if (reClose)
+                {
+                    _gate.Close(charId);
+                }
+            };
+            BuildEnds(LONG_WATCHDOG_TICKS);
+            SeedAndLoad();
+            ConnectAccount();
+            _gate.Close(CHAR_A);
+            BeginLogout();
+
+            // Act — first open: re-held
+            _gate.Open(CHAR_A);
+
+            // Assert
+            Assert.IsTrue(_gate.IsHeld(CHAR_A));
+            Assert.AreEqual(0, _persist.SaveCalls.Count);
+            Assert.AreEqual(1, _ends.InFlightCount);
+
+            // Act — second open
+            reClose = false;
+            _gate.Open(CHAR_A);
+
+            // Assert
+            Assert.AreEqual(1, _persist.SaveCalls.Count);
+            WaitUntil(() => _persist.LastTask.IsCompleted, "the logout save to complete");
+            DrainNextTick();
+            CollectionAssert.AreEqual(new[] { CharacterSaveResult.Success }, _results);
+            AssertReleasedOnce(DisconnectType.Graceful);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void BeginCleanLogout_SecondLogoutWhileWaitingOnGate_ReturnsFalseAndOneSaveAfterOpen()
+        {
+            // Arrange
+            SeedAndLoad();
+            ConnectAccount();
+            _gate.Close(CHAR_A);
+            BeginLogout();
+            int secondCalls = 0;
+
+            // Act
+            bool second = _ends.BeginCleanLogout(ACCOUNT, r => secondCalls++);
+            _gate.Open(CHAR_A);
+            WaitUntil(() => _persist.LastTask.IsCompleted, "the logout save to complete");
+            DrainNextTick();
+
+            // Assert
+            Assert.IsFalse(second);
+            Assert.AreEqual(0, secondCalls);
+            Assert.AreEqual(1, _persist.SaveCalls.Count);
+            CollectionAssert.AreEqual(new[] { CharacterSaveResult.Success }, _results);
+            AssertReleasedOnce(DisconnectType.Graceful);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void EvaluateSessionTTL_SecondTtlOrLogoutWhileWaitingOnGate_ReturnFalseAndOneSaveAfterOpen()
+        {
+            // Arrange
+            SeedAndLoad();
+            ConnectAccount();
+            DisconnectByHeartbeat();
+            _gate.Close(CHAR_A);
+            Assert.IsTrue(_ends.EvaluateSessionTTL(ACCOUNT, EXPIRY_TICK, EXPIRY_TICK));
+            int logoutCalls = 0;
+
+            // Act
+            bool secondTtl = _ends.EvaluateSessionTTL(ACCOUNT, EXPIRY_TICK + 1u, EXPIRY_TICK);
+            bool logout = _ends.BeginCleanLogout(ACCOUNT, r => logoutCalls++);
+            _gate.Open(CHAR_A);
+            WaitUntil(() => _persist.LastTask.IsCompleted, "the TTL save to complete");
+            DrainNextTick();
+
+            // Assert
+            Assert.IsFalse(secondTtl);
+            Assert.IsFalse(logout);
+            Assert.AreEqual(0, logoutCalls);
+            Assert.AreEqual(1, _persist.SaveCalls.Count);
+            AssertReleasedOnce(DisconnectType.Timeout);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void BeginCleanLogout_OtherCharactersGateOpens_StartsNothing()
+        {
+            // Arrange
+            var other = new CharacterID(202u);
+            SeedAndLoad();
+            ConnectAccount();
+            _gate.Close(CHAR_A);
+            _gate.Close(other);
+            BeginLogout();
+
+            // Act
+            _gate.Open(other);
+
+            // Assert
+            Assert.AreEqual(0, _persist.SaveCalls.Count);
+            Assert.AreEqual(1, _ends.InFlightCount);
+            Assert.AreEqual(0, _results.Count);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void GateOpen_TwoCharactersWaiting_OpeningOneStartsOnlyThatCharactersSave()
+        {
+            // Arrange — two accounts wait on their own characters' gates; saves never complete, so nothing is drained.
+            var otherCharacter = new CharacterID(202u);
+            const uint otherAccount = 8u;
+            var neverCompletes = new TaskCompletionSource<CharacterSaveResult>();
+            _persist.SaveOverride = () => neverCompletes.Task;
+            ConnectAccount();
+            _sm.EnterConnecting(otherAccount, CONNECT_TICK);
+            _sm.CompleteAuthSuccess(otherAccount, otherCharacter.RawValue, CONNECT_TICK);
+            _gate.Close(CHAR_A);
+            _gate.Close(otherCharacter);
+            BeginLogout();
+            Assert.IsTrue(_ends.BeginCleanLogout(otherAccount, r => _results.Add(r)));
+
+            // Act
+            _gate.Open(otherCharacter);
+
+            // Assert
+            Assert.AreEqual(1, _persist.SaveCalls.Count);
+            Assert.AreEqual(otherCharacter, _persist.SaveCalls[0].Id);
+            Assert.AreEqual(2, _ends.InFlightCount, "CHAR_A still waits; the other end is started.");
+
+            // Act — the first character's gate
+            _gate.Open(CHAR_A);
+
+            // Assert
+            Assert.AreEqual(2, _persist.SaveCalls.Count);
+            Assert.AreEqual(CHAR_A, _persist.SaveCalls[1].Id);
+            Assert.AreEqual(0, _results.Count);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void BeginCleanLogout_GateHeldAndSaveThrowsWhenStartedAtOpen_LogsErrorReportsDatabaseErrorNothingInFlight()
+        {
+            // Arrange
+            SeedAndLoad();
+            ConnectAccount();
+            _gate.Close(CHAR_A);
+            BeginLogout();
+            _persist.SaveOverride = () => throw new InvalidOperationException("wiring bug");
+            ExpectError("after the mutation gate opened threw");
+
+            // Act
+            Assert.DoesNotThrow(() => _gate.Open(CHAR_A));
+
+            // Assert
+            CollectionAssert.AreEqual(new[] { CharacterSaveResult.DatabaseError }, _results);
+            Assert.AreEqual(0, _ends.InFlightCount);
+            Assert.AreEqual(0, _queue.InFlightCount);
+            AssertNoReleaseSteps();
+            AssertState(SessionState.Connected);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void EvaluateSessionTTL_GateHeldAndSaveThrowsWhenStartedAtOpen_LogsErrorNothingInFlightAndALaterTtlIsAccepted()
+        {
+            // Arrange
+            SeedAndLoad();
+            ConnectAccount();
+            DisconnectByHeartbeat();
+            _gate.Close(CHAR_A);
+            Assert.IsTrue(_ends.EvaluateSessionTTL(ACCOUNT, EXPIRY_TICK, EXPIRY_TICK));
+            _persist.SaveOverride = () => throw new InvalidOperationException("wiring bug");
+            ExpectError("after the mutation gate opened threw");
+
+            // Act
+            Assert.DoesNotThrow(() => _gate.Open(CHAR_A));
+
+            // Assert
+            Assert.AreEqual(0, _ends.InFlightCount);
+            Assert.AreEqual(0, _queue.InFlightCount);
+            AssertNoReleaseSteps();
+
+            // A later TTL evaluation starts a save and releases.
+            _persist.SaveOverride = null;
+            Assert.IsTrue(_ends.EvaluateSessionTTL(ACCOUNT, EXPIRY_TICK + 1u, EXPIRY_TICK));
+            WaitUntil(() => _persist.LastTask.IsCompleted, "the TTL save to complete");
+            DrainNextTick();
+            AssertReleasedOnce(DisconnectType.Timeout);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void BeginCleanLogout_DroppedLogoutOnResultThrows_GateLogsItOpenDoesNotThrowNothingInFlight()
+        {
+            // Arrange
+            SeedAndLoad();
+            ConnectAccount();
+            _gate.Close(CHAR_A);
+            Assert.IsTrue(_ends.BeginCleanLogout(ACCOUNT, r =>
+            {
+                _results.Add(r);
+                throw new InvalidOperationException("caller bug");
+            }));
+            DisconnectByHeartbeat();
+            ExpectWarning("was dropped");
+            ExpectError("subscriber threw");
+
+            // Act
+            Assert.DoesNotThrow(() => _gate.Open(CHAR_A));
+
+            // Assert
+            CollectionAssert.AreEqual(new[] { CharacterSaveResult.DatabaseError }, _results);
+            Assert.AreEqual(0, _ends.InFlightCount);
+            Assert.AreEqual(0, _persist.SaveCalls.Count);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void BeginCleanLogout_GateHeldAndSessionRemovedBeforeOpen_DroppedWithDatabaseErrorNothingStarted()
+        {
+            // Arrange
+            SeedAndLoad();
+            ConnectAccount();
+            _gate.Close(CHAR_A);
+            BeginLogout();
+            _sm.ProcessExplicitDisconnect(ACCOUNT, accountId => { }, accountId => { }, (accountId, type) => { });
+            Assert.IsFalse(_sm.IsAccountRegistered(ACCOUNT));
+            ExpectWarning("was dropped");
+
+            // Act
+            _gate.Open(CHAR_A);
+
+            // Assert
+            Assert.AreEqual(0, _persist.SaveCalls.Count);
+            CollectionAssert.AreEqual(new[] { CharacterSaveResult.DatabaseError }, _results);
+            Assert.AreEqual(0, _ends.InFlightCount);
+            Assert.AreEqual(0, _persist.ReleaseCalls);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void EvaluateSessionTTL_GateHeldAndSessionRemovedBeforeOpen_StartsNothingLogsOneError()
+        {
+            // Arrange
+            SeedAndLoad();
+            ConnectAccount();
+            DisconnectByHeartbeat();
+            _gate.Close(CHAR_A);
+            Assert.IsTrue(_ends.EvaluateSessionTTL(ACCOUNT, EXPIRY_TICK, EXPIRY_TICK));
+            _sm.CompleteSessionActiveTTLExpiry(ACCOUNT, EXPIRY_TICK, EXPIRY_TICK, accountId => { }, accountId => { }, (accountId, type) => { });
+            Assert.IsFalse(_sm.IsAccountRegistered(ACCOUNT));
+            ExpectError(NO_LONGER_LOG);
+
+            // Act
+            _gate.Open(CHAR_A);
+
+            // Assert
+            Assert.AreEqual(0, _persist.SaveCalls.Count);
+            Assert.AreEqual(0, _ends.InFlightCount);
+            Assert.AreEqual(0, _persist.ReleaseCalls);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void EvaluateSessionTTL_GateHeldAndPlayerReconnectedToConnectedBeforeOpen_StartsNothingLogsOneWarning()
+        {
+            // Arrange
+            SeedAndLoad();
+            ConnectAccount();
+            DisconnectByHeartbeat();
+            _gate.Close(CHAR_A);
+            Assert.IsTrue(_ends.EvaluateSessionTTL(ACCOUNT, EXPIRY_TICK, EXPIRY_TICK));
+            _sm.EnterReconnecting(ACCOUNT, EXPIRY_TICK);
+            _sm.CompleteReAuthSuccess(ACCOUNT, _rig.CurrencySystem,
+                queryGoldDebitedPurchases: accountId => Array.Empty<IronGrind.Networking.PendingPurchaseRecord>(),
+                markPurchaseRefunded: purchase => Assert.Fail("No pending purchases in this scenario."),
+                queryRespecReservationStatus: accountId => RespecReservationStatus.NoActiveReservation,
+                representRespecPhase2: accountId => Assert.Fail("No respec reservation in this scenario."),
+                releaseRespecReservationAndNotify: accountId => Assert.Fail("No respec reservation in this scenario."),
+                handshakeData: new SessionHandshakeData(wasKilledWhileDisconnected: false, goldVersion: 9u, level: START_LEVEL,
+                    currentHp: 650, currentMp: 100, heldFreePoints: 4, classType: WARRIOR_CLASS_TYPE));
+            AssertState(SessionState.Connected);
+            ExpectWarning(NO_LONGER_LOG);
+
+            // Act
+            _gate.Open(CHAR_A);
+
+            // Assert
+            Assert.AreEqual(0, _persist.SaveCalls.Count);
+            Assert.AreEqual(0, _ends.InFlightCount);
+            AssertNoReleaseSteps();
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void Constructor_NullGate_ThrowsArgumentNullException()
+        {
+            // Arrange / Act / Assert
+            Assert.Throws<ArgumentNullException>(() => new SessionEndCoordinator(
+                _persist,
+                _persist,
+                _queue,
+                null,
+                _sm,
+                _rig.Inventory,
+                entity => { },
+                characterId => { },
+                (characterId, type) => { }));
         }
 
         // ---------------------------------------------------------------- no await
