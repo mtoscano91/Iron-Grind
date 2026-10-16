@@ -56,8 +56,8 @@
 ## Allowed Libraries / Addons
 
 <!-- Add approved third-party dependencies here -->
-- **Npgsql** (7.0.x line — the last with a .NET Standard build; exact version pinned by Character Persistence Story 012) and its NuGet dependencies — PostgreSQL client, server only (`IronGrind.ServerLogic`), ADR-006 / ADR-012 / ADR-015. Approved 2026-10-16.
-- **Dapper** (2.1.x, exact version pinned by Character Persistence Story 012) — micro-ORM, server only (`IronGrind.ServerLogic`), ADR-006. Approved 2026-10-16.
+- **Npgsql 8.0.9** (the last version with a .NET Standard build; 9.0 dropped it — NuGet API, 2026-10-16) and its NuGet dependencies — PostgreSQL client, server only (`IronGrind.ServerLogic`), ADR-006 / ADR-012 / ADR-015. Approved 2026-10-16; the DLL list is in `docs/server-libraries.md` (Character Persistence Story 012).
+- **Dapper 2.1.66** — micro-ORM, server only (`IronGrind.ServerLogic`), ADR-006. Approved 2026-10-16.
 - Delivery: DLLs taken from NuGet and committed under `Assets/Plugins/Server/`, versions and sources recorded in `docs/` (user decision 2026-10-16; no NuGet-for-Unity tool).
 - Netcode for GameObjects 2.13.3 (`com.unity.netcode.gameobjects`, with Unity Transport 2.6.0) — ADR-004, already in `Packages/manifest.json` since 2026-10-09.
 
