@@ -4069,3 +4069,10 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - 2026-10-19 15:50 VR-3 attempt 2 PASS (backoff 500..10000 logged, ConnectionRefused, alert at 5, no dups, max 2.84 ms in the restart window; logs run3). The first publish is still slow (74.7 ms) despite the SELECT 1 warm-up. Host now: TimingPublisher wrapper (PublishCallMs per call) + warm-up via the exact pg_notify(@channel,@payload) on channel irongrind_relay_warmup. Next: user rebuilds (host only; no test change); I run the VR-5 baseline (A alone) to measure, then part 1.
 - 2026-10-19 16:10 VR-5 baseline 23.936 ms (run4), part 1 PASS (run5). Part 2 (postgres suspended 22 s via NtSuspendProcess helper in scratchpad, user has no PsSuspend): a hung publish is NOT freed at 2 s; slots freed only by the TickCompletionQueue watchdog (~6.7 s at 30 Hz, status=TimedOut); A-2 was still delivered after the resume; no SlowTick, in-flight <= 2, max 26.8 ms, recovered (run6). Repeated with Cancellation Timeout=-1: same (run7). Awaiting user decision: record FAIL and amend ADR-015, or a publisher change that frees the slot at the timeout.
 - Recorded per user decision: VR-5 part 2 FAIL accepted as TD-074 (docs/tech-debt-register.md), ADR-015 Decision 2 note + Risks row, evidence status RUN. All VR items done. Next: commit, then /story-done.
+
+## Session Extract — /story-done 2026-10-19
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/networking-core/story-041-cross-zone-relay-npgsql-transport.md — Cross-Zone Relay: the PostgreSQL Transport
+- Tech debt logged: 1 (TD-074, accepted)
+- EPIC: Networking Core 41/41 Complete (row 041 Complete); epic stays In Progress for the headless-build gate and the composition-root story
+- Next recommended: Character Persistence Story 013 (SQL migrations, Config/Data, unblocked) — production/epics/character-persistence/story-013-sql-migrations.md — run /story-readiness first

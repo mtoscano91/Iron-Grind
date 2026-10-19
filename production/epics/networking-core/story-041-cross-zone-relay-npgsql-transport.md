@@ -1,7 +1,7 @@
 # Story 041: Cross-Zone Relay — the PostgreSQL Transport (Publisher, Listener, Stop)
 
 > **Epic**: Networking Core
-> **Status**: Ready — written 2026-10-16 (`/create-stories`, ADR-015 Migration Plan step 2). `/story-readiness` 2026-10-19: NEEDS WORK (7 gaps), fixed the same day at the user's request. Dependencies Character Persistence Story 012 (Complete 2026-10-19, Npgsql 8.0.9) and Story 040 (Complete 2026-10-16) are met. Verification platform: Windows Dedicated Server build, Mono (user decision 2026-10-19, see below).
+> **Status**: Complete (2026-10-19, `/story-done`, COMPLETE WITH NOTES). Was Ready — written 2026-10-16 (`/create-stories`, ADR-015 Migration Plan step 2). `/story-readiness` 2026-10-19: NEEDS WORK (7 gaps), fixed the same day at the user's request. Dependencies Character Persistence Story 012 (Complete 2026-10-19, Npgsql 8.0.9) and Story 040 (Complete 2026-10-16) are met. Verification platform: Windows Dedicated Server build, Mono (user decision 2026-10-19, see below).
 > **Layer**: Foundation
 > **Type**: Integration
 > **Manifest Version**: 2026-10-16
@@ -46,36 +46,36 @@ Also: **ADR-006** (PostgreSQL + Npgsql; the zone's `NpgsqlDataSource`; `link.xml
 *The behaviour is tested in EditMode through seams over the Npgsql calls (the listener's loop and the publisher's bookkeeping run against fakes); the real Npgsql behaviour is shown in the run below. No EditMode or PlayMode test creates a real `NpgsqlRelayListener` thread on a database.*
 
 **Publisher (EditMode, fake command seam and a real `TickCompletionQueue`)**
-- [ ] **Never blocks, never awaits**: `Publish` starts the command task through the seam and returns; it calls no synchronous `Open()` or `ExecuteNonQuery`; a source search finds no `.Open()`, `.Wait()`, `.Result` or `await` in the publisher's file.
-- [ ] **Envelope**: the command's channel parameter is `RELAY_CHANNEL_NAME` and its payload parameter is `RelayEnvelopeCodec`'s encoding with this process's `originId` (Story 040).
-- [ ] **Tracked, cancelled, disposed**: the task is handed to `ITickCompletionQueue.Track` with a CTS set to cancel after `RELAY_PUBLISH_TIMEOUT_MS`; a task that never completes is cancelled and its callback runs on the tick after the cancellation; on success, failure and cancellation the callback frees the in-flight slot and disposes the CTS (asserted on a CTS the seam exposes); a failure or a timeout logs one warning.
-- [ ] **In-flight bound**: with `RELAY_MAX_PUBLISHES_IN_FLIGHT` publishes pending, the next `Publish` starts nothing, logs one warning and returns; once one completes, a new publish starts.
-- [ ] **Never throws**: a seam that throws synchronously frees the slot, disposes the CTS, logs, and `Publish` returns normally; Story 040's `ServerWideBroadcaster` local delivery is unaffected (re-run Story 040's failing-publisher case with this publisher).
+- [x] **Never blocks, never awaits**: `Publish` starts the command task through the seam and returns; it calls no synchronous `Open()` or `ExecuteNonQuery`; a source search finds no `.Open()`, `.Wait()`, `.Result` or `await` in the publisher's file.
+- [x] **Envelope**: the command's channel parameter is `RELAY_CHANNEL_NAME` and its payload parameter is `RelayEnvelopeCodec`'s encoding with this process's `originId` (Story 040).
+- [x] **Tracked, cancelled, disposed**: the task is handed to `ITickCompletionQueue.Track` with a CTS set to cancel after `RELAY_PUBLISH_TIMEOUT_MS`; a task that never completes is cancelled and its callback runs on the tick after the cancellation; on success, failure and cancellation the callback frees the in-flight slot and disposes the CTS (asserted on a CTS the seam exposes); a failure or a timeout logs one warning.
+- [x] **In-flight bound**: with `RELAY_MAX_PUBLISHES_IN_FLIGHT` publishes pending, the next `Publish` starts nothing, logs one warning and returns; once one completes, a new publish starts.
+- [x] **Never throws**: a seam that throws synchronously frees the slot, disposes the CTS, logs, and `Publish` returns normally; Story 040's `ServerWideBroadcaster` local delivery is unaffected (re-run Story 040's failing-publisher case with this publisher).
 
 **Listener loop (EditMode, fake connection seam, the loop run on the test thread or a test-owned thread)**
-- [ ] **Start**: the loop opens the connection, issues `LISTEN` on `RELAY_CHANNEL_NAME`, then calls `Wait(RELAY_LISTENER_WAIT_MS)` repeatedly until stop.
-- [ ] **Notification**: a notification raised by the fake is passed, as its payload string, to Story 040's `CrossZoneRelayReceiver.OnPayload` and to nothing else.
-- [ ] **Failure and reconnect**: an exception of each type from `Open`, `LISTEN` or `Wait` (`NpgsqlException`, `IOException`, `ObjectDisposedException`, `InvalidOperationException`) does not escape the loop: the connection is disposed, a warning is logged, the loop waits 500, 1 000, 2 000 … ms capped at `RELAY_RECONNECT_MAX_BACKOFF_MS` (asserted through an injected delay seam), reopens and re-issues `LISTEN`; the `RELAY_RECONNECT_ALERT_AFTER`-th consecutive failure logs an error; a successful `LISTEN` resets the count and the backoff.
-- [ ] **Stop**: `Stop()` sets the flag; the loop leaves within one `Wait`, or at once if it is in a backoff delay; the loop disposes the connection on its way out; `Stop()` itself never touches the connection.
-- [ ] **Idempotent**: a second and third `Stop()` return at once; `Stop()` before start and after the thread has ended returns at once; none throws.
-- [ ] **Join timeout**: a fake `Wait` that never returns makes `Stop()` return after `RELAY_LISTENER_STOP_TIMEOUT_MS` and log one warning naming the timeout.
+- [x] **Start**: the loop opens the connection, issues `LISTEN` on `RELAY_CHANNEL_NAME`, then calls `Wait(RELAY_LISTENER_WAIT_MS)` repeatedly until stop.
+- [x] **Notification**: a notification raised by the fake is passed, as its payload string, to Story 040's `CrossZoneRelayReceiver.OnPayload` and to nothing else.
+- [x] **Failure and reconnect**: an exception of each type from `Open`, `LISTEN` or `Wait` (`NpgsqlException`, `IOException`, `ObjectDisposedException`, `InvalidOperationException`) does not escape the loop: the connection is disposed, a warning is logged, the loop waits 500, 1 000, 2 000 … ms capped at `RELAY_RECONNECT_MAX_BACKOFF_MS` (asserted through an injected delay seam), reopens and re-issues `LISTEN`; the `RELAY_RECONNECT_ALERT_AFTER`-th consecutive failure logs an error; a successful `LISTEN` resets the count and the backoff.
+- [x] **Stop**: `Stop()` sets the flag; the loop leaves within one `Wait`, or at once if it is in a backoff delay; the loop disposes the connection on its way out; `Stop()` itself never touches the connection.
+- [x] **Idempotent**: a second and third `Stop()` return at once; `Stop()` before start and after the thread has ended returns at once; none throws.
+- [x] **Join timeout**: a fake `Wait` that never returns makes `Stop()` return after `RELAY_LISTENER_STOP_TIMEOUT_MS` and log one warning naming the timeout.
 
 **Construction (EditMode, no database)**
-- [ ] **Connection string**: the listener's connection string, built from the zone's base string, has `Pooling=false`, `Multiplexing=false`, `Tcp Keepalive=true` and no `Keepalive`; asserted with `NpgsqlConnectionStringBuilder`, without connecting.
-- [ ] **Thread**: the listener's thread is a dedicated `Thread` with `IsBackground = true` and a name; no `Task.Run`, `ThreadPool` or `async` in the listener's file (source search).
-- [ ] **Tuning knobs**: the seven `RELAY_*` values this story uses (all of ADR-015's except `RELAY_INBOX_CAPACITY`, owned by Story 040) are `public const` defaults with ADR-015's values, passed in through constructor parameters, the same pattern as `CrossZoneRelayInbox` (`RELAY_INBOX_CAPACITY`); no other literal for them in the code.
-- [ ] **Data source**: `NpgsqlRelayPublisher` takes an `NpgsqlDataSource` in its constructor and never creates or disposes it; the listener takes the zone's base connection string. In this story the verification host creates both from `IRONGRIND_DEV_PG`. The zone's production data source belongs to the composition-root story.
-- [ ] **Assembly**: `NpgsqlRelayPublisher` and `NpgsqlRelayListener` are in `src/ServerLogic/Networking/CrossZoneRelay/`, `IronGrind.ServerLogic`; the client-binary scan and the boundary test pass.
+- [x] **Connection string**: the listener's connection string, built from the zone's base string, has `Pooling=false`, `Multiplexing=false`, `Tcp Keepalive=true` and no `Keepalive`; asserted with `NpgsqlConnectionStringBuilder`, without connecting.
+- [x] **Thread**: the listener's thread is a dedicated `Thread` with `IsBackground = true` and a name; no `Task.Run`, `ThreadPool` or `async` in the listener's file (source search).
+- [x] **Tuning knobs**: the seven `RELAY_*` values this story uses (all of ADR-015's except `RELAY_INBOX_CAPACITY`, owned by Story 040) are `public const` defaults with ADR-015's values, passed in through constructor parameters, the same pattern as `CrossZoneRelayInbox` (`RELAY_INBOX_CAPACITY`); no other literal for them in the code.
+- [x] **Data source**: `NpgsqlRelayPublisher` takes an `NpgsqlDataSource` in its constructor and never creates or disposes it; the listener takes the zone's base connection string. In this story the verification host creates both from `IRONGRIND_DEV_PG`. The zone's production data source belongs to the composition-root story.
+- [x] **Assembly**: `NpgsqlRelayPublisher` and `NpgsqlRelayListener` are in `src/ServerLogic/Networking/CrossZoneRelay/`, `IronGrind.ServerLogic`; the client-binary scan and the boundary test pass.
 
 **Verification in a real run (evidence document)**
 
 *Recorded in `production/qa/evidence/networking-core-041-relay-verification.md`, PASS / FAIL / NOT RUN with the observation, on two **Windows Dedicated Server (Mono, development) processes** on one machine against the portable PostgreSQL 16.15 (user decision 2026-10-19). The processes run `RelayVerificationHost` (see Implementation Notes); it is not the composition root. A FAIL is recorded and escalated and does not by itself block `/story-done`. An item NOT RUN blocks it, except VR-2 (carried by the headless-build gate) and VR-4 and VR-6 (moved).*
 
-- [ ] **VR-0 Npgsql version**: the pinned version's documentation for `NpgsqlConnection.Wait(int)`, `Notification` and `NpgsqlDataSource.CreateCommand` is cited, and the code compiles against it.
-- [ ] **VR-1 Cross-process notification**: process B, its listener blocking in `Wait`, receives a `pg_notify` sent by process A on its listener thread (thread id logged); the main thread is not involved.
-- [ ] **VR-2 Stripping** — **NOT RUN in this story** (no IL2CPP on the dev machine; user decision 2026-10-19). Recorded as carried by the epic's headless-build gate, naming `Assets/link.xml`'s `Npgsql` entry as the expected cover.
-- [ ] **VR-3 Database restart**: PostgreSQL restarted while both zones run → the listener logs the loss, reconnects with backoff, re-issues `LISTEN`; relayed messages flow again; no notification is delivered twice after the reconnect; the tick never stalls (tick duration logged across the restart).
-- [ ] **VR-5 Publish never blocks**: with the ADR-006 pool exhausted (all connections held by a test), a publish from the tick does not lengthen the tick; a publish against a hung server is cancelled after `RELAY_PUBLISH_TIMEOUT_MS` and frees its slot.
+- [x] **VR-0 Npgsql version**: the pinned version's documentation for `NpgsqlConnection.Wait(int)`, `Notification` and `NpgsqlDataSource.CreateCommand` is cited, and the code compiles against it.
+- [x] **VR-1 Cross-process notification**: process B, its listener blocking in `Wait`, receives a `pg_notify` sent by process A on its listener thread (thread id logged); the main thread is not involved.
+- [x] **VR-2 Stripping** — **NOT RUN in this story** (no IL2CPP on the dev machine; user decision 2026-10-19). Recorded as carried by the epic's headless-build gate, naming `Assets/link.xml`'s `Npgsql` entry as the expected cover.
+- [x] **VR-3 Database restart**: PostgreSQL restarted while both zones run → the listener logs the loss, reconnects with backoff, re-issues `LISTEN`; relayed messages flow again; no notification is delivered twice after the reconnect; the tick never stalls (tick duration logged across the restart).
+- [x] **VR-5 Publish never blocks**: with the ADR-006 pool exhausted (all connections held by a test), a publish from the tick does not lengthen the tick; a publish against a hung server is cancelled after `RELAY_PUBLISH_TIMEOUT_MS` and frees its slot.
 - **VR-4 Teardown** and **VR-6 Leaving Play mode** — **moved** to the composition-root / ADR-009 teardown story (user decision 2026-10-16). Not run here; recorded in the evidence file as "moved", with the story that owns them.
 
 ---
@@ -131,7 +131,7 @@ Also: **ADR-006** (PostgreSQL + Npgsql; the zone's `NpgsqlDataSource`; `link.xml
 **Story Type**: Integration
 **Required evidence**: `tests/EditMode/Networking/CrossZoneRelay_Npgsql_tests.cs` — must exist and pass, with the full EditMode suite; `production/qa/evidence/networking-core-041-relay-verification.md` — VR-0, 1, 3 and 5 PASS or FAIL with the observation, **none NOT RUN**; VR-2 NOT RUN, carried by the headless-build gate; VR-4 and VR-6 recorded as moved.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created: `tests/EditMode/Networking/CrossZoneRelay_Npgsql_tests.cs` (45 test attributes) and `production/qa/evidence/networking-core-041-relay-verification.md` (run 2026-10-19)
 
 ---
 
@@ -139,3 +139,34 @@ Also: **ADR-006** (PostgreSQL + Npgsql; the zone's `NpgsqlDataSource`; `link.xml
 
 - Depends on: **Character Persistence Story 012** (Complete 2026-10-19, Npgsql 8.0.9); **Story 040** (Complete 2026-10-16; the interfaces, `CrossZoneRelayReceiver`, `RelayEnvelopeCodec`, `CrossZoneRelayOrigin`); ADR-015 (Accepted 2026-10-16); Story 030 (`ITickCompletionQueue`) — Complete. Evidence-run precondition (not a code dependency): Unity Hub module "Windows Dedicated Server Build Support" for 6000.3.10f1.
 - Unlocks: the composition-root / ADR-009 teardown story (it wires the publisher and listener and calls `Stop()` from both stop paths); cross-zone delivery in a real deployment. Enhancement Story 016 does **not** wait for this story.
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-19
+**Criteria**: 21/21, verified by the EditMode tests and the two-process run.
+- VR-0, VR-1 (run 2), VR-3 (attempt 2) and VR-5 part 1: PASS.
+- VR-5 part 2: FAIL, escalated and accepted as TD-074. The story rule says a FAIL does not block `/story-done`.
+- VR-2: NOT RUN, carried by the headless-build gate.
+- VR-4 and VR-6: moved to the composition-root / ADR-009 teardown story.
+
+**Deviations** (advisory, all user decisions on 2026-10-19):
+1. The listener connection blocks its thread on `WaitAsync(ms)` instead of `Wait(ms)`. Npgsql 8.0.9's synchronous `Wait` treats every empty wait as a broken connection under Unity Mono. Notifications are queued and handed to the receiver on the listener thread after each wait. Recorded in an ADR-015 Decision 3 note and in the known-issue section of `plugins/npgsql-dapper.md`.
+2. Against a frozen server, a hung publish frees its slot at the ADR-011 watchdog, not at `RELAY_PUBLISH_TIMEOUT_MS`. The tick is never blocked. Recorded as TD-074 and an ADR-015 Decision 2 note.
+3. The first publish of a fresh process cost 58 to 75 ms on the tick. The verification host warms the data source before the first tick, and the composition-root story must do the same (Networking Core EPIC blocker line).
+4. Platform: a Windows Dedicated Server build on Mono, not IL2CPP on Linux (decision before the run). VR-5 part 2 suspended PostgreSQL with `NtSuspendProcess` instead of PsSuspend.
+5. Listener logs strip control characters and name the base exception and socket error. Unity's log stopped at the NUL that ends Mono's Winsock messages.
+
+**Test Evidence**: Integration.
+- `tests/EditMode/Networking/CrossZoneRelay_Npgsql_tests.cs`: EditMode 3146 / 3147, 1 explicit skip.
+- `production/qa/evidence/networking-core-041-relay-verification.md`.
+
+**Code Review**: Complete. `/code-review` by unity-specialist and qa-tester returned CHANGES REQUIRED (R1 to R4, no bugs); all fixes were applied ("fix all"). The lean-mode QL-TEST-COVERAGE and LP-CODE-REVIEW gates were skipped.
+
+**Tech debt**: TD-074.
+
+**Carried to the composition-root / ADR-009 teardown story**:
+- the `Stop()` call sites;
+- VR-4 and VR-6;
+- the data-source warm-up;
+- keeping `WaitAsync` on Mono.
