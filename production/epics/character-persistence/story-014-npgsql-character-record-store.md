@@ -1,7 +1,7 @@
 # Story 014: The Npgsql Character Record Store
 
 > **Epic**: Character Persistence
-> **Status**: Blocked — written 2026-10-12. Blocked on Story 012 (the libraries and a PostgreSQL instance) and Story 013 (the schema).
+> **Status**: Not Started — written 2026-10-12; unblocked 2026-10-19: Story 012 (the libraries and a PostgreSQL instance) and Story 013 (the schema, applied to the dev database `irongrind`) are Complete. Run `/story-readiness` before starting.
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-09

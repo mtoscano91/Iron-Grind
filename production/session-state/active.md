@@ -4082,3 +4082,18 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Decisions: no `account_id` index (the Auth account-character mapping store is undefined; its designer adds one if needed); `last_zone_id` INTEGER → BIGINT via ADR-006 Amendment 2 (ZoneID wraps uint); verify on a throwaway scratch DB, then apply to the dev DB `irongrind`; Defaults smoke case covers every column.
 - Files changed (uncommitted): story-013, character-persistence/EPIC.md, ADR-006 (status line, DDL, type-mapping note, Amendment 2). Propagation check: no other doc types last_zone_id.
 - Next: commit → /dev-story Story 013. PAT rotation still unconfirmed.
+
+## Session Extract — /dev-story 2026-10-19
+- Story: production/epics/character-persistence/story-013-sql-migrations.md — SQL Migrations for character_records and pending_purchases
+- Files changed: tools/db/migrations/001_create_character_records.sql, tools/db/migrations/002_create_pending_purchases.sql, tools/db/README.md (new); story Test Evidence status
+- Test written: None — Config/Data story; smoke check production/qa/smoke-2026-10-19-character-persistence-013.md PASS 4/4 (scratch DBs dropped; both tables now exist in the dev DB irongrind)
+- Blockers: None
+- Next: /code-review tools/db/migrations/001_create_character_records.sql tools/db/migrations/002_create_pending_purchases.sql tools/db/README.md then /story-done (uncommitted)
+- /code-review 2026-10-19 (Story 013): APPROVED WITH SUGGESTIONS (no specialists — SQL/Markdown only) → "fix all": README runs scripts with -1 (single transaction; rollback verified on a scratch DB, smoke addendum) and says how to tell which scripts ran (\dt). Next: /story-done.
+
+## Session Extract — /story-done 2026-10-19
+- Verdict: COMPLETE WITH NOTES (7/7; advisory: no index in 001 by decision, last_zone_id BIGINT per ADR-006 Amendment 2)
+- Story: production/epics/character-persistence/story-013-sql-migrations.md — SQL Migrations for character_records and pending_purchases
+- Tech debt logged: None
+- EPIC: Character Persistence 12/17 Complete; Story 014 unblocked (Not Started)
+- Next recommended: Character Persistence Story 014 (The Npgsql Character Record Store, Integration) — production/epics/character-persistence/story-014-npgsql-character-record-store.md — run /story-readiness first

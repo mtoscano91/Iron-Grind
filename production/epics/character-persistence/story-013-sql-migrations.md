@@ -1,7 +1,7 @@
 # Story 013: SQL Migrations for `character_records` and `pending_purchases`
 
 > **Epic**: Character Persistence
-> **Status**: Ready — written 2026-10-12; unblocked 2026-10-19 (Story 012 Complete; a local PostgreSQL 16.15 runs on the development machine, portable binaries, `tools/postgres/README.md` "Without Docker"; Docker is not available there); `/story-readiness` 2026-10-19: NEEDS WORK (7 gaps) → fixed.
+> **Status**: Complete (2026-10-19, `/story-done` COMPLETE WITH NOTES) — written 2026-10-12; unblocked 2026-10-19 (Story 012 Complete; a local PostgreSQL 16.15 runs on the development machine, portable binaries, `tools/postgres/README.md` "Without Docker"; Docker is not available there); `/story-readiness` 2026-10-19: NEEDS WORK (7 gaps) → fixed.
 > **Layer**: Core
 > **Type**: Config/Data
 > **Manifest Version**: 2026-10-16
@@ -26,13 +26,13 @@
 
 ## Acceptance Criteria
 
-- [ ] **Files**: `tools/db/migrations/001_create_character_records.sql` and `002_create_pending_purchases.sql` exist and hold the DDL of ADR-006 "Key Interfaces" (as amended), column for column, with the index `ix_pending_purchases_char_id`.
-- [ ] **No other indexes**: `001` creates no index besides the primary key (no `account_id` index — see Implementation Notes).
-- [ ] **Defaults**: every column default of `character_records` equals the Level 1 value of CR-CP-9 / F-CP-3 (or `'[]'` / `NOW()` for the JSONB and timestamp columns); `last_zone_id` is `BIGINT DEFAULT 0` (ADR-006 Amendment 2).
-- [ ] **`inventory_slots` shape**: a comment in the first script states the JSONB entry shape of ADR-006 Amendment 1 (item, count, enhancement level) and of `gear_slots`.
-- [ ] **Applies cleanly**: both scripts run in order with `psql -v ON_ERROR_STOP=1` against a newly created empty scratch database (e.g. `irongrind_migration_check`, dropped afterwards) with no error; `002` alone, on another fresh scratch database, fails because `character_records` does not exist.
-- [ ] **Dev database**: both scripts are then applied to the development database `irongrind` (`tools/postgres/README.md`), so Stories 014 and 015 have the tables.
-- [ ] **A note on how to apply them** is in `tools/db/README.md`: the order, the `psql -v ON_ERROR_STOP=1 -f` command with the portable `psql.exe` path, the scratch-database check, and that the scripts are not re-runnable (plain `CREATE TABLE`).
+- [x] **Files**: `tools/db/migrations/001_create_character_records.sql` and `002_create_pending_purchases.sql` exist and hold the DDL of ADR-006 "Key Interfaces" (as amended), column for column, with the index `ix_pending_purchases_char_id`.
+- [x] **No other indexes**: `001` creates no index besides the primary key (no `account_id` index — see Implementation Notes).
+- [x] **Defaults**: every column default of `character_records` equals the Level 1 value of CR-CP-9 / F-CP-3 (or `'[]'` / `NOW()` for the JSONB and timestamp columns); `last_zone_id` is `BIGINT DEFAULT 0` (ADR-006 Amendment 2).
+- [x] **`inventory_slots` shape**: a comment in the first script states the JSONB entry shape of ADR-006 Amendment 1 (item, count, enhancement level) and of `gear_slots`.
+- [x] **Applies cleanly**: both scripts run in order with `psql -v ON_ERROR_STOP=1` against a newly created empty scratch database (e.g. `irongrind_migration_check`, dropped afterwards) with no error; `002` alone, on another fresh scratch database, fails because `character_records` does not exist.
+- [x] **Dev database**: both scripts are then applied to the development database `irongrind` (`tools/postgres/README.md`), so Stories 014 and 015 have the tables.
+- [x] **A note on how to apply them** is in `tools/db/README.md`: the order, the `psql -v ON_ERROR_STOP=1 -f` command with the portable `psql.exe` path, the scratch-database check, and that the scripts are not re-runnable (plain `CREATE TABLE`).
 
 ---
 
@@ -71,7 +71,7 @@
 **Story Type**: Config/Data
 **Required evidence**: a smoke check recorded in `production/qa/smoke-[date]-character-persistence-013.md` (the four cases above, with the `psql` output).
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created 2026-10-19 — `production/qa/smoke-2026-10-19-character-persistence-013.md`, PASS 4/4
 
 ---
 
@@ -79,3 +79,12 @@
 
 - Depends on: a PostgreSQL instance to run against (Story 012, open decision 2) — available since 2026-10-19 (Story 012 Complete; portable PostgreSQL 16.15, see its evidence file)
 - Unlocks: Stories 014, 015
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-19
+**Criteria**: 7/7 passing (none deferred)
+**Deviations**: Advisory, recorded by decision: `001` creates no index although the ADR-006 Migration Plan says "+ indexes" (no `account_id` index, `/story-readiness` decision); `last_zone_id` is `BIGINT` per ADR-006 Amendment 2. No tech debt.
+**Test Evidence**: Config/Data smoke check `production/qa/smoke-2026-10-19-character-persistence-013.md`, PASS 4/4, plus the `-1` single-transaction rollback addendum. Both tables now exist in the dev database `irongrind` (31 and 8 columns).
+**Code Review**: Complete — APPROVED WITH SUGGESTIONS; both applied (`-1` in the README commands, `\dt` to see which scripts ran). QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean).
