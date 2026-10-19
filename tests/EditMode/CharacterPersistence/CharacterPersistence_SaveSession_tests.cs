@@ -879,6 +879,7 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             Rig rig = BuildRig(TimeSpan.FromMilliseconds(100), null);
             CharacterRecord loaded = SeedAndLoad(rig, MakeSeed());
             uint n = loaded.SaveVersion;
+            _counting.IgnoreUpdateToken = true; // the commit wins against the timeout's cancel (Story 014)
             Action release = _store.HoldNext();
             LogAssert.Expect(LogType.Error, new Regex(@"SaveSession \(CleanLogout\) for .* failed.*TimeoutException"));
 
@@ -887,6 +888,7 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             Assert.AreEqual(CharacterSaveResult.DatabaseError, timedOut);
             release();
             WaitUntil(() => Stored().SaveVersion == n + 1u, "the abandoned update to commit");
+            _counting.IgnoreUpdateToken = false;
             LogAssert.Expect(LogType.Warning, new Regex(@"re-read the stored SaveVersion"));
 
             CharacterSaveResult next = Complete(rig.Service.SaveSession(CHAR_A, SessionEndReason.CleanLogout, CancellationToken.None));

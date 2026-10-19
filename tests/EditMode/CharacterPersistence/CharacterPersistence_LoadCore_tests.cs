@@ -537,6 +537,65 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             Assert.AreEqual(CharacterLoadCode.DatabaseError, result.Code);
         }
 
+        // ---------------------------------------------------------------- Story 014: CorruptRecord mapping
+
+        [Test]
+        public void LoadCharacter_StoreFaultsWithCorruptRecordException_ReturnsCorruptRecord()
+        {
+            var store = new ScriptedStore((id, ct) => Task.FromException<CharacterRecord>(new CharacterRecordCorruptException("gear_slots[0]: bad")));
+            var service = new CharacterPersistenceService(store, _stats, _leveling);
+
+            Task<CharacterLoadResult> task = service.LoadCharacter(CHAR_A, ACCOUNT_A, CancellationToken.None);
+            CharacterLoadResult result = Complete(task);
+
+            Assert.AreEqual(TaskStatus.RanToCompletion, task.Status);
+            Assert.AreEqual(CharacterLoadCode.CorruptRecord, result.Code);
+            Assert.AreEqual(ZoneID.Invalid, result.LastZoneID);
+            Assert.IsNull(result.Record);
+        }
+
+        [Test]
+        public void LoadCharacter_StoreFaultsWithCorruptRecordExceptionAndCancellableToken_ReturnsCorruptRecord()
+        {
+            var store = new ScriptedStore((id, ct) => Task.FromException<CharacterRecord>(new CharacterRecordCorruptException("inventory_slots[3]: bad")));
+            var service = new CharacterPersistenceService(store, _stats, _leveling);
+            using (var cts = new CancellationTokenSource())
+            {
+                CharacterLoadResult result = Complete(service.LoadCharacter(CHAR_A, ACCOUNT_A, cts.Token));
+
+                Assert.AreEqual(CharacterLoadCode.CorruptRecord, result.Code);
+                Assert.IsNull(result.Record);
+            }
+        }
+
+        [Test]
+        public void LoadCharacter_StoreThrowsCorruptRecordExceptionSynchronously_ReturnsCorruptRecord()
+        {
+            var store = new ScriptedStore((id, ct) => throw new CharacterRecordCorruptException("sync", new FormatException()));
+            var service = new CharacterPersistenceService(store, _stats, _leveling);
+
+            CharacterLoadResult result = Complete(service.LoadCharacter(CHAR_A, ACCOUNT_A, CancellationToken.None));
+
+            Assert.AreEqual(CharacterLoadCode.CorruptRecord, result.Code);
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void LoadCharacter_StoreFaultsWithAnyOtherException_StaysDatabaseError(bool cancellableToken)
+        {
+            var store = new ScriptedStore((id, ct) => Task.FromException<CharacterRecord>(new FormatException("not the typed corrupt exception")));
+            var service = new CharacterPersistenceService(store, _stats, _leveling);
+            using (var cts = new CancellationTokenSource())
+            {
+                CancellationToken token = cancellableToken ? cts.Token : CancellationToken.None;
+
+                CharacterLoadResult result = Complete(service.LoadCharacter(CHAR_A, ACCOUNT_A, token));
+
+                Assert.AreEqual(CharacterLoadCode.DatabaseError, result.Code);
+                Assert.IsNull(result.Record);
+            }
+        }
+
         // ---------------------------------------------------------------- AC-CP-23 stub
 
         [Test]

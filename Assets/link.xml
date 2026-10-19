@@ -7,4 +7,14 @@
   -->
   <assembly fullname="Npgsql" preserve="all" />
   <assembly fullname="Dapper" preserve="all" />
+  <!--
+    Types that only Dapper constructs or reads, through reflection (Character Persistence Story 014): no compiled code
+    calls their constructors or property accessors, so managed stripping could remove them and the first query would
+    fail at run time only.
+  -->
+  <assembly fullname="IronGrind.ServerLogic">
+    <type fullname="IronGrind.CharacterPersistence.NpgsqlCharacterRecordStore/RecordRow" preserve="all" />
+    <type fullname="IronGrind.CharacterPersistence.NpgsqlCharacterRecordStore/RecordParameters" preserve="all" />
+    <type fullname="IronGrind.CharacterPersistence.NpgsqlCharacterRecordStore/IdParameters" preserve="all" />
+  </assembly>
 </linker>

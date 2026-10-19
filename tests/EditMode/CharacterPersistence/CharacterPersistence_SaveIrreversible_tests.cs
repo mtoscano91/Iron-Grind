@@ -86,9 +86,94 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
                 return _inner.InsertAsync(record, ct);
             }
 
+            /// <summary>
+            /// When true the update ignores its token, as a commit that wins against the service's write-timeout cancel
+            /// (Story 014: the service cancels the store's token at the timeout).
+            /// </summary>
+            public bool IgnoreUpdateToken { get; set; }
+
             public Task<int> UpdateAsync(CharacterRecord record, uint expectedSaveVersion, CancellationToken ct)
             {
-                return _inner.UpdateAsync(record, expectedSaveVersion, ct);
+                return _inner.UpdateAsync(record, expectedSaveVersion, IgnoreUpdateToken ? CancellationToken.None : ct);
+            }
+        }
+
+        /// <summary>How <see cref="TokenReactingStore"/> answers an update.</summary>
+        private enum UpdateBehavior
+        {
+            /// <summary>Delegates to the inner store.</summary>
+            Normal,
+
+            /// <summary>Returns a task that completes canceled as soon as the update's token is cancelled.</summary>
+            CancelOnToken,
+
+            /// <summary>Returns a task that faults with <see cref="InvalidOperationException"/> as soon as the update's token is cancelled.</summary>
+            FaultOnToken,
+
+            /// <summary>Throws <see cref="InvalidOperationException"/> synchronously from <c>UpdateAsync</c>.</summary>
+            ThrowSynchronously,
+
+            /// <summary>Returns a null task.</summary>
+            ReturnNull,
+        }
+
+        /// <summary>
+        /// Wraps a store; fetch and insert go to the inner store, the update follows <see cref="Behavior"/>. Lets the
+        /// reclassification of a failed store call (timeout vs caller cancel) be tested without a wall-clock race.
+        /// </summary>
+        private sealed class TokenReactingStore : ICharacterRecordStore
+        {
+            private readonly ICharacterRecordStore _inner;
+            private int _updateCalls;
+
+            public TokenReactingStore(ICharacterRecordStore inner)
+            {
+                _inner = inner;
+            }
+
+            public UpdateBehavior Behavior { get; set; }
+
+            public int UpdateCalls
+            {
+                get { return Volatile.Read(ref _updateCalls); }
+            }
+
+            public Task<CharacterRecord> FetchAsync(CharacterID id, CancellationToken ct)
+            {
+                return _inner.FetchAsync(id, ct);
+            }
+
+            public Task<bool> InsertAsync(CharacterRecord record, CancellationToken ct)
+            {
+                return _inner.InsertAsync(record, ct);
+            }
+
+            public Task<int> UpdateAsync(CharacterRecord record, uint expectedSaveVersion, CancellationToken ct)
+            {
+                Interlocked.Increment(ref _updateCalls);
+                switch (Behavior)
+                {
+                    case UpdateBehavior.CancelOnToken:
+                    {
+                        var source = new TaskCompletionSource<int>();
+                        ct.Register(() => source.TrySetCanceled(ct));
+                        return source.Task;
+                    }
+
+                    case UpdateBehavior.FaultOnToken:
+                    {
+                        var source = new TaskCompletionSource<int>();
+                        ct.Register(() => source.TrySetException(new InvalidOperationException("faulted after the token fired")));
+                        return source.Task;
+                    }
+
+                    case UpdateBehavior.ThrowSynchronously:
+                        throw new InvalidOperationException("sync boom");
+                    case UpdateBehavior.ReturnNull:
+                        return null;
+                    default:
+                        return _inner.UpdateAsync(record, expectedSaveVersion, ct);
+                }
             }
         }
 
@@ -124,6 +209,11 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
 
         private Rig BuildRig(TimeSpan writeTimeout)
         {
+            return BuildRigOver(_faulty, writeTimeout);
+        }
+
+        private Rig BuildRigOver(ICharacterRecordStore store, TimeSpan writeTimeout)
+        {
             var rig = new Rig();
             rig.Leveling = new LevelingService(BuildXpThresholdsWithCapSentinel(), CreateClassRegistry());
             rig.Stats = CharacterStatsFixture.CreateWithLeveling(rig.Leveling);
@@ -134,7 +224,7 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             rig.Zones = new FakeZoneLocator();
             rig.Queue = new CharacterWriteQueue();
             rig.Service = new CharacterPersistenceService(
-                _faulty,
+                store,
                 rig.Stats,
                 rig.Leveling,
                 rig.Inventory,
@@ -601,6 +691,118 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
         }
 
         [Test]
+        public void Test_WriteTimeout_CancelsTheStoresTokenSoAHeldUpdateWritesNothing()
+        {
+            // Story 014 / ADR-006 Decision 4: the write timeout is a hard CancellationToken timeout for the store too.
+            Rig rig = BuildRig(TimeSpan.FromMilliseconds(100));
+            CharacterRecord loaded = SeedAndLoad(rig);
+            Action release = _store.HoldNext(); // the in-memory hold honours the token
+            ExpectError(@"SaveIrreversibleOutcome \(LevelUp\) for .* failed.*TimeoutException");
+
+            Assert.AreEqual(CharacterSaveResult.DatabaseError, Complete(rig.Service.SaveIrreversibleOutcome(CHAR_A, IrreversibleOutcomeTrigger.LevelUp, CancellationToken.None)));
+            release();
+
+            WaitUntil(() => rig.Queue.ActiveCharacterCount == 0, "the queue to drain");
+            Assert.AreEqual(loaded.SaveVersion, Stored().SaveVersion, "The held update was cancelled at the timeout and wrote nothing.");
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        // ---------------------------------------------------------------- reclassification of a failed store call (Story 014)
+
+        private Rig BuildReactingRig(TimeSpan writeTimeout, UpdateBehavior behavior, out TokenReactingStore store)
+        {
+            store = new TokenReactingStore(_faulty) { Behavior = behavior };
+            Rig rig = BuildRigOver(store, writeTimeout);
+            SeedAndLoad(rig);
+            return rig;
+        }
+
+        [Test]
+        public void Test_StoreEndsCanceledAtTheTimeoutWithTheCallersTokenUntouched_DatabaseErrorLoggedAsTimeout()
+        {
+            Rig rig = BuildReactingRig(TimeSpan.FromMilliseconds(50), UpdateBehavior.CancelOnToken, out TokenReactingStore _);
+            ExpectError(@"SaveIrreversibleOutcome \(LevelUp\) for .* failed.*TimeoutException");
+
+            Task<CharacterSaveResult> task = rig.Service.SaveIrreversibleOutcome(CHAR_A, IrreversibleOutcomeTrigger.LevelUp, CancellationToken.None);
+
+            Assert.AreEqual(CharacterSaveResult.DatabaseError, Complete(task));
+            Assert.IsFalse(task.IsFaulted);
+            Assert.IsFalse(task.IsCanceled);
+            WaitUntil(() => rig.Queue.ActiveCharacterCount == 0, "the queue to drain");
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void Test_CallerCancelsBeforeTheTimeout_DatabaseErrorNotLoggedAsTimeout()
+        {
+            Rig rig = BuildReactingRig(TimeSpan.FromSeconds(5), UpdateBehavior.CancelOnToken, out TokenReactingStore store);
+            ExpectError(@"SaveIrreversibleOutcome \(LevelUp\) for .* failed: (TaskCanceledException|OperationCanceledException)");
+            using (var cts = new CancellationTokenSource())
+            {
+                Task<CharacterSaveResult> task = rig.Service.SaveIrreversibleOutcome(CHAR_A, IrreversibleOutcomeTrigger.LevelUp, cts.Token);
+                WaitUntil(() => store.UpdateCalls == 1, "the update to start");
+
+                cts.Cancel();
+
+                Assert.AreEqual(CharacterSaveResult.DatabaseError, Complete(task));
+                Assert.IsFalse(task.IsCanceled);
+            }
+
+            WaitUntil(() => rig.Queue.ActiveCharacterCount == 0, "the queue to drain");
+            LogAssert.NoUnexpectedReceived(); // a TimeoutException log would not match the expected pattern
+        }
+
+        [Test]
+        public void Test_StoreFaultsAfterTheTimeoutFired_ReportedAsTheTimeoutWithTheCauseAttached()
+        {
+            // Pins: a fault that follows the timeout's cancel is reported as the timeout (the cause is its inner exception).
+            Rig rig = BuildReactingRig(TimeSpan.FromMilliseconds(50), UpdateBehavior.FaultOnToken, out TokenReactingStore _);
+            ExpectError(@"SaveIrreversibleOutcome \(LevelUp\) for .* failed.*TimeoutException");
+
+            Task<CharacterSaveResult> task = rig.Service.SaveIrreversibleOutcome(CHAR_A, IrreversibleOutcomeTrigger.LevelUp, CancellationToken.None);
+
+            Assert.AreEqual(CharacterSaveResult.DatabaseError, Complete(task));
+            Assert.IsFalse(task.IsFaulted);
+            WaitUntil(() => rig.Queue.ActiveCharacterCount == 0, "the queue to drain");
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void Test_StoreThrowsSynchronouslyFromUpdate_DatabaseErrorOneErrorAndAFollowingSaveWorks()
+        {
+            Rig rig = BuildReactingRig(TimeSpan.FromSeconds(5), UpdateBehavior.ThrowSynchronously, out TokenReactingStore store);
+            ExpectError(@"SaveIrreversibleOutcome \(LevelUp\) for .* failed.*sync boom");
+
+            Task<CharacterSaveResult> task = rig.Service.SaveIrreversibleOutcome(CHAR_A, IrreversibleOutcomeTrigger.LevelUp, CancellationToken.None);
+
+            Assert.AreEqual(CharacterSaveResult.DatabaseError, Complete(task));
+            Assert.IsFalse(task.IsFaulted);
+            Assert.IsFalse(task.IsCanceled);
+            WaitUntil(() => rig.Queue.ActiveCharacterCount == 0, "the queue to drain");
+            store.Behavior = UpdateBehavior.Normal;
+            ExpectWarning(REREAD_WARNING); // the failed write left the version unknown
+            Assert.AreEqual(CharacterSaveResult.Success, Complete(rig.Service.SaveIrreversibleOutcome(CHAR_A, IrreversibleOutcomeTrigger.LevelUp, CancellationToken.None)));
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void Test_StoreReturnsANullTask_DatabaseErrorLoggedAsInvalidOperationAndAFollowingSaveWorks()
+        {
+            Rig rig = BuildReactingRig(TimeSpan.FromSeconds(5), UpdateBehavior.ReturnNull, out TokenReactingStore store);
+            ExpectError(@"SaveIrreversibleOutcome \(LevelUp\) for .* failed.*InvalidOperationException");
+
+            Task<CharacterSaveResult> task = rig.Service.SaveIrreversibleOutcome(CHAR_A, IrreversibleOutcomeTrigger.LevelUp, CancellationToken.None);
+
+            Assert.AreEqual(CharacterSaveResult.DatabaseError, Complete(task));
+            Assert.IsFalse(task.IsFaulted);
+            WaitUntil(() => rig.Queue.ActiveCharacterCount == 0, "the queue to drain");
+            store.Behavior = UpdateBehavior.Normal;
+            ExpectWarning(REREAD_WARNING);
+            Assert.AreEqual(CharacterSaveResult.Success, Complete(rig.Service.SaveIrreversibleOutcome(CHAR_A, IrreversibleOutcomeTrigger.LevelUp, CancellationToken.None)));
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
         public void Test_TokenCancelledDuringUpdate_DatabaseErrorNotCancelledAndAFollowingSaveWorks()
         {
             CharacterRecord loaded = SeedAndLoad(_rig);
@@ -633,12 +835,14 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             CharacterRecord loaded = SeedAndLoad(rig);
             uint n = loaded.SaveVersion;
             rig.Stats.SetCurrentHP(rig.Entity, 100f);
+            _faulty.IgnoreUpdateToken = true; // the commit wins against the timeout's cancel
             Action release = _store.HoldNext();
             ExpectError(@"SaveIrreversibleOutcome \(LevelUp\) for .* failed.*TimeoutException");
 
             Assert.AreEqual(CharacterSaveResult.DatabaseError, Complete(rig.Service.SaveIrreversibleOutcome(CHAR_A, IrreversibleOutcomeTrigger.LevelUp, CancellationToken.None)));
             release();
             WaitUntil(() => Stored().SaveVersion == n + 1u, "the abandoned update to commit");
+            _faulty.IgnoreUpdateToken = false;
             Assert.AreEqual(100f, Stored().CurrentHP);
             rig.Stats.SetCurrentHP(rig.Entity, 650f); // the caller rolls its in-memory state back
             ExpectWarning(REREAD_WARNING);
@@ -1045,6 +1249,7 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             _rig = BuildRig(TimeSpan.FromMilliseconds(300));
             CharacterRecord loaded = SeedAndLoad(_rig);
             uint n = loaded.SaveVersion;
+            _faulty.IgnoreUpdateToken = true; // the commit wins against the timeout's cancel (Story 014)
             Action release = _store.HoldNext();
             ExpectError(@"SaveIrreversibleOutcome \(LevelUp\) for .* failed.*TimeoutException");
             Task<CharacterSaveResult> inFlight = Irreversible();
@@ -1053,6 +1258,7 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             Assert.AreEqual(CharacterSaveResult.DatabaseError, Complete(inFlight));
             release(); // the abandoned update commits
             WaitUntil(() => Stored().SaveVersion == n + 1u, "the abandoned update to commit");
+            _faulty.IgnoreUpdateToken = false;
             ExpectWarning(REREAD_WARNING);
 
             Assert.AreEqual(CharacterSaveResult.Success, Complete(Irreversible()));

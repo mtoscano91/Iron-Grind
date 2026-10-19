@@ -203,7 +203,8 @@ namespace IronGrind.CharacterPersistence
         /// <see cref="CurrencySystem.GOLD_CAP"/>, and a <c>CurrentHP</c> or <c>CurrentMP</c> that is NaN are also
         /// <see cref="CharacterLoadCode.CorruptRecord"/> (all beyond the GDD's step 3 list). It never touches Character Stats or
         /// Leveling; <see cref="ApplyLoadedRecord"/> does the writes. The task never faults and is never
-        /// cancelled: a store fault, or <paramref name="ct"/> firing while the fetch is pending (CR-CP-8, the
+        /// cancelled: a store that throws <see cref="CharacterRecordCorruptException"/> gives
+        /// <see cref="CharacterLoadCode.CorruptRecord"/>; every other store fault, or <paramref name="ct"/> firing while the fetch is pending (CR-CP-8, the
         /// caller's token is the timeout), gives <see cref="CharacterLoadCode.DatabaseError"/>. The service
         /// observes the token itself because a store call need not honour it. A fetch that is abandoned by a
         /// cancel and later faults has its exception observed by a synchronous continuation.
@@ -219,6 +220,10 @@ namespace IronGrind.CharacterPersistence
             try
             {
                 record = await FetchObservingTokenAsync(id, ct).ConfigureAwait(false);
+            }
+            catch (CharacterRecordCorruptException)
+            {
+                return new CharacterLoadResult(CharacterLoadCode.CorruptRecord, ZoneID.Invalid);
             }
             catch (Exception)
             {
@@ -929,9 +934,36 @@ namespace IronGrind.CharacterPersistence
 
         // Starts a store call and races it against the write timeout and the token. Throws TimeoutException or
         // OperationCanceledException when the race is lost; the abandoned call's fault is observed.
+        // The store gets the caller's token linked with the write timeout (ADR-006 Decision 4: a hard CancellationToken
+        // timeout), so a store that honours it stops its command and frees its connection at the timeout (Story 014).
+        // The race stays, for a store that does not honour the token, and a cancel can still lose to a commit, so the
+        // caller still treats a lost race as an unknown outcome. The linked source is disposed when the call ends, not
+        // here: an abandoned call may still be using its token.
         private async Task<T> RaceAsync<T>(Func<CancellationToken, Task<T>> start, CancellationToken ct)
         {
-            Task<T> call = start(ct);
+            var callCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            Task<T> call;
+            try
+            {
+                callCts.CancelAfter(_writeTimeout);
+                call = start(callCts.Token);
+                if (call == null)
+                {
+                    throw new InvalidOperationException("The store returned a null task.");
+                }
+
+                call.ContinueWith(
+                    (t, state) => ((CancellationTokenSource)state).Dispose(),
+                    callCts,
+                    CancellationToken.None,
+                    TaskContinuationOptions.ExecuteSynchronously,
+                    TaskScheduler.Default);
+            }
+            catch
+            {
+                callCts.Dispose();
+                throw;
+            }
             using (var timerCts = new CancellationTokenSource())
             {
                 try
@@ -943,6 +975,13 @@ namespace IronGrind.CharacterPersistence
                         Task winner = await Task.WhenAny(call, timeout, cancelled.Task).ConfigureAwait(false);
                         if (winner == call)
                         {
+                            // A store that honoured the timeout's cancel ends just before the delay: still the timeout.
+                            if (call.Status != TaskStatus.RanToCompletion && callCts.IsCancellationRequested && !ct.IsCancellationRequested)
+                            {
+                                Exception cause = call.Exception?.GetBaseException();
+                                throw new TimeoutException("The store call did not complete within " + _writeTimeout.TotalMilliseconds + " ms.", cause);
+                            }
+
                             return await call.ConfigureAwait(false);
                         }
 

@@ -11,45 +11,62 @@ using NUnit.Framework;
 
 namespace IronGrind.Tests.EditMode.CharacterPersistence
 {
-    /// <summary>Character Persistence Story 002: the record store seam, the in-memory store, CharacterStubDefaults and CreateStub.</summary>
-    [TestFixture]
-    internal sealed class CharacterPersistence_RecordStore_Tests
+    /// <summary>
+    /// Character Persistence Story 002 (moved into a shared contract fixture by Story 014): the record store seam,
+    /// CharacterStubDefaults and CreateStub. The tests here hold for every <see cref="ICharacterRecordStore"/>; a subclass
+    /// supplies the store. Tests that assert the injected clock's exact value, use the in-memory store's fault controls,
+    /// or rely on the in-memory store's uint wrap-around live in <see cref="CharacterPersistence_RecordStore_Tests"/>.
+    /// Calls are awaited with a bounded wait, so a store that completes asynchronously passes too.
+    /// </summary>
+    internal abstract class CharacterRecordStoreContractTests
     {
-        private static readonly DateTime T1 = new DateTime(2026, 10, 12, 8, 0, 0, DateTimeKind.Utc);
-        private static readonly DateTime T2 = new DateTime(2026, 10, 12, 9, 30, 0, DateTimeKind.Utc);
-        private static readonly CharacterID CHAR_A = new CharacterID(101u);
-        private static readonly CharacterID CHAR_B = new CharacterID(102u);
-        private static readonly AccountID ACCOUNT_A = new AccountID(7u);
-        private const uint VERSION_FOUR = 4u;
-        private const uint VERSION_NINE = 9u;
-        private static readonly DateTime T3 = new DateTime(2026, 10, 12, 11, 0, 0, DateTimeKind.Utc);
-        private const int GEAR_INDEX = 2;
+        protected static readonly DateTime T1 = new DateTime(2026, 10, 12, 8, 0, 0, DateTimeKind.Utc);
+        protected static readonly DateTime T2 = new DateTime(2026, 10, 12, 9, 30, 0, DateTimeKind.Utc);
+        // Test-only ids (9_000_000 and up): the Npgsql contract run uses the dev database and must never touch real low ids.
+        protected const uint CHAR_A_RAW = 9_000_101u;
+        protected const uint CHAR_B_RAW = 9_000_102u;
+        protected static readonly CharacterID CHAR_A = new CharacterID(CHAR_A_RAW);
+        protected static readonly CharacterID CHAR_B = new CharacterID(CHAR_B_RAW);
+        protected static readonly AccountID ACCOUNT_A = new AccountID(7u);
+        protected const uint VERSION_FOUR = 4u;
+        protected const uint VERSION_NINE = 9u;
+        protected static readonly DateTime T3 = new DateTime(2026, 10, 12, 11, 0, 0, DateTimeKind.Utc);
+        protected const int GEAR_INDEX = 2;
+        protected const int WAIT_MS = 5000;
 
         // What MakeRecord puts in a record, and other values for "changed" records.
-        private const int MADE_LEVEL = 12;
-        private const uint MADE_GOLD = 500u;
-        private const uint MADE_GEAR_ITEM = 77u;
-        private const uint MADE_INVENTORY_ITEM = 5u;
-        private const int MADE_INVENTORY_COUNT = 4;
-        private const byte MADE_INVENTORY_ENHANCEMENT = 2;
-        private const int OTHER_LEVEL = 31;
-        private const uint OTHER_ITEM = 900u;
-        private const int OTHER_COUNT = 9;
-        private const byte OTHER_ENHANCEMENT = 7;
+        protected const int MADE_LEVEL = 12;
+        protected const uint MADE_GOLD = 500u;
+        protected const uint MADE_GEAR_ITEM = 77u;
+        protected const uint MADE_INVENTORY_ITEM = 5u;
+        protected const int MADE_INVENTORY_COUNT = 4;
+        protected const byte MADE_INVENTORY_ENHANCEMENT = 2;
+        protected const int OTHER_LEVEL = 31;
+        protected const uint OTHER_ITEM = 900u;
+        protected const int OTHER_COUNT = 9;
+        protected const byte OTHER_ENHANCEMENT = 7;
 
-        private DateTime _now;
-        private InMemoryCharacterRecordStore _store;
-        private CharacterPersistenceService _service;
+        /// <summary>The clock of the in-memory store; stays available to every subclass (a database store ignores it).</summary>
+        protected DateTime _now;
+
+        /// <summary>The store under test, made by <see cref="CreateStore"/>.</summary>
+        protected ICharacterRecordStore Store;
+
+        /// <summary>A service over <see cref="Store"/>.</summary>
+        protected CharacterPersistenceService Service;
+
+        /// <summary>Makes the store for one test. Called by the base SetUp, after <c>_now</c> is set to T1.</summary>
+        protected abstract ICharacterRecordStore CreateStore();
 
         [SetUp]
-        public void SetUp()
+        public void SetUpContract()
         {
             _now = T1;
-            _store = new InMemoryCharacterRecordStore(() => _now);
-            _service = new CharacterPersistenceService(_store);
+            Store = CreateStore();
+            Service = new CharacterPersistenceService(Store);
         }
 
-        private static CharacterRecord MakeRecord(CharacterID id, uint saveVersion)
+        protected static CharacterRecord MakeRecord(CharacterID id, uint saveVersion)
         {
             CharacterRecord r = CharacterStubDefaults.CreateRecord(ACCOUNT_A, id, 3);
             r.CharacterName = "Brann";
@@ -63,7 +80,7 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             return r;
         }
 
-        private static string Arrays(CharacterRecord r)
+        internal static string Arrays(CharacterRecord r)
         {
             return string.Join(",", r.GearSlots.Select(g => g.ItemId.RawValue + ":" + g.EnhancementLevel))
                 + "|" + string.Join(",", r.InventorySlots.Select(i => i.RawValue))
@@ -71,7 +88,7 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
                 + "|" + string.Join(",", r.InventoryEnhancementLevels);
         }
 
-        private static void AssertSame(CharacterRecord expected, CharacterRecord actual)
+        internal static void AssertSame(CharacterRecord expected, CharacterRecord actual)
         {
             Assert.IsNotNull(actual);
             foreach (PropertyInfo p in typeof(CharacterRecord).GetProperties().Where(property => !property.PropertyType.IsArray))
@@ -82,64 +99,48 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             Assert.AreEqual(Arrays(expected), Arrays(actual));
         }
 
-        private bool Insert(CharacterRecord r)
+        /// <summary>Waits (bounded) for a task to end, whatever its outcome, and asserts that it ended.</summary>
+        protected static void Settle(Task task)
         {
-            Task<bool> t = _store.InsertAsync(r, CancellationToken.None);
-            Assert.IsTrue(t.IsCompleted);
+            try
+            {
+                task.Wait(WAIT_MS);
+            }
+            catch (AggregateException)
+            {
+                // The outcome is the test's to inspect.
+            }
+
+            Assert.IsTrue(task.IsCompleted, "The task did not end within " + WAIT_MS + " ms.");
+        }
+
+        protected bool Insert(CharacterRecord r)
+        {
+            Task<bool> t = Store.InsertAsync(r, CancellationToken.None);
+            Settle(t);
             return t.Result;
         }
 
-        private int Update(CharacterRecord r, uint expected)
+        protected int Update(CharacterRecord r, uint expected)
         {
-            Task<int> t = _store.UpdateAsync(r, expected, CancellationToken.None);
-            Assert.IsTrue(t.IsCompleted);
+            Task<int> t = Store.UpdateAsync(r, expected, CancellationToken.None);
+            Settle(t);
             return t.Result;
         }
 
-        private CharacterRecord Fetch(CharacterID id)
+        protected CharacterRecord Fetch(CharacterID id)
         {
-            Task<CharacterRecord> t = _store.FetchAsync(id, CancellationToken.None);
-            Assert.IsTrue(t.IsCompleted);
+            Task<CharacterRecord> t = Store.FetchAsync(id, CancellationToken.None);
+            Settle(t);
             return t.Result;
         }
 
-        private static CancellationToken CancelledToken()
+        protected static CancellationToken CancelledToken()
         {
             return new CancellationToken(true);
         }
 
         // ---------------------------------------------------------------- insert / fetch
-
-        [Test]
-        public void InMemoryStore_Insert_StoresRecordWithGivenVersionAndStampsBothTimestamps()
-        {
-            CharacterRecord r = MakeRecord(CHAR_A, VERSION_FOUR);
-
-            Assert.IsTrue(Insert(r));
-
-            CharacterRecord fetched = Fetch(CHAR_A);
-            Assert.AreEqual(VERSION_FOUR, fetched.SaveVersion);
-            Assert.AreEqual(T1, fetched.CreatedAtUtc);
-            Assert.AreEqual(T1, fetched.LastSavedAtUtc);
-            Assert.AreEqual(MADE_GOLD, fetched.GoldBalance);
-            Assert.AreEqual(MADE_GEAR_ITEM, fetched.GearSlots[GEAR_INDEX].ItemId.RawValue);
-        }
-
-        [Test]
-        public void InMemoryStore_InsertSameIdTwice_ReturnsFalseAndKeepsFirstRecord()
-        {
-            Insert(MakeRecord(CHAR_A, VERSION_FOUR));
-            CharacterRecord second = MakeRecord(CHAR_A, 0u);
-            second.GoldBalance = 1u;
-            _now = T2;
-
-            Assert.IsFalse(Insert(second));
-
-            CharacterRecord fetched = Fetch(CHAR_A);
-            Assert.AreEqual(MADE_GOLD, fetched.GoldBalance);
-            Assert.AreEqual(VERSION_FOUR, fetched.SaveVersion);
-            Assert.AreEqual(T1, fetched.LastSavedAtUtc);
-        }
 
         [Test]
         public void InMemoryStore_FetchMiss_ReturnsNull()
@@ -148,24 +149,6 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
         }
 
         // ---------------------------------------------------------------- update
-
-        [Test]
-        public void InMemoryStore_UpdateWithMatchingVersion_IncrementsVersionAndStampsLastSaved()
-        {
-            Insert(MakeRecord(CHAR_A, VERSION_FOUR));
-            _now = T2;
-            CharacterRecord incoming = MakeRecord(CHAR_A, 99u);
-            incoming.Level = 13;
-            incoming.CreatedAtUtc = T2;
-
-            Assert.AreEqual(1, Update(incoming, VERSION_FOUR));
-
-            CharacterRecord fetched = Fetch(CHAR_A);
-            Assert.AreEqual(VERSION_FOUR + 1u, fetched.SaveVersion);
-            Assert.AreEqual(T2, fetched.LastSavedAtUtc);
-            Assert.AreEqual(T1, fetched.CreatedAtUtc);
-            Assert.AreEqual(13, fetched.Level);
-        }
 
         [Test]
         public void InMemoryStore_UpdateWithStaleVersion_ReturnsZeroAndChangesNothing()
@@ -189,16 +172,6 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
         {
             Assert.AreEqual(0, Update(MakeRecord(CHAR_B, 0u), 0u));
             Assert.IsNull(Fetch(CHAR_B));
-        }
-
-        [Test]
-        public void InMemoryStore_UpdateAtMaxVersion_WrapsToZero()
-        {
-            Insert(MakeRecord(CHAR_A, uint.MaxValue));
-
-            Assert.AreEqual(1, Update(MakeRecord(CHAR_A, 0u), uint.MaxValue));
-
-            Assert.AreEqual(0u, Fetch(CHAR_A).SaveVersion);
         }
 
         // ---------------------------------------------------------------- isolation
@@ -253,7 +226,8 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
         [Test]
         public void InMemoryStore_InsertWithCancelledToken_IsCancelledAndWritesNothing()
         {
-            Task<bool> t = _store.InsertAsync(MakeRecord(CHAR_A, 0u), CancelledToken());
+            Task<bool> t = Store.InsertAsync(MakeRecord(CHAR_A, 0u), CancelledToken());
+            Settle(t);
 
             Assert.IsTrue(t.IsCanceled);
             Assert.IsNull(Fetch(CHAR_A));
@@ -264,7 +238,8 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
         {
             Insert(MakeRecord(CHAR_A, 0u));
 
-            Task<CharacterRecord> t = _store.FetchAsync(CHAR_A, CancelledToken());
+            Task<CharacterRecord> t = Store.FetchAsync(CHAR_A, CancelledToken());
+            Settle(t);
 
             Assert.IsTrue(t.IsCanceled);
         }
@@ -276,12 +251,386 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             CharacterRecord changed = MakeRecord(CHAR_A, 0u);
             changed.Level = 50;
 
-            Task<int> t = _store.UpdateAsync(changed, 0u, CancelledToken());
+            Task<int> t = Store.UpdateAsync(changed, 0u, CancelledToken());
+            Settle(t);
 
             Assert.IsTrue(t.IsCanceled);
             Assert.AreEqual(MADE_LEVEL, Fetch(CHAR_A).Level);
             Assert.AreEqual(0u, Fetch(CHAR_A).SaveVersion);
         }
+
+        // ---------------------------------------------------------------- argument checks
+
+        [Test]
+        public void InMemoryStore_NullRecord_ThrowsArgumentNullException()
+        {
+            Assert.Throws<ArgumentNullException>(() => Store.InsertAsync(null, CancellationToken.None));
+            Assert.Throws<ArgumentNullException>(() => Store.UpdateAsync(null, 0u, CancellationToken.None));
+        }
+
+        [Test]
+        public void ICharacterRecordStore_HasExactlyThreeMethods()
+        {
+            MethodInfo[] methods = typeof(ICharacterRecordStore).GetMethods();
+            Assert.AreEqual(3, methods.Length);
+            CollectionAssert.AreEquivalent(new[] { "FetchAsync", "InsertAsync", "UpdateAsync" }, methods.Select(m => m.Name).ToArray());
+        }
+
+        // ---------------------------------------------------------------- CharacterStubDefaults
+
+        [Test]
+        public void CharacterStubDefaults_Constants_EqualCrCp9Values()
+        {
+            Assert.AreEqual(1, CharacterStubDefaults.LEVEL);
+            Assert.AreEqual(0, CharacterStubDefaults.EXPERIENCE);
+            Assert.AreEqual(0, CharacterStubDefaults.HELD_FREE_POINTS);
+            Assert.AreEqual(10, CharacterStubDefaults.BASE_ATTRIBUTE);
+            Assert.AreEqual(400, CharacterStubDefaults.MAX_HP);
+            Assert.AreEqual(220, CharacterStubDefaults.MAX_MP);
+            Assert.AreEqual(30, CharacterStubDefaults.ATTACK_POWER);
+            Assert.AreEqual(20, CharacterStubDefaults.DEFENSE);
+            Assert.AreEqual(4, CharacterStubDefaults.MAGIC_DEFENSE);
+            Assert.AreEqual(0.065f, CharacterStubDefaults.CRIT_CHANCE);
+            Assert.AreEqual(1.5f, CharacterStubDefaults.CRIT_MULTIPLIER);
+            Assert.AreEqual(3.0f, CharacterStubDefaults.ATTACK_RANGE);
+            Assert.AreEqual(1.030f, CharacterStubDefaults.ATTACK_SPEED_MULTIPLIER);
+            Assert.AreEqual(5.0f, CharacterStubDefaults.MOVEMENT_SPEED);
+            Assert.AreEqual(400f, CharacterStubDefaults.CURRENT_HP);
+            Assert.AreEqual(220f, CharacterStubDefaults.CURRENT_MP);
+            Assert.AreEqual(0u, CharacterStubDefaults.GOLD_BALANCE);
+            Assert.AreEqual(0u, CharacterStubDefaults.GOLD_VERSION);
+            Assert.AreEqual(0u, CharacterStubDefaults.SAVE_VERSION);
+        }
+
+        [Test]
+        public void CharacterStubDefaults_CreateRecord_SetsEveryField()
+        {
+            CharacterRecord r = CharacterStubDefaults.CreateRecord(ACCOUNT_A, CHAR_A, 2);
+
+            Assert.AreEqual(CHAR_A, r.CharacterID);
+            Assert.AreEqual(ACCOUNT_A, r.AccountID);
+            Assert.AreEqual(string.Empty, r.CharacterName);
+            Assert.AreEqual((byte)2, r.ClassType);
+            Assert.AreEqual(1, r.Level);
+            Assert.AreEqual(0, r.Experience);
+            Assert.AreEqual(0, r.HeldFreePoints);
+            Assert.AreEqual(10, r.STR);
+            Assert.AreEqual(10, r.DEX);
+            Assert.AreEqual(10, r.VIT);
+            Assert.AreEqual(10, r.INT);
+            Assert.AreEqual(400, r.MaxHP);
+            Assert.AreEqual(220, r.MaxMP);
+            Assert.AreEqual(30, r.AttackPower);
+            Assert.AreEqual(20, r.Defense);
+            Assert.AreEqual(4, r.MagicDefense);
+            Assert.AreEqual(0.065f, r.CritChance);
+            Assert.AreEqual(1.5f, r.CritMultiplier);
+            Assert.AreEqual(3.0f, r.AttackRange);
+            Assert.AreEqual(1.030f, r.AttackSpeedMultiplier);
+            Assert.AreEqual(5.0f, r.MovementSpeed);
+            Assert.AreEqual(400f, r.CurrentHP);
+            Assert.AreEqual(220f, r.CurrentMP);
+            Assert.AreEqual(0u, r.GoldBalance);
+            Assert.AreEqual(0u, r.GoldVersion);
+            Assert.AreEqual(ZoneID.Invalid, r.LastZoneID);
+            Assert.AreEqual(0u, r.SaveVersion);
+            Assert.AreEqual(default(DateTime), r.CreatedAtUtc);
+            Assert.AreEqual(default(DateTime), r.LastSavedAtUtc);
+            Assert.IsTrue(r.GearSlots.All(g => g.ItemId == ItemID.Invalid && g.EnhancementLevel == 0));
+            Assert.IsTrue(r.InventorySlots.All(i => i == ItemID.Invalid));
+            Assert.IsTrue(r.InventoryItemCounts.All(c => c == 0));
+            Assert.IsTrue(r.InventoryEnhancementLevels.All(l => l == 0));
+        }
+
+        // ---------------------------------------------------------------- CreateStub
+
+        [Test]
+        public void CreateStub_ExistingId_FaultsWithInvalidOperationExceptionAndKeepsRecord()
+        {
+            Insert(MakeRecord(CHAR_A, 0u));
+
+            Task t = Service.CreateStub(ACCOUNT_A, CHAR_A, 1, CancellationToken.None);
+            Settle(t);
+
+            Assert.IsTrue(t.IsFaulted);
+            Assert.IsInstanceOf<InvalidOperationException>(t.Exception.InnerException);
+            Assert.AreEqual(MADE_GOLD, Fetch(CHAR_A).GoldBalance);
+        }
+
+        [Test]
+        public void CreateStub_CancelledToken_IsCancelled()
+        {
+            Task t = Service.CreateStub(ACCOUNT_A, CHAR_A, 1, CancelledToken());
+            Settle(t);
+
+            Assert.IsTrue(t.IsCanceled);
+            Assert.IsNull(Fetch(CHAR_A));
+        }
+
+        // ---------------------------------------------------------------- service
+
+        [Test]
+        public void CharacterPersistenceService_NullStore_ThrowsArgumentNullException()
+        {
+            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(null));
+        }
+
+        // The call itself must return (no synchronous throw): tick code passes it straight to Track (ADR-011).
+        private static void AssertFaultedNotSupported(Task task, string story)
+        {
+            Assert.IsNotNull(task);
+            Assert.IsTrue(task.IsFaulted, "the task is faulted, status " + task.Status);
+            Assert.IsInstanceOf<NotSupportedException>(task.Exception.InnerException);
+            StringAssert.Contains(story, task.Exception.InnerException.Message);
+        }
+
+        [Test]
+        public void CharacterPersistenceService_BeginPurchase_ReturnsFaultedTaskNamingStory011()
+        {
+            AssertFaultedNotSupported(Service.BeginPurchase(CHAR_A, default(PendingPurchaseRecord), CancellationToken.None), "Story 011");
+        }
+
+        [Test]
+        public void CharacterPersistenceService_CompletePurchase_ReturnsFaultedTaskNamingStory011()
+        {
+            AssertFaultedNotSupported(Service.CompletePurchase(1L, CancellationToken.None), "Story 011");
+        }
+
+        [Test]
+        public void CharacterPersistenceService_RefundPurchase_ReturnsFaultedTaskNamingStory011()
+        {
+            AssertFaultedNotSupported(Service.RefundPurchase(1L, CHAR_A, 10u, CancellationToken.None), "Story 011");
+        }
+
+        [Test]
+        public void CharacterPersistenceService_LoadOutstandingPurchases_ReturnsFaultedTaskNamingStory011()
+        {
+            AssertFaultedNotSupported(Service.LoadOutstandingPurchases(CHAR_A, CancellationToken.None), "Story 011");
+        }
+
+        // ---------------------------------------------------------------- rows are keyed by character
+
+        [Test]
+        public void InMemoryStore_TwoCharacters_AreKeptApart()
+        {
+            Insert(MakeRecord(CHAR_A, VERSION_FOUR));
+
+            Assert.IsNull(Fetch(CHAR_B), "a fetch for B must not return A's row");
+            Assert.AreEqual(0, Update(MakeRecord(CHAR_B, 0u), VERSION_FOUR), "an update for B must not hit A's row");
+            CharacterRecord b = MakeRecord(CHAR_B, 0u);
+            b.Level = OTHER_LEVEL;
+            Assert.IsTrue(Insert(b), "B has no row yet");
+
+            Assert.AreEqual(MADE_LEVEL, Fetch(CHAR_A).Level);
+            Assert.AreEqual(VERSION_FOUR, Fetch(CHAR_A).SaveVersion);
+            Assert.AreEqual(OTHER_LEVEL, Fetch(CHAR_B).Level);
+            Assert.AreEqual(CHAR_B, Fetch(CHAR_B).CharacterID);
+        }
+
+        [Test]
+        public void InMemoryStore_UpdateOneCharacter_LeavesTheOtherUnchanged()
+        {
+            Insert(MakeRecord(CHAR_A, 0u));
+            Insert(MakeRecord(CHAR_B, 0u));
+            CharacterRecord before = Fetch(CHAR_B);
+            CharacterRecord changed = MakeRecord(CHAR_A, 0u);
+            changed.Level = OTHER_LEVEL;
+
+            Assert.AreEqual(1, Update(changed, 0u));
+
+            AssertSame(before, Fetch(CHAR_B));
+            Assert.AreEqual(OTHER_LEVEL, Fetch(CHAR_A).Level);
+        }
+
+        // ---------------------------------------------------------------- version predicate, further cases
+
+        [Test]
+        public void InMemoryStore_UpdateWithExpectedVersionAboveStored_ReturnsZeroAndChangesNothing()
+        {
+            Insert(MakeRecord(CHAR_A, VERSION_FOUR));
+            CharacterRecord before = Fetch(CHAR_A);
+            _now = T2;
+
+            Assert.AreEqual(0, Update(MakeRecord(CHAR_A, 0u), VERSION_NINE));
+
+            AssertSame(before, Fetch(CHAR_A));
+        }
+
+        // ---------------------------------------------------------------- isolation of the inventory arrays
+
+        [Test]
+        public void InMemoryStore_CallerMutatesInventoryArraysAfterInsert_StoredRecordUnchanged()
+        {
+            CharacterRecord r = MakeRecord(CHAR_A, 0u);
+            Insert(r);
+
+            r.InventorySlots[0] = new ItemID(OTHER_ITEM);
+            r.InventoryItemCounts[0] = OTHER_COUNT;
+            r.InventoryEnhancementLevels[0] = OTHER_ENHANCEMENT;
+
+            CharacterRecord fetched = Fetch(CHAR_A);
+            Assert.AreEqual(MADE_INVENTORY_ITEM, fetched.InventorySlots[0].RawValue);
+            Assert.AreEqual(MADE_INVENTORY_COUNT, fetched.InventoryItemCounts[0]);
+            Assert.AreEqual(MADE_INVENTORY_ENHANCEMENT, fetched.InventoryEnhancementLevels[0]);
+        }
+
+        [Test]
+        public void InMemoryStore_CallerMutatesFetchedInventoryArrays_SecondFetchShowsStoredValues()
+        {
+            Insert(MakeRecord(CHAR_A, 0u));
+            CharacterRecord first = Fetch(CHAR_A);
+
+            first.InventorySlots[0] = new ItemID(OTHER_ITEM);
+            first.InventoryItemCounts[0] = OTHER_COUNT;
+            first.InventoryEnhancementLevels[0] = OTHER_ENHANCEMENT;
+
+            CharacterRecord second = Fetch(CHAR_A);
+            Assert.AreEqual(MADE_INVENTORY_ITEM, second.InventorySlots[0].RawValue);
+            Assert.AreEqual(MADE_INVENTORY_COUNT, second.InventoryItemCounts[0]);
+            Assert.AreEqual(MADE_INVENTORY_ENHANCEMENT, second.InventoryEnhancementLevels[0]);
+        }
+
+        // ---------------------------------------------------------------- source rules
+
+        private static string[] CodeLines(string fileName)
+        {
+            // Application.dataPath is <repo>/Assets; the sources live in <repo>/src.
+            string repo = Directory.GetParent(UnityEngine.Application.dataPath).FullName;
+            string path = Path.Combine(repo, "src", "ServerLogic", "CharacterPersistence", fileName);
+            return File.ReadAllLines(path).Where(line => !line.TrimStart().StartsWith("//")).ToArray();
+        }
+
+        [Test]
+        public void PersistenceSources_NeverReadTheSystemClock()
+        {
+            string repo = Directory.GetParent(UnityEngine.Application.dataPath).FullName;
+            string folder = Path.Combine(repo, "src", "ServerLogic", "CharacterPersistence");
+            string[] files = Directory.GetFiles(folder, "*.cs");
+            Assert.IsNotEmpty(files, "no source found under " + folder);
+
+            foreach (string file in files)
+            {
+                foreach (string line in CodeLines(Path.GetFileName(file)))
+                {
+                    Assert.IsFalse(line.Contains("DateTime.UtcNow") || line.Contains("DateTime.Now"),
+                        Path.GetFileName(file) + " reads the system clock: " + line.Trim());
+                }
+            }
+        }
+
+        [Test]
+        public void CharacterPersistenceService_HasNoLevelOneLiteral()
+        {
+            // Distinctive CR-CP-9 values; the service must take them from CharacterStubDefaults.
+            string[] literals = { "400", "220", "0.065", "1.030", "1.03f" };
+
+            foreach (string line in CodeLines("CharacterPersistenceService.cs"))
+            {
+                foreach (string literal in literals)
+                {
+                    Assert.IsFalse(line.Contains(literal), "CharacterPersistenceService.cs has the literal " + literal + ": " + line.Trim());
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// The contract fixture against <see cref="InMemoryCharacterRecordStore"/>, plus the tests that cannot run against a
+    /// database store: they assert the injected clock's exact value, drive the in-memory fault controls
+    /// (<c>FailNext</c>, <c>HoldNext</c>, <c>NeverCompleteNext</c>, <c>OverwriteSaveVersion</c>), or rely on the in-memory
+    /// store's <c>uint</c> wrap-around of <c>SaveVersion</c>. Their bodies are Story 002's, unchanged.
+    /// </summary>
+    [TestFixture]
+    internal sealed class CharacterPersistence_RecordStore_Tests : CharacterRecordStoreContractTests
+    {
+        private InMemoryCharacterRecordStore _store;
+
+        protected override ICharacterRecordStore CreateStore()
+        {
+            _store = new InMemoryCharacterRecordStore(() => _now);
+            return _store;
+        }
+
+        // ---------------------------------------------------------------- divergence from the database store
+
+        [Test]
+        public void InMemoryStore_InsertWithNegativeInventoryCount_AcceptsItAndReturnsItUnchanged()
+        {
+            // Pins the divergence: NpgsqlCharacterRecordStore rejects a negative count with ArgumentException
+            // (NpgsqlStore_InsertWithNegativeInventoryCount_FaultsWithArgumentExceptionAndWritesNothing); the in-memory store does not.
+            CharacterRecord r = MakeRecord(CHAR_A, 0u);
+            r.InventoryItemCounts[0] = -1;
+
+            Assert.IsTrue(Insert(r));
+
+            Assert.AreEqual(-1, Fetch(CHAR_A).InventoryItemCounts[0]);
+        }
+
+        // ---------------------------------------------------------------- insert / fetch
+
+        [Test]
+        public void InMemoryStore_Insert_StoresRecordWithGivenVersionAndStampsBothTimestamps()
+        {
+            CharacterRecord r = MakeRecord(CHAR_A, VERSION_FOUR);
+
+            Assert.IsTrue(Insert(r));
+
+            CharacterRecord fetched = Fetch(CHAR_A);
+            Assert.AreEqual(VERSION_FOUR, fetched.SaveVersion);
+            Assert.AreEqual(T1, fetched.CreatedAtUtc);
+            Assert.AreEqual(T1, fetched.LastSavedAtUtc);
+            Assert.AreEqual(MADE_GOLD, fetched.GoldBalance);
+            Assert.AreEqual(MADE_GEAR_ITEM, fetched.GearSlots[GEAR_INDEX].ItemId.RawValue);
+        }
+
+        [Test]
+        public void InMemoryStore_InsertSameIdTwice_ReturnsFalseAndKeepsFirstRecord()
+        {
+            Insert(MakeRecord(CHAR_A, VERSION_FOUR));
+            CharacterRecord second = MakeRecord(CHAR_A, 0u);
+            second.GoldBalance = 1u;
+            _now = T2;
+
+            Assert.IsFalse(Insert(second));
+
+            CharacterRecord fetched = Fetch(CHAR_A);
+            Assert.AreEqual(MADE_GOLD, fetched.GoldBalance);
+            Assert.AreEqual(VERSION_FOUR, fetched.SaveVersion);
+            Assert.AreEqual(T1, fetched.LastSavedAtUtc);
+        }
+
+        // ---------------------------------------------------------------- update
+
+        [Test]
+        public void InMemoryStore_UpdateWithMatchingVersion_IncrementsVersionAndStampsLastSaved()
+        {
+            Insert(MakeRecord(CHAR_A, VERSION_FOUR));
+            _now = T2;
+            CharacterRecord incoming = MakeRecord(CHAR_A, 99u);
+            incoming.Level = 13;
+            incoming.CreatedAtUtc = T2;
+
+            Assert.AreEqual(1, Update(incoming, VERSION_FOUR));
+
+            CharacterRecord fetched = Fetch(CHAR_A);
+            Assert.AreEqual(VERSION_FOUR + 1u, fetched.SaveVersion);
+            Assert.AreEqual(T2, fetched.LastSavedAtUtc);
+            Assert.AreEqual(T1, fetched.CreatedAtUtc);
+            Assert.AreEqual(13, fetched.Level);
+        }
+
+        // A database BIGINT does not wrap: save_version + 1 at uint.MaxValue is 4294967296, which reads back as a corrupt record.
+        [Test]
+        public void InMemoryStore_UpdateAtMaxVersion_WrapsToZero()
+        {
+            Insert(MakeRecord(CHAR_A, uint.MaxValue));
+
+            Assert.AreEqual(1, Update(MakeRecord(CHAR_A, 0u), uint.MaxValue));
+
+            Assert.AreEqual(0u, Fetch(CHAR_A).SaveVersion);
+        }
+
+        // ---------------------------------------------------------------- cancellation
 
         [Test]
         public void InMemoryStore_CancelledCall_DoesNotConsumePendingFailNext()
@@ -451,19 +800,12 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             Assert.IsFalse(_store.OverwriteSaveVersion(CHAR_A, VERSION_NINE));
         }
 
-        // ---------------------------------------------------------------- argument checks
+        // ---------------------------------------------------------------- argument checks and the clock
 
         [Test]
         public void InMemoryStore_NullClock_ThrowsArgumentNullException()
         {
             Assert.Throws<ArgumentNullException>(() => new InMemoryCharacterRecordStore(null));
-        }
-
-        [Test]
-        public void InMemoryStore_NullRecord_ThrowsArgumentNullException()
-        {
-            Assert.Throws<ArgumentNullException>(() => _store.InsertAsync(null, CancellationToken.None));
-            Assert.Throws<ArgumentNullException>(() => _store.UpdateAsync(null, 0u, CancellationToken.None));
         }
 
         [Test]
@@ -479,236 +821,6 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             Task<CharacterRecord> fetch = store.FetchAsync(CHAR_A, CancellationToken.None);
             Assert.IsTrue(fetch.IsCompleted);
             Assert.IsNull(fetch.Result);
-        }
-
-        [Test]
-        public void ICharacterRecordStore_HasExactlyThreeMethods()
-        {
-            MethodInfo[] methods = typeof(ICharacterRecordStore).GetMethods();
-            Assert.AreEqual(3, methods.Length);
-            CollectionAssert.AreEquivalent(new[] { "FetchAsync", "InsertAsync", "UpdateAsync" }, methods.Select(m => m.Name).ToArray());
-        }
-
-        // ---------------------------------------------------------------- CharacterStubDefaults
-
-        [Test]
-        public void CharacterStubDefaults_Constants_EqualCrCp9Values()
-        {
-            Assert.AreEqual(1, CharacterStubDefaults.LEVEL);
-            Assert.AreEqual(0, CharacterStubDefaults.EXPERIENCE);
-            Assert.AreEqual(0, CharacterStubDefaults.HELD_FREE_POINTS);
-            Assert.AreEqual(10, CharacterStubDefaults.BASE_ATTRIBUTE);
-            Assert.AreEqual(400, CharacterStubDefaults.MAX_HP);
-            Assert.AreEqual(220, CharacterStubDefaults.MAX_MP);
-            Assert.AreEqual(30, CharacterStubDefaults.ATTACK_POWER);
-            Assert.AreEqual(20, CharacterStubDefaults.DEFENSE);
-            Assert.AreEqual(4, CharacterStubDefaults.MAGIC_DEFENSE);
-            Assert.AreEqual(0.065f, CharacterStubDefaults.CRIT_CHANCE);
-            Assert.AreEqual(1.5f, CharacterStubDefaults.CRIT_MULTIPLIER);
-            Assert.AreEqual(3.0f, CharacterStubDefaults.ATTACK_RANGE);
-            Assert.AreEqual(1.030f, CharacterStubDefaults.ATTACK_SPEED_MULTIPLIER);
-            Assert.AreEqual(5.0f, CharacterStubDefaults.MOVEMENT_SPEED);
-            Assert.AreEqual(400f, CharacterStubDefaults.CURRENT_HP);
-            Assert.AreEqual(220f, CharacterStubDefaults.CURRENT_MP);
-            Assert.AreEqual(0u, CharacterStubDefaults.GOLD_BALANCE);
-            Assert.AreEqual(0u, CharacterStubDefaults.GOLD_VERSION);
-            Assert.AreEqual(0u, CharacterStubDefaults.SAVE_VERSION);
-        }
-
-        [Test]
-        public void CharacterStubDefaults_CreateRecord_SetsEveryField()
-        {
-            CharacterRecord r = CharacterStubDefaults.CreateRecord(ACCOUNT_A, CHAR_A, 2);
-
-            Assert.AreEqual(CHAR_A, r.CharacterID);
-            Assert.AreEqual(ACCOUNT_A, r.AccountID);
-            Assert.AreEqual(string.Empty, r.CharacterName);
-            Assert.AreEqual((byte)2, r.ClassType);
-            Assert.AreEqual(1, r.Level);
-            Assert.AreEqual(0, r.Experience);
-            Assert.AreEqual(0, r.HeldFreePoints);
-            Assert.AreEqual(10, r.STR);
-            Assert.AreEqual(10, r.DEX);
-            Assert.AreEqual(10, r.VIT);
-            Assert.AreEqual(10, r.INT);
-            Assert.AreEqual(400, r.MaxHP);
-            Assert.AreEqual(220, r.MaxMP);
-            Assert.AreEqual(30, r.AttackPower);
-            Assert.AreEqual(20, r.Defense);
-            Assert.AreEqual(4, r.MagicDefense);
-            Assert.AreEqual(0.065f, r.CritChance);
-            Assert.AreEqual(1.5f, r.CritMultiplier);
-            Assert.AreEqual(3.0f, r.AttackRange);
-            Assert.AreEqual(1.030f, r.AttackSpeedMultiplier);
-            Assert.AreEqual(5.0f, r.MovementSpeed);
-            Assert.AreEqual(400f, r.CurrentHP);
-            Assert.AreEqual(220f, r.CurrentMP);
-            Assert.AreEqual(0u, r.GoldBalance);
-            Assert.AreEqual(0u, r.GoldVersion);
-            Assert.AreEqual(ZoneID.Invalid, r.LastZoneID);
-            Assert.AreEqual(0u, r.SaveVersion);
-            Assert.AreEqual(default(DateTime), r.CreatedAtUtc);
-            Assert.AreEqual(default(DateTime), r.LastSavedAtUtc);
-            Assert.IsTrue(r.GearSlots.All(g => g.ItemId == ItemID.Invalid && g.EnhancementLevel == 0));
-            Assert.IsTrue(r.InventorySlots.All(i => i == ItemID.Invalid));
-            Assert.IsTrue(r.InventoryItemCounts.All(c => c == 0));
-            Assert.IsTrue(r.InventoryEnhancementLevels.All(l => l == 0));
-        }
-
-        // ---------------------------------------------------------------- CreateStub
-
-        [TestCase((byte)0)]
-        [TestCase((byte)1)]
-        [TestCase((byte)255)]
-        public void CreateStub_NewCharacter_StoresLevelOneRecordWithGivenClassByte(byte classType)
-        {
-            Task t = _service.CreateStub(ACCOUNT_A, CHAR_A, classType, CancellationToken.None);
-
-            Assert.IsTrue(t.IsCompleted);
-            Assert.AreEqual(TaskStatus.RanToCompletion, t.Status);
-            // One baseline for every class byte: the stats do not depend on the class (CR-CP-9).
-            CharacterRecord expected = CharacterStubDefaults.CreateRecord(ACCOUNT_A, CHAR_A, 0);
-            expected.ClassType = classType;
-            expected.CreatedAtUtc = T1;
-            expected.LastSavedAtUtc = T1;
-            AssertSame(expected, Fetch(CHAR_A));
-        }
-
-        [Test]
-        public void CreateStub_ExistingId_FaultsWithInvalidOperationExceptionAndKeepsRecord()
-        {
-            Insert(MakeRecord(CHAR_A, 0u));
-
-            Task t = _service.CreateStub(ACCOUNT_A, CHAR_A, 1, CancellationToken.None);
-
-            Assert.IsTrue(t.IsFaulted);
-            Assert.IsInstanceOf<InvalidOperationException>(t.Exception.InnerException);
-            Assert.AreEqual(MADE_GOLD, Fetch(CHAR_A).GoldBalance);
-        }
-
-        [Test]
-        public void CreateStub_StoreFails_FaultsWithStoreException()
-        {
-            var e = new InvalidOperationException("db down");
-            _store.FailNext(e);
-
-            Task t = _service.CreateStub(ACCOUNT_A, CHAR_A, 1, CancellationToken.None);
-
-            Assert.IsTrue(t.IsFaulted);
-            Assert.AreSame(e, t.Exception.InnerException);
-            Assert.IsNull(Fetch(CHAR_A));
-        }
-
-        [Test]
-        public void CreateStub_CancelledToken_IsCancelled()
-        {
-            Task t = _service.CreateStub(ACCOUNT_A, CHAR_A, 1, CancelledToken());
-
-            Assert.IsTrue(t.IsCanceled);
-            Assert.IsNull(Fetch(CHAR_A));
-        }
-
-        [Test]
-        public void CreateStub_StoreCallHeld_IsIncompleteUntilTheStoreIsReleased()
-        {
-            Action release = _store.HoldNext();
-
-            Task t = _service.CreateStub(ACCOUNT_A, CHAR_A, 1, CancellationToken.None);
-
-            Assert.IsFalse(t.IsCompleted, "CreateStub must not complete before its store call does");
-            Assert.IsNull(Fetch(CHAR_A));
-            release();
-            // The store writes on release; CreateStub's own task finishes on a pool thread and is not waited for.
-            Assert.IsNotNull(Fetch(CHAR_A));
-        }
-
-        // ---------------------------------------------------------------- service
-
-        [Test]
-        public void CharacterPersistenceService_NullStore_ThrowsArgumentNullException()
-        {
-            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(null));
-        }
-
-        // The call itself must return (no synchronous throw): tick code passes it straight to Track (ADR-011).
-        private static void AssertFaultedNotSupported(Task task, string story)
-        {
-            Assert.IsNotNull(task);
-            Assert.IsTrue(task.IsFaulted, "the task is faulted, status " + task.Status);
-            Assert.IsInstanceOf<NotSupportedException>(task.Exception.InnerException);
-            StringAssert.Contains(story, task.Exception.InnerException.Message);
-        }
-
-        [Test]
-        public void CharacterPersistenceService_BeginPurchase_ReturnsFaultedTaskNamingStory011()
-        {
-            AssertFaultedNotSupported(_service.BeginPurchase(CHAR_A, default(PendingPurchaseRecord), CancellationToken.None), "Story 011");
-        }
-
-        [Test]
-        public void CharacterPersistenceService_CompletePurchase_ReturnsFaultedTaskNamingStory011()
-        {
-            AssertFaultedNotSupported(_service.CompletePurchase(1L, CancellationToken.None), "Story 011");
-        }
-
-        [Test]
-        public void CharacterPersistenceService_RefundPurchase_ReturnsFaultedTaskNamingStory011()
-        {
-            AssertFaultedNotSupported(_service.RefundPurchase(1L, CHAR_A, 10u, CancellationToken.None), "Story 011");
-        }
-
-        [Test]
-        public void CharacterPersistenceService_LoadOutstandingPurchases_ReturnsFaultedTaskNamingStory011()
-        {
-            AssertFaultedNotSupported(_service.LoadOutstandingPurchases(CHAR_A, CancellationToken.None), "Story 011");
-        }
-
-        // ---------------------------------------------------------------- rows are keyed by character
-
-        [Test]
-        public void InMemoryStore_TwoCharacters_AreKeptApart()
-        {
-            Insert(MakeRecord(CHAR_A, VERSION_FOUR));
-
-            Assert.IsNull(Fetch(CHAR_B), "a fetch for B must not return A's row");
-            Assert.AreEqual(0, Update(MakeRecord(CHAR_B, 0u), VERSION_FOUR), "an update for B must not hit A's row");
-            CharacterRecord b = MakeRecord(CHAR_B, 0u);
-            b.Level = OTHER_LEVEL;
-            Assert.IsTrue(Insert(b), "B has no row yet");
-
-            Assert.AreEqual(MADE_LEVEL, Fetch(CHAR_A).Level);
-            Assert.AreEqual(VERSION_FOUR, Fetch(CHAR_A).SaveVersion);
-            Assert.AreEqual(OTHER_LEVEL, Fetch(CHAR_B).Level);
-            Assert.AreEqual(CHAR_B, Fetch(CHAR_B).CharacterID);
-        }
-
-        [Test]
-        public void InMemoryStore_UpdateOneCharacter_LeavesTheOtherUnchanged()
-        {
-            Insert(MakeRecord(CHAR_A, 0u));
-            Insert(MakeRecord(CHAR_B, 0u));
-            CharacterRecord before = Fetch(CHAR_B);
-            CharacterRecord changed = MakeRecord(CHAR_A, 0u);
-            changed.Level = OTHER_LEVEL;
-
-            Assert.AreEqual(1, Update(changed, 0u));
-
-            AssertSame(before, Fetch(CHAR_B));
-            Assert.AreEqual(OTHER_LEVEL, Fetch(CHAR_A).Level);
-        }
-
-        // ---------------------------------------------------------------- version predicate, further cases
-
-        [Test]
-        public void InMemoryStore_UpdateWithExpectedVersionAboveStored_ReturnsZeroAndChangesNothing()
-        {
-            Insert(MakeRecord(CHAR_A, VERSION_FOUR));
-            CharacterRecord before = Fetch(CHAR_A);
-            _now = T2;
-
-            Assert.AreEqual(0, Update(MakeRecord(CHAR_A, 0u), VERSION_NINE));
-
-            AssertSame(before, Fetch(CHAR_A));
         }
 
         [Test]
@@ -745,38 +857,50 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             Assert.AreEqual(VERSION_FOUR, fetch.Result.SaveVersion);
         }
 
-        // ---------------------------------------------------------------- isolation of the inventory arrays
+        // ---------------------------------------------------------------- CreateStub
 
-        [Test]
-        public void InMemoryStore_CallerMutatesInventoryArraysAfterInsert_StoredRecordUnchanged()
+        [TestCase((byte)0)]
+        [TestCase((byte)1)]
+        [TestCase((byte)255)]
+        public void CreateStub_NewCharacter_StoresLevelOneRecordWithGivenClassByte(byte classType)
         {
-            CharacterRecord r = MakeRecord(CHAR_A, 0u);
-            Insert(r);
+            Task t = Service.CreateStub(ACCOUNT_A, CHAR_A, classType, CancellationToken.None);
 
-            r.InventorySlots[0] = new ItemID(OTHER_ITEM);
-            r.InventoryItemCounts[0] = OTHER_COUNT;
-            r.InventoryEnhancementLevels[0] = OTHER_ENHANCEMENT;
-
-            CharacterRecord fetched = Fetch(CHAR_A);
-            Assert.AreEqual(MADE_INVENTORY_ITEM, fetched.InventorySlots[0].RawValue);
-            Assert.AreEqual(MADE_INVENTORY_COUNT, fetched.InventoryItemCounts[0]);
-            Assert.AreEqual(MADE_INVENTORY_ENHANCEMENT, fetched.InventoryEnhancementLevels[0]);
+            Assert.IsTrue(t.IsCompleted);
+            Assert.AreEqual(TaskStatus.RanToCompletion, t.Status);
+            // One baseline for every class byte: the stats do not depend on the class (CR-CP-9).
+            CharacterRecord expected = CharacterStubDefaults.CreateRecord(ACCOUNT_A, CHAR_A, 0);
+            expected.ClassType = classType;
+            expected.CreatedAtUtc = T1;
+            expected.LastSavedAtUtc = T1;
+            AssertSame(expected, Fetch(CHAR_A));
         }
 
         [Test]
-        public void InMemoryStore_CallerMutatesFetchedInventoryArrays_SecondFetchShowsStoredValues()
+        public void CreateStub_StoreFails_FaultsWithStoreException()
         {
-            Insert(MakeRecord(CHAR_A, 0u));
-            CharacterRecord first = Fetch(CHAR_A);
+            var e = new InvalidOperationException("db down");
+            _store.FailNext(e);
 
-            first.InventorySlots[0] = new ItemID(OTHER_ITEM);
-            first.InventoryItemCounts[0] = OTHER_COUNT;
-            first.InventoryEnhancementLevels[0] = OTHER_ENHANCEMENT;
+            Task t = Service.CreateStub(ACCOUNT_A, CHAR_A, 1, CancellationToken.None);
 
-            CharacterRecord second = Fetch(CHAR_A);
-            Assert.AreEqual(MADE_INVENTORY_ITEM, second.InventorySlots[0].RawValue);
-            Assert.AreEqual(MADE_INVENTORY_COUNT, second.InventoryItemCounts[0]);
-            Assert.AreEqual(MADE_INVENTORY_ENHANCEMENT, second.InventoryEnhancementLevels[0]);
+            Assert.IsTrue(t.IsFaulted);
+            Assert.AreSame(e, t.Exception.InnerException);
+            Assert.IsNull(Fetch(CHAR_A));
+        }
+
+        [Test]
+        public void CreateStub_StoreCallHeld_IsIncompleteUntilTheStoreIsReleased()
+        {
+            Action release = _store.HoldNext();
+
+            Task t = Service.CreateStub(ACCOUNT_A, CHAR_A, 1, CancellationToken.None);
+
+            Assert.IsFalse(t.IsCompleted, "CreateStub must not complete before its store call does");
+            Assert.IsNull(Fetch(CHAR_A));
+            release();
+            // The store writes on release; CreateStub's own task finishes on a pool thread and is not waited for.
+            Assert.IsNotNull(Fetch(CHAR_A));
         }
 
         // ---------------------------------------------------------------- fault controls on fetch and update
@@ -918,49 +1042,6 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
 
             Assert.IsFalse(t.IsCompleted);
             Assert.IsNull(Fetch(CHAR_A));
-        }
-
-        // ---------------------------------------------------------------- source rules
-
-        private static string[] CodeLines(string fileName)
-        {
-            // Application.dataPath is <repo>/Assets; the sources live in <repo>/src.
-            string repo = Directory.GetParent(UnityEngine.Application.dataPath).FullName;
-            string path = Path.Combine(repo, "src", "ServerLogic", "CharacterPersistence", fileName);
-            return File.ReadAllLines(path).Where(line => !line.TrimStart().StartsWith("//")).ToArray();
-        }
-
-        [Test]
-        public void PersistenceSources_NeverReadTheSystemClock()
-        {
-            string repo = Directory.GetParent(UnityEngine.Application.dataPath).FullName;
-            string folder = Path.Combine(repo, "src", "ServerLogic", "CharacterPersistence");
-            string[] files = Directory.GetFiles(folder, "*.cs");
-            Assert.IsNotEmpty(files, "no source found under " + folder);
-
-            foreach (string file in files)
-            {
-                foreach (string line in CodeLines(Path.GetFileName(file)))
-                {
-                    Assert.IsFalse(line.Contains("DateTime.UtcNow") || line.Contains("DateTime.Now"),
-                        Path.GetFileName(file) + " reads the system clock: " + line.Trim());
-                }
-            }
-        }
-
-        [Test]
-        public void CharacterPersistenceService_HasNoLevelOneLiteral()
-        {
-            // Distinctive CR-CP-9 values; the service must take them from CharacterStubDefaults.
-            string[] literals = { "400", "220", "0.065", "1.030", "1.03f" };
-
-            foreach (string line in CodeLines("CharacterPersistenceService.cs"))
-            {
-                foreach (string literal in literals)
-                {
-                    Assert.IsFalse(line.Contains(literal), "CharacterPersistenceService.cs has the literal " + literal + ": " + line.Trim());
-                }
-            }
         }
     }
 }

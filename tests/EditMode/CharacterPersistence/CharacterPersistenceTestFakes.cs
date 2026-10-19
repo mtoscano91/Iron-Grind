@@ -49,10 +49,16 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             return _inner.InsertAsync(record, ct);
         }
 
+        /// <summary>
+        /// When true the update ignores its token, as a commit that wins against the service's write-timeout cancel
+        /// (Story 014: the service cancels the store's token at the timeout).
+        /// </summary>
+        public bool IgnoreUpdateToken { get; set; }
+
         public System.Threading.Tasks.Task<int> UpdateAsync(CharacterRecord record, uint expectedSaveVersion, System.Threading.CancellationToken ct)
         {
             UpdateCount++;
-            return _inner.UpdateAsync(record, expectedSaveVersion, ct);
+            return _inner.UpdateAsync(record, expectedSaveVersion, IgnoreUpdateToken ? System.Threading.CancellationToken.None : ct);
         }
     }
 
