@@ -865,6 +865,23 @@ namespace IronGrind.Tests.EditMode.Networking
         }
 
         [Test]
+        public void test_listener_failure_log_drops_control_characters_and_names_the_base_socket_error()
+        {
+            // VR-3 first run: Mono's Winsock message ends with a NUL, and Unity's log stopped there, losing the backoff.
+            var script = new ListenerScript();
+            var socket = new System.Net.Sockets.SocketException((int)System.Net.Sockets.SocketError.ConnectionRefused);
+            FailOpen(script.Add(), new IOException("connect failed\0", socket));
+            script.Add().StopOnWaitNumber(1);
+            NewListener(script);
+            LogAssert.Expect(LogType.Warning, new Regex(
+                @"ConnectionLost: consecutiveFailures=1 - IOException: connect failed \(base: SocketException: [^\x00-\x1F]* socketError=ConnectionRefused\); reconnecting in 500 ms\.$"));
+
+            script.Listener.RunLoop();
+
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
         public void test_listener_a_fifth_failure_split_by_a_successful_listen_logs_no_error()
         {
             var script = new ListenerScript();

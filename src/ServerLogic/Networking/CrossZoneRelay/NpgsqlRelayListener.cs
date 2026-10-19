@@ -1,4 +1,5 @@
 using System;
+using System.Net.Sockets;
 using System.Threading;
 using Npgsql;
 using UnityEngine;
@@ -307,7 +308,7 @@ namespace IronGrind.Networking
 
                 if (_stopRequested)
                 {
-                    Debug.Log($"{LOG_PREFIX} FailureAfterStop: {failure.GetType().Name}: {failure.Message}; the listener is stopping, no reconnect.");
+                    Debug.Log($"{LOG_PREFIX} FailureAfterStop: {failure.GetType().Name}: {LogSafe(failure.Message)}{DescribeBaseCause(failure)}; the listener is stopping, no reconnect.");
                     break;
                 }
 
@@ -315,11 +316,11 @@ namespace IronGrind.Networking
                 int delayMs = Math.Min(backoffMs, _reconnectMaxBackoffMs);
                 if (consecutiveFailures == _reconnectAlertAfter)
                 {
-                    Debug.LogError($"{LOG_PREFIX} ReconnectAlert: {consecutiveFailures} consecutive failures - {failure.GetType().Name}: {failure.Message}; still retrying in {delayMs} ms. Cross-zone messages are being lost.");
+                    Debug.LogError($"{LOG_PREFIX} ReconnectAlert: {consecutiveFailures} consecutive failures - {failure.GetType().Name}: {LogSafe(failure.Message)}{DescribeBaseCause(failure)}; still retrying in {delayMs} ms. Cross-zone messages are being lost.");
                 }
                 else
                 {
-                    Debug.LogWarning($"{LOG_PREFIX} ConnectionLost: consecutiveFailures={consecutiveFailures} - {failure.GetType().Name}: {failure.Message}; reconnecting in {delayMs} ms.");
+                    Debug.LogWarning($"{LOG_PREFIX} ConnectionLost: consecutiveFailures={consecutiveFailures} - {failure.GetType().Name}: {LogSafe(failure.Message)}{DescribeBaseCause(failure)}; reconnecting in {delayMs} ms.");
                 }
 
                 if (_backoffWait(delayMs, _stopSignal))
@@ -346,6 +347,40 @@ namespace IronGrind.Networking
         private void OnNotification(string payload)
         {
             _receiver.OnPayload(payload);
+        }
+
+        // The innermost exception and, for a socket failure, its error code: Npgsql wraps both in
+        // "Exception while reading from stream", which alone does not tell a timeout from a lost server (VR-1).
+        private static string DescribeBaseCause(Exception failure)
+        {
+            Exception cause = failure.GetBaseException();
+            if (ReferenceEquals(cause, failure))
+            {
+                return string.Empty;
+            }
+
+            var socket = cause as SocketException;
+            string code = socket == null ? string.Empty : $" socketError={socket.SocketErrorCode}";
+            return $" (base: {cause.GetType().Name}: {LogSafe(cause.Message)}{code})";
+        }
+
+        // Unity's native log stops at a NUL character, and Mono's Winsock messages end with one (VR-3 first run: the
+        // rest of the line, backoff included, was lost). Control characters are dropped and the text trimmed.
+        private static string LogSafe(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return string.Empty;
+            }
+
+            var builder = new System.Text.StringBuilder(text.Length);
+            for (int i = 0; i < text.Length; i++)
+            {
+                char c = text[i];
+                builder.Append(char.IsControl(c) ? ' ' : c);
+            }
+
+            return builder.ToString().Trim();
         }
 
         private static void DisposeQuietly(IRelayListenerConnection connection)

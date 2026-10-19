@@ -106,9 +106,10 @@ namespace IronGrind.Networking
                 _inbox = new CrossZoneRelayInbox(allowlist.LargestMaxBodyBytes);
                 var receiver = new CrossZoneRelayReceiver(allowlist, new LoggingInbox(_inbox, _zone), origin);
                 var publisher = new NpgsqlRelayPublisher(_dataSource, _queue, origin);
-                _broadcaster = new ServerWideBroadcaster(new LoggingSink(_zone), publisher, allowlist);
+                _broadcaster = new ServerWideBroadcaster(new LoggingSink(_zone), new TimingPublisher(publisher, _zone), allowlist);
                 _handler = new RelayHandler(_zone, _mainThreadId);
 
+                WarmUpDataSource();
                 if (hold > 0)
                 {
                     HoldPoolConnections(connectionString, hold);
@@ -127,6 +128,25 @@ namespace IronGrind.Networking
 
             _nextPublishAt = Time.realtimeSinceStartupAsDouble + Math.Max(1, _publishIntervalSec);
             _summaryWatch.Start();
+        }
+
+        // User decision 2026-10-19 (VR-1 run 2): the first publish of a fresh process cost 58 ms on the tick (first
+        // physical open with SCRAM authentication, first Mono JIT of the Npgsql command path). Before the first tick,
+        // run the publisher's own path once (CreateCommand + ExecuteNonQueryAsync) and wait for it here, at startup.
+        // The composition-root story must do the same before its tick loop starts.
+        private void WarmUpDataSource()
+        {
+            var watch = Stopwatch.StartNew();
+            // The publisher's exact statement and parameter types, on a channel nobody listens to. A plain SELECT 1 did
+            // not remove the spike (VR-3 attempt 2: 74.7 ms), so the first parameterized command is the suspect.
+            using (NpgsqlCommand command = _dataSource.CreateCommand("SELECT pg_notify(@channel, @payload)"))
+            {
+                command.Parameters.AddWithValue("channel", "irongrind_relay_warmup");
+                command.Parameters.AddWithValue("payload", "warmup");
+                command.ExecuteNonQueryAsync().GetAwaiter().GetResult();   // startup, not the tick
+            }
+
+            Debug.Log($"{LOG_PREFIX} WarmUp: zone={_zone} ms={watch.Elapsed.TotalMilliseconds:F1} (data source opened once before the first tick)");
         }
 
         private void HoldPoolConnections(string connectionString, int requested)
@@ -268,6 +288,31 @@ namespace IronGrind.Networking
         }
 
         /// <summary>Logs each local delivery; stands in for the zone's client outbox.</summary>
+        // Verification only: times NpgsqlRelayPublisher.Publish alone (no host logging inside the measurement), so a
+        // slow publish tick can be split into the publisher's own cost and the host's Debug.Log calls.
+        private sealed class TimingPublisher : ICrossZoneRelayPublisher
+        {
+            private readonly ICrossZoneRelayPublisher _inner;
+            private readonly string _zone;
+            private readonly Stopwatch _watch = new Stopwatch();
+            private int _count;
+
+            public TimingPublisher(ICrossZoneRelayPublisher inner, string zone)
+            {
+                _inner = inner;
+                _zone = zone;
+            }
+
+            public void Publish(ushort messageTypeId, ReadOnlySpan<byte> body)
+            {
+                _watch.Restart();
+                _inner.Publish(messageTypeId, body);
+                _watch.Stop();
+                _count++;
+                Debug.Log($"{LOG_PREFIX} PublishCallMs: zone={_zone} n={_count} ms={_watch.Elapsed.TotalMilliseconds:F3}");
+            }
+        }
+
         private sealed class LoggingSink : IZoneClientBroadcastSink
         {
             private readonly string _zone;
