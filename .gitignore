@@ -25,6 +25,9 @@ docs/consistency-failures.md
 # === Build Output ===
 build/
 builds/
+# Story 041 (Networking Core): manual Windows Server build of the relay verification host
+# (production/qa/evidence/networking-core-041-relay-verification.md). Explicit and case-exact.
+/Builds/
 bin/
 obj/
 out/
