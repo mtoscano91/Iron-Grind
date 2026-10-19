@@ -3,7 +3,7 @@
 > **Layer**: Core
 > **GDD**: design/gdd/character-persistence.md
 > **Architecture Module**: Character Persistence — `CharacterPersistenceService : ICharacterPersistence` (async), PostgreSQL via Npgsql and Dapper
-> **Status**: In Progress (created 2026-10-12; 16 stories written 2026-10-12 — 11 Complete (001–004, 006–010, 012, 017 — 017 added and Complete 2026-10-16 for TD-070 / TD-060; 012 Complete 2026-10-19), 2 Not Started pending `/story-readiness` (011, 013), 4 Blocked (005, 014–016))
+> **Status**: In Progress (created 2026-10-12; 16 stories written 2026-10-12 — 11 Complete (001–004, 006–010, 012, 017 — 017 added and Complete 2026-10-16 for TD-070 / TD-060; 012 Complete 2026-10-19), 1 Ready (013), 1 Not Started pending `/story-readiness` (011), 4 Blocked (005, 014–016))
 > **Stories**: 16 stories created 2026-10-12 (001–016); Story 017 added 2026-10-16
 > **Manifest Version**: 2026-10-09
 
@@ -87,7 +87,7 @@ This epic is complete when:
 | 010 | [Session-End Triggers — Clean Logout and TTL Expiry](story-010-session-end-triggers.md) | Integration | Complete (2026-10-15; 28 test cases, EditMode 2865 / 2865; COMPLETE WITH NOTES) | ADR-011 |
 | 011 | [`PendingPurchase` Lifecycle on the Store Seam](story-011-pending-purchase-lifecycle.md) | Logic | Not Started (2026-10-12; 3 open decisions; no caller yet) | ADR-001, ADR-006 |
 | 012 | [Npgsql and Dapper in the Project](story-012-npgsql-and-dapper-in-the-project.md) | Integration | Complete (2026-10-19; COMPLETE WITH NOTES; 11 DLLs, Editor round trip PASS against a portable PostgreSQL 16.15 — no Docker on the dev machine; build items (b)–(d) carried by the epic; IL2CPP / Dapper risk TD-073; EditMode 3091: 3090 passed, 1 skipped) | ADR-006, ADR-012 |
-| 013 | [SQL Migrations for `character_records` and `pending_purchases`](story-013-sql-migrations.md) | Config/Data | Not Started (2026-10-19: unblocked — a local PostgreSQL 16.15 exists since Story 012; run `/story-readiness`) | ADR-006 |
+| 013 | [SQL Migrations for `character_records` and `pending_purchases`](story-013-sql-migrations.md) | Config/Data | Ready (2026-10-19 `/story-readiness`; 2.5 h) | ADR-006 |
 | 014 | [The Npgsql Character Record Store](story-014-npgsql-character-record-store.md) | Integration | Blocked (012, 013) | ADR-006, ADR-011 |
 | 015 | [The Npgsql Pending-Purchase Store](story-015-npgsql-pending-purchase-store.md) | Integration | Blocked (012–014) | ADR-006, ADR-001 |
 | 016 | [The Real-Database Verification Run](story-016-real-database-verification-run.md) | Integration | Blocked (012–015 and Part A) | ADR-006 |

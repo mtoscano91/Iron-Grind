@@ -1,7 +1,7 @@
 # ADR-006: Persistence Layer — PostgreSQL + Npgsql + Dapper
 
 ## Status
-Accepted (2026-06-27) — amended 2026-10-01 (Amendment 1: `inventory_slots` entry gains `enhancement_level`; see Amendments)
+Accepted (2026-06-27) — amended 2026-10-01 (Amendment 1: `inventory_slots` entry gains `enhancement_level`) and 2026-10-19 (Amendment 2: `last_zone_id` is `BIGINT`); see Amendments
 
 ## Date
 2026-06-27
@@ -181,7 +181,7 @@ CREATE TABLE character_records (
     current_mp              REAL         NOT NULL DEFAULT 220,
     gold_balance            BIGINT       NOT NULL DEFAULT 0,
     gold_version            BIGINT       NOT NULL DEFAULT 0,
-    last_zone_id            INTEGER      NOT NULL DEFAULT 0,
+    last_zone_id            BIGINT       NOT NULL DEFAULT 0,
     gear_slots              JSONB        NOT NULL DEFAULT '[]',
     inventory_slots         JSONB        NOT NULL DEFAULT '[]',
     save_version            BIGINT       NOT NULL DEFAULT 0,
@@ -190,7 +190,7 @@ CREATE TABLE character_records (
 );
 ```
 
-> **Type mapping notes**: C# `uint` fields (CharacterID, AccountID, GoldBalance, GoldVersion, SaveVersion) map to `BIGINT` to hold the full unsigned 32-bit range without overflow. `int_stat` avoids the SQL reserved word `INT`. `gear_slots` JSONB encodes `[{"item_id": N, "enhancement_level": M}, null, ...]` (7 slots, null = empty). `inventory_slots` JSONB encodes `[{"item_id": N, "count": C, "enhancement_level": M}, null, ...]` (20 slots, combining the GDD's parallel `InventorySlots[]` + `InventoryItemCounts[]` + `InventoryEnhancementLevels[]` arrays; `enhancement_level` added by Amendment 1, 2026-10-01 — Character Persistence translates at load/save boundaries per CR-CP-3 step 5 and CR-CP-10 step 4).
+> **Type mapping notes**: C# `uint` fields (CharacterID, AccountID, GoldBalance, GoldVersion, LastZoneID, SaveVersion) map to `BIGINT` to hold the full unsigned 32-bit range without overflow. `int_stat` avoids the SQL reserved word `INT`. `gear_slots` JSONB encodes `[{"item_id": N, "enhancement_level": M}, null, ...]` (7 slots, null = empty). `inventory_slots` JSONB encodes `[{"item_id": N, "count": C, "enhancement_level": M}, null, ...]` (20 slots, combining the GDD's parallel `InventorySlots[]` + `InventoryItemCounts[]` + `InventoryEnhancementLevels[]` arrays; `enhancement_level` added by Amendment 1, 2026-10-01 — Character Persistence translates at load/save boundaries per CR-CP-3 step 5 and CR-CP-10 step 4).
 
 #### pending_purchases DDL
 
@@ -317,6 +317,18 @@ Migrations are applied manually before server deployment for MVP. Automated migr
 **Compatibility / migration:** no production database exists yet, so no data migration is needed. The deserializer must treat a missing `enhancement_level` key as 0 so that any development rows written with the old shape still load. The Inventory System validates the loaded value (above the maximum → clamped; non-zero on a stack → 0; both with a warning).
 
 **Performance:** negligible — at most 20 small additional integers per character row; no effect on the Decision 4 latency budget.
+
+### Amendment 2 (2026-10-19) — `last_zone_id` is `BIGINT`
+
+**Change:** the `character_records.last_zone_id` column is `BIGINT` (was `INTEGER`). LastZoneID joins the `uint` fields of the type-mapping note.
+
+**Why:** `ZoneID` wraps a `uint` (CR-CP-2, `src/Foundation/CharacterPersistence/ZoneID.cs`), and this ADR maps every `uint` field to `BIGINT` so the full unsigned 32-bit range fits; `last_zone_id` was left out of that list and typed `INTEGER`, which cannot hold zone IDs above 2,147,483,647. Found at Character Persistence Story 013 `/story-readiness` (user decision 2026-10-19).
+
+**Decision unchanged:** PostgreSQL + Npgsql + Dapper, single-row character record, the `0` default (`ZoneID.Invalid`, the CR-CP-9 first-login sentinel).
+
+**Compatibility / migration:** no database holds `character_records` yet (the migrations are Story 013), so no data migration is needed.
+
+**Performance:** 4 bytes more per character row; no effect on the Decision 4 latency budget.
 
 ## Related Decisions
 - ADR-001: Purchase Transaction Integrity — `PendingPurchase` record; OQ-ADR1-1 resolved by Decision 3

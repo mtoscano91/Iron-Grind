@@ -4076,3 +4076,9 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: 1 (TD-074, accepted)
 - EPIC: Networking Core 41/41 Complete (row 041 Complete); epic stays In Progress for the headless-build gate and the composition-root story
 - Next recommended: Character Persistence Story 013 (SQL migrations, Config/Data, unblocked) — production/epics/character-persistence/story-013-sql-migrations.md — run /story-readiness first
+
+## Session Extract — /story-readiness 2026-10-19 (Character Persistence Story 013)
+- Verdict: NEEDS WORK (7 gaps) → fixed with the recommended options (user: "yes, use your recommended options"). Story Ready, 2.5 h; EPIC row 013 Ready. QL-STORY-READY skipped (lean).
+- Decisions: no `account_id` index (the Auth account-character mapping store is undefined; its designer adds one if needed); `last_zone_id` INTEGER → BIGINT via ADR-006 Amendment 2 (ZoneID wraps uint); verify on a throwaway scratch DB, then apply to the dev DB `irongrind`; Defaults smoke case covers every column.
+- Files changed (uncommitted): story-013, character-persistence/EPIC.md, ADR-006 (status line, DDL, type-mapping note, Amendment 2). Propagation check: no other doc types last_zone_id.
+- Next: commit → /dev-story Story 013. PAT rotation still unconfirmed.
