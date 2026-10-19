@@ -8,8 +8,20 @@
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
-    "overrideReferences": false,
-    "precompiledReferences": [],
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "Npgsql.dll",
+        "Dapper.dll",
+        "Microsoft.Bcl.AsyncInterfaces.dll",
+        "Microsoft.Extensions.DependencyInjection.Abstractions.dll",
+        "Microsoft.Extensions.Logging.Abstractions.dll",
+        "System.Collections.Immutable.dll",
+        "System.Diagnostics.DiagnosticSource.dll",
+        "System.Runtime.CompilerServices.Unsafe.dll",
+        "System.Text.Encodings.Web.dll",
+        "System.Text.Json.dll",
+        "System.Threading.Channels.dll"
+    ],
     "autoReferenced": false,
     "defineConstraints": [
         "UNITY_SERVER || UNITY_EDITOR"

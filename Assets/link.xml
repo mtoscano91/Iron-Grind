@@ -1,0 +1,10 @@
+<linker>
+  <!--
+    IL2CPP stripping: keep the server-only database libraries whole (ADR-006 Decision 2, Verification Required 2;
+    ADR-012). This file only preserves assemblies that are already in a build. It does not bring the DLLs into
+    a client build: their import settings (UNITY_SERVER || UNITY_EDITOR, explicitly referenced) keep them out.
+    See docs/server-libraries.md.
+  -->
+  <assembly fullname="Npgsql" preserve="all" />
+  <assembly fullname="Dapper" preserve="all" />
+</linker>

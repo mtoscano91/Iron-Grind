@@ -1,7 +1,7 @@
 # Story 013: SQL Migrations for `character_records` and `pending_purchases`
 
 > **Epic**: Character Persistence
-> **Status**: Blocked — written 2026-10-12. The scripts can be written from ADR-006 today; they can be *run* only when a PostgreSQL instance exists (Story 012, open decision 2).
+> **Status**: Not Started — written 2026-10-12; unblocked 2026-10-19: Story 012 is Complete and a local PostgreSQL 16.15 runs on the development machine (portable binaries, `tools/postgres/README.md` "Without Docker"; Docker is not available there). Run `/story-readiness` before starting.
 > **Layer**: Core
 > **Type**: Config/Data
 > **Manifest Version**: 2026-10-09
@@ -71,5 +71,5 @@
 
 ## Dependencies
 
-- Depends on: a PostgreSQL instance to run against (Story 012, open decision 2)
+- Depends on: a PostgreSQL instance to run against (Story 012, open decision 2) — available since 2026-10-19 (Story 012 Complete; portable PostgreSQL 16.15, see its evidence file)
 - Unlocks: Stories 014, 015

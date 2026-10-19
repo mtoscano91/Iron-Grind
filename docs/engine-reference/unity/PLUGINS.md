@@ -51,6 +51,14 @@ These are NOT part of the core engine but are commonly used for specific game ty
 
 ---
 
+### ✅ Npgsql + Dapper (server-only NuGet DLLs, not Unity packages)
+- **Purpose:** PostgreSQL client and micro-ORM for the dedicated server (ADR-006, ADR-012, ADR-015)
+- **Knowledge Gap:** Npgsql 8.0.9 is the last version with a .NET Standard build; hand-written PluginImporter `.meta` files silently disable a DLL
+- **Status:** In the project since 2026-10-16 (Character Persistence Story 012); Editor-verified, headless IL2CPP not yet
+- **Detailed Docs:** [plugins/npgsql-dapper.md](plugins/npgsql-dapper.md); DLL record `docs/server-libraries.md`
+
+---
+
 ## Other Production-Ready Packages (Brief Overview)
 
 ### 🟡 Input System (Already Covered)

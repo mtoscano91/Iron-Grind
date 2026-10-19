@@ -1,0 +1,18 @@
+# Development PostgreSQL for Character Persistence (ADR-006; Story 012).
+# Credentials come from tools/postgres/.env (git-ignored); copy .env.example to .env first.
+services:
+  postgres:
+    image: postgres:16
+    ports:
+      - "127.0.0.1:5432:5432"
+    env_file: .env
+    volumes:
+      - irongrind-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  irongrind-pg-data:

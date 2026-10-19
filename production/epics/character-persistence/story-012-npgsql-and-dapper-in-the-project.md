@@ -1,7 +1,7 @@
 # Story 012: Npgsql and Dapper in the Project
 
 > **Epic**: Character Persistence
-> **Status**: Ready — written 2026-10-12; unblocked 2026-10-16 when the user closed open decisions 1–3; `/story-readiness` 2026-10-16: NEEDS WORK, fixed the same day at the user's request (versions pinned from the NuGet API, dependency set, compose file, manifest rules). Neither library is in the project yet.
+> **Status**: Complete (2026-10-19, `/story-done` COMPLETE WITH NOTES) — written 2026-10-12; unblocked 2026-10-16 when the user closed open decisions 1–3; `/story-readiness` 2026-10-16: NEEDS WORK, fixed the same day at the user's request (versions pinned from the NuGet API, dependency set, compose file, manifest rules). Implemented 2026-10-16 (WIP `8d3209c`); round trip (a) PASS 2026-10-19 against a portable PostgreSQL 16.15 (no Docker on the development machine, see the Development PostgreSQL criterion). `/code-review` 2026-10-19: CHANGES REQUIRED, all fixes applied.
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-16
@@ -29,19 +29,20 @@
 
 ## Acceptance Criteria
 
-- [ ] **In the project**: Npgsql 8.0.9 (`lib/netstandard2.1`) and Dapper 2.1.66 (`lib/netstandard2.0`) are under `Assets/Plugins/Server/`, with the dependency DLLs they need, each from the `netstandard2.1` folder of its package when it has one, else `netstandard2.0`. Start from this set (NuGet's dependency graph for those two, 2026-10-16):
+- [x] **In the project**: Npgsql 8.0.9 (`lib/netstandard2.1`) and Dapper 2.1.66 (`lib/netstandard2.0`) are under `Assets/Plugins/Server/`, with the dependency DLLs they need, each from the `netstandard2.1` folder of its package when it has one, else `netstandard2.0`. Start from this set (NuGet's dependency graph for those two, 2026-10-16):
   - Npgsql 8.0.9 → Microsoft.Extensions.Logging.Abstractions 8.0.0 (→ Microsoft.Extensions.DependencyInjection.Abstractions 8.0.0), System.Collections.Immutable 8.0.0, System.Diagnostics.DiagnosticSource 8.0.0, System.Text.Json 8.0.5 (→ System.Text.Encodings.Web 8.0.0), System.Threading.Channels 8.0.0, System.Runtime.CompilerServices.Unsafe 6.0.0;
   - Dapper 2.1.66 → Microsoft.Bcl.AsyncInterfaces 9.0.1 (one copy also serves Npgsql's chain, which asks for 8.0.0), System.Reflection.Emit.Lightweight 4.7.0;
   - leave out at first, add only on a missing-type compile error: System.Memory 4.5.5, System.Buffers 4.5.1, System.Numerics.Vectors 4.4.0, System.Threading.Tasks.Extensions 4.5.4 (already in .NET Standard 2.1).
 
   `docs/server-libraries.md` lists every DLL: package, version, framework folder, SHA-256 of the DLL, NuGet URL, and for each one added or left out, why. **No compile error** of the kind "multiple precompiled assemblies with the same name" or CS0433 (duplicate type) in the Editor.
-- [ ] **Referenced by one assembly**: `IronGrind.ServerLogic.asmdef` lists them as precompiled references; no other asmdef does. The assembly-boundary tests are updated to assert exactly that, and pass.
-- [ ] **Server only**: the DLLs' import settings keep them out of a client player build (ADR-012's client-binary rule).
-- [ ] **Compiles**: a type in `ServerLogic` that names `NpgsqlDataSource` and a Dapper extension method compiles in the Editor; the EditMode suite still passes.
-- [ ] **`link.xml`**: the two `preserve="all"` entries of ADR-006 are present.
-- [ ] **Verification, as far as it can be run** — recorded in `production/qa/evidence/character-persistence-012-npgsql-verification.md`, each item PASS / FAIL / NOT RUN with its observation: (a) in the Editor, a connection opens against a PostgreSQL instance and `SELECT 1` returns through Dapper; (b) ADR-006 item 1, a headless Linux server build; (c) item 2, IL2CPP; (d) item 3, the pool across start and shutdown.
-- [ ] **Development PostgreSQL**: `tools/postgres/docker-compose.yml` starts `postgres:16` bound to `127.0.0.1:5432` with a named volume; credentials come from `tools/postgres/.env`, which is git-ignored (`tools/postgres/.env.example` is committed); `docker compose up -d` then the round trip (a) runs against it. A short `tools/postgres/README.md` gives the two commands.
-- [ ] **Engine reference**: what was confirmed is added to `docs/engine-reference/unity/` — the DLL set that compiles under Unity 6.3, which dependencies were redundant, the import settings used; and that `NpgsqlDataSource`, `NpgsqlConnection.Wait(int)` and the `Notification` event exist in Npgsql 8.0.9, citing that version's API documentation (the documentation half of ADR-015 Verification 0, for Networking Core Story 041).
+- [x] **Referenced by one assembly**: `IronGrind.ServerLogic.asmdef` lists them as precompiled references; no other asmdef does. The assembly-boundary tests are updated to assert exactly that, and pass.
+- [x] **Server only**: the DLLs' import settings keep them out of a client player build (ADR-012's client-binary rule).
+- [x] **Compiles**: a type in `ServerLogic` that names `NpgsqlDataSource` and a Dapper extension method compiles in the Editor; the EditMode suite still passes.
+- [x] **`link.xml`**: the two `preserve="all"` entries of ADR-006 are present.
+- [x] **Verification, as far as it can be run** — recorded in `production/qa/evidence/character-persistence-012-npgsql-verification.md`, each item PASS / FAIL / NOT RUN with its observation: (a) in the Editor, a connection opens against a PostgreSQL instance and `SELECT 1` returns through Dapper; (b) ADR-006 item 1, a headless Linux server build; (c) item 2, IL2CPP; (d) item 3, the pool across start and shutdown. *2026-10-19: (a) PASS, (b)–(d) NOT RUN (user decision 3).*
+- [x] **Development PostgreSQL** *(accepted with the deviation below, user decision at `/story-done` 2026-10-19)*: `tools/postgres/docker-compose.yml` starts `postgres:16` bound to `127.0.0.1:5432` with a named volume; credentials come from `tools/postgres/.env`, which is git-ignored (`tools/postgres/.env.example` is committed); `docker compose up -d` then the round trip (a) runs against it. A short `tools/postgres/README.md` gives the two commands.
+  *Deviation 2026-10-19 (user decision): the user cannot use the Docker Desktop app and the machine has no WSL, so the compose file is written but not run here; round trip (a) ran against the EnterpriseDB PostgreSQL 16.15 portable binaries under `%LOCALAPPDATA%\IronGrind\` (unsigned, no published checksum; zip SHA-256 in the evidence file). The README has a "Without Docker" section. `.env` is git-ignored (checked); `.env.example` written by the user 2026-10-19 (a project permission rule blocks Claude from `.env*` files), not ignored by git.*
+- [x] **Engine reference**: what was confirmed is added to `docs/engine-reference/unity/` — the DLL set that compiles under Unity 6.3, which dependencies were redundant, the import settings used; and that `NpgsqlDataSource`, `NpgsqlConnection.Wait(int)` and the `Notification` event exist in Npgsql 8.0.9, citing that version's API documentation (the documentation half of ADR-015 Verification 0, for Networking Core Story 041).
 
 ---
 
@@ -77,7 +78,7 @@
 - **Compile** — Given the reference type, Then no `error CS` and the EditMode total is unchanged plus this story's tests.
 - **DLL set** — Given the DLLs under `Assets/Plugins/Server/`, Then the Editor log has no "multiple precompiled assemblies" error and no CS0433; every DLL is in `docs/server-libraries.md` with its hash, and each left-out dependency is listed with its reason.
 - **Compose** — `docker compose -f tools/postgres/docker-compose.yml up -d` → the container is healthy on 127.0.0.1:5432; `tools/postgres/.env` is ignored by git (`git check-ignore`).
-- **Round trip** — Setup: the PostgreSQL container above. Verify: `SELECT 1` through Dapper. Pass: the value 1 returns and the connection goes back to the pool.
+- **Round trip** — Setup: the PostgreSQL container above (or the portable server, see the Development PostgreSQL deviation). Verify: `SELECT 1` through Dapper. Pass: the value 1 returns and no connection is left open after dispose (`pg_stat_activity` for the role shows 0). *Reworded 2026-10-19 (`/code-review`): was "the connection goes back to the pool", which the probe cannot show — it disposes its own data source.*
 - **Build items** — Setup: a headless Linux server build with IL2CPP. Verify: the same round trip. Pass: it returns; otherwise the observation is recorded as FAIL with the error text.
 
 ---
@@ -87,7 +88,7 @@
 **Story Type**: Integration
 **Required evidence**: `production/qa/evidence/character-persistence-012-npgsql-verification.md`; the updated assembly-boundary tests passing.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created 2026-10-19 — `production/qa/evidence/character-persistence-012-npgsql-verification.md` ((a) PASS, (b)–(d) NOT RUN, Docker deviation); boundary tests pass (EditMode 3090: 3089 passed, 1 skipped, 2026-10-16)
 
 ---
 
@@ -95,3 +96,17 @@
 
 - Depends on: the user's decisions on open decisions 1–3 — made 2026-10-16 (see Implementation Notes)
 - Unlocks: Stories 014, 015, 016; Networking Core Story 041 (the ADR-015 Npgsql relay transport)
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-10-19
+**Criteria**: 8/8 passing (Development PostgreSQL accepted with a deviation; verification items (b)–(d) NOT RUN by user decision 3, carried by the epic)
+**Deviations** (advisory, user-accepted):
+- Round trip (a) ran against EnterpriseDB PostgreSQL 16.15 portable binaries under `%LOCALAPPDATA%\IronGrind\`, not the Docker container: the user cannot use the Docker Desktop app and the machine has no WSL. The binaries are unsigned and EDB publishes no checksum (zip SHA-256 in the evidence file). `docker-compose.yml` is written but has not been run here. `tools/postgres/README.md` has a "Without Docker" section.
+- IL2CPP risk: Dapper's default mapping emits IL (`Reflection.Emit`), which IL2CPP cannot run; ADR-007 / ADR-012 plan an IL2CPP server. Logged as TD-073; recorded in `docs/engine-reference/unity/plugins/npgsql-dapper.md`, `docs/server-libraries.md` and the epic's Known Gap 2.
+- ADR-012 Verification 7 partly answered (Editor result); the client-build half and the `link.xml` question remain.
+**Test Evidence**: Integration — `production/qa/evidence/character-persistence-012-npgsql-verification.md`; `tests/EditMode/Architecture/AssemblyBoundary_tests.cs` (incl. the new `test_only_server_logic_lists_server_only_dlls`); `tests/EditMode/CharacterPersistence/CharacterPersistence_NpgsqlRoundTrip_tests.cs` (Explicit, passed 2026-10-19). EditMode 3091: 3090 passed, 1 skipped (the Explicit test), 0 failed.
+**Code Review**: Complete (`/code-review` 2026-10-19, unity-specialist + qa-tester; CHANGES REQUIRED → all fixes applied). QL-TEST-COVERAGE and LP-CODE-REVIEW skipped — lean mode.
+**Scope**: beyond the story's files — ADR-012 (dated note, Verification 7), the epic (Known Gap 2), `docs/engine-reference/unity/PLUGINS.md`, `.gitignore`.

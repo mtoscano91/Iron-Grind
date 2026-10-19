@@ -31,6 +31,8 @@ out/
 dist/
 *.exe
 *.dll
+# Server-only libraries committed on purpose (docs/server-libraries.md)
+!Assets/Plugins/Server/*.dll
 *.so
 *.dylib
 *.app
@@ -112,6 +114,7 @@ node_modules/
 *.pem
 *.key
 credentials.json
+tools/postgres/.env
 secrets.json
 
 # === Large Binary Assets (use Git LFS instead) ===

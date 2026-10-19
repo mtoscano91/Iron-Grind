@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -31,8 +32,23 @@ namespace IronGrind.Tests.EditMode.Architecture
         private const BindingFlags ALL_DECLARED = BindingFlags.Public | BindingFlags.NonPublic
             | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly;
 
-        // Server-only precompiled DLLs allowed on IronGrind.ServerLogic (ADR-012 Decision 1; empty today).
-        private static readonly string[] ServerOnlyDlls = { "Npgsql.dll", "Dapper.dll" };
+        // Server-only precompiled DLLs: exactly the precompiledReferences of IronGrind.ServerLogic
+        // (ADR-012 Decision 1, ADR-006; Character Persistence Story 012; listed in docs/server-libraries.md).
+        private static readonly string[] ServerOnlyDlls =
+        {
+            "Npgsql.dll",
+            "Dapper.dll",
+            "Microsoft.Bcl.AsyncInterfaces.dll",
+            "Microsoft.Extensions.DependencyInjection.Abstractions.dll",
+            "Microsoft.Extensions.Logging.Abstractions.dll",
+            "System.Collections.Immutable.dll",
+            "System.Diagnostics.DiagnosticSource.dll",
+            "System.Runtime.CompilerServices.Unsafe.dll",
+            "System.Text.Encodings.Web.dll",
+            "System.Text.Json.dll",
+            "System.Threading.Channels.dll",
+        };
+        private const string SERVER_PLUGIN_FOLDER = "Assets/Plugins/Server/";
 
         [Serializable]
         private sealed class AsmdefData
@@ -40,6 +56,7 @@ namespace IronGrind.Tests.EditMode.Architecture
             public string name;
             public string[] references;
             public string[] precompiledReferences;
+            public bool overrideReferences;
             public bool autoReferenced;
             public string[] defineConstraints;
             public string[] includePlatforms;
@@ -85,14 +102,60 @@ namespace IronGrind.Tests.EditMode.Architecture
             AsmdefData client = LoadAsmdef(CLIENT);
 
             CollectionAssert.AreEqual(new[] { FOUNDATION, NETCODE_RUNTIME }, Safe(server.references), "ServerLogic references");
-            foreach (string dll in Safe(server.precompiledReferences))
-            {
-                CollectionAssert.Contains(ServerOnlyDlls, dll, "ServerLogic precompiled reference outside the named list");
-            }
+            // Story 012: replaces the old "each entry is on the allowed list" loop (the list was empty).
+            Assert.IsTrue(server.overrideReferences, "ServerLogic overrideReferences");
+            CollectionAssert.AreEquivalent(ServerOnlyDlls, Safe(server.precompiledReferences), "ServerLogic precompiled references");
+            Assert.IsFalse(foundation.overrideReferences, "Foundation overrideReferences");
+            Assert.IsFalse(client.overrideReferences, "Client overrideReferences");
             CollectionAssert.AreEqual(new[] { FOUNDATION }, Safe(client.references), "Client references");
-            CollectionAssert.IsEmpty(Safe(client.precompiledReferences), "Client precompiled references");
             CollectionAssert.DoesNotContain(Safe(foundation.references), SERVER_LOGIC);
             CollectionAssert.DoesNotContain(Safe(foundation.references), CLIENT);
+        }
+
+        /// <summary>
+        /// No project asmdef other than <c>IronGrind.ServerLogic</c> lists a server-only DLL (ADR-012 Decision 1;
+        /// Character Persistence Story 012). Scans every asmdef under <c>Assets/</c> and the project's own
+        /// <c>file:</c> packages (<c>src/</c>, <c>tests/</c>), so an asmdef added later is covered too.
+        /// </summary>
+        [Test]
+        public void test_only_server_logic_lists_server_only_dlls()
+        {
+            List<AsmdefData> asmdefs = LoadProjectAsmdefs();
+            List<string> names = asmdefs.Select(a => a.name).ToList();
+            // Guard against a vacuous scan: the production assemblies and the EditMode test assembly are found.
+            CollectionAssert.IsSubsetOf(
+                new[] { FOUNDATION, SERVER_LOGIC, CLIENT, DEV_HARNESS, "IronGrind.Foundation.EditModeTests" }, names,
+                "Asmdef scan did not find the known assemblies");
+
+            foreach (AsmdefData asmdef in asmdefs)
+            {
+                if (asmdef.name == SERVER_LOGIC)
+                {
+                    continue;
+                }
+                string[] offending = Safe(asmdef.precompiledReferences).Intersect(ServerOnlyDlls).ToArray();
+                CollectionAssert.IsEmpty(offending, asmdef.name + " lists a server-only DLL");
+            }
+        }
+
+        /// <summary>
+        /// Each server-only DLL's import settings keep it out of a client player: the define constraint
+        /// <c>UNITY_SERVER || UNITY_EDITOR</c>, and <c>isExplicitlyReferenced: 1</c> so only an asmdef that
+        /// lists it references it (ADR-012 Decision 1; Character Persistence Story 012).
+        /// </summary>
+        [Test]
+        public void test_server_dll_import_settings_keep_them_out_of_client_builds()
+        {
+            string projectRoot = Directory.GetParent(Application.dataPath).FullName;
+            foreach (string dll in ServerOnlyDlls)
+            {
+                string path = Path.Combine(projectRoot, SERVER_PLUGIN_FOLDER + dll + ".meta");
+                Assert.IsTrue(File.Exists(path), "Missing import settings file: " + path);
+                string[] lines = File.ReadAllLines(path).Select(l => l.TrimEnd()).ToArray();
+                CollectionAssert.Contains(lines, "  isExplicitlyReferenced: 1", dll + " isExplicitlyReferenced");
+                CollectionAssert.Contains(lines, "  - " + SERVER_CONSTRAINT, dll + " define constraint");
+                CollectionAssert.Contains(lines, "  validateReferences: 1", dll + " validateReferences");
+            }
         }
 
         /// <summary>
@@ -291,6 +354,25 @@ namespace IronGrind.Tests.EditMode.Architecture
             var asset = AssetDatabase.LoadAssetAtPath<TextAsset>(path);
             Assert.IsNotNull(asset, "Could not load the asmdef at " + path);
             return JsonUtility.FromJson<AsmdefData>(asset.text);
+        }
+
+        // Every asmdef the project owns: under Assets/ and in its own file: packages (com.irongrind.*).
+        // Unity's and third-party packages are left out.
+        private static List<AsmdefData> LoadProjectAsmdefs()
+        {
+            var result = new List<AsmdefData>();
+            foreach (string guid in AssetDatabase.FindAssets("t:AssemblyDefinitionAsset"))
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                if (!path.StartsWith("Assets/") && !path.StartsWith("Packages/com.irongrind."))
+                {
+                    continue;
+                }
+                var asset = AssetDatabase.LoadAssetAtPath<TextAsset>(path);
+                Assert.IsNotNull(asset, "Could not load the asmdef at " + path);
+                result.Add(JsonUtility.FromJson<AsmdefData>(asset.text));
+            }
+            return result;
         }
 
         private static Type[] GetTypesOrFail(Assembly assembly)

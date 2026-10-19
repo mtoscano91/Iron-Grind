@@ -3,7 +3,7 @@
 > **Layer**: Core
 > **GDD**: design/gdd/character-persistence.md
 > **Architecture Module**: Character Persistence — `CharacterPersistenceService : ICharacterPersistence` (async), PostgreSQL via Npgsql and Dapper
-> **Status**: In Progress (created 2026-10-12; 16 stories written 2026-10-12 — 10 Complete (001–004, 006–010, 017 — added and Complete 2026-10-16 for TD-070 / TD-060), 1 Not Started pending `/story-readiness` (011), 6 Blocked)
+> **Status**: In Progress (created 2026-10-12; 16 stories written 2026-10-12 — 11 Complete (001–004, 006–010, 012, 017 — 017 added and Complete 2026-10-16 for TD-070 / TD-060; 012 Complete 2026-10-19), 2 Not Started pending `/story-readiness` (011, 013), 4 Blocked (005, 014–016))
 > **Stories**: 16 stories created 2026-10-12 (001–016); Story 017 added 2026-10-16
 > **Manifest Version**: 2026-10-09
 
@@ -51,6 +51,7 @@ No requirement was found that needs a new ADR.
 
 1. **No code exists.** `ICharacterPersistence` is named in comments of four files (`INetworkTestObserver.cs`, `CommitBeforeBroadcastSequencer.cs`, `EnhancementRequestDeduplicator.cs`, `ITickCompletionQueue.cs`) and defined nowhere in `src/` or `tests/`.
 2. **Npgsql and Dapper are not in the project** (not in `Packages/manifest.json`, nothing under `Assets/`). ADR-006 Verification Required 1–3 are open: Npgsql on a headless Linux server build, Dapper's `link.xml` needs under IL2CPP, the connection pool under the headless process lifecycle.
+   *Update 2026-10-19 (Story 012):* both libraries are in the project (11 DLLs under `Assets/Plugins/Server/`) and an Editor round trip passes; Verification 1–3 are still open and carried by this epic. **New risk from Story 012's code review: Dapper's default mapping emits IL at runtime (`Reflection.Emit`), which IL2CPP cannot run, and `link.xml` does not fix that — while ADR-007 / ADR-012 plan an IL2CPP server.** Settle before the first IL2CPP server build (Story 016 or earlier): Mono scripting backend for the server, or Dapper proven under IL2CPP, or Dapper.AOT / plain Npgsql — likely an ADR-006 amendment via `/architecture-decision`. Details: `docs/engine-reference/unity/plugins/npgsql-dapper.md`.
 3. **ADR-006 requires a real PostgreSQL instance for AC-CP-13 to AC-CP-31, "no mock substitution"**, and two latency / concurrency gates against a local PostgreSQL container. No database is set up in the project, and the testing standard says unit tests call no database. The work therefore falls in two parts:
    - **Plain C#, EditMode-testable**: the interface and its types, the load sequence (CR-CP-3), the `SaveSession` step sequence (CR-CP-10), the per-character write queue (CR-CP-7), the failure protocols (CR-CP-5, CR-CP-11), with the store behind a seam.
    - **The Npgsql / Dapper store**: SQL migrations under `tools/db/migrations/`, the implementation, and the real-database tests — gated on importing the two libraries and on a PostgreSQL instance.
@@ -85,8 +86,8 @@ This epic is complete when:
 | 009 | [The Irreversible-Outcome Persist Step and the Level-Up Path](story-009-irreversible-persist-step-and-level-up.md) | Integration | Complete (2026-10-15; level-up proven with a test caller, real wiring moved to a Leveling follow-up story) | ADR-011, ADR-010 |
 | 010 | [Session-End Triggers — Clean Logout and TTL Expiry](story-010-session-end-triggers.md) | Integration | Complete (2026-10-15; 28 test cases, EditMode 2865 / 2865; COMPLETE WITH NOTES) | ADR-011 |
 | 011 | [`PendingPurchase` Lifecycle on the Store Seam](story-011-pending-purchase-lifecycle.md) | Logic | Not Started (2026-10-12; 3 open decisions; no caller yet) | ADR-001, ADR-006 |
-| 012 | [Npgsql and Dapper in the Project](story-012-npgsql-and-dapper-in-the-project.md) | Integration | Ready (2026-10-16; 10 h; Npgsql 8.0.9 + Dapper 2.1.66 as DLLs under `Assets/Plugins/Server/`, local Docker `postgres:16`, build items carried by the epic) | ADR-006, ADR-012 |
-| 013 | [SQL Migrations for `character_records` and `pending_purchases`](story-013-sql-migrations.md) | Config/Data | Blocked (needs a PostgreSQL instance to run) | ADR-006 |
+| 012 | [Npgsql and Dapper in the Project](story-012-npgsql-and-dapper-in-the-project.md) | Integration | Complete (2026-10-19; COMPLETE WITH NOTES; 11 DLLs, Editor round trip PASS against a portable PostgreSQL 16.15 — no Docker on the dev machine; build items (b)–(d) carried by the epic; IL2CPP / Dapper risk TD-073; EditMode 3091: 3090 passed, 1 skipped) | ADR-006, ADR-012 |
+| 013 | [SQL Migrations for `character_records` and `pending_purchases`](story-013-sql-migrations.md) | Config/Data | Not Started (2026-10-19: unblocked — a local PostgreSQL 16.15 exists since Story 012; run `/story-readiness`) | ADR-006 |
 | 014 | [The Npgsql Character Record Store](story-014-npgsql-character-record-store.md) | Integration | Blocked (012, 013) | ADR-006, ADR-011 |
 | 015 | [The Npgsql Pending-Purchase Store](story-015-npgsql-pending-purchase-store.md) | Integration | Blocked (012–014) | ADR-006, ADR-001 |
 | 016 | [The Real-Database Verification Run](story-016-real-database-verification-run.md) | Integration | Blocked (012–015 and Part A) | ADR-006 |
