@@ -1,15 +1,17 @@
 # Story 041: Cross-Zone Relay — the PostgreSQL Transport (Publisher, Listener, Stop)
 
 > **Epic**: Networking Core
-> **Status**: Blocked — written 2026-10-16 (`/create-stories`, ADR-015 Migration Plan step 2). **Npgsql is not in the project**: waits for Character Persistence Story 012 (Npgsql and Dapper in the project at a pinned version — itself Blocked on how the libraries get in). Also waits for Story 040.
+> **Status**: Ready — written 2026-10-16 (`/create-stories`, ADR-015 Migration Plan step 2). `/story-readiness` 2026-10-19: NEEDS WORK (7 gaps), fixed the same day at the user's request. Dependencies Character Persistence Story 012 (Complete 2026-10-19, Npgsql 8.0.9) and Story 040 (Complete 2026-10-16) are met. Verification platform: Windows Dedicated Server build, Mono (user decision 2026-10-19, see below).
 > **Layer**: Foundation
 > **Type**: Integration
 > **Manifest Version**: 2026-10-16
-> **Estimate**: not estimated — set at `/story-readiness` once Character Persistence Story 012 has pinned the Npgsql version
+> **Estimate**: 14 hours (Story 040 was 12 h; this adds a background thread, reconnect with backoff and a two-process run)
 
 *Added 2026-10-16 after ADR-015 was Accepted. Story 040 builds the relay behind interfaces and tests it on an in-memory bus. This story puts PostgreSQL `LISTEN` / `pg_notify` behind the same interfaces and proves, on the headless server build and in the Editor, the runtime behaviour ADR-015 lists as Verification Required 0–6.*
 
 > **User decision 2026-10-16 (`/create-stories`).** No server composition root, no ADR-009 teardown code and no server host `MonoBehaviour` exist yet. This story builds `NpgsqlRelayListener.Stop()` and tests it by calling it. **The two call sites — ADR-009 teardown step 2a and the server host's `OnDestroy` — belong to the story that builds the server composition root and the ADR-009 teardown sequence (open item C2 in `architecture-traceability.md`)**, and ADR-015 Verification 4 (teardown) and 6 (leaving Play mode) move with them. This story records them as a requirement on that story; it does not write a host or a teardown.
+
+> **User decision 2026-10-19 (`/story-readiness`): the run uses a Windows Dedicated Server build on Mono, not the IL2CPP Linux server.** The dev machine has no Linux build support, no IL2CPP, no Docker and no WSL. VR-0, 1, 3 and 5 run on two Windows Dedicated Server processes (Mono, development build, `-batchmode -nographics`) against the portable PostgreSQL 16.15 (`tools/postgres/README.md`, "Without Docker"). Precondition: the Unity Hub module "Windows Dedicated Server Build Support" for 6000.3.10f1, the only target that defines `UNITY_SERVER` and so compiles `IronGrind.ServerLogic` and the Npgsql DLLs. **VR-2 (IL2CPP stripping) is NOT RUN here and is carried by the epic's headless-build gate** (with Character Persistence Story 012 (b)–(d)); it does not block `/story-done`. The Mono / Windows deviation is recorded in the evidence file.
 
 ## Context
 
@@ -22,8 +24,8 @@ Also: **ADR-006** (PostgreSQL + Npgsql; the zone's `NpgsqlDataSource`; `link.xml
 
 **ADR Decision Summary**: the publisher runs one `SELECT pg_notify(@channel, @payload)` per relayed message through the zone's pooled data source, inside a task tracked by `ITickCompletionQueue` and cancelled after `RELAY_PUBLISH_TIMEOUT_MS`, never awaited; each zone runs one listener on a dedicated background thread with its own unpooled connection that `LISTEN`s, loops on `Wait`, hands every payload to Story 040's receiver, reconnects with backoff on any failure, and stops on `Stop()`.
 
-**Engine**: Unity 6.3 LTS | **Risk**: MEDIUM — no engine API, but a background thread blocking in Npgsql inside an IL2CPP headless Linux build; the Npgsql version is not pinned.
-**Engine Notes**: ADR-015 Engine Compatibility. Npgsql `NpgsqlConnection.Notification`, `NpgsqlConnection.Wait(int)`, `NpgsqlDataSource.CreateCommand` and SQL `LISTEN` / `pg_notify` exist in Npgsql 6–8 — **unverified until Character Persistence Story 012 pins a version** (Verification 0: cite that version's documentation). IL2CPP stripping must keep the notification path (`link.xml`, ADR-006 Verification 2). Every verification runs on IL2CPP, the server build's backend (ADR-007).
+**Engine**: Unity 6.3 LTS | **Risk**: MEDIUM — no engine API; a background thread blocking in Npgsql 8.0.9 `Wait`. Behaviour not yet run; IL2CPP behaviour unproven (VR-2, carried).
+**Engine Notes**: ADR-015 Engine Compatibility. Npgsql is pinned at **8.0.9** (netstandard2.1, Character Persistence Story 012). `NpgsqlDataSource.CreateCommand(string)`, `NpgsqlConnection.Wait(int)`, `NpgsqlConnection.Notification` and `NpgsqlNotificationEventArgs.Payload` are present in that version's `Npgsql.xml`. See `docs/engine-reference/unity/plugins/npgsql-dapper.md` §"API members present in Npgsql 8.0.9", the documentation half of VR-0. The relay uses no Dapper, so TD-073 does not apply. `Assets/link.xml` (Story 012) preserves `Npgsql`. ADR-007's IL2CPP server backend is not run in this story (user decision 2026-10-19 above).
 
 **Control Manifest Rules (Foundation, v2026-10-16)**:
 - Required: publish through `dataSource.CreateCommand(sql)` + `ExecuteNonQueryAsync(token)`, the task handed to `ITickCompletionQueue.Track` with a CTS cancelling after `RELAY_PUBLISH_TIMEOUT_MS` (command timeout the same); the callback logs a failure or timeout, frees the in-flight slot and disposes the CTS; at most `RELAY_MAX_PUBLISHES_IN_FLIGHT` in flight, a publish over it dropped and logged — ADR-015, ADR-011
@@ -41,7 +43,7 @@ Also: **ADR-006** (PostgreSQL + Npgsql; the zone's `NpgsqlDataSource`; `link.xml
 
 ## Acceptance Criteria
 
-*To be re-checked at `/story-readiness` once the Npgsql version is pinned. The behaviour is tested in EditMode through seams over the Npgsql calls (the listener's loop and the publisher's bookkeeping run against fakes); the real Npgsql behaviour is shown in the run below. No EditMode or PlayMode test creates a real `NpgsqlRelayListener` thread on a database.*
+*The behaviour is tested in EditMode through seams over the Npgsql calls (the listener's loop and the publisher's bookkeeping run against fakes); the real Npgsql behaviour is shown in the run below. No EditMode or PlayMode test creates a real `NpgsqlRelayListener` thread on a database.*
 
 **Publisher (EditMode, fake command seam and a real `TickCompletionQueue`)**
 - [ ] **Never blocks, never awaits**: `Publish` starts the command task through the seam and returns; it calls no synchronous `Open()` or `ExecuteNonQuery`; a source search finds no `.Open()`, `.Wait()`, `.Result` or `await` in the publisher's file.
@@ -61,16 +63,17 @@ Also: **ADR-006** (PostgreSQL + Npgsql; the zone's `NpgsqlDataSource`; `link.xml
 **Construction (EditMode, no database)**
 - [ ] **Connection string**: the listener's connection string, built from the zone's base string, has `Pooling=false`, `Multiplexing=false`, `Tcp Keepalive=true` and no `Keepalive`; asserted with `NpgsqlConnectionStringBuilder`, without connecting.
 - [ ] **Thread**: the listener's thread is a dedicated `Thread` with `IsBackground = true` and a name; no `Task.Run`, `ThreadPool` or `async` in the listener's file (source search).
-- [ ] **Tuning knobs**: the eight `RELAY_*` values of ADR-015 are server config with the ADR's defaults, not literals in the code.
+- [ ] **Tuning knobs**: the seven `RELAY_*` values this story uses (all of ADR-015's except `RELAY_INBOX_CAPACITY`, owned by Story 040) are `public const` defaults with ADR-015's values, passed in through constructor parameters, the same pattern as `CrossZoneRelayInbox` (`RELAY_INBOX_CAPACITY`); no other literal for them in the code.
+- [ ] **Data source**: `NpgsqlRelayPublisher` takes an `NpgsqlDataSource` in its constructor and never creates or disposes it; the listener takes the zone's base connection string. In this story the verification host creates both from `IRONGRIND_DEV_PG`. The zone's production data source belongs to the composition-root story.
 - [ ] **Assembly**: `NpgsqlRelayPublisher` and `NpgsqlRelayListener` are in `src/ServerLogic/Networking/CrossZoneRelay/`, `IronGrind.ServerLogic`; the client-binary scan and the boundary test pass.
 
 **Verification in a real run (evidence document)**
 
-*Recorded in `production/qa/evidence/networking-core-041-relay-verification.md`, PASS / FAIL / NOT RUN with the observation, on the IL2CPP Linux headless server build against the project's PostgreSQL (two zone processes on one machine). The run uses a small test entry point that builds the relay objects of Story 040 and this story; it is not the composition root. A FAIL is recorded and escalated and does not by itself block `/story-done`; an item NOT RUN blocks it, except 4 and 6 (see the user decision at the top).*
+*Recorded in `production/qa/evidence/networking-core-041-relay-verification.md`, PASS / FAIL / NOT RUN with the observation, on two **Windows Dedicated Server (Mono, development) processes** on one machine against the portable PostgreSQL 16.15 (user decision 2026-10-19). The processes run `RelayVerificationHost` (see Implementation Notes); it is not the composition root. A FAIL is recorded and escalated and does not by itself block `/story-done`. An item NOT RUN blocks it, except VR-2 (carried by the headless-build gate) and VR-4 and VR-6 (moved).*
 
 - [ ] **VR-0 Npgsql version**: the pinned version's documentation for `NpgsqlConnection.Wait(int)`, `Notification` and `NpgsqlDataSource.CreateCommand` is cited, and the code compiles against it.
 - [ ] **VR-1 Cross-process notification**: process B, its listener blocking in `Wait`, receives a `pg_notify` sent by process A on its listener thread (thread id logged); the main thread is not involved.
-- [ ] **VR-2 Stripping**: the IL2CPP build keeps the notification path, the `Notification` event included (the `link.xml` entry is named).
+- [ ] **VR-2 Stripping** — **NOT RUN in this story** (no IL2CPP on the dev machine; user decision 2026-10-19). Recorded as carried by the epic's headless-build gate, naming `Assets/link.xml`'s `Npgsql` entry as the expected cover.
 - [ ] **VR-3 Database restart**: PostgreSQL restarted while both zones run → the listener logs the loss, reconnects with backoff, re-issues `LISTEN`; relayed messages flow again; no notification is delivered twice after the reconnect; the tick never stalls (tick duration logged across the restart).
 - [ ] **VR-5 Publish never blocks**: with the ADR-006 pool exhausted (all connections held by a test), a publish from the tick does not lengthen the tick; a publish against a hung server is cancelled after `RELAY_PUBLISH_TIMEOUT_MS` and frees its slot.
 - **VR-4 Teardown** and **VR-6 Leaving Play mode** — **moved** to the composition-root / ADR-009 teardown story (user decision 2026-10-16). Not run here; recorded in the evidence file as "moved", with the story that owns them.
@@ -88,6 +91,7 @@ Also: **ADR-006** (PostgreSQL + Npgsql; the zone's `NpgsqlDataSource`; `link.xml
 - **No order, at most once** (Decision 6). Publishes run on different pooled connections, so even one zone's notifications may arrive out of order; do not try to order them.
 - **Not in this story** (user decision 2026-10-16): calling `Stop()` from the ADR-009 teardown (step 2a, after the tick loop has stopped, before the process exits) and from the server host `MonoBehaviour.OnDestroy`. When the composition-root / teardown story is written, it must take both call sites and ADR-015 Verification 4 and 6. Add a line for it to the epic's blocker list.
 - **`link.xml`.** ADR-006's entry (`<assembly fullname="Npgsql" preserve="all" />`) is expected to cover the notification path; VR-2 confirms it. If Character Persistence Story 012 places `link.xml` differently, follow it.
+- **Verification host.** `src/ServerLogic/Networking/CrossZoneRelay/Verification/RelayVerificationHost.cs` is a server-only `MonoBehaviour` in `IronGrind.ServerLogic`. It reads `IRONGRIND_DEV_PG` and a zone name from the command line, builds Story 040's broadcaster, inbox and receiver plus this story's publisher and listener, and runs a minimal tick that drains the inbox. It logs every received payload with the thread id, plus the tick duration, and publishes a test `ServerBroadcast_Enhancement9` on a command-line interval. Its `OnDestroy` calls `Stop()`. This is a test call site; the production ones stay with the composition-root story. It lives in the scene `Assets/Scenes/Verification/RelayVerification.unity`, built manually from a Build Profile (Windows Server, Mono, Development Build, that scene only) to `Builds/RelayVerification/`, which is added to `.gitignore`. The build settings go in the evidence file. No build script.
 
 ---
 
@@ -103,7 +107,7 @@ Also: **ADR-006** (PostgreSQL + Npgsql; the zone's `NpgsqlDataSource`; `link.xml
 
 ## QA Test Cases
 
-**Files** — to be created: `src/ServerLogic/Networking/CrossZoneRelay/NpgsqlRelayPublisher.cs`, `NpgsqlRelayListener.cs` and their seams; `tests/EditMode/Networking/CrossZoneRelay_Npgsql_tests.cs`; the run's test entry point (location decided at `/story-readiness`); `production/qa/evidence/networking-core-041-relay-verification.md`.
+**Files** — to be created: `src/ServerLogic/Networking/CrossZoneRelay/NpgsqlRelayPublisher.cs`, `NpgsqlRelayListener.cs` and their seams; `tests/EditMode/Networking/CrossZoneRelay_Npgsql_tests.cs`; `Verification/RelayVerificationHost.cs` and `Assets/Scenes/Verification/RelayVerification.unity`; `production/qa/evidence/networking-core-041-relay-verification.md`.
 
 - **Publish returns at once** — a seam whose task never completes → `Publish` returns; after `RELAY_PUBLISH_TIMEOUT_MS` the callback runs on the tick, logs a timeout, frees the slot, the CTS is disposed.
 - **Publish success / failure** — completed task → slot freed, CTS disposed, nothing logged; faulted task → one warning, slot freed, CTS disposed.
@@ -118,14 +122,14 @@ Also: **ADR-006** (PostgreSQL + Npgsql; the zone's `NpgsqlDataSource`; `link.xml
 - **Join timeout** — a `Wait` that never returns → `Stop()` returns after the timeout with one warning.
 - **Connection string** — builder shows `Pooling=false`, `Multiplexing=false`, `Tcp Keepalive=true`, no `Keepalive`.
 - **Source searches** — no `.Open()`, `.Wait()`, `.Result`, `await` in the publisher; no `Task.Run`, `ThreadPool`, `async` in the listener.
-- **Run** — VR-0, 1, 2, 3, 5 each with its observation; 4 and 6 recorded as moved.
+- **Run** — VR-0, 1, 3, 5 each with its observation; 2 recorded NOT RUN (carried); 4 and 6 recorded as moved.
 
 ---
 
 ## Test Evidence
 
 **Story Type**: Integration
-**Required evidence**: `tests/EditMode/Networking/CrossZoneRelay_Npgsql_tests.cs` — must exist and pass, with the full EditMode suite; `production/qa/evidence/networking-core-041-relay-verification.md` — VR-0, 1, 2, 3 and 5 PASS or FAIL with the observation, **none NOT RUN**; VR-4 and VR-6 recorded as moved.
+**Required evidence**: `tests/EditMode/Networking/CrossZoneRelay_Npgsql_tests.cs` — must exist and pass, with the full EditMode suite; `production/qa/evidence/networking-core-041-relay-verification.md` — VR-0, 1, 3 and 5 PASS or FAIL with the observation, **none NOT RUN**; VR-2 NOT RUN, carried by the headless-build gate; VR-4 and VR-6 recorded as moved.
 
 **Status**: [ ] Not yet created
 
@@ -133,5 +137,5 @@ Also: **ADR-006** (PostgreSQL + Npgsql; the zone's `NpgsqlDataSource`; `link.xml
 
 ## Dependencies
 
-- Depends on: **Character Persistence Story 012** (Npgsql in the project at a pinned version — Blocked); **Story 040** (the interfaces, `CrossZoneRelayReceiver`, `RelayEnvelopeCodec`, `CrossZoneRelayOrigin`); ADR-015 (Accepted 2026-10-16); Story 030 (`ITickCompletionQueue`) — Complete.
+- Depends on: **Character Persistence Story 012** (Complete 2026-10-19, Npgsql 8.0.9); **Story 040** (Complete 2026-10-16; the interfaces, `CrossZoneRelayReceiver`, `RelayEnvelopeCodec`, `CrossZoneRelayOrigin`); ADR-015 (Accepted 2026-10-16); Story 030 (`ITickCompletionQueue`) — Complete. Evidence-run precondition (not a code dependency): Unity Hub module "Windows Dedicated Server Build Support" for 6000.3.10f1.
 - Unlocks: the composition-root / ADR-009 teardown story (it wires the publisher and listener and calls `Stop()` from both stop paths); cross-zone delivery in a real deployment. Enhancement Story 016 does **not** wait for this story.
