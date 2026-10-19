@@ -3,7 +3,7 @@
 > **Layer**: Core
 > **GDD**: design/gdd/character-persistence.md
 > **Architecture Module**: Character Persistence — `CharacterPersistenceService : ICharacterPersistence` (async), PostgreSQL via Npgsql and Dapper
-> **Status**: In Progress (created 2026-10-12; 16 stories written 2026-10-12 — 12 Complete (001–004, 006–010, 012, 013, 017 — 017 added and Complete 2026-10-16 for TD-070 / TD-060; 012 and 013 Complete 2026-10-19), 2 Not Started pending `/story-readiness` (011, 014), 3 Blocked (005, 015, 016))
+> **Status**: In Progress (created 2026-10-12; 16 stories written 2026-10-12 — 12 Complete (001–004, 006–010, 012, 013, 017 — 017 added and Complete 2026-10-16 for TD-070 / TD-060; 012 and 013 Complete 2026-10-19), 1 Ready (014), 1 Not Started pending `/story-readiness` (011), 3 Blocked (005, 015, 016))
 > **Stories**: 16 stories created 2026-10-12 (001–016); Story 017 added 2026-10-16
 > **Manifest Version**: 2026-10-09
 
@@ -59,6 +59,7 @@ No requirement was found that needs a new ADR.
 4. **Three callers are not implemented**: Authentication (`LoadCharacter`, `CreateStub` — an epic exists), Zone Instancing (`SaveSession(ZoneClosed)` — no epic), Death & Respawn (no epic). Their call sites are reached through seams until then.
 5. **Open questions of the GDD, none marked blocking**: OQ-CP-1 (a dedicated `DisconnectReason.PersistenceFailure`; the GDD recommends it), OQ-CP-3 (an action: close OQ-NC-SER-2 in `networking-wire-protocol.md`), OQ-CP-4 (a timeout constant for `CreateStub`; its source is unspecified today).
 6. **Reverse references not verified**: the GDD asks that Character Stats, Equipment System, Inventory System, Currency System and Leveling System be checked for their reference back to this system before implementation. Not checked when this epic was written.
+7. *(Added 2026-10-19, Story 014 `/story-readiness`.)* **ADR-006 and ADR-007 disagree on the connection pool.** ADR-006 Decision 5: `Maximum Pool Size=20;Connection Idle Lifetime=60`. ADR-007 (zone connection string): `Timeout=5;CommandTimeout=5;Pooling=true;MinPoolSize=2;MaxPoolSize=10`, with `Password=[env]`. Story 014's store takes an `NpgsqlDataSource` and builds none, so the conflict belongs to whoever builds the data source (the composition-root story, which also owns the data-source warm-up from Networking Core Story 041). Settle it there, likely as an ADR-006 or ADR-007 amendment.
 
 ## Definition of Done
 
@@ -88,7 +89,7 @@ This epic is complete when:
 | 011 | [`PendingPurchase` Lifecycle on the Store Seam](story-011-pending-purchase-lifecycle.md) | Logic | Not Started (2026-10-12; 3 open decisions; no caller yet) | ADR-001, ADR-006 |
 | 012 | [Npgsql and Dapper in the Project](story-012-npgsql-and-dapper-in-the-project.md) | Integration | Complete (2026-10-19; COMPLETE WITH NOTES; 11 DLLs, Editor round trip PASS against a portable PostgreSQL 16.15 — no Docker on the dev machine; build items (b)–(d) carried by the epic; IL2CPP / Dapper risk TD-073; EditMode 3091: 3090 passed, 1 skipped) | ADR-006, ADR-012 |
 | 013 | [SQL Migrations for `character_records` and `pending_purchases`](story-013-sql-migrations.md) | Config/Data | Complete (2026-10-19) | ADR-006 |
-| 014 | [The Npgsql Character Record Store](story-014-npgsql-character-record-store.md) | Integration | Not Started (2026-10-19: unblocked — 012 and 013 Complete; run `/story-readiness`) | ADR-006, ADR-011 |
+| 014 | [The Npgsql Character Record Store](story-014-npgsql-character-record-store.md) | Integration | Ready (2026-10-19 `/story-readiness`; 10 h) | ADR-006, ADR-011 |
 | 015 | [The Npgsql Pending-Purchase Store](story-015-npgsql-pending-purchase-store.md) | Integration | Blocked (012–014) | ADR-006, ADR-001 |
 | 016 | [The Real-Database Verification Run](story-016-real-database-verification-run.md) | Integration | Blocked (012–015 and Part A) | ADR-006 |
 | 017 | [Session-End Saves Wait for the Mutation Gate](story-017-session-end-waits-for-the-mutation-gate.md) | Integration | Complete (2026-10-16; 16 new test cases, EditMode 2932 / 2932; COMPLETE WITH NOTES; closes TD-070 and TD-060, adds TD-071) | ADR-011 |

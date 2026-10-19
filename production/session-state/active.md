@@ -4097,3 +4097,9 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: None
 - EPIC: Character Persistence 12/17 Complete; Story 014 unblocked (Not Started)
 - Next recommended: Character Persistence Story 014 (The Npgsql Character Record Store, Integration) — production/epics/character-persistence/story-014-npgsql-character-record-store.md — run /story-readiness first
+
+## Session Extract — /story-readiness 2026-10-19 (Character Persistence Story 014)
+- Verdict: NEEDS WORK (7 gaps; first report miscounted, corrected) → fixed with the recommendations (user approved). Story Ready, 10 h; EPIC row 014 Ready. QL-STORY-READY skipped (lean).
+- Decisions: DB tests in tests/EditMode/CharacterPersistence/CharacterPersistence_NpgsqlRecordStore_tests.cs, [Explicit][Category("Database")], Assert.Ignore without IRONGRIND_DEV_PG, no Npgsql type in tests (internal ServerLogic factory); Story 002's 60 store tests move into an abstract contract fixture (clock-exact asserts in-memory only; DB stamps NOW()); hand-written slot JSON codec (no reflection); store takes NpgsqlDataSource, never builds it; timeout via the service's injected writeTimeout (1 s in test).
+- EPIC Known Gap 7 added: ADR-006 (Max Pool 20) vs ADR-007 (Min 2 / Max 10, Password=[env]) pool conflict → composition-root story.
+- Uncommitted: story-014, character-persistence/EPIC.md. Next: commit → /dev-story Story 014.
