@@ -6,6 +6,8 @@ Accepted (2026-06-27)
 ## Date
 2026-06-27
 
+Note 2026-10-19 (ADR-009 Amendment 1 Accepted): the `IZoneStartupService.StartZone()` this ADR names as the server-side injection point "(ADR-009)" was never defined in ADR-009. It is `ZoneServerComposition.Start(ZoneStartupArgs)` of ADR-009 Amendment 1 (Decision 5, startup S5), the one server composition root. No `IZoneStartupService` interface is introduced. The wiring rule itself is unchanged.
+
 ## Engine Compatibility
 
 | Field | Value |

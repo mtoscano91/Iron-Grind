@@ -4144,3 +4144,9 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - New TR-IDs: none. GDD revision flags: none (R4 is a story note).
 - Report: docs/architecture/architecture-review-2026-10-19-adr-009-a1.md. Not committed.
 - Next: commit → `/create-control-manifest update` → `/create-stories networking-core` (composition root, 042+). PAT rotation still unconfirmed.
+
+## Session Extract — /create-control-manifest update 2026-10-19
+- Manifest Version 2026-10-16 → **2026-10-19** (lean — TD-MANIFEST skipped). Covers ADR-009 Amendment 1, ADR-006 Amendments 2–3, ADR-011 and ADR-010 notes.
+- Foundation: pool line (Amendment 3 string, IRONGRIND_PG_PASSWORD), uint→BIGINT incl. last_zone_id (Amendment 2 was missing), drain at teardown step 5, composition root + seams, startup S0–S10, S-fail, coroutine structure, stand-ins, teardown 1–8, OnWantsToQuit, OnDestroy, ZoneExitCode; 8 forbidden approaches; 5 guardrails (two blocking waits, NGO shutdown cap, 44 connections, TimeoutStopSec, A1 verification split); 1 cross-cutting line.
+- User decision: ADR-010's IZoneStartupService.StartZone() = ZoneServerComposition.Start — dated note on ADR-010, manifest line 170 updated.
+- Not committed. Next: commit → `/create-stories networking-core` (composition root 042+, embed manifest 2026-10-19).
