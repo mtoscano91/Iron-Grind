@@ -4120,3 +4120,27 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: 1 (TD-075, SaveVersion wrap divergence)
 - EPIC: Character Persistence 13/17 Complete; 015 still blocked on Story 011's open decision 1 (011 Deferred until NPC Shop); 016 blocked on 015
 - Next recommended: none ready in this epic — the composition-root story (data source, pool-size conflict Known Gap 7, warm-up) or another epic (/help)
+
+## Session Extract — /create-stories networking-core (Story 042, composition root) 2026-10-19
+- Verdict: BLOCKED — no story written. No production server host exists (nothing outside tests builds ZoneTickPipeline, CharacterPersistenceService, the outbox or the relay; RelayVerificationHost is a test call site), and ADR-009 is incomplete: architecture-traceability.md C2/P4 open (teardown lacks Dispose pass and shutdown drain; startup lacks NGO start, static-data-ready, wiring; IRandomProvider creation; Process.Exit(0) is not a .NET API).
+- User decision: write ADR-009 Amendment 1 first (/architecture-decision), closing C2/P4; then /create-stories splits the composition root into 2-3 stories.
+- User decision (EPIC Known Gap 7, pool): adopt ADR-007's values — Timeout=5;CommandTimeout=5;Pooling=true;MinPoolSize=2;MaxPoolSize=10 — plus ADR-006's Connection Idle Lifetime=60; recorded as an ADR-006 amendment (Amendment 3). 4 zones = 40 pooled + 4 unpooled listener connections, under the default max_connections=100.
+- Must carry into the amendment/stories: data-source warm-up before the first tick (Story 041 VR-1, 58 ms); NpgsqlRelayListener.Stop() at teardown step 2a and host OnDestroy; ADR-015 Verification 4 and 6; listener keeps WaitAsync on Mono/Editor; NpgsqlCharacterRecordStore wiring (Story 014).
+- Next: /architecture-decision ADR-009 Amendment 1 (+ ADR-006 Amendment 3 for the pool).
+
+## Session Extract — /architecture-decision ADR-009 Amendment 1 + ADR-006 Amendment 3 (2026-10-19)
+- Written, Proposed (uncommitted): ADR-009 Amendment 1 (end of file + Status note) — startup S0–S10, teardown 1–8 (tick off → listener Stop 2a → nav Teardown (CR-NAV-3) → CR-ZI-12 → final outbound flush 4b → DrainOnShutdown → NGO Shutdown, yield while ShutdownInProgress → Dispose pass, data source last → Application.Quit(code)), Decision 5 composition root (ZoneServerHost thin MonoBehaviour + ZoneServerComposition), ZoneExitCode 0/1/2, Verification A1-1..A1-7. ADR-006 Amendment 3 (pool = ADR-007 values + Connection Idle Lifetime=60; password from IRONGRIND_PG_PASSWORD). ADR-011 Decision 2 dated note (two blocking waits). architecture-traceability.md C2/P4 marked "amendment Proposed".
+- User decisions: amend ADR-009 (not a new ADR); thin host + testable composition; Application.Quit(int); wantsToQuit interception; config + password env; failed startup undoes and exits 1.
+- unity-specialist validation: 1 BLOCKING (Editor wantsToQuit blocks Play-mode stop → handler returns true in Editor) + minors, all folded in. GDD sync: nav teardown restored before CR-ZI-12 (CR-NAV-3); step 4b added.
+- Registry: 5 candidate stances deferred until acceptance (user decision).
+- Next: user accepts the amendments (or fresh-session /architecture-review first), then registry entries, then /create-stories networking-core for the composition-root stories (042+).
+
+## Session Extract — /architecture-review 2026-10-19 (ADR-009 Amendment 1 + ADR-006 Amendment 3)
+- Verdict: CONCERNS (nothing blocking); both amendments **Accepted** 2026-10-19 by the user (option "fix, then accept").
+- Scope: focused on the two amendments; code names, ADR-002/004/007/011/013/014/015, CR-ZI-12, CR-NAV-3 cross-checked; unity-specialist read-only review: 0 blocking, 8 advisory.
+- Folded into ADR-009 Amendment 1: R1 NGO shutdown wait capped (`NGO_SHUTDOWN_WAIT_FRAMES`, 100, server config); R2 SIGTERM fallback named (PosixSignalRegistration or native plugin; handler only sets a flag); R3 A1 checks split (A1-3/5/6 + first A1-4 locally on Windows Mono Dedicated Server; A1-1/2/7 + final A1-4 at the Linux IL2CPP gate). Notes: R4 CR-ZI-12 step 5 ordering, R6 `Restart=always`, R7 uint cast.
+- Propagation: ADR-006 status/note/diagram, ADR-011 note, ADR-015 line 224, traceability (C2/P4 closed, conflicts 1, history row). Control manifest NOT updated (lines 71, 79 stale).
+- Registry: 5 entries added (zone_process_object_graph, zone_process_lifecycle, postgres_connection_pool, server_construction_outside_composition_root, teardown_inside_tick_or_quit_handler).
+- New TR-IDs: none. GDD revision flags: none (R4 is a story note).
+- Report: docs/architecture/architecture-review-2026-10-19-adr-009-a1.md. Not committed.
+- Next: commit → `/create-control-manifest update` → `/create-stories networking-core` (composition root, 042+). PAT rotation still unconfirmed.

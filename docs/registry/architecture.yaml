@@ -30,7 +30,7 @@
 #   Superseded entries:     Grep pattern="status: superseded"
 
 version: 1
-last_updated: "2026-10-16"
+last_updated: "2026-10-19"
 
 # ─── STATE OWNERSHIP ─────────────────────────────────────────────────────────
 # Who is the authoritative owner of each piece of shared game state.
@@ -66,6 +66,21 @@ state_ownership:
       - docs/architecture/ADR-006-persistence-layer.md
       - docs/architecture/ADR-001-purchase-transaction-integrity.md
     added: 2026-06-27
+    revised: ""
+
+  - state: zone_process_object_graph
+    status: active
+    owner_system: ZoneServerComposition
+    adr: docs/architecture/ADR-009-scene-zone-load-management.md
+    interface: "ZoneServerComposition.Start(ZoneStartupArgs) / RequestTeardown(ZoneExitCode) / RunTeardown() / TeardownNow() / OnWantsToQuit(); hosted by the thin ZoneServerHost MonoBehaviour (ADR-009 Amendment 1, Decision 5)"
+    write_access: "ZoneServerComposition-only: it constructs every server system, the one IRandomProvider, the NpgsqlDataSource and the relay, owns them, and releases them in the teardown Dispose pass (reverse construction order, data source last)"
+    referenced_by:
+      - docs/architecture/ADR-009-scene-zone-load-management.md
+      - docs/architecture/ADR-011-async-persistence-tick-loop.md
+      - docs/architecture/ADR-013-server-random-provider.md
+      - docs/architecture/ADR-014-inbound-request-dispatch-and-tick-order.md
+      - docs/architecture/ADR-015-cross-zone-message-relay.md
+    added: 2026-10-19
     revised: ""
 
 # Example:
@@ -498,6 +513,33 @@ api_decisions:
     added: 2026-10-16
     revised: 2026-10-16
 
+  - purpose: zone_process_lifecycle
+    status: active
+    api: "Startup S0–S10 (config → wantsToQuit hook + DontDestroyOnLoad roots, NGO scene management off → static data → IRandomProvider → NpgsqlDataSource + bounded warm-up → construction without I/O → scene + NavMesh → relay listener → NGO StartServer at TickRate 20 → tick from NetworkTickSystem.Tick → gateway registration last); teardown 1–8 (tick off → listener Stop → nav Teardown → CR-ZI-12 → one outbound flush → DrainOnShutdown → NGO Shutdown with a capped wait → Dispose pass → Application.Quit((int)ZoneExitCode)); quit requests go through Application.wantsToQuit → RequestTeardown; OnDestroy runs steps 1–7 synchronously; ZoneExitCode Clean=0, StartupFailed=1, Fatal=2"
+    not: "Process.Exit(0) (not a .NET API); Environment.Exit; tearing down inside a tick or inside the wantsToQuit handler; retrying a failed startup step inside the process; OnApplicationQuit as the teardown path"
+    adr: docs/architecture/ADR-009-scene-zone-load-management.md
+    reason: "One process per zone (ADR-007): a fixed startup and teardown order lets the drain finish the last saves, the relay listener stop, and supervision see why the process ended. Closes C2/P4 (architecture-review-2026-10-19-adr-009-a1)."
+    referenced_by:
+      - docs/architecture/ADR-009-scene-zone-load-management.md
+      - docs/architecture/ADR-011-async-persistence-tick-loop.md
+      - docs/architecture/ADR-015-cross-zone-message-relay.md
+    added: 2026-10-19
+    revised: ""
+
+  - purpose: postgres_connection_pool
+    status: active
+    api: "One NpgsqlDataSource per zone process, built by the composition root with NpgsqlConnectionStringBuilder from server config and IRONGRIND_PG_PASSWORD: Timeout=5;Command Timeout=5;Pooling=true;Minimum Pool Size=2;Maximum Pool Size=10;Connection Idle Lifetime=60. Relay listener: one extra unpooled connection. 4 zones = 44 connections < max_connections 100"
+    not: "Maximum Pool Size=20 (ADR-006's original value); an external pooler (PgBouncer) at MVP; a data source built anywhere but the composition root; logging the connection string; IRONGRIND_DEV_PG in production"
+    adr: docs/architecture/ADR-006-persistence-layer.md
+    reason: "ADR-006 and ADR-007 disagreed on the pool (Character Persistence EPIC Known Gap 7); ADR-007's per-zone values fit 4 zones within PostgreSQL's default connection limit (ADR-006 Amendment 3)."
+    referenced_by:
+      - docs/architecture/ADR-006-persistence-layer.md
+      - docs/architecture/ADR-007-hosting-backend.md
+      - docs/architecture/ADR-009-scene-zone-load-management.md
+      - docs/architecture/ADR-015-cross-zone-message-relay.md
+    added: 2026-10-19
+    revised: ""
+
 # Example:
 #
 # api_decisions:
@@ -704,6 +746,20 @@ forbidden_patterns:
     why: "Game state is single-threaded (ADR-007, ADR-011); a network-side callback only records (ADR-010 Decision 5, ADR-014 Decision 7)."
     adr: docs/architecture/ADR-015-cross-zone-message-relay.md
     added: 2026-10-16
+
+  - pattern: server_construction_outside_composition_root
+    status: active
+    description: "No server code outside ZoneServerComposition constructs a game system, an IRandomProvider, an NpgsqlDataSource, the relay publisher/listener, or the ZoneTickPipeline. Systems receive their dependencies through constructors. Tests construct them directly."
+    why: "Several generators or data sources per zone break ADR-013 Decision 4 and the pool budget (ADR-006 Amendment 3); anything built outside the composition root is missed by the teardown Dispose pass."
+    adr: docs/architecture/ADR-009-scene-zone-load-management.md
+    added: 2026-10-19
+
+  - pattern: teardown_inside_tick_or_quit_handler
+    status: active
+    description: "A teardown trigger (zone Closed, a quit request, a fatal error) only calls ZoneServerComposition.RequestTeardown(code). The teardown itself is started by the host's Update, never inside a tick, a completion callback or the Application.wantsToQuit handler, and the handler returns false outside the Editor until teardown step 8."
+    why: "Teardown stops the tick and blocks on the drain. Run inside a tick it would re-enter the pipeline. Run inside wantsToQuit it would block Unity's quit path. Returning true early skips the drain and loses the last saves."
+    adr: docs/architecture/ADR-009-scene-zone-load-management.md
+    added: 2026-10-19
 
 # Example:
 #

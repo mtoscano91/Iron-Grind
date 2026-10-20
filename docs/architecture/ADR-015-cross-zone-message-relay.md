@@ -221,7 +221,7 @@ Production types: `ServerWideBroadcaster`, `NpgsqlRelayPublisher`, `NpgsqlRelayL
 - EditMode tests run several zones on the in-memory bus, with no database.
 
 ### Negative
-- One extra dedicated database connection and one extra thread per zone process (4 zones: 4 connections; ADR-006's pool, `Maximum Pool Size=20` per zone, is unaffected because the listener connection is unpooled; ADR-007's example connection string shows 10).
+- One extra dedicated database connection and one extra thread per zone process (4 zones: 4 connections; the listener connection is unpooled, so it is outside the per-zone pool; that pool is `Maximum Pool Size=10` since ADR-006 Amendment 3, 2026-10-19, which counts 4 × 10 pooled + 4 listener connections = 44 against `max_connections` = 100).
 - Messages are lost while a listener reconnects; a zone can miss a +9 announcement after a database restart.
 - A relayed message reaches other zones' clients one tick later than the producer's own clients (≤ 50 ms + database round trip).
 - The relay is down whenever PostgreSQL is down — but so is every commit, so no +9 can happen then.

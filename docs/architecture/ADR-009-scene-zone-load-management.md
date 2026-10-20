@@ -1,14 +1,14 @@
 # ADR-009: Scene/Zone-Load Management
 
 ## Status
-Accepted (2026-06-27)
+Accepted (2026-06-27) — Amendment 1 Accepted 2026-10-19
 
 ## Date
 2026-06-27
 
 Note 2026-10-16 (ADR-015 Accepted): Decision 3 gains step 2a — stop the cross-zone relay listener (`NpgsqlRelayListener.Stop()`) after the tick loop has stopped. The listener is also stopped from the server host `MonoBehaviour.OnDestroy`, because this teardown does not run when the Editor leaves Play mode (ADR-015 Decision 3). This adds to the open teardown-order item C2 in `architecture-traceability.md`.
 
-Note 2026-10-19: **Amendment 1 (Proposed)** at the end of this file replaces the step lists of Decision 2 (startup) and Decision 3 (teardown), adds Decision 5 (the composition root) and replaces `Process.Exit(0)` with `Application.Quit(int)`. It closes C2 and P4 once Accepted.
+Note 2026-10-19: **Amendment 1 (Accepted 2026-10-19)** at the end of this file replaces the step lists of Decision 2 (startup) and Decision 3 (teardown), adds Decision 5 (the composition root) and replaces `Process.Exit(0)` with `Application.Quit(int)`. Where the body below still shows `Process.Exit(0)` or the old step lists, the amendment wins. It closes C2 and P4 (`architecture-review-2026-10-19-adr-009-a1.md`).
 
 ## Engine Compatibility
 
@@ -362,7 +362,7 @@ Greenfield — no existing scene management code. Implementation order:
 - `design/gdd/navigation-pathfinding.md` — `ZoneNavigationService.Initialize()` / `Teardown()` call sites
 - `design/gdd/movement-system.md` — spawn position on zone entry via `GetTownRespawnPoint()`
 
-## Amendment 1 — Zone Process Startup, Teardown and the Composition Root (2026-10-19, Proposed)
+## Amendment 1 — Zone Process Startup, Teardown and the Composition Root (2026-10-19, Accepted 2026-10-19)
 
 Closes `architecture-traceability.md` C2 (teardown lacks a `Dispose()` pass and the shutdown drain) and P4 (startup lacks NGO start, static-data-ready and wiring). It replaces the step lists of Decision 2 and Decision 3 and adds Decision 5. Decision 1 (scene loading), the `ZoneDefinition` rules and Decision 4 (client) are unchanged. User decisions 2026-10-19: amend this ADR rather than write a new one; thin host + testable composition class; `Application.Quit(int)` as the exit call; quit requests intercepted through `Application.wantsToQuit`; connection string from server config with the password from the environment; a failed startup step undoes what was built and exits nonzero.
 
@@ -371,7 +371,7 @@ Closes `architecture-traceability.md` C2 (teardown lacks a `Dispose()` pass and 
 | Field | Value |
 |-------|-------|
 | **Post-Cutoff / unverified APIs** | `Application.wantsToQuit` and `Application.Quit(int)` on a Linux Dedicated Server IL2CPP player; `Object.DontDestroyOnLoad` across `LoadSceneAsync(…, Single)`; `NetworkManager.NetworkTickSystem.Tick` (`event Action`, can fire more than once per frame — engine reference networking.md); `NetworkManager.StartServer()` return value; `OnDestroy` order when the Editor leaves Play mode |
-| **Verification Required (A1)** | All on the Linux Dedicated Server IL2CPP build in batch mode (`-batchmode -nographics`), started under systemd or stopped with `kill -TERM`, except A1-5. (A1-1) SIGTERM raises `Application.wantsToQuit` on the main thread; returning `false` keeps the process alive until the teardown calls `Application.Quit(code)`, and the exit status equals `code` (ADR-011 Verification 4 made concrete). **This is a real unknown, not a formality:** if SIGTERM does not reach `wantsToQuit`, the amendment needs another hook before shipping (a native signal shim; `AppDomain.ProcessExit` is too late for the drain) — record the finding either way. (A1-2) A second SIGTERM during teardown does not cut the drain short. (A1-3) The host (a root GameObject) and the `NetworkManager` object, both `DontDestroyOnLoad`, survive `LoadSceneAsync(…, Single)`. (A1-4) `NetworkConfig.TickRate = 20` set before `StartServer()` makes `NetworkTickSystem.Tick` fire 20 times per second of server time with `Application.targetFrameRate = 20` and `vSyncCount = 0` in batch mode; ticks per frame are 0, 1 or 2. (A1-5) Editor: leaving Play mode is not blocked by the `wantsToQuit` handler, runs the host's `OnDestroy`, which runs the teardown without the exit step, also when `NetworkManager.OnDestroy` ran first; the listener thread stops within `RELAY_LISTENER_STOP_TIMEOUT_MS` (ADR-015 Verification 6). (A1-6) With NGO scene management disabled (`NetworkConfig.EnableSceneManagement = false`), the plain `SceneManager.LoadSceneAsync` of Decision 1 runs with NGO started afterwards and no NGO scene warning. (A1-7) Npgsql 8.0.9 and Dapper 2.1.66 run on the IL2CPP Linux build with `Assets/link.xml` (one real read and one real write; Character Persistence EPIC Known Gap 2, TD-073). |
+| **Verification Required (A1)** | All on the Linux Dedicated Server IL2CPP build in batch mode (`-batchmode -nographics`), started under systemd or stopped with `kill -TERM`, except A1-5. (A1-1) SIGTERM raises `Application.wantsToQuit` on the main thread; returning `false` keeps the process alive until the teardown calls `Application.Quit(code)`, and the exit status equals `code` (ADR-011 Verification 4 made concrete). **This is a real unknown, not a formality:** if SIGTERM does not reach `wantsToQuit`, the amendment needs another hook before shipping, in this order: `PosixSignalRegistration.Create(PosixSignal.SIGTERM, ctx => { ctx.Cancel = true; … })` if Unity's .NET profile has it (a .NET 6 API that may be missing; A1-1 checks), otherwise a small native plugin that installs the signal handler. Either handler runs off the main thread and only sets a volatile flag that the host's `Update` turns into `RequestTeardown(Clean)`. `AppDomain.ProcessExit` is too late for the drain. Record the finding either way. (A1-2) A second SIGTERM during teardown does not cut the drain short. (A1-3) The host (a root GameObject) and the `NetworkManager` object, both `DontDestroyOnLoad`, survive `LoadSceneAsync(…, Single)`. (A1-4) `NetworkConfig.TickRate = 20` set before `StartServer()` makes `NetworkTickSystem.Tick` fire 20 times per second of server time with `Application.targetFrameRate = 20` and `vSyncCount = 0` in batch mode; ticks per frame are 0, 1 or 2. (A1-5) Editor: leaving Play mode is not blocked by the `wantsToQuit` handler, runs the host's `OnDestroy`, which runs the teardown without the exit step, also when `NetworkManager.OnDestroy` ran first; the listener thread stops within `RELAY_LISTENER_STOP_TIMEOUT_MS` (ADR-015 Verification 6). (A1-6) With NGO scene management disabled (`NetworkConfig.EnableSceneManagement = false`), the plain `SceneManager.LoadSceneAsync` of Decision 1 runs with NGO started afterwards and no NGO scene warning. (A1-7) Npgsql 8.0.9 and Dapper 2.1.66 run on the IL2CPP Linux build with `Assets/link.xml` (one real read and one real write; Character Persistence EPIC Known Gap 2, TD-073). **Where each check runs (review 2026-10-19):** this machine has only the Windows Dedicated Server (Mono) module for 6000.3.10f1 and Windows has no SIGTERM, so A1-3, A1-5 and A1-6 run locally (A1-3 and A1-6 on the Windows Dedicated Server build, A1-5 in the Editor), A1-4 runs there as a first measurement, and A1-1, A1-2, A1-7 and the final A1-4 are carried by the epic's Linux IL2CPP headless-build gate, as Networking Core Story 041 did for its VR-2. |
 
 ### Decision 2 (replaced) — Zone Process Startup
 
@@ -435,7 +435,9 @@ A trigger (zone `Closed` from game code, a quit request, a fatal error) only cal
 4b. outbound.Flush() once                              // the tick is stopped; sends CR-ZI-12 step 4's ZoneSessionEnded
 5.  queue.DrainOnShutdown(PERSISTENCE_WATCHDOG duration)   // ADR-011 Decision 2: bounded wait, then a last Drain
 6.  NgoInboundTransportShell.Stop(); NetworkManager.Shutdown();
-    yield while NetworkManager.ShutdownInProgress      // NGO finishes its shutdown at the end of a frame
+    yield while NetworkManager != null && NetworkManager.ShutdownInProgress,
+          at most NGO_SHUTDOWN_WAIT_FRAMES frames      // NGO finishes its shutdown at the end of a frame; a destroyed or
+                                                       // inactive NetworkManager never gets that frame: at the cap, log a warning and go on
 7.  Dispose pass: everything S5 built that is IDisposable, in reverse order; dataSource.Dispose() last
 8.  quitAllowed = true; Application.Quit((int)code)    // replaces Process.Exit(0), which is not a .NET API
 ```
@@ -452,7 +454,7 @@ Steps 3 and 4 are the old Decision 3 order (nav teardown, then CR-ZI-12); what i
 
 - `ZoneServerComposition` is the only place in the server that constructs systems, the `IRandomProvider`, the `NpgsqlDataSource` and the relay; it is the "server composition root" named by ADR-011, ADR-013, ADR-014 and ADR-015. It owns everything it constructs, and the teardown's Dispose pass releases it.
 - Its Unity-facing work (NGO, scene load, NavMesh, `Application`) goes through small seams so that EditMode tests can run startup order, startup failure at each step, teardown order and idempotence without NGO, a scene or a database. The database part is tested against PostgreSQL in the explicit `Database` category, as Character Persistence Story 014 did.
-- Configuration values introduced here are server config, not constants: `DB_WARMUP_TIMEOUT_MS` (5 000) and the connection fields of ADR-006 Amendment 3.
+- Configuration values introduced here are server config, not constants: `DB_WARMUP_TIMEOUT_MS` (5 000), `NGO_SHUTDOWN_WAIT_FRAMES` (100, 5 s at 20 frames per second) and the connection fields of ADR-006 Amendment 3.
 
 ### Key Interfaces (Amendment 1)
 
@@ -479,5 +481,10 @@ public interface IGatewayRegistration { void RegisterZone(ZoneID zone, ushort po
 1. ADR-006 Amendment 3 (pool) and a dated note on ADR-011 Decision 2 (two blocking waits) — with this amendment.
 2. Networking Core stories: `ZoneServerComposition` + `ZoneServerHost`, startup S0–S5 and S7–S10 with stand-ins for nav, bounds, CR-ZI-12 and gateway, teardown 1–8, exit codes, quit interception; EditMode tests on the seams; Database-category test of S4. Carries ADR-015 Verification 4 and 6 and A1-1 to A1-7.
 3. Zone Instancing / Navigation stories replace the stand-ins (S6, teardown 3 and 4, S10) when those epics are written.
-4. ADR-007 C1 amendment picks up exit codes and `TimeoutStopSec`.
+4. ADR-007 C1 amendment picks up exit codes and `TimeoutStopSec`, and `Restart=always`, which also restarts a zone that exited `Clean`.
+
+Notes for the stories (review 2026-10-19):
+- `NetworkConfig.TickRate` is a `uint`; S8 casts `ServerTickLoop.TICK_RATE_HZ` (an `int`) explicitly.
+- NGO's `DontDestroy = true` (the default) already makes the root `NetworkManager` object `DontDestroyOnLoad`; S1 only has to keep it a root object.
+- CR-ZI-12 step 5 (`NotifyZoneExit`) runs before the saves of step 2 complete: their completions are delivered by the drain at teardown step 5. The GDD allows this only when the saves are "committed to the write queue with guaranteed ordering"; the Zone Instancing story that replaces the CR-ZI-12 stand-in states how that ordering holds, or moves `NotifyZoneExit` into the save completion callbacks.
 

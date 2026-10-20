@@ -1,7 +1,7 @@
 # ADR-006: Persistence Layer — PostgreSQL + Npgsql + Dapper
 
 ## Status
-Accepted (2026-06-27) — amended 2026-10-01 (Amendment 1: `inventory_slots` entry gains `enhancement_level`) and 2026-10-19 (Amendment 2: `last_zone_id` is `BIGINT`); Amendment 3 (connection pool: ADR-007's values) Proposed 2026-10-19; see Amendments
+Accepted (2026-06-27) — amended 2026-10-01 (Amendment 1: `inventory_slots` entry gains `enhancement_level`) and 2026-10-19 (Amendment 2: `last_zone_id` is `BIGINT`); and 2026-10-19 (Amendment 3: connection pool, ADR-007's values; Accepted 2026-10-19); see Amendments
 
 ## Date
 2026-06-27
@@ -135,7 +135,7 @@ Maximum Pool Size=20;Connection Idle Lifetime=60;
 
 `Maximum Pool Size=20` provides headroom for concurrent zone-tick processing and background saves without exhausting PostgreSQL connection slots.
 
-*Note 2026-10-19: Amendment 3 (Proposed) replaces this string with ADR-007's values (`Maximum Pool Size=10`, `Minimum Pool Size=2`, `Timeout=5`, `Command Timeout=5`) plus `Connection Idle Lifetime=60`.*
+*Note 2026-10-19: Amendment 3 (Accepted 2026-10-19) replaces this string with ADR-007's values (`Maximum Pool Size=10`, `Minimum Pool Size=2`, `Timeout=5`, `Command Timeout=5`) plus `Connection Idle Lifetime=60`.*
 
 ### Architecture Diagram
 
@@ -143,7 +143,7 @@ Maximum Pool Size=20;Connection Idle Lifetime=60;
 Game Server Process (Unity Headless, Linux)
 │
 ├── CharacterPersistenceService : ICharacterPersistence
-│   ├── NpgsqlDataSource (connection pool, Max Pool Size=20)
+│   ├── NpgsqlDataSource (connection pool, Max Pool Size=10 — Amendment 3)
 │   ├── Dapper SQL helpers (explicit parameterised SQL)
 │   └── Per-CharacterID write-queue (CR-CP-7 invariant — one write in flight)
 │
@@ -332,7 +332,7 @@ Migrations are applied manually before server deployment for MVP. Automated migr
 
 **Performance:** 4 bytes more per character row; no effect on the Decision 4 latency budget.
 
-### Amendment 3 (2026-10-19, Proposed) — connection pool
+### Amendment 3 (2026-10-19, Accepted 2026-10-19) — connection pool
 
 **Change:** Decision 5's connection string is replaced; ADR-007's per-zone values win (user decision 2026-10-19, Character Persistence EPIC Known Gap 7):
 
