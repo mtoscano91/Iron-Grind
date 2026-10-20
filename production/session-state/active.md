@@ -4150,3 +4150,9 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Foundation: pool line (Amendment 3 string, IRONGRIND_PG_PASSWORD), uint→BIGINT incl. last_zone_id (Amendment 2 was missing), drain at teardown step 5, composition root + seams, startup S0–S10, S-fail, coroutine structure, stand-ins, teardown 1–8, OnWantsToQuit, OnDestroy, ZoneExitCode; 8 forbidden approaches; 5 guardrails (two blocking waits, NGO shutdown cap, 44 connections, TimeoutStopSec, A1 verification split); 1 cross-cutting line.
 - User decision: ADR-010's IZoneStartupService.StartZone() = ZoneServerComposition.Start — dated note on ADR-010, manifest line 170 updated.
 - Not committed. Next: commit → `/create-stories networking-core` (composition root 042+, embed manifest 2026-10-19).
+
+## Session close 2026-10-19
+- Commits this session: a6125b1 (ADR-009 A1 + ADR-006 A3 Accepted, review report, registry), 8da3b02 (control manifest 2026-10-19, ADR-010 note), plus Character Persistence EPIC Known Gap 7 marked Closed (missed propagation).
+- Open (see the 2026-10-19 "what's missing" list): composition-root stories (/create-stories networking-core 042+); A1-1..A1-7 (Linux IL2CPP module not installed); ADR-007 C1 amendment; Zone Instancing/Navigation/gateway stand-ins and the CR-ZI-12 step 5 ordering; P1, P2/P5, P3, G1/G2; CP 015/016 blocked; TD-073, TD-074.
+- Untracked, not committed: bash.exe.stackdump (delete), ProjectSettings/SceneTemplateSettings.json (commit or ignore). PAT rotation still unconfirmed.
+- Next: /create-stories networking-core (composition root, manifest 2026-10-19).
