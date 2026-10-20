@@ -1,7 +1,7 @@
 # ADR-006: Persistence Layer — PostgreSQL + Npgsql + Dapper
 
 ## Status
-Accepted (2026-06-27) — amended 2026-10-01 (Amendment 1: `inventory_slots` entry gains `enhancement_level`) and 2026-10-19 (Amendment 2: `last_zone_id` is `BIGINT`); see Amendments
+Accepted (2026-06-27) — amended 2026-10-01 (Amendment 1: `inventory_slots` entry gains `enhancement_level`) and 2026-10-19 (Amendment 2: `last_zone_id` is `BIGINT`); Amendment 3 (connection pool: ADR-007's values) Proposed 2026-10-19; see Amendments
 
 ## Date
 2026-06-27
@@ -134,6 +134,8 @@ Maximum Pool Size=20;Connection Idle Lifetime=60;
 ```
 
 `Maximum Pool Size=20` provides headroom for concurrent zone-tick processing and background saves without exhausting PostgreSQL connection slots.
+
+*Note 2026-10-19: Amendment 3 (Proposed) replaces this string with ADR-007's values (`Maximum Pool Size=10`, `Minimum Pool Size=2`, `Timeout=5`, `Command Timeout=5`) plus `Connection Idle Lifetime=60`.*
 
 ### Architecture Diagram
 
@@ -269,7 +271,7 @@ DDL migration scripts are maintained in `tools/db/migrations/` and applied befor
 | PostgreSQL write latency exceeds 50ms P95 due to hosting topology (DB not co-located) | Medium | High | Hosting Backend ADR must enforce co-location constraint. CI integration test asserts P95 write latency ≤ 50ms against a local PostgreSQL instance. |
 | Npgsql or Dapper IL2CPP incompatibility if server uses IL2CPP | Low | High | Verify `link.xml` requirements before first IL2CPP server build. Use Mono for Linux headless server builds (typical) to avoid AOT issues. |
 | `gear_slots` / `inventory_slots` JSONB deserialization adds latency at load | Low | Low | Dapper maps JSONB columns as `string`; `System.Text.Json` deserialization of fixed-size arrays (7 gear, 20 inventory) is fast. Profile at integration test milestone. |
-| PostgreSQL connection pool exhaustion under burst zone load | Low | Medium | Monitor active connections in soak test. Pool size of 20 is configurable; increase if profiling indicates saturation. |
+| PostgreSQL connection pool exhaustion under burst zone load | Low | Medium | Monitor active connections in soak test. Pool size of 10 per zone (Amendment 3; was 20) is configurable; increase if profiling indicates saturation, within `max_connections`. |
 
 ## GDD Requirements Addressed
 
@@ -329,6 +331,22 @@ Migrations are applied manually before server deployment for MVP. Automated migr
 **Compatibility / migration:** no database holds `character_records` yet (the migrations are Story 013), so no data migration is needed.
 
 **Performance:** 4 bytes more per character row; no effect on the Decision 4 latency budget.
+
+### Amendment 3 (2026-10-19, Proposed) — connection pool
+
+**Change:** Decision 5's connection string is replaced; ADR-007's per-zone values win (user decision 2026-10-19, Character Persistence EPIC Known Gap 7):
+
+```
+Host=127.0.0.1;Port=5432;Database=irongrind;Username=zone_server;Password=[IRONGRIND_PG_PASSWORD];
+Timeout=5;Command Timeout=5;Pooling=true;Minimum Pool Size=2;Maximum Pool Size=10;Connection Idle Lifetime=60
+```
+
+- Built by the zone composition root (ADR-009 Amendment 1, startup step S4) with `NpgsqlConnectionStringBuilder` from server config (host, port, database, username, the pool values) and the password from `IRONGRIND_PG_PASSWORD`; never logged. `IRONGRIND_DEV_PG` stays a test-and-verification variable only.
+- `Command Timeout=5` equals `PERSISTENCE_WRITE_TIMEOUT_SECONDS`; the store also passes the 5 s timeout and the token on each command (Character Persistence Story 014).
+- Budget: 4 zone processes × 10 pooled + 4 unpooled relay listeners (ADR-015) = 44 connections, under PostgreSQL's default `max_connections` = 100. `Minimum Pool Size=2` keeps the warmed connections (ADR-009 Amendment 1, S4) open between bursts.
+- The risk-table pool line now reads 10.
+
+**Decision unchanged:** Npgsql's built-in pool, no external pooler.
 
 ## Related Decisions
 - ADR-001: Purchase Transaction Integrity — `PendingPurchase` record; OQ-ADR1-1 resolved by Decision 3
