@@ -8,7 +8,7 @@ namespace IronGrind.Networking
     /// the CR-OWL-4 entity slot allocation contract (player join/leave/ghost-preserve lifecycle,
     /// mob spawn/despawn free-list lifecycle). A sealed, per-zone-instance stateful class — one
     /// instance per zone, constructed fresh per zone (same shape/precedent as
-    /// <see cref="ZoneSessionStateMachine"/> and <see cref="GhostEntityTracker"/>), never a static
+    /// <c>ZoneSessionStateMachine</c> (deleted, Zone Instancing Story 001) and <see cref="GhostEntityTracker"/>), never a static
     /// singleton.
     /// </summary>
     /// <remarks>

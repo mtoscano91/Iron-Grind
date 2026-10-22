@@ -55,7 +55,7 @@ namespace IronGrind.Networking
     /// <para>
     /// <b>The caller has already enumerated the affected sessions (CR-GH-11 step 1) — this class
     /// does not query any registry itself:</b> matching
-    /// <see cref="ZoneSessionStateMachine.CompleteTTLExpiryTeardown"/>'s own
+    /// <c>ZoneSessionStateMachine.CompleteTTLExpiryTeardown</c> (deleted, Zone Instancing Story 001)'s own
     /// <c>remainingCharacterIds</c> precedent, <see cref="ProcessZoneCrash"/>'s
     /// <c>affectedSessions</c> parameter is the caller's own pre-built list of every session in
     /// <see cref="SessionState.Disconnected_SessionActive"/> or <see cref="SessionState.Reconnecting"/>
@@ -77,7 +77,7 @@ namespace IronGrind.Networking
     /// the 6 pre-existing <see cref="PersistenceWriteReason"/> values name a zone-crash scenario —
     /// <see cref="PersistenceWriteReason.ZoneClose"/> is a different, already-owned scenario (Story
     /// 014's non-ghost <c>Draining → Closed</c> teardown reason; see that enum member's own doc
-    /// comment and <see cref="ZoneSessionStateMachine"/>'s class remarks). Reusing it here would
+    /// comment and <c>ZoneSessionStateMachine</c> (deleted, Zone Instancing Story 001)'s class remarks). Reusing it here would
     /// conflate two structurally different rows in two different state machines. Mirrors this
     /// cluster's own precedent of adding a new, precisely-named reason whenever an existing one
     /// doesn't fit (Story 018 added <see cref="PersistenceWriteReason.GhostCombatTTLExpiry"/> and
@@ -97,7 +97,7 @@ namespace IronGrind.Networking
     /// <c>characterId</c> and <c>snapshotHp</c>) strictly precedes that same entry's
     /// <c>OnPersistenceWriteCompleted</c> and <c>OnSessionStateTransitioned</c> calls — but entries
     /// are otherwise processed independently, one at a time, matching
-    /// <see cref="ZoneSessionStateMachine.CompleteTTLExpiryTeardown"/>'s own per-entry loop shape.
+    /// <c>ZoneSessionStateMachine.CompleteTTLExpiryTeardown</c> (deleted, Zone Instancing Story 001)'s own per-entry loop shape.
     /// </para>
     /// </remarks>
     /// <example>

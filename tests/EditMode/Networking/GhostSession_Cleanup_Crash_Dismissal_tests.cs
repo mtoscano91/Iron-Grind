@@ -10,7 +10,8 @@ namespace IronGrind.Tests.EditMode.Networking
     /// story: <see cref="GhostEntityTracker.RemoveGhost"/> (CR-GH-10 step 4),
     /// <see cref="GhostCleanupSequencer.CompleteVoluntaryDismissalCleanup"/> (CR-GH-12/12.1),
     /// <see cref="GhostDismissalCoordinator"/> (CR-GH-12), and <see cref="ZoneCrashCleanupHandler"/>
-    /// (CR-GH-11). Covers all 5 blocking ACs (AC-GH-10, AC-GH-11, AC-GH-14, AC-GH-16, AC-GH-20) plus
+    /// (CR-GH-11). Covers 4 of the 5 blocking ACs (AC-GH-10, AC-GH-11, AC-GH-14, AC-GH-20; AC-GH-16 moved
+    /// to Zone Instancing Story 002 — see remarks) plus
     /// null-guard/precondition-guard coverage for every new public method across all 4 new/extended
     /// pieces.
     /// </summary>
@@ -21,7 +22,7 @@ namespace IronGrind.Tests.EditMode.Networking
     /// 017-020).
     /// </para>
     /// <para>
-    /// <b>AC-GH-14 and AC-GH-16 are composition tests requiring no new production code</b> (per this
+    /// <b>AC-GH-14 is a composition test requiring no new production code</b> (per this
     /// story's own approved design guidance — the same "compose with already-tested methods, don't
     /// re-derive" precedent Story 019's AC-GH-9 and Story 020's AC-GH-7/AC-GH-12/AC-GH-6 tests already
     /// established). AC-GH-14 composes <see cref="ConnectionStateMachine.EnterReconnecting"/> and
@@ -30,17 +31,9 @@ namespace IronGrind.Tests.EditMode.Networking
     /// branch") with <see cref="MobDeTargetingCoordinator.ProcessTTLExpiry"/> (Story 019, already
     /// tested), reusing the identical <c>originalSessionExpiryTick</c> constant across both
     /// <see cref="ConnectionStateMachine.EnterReconnecting"/> calls to prove the TTL is never re-armed
-    /// by the intervening failed reconnect. AC-GH-16 composes
-    /// <see cref="GhostEntityTracker.PromoteToGhost"/> and a real
-    /// <see cref="ConnectionStateMachine"/> heartbeat-timeout ghost (proving a genuine ghost session,
-    /// not just an abstract slot count) with
-    /// <see cref="ZoneSessionStateMachine.EvaluateJoinAttempt"/> — the exact method
-    /// <c>Session_ZoneStateMachine_Capacity_tests.cs</c>'s own
-    /// <c>EvaluateJoinAttempt_FortyNineConnectedPlusOneGhost_GhostCountsTowardCap_RejectsNewJoin</c>
-    /// (Story 014) already tests for the identical underlying capacity arithmetic; that method's own
-    /// doc comment and EC-NET-3 already state ghost sessions count toward zone capacity, so this test
-    /// proves this story's own scenario composes correctly with that already-tested guarantee, not a
-    /// new one.
+    /// by the intervening failed reconnect. AC-GH-16 (a ghost occupies the final capacity slot, so a new
+    /// join is rejected) moved to Zone Instancing Story 002 (slot pool capacity, <c>TryAllocatePlayer</c>)
+    /// when <c>ZoneSessionStateMachine.EvaluateJoinAttempt</c> was deleted by Zone Instancing Story 001.
     /// </para>
     /// <para>
     /// <b>AC-GH-20 does not use <see cref="IServerCrashInjector"/></b> (mechanism clarification, per
@@ -431,41 +424,6 @@ namespace IronGrind.Tests.EditMode.Networking
             Assert.AreEqual((GhostCharacterId, disconnectTickNumber, originalSessionExpiryTick),
                 observer.GhostCombatTTLExpiredCalls[0],
                 "AC-GH-14: expiryTick must equal the ORIGINAL disconnect tick + TTL width — never re-armed by the failed reconnect.");
-        }
-
-        // =========================================================================================
-        // AC-GH-16: ghost counts against zone capacity — composition test, no new production code
-        // (see class remarks).
-        // =========================================================================================
-
-        [Test]
-        public void EvaluateJoinAttempt_GhostOccupiesFinalCapacitySlot_NewJoinRejected_AC_GH_16()
-        {
-            // Arrange — a zone at capacity N=10 with 9 live Connected players (abstracted as a slot
-            // count) plus 1 real ghost, tracked by both GhostEntityTracker and ConnectionStateMachine
-            // (not just an abstract integer) — proving the ghost occupying the final slot is a
-            // genuine ghost session.
-            const int zoneCapacity = 10;
-            const int otherConnectedPlayers = 9;
-
-            var observer = new NetworkTestObserver();
-            var ghostTracker = new GhostEntityTracker();
-            var stateMachine = CreateDisconnectedSessionActiveStateMachine(observer); // ghost via heartbeat timeout
-            ghostTracker.PromoteToGhost(GhostCharacterId, frozenPosition: (10, 0, 20), observer);
-
-            Assert.IsTrue(stateMachine.TryGetSessionState(AccountId, out SessionState ghostState));
-            Assert.AreEqual(SessionState.Disconnected_SessionActive, ghostState);
-            Assert.IsTrue(ghostTracker.IsGhost(GhostCharacterId));
-
-            var zoneStateMachine = new ZoneSessionStateMachine();
-
-            // Act — EC-NET-3: the ghost session counts toward the cap alongside the 9 live players.
-            bool accepted = zoneStateMachine.EvaluateJoinAttempt(
-                currentOccupiedSlots: otherConnectedPlayers + 1, capacity: zoneCapacity);
-
-            // Assert
-            Assert.IsFalse(accepted,
-                "AC-GH-16: the ghost session's slot is not relinquished until TTL expiry — it still occupies the final slot.");
         }
 
         // =========================================================================================

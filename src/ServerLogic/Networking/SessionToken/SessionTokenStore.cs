@@ -9,7 +9,7 @@ namespace IronGrind.Networking
     /// CR-TOK-1 through CR-TOK-8) — the credential a reconnecting client presents to skip full
     /// re-authentication within the session TTL. This is the first genuinely concurrency-sensitive
     /// class in this codebase: every prior Networking Core registry (<see cref="ConnectionStateMachine"/>,
-    /// <see cref="ZoneSessionStateMachine"/>) is a plain <see cref="System.Collections.Generic.Dictionary{TKey,TValue}"/>
+    /// <c>ZoneSessionStateMachine</c> (deleted, Zone Instancing Story 001)) is a plain <see cref="System.Collections.Generic.Dictionary{TKey,TValue}"/>
     /// and implicitly single-threaded, but CR-TOK-8 requires thread safety because reconnect handlers
     /// and TTL expiry can execute concurrently at the 20Hz tick boundary.
     /// </summary>
@@ -17,7 +17,7 @@ namespace IronGrind.Networking
     /// <para>
     /// <b><see cref="ActiveTokenEntry"/> is immutable — a deliberate, necessary departure from this
     /// epic's usual mutable-record convention:</b> <see cref="ConnectionStateMachine.AccountSessionRecord"/>
-    /// and <see cref="ZoneSessionStateMachine"/>'s own nested record mutate an existing instance's
+    /// and <c>ZoneSessionStateMachine</c> (deleted, Zone Instancing Story 001)'s own nested record mutate an existing instance's
     /// fields in place. This class cannot do that: <see cref="TryValidateAndRotate"/>'s atomicity
     /// guarantee for AC-TOK-6 (only the first of two concurrent requests succeeds) depends on
     /// <see cref="ConcurrentDictionary{TKey,TValue}.TryUpdate(TKey,TValue,TValue)"/>'s reference-identity

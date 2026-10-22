@@ -10,12 +10,12 @@ namespace IronGrind.Networking
     /// and damage applying identically regardless of ghost state (CGS-1/CGS-5's "no client
     /// prediction, ever" guarantee). A sealed, in-memory <c>Dictionary&lt;uint, GhostRecord&gt;</c>
     /// registry keyed by <c>characterId</c>, mirroring <see cref="ConnectionStateMachine"/>'s and
-    /// <see cref="ZoneSessionStateMachine"/>'s established per-story registry shape.
+    /// <c>ZoneSessionStateMachine</c> (deleted, Zone Instancing Story 001)'s established per-story registry shape.
     /// </summary>
     /// <remarks>
     /// <para>
     /// <b>Deliberately decoupled from <see cref="ConnectionStateMachine"/> — no dependency, same
-    /// precedent as <see cref="ZoneSessionStateMachine"/>'s own class remarks:</b> this class never
+    /// precedent as <c>ZoneSessionStateMachine</c> (deleted, Zone Instancing Story 001)'s own class remarks:</b> this class never
     /// calls into <see cref="ConnectionStateMachine"/>. A real caller invokes
     /// <see cref="PromoteToGhost"/> alongside <see cref="ConnectionStateMachine.EvaluateTimeouts"/>'s
     /// heartbeat-timeout branch, at the same trigger point, but no orchestration layer wiring the two
@@ -25,7 +25,7 @@ namespace IronGrind.Networking
     /// <para>
     /// <b><see cref="PromoteToGhost"/> throws on double-promotion (judgment call, approved before
     /// implementation):</b> no blocking AC in this story requires this guard, but it matches
-    /// <see cref="ConnectionStateMachine"/>'s and <see cref="ZoneSessionStateMachine"/>'s own
+    /// <see cref="ConnectionStateMachine"/>'s and <c>ZoneSessionStateMachine</c> (deleted, Zone Instancing Story 001)'s own
     /// established discipline of guarding every state-changing method's precondition rather than
     /// silently allowing a caller to re-enter an already-reached state. Because of this guard, this
     /// class deliberately does <i>not</i> add a <c>ClearGhostState</c> method — no AC in this story
@@ -123,7 +123,7 @@ namespace IronGrind.Networking
         /// <summary>
         /// One character's in-memory ghost-tracking record. A mutable reference type (not a struct),
         /// matching <see cref="ConnectionStateMachine.AccountSessionRecord"/>'s and
-        /// <see cref="ZoneSessionStateMachine.ZoneSessionRecord"/>'s own reasoning: every method
+        /// <c>ZoneSessionStateMachine.ZoneSessionRecord</c> (deleted, Zone Instancing Story 001)'s own reasoning: every method
         /// updates fields in place via a single dictionary lookup.
         /// </summary>
         private sealed class GhostRecord

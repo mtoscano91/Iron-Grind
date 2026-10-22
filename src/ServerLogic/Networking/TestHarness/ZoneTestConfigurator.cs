@@ -22,7 +22,7 @@ namespace IronGrind.Networking
             public (short posX, short posY, short posZ)? EntryPoint;
             public int? Capacity;
             public int? BatchSizeLimit;
-            public ZoneState State = ZoneState.Empty;
+            public ZoneState State = ZoneState.Loading;
         }
 
         private sealed class EntityOverrides
@@ -76,7 +76,7 @@ namespace IronGrind.Networking
         /// <inheritdoc/>
         public ZoneState GetCurrentZoneState(uint zoneInstanceId)
         {
-            return _zones.TryGetValue(zoneInstanceId, out ZoneOverrides overrides) ? overrides.State : ZoneState.Empty;
+            return _zones.TryGetValue(zoneInstanceId, out ZoneOverrides overrides) ? overrides.State : ZoneState.Loading;
         }
 
         /// <inheritdoc/>

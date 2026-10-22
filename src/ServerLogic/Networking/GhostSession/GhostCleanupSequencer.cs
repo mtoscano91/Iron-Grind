@@ -73,7 +73,7 @@ namespace IronGrind.Networking
     /// instead of duplicating that method's own reasoning for why a single, parameterized
     /// <c>reason</c> parameter was rejected in favor of one method per GDD-determinate scenario (see
     /// the <see cref="CompleteTTLExpiryCleanup"/> paragraph above, and
-    /// <see cref="ZoneSessionStateMachine"/>'s own identical precedent for its two teardown methods).
+    /// <c>ZoneSessionStateMachine</c> (deleted, Zone Instancing Story 001)'s own identical precedent for its two teardown methods).
     /// Per CR-GH-12.1, voluntary dismissal applies the identical forfeit policy as TTL expiry — this
     /// method's own <c>snapshotHp</c> parameter plays the exact same role as
     /// <see cref="CompleteTTLExpiryCleanup"/>'s; the caller resolves it from

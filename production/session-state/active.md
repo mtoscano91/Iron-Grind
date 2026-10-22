@@ -4354,3 +4354,20 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Decisions in Story 001: (1) new ZoneLifecycle in src/ServerLogic/ZoneInstancing/, delete ZoneSessionStateMachine + Session_ZoneStateMachine_Capacity_tests.cs (no production caller; only crefs in 6 files), rewrite surviving cases, list dropped ones; (2) EvaluateJoinAttempt removed, ghost-counts-toward-capacity AC added to Story 002; (3) IZoneLifecycleListener OnDraining / OnClosed(ZoneCloseTransition LoadFailed=3, Drained=5, Emergency=6, Idle=7) per ADR-010 direct call, observer OnZoneStateTransitioned kept; (4) TR-zi-002 stays placeholder until /architecture-review.
 - Files: story-001, story-002 (one AC), this file. Not committed.
 - Next: commit -> /dev-story story-001. PAT rotation still unconfirmed.
+
+## Session Extract — /dev-story 2026-10-22 — Zone Instancing Story 001
+- Story: production/epics/zone-instancing/story-001-zone-lifecycle-state-machine.md — Zone lifecycle state machine. Implemented by network-programmer; orchestrator reviewed. Not reviewed (/code-review), not committed.
+- Created: src/ServerLogic/ZoneInstancing/{ZoneLifecycle,IZoneLifecycleListener,ZoneCloseTransition}.cs, tests/EditMode/ZoneInstancing/ZoneInstancing_Lifecycle_tests.cs (37 [Test], 45 cases) + folder .meta files.
+- Modified: ZoneState.cs (Empty -> Loading), ZoneTestConfigurator.cs, NetworkingTestHarness_FaultCrashConfig_tests.cs (test renamed ...DefaultsToLoading), GhostSession_Cleanup_Crash_Dismissal_tests.cs (AC-GH-16 test removed -> Story 002), doc crefs in 6 Networking files (plain text, no code change).
+- Deleted: ZoneSessionStateMachine.cs (+ folder, metas), Session_ZoneStateMachine_Capacity_tests.cs (+ meta).
+- Orchestrator fixes: re-entrant OnDraining -> RequestFatal could double-fire OnClosed (state guard + regression test); ghost test class summary AC-GH-16 line.
+- Agent deviations: observer ctor param under #if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD (as old class); OnOccupiedPlayerSlotsChanged after Closed records silently (teardown releases slots); added public Zone getter; deadlines stored as long.
+- Dropped old test cases (for completion notes): population Draining / Draining->Active (EvaluatePlayerCountChange_*), ReinitializeFromClosed, CompleteExplicitDisconnectTeardown immediate close (AC-NC-41), CompleteTTLExpiryTeardown, EvaluateJoinAttempt capacity cases (AC-NC-22/24, EC-NET-3 -> Story 002).
+- Tests: batch-mode EditMode 3541 total, 3471 passed, 0 failed, 70 skipped (all Npgsql database fixtures, no PG running); 0 compile errors.
+- Next: /code-review the ZoneInstancing files -> /story-done story-001. PAT rotation still unconfirmed.
+
+## Session Extract — /code-review ZoneLifecycle.cs 2026-10-22 (Zone Instancing Story 001)
+- Verdict APPROVED WITH SUGGESTIONS (unity-specialist: no blocking; qa-tester: GAPS, none blocking). User: "fix all" -> all 6 applied.
+- Applied: Close() early return when Closed; _loadDeadlineTick readonly; class + IZoneLifecycleListener remarks (main thread, listeners must not throw, load timeout only in OnTick, late MarkActive wins); 8 tests added (Loading==0, release on grace tick, quit before idle deadline, idle/grace tick jump, backwards tick, late MarkActive pinned, OnClosed re-entry, release inside OnDraining); after-Closed warnings asserted per call; Story 014 implementation notes (tick lifecycle while Loading, observer #if at call sites, listener catches).
+- Tests: batch EditMode rerun 3550 total, 3480 passed, 0 failed, 70 skipped (Npgsql); Lifecycle fixture 54/54.
+- Not committed. Next: /story-done story-001. PAT rotation still unconfirmed.

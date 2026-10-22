@@ -44,6 +44,7 @@
 
 ## Implementation Notes
 
+- **From Story 001's code review (2026-10-22):** (a) `ZoneLifecycle` evaluates the load timeout (T-3) only in `OnTick`, and the tick loop is not running during startup — the composition must call `OnTick` from the startup frame polling while Loading, or T-3 by timeout never fires. (b) The `observer` constructor parameter exists only under `UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD`; a call site that passes it must sit inside the same `#if`, or the release server build fails — check a non-development server build. (c) `IZoneLifecycleListener` implementations must not throw: catch and log inside the composition's listener.
 - `ZoneServerComposition.cs` is ~1,300 lines; keep the change to construction, the quit hook and the close-notification → `RequestTeardown` link.
 - The Story 045 local verification run must still reach Active and exit cleanly on quit (now after the drain; with no players, T-4 and T-5 fire together).
 

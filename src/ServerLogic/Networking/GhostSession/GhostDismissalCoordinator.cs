@@ -34,7 +34,7 @@ namespace IronGrind.Networking
     /// <b>Returns <see langword="bool"/> rather than throwing on an invalid request (judgment call,
     /// approved before implementation):</b> CR-GH-12 step 1 describes "the server validates ..." as a
     /// normal negative-response gate, not an exceptional caller-contract violation — the same framing
-    /// <see cref="ZoneSessionStateMachine.EvaluateJoinAttempt"/> already established for "the join is
+    /// <c>ZoneSessionStateMachine.EvaluateJoinAttempt</c> (deleted, Zone Instancing Story 001) already established for "the join is
     /// rejected" (a routine, expected outcome, not a bug). This story's own AC-GH-11 has no dedicated
     /// rejection-path acceptance criterion, so either choice was reasonable; a <see langword="bool"/>
     /// return keeps the invalid-request path a cheap, allocation-free check a caller can act on

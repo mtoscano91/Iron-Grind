@@ -412,14 +412,14 @@ namespace IronGrind.Tests.EditMode.Networking
         }
 
         // -----------------------------------------------------------------------
-        // AC-TH-3: GetCurrentZoneState defaults to Empty when never configured.
+        // AC-TH-3: GetCurrentZoneState defaults to Loading when never configured.
         // -----------------------------------------------------------------------
 
         [Test]
-        public void GetCurrentZoneState_NeverConfigured_DefaultsToEmpty()
+        public void GetCurrentZoneState_NeverConfigured_DefaultsToLoading()
         {
             // Act & Assert
-            Assert.AreEqual(ZoneState.Empty, _zoneConfig.GetCurrentZoneState(ZoneA));
+            Assert.AreEqual(ZoneState.Loading, _zoneConfig.GetCurrentZoneState(ZoneA));
         }
 
         [Test]
