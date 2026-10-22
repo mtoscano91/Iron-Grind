@@ -5,7 +5,7 @@
 > **Layer**: Foundation
 > **Type**: Integration
 > **Manifest Version**: 2026-10-19
-> **Estimate**: 14 hours (provisional — confirm at `/story-readiness`)
+> **Estimate**: 15 hours (confirmed at `/story-readiness` 2026-10-22: 14 h + 1 h for AC-15 in the composition)
 
 *Added 2026-10-22 (`/create-stories networking-core`, ADR-009 Amendment 1 Migration Plan step 2, fourth of four). Implements the seams of Stories 042–044 over Unity and NGO, adds the host `MonoBehaviour`, the server scene, an empty zone template scene and a Build Profile, and runs the checks this machine can run: A1-3, A1-6 and a first A1-4 measurement on the Windows Dedicated Server (Mono) build, A1-5 and ADR-015 Verification 6 in the Editor, ADR-015 Verification 4 on the Windows build. A1-1, A1-2, A1-7 and the final A1-4 are carried by the epic's Linux IL2CPP headless-build gate (ADR-009 A1 review 2026-10-19, as Story 041 did for its VR-2). Windows has no SIGTERM, so V4 is triggered by a development-build-only `-teardownAfterSeconds <n>` argument.*
 
@@ -40,10 +40,10 @@ Also: **ADR-004** (NGO substrate; `NetworkManager.NetworkTickSystem.Tick`; Amend
 
 *From ADR-009 Amendment 1 (Decisions 2, 3, Engine Compatibility A1) and ADR-015 Verification 4 and 6, scoped to this story:*
 
-- [ ] **AC-1** `ZoneServerHost` (`src/ServerLogic/ZoneServer/ZoneServerHost.cs`) forwards only: `Start` → starts the composition's `Start(args)` coroutine with `Environment.GetCommandLineArgs()`; `Update` → starts `RunTeardown()` once when a teardown was requested; `OnDestroy` → `TeardownNow()`; `Application.wantsToQuit` → `OnWantsToQuit()` (subscribed by S1 through the seam, unsubscribed at teardown). It contains no other logic (a review check plus a source search: no `new` of a system type in the host file).
-- [ ] **AC-2** `UnityZoneApplication : IZoneApplication` implements `IsEditor` (`Application.isEditor`), `IsDevelopmentBuild` (`Debug.isDebugBuild`), `Quit(int)` (`Application.Quit(code)`), the `wantsToQuit` subscription, `KeepAcrossSceneLoads` (`Object.DontDestroyOnLoad(host.gameObject)`); `UnityZoneEnvironment` reads environment variables; reading the `-serverConfig` file uses `File.ReadAllText` here (the only file I/O).
-- [ ] **AC-3** `NgoZoneNetwork : IZoneNetwork` implements S1 (root `NetworkManager` object outside the zone scene, `DontDestroy = true`, `EnableSceneManagement = false`), S8 (`TickRate = (uint)TICK_RATE_HZ`, `targetFrameRate`, `vSyncCount = 0`, `StartServer()` result returned), the tick subscription on `NetworkManager.NetworkTickSystem.Tick` with a named handler, `CreateSendSeam()` → `NgoClientMessageSender`, the inbound shell (`NgoInboundTransportShell` start / stop), and step 6 (`Shutdown()`, `IsAlive`, `ShutdownInProgress`), null-guarding a destroyed manager.
-- [ ] **AC-4** `UnitySceneLoader : IZoneScene` loads `-zoneTemplate` with `SceneManager.LoadSceneAsync(name, LoadSceneMode.Single)` and reports done / succeeded; an unknown scene name is S-fail at S6. Nav and bounds stay stand-ins.
+- [ ] **AC-1** `ZoneServerHost` (`src/ServerLogic/ZoneServer/ZoneServerHost.cs`) builds the composition in `Awake` with `ZoneServerComposition.CreateWithRealBackend(application, network, navigation, closeSteps, scene, bounds, staticData, zoneState, gateway, configSource, new ProcessZoneEnvironment(), null)` — Unity seams of AC-2 to AC-4 plus the Story 044 stand-ins for navigation, close steps, bounds, static data, zone state and gateway — and forwards only: `Start` → starts the composition's `Start(args)` coroutine; `Update` → starts `RunTeardown()` once when a teardown was requested; `OnDestroy` → `TeardownNow()`; `Application.wantsToQuit` → `OnWantsToQuit()` (subscribed by S1 through the seam, unsubscribed at teardown). `args` is `Environment.GetCommandLineArgs()` in a player; in the Editor it is the host's `[SerializeField] private string[] _editorArgs` (field and its use inside `#if UNITY_EDITOR`, used only when `Application.isEditor`). It contains no other logic (a review check plus a source search: no `new` of a type from `IronGrind.ServerLogic.Networking`, `CharacterPersistence` or `Randomness` in the host file).
+- [ ] **AC-2** `UnityZoneApplication : IZoneApplication` (constructor takes the host's `GameObject`) implements `IsEditor` (`Application.isEditor`), `Quit(int)` (`Application.Quit(code)`), `SubscribeWantsToQuit` / `UnsubscribeWantsToQuit` (`Application.wantsToQuit += / -=`), `KeepAcrossSceneLoads()` (`Object.DontDestroyOnLoad(hostObject)`). `FileZoneConfigSource : IZoneConfigSource` reads the `-serverConfig` file with `File.ReadAllText` (the only file I/O). Environment variables use the existing `ProcessZoneEnvironment` (Story 044); no new environment seam. The development-build check of AC-6 is the compile symbol, not a seam member.
+- [ ] **AC-3** `NgoZoneNetwork : IZoneNetwork` implements S1 `PrepareObject()` (root `NetworkManager` object outside the zone scene with `UnityTransport` as `NetworkConfig.NetworkTransport`, `DontDestroy = true`, `EnableSceneManagement = false`), S8 `Configure(tickRate, targetFrameRate, vSyncCount)` (`NetworkConfig.TickRate`, `Application.targetFrameRate`, `QualitySettings.vSyncCount`) and `StartServer()` (result returned), `SubscribeTick` / `UnsubscribeTick` on `NetworkManager.NetworkTickSystem.Tick` (unsubscribe null-safe), `CreateSendSeam()` → `new NgoClientMessageSender(manager)`, `CreateInboundTransport(intake, dispatcher, clientListener)` → `NgoZoneInboundTransport : IZoneInboundTransport`, which wraps `new NgoInboundTransportShell(manager, intake, dispatcher, clientListener)` and forwards `Start()` / `Stop()`, and step 6 (`Shutdown()`, `IsAlive`, `ShutdownInProgress`), null-guarding a destroyed manager.
+- [ ] **AC-4** `UnitySceneLoader : IZoneScene` loads `-zoneTemplate` with `SceneManager.LoadSceneAsync(name, LoadSceneMode.Single)` and reports `IsDone` / `Succeeded`; an unknown scene name (`LoadSceneAsync` returns null) reports done and not succeeded, which is S-fail at S6. `AddNavMeshData()` returns `default(NavMeshDataInstance)` and logs `[StandIn] no zone NavMesh data` once (no zone definition or baked NavMesh exists yet). Nav and bounds stay stand-ins.
 - [ ] **AC-5** Scenes and profile: `Assets/Scenes/Server/ZoneServer.unity` holds one root GameObject with `ZoneServerHost`; `Assets/Scenes/Zones/ZoneTemplate_Empty.unity` is an empty zone scene; Build Profile `Assets/Settings/Build Profiles/ZoneServer.asset` (Windows Server, development) lists only those two scenes; neither scene is in any client profile's scene list.
 - [ ] **AC-6** A development-build-only `-teardownAfterSeconds <n>` argument calls `RequestTeardown(Clean)` after `n` seconds of server time; in a release build the argument is ignored (compiled out with `#if DEVELOPMENT_BUILD || UNITY_EDITOR`).
 - [ ] **AC-7** (A1-3, Windows Dedicated Server build) The host object and the `NetworkManager` object both survive `LoadSceneAsync(…, Single)` of the zone template: logged instance ids before and after match.
@@ -54,6 +54,7 @@ Also: **ADR-004** (NGO substrate; `NetworkManager.NetworkTickSystem.Tick`; Amend
 - [ ] **AC-12** A1-1, A1-2, A1-7 and the final A1-4 are recorded in the evidence document as NOT RUN — carried by the epic's Linux IL2CPP headless-build gate — and the EPIC's engine-risk gate note lists them.
 - [ ] **AC-13** After the Build Profile is created, the side effects of a Windows Server build (`com.unity.dedicated-server` in `Packages/manifest.json`, changed `ProjectSettings`) are reverted; only the profile asset, the scenes and the code are committed.
 - [ ] **AC-14** The host never interrupts a running `RunTeardown()` coroutine: it does not call `StopAllCoroutines` / `StopCoroutine`, never deactivates or disables itself (`SetActive(false)`, `enabled = false`) and never destroys itself or its GameObject (`Destroy`); a source search of `ZoneServerHost.cs` (comments stripped) finds none of these. *(Added 2026-10-22, Story 042 `/code-review`, user decision: `ZoneServerComposition.OnWantsToQuit()` keeps returning `false` until step 8, so a host killed mid-teardown in a player would leave `TeardownNow()` done and quit blocked; the host must not reach that state.)*
+- [ ] **AC-15** `ZoneServerComposition.OnNetworkTick` catches any exception from `AdvanceTick` so none escapes into NGO's `Tick` event: it logs `[ZoneServer] tick failed: <exception type name>` once (no message, no stack) and calls `RequestTeardown(ZoneExitCode.Fatal)`; later ticks that throw log nothing more and request nothing more. *(Added 2026-10-22, `/story-readiness`, user decision: the catch sits in the composition, not the host.)*
 
 ---
 
@@ -72,12 +73,22 @@ Also: **ADR-004** (NGO substrate; `NetworkManager.NetworkTickSystem.Tick`; Amend
 - Server config for the runs: a JSON file under `Builds/ZoneServer/` (git-ignored), host `127.0.0.1`, the portable PG port.
 - Evidence document: `production/qa/evidence/networking-core-045-zone-process-verification.md` with, per check, the command line (password redacted), the relevant log excerpt, the exit status and PASS / FAIL / NOT RUN.
 - **Notes from Story 043 `/code-review` (2026-10-22):**
-  - Wrap the body of the composition's tick handler path so an exception from `AdvanceTick` does not escape into NGO's `Tick` event: log the exception type once and call `RequestTeardown(ZoneExitCode.Fatal)` (decide whether this sits in the host or in `ZoneServerComposition.OnNetworkTick`).
+  - Tick exceptions: caught in `ZoneServerComposition.OnNetworkTick` (AC-15; user decision at `/story-readiness`). This changes a Story 043 file; it is in the Files list.
   - `NgoZoneNetwork.PrepareObject()` (S1) attaches `UnityTransport` to `NetworkConfig.NetworkTransport`, keeps the `NetworkManager` a root object with NGO's `DontDestroy = true`, and sets `EnableSceneManagement = false`; `Configure` sets `NetworkConfig.TickRate` (`uint`) before `StartServer`, while the manager is not listening.
   - `UnsubscribeTick` must be null-safe: `NetworkTickSystem` exists only after `StartServer` and may be gone after a shutdown or a failed S8.
   - The real `IZoneNavigation.Teardown` removes the `NavMeshDataInstance` passed to `Initialize` and tolerates a partial `Initialize` (the composition calls it whenever `Initialize` was called, also when it threw).
   - `JsonUtility` ignores a type mismatch (`"Port":"abc"` keeps the default) — the `IZoneConfigSource` file is hand-written, so the AC-10 run's config is checked by eye.
 - Doc comments on every public type and member.
+- **Performance**: the host adds one `Update` check per frame and the tick handler a try/catch (no allocation on the non-throwing path); the AC-9 probe runs only in development builds. No other runtime cost.
+
+### Files
+
+- New `src/ServerLogic/ZoneServer/ZoneServerHost.cs`
+- New `src/ServerLogic/ZoneServer/Unity/UnityZoneApplication.cs`, `FileZoneConfigSource.cs`, `NgoZoneNetwork.cs`, `NgoZoneInboundTransport.cs`, `UnitySceneLoader.cs` (+ `.meta`)
+- Changed `src/ServerLogic/ZoneServer/ZoneServerComposition.cs` (AC-15 only)
+- New `Assets/Scenes/Server/ZoneServer.unity`, `Assets/Scenes/Zones/ZoneTemplate_Empty.unity`, `Assets/Settings/Build Profiles/ZoneServer.asset`
+- New `tests/PlayMode/Networking/ZoneServer_UnitySeams_tests.cs`; new `tests/EditMode/Networking/ZoneServer_CompositionTick_tests.cs` (AC-15); EditMode source-search tests for AC-1, AC-6, AC-14 in the same file or `ZoneServer_HostSource_tests.cs`
+- New `production/qa/evidence/networking-core-045-zone-process-verification.md`; EPIC.md engine-risk note (AC-12)
 
 ---
 
@@ -86,7 +97,7 @@ Also: **ADR-004** (NGO substrate; `NetworkManager.NetworkTickSystem.Tick`; Amend
 - Stories 042–044: composition logic, startup and teardown order, config, object graph, database test (Done before this story).
 - Linux Dedicated Server IL2CPP build and A1-1, A1-2, A1-7, final A1-4 (the epic's headless-build gate; needs the Linux IL2CPP module).
 - systemd unit, `TimeoutStopSec`, `Restart=always`, exit-code handling by supervision (ADR-007 C1 amendment).
-- Real nav, bounds, CR-ZI-12, gateway, character directory, activity sink, static data loaders and game systems (their epics).
+- Real nav, bounds, CR-ZI-12, gateway, character directory, activity sink, static data loaders and game systems (their epics); the zone's baked NavMesh behind `AddNavMeshData()` (Zone Instancing / Navigation epic).
 - Client build profile changes beyond confirming the server scenes are absent.
 
 ---
@@ -121,9 +132,12 @@ Also: **ADR-004** (NGO substrate; `NetworkManager.NetworkTickSystem.Tick`; Amend
   - Verify: teardown step lines 1, 2a, 3, 4, 4b, 5, 6, 7, 8 in order; listener stop time; exit status.
   - Pass condition: order exact; listener stopped ≤ 2 000 ms; status 0 for the first run, 1 for the second; no connection string in either log.
 - **AC-11** (A1-5, V6) — Manual check
-  - Setup: open `ZoneServer.unity` in the Editor with Play-mode command-line values supplied by an Editor-only args provider (or the defaults the host uses in the Editor — decide at implementation and record it); portable PG running.
+  - Setup: open `ZoneServer.unity` in the Editor; the host's `_editorArgs` field holds `-zoneTemplate ZoneTemplate_Empty -zoneId <n> -port <p> -serverConfig <Builds/ZoneServer/ config path>`; `IRONGRIND_PG_PASSWORD` set in the Editor's environment; portable PG running.
   - Verify: press Stop; Console shows `OnDestroy` teardown lines 1–7, the listener stop time, the order of `NetworkManager.OnDestroy` vs the host's.
   - Pass condition: Play mode exits at once; steps 1–7 logged, no step 8; listener stopped ≤ 2 000 ms; no exceptions. Repeat 3 times.
+- **AC-15**: tick exception contained (EditMode)
+  - Given: a composition whose tick loop's `AdvanceTick` throws (a registered tick-driven fake). When: the tick handler is called twice. Then: no exception escapes; one `tick failed: <type>` line (`LogAssert.Expect`); `RequestTeardown(Fatal)` recorded once; the exit code is Fatal.
+- **AC-4** (scene seam, PlayMode): `AddNavMeshData()` returns `default` and logs the stand-in line once over two calls.
 - **AC-12**: carried checks
   - Pass condition: the evidence doc lists A1-1, A1-2, A1-7 and final A1-4 as NOT RUN with the reason; EPIC engine-risk note updated.
 - **AC-13**: side effects reverted
@@ -136,6 +150,7 @@ Also: **ADR-004** (NGO substrate; `NetworkManager.NetworkTickSystem.Tick`; Amend
 **Story Type**: Integration
 **Required evidence**:
 - `tests/PlayMode/Networking/ZoneServer_UnitySeams_tests.cs` — PlayMode loopback test of the NGO and scene seams; must pass
+- `tests/EditMode/Networking/ZoneServer_CompositionTick_tests.cs` — AC-15, plus the AC-1 / AC-6 / AC-14 source searches; must pass
 - `production/qa/evidence/networking-core-045-zone-process-verification.md` — the A1-3, A1-4 (first), A1-5, A1-6, ADR-015 V4 and V6 runs, plus the NOT RUN list
 
 **Status**: [ ] Not yet created
