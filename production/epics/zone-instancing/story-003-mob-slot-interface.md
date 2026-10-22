@@ -1,7 +1,7 @@
 # Story 003: Mob Slot Interface for Mob Spawning (CR-ZI-13)
 
 > **Epic**: Zone Instancing
-> **Status**: Ready — written 2026-10-22; lean readiness 2026-10-22 (NEEDS WORK → fixed → Ready)
+> **Status**: Complete (2026-10-22) — written 2026-10-22; lean readiness 2026-10-22 (NEEDS WORK → fixed → Ready)
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-19
@@ -81,7 +81,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/ZoneInstancing/ZoneInstancing_MobSlots_tests.cs` — must exist and pass.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 25 tests, all passing (batch EditMode 2026-10-22)
 
 ---
 
@@ -89,3 +89,18 @@
 
 - Depends on: Story 002
 - Unlocks: Story 007 (mob entries in the snapshot); the Mob Spawning epic
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-22
+**Criteria**: 7/7 passing (none deferred)
+**Deviations** (advisory, accepted):
+- Extra behaviour: `exhaustedLogIntervalTicks` = 0 throws `ArgumentOutOfRangeException`; `RemoveMob` warns when `ZoneSlotPool.ReleaseMob` returns false and still drops the roster entry; a foreign-zone `TryAddMob` on a full pool logs only the pool's warning (no `MobSlotExhausted`).
+- The roster keeps its own EntityID → slot map (the pool's is private), so it must be the pool's only mob allocator: a mob allocated directly on the pool is counted by `GetMobCount` but unknown to `RemoveMob` / `TryGetMob` (documented in the class remarks, pinned by a test).
+- O(1) and allocation-free per call except on warning paths (the log message is formatted).
+- `TryGetMob` is part of `IZoneMobRoster` (Story 007 reads it through the interface).
+- `TR-zi-013` is still an epic placeholder (readiness decision).
+**Notes for Story 007**: `TryGetMob` returns the **spawn** position; the snapshot's current mob position belongs to Enemy AI / Movement. **Notes for Story 014**: construct `ZoneMobRoster` over the same `ZoneSlotPool` and `IServerTickSource`, and give Mob Spawning only `IZoneMobRoster`.
+**Test Evidence**: Logic — `tests/EditMode/ZoneInstancing/ZoneInstancing_MobSlots_tests.cs` (25 tests).
+**Code Review**: Complete — `/code-review` 2026-10-22 APPROVED WITH SUGGESTIONS, all 8 suggestions applied (commit `3a1fd5c`). QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean mode).

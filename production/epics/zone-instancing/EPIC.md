@@ -77,7 +77,7 @@ Zone Instancing is the server-side runtime of one zone instance: it owns the ins
 |---|-------|------|--------|-----|
 | 001 | [Zone lifecycle state machine](story-001-zone-lifecycle-state-machine.md) | Logic | Complete (2026-10-22) | ADR-009 A1 |
 | 002 | [Slot pools, EntityID minting, player roster view](story-002-slot-pools-and-entity-ids.md) | Logic | Complete (2026-10-22) | design rule, ADR-010 |
-| 003 | [Mob slot interface](story-003-mob-slot-interface.md) | Logic | Ready | ADR-010 |
+| 003 | [Mob slot interface](story-003-mob-slot-interface.md) | Logic | Complete (2026-10-22) | ADR-010 |
 | 004 | [ZoneDefinition, ZoneSceneRegistry, bounds validation](story-004-zone-definition-and-bounds-validation.md) | Integration | Ready | ADR-009 |
 | 005 | [GetTownRespawnPoint](story-005-town-respawn-point.md) | Logic | Ready | ADR-009 |
 | 006 | [Zone wire messages and codecs](story-006-zone-wire-messages.md) | Logic | Ready | ADR-004 |
@@ -100,4 +100,4 @@ This epic is complete when:
 
 ## Next Step
 
-Stories 001 and 002 are Complete (2026-10-22). Next: `/story-readiness production/epics/zone-instancing/story-003-mob-slot-interface.md` (builds on Story 002), then `/dev-story`. Stories 004 and 006 have no dependencies and can go in any order.
+Stories 001, 002 and 003 are Complete (2026-10-22). Next: `/story-readiness production/epics/zone-instancing/story-004-zone-definition-and-bounds-validation.md` (no dependencies), then `/dev-story`. Story 006 also has no dependencies; Story 007 needs 002, 003 and 006.

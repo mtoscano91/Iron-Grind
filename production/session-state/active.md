@@ -4426,3 +4426,11 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Applied: RemoveMob warns when pool.ReleaseMob returns false and still drops the roster entry; docs "allocation-free except on warning paths"; class remarks — roster must be the pool's only mob allocator; tests — NoUnexpectedReceived on both cap tests, method-specific foreign-zone regexes (pool TryAllocateMob / RemoveMob / GetMobCount), new: RemoveMob of EntityID.Invalid, of a live player id, of a mob allocated directly on the pool, of a mob released behind the roster, and timer not reset by remove/add between cap hits.
 - Tests: batch EditMode 3639 total, 3569 passed, 0 failed, 70 skipped (Npgsql); MobSlots 25/25; 0 compile errors.
 - Next: commit -> /story-done story-003. PAT rotation still unconfirmed.
+
+## Session Extract — /story-done 2026-10-22 (Story 003)
+- Verdict: COMPLETE WITH NOTES (7/7 by test; MobSlots 25/25; EditMode 3639 total, 0 failed, 70 skipped Npgsql)
+- Story: production/epics/zone-instancing/story-003-mob-slot-interface.md — mob slot interface (IZoneMobRoster / ZoneMobRoster)
+- Tech debt logged: None (user: "Complete, notes only"; advisory deviations + Story 007/014 notes in Completion Notes)
+- EPIC.md row 003 Complete, Next Step -> Story 004; epics/index.md row: 001-003 Complete.
+- Next recommended: /story-readiness production/epics/zone-instancing/story-004-zone-definition-and-bounds-validation.md (no dependencies); 006 also free; 007 needs 002, 003, 006.
+- Not committed. PAT rotation still unconfirmed.
