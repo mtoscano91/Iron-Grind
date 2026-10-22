@@ -1,4 +1,5 @@
 using System;
+using IronGrind.Networking;
 
 namespace IronGrind.ServerLogic.ZoneServer
 {
@@ -46,5 +47,26 @@ namespace IronGrind.ServerLogic.ZoneServer
 
         /// <summary>True while NGO has not finished a requested shutdown.</summary>
         bool ShutdownInProgress { get; }
+
+        /// <summary>
+        /// Startup S5: creates the seam through which the client message outbox sends bytes
+        /// (Story 045: <c>NgoClientMessageSender(networkManager)</c>). Called once; builds no connection.
+        /// </summary>
+        /// <returns>The send seam.</returns>
+        IClientMessageSendSeam CreateSendSeam();
+
+        /// <summary>
+        /// Startup S5: creates the inbound transport shell that feeds NGO messages to the dispatcher and reports
+        /// connects and disconnects to the outbox. Called once, after the dispatcher is sealed; the composition
+        /// starts it at S8 and stops it at teardown step 6.
+        /// </summary>
+        /// <param name="intake">Receives every inbound message (the dispatcher).</param>
+        /// <param name="dispatcher">The sealed dispatcher (the same object as <paramref name="intake"/>).</param>
+        /// <param name="clientListener">Told of connects and disconnects (the outbox).</param>
+        /// <returns>The transport, not yet started.</returns>
+        IZoneInboundTransport CreateInboundTransport(
+            IInboundMessageIntake intake,
+            IInboundRequestDispatcher dispatcher,
+            IClientConnectionListener clientListener);
     }
 }

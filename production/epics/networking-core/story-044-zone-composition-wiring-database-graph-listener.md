@@ -1,7 +1,7 @@
 # Story 044: Composition Wiring — Connection Pool and Warm-up, the Object Graph, Listener, Dispose
 
 > **Epic**: Networking Core
-> **Status**: Ready — `/story-readiness` 2026-10-22: NEEDS WORK (6 gaps: performance note, file list, missing seams, constructor wiring, `isDevelopmentBuild` source, provisional estimate) → fixed. The fixes also found that `NpgsqlRelayListener` does not implement `IZoneRelayListener` yet (AC-8), that no S5 object is `IDisposable` (AC-9 rewritten), and that AC-10 puts the real backend in `ZoneServerComposition.cs`. Re-check READY. Estimate confirmed (12 h).
+> **Status**: Complete — 2026-10-22 (`/story-done`, COMPLETE WITH NOTES; `/code-review` CHANGES REQUIRED → fixed, re-review CHANGES REQUIRED → fixed; EditMode 3523 total, 3453 passed, 0 failed, 70 skipped; Database category 5/5 on three runs).
 > **Layer**: Foundation
 > **Type**: Integration
 > **Manifest Version**: 2026-10-19
@@ -48,10 +48,16 @@ Also: **ADR-006 Amendment 3** (pool string, password from `IRONGRIND_PG_PASSWORD
 - [ ] **AC-4** S4 creates the data source with `NpgsqlDataSource.Create(connectionString)` and registers it first for the Dispose pass (so it is disposed last); then warms it with `Task.Run(() => dataSource.CreateCommand("SELECT 1").ExecuteNonQueryAsync(token)).Wait(DbWarmupTimeoutMs)`; a timeout or a fault is S-fail at S4, and on a timeout the token is cancelled.
 - [ ] **AC-5** No log line written by the composition at any step, success or failure, contains the connection string, the password, or the builder's `ToString()`; exceptions are logged by type name (and the Npgsql `SqlState` when present).
 - [ ] **AC-6** S5 constructs, without I/O, in this order, registering each `IDisposable` for the Dispose pass: `TickCompletionQueue`; `ServerTickLoop`; `NpgsqlCharacterRecordStore(dataSource)`; `CharacterPersistenceService(store)`; relay — `CrossZoneRelayAllowlist.CreateProduction()`, `CrossZoneRelayOrigin`, `CrossZoneRelayInbox(allowlist.LargestMaxBodyBytes)`, `CrossZoneRelayReceiver`, `NpgsqlRelayPublisher(dataSource, queue, origin)`; `CrossCuttingRpcGuardChain()`; `CharacterMutationGate()`; `InboundRequestDispatcher(guardChain, gate, directoryStandIn, activitySinkStandIn, tickLoop, MessageRoutingRegistry.TryGetEntry, BuildConfiguration.IsDevelopmentBuild)`; `ClientMessageOutbox(network.CreateSendSeam())`; `ServerWideBroadcaster(outbox, publisher, allowlist)`; `ZoneClientRelayHandler(outbox)`; the ordered simulation step (empty list); `ZoneTickPipeline(queue, inbox, relayHandler, dispatcher, simulation, outbox, tickLoop)` (the 7-argument constructor). Then `dispatcher.Seal()`, `tickLoop.RegisterTickDriven(pipeline.Tick)`, and `transport = network.CreateInboundTransport(dispatcher, dispatcher, outbox)` (the dispatcher is both the intake and the dispatcher; the outbox is the client-connection listener). S5 ends with `AttachOwnedObjects(queue, outbox, null, transport, currentTick from tickLoop, null)` and `AttachTickLoop(tickLoop)`. No outbound sender is attached: the pipeline flushes the outbox each tick, so S8 skips the sender start.
-- [ ] **AC-7** `IConnectionCharacterDirectory` and `IConnectionActivitySink` stand-ins log `"[ZoneServer] <name> not implemented"` once each; the directory finds no character for any connection (requests are then dropped by the dispatcher's existing `NoCharacter` path), the activity sink records nothing.
+- [ ] **AC-7** `IConnectionCharacterDirectory` and `IConnectionActivitySink` stand-ins log `"[ZoneServer] <name> not implemented"` once each; the directory finds no character for any connection, and the activity sink records nothing. S5 passes both to the dispatcher. The dispatcher consults the directory only for registered request types (`InboundRequestDispatcher` drops other messages earlier as `UnknownInboundMessageType`), and this story registers no handler. The tick-level `NoCharacter` drop is therefore verified by the first game-system story that registers a handler (amended at `/code-review` 2026-10-22).
 - [ ] **AC-8** `NpgsqlRelayListener` implements `IZoneRelayListener` (Story 042's interface; its existing `Stop()` is idempotent). S7 constructs `NpgsqlRelayListener(connectionString, receiver)`; the listener applies `Pooling=false`, `Multiplexing=false` and `Tcp Keepalive=true` itself (Story 041). S7 attaches it through a new `internal void AttachListener(IZoneRelayListener)` before calling `Start()`, so teardown step 2a stops it even when `Start()` throws.
-- [ ] **AC-9** The data source is registered for the Dispose pass at S4, right after creation. It is the only `IDisposable` this story builds (none of the S5 objects implements `IDisposable`), so it is disposed last. After a failure at S4 (warm-up), at S5 or at S7, the Dispose pass disposes the data source exactly once. After a failure at S3, nothing is disposed.
-- [ ] **AC-10** A source search over `src/` (comments stripped) finds `RegisterTickDriven(`, `NpgsqlDataSource.Create(`, `CreateSeededFromEntropy(` and `new NpgsqlRelayListener(` only in `src/ServerLogic/ZoneServer/ZoneServerComposition.cs`, with one named exemption: `src/ServerLogic/Networking/CrossZoneRelay/Verification/RelayVerificationHost.cs` (Story 041's verification call site).
+  - **Wake on stop** (added at `/code-review` 2026-10-22, ADR-015 note 2026-10-22). Under Unity's Mono the listener's `WaitAsync` returns only on a notification. The listener therefore also `LISTEN`s on a private wake channel, `<channel>_wake_<32 hex>`. `Stop()` sends one `pg_notify` there over its own short-lived connection before the join. The connection hands only relay-channel payloads to the receiver. A channel name longer than 25 characters is rejected.
+- [ ] **AC-9** The data source is registered for the Dispose pass at S4, right after creation. It is the only `IDisposable` this story builds (none of the S5 objects implements `IDisposable`), so it is disposed last. After a failure at S4 (warm-up), at S5 or at S7, the Dispose pass disposes the data source exactly once. After a failure before S4, no data source exists and nothing is disposed. (S3 itself cannot fail: `CreateSeededFromEntropy` has no failure path. Amended at `/code-review` 2026-10-22.)
+- [ ] **AC-10** A source search over `src/` (comments stripped) finds `RegisterTickDriven(`, `NpgsqlDataSource.Create(`, `CreateSeededFromEntropy(` and `new NpgsqlRelayListener(` exactly once each in `src/ServerLogic/ZoneServer/ZoneServerComposition.cs`. Elsewhere it finds them only at these named exemptions, with exact counts (amended at `/code-review` 2026-10-22):
+  - `RelayVerificationHost.cs` (Story 041's verification entry point): one data source, one listener.
+  - `NpgsqlRoundTripProbe.cs` (Character Persistence Story 012's dev-time round trip): one data source.
+  - `NpgsqlRecordStoreTestAccess.cs` (Character Persistence Story 014's test access): two data sources.
+
+  The definitions in `ServerTickLoop.cs` and `RandomProviderFactory.cs` are not call sites and are excluded.
 - [ ] **AC-11** Database category (`[Explicit][Category("Database")]`, `Assert.Ignore` without `IRONGRIND_DEV_PG`): against the portable PostgreSQL 16.15, S3–S5 and S7 run with the real backend; the warm-up succeeds; the listener starts; the Dispose pass leaves no connection of this test's application name in `pg_stat_activity`.
 - [ ] **AC-12** Database category: a wrong password fails at S4 within `DbWarmupTimeoutMs` + 1 s, exits `StartupFailed`, and no captured log line contains the password or the connection string.
 - [ ] **AC-13** Database category: an unreachable host (closed port) fails at S4 by timeout or fault, never hangs past `DbWarmupTimeoutMs` + 1 s.
@@ -124,14 +130,25 @@ Also: **ADR-006 Amendment 3** (pool string, password from `IRONGRIND_PG_PASSWORD
   - Given: an internal `Action<string> ConstructionObserver` on the composition that S5 calls with each constructed type name, and once each for `Seal`, `RegisterTickDriven` and `CreateInboundTransport` (null in production, no allocation when null). Then: the observed sequence equals the AC-6 list; `Seal()` comes after all registrations; `RegisterTickDriven` occurs exactly once, and the delegate registered is the pipeline's `Tick` (one `AdvanceTick` on the attached tick loop runs the pipeline once).
   - Edge cases: registering a handler after `Seal()` throws (existing dispatcher behaviour — assert the composition never does it).
 - **AC-7**: stand-ins
-  - Given: a request intake for connection 5. When: one tick. Then: the request is dropped as `NoCharacter`; the two stand-in lines logged once each.
+  - Given: each stand-in. Then: the directory finds no character for connections 5 and 6, the sink records nothing, and each logs its line once.
+  - The tick-level drop needs a registered handler, so it moves to the first game-system story that registers one (see AC-7).
 - **AC-8**: listener
   - EditMode: `NpgsqlRelayListener` is assignable to `IZoneRelayListener`. With a full fake startup, the listener is attached before `Start()`, so teardown step 2a stops it.
   - Database category: the started listener's `IsRunning` is true after S7 and false after teardown step 2a.
+  - Wake, fake connection:
+    - with a wake sender, the loop listens on the relay channel and then on a wake channel of at most 63 characters;
+    - a stop ends a wait that blocks until a notification in under 1 s, through one wake on that channel;
+    - a failing wake sender logs `WakeFailed` by type and the stop falls back to the join timeout;
+    - a stop during `Open` ends the loop without a wait;
+    - a channel name too long for its wake channel is rejected.
+  - Wake, Database category:
+    - over a real connection, a wake notification ends `Wait` and is not delivered; a relay payload on a mixed-case channel is delivered; `Factory.SendWake` ends a wait;
+    - `Factory.SendWake` to an unreachable host fails within the connection timeout plus 1 s.
 - **AC-9**: Dispose
-  - Given: a fault injected at S4 (warm-up), then at S5 (a throwing `CreateSendSeam`), then at S7, each a separate case. Then: the Dispose pass disposes the data source exactly once (observed through an internal disposed flag on the test-access class). Given a fault at S3: no data source exists and nothing is disposed.
+  - Given: a fault injected at S4 (warm-up), then at S5 (a throwing `CreateSendSeam`), then at S7, each a separate case. Then: the Dispose pass disposes the data source exactly once (observed through an internal disposed flag on the test-access class). Given a fault before S4 (at S2): no data source exists and nothing is disposed.
+  - The connection string, which carries the password, is held from S4 to the end of S7 only. After a full startup it is gone; after an S5 failure it is held until the Dispose pass clears it.
 - **AC-10**: source search
-  - Given: `src/**/*.cs`, comments stripped. Then: the four patterns occur only in the composition file and the named exemption.
+  - Given: `src/**/*.cs`, comments stripped, with the two definitions removed. Then: the (file, pattern) counts equal exactly the AC-10 list, so a new call site anywhere fails, including a second call in an exempt file.
 - **AC-11**: real database, happy path (Explicit, Database)
   - Given: portable PG running, `IRONGRIND_DEV_PG` set. When: S3–S5, S7, then teardown steps 2a and 7. Then: warm-up < `DbWarmupTimeoutMs`; the listener started (its thread alive; delivery itself was Story 041's run); after Dispose, `pg_stat_activity` shows no row with this test's `application_name` (poll up to 2 s).
 - **AC-12**: wrong password (Explicit, Database)
@@ -148,7 +165,7 @@ Also: **ADR-006 Amendment 3** (pool string, password from `IRONGRIND_PG_PASSWORD
 - `tests/EditMode/Networking/ZoneServer_CompositionWiring_tests.cs` — must exist and pass
 - `tests/EditMode/Networking/ZoneServer_CompositionDatabase_tests.cs` — Explicit `Database` category, run against the portable PostgreSQL 16.15 with `-testFilter`; results recorded in the story's Completion Notes
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — wiring 29 / 29 (EditMode); Database 5 / 5 against the portable PostgreSQL 16.15, three runs (2026-10-22)
 
 ---
 
@@ -156,3 +173,54 @@ Also: **ADR-006 Amendment 3** (pool string, password from `IRONGRIND_PG_PASSWORD
 
 - Depends on: Story 043 (Complete 2026-10-22, `d4485aa`); Character Persistence Story 014 (Complete); Story 041 (Complete)
 - Unlocks: Story 045
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-22
+**Criteria**: 13/13 passing. AC-7 is amended: the tick-level `NoCharacter` drop moves to the first game-system story that registers a handler.
+
+**Deviations**: ADVISORY, all accepted; none logged as tech debt (user decision).
+1. **Story 041 listener defect fixed in this story** (user decision, wake on stop; ADR-015 note 2026-10-22).
+   - Under Unity's Mono, `WaitAsync(RELAY_LISTENER_WAIT_MS)` never timed out, so `Stop()` could not end the listener thread. A diagnostic showed `Stop()` timing out at 2 026 ms, and one `pg_notify` ending the thread in about 200 ms.
+   - The listener now also `LISTEN`s on a private wake channel, `<channel>_wake_<32 hex>`. `Stop()` sends one `pg_notify` there over its own short-lived connection, with a 2 s command timeout, before the join.
+   - The connection delivers relay-channel payloads only. Channel names longer than 25 characters are rejected when the wake is used.
+   - ADR-015 Verifications 4 and 6 stay open for Story 045 and the IL2CPP gate.
+2. **AC-10 exemptions** beyond `RelayVerificationHost.cs`:
+   - `NpgsqlRoundTripProbe.cs` (Character Persistence Story 012) and `NpgsqlRecordStoreTestAccess.cs` (Character Persistence Story 014);
+   - the definitions in `ServerTickLoop.cs` and `RandomProviderFactory.cs` are excluded;
+   - the test checks exact counts.
+3. **Internal seams beyond the story:**
+   - `IStartableZoneRelayListener` and `ListenerFactoryOverride`;
+   - `DataSourceCreated` and `DataSourceDisposeCount`;
+   - `HoldsConnectionString`;
+   - `PersistenceService` and `SimulationSteps`;
+   - `ZoneCompositionDatabaseTestAccess` (`Notify`, `CountListeningConnections`).
+4. **AC text amended at `/code-review`:** AC-7, AC-8 (wake), AC-9 ("before S4"), AC-10 (exemptions).
+
+No GDD deviation: TR-net-008 and TR-cp-006 (wiring) hold.
+
+**Test Evidence**: Integration.
+- `tests/EditMode/Networking/ZoneServer_CompositionWiring_tests.cs`: 29 tests.
+- `tests/EditMode/Networking/ZoneServer_CompositionDatabase_tests.cs`: 5 Explicit Database tests, run with `-testFilter` against the portable PostgreSQL 16.15. 5/5 on three consecutive runs, no `StopTimedOut`.
+- `tests/EditMode/Networking/CrossZoneRelay_Npgsql_tests.cs`: 5 wake tests added.
+- Full EditMode suite: 3523 total, 3453 passed, 0 failed, 70 skipped (batch mode, 2026-10-22).
+
+**Code Review**: Complete.
+- `/code-review` (unity-specialist + qa-tester): CHANGES REQUIRED → all fixed:
+  - the AC-4 test is deterministic;
+  - AC-10 checks exact counts;
+  - story text matches the tests;
+  - the warm-up cancellation source is not disposed on timeout;
+  - `ConstructObjects` is split;
+  - the Database tests expect their log lines;
+  - `HoldsConnectionString`.
+- The Database run then found the listener defect above.
+- Re-review: CHANGES REQUIRED → fixed:
+  - wake command timeout;
+  - AC-8 and AC-9 text;
+  - channel-length guard;
+  - listener docs;
+  - tests for stop during `Open`, a mixed-case channel and an unreachable wake host.
+- The re-review's "resend the wake during the join" was not applied: the loop checks the stop flag after both `LISTEN`s and before every wait, so one wake is enough. A test pins this.
+- QL-TEST-COVERAGE and LP-CODE-REVIEW were skipped (lean mode).

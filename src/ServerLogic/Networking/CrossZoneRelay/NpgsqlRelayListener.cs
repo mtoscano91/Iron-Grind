@@ -1,6 +1,7 @@
 using System;
 using System.Net.Sockets;
 using System.Threading;
+using IronGrind.ServerLogic.ZoneServer;
 using Npgsql;
 using UnityEngine;
 
@@ -23,8 +24,12 @@ namespace IronGrind.Networking
     /// <para>
     /// <b>Connection ownership.</b> Only the listener thread disposes the connection, on its way out of an iteration;
     /// <see cref="Stop"/> never touches it, because disposing a connection under a thread blocked in <c>Wait</c> is
-    /// unsafe. <see cref="Stop"/> sets a volatile flag and a signal; the loop leaves within one <c>Wait</c> or at once
-    /// when it is in a backoff delay.
+    /// unsafe. <see cref="Stop"/> sets a volatile flag and a signal, then sends one notification on the listener's
+    /// private wake channel (<c>&lt;channel&gt;_wake_&lt;32 hex&gt;</c>), because under Unity's Mono a <c>Wait</c>
+    /// returns only on a notification (ADR-015 note 2026-10-22). The loop leaves when that wait returns, at once when it
+    /// is in a backoff delay, and without waiting at all when the stop arrives while it connects or issues its
+    /// <c>LISTEN</c>s: it checks the flag after both <c>LISTEN</c>s and before its first wait. Wake notifications are
+    /// never delivered to the receiver.
     /// </para>
     /// <para>
     /// <b>Failures.</b> The loop catches every exception type. Consecutive failures are counted; the
@@ -49,7 +54,7 @@ namespace IronGrind.Networking
     /// listener.Stop();
     /// </code>
     /// </example>
-    public sealed class NpgsqlRelayListener
+    public sealed class NpgsqlRelayListener : IZoneRelayListener, IStartableZoneRelayListener
     {
         /// <summary>Default longest block in one <c>Wait</c>, milliseconds (tuning knob RELAY_LISTENER_WAIT_MS).</summary>
         public const int RELAY_LISTENER_WAIT_MS = 500;
@@ -67,7 +72,13 @@ namespace IronGrind.Networking
         private const string LOG_PREFIX = "[NpgsqlRelayListener]";
         private const string THREAD_NAME = "IronGrindRelayListener";
 
+        // The default channel (15 characters) + this infix + 32 hex digits = 53 characters, under PostgreSQL's
+        // 63-character identifier limit.
+        private const string WAKE_CHANNEL_INFIX = "_wake_";
+        private const int MAX_CHANNEL_NAME_LENGTH = 63;
         private readonly Func<IRelayListenerConnection> _connectionFactory;
+        private readonly Action<string> _wakeSender;
+        private readonly string _wakeChannel;
         private readonly CrossZoneRelayReceiver _receiver;
         private readonly string _channelName;
         private readonly int _waitMs;
@@ -102,18 +113,42 @@ namespace IronGrind.Networking
             int reconnectAlertAfter = RELAY_RECONNECT_ALERT_AFTER,
             int stopTimeoutMs = RELAY_LISTENER_STOP_TIMEOUT_MS)
             : this(
-                new NpgsqlRelayListenerConnection.Factory(BuildListenerConnectionString(baseConnectionString)).Create,
+                new NpgsqlRelayListenerConnection.Factory(BuildListenerConnectionString(baseConnectionString)),
+                receiver,
+                channelName,
+                waitMs,
+                reconnectMaxBackoffMs,
+                reconnectAlertAfter,
+                stopTimeoutMs)
+        {
+        }
+
+        // The production chain: the factory both creates the listener's connections and sends the wake on Stop.
+        private NpgsqlRelayListener(
+            NpgsqlRelayListenerConnection.Factory factory,
+            CrossZoneRelayReceiver receiver,
+            string channelName,
+            int waitMs,
+            int reconnectMaxBackoffMs,
+            int reconnectAlertAfter,
+            int stopTimeoutMs)
+            : this(
+                factory.Create,
                 receiver,
                 channelName,
                 waitMs,
                 reconnectMaxBackoffMs,
                 reconnectAlertAfter,
                 stopTimeoutMs,
-                null)
+                null,
+                factory.SendWake)
         {
         }
 
-        /// <summary>Creates the listener over seams. For tests; a null delay uses the stop signal's own timed wait.</summary>
+        /// <summary>
+        /// Creates the listener over seams. For tests; a null delay uses the stop signal's own timed wait. A null wake
+        /// sender means no wake channel: the loop issues no second <c>LISTEN</c> and <see cref="Stop"/> sends nothing.
+        /// </summary>
         internal NpgsqlRelayListener(
             Func<IRelayListenerConnection> connectionFactory,
             CrossZoneRelayReceiver receiver,
@@ -122,8 +157,10 @@ namespace IronGrind.Networking
             int reconnectMaxBackoffMs,
             int reconnectAlertAfter,
             int stopTimeoutMs,
-            Func<int, ManualResetEventSlim, bool> backoffWait)
+            Func<int, ManualResetEventSlim, bool> backoffWait,
+            Action<string> wakeSender = null)
         {
+            _wakeSender = wakeSender;
             _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
             _receiver = receiver ?? throw new ArgumentNullException(nameof(receiver));
             if (channelName == null)
@@ -157,6 +194,15 @@ namespace IronGrind.Networking
             }
 
             _channelName = channelName;
+            _wakeChannel = channelName + WAKE_CHANNEL_INFIX + Guid.NewGuid().ToString("N");
+            // PostgreSQL truncates a longer LISTEN identifier silently and pg_notify rejects it, so every wake would fail.
+            if (wakeSender != null && _wakeChannel.Length > MAX_CHANNEL_NAME_LENGTH)
+            {
+                throw new ArgumentException(
+                    "The channel name is too long to carry a wake channel (at most "
+                    + (MAX_CHANNEL_NAME_LENGTH - (_wakeChannel.Length - channelName.Length)) + " characters).",
+                    nameof(channelName));
+            }
             _waitMs = waitMs;
             _reconnectMaxBackoffMs = reconnectMaxBackoffMs;
             _reconnectAlertAfter = reconnectAlertAfter;
@@ -207,10 +253,13 @@ namespace IronGrind.Networking
         }
 
         /// <summary>
-        /// Requests the end of the loop and joins the thread for at most the stop timeout. Idempotent: a repeat call, a
-        /// call before <see cref="Start"/> and a call after the thread has ended return at once and never throw. A thread
-        /// that does not end in time is logged once; being a background thread it does not hold the process open, and it
-        /// still disposes its own connection when it ends. Never touches the connection.
+        /// Requests the end of the loop, wakes its wait, and joins the thread for at most the stop timeout. Idempotent: a
+        /// repeat call, a call before <see cref="Start"/> and a call after the thread has ended return at once and never
+        /// throw. The wake opens one short-lived connection of its own (bounded by the connection string's
+        /// <c>Timeout</c> and a short command timeout) and sends one <c>pg_notify</c> on the private wake channel; a
+        /// failure is logged by type and the join still bounds the call. A thread that does not end in time (for
+        /// example one still connecting) is logged once; being a background thread it does not hold the process open,
+        /// and it still disposes its own connection when it ends. Never touches the listener's connection.
         /// </summary>
         public void Stop()
         {
@@ -223,6 +272,7 @@ namespace IronGrind.Networking
                 return;
             }
 
+            SendWake();
             if (!thread.Join(_stopTimeoutMs))
             {
                 _joinTimedOut = true;
@@ -284,6 +334,11 @@ namespace IronGrind.Networking
                     connection.NotificationHandler = _onNotification;
                     connection.Open();
                     connection.Listen(_channelName);
+                    if (_wakeSender != null)
+                    {
+                        connection.ListenWake(_wakeChannel);
+                    }
+
                     // A successful LISTEN resets the count and the backoff (ADR-015 Decision 3). A connection that
                     // keeps passing LISTEN and failing in the first Wait therefore retries every 500 ms and never
                     // reaches the alert; each failure still logs a warning.
@@ -347,6 +402,29 @@ namespace IronGrind.Networking
         private void OnNotification(string payload)
         {
             _receiver.OnPayload(payload);
+        }
+
+        // Under Unity's Mono, WaitAsync's timeout never fires, so a wait returns only on a notification (ADR-015 note
+        // 2026-10-22). One notification on the private wake channel ends the current wait, and the loop then sees the
+        // stop flag. One wake is enough: the loop checks the flag after both LISTENs and before every wait, so a stop
+        // that lands while it connects or listens ends the loop without a wait, and a stop that lands after that check
+        // finds the wake LISTEN committed (the notification is buffered and the next wait returns on it). A failure is
+        // logged by type and the join timeout still bounds Stop.
+        private void SendWake()
+        {
+            if (_wakeSender == null)
+            {
+                return;
+            }
+
+            try
+            {
+                _wakeSender(_wakeChannel);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"{LOG_PREFIX} WakeFailed: {ex.GetType().Name}; Stop waits for the join timeout.");
+            }
         }
 
         // The innermost exception and, for a socket failure, its error code: Npgsql wraps both in

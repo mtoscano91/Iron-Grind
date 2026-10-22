@@ -20,9 +20,16 @@ namespace IronGrind.Networking
         /// <summary>Opens the connection (blocking).</summary>
         void Open();
 
-        /// <summary>Issues <c>LISTEN</c> on the channel (blocking).</summary>
+        /// <summary>Issues <c>LISTEN</c> on the channel (blocking). Its notifications go to the handler.</summary>
         /// <param name="channel">The channel name.</param>
         void Listen(string channel);
+
+        /// <summary>
+        /// Issues <c>LISTEN</c> on the listener's private wake channel (blocking). A notification there only ends the
+        /// current <see cref="Wait"/>; it never reaches the handler.
+        /// </summary>
+        /// <param name="channel">The wake channel name.</param>
+        void ListenWake(string channel);
 
         /// <summary>Blocks for at most <paramref name="timeoutMs"/> until a message arrives; notifications go to the handler.</summary>
         /// <param name="timeoutMs">The longest block, in milliseconds.</param>
@@ -76,6 +83,7 @@ namespace IronGrind.Networking
         private readonly List<string> _pending = new List<string>();
         private readonly List<string> _delivering = new List<string>();
         private Action<string> _handler;
+        private volatile string _deliveryChannel;
 
         /// <summary>Creates the connection object; nothing connects until <see cref="Open"/>.</summary>
         /// <param name="listenerConnectionString">A string from <c>NpgsqlRelayListener.BuildListenerConnectionString</c>.</param>
@@ -99,6 +107,18 @@ namespace IronGrind.Networking
 
         /// <inheritdoc />
         public void Listen(string channel)
+        {
+            _deliveryChannel = channel;
+            IssueListen(channel);
+        }
+
+        /// <inheritdoc />
+        public void ListenWake(string channel)
+        {
+            IssueListen(channel);
+        }
+
+        private void IssueListen(string channel)
         {
             using (NpgsqlCommand command = _connection.CreateCommand())
             {
@@ -125,6 +145,12 @@ namespace IronGrind.Networking
 
         private void OnNotification(object sender, NpgsqlNotificationEventArgs e)
         {
+            // Only the relay channel is delivered; a wake notification has already done its job by ending the wait.
+            if (!string.Equals(e.Channel, _deliveryChannel, StringComparison.Ordinal))
+            {
+                return;
+            }
+
             lock (_pendingLock)
             {
                 _pending.Add(e.Payload);
@@ -165,6 +191,7 @@ namespace IronGrind.Networking
         /// <summary>Holds a connection string so a factory delegate can be made once from a method group.</summary>
         internal sealed class Factory
         {
+            private const int WAKE_COMMAND_TIMEOUT_SECONDS = 2;
             private readonly string _listenerConnectionString;
 
             internal Factory(string listenerConnectionString)
@@ -176,6 +203,29 @@ namespace IronGrind.Networking
             internal IRelayListenerConnection Create()
             {
                 return new NpgsqlRelayListenerConnection(_listenerConnectionString);
+            }
+
+            /// <summary>
+            /// Sends one empty notification on the wake channel over a short-lived connection of its own, so a listener
+            /// blocked in <c>WaitAsync</c> returns (ADR-015 note 2026-10-22: under Unity's Mono the wait's timeout does not
+            /// fire). Called by <c>NpgsqlRelayListener.Stop</c> on the stopping thread; never touches the listener's
+            /// connection. Blocks for one connect and one statement, bounded by the string's <c>Timeout</c>.
+            /// </summary>
+            /// <param name="wakeChannel">The listener's wake channel.</param>
+            internal void SendWake(string wakeChannel)
+            {
+                using (var connection = new NpgsqlConnection(_listenerConnectionString))
+                {
+                    connection.Open();
+                    using (NpgsqlCommand command = connection.CreateCommand())
+                    {
+                        // Short, so a hung server cannot hold the stopping thread for Npgsql's default 30 s.
+                        command.CommandTimeout = WAKE_COMMAND_TIMEOUT_SECONDS;
+                        command.CommandText = "SELECT pg_notify(@channel, '')";
+                        command.Parameters.AddWithValue("channel", wakeChannel);
+                        command.ExecuteNonQuery();
+                    }
+                }
             }
         }
     }

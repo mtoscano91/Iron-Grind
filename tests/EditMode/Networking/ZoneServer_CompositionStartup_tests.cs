@@ -83,6 +83,14 @@ namespace IronGrind.Tests.EditMode.Networking
         public bool IsAlive => true;
         public bool ShutdownInProgress => ShutdownForever;
 
+        public IClientMessageSendSeam CreateSendSeam() { return null; }
+
+        public IZoneInboundTransport CreateInboundTransport(
+            IInboundMessageIntake intake, IInboundRequestDispatcher dispatcher, IClientConnectionListener clientListener)
+        {
+            return null;
+        }
+
         public void FireTick() { SubscribedHandler(); }
     }
 

@@ -59,6 +59,13 @@ namespace IronGrind.Tests.EditMode.Networking
         public void PrepareObject() { }
         public void Configure(uint tickRate, int targetFrameRate, int vSyncCount) { }
         public bool StartServer() { return true; }
+        public IClientMessageSendSeam CreateSendSeam() { return null; }
+
+        public IZoneInboundTransport CreateInboundTransport(
+            IInboundMessageIntake intake, IInboundRequestDispatcher dispatcher, IClientConnectionListener clientListener)
+        {
+            return null;
+        }
 
         public bool ShutdownInProgress
         {

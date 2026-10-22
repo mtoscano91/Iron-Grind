@@ -554,6 +554,11 @@ namespace IronGrind.Tests.EditMode.Networking
                 OnListen?.Invoke();
             }
 
+            public void ListenWake(string channel)
+            {
+                Record("ListenWake:" + channel);
+            }
+
             public bool Wait(int timeoutMs)
             {
                 Record("Wait:" + timeoutMs);
@@ -937,6 +942,168 @@ namespace IronGrind.Tests.EditMode.Networking
             Assert.AreEqual(1, connection.DisposeCount);
             Assert.AreEqual(thread.ManagedThreadId, connection.DisposeThreadId);
             LogAssert.NoUnexpectedReceived();
+        }
+
+        // ---- wake on stop (ADR-015 note 2026-10-22: under Unity's Mono WaitAsync's timeout never fires) -------------
+
+        [Test]
+        public void test_listener_with_a_wake_sender_listens_on_a_private_wake_channel_after_the_relay_channel()
+        {
+            var script = new ListenerScript();
+            FakeConnection connection = script.Add();
+            connection.StopOnWaitNumber(1);
+            var woken = new List<string>();
+            script.Listener = new NpgsqlRelayListener(
+                script.Create, script.Receiver, Channel, 500, 10000, 5, 2000, script.Delay, woken.Add);
+
+            script.Listener.RunLoop();
+
+            List<string> events = connection.Events;
+            Assert.AreEqual("Open", events[0]);
+            Assert.AreEqual("Listen:" + Channel, events[1]);
+            StringAssert.StartsWith("ListenWake:" + Channel + "_wake_", events[2]);
+            string wakeChannel = events[2].Substring("ListenWake:".Length);
+            Assert.LessOrEqual(wakeChannel.Length, 63, "PostgreSQL identifiers are at most 63 characters");
+            Assert.IsEmpty(woken, "Stop from the loop's own thread sends no wake");
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_listener_stop_sends_one_wake_on_its_wake_channel_and_a_wait_blocked_until_a_notification_ends()
+        {
+            var script = new ListenerScript();
+            FakeConnection connection = script.Add();
+            var released = new ManualResetEventSlim(false);
+            // Like WaitAsync under Unity's Mono: the wait returns only when a notification arrives.
+            connection.OnWait = ms =>
+            {
+                released.Wait();
+                return true;
+            };
+            var woken = new List<string>();
+            var listener = new NpgsqlRelayListener(
+                script.Create, script.Receiver, Channel, 500, 10000, 5, JoinWaitMs, script.Delay,
+                channel =>
+                {
+                    lock (woken)
+                    {
+                        woken.Add(channel);
+                    }
+
+                    released.Set();
+                });
+            script.Listener = listener;
+            _cleanup.Add(released.Set);
+            _cleanup.Add(listener.Stop);
+            listener.Start();
+            var ready = System.Diagnostics.Stopwatch.StartNew();
+            while (connection.WaitCount == 0 && ready.ElapsedMilliseconds < JoinWaitMs)
+            {
+                Thread.Sleep(5);
+            }
+            Assert.Greater(connection.WaitCount, 0, "the listener reached its wait");
+
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            listener.Stop();
+
+            Assert.Less(watch.ElapsedMilliseconds, 1000L, "the wake ended the wait long before the join timeout");
+            Assert.IsFalse(listener.IsRunning);
+            Assert.AreEqual(1, woken.Count);
+            Assert.AreEqual("ListenWake:" + woken[0], connection.Events[2], "the wake went to the channel the loop listens on");
+            Assert.AreEqual(1, connection.DisposeCount);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_listener_wake_failure_is_logged_by_type_and_stop_falls_back_to_the_join_timeout()
+        {
+            var script = new ListenerScript();
+            FakeConnection connection = script.Add();
+            var released = new ManualResetEventSlim(false);
+            connection.OnWait = ms =>
+            {
+                released.Wait();
+                return false;
+            };
+            var listener = new NpgsqlRelayListener(
+                script.Create, script.Receiver, Channel, 500, 10000, 5, 200, script.Delay,
+                channel => { throw new InvalidOperationException("secret-wake-detail"); });
+            script.Listener = listener;
+            _cleanup.Add(released.Set);
+            LogAssert.Expect(LogType.Warning, LogLine($"{ListenerPrefix} WakeFailed: InvalidOperationException; Stop waits for the join timeout."));
+            LogAssert.Expect(LogType.Warning, LogLine($"{ListenerPrefix} StopTimedOut"));
+            listener.Start();
+            Thread thread = listener.WorkerThread;
+            var ready = System.Diagnostics.Stopwatch.StartNew();
+            while (connection.WaitCount == 0 && ready.ElapsedMilliseconds < JoinWaitMs)
+            {
+                Thread.Sleep(5);
+            }
+            Assert.Greater(connection.WaitCount, 0, "the listener reached its wait");
+
+            listener.Stop();
+
+            Assert.IsTrue(listener.IsRunning, "without the wake the blocked wait outlives the join timeout");
+            released.Set();
+            Assert.IsTrue(thread.Join(JoinWaitMs), "once a notification arrives the loop sees the stop flag and ends");
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_listener_stop_during_open_ends_the_loop_without_a_wait_once_the_connect_returns()
+        {
+            var script = new ListenerScript();
+            FakeConnection connection = script.Add();
+            var inOpen = new ManualResetEventSlim(false);
+            var openGate = new ManualResetEventSlim(false);
+            connection.OnOpen = () =>
+            {
+                inOpen.Set();
+                openGate.Wait();
+            };
+            var woken = new List<string>();
+            var listener = new NpgsqlRelayListener(
+                script.Create, script.Receiver, Channel, 500, 10000, 5, 100, script.Delay,
+                channel =>
+                {
+                    lock (woken)
+                    {
+                        woken.Add(channel);
+                    }
+                });
+            script.Listener = listener;
+            _cleanup.Add(openGate.Set);
+            LogAssert.Expect(LogType.Warning, LogLine($"{ListenerPrefix} StopTimedOut"));
+            listener.Start();
+            Thread thread = listener.WorkerThread;
+            Assert.IsTrue(inOpen.Wait(JoinWaitMs), "the loop is connecting");
+
+            listener.Stop(); // the connect is still blocked, so this join (100 ms) times out
+            openGate.Set();
+
+            Assert.IsTrue(thread.Join(JoinWaitMs), "the loop ends once the connect returns");
+            Assert.AreEqual(0, connection.WaitCount, "the flag is checked after both LISTENs, before any wait");
+            List<string> events = connection.Events;
+            Assert.AreEqual("Dispose", events[events.Count - 1]);
+            Assert.AreEqual(1, woken.Count, "one wake, sent while nothing listened, and none needed");
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_listener_rejects_a_channel_name_too_long_for_its_wake_channel()
+        {
+            var script = new ListenerScript();
+
+            var exception = Assert.Throws<ArgumentException>(() => new NpgsqlRelayListener(
+                script.Create, script.Receiver, new string('c', 26), 500, 10000, 5, 2000, script.Delay, channel => { }));
+
+            Assert.AreEqual("channelName", exception.ParamName);
+            StringAssert.Contains("at most 25 characters", exception.Message);
+            Assert.DoesNotThrow(() => new NpgsqlRelayListener(
+                script.Create, script.Receiver, new string('c', 25), 500, 10000, 5, 2000, script.Delay, channel => { }));
+            Assert.DoesNotThrow(() => new NpgsqlRelayListener(
+                script.Create, script.Receiver, new string('c', 40), 500, 10000, 5, 2000, script.Delay),
+                "without a wake sender there is no wake channel and no limit");
         }
 
         [Test]

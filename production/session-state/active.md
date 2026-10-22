@@ -4226,3 +4226,42 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Fixes: estimate confirmed 12 h (9 code + EditMode, 3 Database run); Files section; performance note; seams IZoneEnvironment, IZoneNetwork.CreateSendSeam(), IZoneNetwork.CreateInboundTransport(intake, dispatcher, listener); AC-6 exact constructors (dispatcher gets tickLoop, MessageRoutingRegistry.TryGetEntry, BuildConfiguration.IsDevelopmentBuild per ADR-014/manifest; ZoneTickPipeline 7-arg); AC-1 RandomProvider property (no S5 object takes IRandomProvider yet); AC-8 NpgsqlRelayListener implements IZoneRelayListener, AttachListener before Start; AC-9 rewritten (data source is the only IDisposable); real backend lives in ZoneServerComposition.cs (AC-10); WarmUpOverride seam (tests never touch Npgsql types); ConstructionObserver for AC-6.
 - QL-STORY-READY skipped (lean). Not committed.
 - Next: commit, then /dev-story Story 044.
+
+## Session Extract — /dev-story 2026-10-22 (Story 044)
+- Story: production/epics/networking-core/story-044-zone-composition-wiring-database-graph-listener.md — Composition Wiring
+- Files changed: src/ServerLogic/ZoneServer/{ZoneServerComposition (RealBackend nested class, CreateWithRealBackend, IStartableZoneRelayListener, WarmUpOverride, ListenerFactoryOverride, ConstructionObserver, RandomProvider, AttachListener), IZoneNetwork, ZoneServerStandIns}.cs; new IZoneEnvironment, ZoneSimulationStep, ZoneCompositionDatabaseTestAccess (.cs + .meta); NpgsqlRelayListener implements IZoneRelayListener + IStartableZoneRelayListener; Startup/Teardown test fakes stubbed.
+- Tests: ZoneServer_CompositionWiring_tests.cs (28), ZoneServer_CompositionDatabase_tests.cs (3, Explicit). EditMode 3515 total, 3447 passed, 0 failed, 68 skipped. Database run (portable PG 16.15, -testFilter): 3/3 passed.
+- Orchestrator fixes after the agent hit its turn limit: wiring test expects the factory's "[Random] PRNG seed" line; AC-11 test waits for >= 2 connections (pool + listener) before teardown (a stop during the listener's Open hit the 2 s join timeout) and drops a vacuous assertion.
+- Deviations to review: AC-10 exemptions beyond RelayVerificationHost.cs: definitions (ServerTickLoop.cs, RandomProviderFactory.cs) and pre-existing NpgsqlDataSource.Create call sites NpgsqlRoundTripProbe.cs, NpgsqlRecordStoreTestAccess.cs; new internal seams IStartableZoneRelayListener + ListenerFactoryOverride, DataSourceCreated/DataSourceDisposeCount, PersistenceService, SimulationSteps; AC-7 tick-level NoCharacter drop not tested (stand-ins unit-tested only); CreateWithRealBackend doc example names ProcessZoneEnvironment (Story 045).
+- Portable PostgreSQL left running.
+- Blockers: None. Not committed.
+- Next: /code-review then /story-done story-044.
+
+## Session Extract — /code-review Story 044 fixes, 2026-10-22
+- Verdict CHANGES REQUIRED (3 required + 4 suggestions) -> user "fix all" -> all applied: AC-4 test waits on ManualResetEventSlim; AC-10 test exact (file, pattern) counts with definitions removed; story AC-7/AC-9/AC-10 + QA text amended; warm-up CTS not disposed on timeout; ConstructObjects split in 4; DB tests use LogAssert.Expect; HoldsConnectionString + test.
+- EditMode suite: 3516 total, 3448 passed, 0 failed, 68 skipped.
+- DATABASE AC-11 FAILS, real defect found (Story 041 listener, not 044 code): under Unity Mono (Editor), NpgsqlRelayListenerConnection.Wait -> WaitAsync(500) never times out; it returns only on a notification. Diagnostic (temporary, removed): after 3 s idle, Stop() timed out at 2026 ms, thread still alive; one pg_notify on irongrind_relay ended it in 202 ms. Consequence: teardown 2a / OnDestroy cannot stop the listener; its connection lives until process exit (ADR-015 Verification 4 and 6 would FAIL). Consistent with Story 041 VR-5 Part 2 FAIL (async timeout not interrupting a pending read on Mono). AC-12, AC-13 pass.
+- Awaiting user decision on how to handle. Portable PG running. Not committed.
+
+## Session Extract — listener wake-on-stop fix, 2026-10-22 (user decision)
+- Fix for the WaitAsync-never-times-out defect: NpgsqlRelayListener LISTENs on a private wake channel (<channel>_wake_<32 hex>); Stop() sends one pg_notify on it (NpgsqlRelayListenerConnection.Factory.SendWake, own unpooled connection) before the join; WakeFailed logged by type; connection delivers relay-channel payloads only (IRelayListenerConnection.ListenWake added). Wake sender is an optional internal-ctor seam (existing fake tests unchanged).
+- Tests: CrossZoneRelay_Npgsql_tests +3 (wake channel listened, Stop wakes a blocked wait < 1 s, wake failure falls back to join timeout); ZoneServer_CompositionDatabase_tests +1 (real connection: wake ends Wait, not delivered; relay payload delivered; SendWake works); ZoneCompositionDatabaseTestAccess.Notify + CountListeningConnections; AC-11 waits for the LISTEN session.
+- ADR-015 dated note 2026-10-22 added (finding, change, limits, V4/V6 still to confirm in Story 045 and on IL2CPP).
+- EditMode 3520 total, 3451 passed, 0 failed, 69 skipped. Database 4/4 on three runs, no StopTimedOut.
+- Files outside Story 044's list: NpgsqlRelayListener.cs, NpgsqlRelayListenerConnection.cs (Story 041 code), CrossZoneRelay_Npgsql_tests.cs, ADR-015.
+- Next: re-run /code-review or /story-done story-044. Not committed. Portable PG running.
+
+## Session Extract — /code-review re-review Story 044, 2026-10-22
+- Re-review (wake fix + earlier fixes): CHANGES REQUIRED (3 required + 4 suggestions) -> user "fix all".
+- Required 1 (resend wake during join) NOT applied: premise wrong — RunLoop checks the stop flag after both LISTENs and before every wait, so a stop during connect/LISTEN needs no wake, and a stop after the check finds the wake LISTEN committed. Corrected the code comment, class remarks, Stop() doc and the ADR-015 note; remaining overrun = a connect (Timeout 5 s) longer than the 2 s join. Test added: stop during Open -> no Wait, loop ends once the connect returns.
+- Applied: wake CommandTimeout 2 s; story AC-8 wake text + QA cases, AC-9 QA connection-string clearing; channel name > 25 chars rejected when a wake sender is set (+ test); listener docs; DB test mixed-case relay channel; DB test SendWake to unreachable host < 3 s; wait-started asserts in the wake tests.
+- EditMode 3523 total, 3453 passed, 0 failed, 70 skipped. Database 5/5 on three runs, no StopTimedOut.
+- Next: /story-done story-044. Not committed. Portable PG running.
+
+## Session Extract — /story-done 2026-10-22 (Story 044)
+- Verdict: COMPLETE WITH NOTES (13/13 ACs; lean: QL-TEST-COVERAGE and LP-CODE-REVIEW skipped)
+- Story: production/epics/networking-core/story-044-zone-composition-wiring-database-graph-listener.md — Composition Wiring
+- Updated: story Status/Test Evidence/Completion Notes; EPIC.md row 044 Complete + status 44/45 (045 Ready)
+- Tech debt logged: None (user decision)
+- Next recommended: Story 045 — production/epics/networking-core/story-045-zone-server-host-unity-seams-verification.md (Ready, written before 043/044 changed the seams: run /story-readiness first; it now also owns ADR-015 V4/V6 with the wake fix, ProcessZoneEnvironment, CreateWithRealBackend, CreateSendSeam/CreateInboundTransport).
+- Not committed. Portable PG running.

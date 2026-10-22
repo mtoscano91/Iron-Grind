@@ -2,14 +2,29 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Threading;
+using System.Threading.Tasks;
 using IronGrind.CharacterPersistence;
 using IronGrind.Networking;
+using IronGrind.Randomness;
+using Npgsql;
 using UnityEngine;
 using UnityEngine.AI;
 using Debug = UnityEngine.Debug;
 
 namespace IronGrind.ServerLogic.ZoneServer
 {
+    /// <summary>
+    /// A relay listener that can be started: <see cref="IZoneRelayListener"/> plus <c>Start()</c>. Internal because
+    /// only the composition root starts a listener (ADR-015); <c>NpgsqlRelayListener</c> implements it and EditMode
+    /// tests supply fakes through <c>ListenerFactoryOverride</c>.
+    /// </summary>
+    internal interface IStartableZoneRelayListener : IZoneRelayListener
+    {
+        /// <summary>Starts the listener; may throw (S7 then fails and teardown step 2a still stops it).</summary>
+        void Start();
+    }
+
     /// <summary>
     /// The zone server composition root: startup S0-S10 (Networking Core Story 043), teardown 1-8 (Story 042)
     /// (ADR-009 Amendment 1 Decisions 2, 3 and 5). A trigger only calls <see cref="RequestTeardown"/>; the host's
@@ -64,6 +79,8 @@ namespace IronGrind.ServerLogic.ZoneServer
         private const int LAST_STARTUP_STEP = 10;
         private const int SCENE_STEP = 6;
         private const string STEP_RETURNED_FALSE = "StepReturnedFalse";
+        private const string PASSWORD_VARIABLE = "IRONGRIND_PG_PASSWORD";
+        private const string APPLICATION_NAME_PREFIX = "irongrind-zone-";
 
         // Internal step numbers 1..8 and the names the ADR gives them (used in logs).
         private static readonly string[] STEP_NAMES = { "", "1", "2a", "3", "4", "4b", "5", "6", "7" };
@@ -82,8 +99,10 @@ namespace IronGrind.ServerLogic.ZoneServer
         private readonly IZoneStateOwner _zoneStateOwner;
         private readonly IGatewayRegistration _gateway;
         private readonly IZoneConfigSource _configSource;
-        private readonly IZoneBackendSteps _backend;
+        private IZoneBackendSteps _backend;
         private readonly Func<double> _clock;
+        private readonly Func<uint> _currentTickReader;
+        private readonly List<IZoneSimulationStep> _simulationSteps = new List<IZoneSimulationStep>();
         private readonly Stopwatch _stopwatch;
         private readonly Func<bool> _quitHandler;
         private readonly Action _networkTickHandler;
@@ -94,6 +113,7 @@ namespace IronGrind.ServerLogic.ZoneServer
         private IZoneOutboundStep _outbound;
         private IZoneRelayListener _listener;
         private IZoneInboundTransport _transport;
+        private ServerWideBroadcaster _broadcaster;
         private IZoneOutboundSender _outboundSender;
         private ServerTickLoop _tickLoop;
         private Func<uint> _currentTick;
@@ -185,6 +205,7 @@ namespace IronGrind.ServerLogic.ZoneServer
             _ngoShutdownWaitFrames = ZoneServerConfig.DEFAULT_NGO_SHUTDOWN_WAIT_FRAMES;
             _quitHandler = OnWantsToQuit;
             _networkTickHandler = OnNetworkTick;
+            _currentTickReader = ReadCurrentTick;
             if (clock != null)
             {
                 _clock = clock;
@@ -195,6 +216,98 @@ namespace IronGrind.ServerLogic.ZoneServer
                 _clock = ReadStopwatchSeconds;
             }
         }
+
+        /// <summary>
+        /// Creates the composition with the REAL backend (Networking Core Story 044): S3 random, S4 data source and
+        /// warm-up, S5 object graph, S7 relay listener. This is the entry point Story 045's host uses. The seams are
+        /// those of the internal constructor minus <c>backend</c>, plus the environment the database password is read
+        /// from.
+        /// </summary>
+        /// <param name="application">Application seam.</param>
+        /// <param name="network">NGO seam (also creates the send seam and the inbound transport).</param>
+        /// <param name="navigation">Navigation seam.</param>
+        /// <param name="closeSteps">CR-ZI-12 seam.</param>
+        /// <param name="scene">Zone scene seam (S6).</param>
+        /// <param name="boundsValidator">Bounds validator seam (S6).</param>
+        /// <param name="staticDataLoader">Static data seam (S2).</param>
+        /// <param name="zoneStateOwner">Zone state seam.</param>
+        /// <param name="gateway">Gateway registration seam (S10).</param>
+        /// <param name="configSource">Config file reader (S0).</param>
+        /// <param name="environment">Environment variable seam (<c>IRONGRIND_PG_PASSWORD</c>).</param>
+        /// <param name="clock">Seconds source for tick durations; null = a stopwatch started here.</param>
+        /// <returns>The composition, ready for <see cref="Start"/>.</returns>
+        /// <example>
+        /// <code>
+        /// var composition = ZoneServerComposition.CreateWithRealBackend(app, network, navigation, closeSteps, scene,
+        ///     bounds, staticData, zoneState, gateway, configSource, new ProcessZoneEnvironment(), null);
+        /// yield return composition.Start(Environment.GetCommandLineArgs());
+        /// </code>
+        /// </example>
+        internal static ZoneServerComposition CreateWithRealBackend(
+            IZoneApplication application,
+            IZoneNetwork network,
+            IZoneNavigation navigation,
+            IZoneCloseSteps closeSteps,
+            IZoneScene scene,
+            IZoneBoundsValidator boundsValidator,
+            IZoneStaticDataLoader staticDataLoader,
+            IZoneStateOwner zoneStateOwner,
+            IGatewayRegistration gateway,
+            IZoneConfigSource configSource,
+            IZoneEnvironment environment,
+            Func<double> clock)
+        {
+            var composition = new ZoneServerComposition(
+                application, network, navigation, closeSteps, scene, boundsValidator, staticDataLoader,
+                zoneStateOwner, gateway, configSource, null, clock);
+            composition._backend = new RealBackend(composition, environment);
+            return composition;
+        }
+
+        /// <summary>
+        /// Test seam: replaces the real warm-up (<c>SELECT 1</c>) at S4 when set. Null in production. The task is run
+        /// with <c>Task.Run</c> and waited for <c>DbWarmupTimeoutMs</c>; the token is cancelled on a timeout.
+        /// </summary>
+        internal Func<CancellationToken, Task> WarmUpOverride;
+
+        /// <summary>
+        /// Test seam: replaces the creation of the relay listener at S7 when set (the real one connects from its own
+        /// thread, which EditMode tests must not do). Receives the connection string and the receiver. Null in production.
+        /// </summary>
+        internal Func<string, CrossZoneRelayReceiver, IStartableZoneRelayListener> ListenerFactoryOverride;
+
+        /// <summary>
+        /// Test seam: when set, S5 calls it with each constructed type name and once each with <c>Seal</c>,
+        /// <c>RegisterTickDriven</c> and <c>CreateInboundTransport</c>. Null in production (no allocation).
+        /// </summary>
+        internal Action<string> ConstructionObserver;
+
+        /// <summary>The one random provider created at S3 (ADR-013 Decision 4), or null before S3.</summary>
+        internal IRandomProvider RandomProvider { get; private set; }
+
+        /// <summary>The relay listener attached at S7 (before <c>Start()</c>), or null.</summary>
+        internal IZoneRelayListener Listener => _listener;
+
+        /// <summary>The tick loop built at S5, or null before it.</summary>
+        internal ServerTickLoop TickLoop => _tickLoop;
+
+        /// <summary>The character persistence service built at S5 (game-system stories take it from here), or null.</summary>
+        internal CharacterPersistenceService PersistenceService { get; private set; }
+
+        /// <summary>True once S4 created the data source (before the warm-up).</summary>
+        internal bool DataSourceCreated { get; private set; }
+
+        /// <summary>How many times the Dispose pass disposed the data source (0 or 1).</summary>
+        internal int DataSourceDisposeCount { get; private set; }
+
+        /// <summary>
+        /// True while the real backend holds the connection string (S4 to the end of S7, or the Dispose pass). Lets a
+        /// test check that the string, which carries the password, is cleared. False for an injected backend.
+        /// </summary>
+        internal bool HoldsConnectionString => (_backend as RealBackend)?.HasConnectionString ?? false;
+
+        /// <summary>The ordered phase-3 steps the composition lists (empty until the game-system stories add theirs).</summary>
+        internal IList<IZoneSimulationStep> SimulationSteps => _simulationSteps;
 
         /// <summary>Duration in seconds passed to the last <c>AdvanceTick</c> by the tick handler (0 before any).</summary>
         internal float LastTickDurationSeconds { get; private set; }
@@ -435,6 +548,16 @@ namespace IronGrind.ServerLogic.ZoneServer
             _tickHandler = tickHandler;
         }
 
+        /// <summary>
+        /// Attaches the relay listener S7 created, before it calls <c>Start()</c>, so teardown step 2a stops it even
+        /// when <c>Start()</c> throws.
+        /// </summary>
+        /// <param name="listener">The listener to stop at teardown step 2a.</param>
+        internal void AttachListener(IZoneRelayListener listener)
+        {
+            _listener = listener;
+        }
+
         /// <summary>Attaches the tick loop built in S5; S9 fails without it.</summary>
         /// <param name="tickLoop">The server tick loop the network tick event advances.</param>
         internal void AttachTickLoop(ServerTickLoop tickLoop)
@@ -492,6 +615,11 @@ namespace IronGrind.ServerLogic.ZoneServer
         }
 
         // ------------------------------------------------------------------ startup
+
+        private uint ReadCurrentTick()
+        {
+            return _tickLoop != null ? _tickLoop.ServerTickNumber : 0u;
+        }
 
         private double ReadStopwatchSeconds()
         {
@@ -819,6 +947,7 @@ namespace IronGrind.ServerLogic.ZoneServer
 
         private void DisposePass()
         {
+            (_backend as RealBackend)?.ClearConnectionString();
             for (int i = _disposables.Count - 1; i >= 0; i--)
             {
                 try
@@ -832,6 +961,291 @@ namespace IronGrind.ServerLogic.ZoneServer
             }
 
             _disposables.Clear();
+        }
+
+        // ------------------------------------------------------------------ real backend (Story 044)
+
+        /// <summary>
+        /// Builds the Npgsql connection string for the zone (ADR-006 Amendment 3) from the server config and the
+        /// password. The string holds the password: never log it. The application name is
+        /// <c>irongrind-zone-&lt;zoneId&gt;</c>.
+        /// </summary>
+        /// <param name="config">The parsed server config.</param>
+        /// <param name="password">The password from <c>IRONGRIND_PG_PASSWORD</c>.</param>
+        /// <param name="zoneId">The zone id from the command line.</param>
+        /// <returns>The connection string (escaped by the builder).</returns>
+        internal static string BuildConnectionString(ZoneServerConfig config, string password, uint zoneId)
+        {
+            var builder = new NpgsqlConnectionStringBuilder
+            {
+                Host = config.Host,
+                Port = config.Port,
+                Database = config.Database,
+                Username = config.Username,
+                Password = password,
+                Timeout = config.Timeout,
+                CommandTimeout = config.CommandTimeout,
+                Pooling = true,
+                MinPoolSize = config.MinPoolSize,
+                MaxPoolSize = config.MaxPoolSize,
+                ConnectionIdleLifetime = config.ConnectionIdleLifetime,
+                ApplicationName = ApplicationNameFor(zoneId)
+            };
+            return builder.ConnectionString;
+        }
+
+        /// <summary>The PostgreSQL <c>application_name</c> of a zone's connections: <c>irongrind-zone-&lt;zoneId&gt;</c>.</summary>
+        /// <param name="zoneId">The zone id.</param>
+        /// <returns>The application name.</returns>
+        internal static string ApplicationNameFor(uint zoneId)
+        {
+            return APPLICATION_NAME_PREFIX + zoneId;
+        }
+
+        // Disposes the data source and counts it (the count is the AC-9 observation; it costs one int).
+        private sealed class DataSourceHandle : IDisposable
+        {
+            private readonly ZoneServerComposition _owner;
+            private readonly NpgsqlDataSource _dataSource;
+
+            public DataSourceHandle(ZoneServerComposition owner, NpgsqlDataSource dataSource)
+            {
+                _owner = owner;
+                _dataSource = dataSource;
+            }
+
+            public void Dispose()
+            {
+                _owner.DataSourceDisposeCount++;
+                _dataSource.Dispose();
+            }
+        }
+
+        // The real S3, S4, S5, S7. A private nested class so the construction stays inside this file (AC-10).
+        private sealed class RealBackend : IZoneBackendSteps
+        {
+            private readonly ZoneServerComposition _owner;
+            private readonly IZoneEnvironment _environment;
+            private string _connectionString;
+            private NpgsqlDataSource _dataSource;
+            private CrossZoneRelayReceiver _receiver;
+
+            // S5 objects shared between its build methods.
+            private TickCompletionQueue _queue;
+            private ServerTickLoop _tickLoop;
+            private CrossZoneRelayAllowlist _allowlist;
+            private CrossZoneRelayInbox _inbox;
+            private NpgsqlRelayPublisher _publisher;
+
+            public RealBackend(ZoneServerComposition owner, IZoneEnvironment environment)
+            {
+                _owner = owner;
+                _environment = environment;
+            }
+
+            // The string holds the password; it lives here from S4 to the end of S7 (or the Dispose pass).
+            public void ClearConnectionString()
+            {
+                _connectionString = null;
+            }
+
+            public bool HasConnectionString => _connectionString != null;
+
+            public bool InitializeRandom()
+            {
+                // The factory logs the seed on one line ("[Random] PRNG seed: n"); nothing else logs it.
+                _owner.RandomProvider = RandomProviderFactory.CreateSeededFromEntropy(out int _);
+                return true;
+            }
+
+            public bool OpenDatabase()
+            {
+                ZoneServerConfig config = _owner._config;
+                string password = _environment.GetVariable(PASSWORD_VARIABLE);
+                if (string.IsNullOrEmpty(password))
+                {
+                    Debug.LogError(LOG_PREFIX + " S4: environment variable " + PASSWORD_VARIABLE + " is not set or empty");
+                    return false;
+                }
+
+                _connectionString = BuildConnectionString(config, password, _owner._args.ZoneId);
+                _dataSource = NpgsqlDataSource.Create(_connectionString);
+                _owner.DataSourceCreated = true;
+
+                // Registered first, so the Dispose pass (reverse order) disposes it last, also after a warm-up failure.
+                _owner.RegisterDisposable(new DataSourceHandle(_owner, _dataSource));
+                return WarmUp(config.DbWarmupTimeoutMs);
+            }
+
+            private bool WarmUp(int timeoutMs)
+            {
+                Func<CancellationToken, Task> warm = _owner.WarmUpOverride ?? WarmUpDataSource;
+                var cancellation = new CancellationTokenSource();
+                CancellationToken token = cancellation.Token;
+                Task task = Task.Run(() => warm(token));
+                bool completed;
+                try
+                {
+                    completed = task.Wait(timeoutMs);
+                }
+                catch (AggregateException ex)
+                {
+                    cancellation.Dispose();
+                    Debug.LogError(LOG_PREFIX + " S4: database warm-up failed: " + Describe(ex));
+                    return false;
+                }
+
+                if (!completed)
+                {
+                    // Cancelled but not disposed: the abandoned task may still register on the token, which throws
+                    // ObjectDisposedException on Mono after Dispose. A source without a timer holds no unmanaged
+                    // resource, so the garbage collector reclaims it.
+                    cancellation.Cancel();
+                    task.ContinueWith(ObserveFault, TaskContinuationOptions.OnlyOnFaulted);
+                    Debug.LogError(LOG_PREFIX + " S4: database warm-up timed out");
+                    return false;
+                }
+
+                cancellation.Dispose();
+                return true;
+            }
+
+            private async Task WarmUpDataSource(CancellationToken token)
+            {
+                using (NpgsqlCommand command = _dataSource.CreateCommand("SELECT 1"))
+                {
+                    await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+                }
+            }
+
+            private static void ObserveFault(Task task)
+            {
+                // Reading Exception marks it observed; nothing else to do for an abandoned warm-up.
+                AggregateException ignored = task.Exception;
+            }
+
+            // The exception type name, and the PostgreSQL SqlState when the chain holds a PostgresException. Never the
+            // message: Npgsql messages can carry the host and user name.
+            private static string Describe(AggregateException aggregate)
+            {
+                Exception top = aggregate.InnerException ?? aggregate;
+                string sqlState = null;
+                for (Exception e = top; e != null && sqlState == null; e = e.InnerException)
+                {
+                    var postgres = e as PostgresException;
+                    if (postgres != null)
+                    {
+                        sqlState = postgres.SqlState;
+                    }
+                }
+
+                return sqlState == null ? top.GetType().Name : top.GetType().Name + " SqlState=" + sqlState;
+            }
+
+            private void Observe(string name)
+            {
+                _owner.ConstructionObserver?.Invoke(name);
+            }
+
+            // S5, in the AC-6 order: persistence, relay, dispatch, then outbound and the pipeline.
+            public bool ConstructObjects()
+            {
+                BuildPersistence();
+                BuildRelay();
+                InboundRequestDispatcher dispatcher = BuildDispatcher();
+                BuildOutboundAndPipeline(dispatcher);
+                return true;
+            }
+
+            private void BuildPersistence()
+            {
+                _queue = new TickCompletionQueue();
+                Observe(nameof(TickCompletionQueue));
+                _tickLoop = new ServerTickLoop();
+                Observe(nameof(ServerTickLoop));
+                var store = new NpgsqlCharacterRecordStore(_dataSource);
+                Observe(nameof(NpgsqlCharacterRecordStore));
+                _owner.PersistenceService = new CharacterPersistenceService(store);
+                Observe(nameof(CharacterPersistenceService));
+            }
+
+            private void BuildRelay()
+            {
+                _allowlist = CrossZoneRelayAllowlist.CreateProduction();
+                Observe(nameof(CrossZoneRelayAllowlist));
+                var origin = new CrossZoneRelayOrigin();
+                Observe(nameof(CrossZoneRelayOrigin));
+                _inbox = new CrossZoneRelayInbox(_allowlist.LargestMaxBodyBytes);
+                Observe(nameof(CrossZoneRelayInbox));
+                _receiver = new CrossZoneRelayReceiver(_allowlist, _inbox, origin);
+                Observe(nameof(CrossZoneRelayReceiver));
+                _publisher = new NpgsqlRelayPublisher(_dataSource, _queue, origin);
+                Observe(nameof(NpgsqlRelayPublisher));
+            }
+
+            private InboundRequestDispatcher BuildDispatcher()
+            {
+                var guardChain = new CrossCuttingRpcGuardChain();
+                Observe(nameof(CrossCuttingRpcGuardChain));
+                var gate = new CharacterMutationGate();
+                Observe(nameof(CharacterMutationGate));
+                var dispatcher = new InboundRequestDispatcher(
+                    guardChain, gate, new StandInConnectionCharacterDirectory(), new StandInConnectionActivitySink(),
+                    _tickLoop, MessageRoutingRegistry.TryGetEntry, BuildConfiguration.IsDevelopmentBuild);
+                Observe(nameof(InboundRequestDispatcher));
+                return dispatcher;
+            }
+
+            private void BuildOutboundAndPipeline(InboundRequestDispatcher dispatcher)
+            {
+                var outbox = new ClientMessageOutbox(_owner._network.CreateSendSeam());
+                Observe(nameof(ClientMessageOutbox));
+                // Built for the game-system stories to take; this story registers no handler.
+                _owner._broadcaster = new ServerWideBroadcaster(outbox, _publisher, _allowlist);
+                Observe(nameof(ServerWideBroadcaster));
+                var relayHandler = new ZoneClientRelayHandler(outbox);
+                Observe(nameof(ZoneClientRelayHandler));
+                var simulation = new ZoneSimulationStep(_owner._simulationSteps);
+                Observe(nameof(ZoneSimulationStep));
+                var pipeline = new ZoneTickPipeline(_queue, _inbox, relayHandler, dispatcher, simulation, outbox, _tickLoop);
+                Observe(nameof(ZoneTickPipeline));
+
+                dispatcher.Seal();
+                Observe("Seal");
+                _tickLoop.RegisterTickDriven(pipeline.Tick);
+                Observe("RegisterTickDriven");
+                IZoneInboundTransport transport = _owner._network.CreateInboundTransport(dispatcher, dispatcher, outbox);
+                Observe("CreateInboundTransport");
+
+                _owner.AttachOwnedObjects(_queue, outbox, null, transport, _owner._currentTickReader, null);
+                _owner.AttachTickLoop(_tickLoop);
+            }
+
+            public bool StartListener()
+            {
+                try
+                {
+                    IStartableZoneRelayListener listener;
+                    Func<string, CrossZoneRelayReceiver, IStartableZoneRelayListener> factory = _owner.ListenerFactoryOverride;
+                    if (factory != null)
+                    {
+                        listener = factory(_connectionString, _receiver);
+                    }
+                    else
+                    {
+                        listener = new NpgsqlRelayListener(_connectionString, _receiver);
+                    }
+
+                    // Attached before Start(), so teardown step 2a stops it even when Start() throws.
+                    _owner.AttachListener(listener);
+                    listener.Start();
+                    return true;
+                }
+                finally
+                {
+                    _connectionString = null;
+                }
+            }
         }
     }
 }

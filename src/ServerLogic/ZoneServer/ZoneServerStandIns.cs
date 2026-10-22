@@ -1,4 +1,5 @@
 using IronGrind.CharacterPersistence;
+using IronGrind.Networking;
 using UnityEngine;
 using UnityEngine.AI;
 
@@ -27,6 +28,49 @@ namespace IronGrind.ServerLogic.ZoneServer
 
             _logged = true;
             Debug.Log("[ZoneServer] " + _step + " not implemented");
+        }
+    }
+
+    /// <summary>
+    /// Stand-in for <see cref="IConnectionCharacterDirectory"/> until the session epic ships: finds no character for
+    /// any connection, so the dispatcher drops every request on its <c>NoCharacter</c> path. Logs
+    /// "[ZoneServer] connection character directory not implemented" once.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// bool found = new StandInConnectionCharacterDirectory().TryGetCharacterId(5u, out CharacterID id); // false
+    /// </code>
+    /// </example>
+    public sealed class StandInConnectionCharacterDirectory : IConnectionCharacterDirectory
+    {
+        private readonly StandInLogOnce _log = new StandInLogOnce("connection character directory");
+
+        /// <inheritdoc/>
+        public bool TryGetCharacterId(uint clientId, out IronGrind.Currency.CharacterID charId)
+        {
+            _log.Log();
+            charId = IronGrind.Currency.CharacterID.Invalid;
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Stand-in for <see cref="IConnectionActivitySink"/> until the session epic ships: records nothing. Logs
+    /// "[ZoneServer] connection activity sink not implemented" once.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// new StandInConnectionActivitySink().OnInboundActivity(5u, 100u); // logs once, records nothing
+    /// </code>
+    /// </example>
+    public sealed class StandInConnectionActivitySink : IConnectionActivitySink
+    {
+        private readonly StandInLogOnce _log = new StandInLogOnce("connection activity sink");
+
+        /// <inheritdoc/>
+        public void OnInboundActivity(uint clientId, uint serverTick)
+        {
+            _log.Log();
         }
     }
 
