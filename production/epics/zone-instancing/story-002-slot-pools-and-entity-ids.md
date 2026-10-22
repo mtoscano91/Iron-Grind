@@ -1,7 +1,7 @@
 # Story 002: Player and Mob Slot Pools, EntityID Minting, Player Roster View
 
 > **Epic**: Zone Instancing
-> **Status**: Ready — written 2026-10-22; lean readiness 2026-10-22 (NEEDS WORK → fixed → Ready)
+> **Status**: Complete — 2026-10-22 (written and lean readiness 2026-10-22)
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-19
@@ -92,7 +92,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/ZoneInstancing/ZoneInstancing_SlotPools_tests.cs` — must exist and pass.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 64 cases, all passing (batch EditMode 2026-10-22)
 
 ---
 
@@ -100,3 +100,18 @@
 
 - Depends on: None
 - Unlocks: Stories 003, 007, 009, 011, 012, 013
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-22
+**Criteria**: 11/11 passing (none deferred)
+**Deviations** (advisory, accepted):
+- The roster is updated in O(1) by swap-remove, so its order is unspecified (not slot-index order); CR-ZI-15 requires no order.
+- `GetPlayerEntityIDsInZone` with a foreign `ZoneID` warns once per pool, not once per call (it is polled every tick); `TryAllocatePlayer` / `TryAllocateMob` still warn on every foreign-zone call.
+- `EntityIDCounterExhausted` is raised on the first allocation attempt that reaches ID minting after `uint.MaxValue` was issued; a full-pool or foreign-zone attempt fails earlier and raises nothing (pinned by a test).
+- Extra public API: `TryGetPlayer` / `ZonePlayerSlot` (own file), `Zone`, `MaxPlayers`, `MaxMobs` getters, `GetOwlIndexForMobSlot(ushort)` (instance method, uses the configured `maxPlayers`).
+- `TR-zi-003`, `TR-zi-004`, `TR-zi-015` are still epic placeholders (readiness decision). Control-manifest "broadcast events are `event Action<T>`" does not apply: single ordered consumer → listener interface (as Story 001 Decision 3, ADR-010).
+**Notes for Story 014**: forward `IZoneSlotPoolListener.OnOccupiedPlayerSlotsChanged` to `ZoneLifecycle.OnOccupiedPlayerSlotsChanged` and map `OnEntityIDCounterExhausted` to `RequestTeardown(Fatal)`; the listener must not throw.
+**Test Evidence**: Logic — `tests/EditMode/ZoneInstancing/ZoneInstancing_SlotPools_tests.cs` (64 cases).
+**Code Review**: Complete — `/code-review` 2026-10-22 APPROVED WITH SUGGESTIONS, all 8 suggestions applied (commit `6d9754d`). QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean mode).

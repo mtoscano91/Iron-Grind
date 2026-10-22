@@ -4398,3 +4398,11 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Applied: O(1) roster by swap-remove (_rosterPos), order now unspecified; docs (O(1), exhaustion fires on the first attempt that reaches minting); roster foreign-zone warning once per pool; ctor split (ValidateArguments, CreateFreeList); ZonePlayerSlot moved to its own file; tests — order-insensitive roster asserts, stronger stable-index / AC-ZI-4 / fill-to-50, new re-entrancy, reallocate-new-id, mob id on player ops, released-id SetSessionState, full pool + spent counter, invalid ids, OWL bounds, mob exhaustion tick.
 - Tests: batch EditMode 3614 total, 3544 passed, 0 failed, 70 skipped (Npgsql); SlotPools 64/64; 0 compile errors.
 - Next: commit -> /story-done story-002. PAT rotation still unconfirmed.
+
+## Session Extract — /story-done 2026-10-22 (Story 002)
+- Verdict: COMPLETE WITH NOTES (11/11 by test; SlotPools 64/64)
+- Story: production/epics/zone-instancing/story-002-slot-pools-and-entity-ids.md — slot pools, EntityID minting, roster view
+- Tech debt logged: None (5 advisory deviations in the story's Completion Notes, plus Story 014 wiring notes)
+- EPIC.md row 002 Complete; Next Step points to Story 003.
+- Next recommended: /story-readiness production/epics/zone-instancing/story-003-mob-slot-interface.md (depends only on 002); 004 and 006 have no dependencies.
+- PAT rotation still unconfirmed.
