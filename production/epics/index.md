@@ -1,6 +1,6 @@
 # Epics Index
 
-Last Updated: 2026-10-12
+Last Updated: 2026-10-22
 Engine: Unity 6.3 LTS (6000.3)
 Control Manifest Version: 2026-06-28
 
@@ -9,7 +9,7 @@ Control Manifest Version: 2026-06-28
 | [Character Stats](character-stats/EPIC.md) | Foundation | Character Stats | design/gdd/character-stats.md | 8 stories (001-008 Complete) | Complete |
 | [Item Database](item-database/EPIC.md) | Foundation | Item Database | design/gdd/item-database.md | 4 stories (001-004), all Complete | Complete |
 | [Currency System](currency-system/EPIC.md) | Foundation | Currency System | design/gdd/currency-system.md | 6 stories (001-006), all Complete | Complete |
-| [Networking Core](networking-core/EPIC.md) | Foundation | Networking Core (+ 10 sub-contracts) | design/gdd/networking-core.md | 39 stories (001-039): 39 Complete (039, the client message outbox, 2026-10-12); the headless-build engine-risk gate is still open | In Progress |
+| [Networking Core](networking-core/EPIC.md) | Foundation | Networking Core (+ 10 sub-contracts) | design/gdd/networking-core.md | 45 stories (001-045), all Complete (045, the zone server host and local verification, 2026-10-22); the Linux IL2CPP headless-build engine-risk gate is still open | Stories Complete |
 | [Authentication](authentication/EPIC.md) | Core | Authentication | design/gdd/authentication.md | Not yet created | Ready |
 | [Damage Calculation](damage-calculation/EPIC.md) | Core | Damage Calculation | design/gdd/damage-calculation.md | Not yet created | Ready — **blocked on server/client assembly-boundary ADR before Story 001** |
 | [Leveling System](leveling-system/EPIC.md) | Core | Leveling System | design/gdd/leveling-system.md | 16 stories (001-016 Complete) | Complete |
@@ -17,6 +17,7 @@ Control Manifest Version: 2026-06-28
 | [Loot Table System](loot-table-system/EPIC.md) | Core | Loot Table System | design/gdd/loot-table-system.md | Not yet created | Ready |
 | [Status Effects / Buffs](status-effects/EPIC.md) | Core | Status Effects | design/gdd/status-effects.md | Not yet created | Ready |
 | [Equipment System](equipment-system/EPIC.md) | Core | Equipment System | design/gdd/equipment-system.md | Not yet created | Ready — **design gate OQ-EQS-9 open before `/create-stories`** |
+| [Zone Instancing](zone-instancing/EPIC.md) | Core | Zone Instancing (zone-process side) | design/gdd/zone-instancing.md | Not yet created | Ready — routing, `ZoneID` allocation and gateway registration (TR-zi-001 allocator, 005, 018) **Blocked** until a gateway ADR + epic exist |
 | [Character Persistence](character-persistence/EPIC.md) | Core | Character Persistence | design/gdd/character-persistence.md | 16 stories (001-016, written 2026-10-12): 001-004, 006 and 007 Complete (2026-10-12 to 2026-10-15), 4 Not Started pending `/story-readiness`, 6 Blocked (005 on the Equipment System; 012-016 on Npgsql, Dapper and a PostgreSQL instance) | In Progress |
 | [Enhancement System](enhancement-system/EPIC.md) | Feature | Enhancement System | design/gdd/enhancement-system.md | 15 stories (001-010 and 012-014 Complete; 011 Blocked on Character Persistence; 015 Blocked on 011) | In Progress |
 

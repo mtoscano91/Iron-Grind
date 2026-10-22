@@ -1,8 +1,8 @@
 # Zone Instancing
 
-> **Status**: Needs Revision
+> **Status**: Approved (lean re-review 2026-05-30)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-05-29
+> **Last Updated**: 2026-05-30
 > **Implements Pillar**: Social Gravity (primary — instanced shared zones are the social world), Earned Power (zone tiers gate content progression)
 
 ## Overview

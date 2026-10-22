@@ -4301,3 +4301,10 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: None
 - EPIC.md: row 045 Complete, 45/45; the Linux IL2CPP headless-build engine-risk gate (A1-1, A1-2, A1-7, final A1-4) stays open.
 - Next recommended: None in this epic. Options: the headless-build gate (needs the Linux IL2CPP module), Zone Instancing / Navigation stories replacing the stand-ins, or /sprint-plan. PAT rotation still unconfirmed.
+
+## Session Extract — /create-epics zone-instancing 2026-10-22
+- Verdict: COMPLETE — 1 epic written: production/epics/zone-instancing/EPIC.md (Core, Ready, Manifest 2026-10-19, TR-zi-001..018 placeholders, not in tr-registry yet). PR-EPIC skipped (lean).
+- User decisions: scope = zone process only; TR-zi-001 allocator, TR-zi-005 (CR-ZI-6 routing) and TR-zi-018 (gateway registration) Blocked until a gateway ADR (/architecture-decision: gateway process + zone registration IPC) and gateway epic. GDD header fixed Needs Revision -> Approved (lean re-review 2026-05-30), no rule change.
+- Known gaps in the epic: missing callees via interfaces (Auth token validation, Party, Mob Spawning, Navigation); T-4 drain trigger unmapped (decide at /create-stories: MVP drain or always T-6); stand-ins replaced (IZoneStateOwner, IZoneBoundsValidator, IZoneCloseSteps, AddNavMeshData data via ZoneDefinition); no zone content exists.
+- Also: epics/index.md — Zone Instancing row, Networking Core row 45/45, date 2026-10-22.
+- Uncommitted: zone-instancing/EPIC.md, epics/index.md, design/gdd/zone-instancing.md, this file. Next: /create-stories zone-instancing. PAT rotation still unconfirmed.
