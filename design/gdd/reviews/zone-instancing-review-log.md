@@ -1,5 +1,12 @@
 # Zone Instancing — Design Review Log
 
+## Review — 2026-10-22 (lean #2) — Verdict: NEEDS REVISION (fixed same session; marked Approved by user)
+Scope signal: XL
+Specialists: None (lean mode — single-session analysis)
+Blocking items: 1 | Recommended: 3
+Summary: All four items from the first 2026-10-22 pass verified closed. Blocker: CR-ZI-12 step 3(a), EC-ZI-3 and the Interactions/Dependencies rows still cached the `ZoneID` so a ghost expired by teardown would get `ZoneSessionEnded(GhostDeath=3)` on reconnect — contradicting step 3 (not a death; CR-GH-6 is death-only) and impossible across the process exit (ADR-007/009). Fixed: step 3 saves from the CGS-3 snapshot, expires the session and invalidates the token; reconnect takes the EC-TOK-1 auth failure → fresh login → CR-ZI-6 rule 2 fall-through. Recommended fixed: step 4 stale ordering note and unclear notification wording; step 5 ordering covers step 2 and step 3 saves; `MAX_MOBS_PER_ZONE` 500 knob row 44 → 43 fragments. Nice-to-have fixed: CSP status, `JoinRejectedReason.Other`, AC-ZI-22/23 precision. `entities.yaml` `DisconnectReason` note updated.
+Prior verdict resolved: Yes — NEEDS REVISION (2026-10-22 lean #1)
+
 ## Review — 2026-10-22 — Verdict: NEEDS REVISION (fixed same session)
 Scope signal: XL
 Specialists: None (lean mode — single-session analysis)

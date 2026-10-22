@@ -395,11 +395,12 @@ constants:
     referenced_by:
       - design/gdd/networking-core.md
       - design/gdd/death-and-respawn.md
+      - design/gdd/zone-instancing.md
     type: "enum : byte"
     values: "{ZoneClosed=0, ServerShutdown=1, AdminKick=2, GhostDeath=3, Other=255}"
-    note: "Wire type declared in CR-NET-7.9. Used in ZoneSessionEnded message. GhostDeath=3 added in networking-ghost-character-state.md (2026-05-15). Zone Instancing GDD must reference this for zone teardown messages."
+    note: "Wire type declared in CR-NET-7.9. Used in ZoneSessionEnded message. GhostDeath=3 added in networking-ghost-character-state.md (2026-05-15). Zone Instancing teardown sends ZoneClosed=0 (zone-instancing.md T-4, CR-ZI-12 step 4); GhostDeath=3 is CR-GH-6's death-only path — a ghost expired by zone teardown is never sent it (CR-ZI-12 step 3, EC-ZI-3, revised 2026-10-22)."
     added: "2026-05-06"
-    revised: "2026-05-19"
+    revised: "2026-10-22"
 
   - name: DisconnectType
     status: active
