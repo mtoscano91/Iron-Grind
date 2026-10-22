@@ -4384,3 +4384,11 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Fixes in Story 002: estimate 6 h confirmed; TR-zi-003/004/015 stay placeholders until /architecture-review (as Story 001 Decision 4); API pinned — ZoneSlotPool with TryAllocatePlayer(ZoneID, CharacterID, AccountID, uint clientId, out byte, out EntityID), ReleasePlayer(EntityID), TryGetPlayerSlot, SetSessionState, TryAllocateMob / ReleaseMob (Story 003 wraps), counts; ZoneSessionState new byte enum in src/ServerLogic/ZoneInstancing (separate from Networking.SessionState); lifecycle seam — injected IServerTickSource + new IZoneSlotPoolListener (OnOccupiedPlayerSlotsChanged(int, uint tick), OnEntityIDCounterExhausted(uint tick)), Story 014 wires to ZoneLifecycle / RequestTeardown(Fatal); 4 QA cases + Files section.
 - Files: story-002, this file. Not committed.
 - Next: commit -> /dev-story story-002. PAT rotation still unconfirmed.
+
+## Session Extract — /dev-story 2026-10-22 — Zone Instancing Story 002
+- Story: production/epics/zone-instancing/story-002-slot-pools-and-entity-ids.md — slot pools, EntityID minting, roster view. Implemented by network-programmer; orchestrator reviewed. Not reviewed (/code-review), not committed.
+- Created: src/ServerLogic/ZoneInstancing/{ZoneSlotPool (+ ZonePlayerSlot readonly struct), ZoneSessionState, IZoneSlotPoolListener}.cs, tests/EditMode/ZoneInstancing/ZoneInstancing_SlotPools_tests.cs (45 [Test] + 4 parameterized methods = 54 cases) + .meta files.
+- Agent choices (unspecified by story): extra public TryGetPlayer/ZonePlayerSlot, Zone/MaxPlayers/MaxMobs getters; GetOwlIndexForMobSlot instance method (throws >= MaxMobs); full pool fails before the ID mint (no exhaustion alert on a full pool); foreign-zone check before capacity.
+- Review note for /code-review: RebuildRoster rescans all player slots on each alloc/release (no allocation, but O(maxPlayers), guardrail says O(1)).
+- Tests: batch EditMode 3604 total, 3534 passed, 0 failed, 70 skipped (Npgsql); SlotPools 54/54; 0 compile errors.
+- Next: /code-review the 3 ZoneInstancing files -> /story-done story-002. PAT rotation still unconfirmed.
