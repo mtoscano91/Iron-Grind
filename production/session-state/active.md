@@ -4167,3 +4167,8 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Findings: no production loaders for the static data; IConnectionCharacterDirectory / IConnectionActivitySink have no production implementation (stand-ins → requests dropped as NoCharacter); no IZoneSimulationStep production class (composition supplies an empty ordered list); no zone scene exists.
 - EPIC.md: 41/45, rows 042–045, composition-root gap marked written, new Known Gap for the stand-ins.
 - Uncommitted: story-042..045, networking-core/EPIC.md, this file. Next: commit → /story-readiness story-042. PAT rotation still unconfirmed.
+
+## Session Extract — /story-readiness 2026-10-22 (Networking Core Story 042)
+- Verdict: NEEDS WORK (4 gaps) → all fixed at the user's request; Story Ready (10 h). QL-STORY-READY skipped (lean).
+- Fixes: AC-8 leaves incomplete-task alerts to TickCompletionQueue.DrainOnShutdown (it already raises them; returns void) and checks the exit code is unchanged, also when the drain throws; AC-9 names `bool TryBeginTeardown()` (true once); new AC-14 `Dispose()` = `TeardownNow()`, idempotent; `internal RegisterDisposable(IDisposable)` named (Story 044 calls it, data source first); drain timeout computed 200 / 20 = 10 s; DrainOnShutdown's AssertTickThread noted for tests.
+- Uncommitted: story-042, this file. Next: commit → /dev-story Story 042.
