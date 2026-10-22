@@ -23,8 +23,9 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         void OnOccupiedPlayerSlotsChanged(int occupied, uint serverTick);
 
         /// <summary>
-        /// Called once, on the first allocation attempt after the EntityID counter has issued
-        /// <see cref="uint.MaxValue"/> (EC-ZI-12). Later failed attempts do not call it again.
+        /// Called once, on the first allocation attempt that reaches ID minting after
+        /// <see cref="uint.MaxValue"/> has been issued (EC-ZI-12). An attempt that fails earlier
+        /// (foreign zone, full pool) raises nothing; later failed attempts do not call it again.
         /// </summary>
         /// <param name="serverTick">The server tick of the failed attempt.</param>
         void OnEntityIDCounterExhausted(uint serverTick);

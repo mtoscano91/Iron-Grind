@@ -199,12 +199,34 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
             ZoneSlotPool pool = Create();
             Fill(pool, 49);
 
-            bool first = AllocPlayer(pool, out _, out _);
-            bool second = AllocPlayer(pool, out _, out _);
+            bool first = AllocPlayer(pool, out byte winnerSlot, out EntityID winnerId);
+            bool second = AllocPlayer(pool, out byte loserSlot, out EntityID loserId);
 
             Assert.IsTrue(first);
             Assert.IsFalse(second);
+            Assert.AreEqual(49, winnerSlot);
+            Assert.AreNotEqual(EntityID.Invalid, winnerId);
+            Assert.AreEqual(0, loserSlot);
+            Assert.AreEqual(EntityID.Invalid, loserId);
             Assert.AreEqual(50, pool.OccupiedPlayerCount);
+        }
+
+        [Test]
+        public void TryAllocatePlayer_FillToCapacity_LastSlotIs49AndNextCallFails()
+        {
+            ZoneSlotPool pool = Create();
+            byte lastSlot = 0;
+            for (int i = 0; i < 50; i++)
+            {
+                Assert.IsTrue(AllocPlayer(pool, out lastSlot, out _), "player " + i);
+            }
+
+            bool ok = AllocPlayer(pool, out byte slot, out EntityID id);
+
+            Assert.AreEqual(49, lastSlot);
+            Assert.IsFalse(ok);
+            Assert.AreEqual(0, slot);
+            Assert.AreEqual(EntityID.Invalid, id);
         }
 
         [Test]
@@ -242,6 +264,8 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
             AllocPlayer(pool, out _, out EntityID a);
             AllocPlayer(pool, out byte slotB, out EntityID b);
             AllocPlayer(pool, out _, out EntityID c);
+            Assert.IsTrue(pool.TryGetPlayer(a, out ZonePlayerSlot beforeA));
+            Assert.IsTrue(pool.TryGetPlayer(c, out ZonePlayerSlot beforeC));
 
             Assert.IsTrue(pool.ReleasePlayer(b));
             Assert.IsTrue(AllocPlayer(pool, out byte newSlot, out EntityID d));
@@ -252,6 +276,12 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
             Assert.IsTrue(pool.TryGetPlayerSlot(c, out byte slotC));
             Assert.AreEqual(0, slotA);
             Assert.AreEqual(2, slotC);
+            Assert.IsTrue(pool.TryGetPlayer(a, out ZonePlayerSlot afterA));
+            Assert.IsTrue(pool.TryGetPlayer(c, out ZonePlayerSlot afterC));
+            Assert.AreEqual(beforeA.Entity, afterA.Entity);
+            Assert.AreEqual(beforeA.ClientId, afterA.ClientId);
+            Assert.AreEqual(beforeC.Entity, afterC.Entity);
+            Assert.AreEqual(beforeC.ClientId, afterC.ClientId);
         }
 
         [Test]
@@ -498,10 +528,12 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
             Assert.IsTrue(pool.TryAllocateMob(Zone, out _, out EntityID last));
             Assert.AreEqual(uint.MaxValue, last.RawValue);
 
+            _ticks.Tick = 654u;
             LogAssert.Expect(LogType.Error, EXHAUSTED_LOG);
             Assert.IsFalse(pool.TryAllocateMob(Zone, out _, out _));
             Assert.IsFalse(AllocPlayer(pool, out _, out _));
 
+            CollectionAssert.AreEqual(new uint[] { 654u }, _listener.ExhaustedTicks);
             Assert.AreEqual(1, pool.OccupiedMobCount);
             Assert.AreEqual(0, pool.OccupiedPlayerCount);
             Assert.AreEqual(1, _listener.ExhaustedTicks.Count);
@@ -562,7 +594,7 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
 
             IReadOnlyList<EntityID> roster = pool.GetPlayerEntityIDsInZone(Zone);
 
-            CollectionAssert.AreEqual(new[] { a, c }, roster);
+            CollectionAssert.AreEquivalent(new[] { a, c }, roster);
         }
 
         [Test]
@@ -583,12 +615,37 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
             IReadOnlyList<EntityID> second = pool.GetPlayerEntityIDsInZone(Zone);
 
             Assert.AreSame(first, second);
-            CollectionAssert.AreEqual(new[] { a, b }, first);
+            CollectionAssert.AreEquivalent(new[] { a, b }, first);
 
             pool.ReleasePlayer(a);
 
             Assert.AreSame(first, pool.GetPlayerEntityIDsInZone(Zone));
-            CollectionAssert.AreEqual(new[] { b }, first);
+            CollectionAssert.AreEquivalent(new[] { b }, first);
+        }
+
+        [Test]
+        public void GetPlayerEntityIDsInZone_ReleasesFromMiddleAndFront_RosterIsOccupiedSetWithoutDuplicates()
+        {
+            ZoneSlotPool pool = Create();
+            var ids = new List<EntityID>();
+            Fill(pool, 8, ids);
+            IReadOnlyList<EntityID> roster = pool.GetPlayerEntityIDsInZone(Zone);
+
+            pool.ReleasePlayer(ids[3]);
+            pool.ReleasePlayer(ids[0]);
+            pool.ReleasePlayer(ids[5]);
+            EntityID extra = MustAllocPlayer(pool);
+            pool.ReleasePlayer(ids[1]);
+
+            var expected = new List<EntityID> { ids[2], ids[4], ids[6], ids[7], extra };
+            CollectionAssert.AreEquivalent(expected, roster);
+            CollectionAssert.AllItemsAreUnique(roster);
+            Assert.AreSame(roster, pool.GetPlayerEntityIDsInZone(Zone));
+            Assert.AreEqual(pool.OccupiedPlayerCount, roster.Count);
+            foreach (EntityID id in roster)
+            {
+                Assert.IsTrue(pool.TryGetPlayerSlot(id, out _));
+            }
         }
 
         [Test]
@@ -677,6 +734,165 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
             public void OnEntityIDCounterExhausted(uint serverTick) { }
         }
 
+        private sealed class HookListener : IZoneSlotPoolListener
+        {
+            public readonly List<(int Occupied, uint Tick)> Calls = new List<(int, uint)>();
+            public Action<int> OnChanged;
+
+            public void OnOccupiedPlayerSlotsChanged(int occupied, uint serverTick)
+            {
+                Calls.Add((occupied, serverTick));
+                OnChanged?.Invoke(occupied);
+            }
+
+            public void OnEntityIDCounterExhausted(uint serverTick) { }
+        }
+
+        [Test]
+        public void Listener_ReleasesSamePlayerInsideAllocateCallback_PoolEndsEmptyAndCallsAreOrdered()
+        {
+            var hook = new HookListener();
+            var pool = new ZoneSlotPool(Zone, _ticks, hook);
+            bool released = false;
+            hook.OnChanged = count =>
+            {
+                if (count == 1 && !released)
+                {
+                    released = true;
+                    Assert.IsTrue(pool.ReleasePlayer(pool.GetPlayerEntityIDsInZone(Zone)[0]));
+                }
+            };
+
+            bool ok = AllocPlayer(pool, out _, out _);
+
+            Assert.IsTrue(ok);
+            Assert.AreEqual(0, pool.OccupiedPlayerCount);
+            Assert.AreEqual(0, pool.GetPlayerEntityIDsInZone(Zone).Count);
+            CollectionAssert.AreEqual(new[] { (1, 100u), (0, 100u) }, hook.Calls);
+        }
+
+        [Test]
+        public void Listener_AllocatesSecondPlayerInsideCallbackOnce_BothHeldAndCallsAreOrdered()
+        {
+            var hook = new HookListener();
+            var pool = new ZoneSlotPool(Zone, _ticks, hook);
+            bool allocated = false;
+            hook.OnChanged = count =>
+            {
+                if (count == 1 && !allocated)
+                {
+                    allocated = true;
+                    Assert.IsTrue(AllocPlayer(pool, out _, out _));
+                }
+            };
+
+            bool ok = AllocPlayer(pool, out _, out _);
+
+            Assert.IsTrue(ok);
+            Assert.AreEqual(2, pool.OccupiedPlayerCount);
+            Assert.AreEqual(2, pool.GetPlayerEntityIDsInZone(Zone).Count);
+            CollectionAssert.AreEqual(new[] { (1, 100u), (2, 100u) }, hook.Calls);
+        }
+
+        // ----- Additional identity and lookup cases ---------------------------------------------
+
+        [Test]
+        public void EntityIds_ReleaseThenReallocate_NewIdExceedsAllEarlierIdsAndReusesFreedSlot()
+        {
+            ZoneSlotPool pool = Create();
+            var earlier = new List<uint>();
+            AllocPlayer(pool, out _, out EntityID a);
+            AllocPlayer(pool, out byte slotB, out EntityID b);
+            pool.TryAllocateMob(Zone, out _, out EntityID mob);
+            earlier.Add(a.RawValue);
+            earlier.Add(b.RawValue);
+            earlier.Add(mob.RawValue);
+
+            pool.ReleasePlayer(b);
+            Assert.IsTrue(AllocPlayer(pool, out byte newSlot, out EntityID d));
+
+            Assert.AreEqual(slotB, newSlot);
+            foreach (uint raw in earlier)
+            {
+                Assert.Greater(d.RawValue, raw);
+            }
+        }
+
+        [Test]
+        public void MobEntityId_PlayerOperationsReturnFalse()
+        {
+            ZoneSlotPool pool = Create();
+            pool.TryAllocateMob(Zone, out _, out EntityID mob);
+            AllocPlayer(pool, out _, out _);
+            _listener.Changes.Clear();
+
+            Assert.IsFalse(pool.ReleasePlayer(mob));
+            Assert.IsFalse(pool.SetSessionState(mob, ZoneSessionState.Dead));
+            Assert.IsFalse(pool.TryGetPlayerSlot(mob, out _));
+
+            Assert.AreEqual(1, pool.OccupiedMobCount);
+            Assert.AreEqual(1, pool.OccupiedPlayerCount);
+            Assert.AreEqual(0, _listener.Changes.Count);
+        }
+
+        [Test]
+        public void SetSessionState_OnReleasedId_ReturnsFalseAndChangesNothing()
+        {
+            ZoneSlotPool pool = Create();
+            AllocPlayer(pool, out _, out EntityID a);
+            AllocPlayer(pool, out _, out _);
+            pool.ReleasePlayer(a);
+
+            Assert.IsFalse(pool.SetSessionState(a, ZoneSessionState.Dead));
+
+            Assert.AreEqual(1, pool.OccupiedPlayerCount);
+            Assert.IsFalse(pool.TryGetPlayer(a, out _));
+        }
+
+        [Test]
+        public void InvalidAndUnknownIds_MobReleaseAndPlayerSlotLookupReturnFalse()
+        {
+            ZoneSlotPool pool = Create();
+            pool.TryAllocateMob(Zone, out _, out _);
+
+            Assert.IsFalse(pool.ReleaseMob(new EntityID(9999u)));
+            Assert.IsFalse(pool.ReleaseMob(EntityID.Invalid));
+            Assert.IsFalse(pool.TryGetPlayerSlot(EntityID.Invalid, out byte slot));
+            Assert.AreEqual(0, slot);
+            Assert.AreEqual(1, pool.OccupiedMobCount);
+        }
+
+        [Test]
+        public void GetOwlIndexForMobSlot_FourMobPool_LastSlotMapsAndOutOfRangeThrows()
+        {
+            ZoneSlotPool pool = Create(maxMobs: 4);
+
+            Assert.AreEqual(ZoneSlotPool.MAX_PLAYERS_PER_ZONE + 3, pool.GetOwlIndexForMobSlot(3));
+            Assert.Throws<ArgumentOutOfRangeException>(() => pool.GetOwlIndexForMobSlot(4));
+            Assert.Throws<ArgumentOutOfRangeException>(() => pool.GetOwlIndexForMobSlot(ushort.MaxValue));
+        }
+
+        [Test]
+        public void CounterExhaustion_FullPoolThenReleaseThenAttempt_AlertRaisesOnlyWhenMintingIsReached()
+        {
+            ZoneSlotPool pool = Create(maxPlayers: 1, firstEntityId: uint.MaxValue);
+            Assert.IsTrue(AllocPlayer(pool, out _, out EntityID last));
+            Assert.AreEqual(uint.MaxValue, last.RawValue);
+
+            Assert.IsFalse(AllocPlayer(pool, out _, out _));      // full: capacity failure
+            Assert.AreEqual(0, _listener.ExhaustedTicks.Count);
+
+            Assert.IsTrue(pool.ReleasePlayer(last));
+            _ticks.Tick = 777u;
+            LogAssert.Expect(LogType.Error, EXHAUSTED_LOG);
+            Assert.IsFalse(AllocPlayer(pool, out _, out _));      // reaches minting: alert
+            CollectionAssert.AreEqual(new uint[] { 777u }, _listener.ExhaustedTicks);
+
+            Assert.IsFalse(AllocPlayer(pool, out _, out _));      // silent
+            Assert.AreEqual(1, _listener.ExhaustedTicks.Count);
+            LogAssert.NoUnexpectedReceived();
+        }
+
         // ----- Foreign ZoneID -------------------------------------------------------------------
 
         [Test]
@@ -716,8 +932,11 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
             LogAssert.Expect(LogType.Warning, FOREIGN_ZONE_LOG);
 
             IReadOnlyList<EntityID> roster = pool.GetPlayerEntityIDsInZone(new ZoneID(FOREIGN_ZONE_RAW));
+            IReadOnlyList<EntityID> again = pool.GetPlayerEntityIDsInZone(new ZoneID(FOREIGN_ZONE_RAW));
 
             Assert.AreEqual(0, roster.Count);
+            Assert.AreEqual(0, again.Count);
+            LogAssert.NoUnexpectedReceived();
             Assert.AreNotSame(roster, pool.GetPlayerEntityIDsInZone(Zone));
             TestDelegate mutate = () => ((IList<EntityID>)roster).Add(new EntityID(1u));
             Assert.That(mutate, Throws.TypeOf<NotSupportedException>().Or.TypeOf<InvalidCastException>());

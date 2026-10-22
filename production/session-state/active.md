@@ -4392,3 +4392,9 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Review note for /code-review: RebuildRoster rescans all player slots on each alloc/release (no allocation, but O(maxPlayers), guardrail says O(1)).
 - Tests: batch EditMode 3604 total, 3534 passed, 0 failed, 70 skipped (Npgsql); SlotPools 54/54; 0 compile errors.
 - Next: /code-review the 3 ZoneInstancing files -> /story-done story-002. PAT rotation still unconfirmed.
+
+## Session Extract — /code-review ZoneSlotPool 2026-10-22 (Zone Instancing Story 002)
+- Verdict APPROVED WITH SUGGESTIONS (unity-specialist: no blocking; qa-tester: GAPS, none blocking). User: "fix all" -> all 8 applied by network-programmer, orchestrator reviewed.
+- Applied: O(1) roster by swap-remove (_rosterPos), order now unspecified; docs (O(1), exhaustion fires on the first attempt that reaches minting); roster foreign-zone warning once per pool; ctor split (ValidateArguments, CreateFreeList); ZonePlayerSlot moved to its own file; tests — order-insensitive roster asserts, stronger stable-index / AC-ZI-4 / fill-to-50, new re-entrancy, reallocate-new-id, mob id on player ops, released-id SetSessionState, full pool + spent counter, invalid ids, OWL bounds, mob exhaustion tick.
+- Tests: batch EditMode 3614 total, 3544 passed, 0 failed, 70 skipped (Npgsql); SlotPools 64/64; 0 compile errors.
+- Next: commit -> /story-done story-002. PAT rotation still unconfirmed.

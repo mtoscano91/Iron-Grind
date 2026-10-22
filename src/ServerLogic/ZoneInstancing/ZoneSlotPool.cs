@@ -10,37 +10,6 @@ using UnityEngine;
 namespace IronGrind.ServerLogic.ZoneInstancing
 {
     /// <summary>
-    /// A read-only copy of one occupied player slot (see <see cref="ZoneSlotPool.TryGetPlayer"/>).
-    /// </summary>
-    public readonly struct ZonePlayerSlot
-    {
-        /// <summary>Creates a slot snapshot.</summary>
-        public ZonePlayerSlot(EntityID entity, CharacterID character, AccountID account, uint clientId, ZoneSessionState state)
-        {
-            Entity = entity;
-            Character = character;
-            Account = account;
-            ClientId = clientId;
-            State = state;
-        }
-
-        /// <summary>The EntityID minted for this session.</summary>
-        public EntityID Entity { get; }
-
-        /// <summary>The persistent character occupying the slot.</summary>
-        public CharacterID Character { get; }
-
-        /// <summary>The owning account.</summary>
-        public AccountID Account { get; }
-
-        /// <summary>The connection id of the session.</summary>
-        public uint ClientId { get; }
-
-        /// <summary>The session state (every state counts toward capacity).</summary>
-        public ZoneSessionState State { get; }
-    }
-
-    /// <summary>
     /// The player and mob slot pools of one zone instance plus the shared EntityID counter
     /// (<c>zone-instancing.md</c> CR-ZI-3, CR-ZI-4, CR-ZI-5, CR-ZI-15, EC-ZI-4, EC-ZI-12).
     /// One zone per process (ADR-007, ADR-009), so methods taking a <see cref="ZoneID"/> reject any
@@ -51,14 +20,16 @@ namespace IronGrind.ServerLogic.ZoneInstancing
     /// <b>Slots.</b> Player slots are <c>byte</c> indices, mob slots <c>ushort</c> indices. Each pool is
     /// a LIFO free-list over preallocated arrays: allocation and release are O(1) and allocate nothing
     /// after construction. An index is never reassigned while occupied; the most recently freed index
-    /// is the next one handed out. A fresh pool hands out 0, 1, 2, ...
+    /// is the next one handed out. A fresh pool hands out 0, 1, 2, ... The player roster is also
+    /// updated in O(1) (swap-remove), so its order is unspecified.
     /// </para>
     /// <para>
     /// <b>EntityIDs.</b> One monotonic counter shared by players and mobs starts at the constructor's
     /// <c>firstEntityId</c> (default 1); 0 is never issued. After <see cref="uint.MaxValue"/> has been
-    /// issued, the next allocation fails without taking a slot, logs one <c>EntityIDCounterExhausted</c>
-    /// critical alert and calls <see cref="IZoneSlotPoolListener.OnEntityIDCounterExhausted"/> once;
-    /// later failures are silent.
+    /// issued, the first allocation attempt that reaches ID minting fails without taking a slot, logs
+    /// one <c>EntityIDCounterExhausted</c> critical alert and calls
+    /// <see cref="IZoneSlotPoolListener.OnEntityIDCounterExhausted"/> once; later failures are silent.
+    /// An attempt that fails earlier (foreign zone, full pool) raises nothing.
     /// </para>
     /// <para>
     /// <b>Threading.</b> Main thread only: the capacity check and the slot write are atomic because
@@ -113,11 +84,13 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         private int _mobFreeCount;
 
         private readonly List<EntityID> _rosterList;
+        private readonly int[] _rosterPos;
         private readonly ReadOnlyCollection<EntityID> _roster;
 
         private uint _nextEntityId;
         private bool _counterSpent;
         private bool _exhaustionRaised;
+        private bool _foreignRosterWarned;
 
         /// <summary>Creates empty pools for <paramref name="zone"/>.</summary>
         /// <param name="zone">The zone this process hosts. Must not be <see cref="ZoneID.Invalid"/>.</param>
@@ -137,38 +110,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             int maxMobs = MAX_MOBS_PER_ZONE,
             uint firstEntityId = 1u)
         {
-            if (ticks == null)
-            {
-                throw new ArgumentNullException(nameof(ticks));
-            }
-
-            if (listener == null)
-            {
-                throw new ArgumentNullException(nameof(listener));
-            }
-
-            if (zone == ZoneID.Invalid)
-            {
-                throw new ArgumentException($"{LOG_PREFIX} zone must not be ZoneID.Invalid.", nameof(zone));
-            }
-
-            if (maxPlayers < 1 || maxPlayers > MAX_PLAYER_SLOT_CEILING)
-            {
-                throw new ArgumentOutOfRangeException(nameof(maxPlayers), maxPlayers,
-                    $"{LOG_PREFIX} maxPlayers must be in [1, {MAX_PLAYER_SLOT_CEILING}].");
-            }
-
-            if (maxMobs < 1 || maxMobs > MAX_MOB_SLOT_CEILING)
-            {
-                throw new ArgumentOutOfRangeException(nameof(maxMobs), maxMobs,
-                    $"{LOG_PREFIX} maxMobs must be in [1, {MAX_MOB_SLOT_CEILING}].");
-            }
-
-            if (firstEntityId == 0u)
-            {
-                throw new ArgumentOutOfRangeException(nameof(firstEntityId), firstEntityId,
-                    $"{LOG_PREFIX} firstEntityId must not be 0 (EntityID.Invalid).");
-            }
+            ValidateArguments(zone, ticks, listener, maxPlayers, maxMobs, firstEntityId);
 
             _zone = zone;
             _ticks = ticks;
@@ -182,26 +124,17 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             _playerAccount = new AccountID[maxPlayers];
             _playerClient = new uint[maxPlayers];
             _playerState = new ZoneSessionState[maxPlayers];
-            _playerFree = new int[maxPlayers];
+            _playerFree = CreateFreeList(maxPlayers);
             _playerIndex = new Dictionary<EntityID, int>(maxPlayers);
-            for (int i = 0; i < maxPlayers; i++)
-            {
-                _playerFree[i] = maxPlayers - 1 - i; // top of the stack is index 0
-            }
-
             _playerFreeCount = maxPlayers;
 
             _mobEntity = new EntityID[maxMobs];
-            _mobFree = new int[maxMobs];
+            _mobFree = CreateFreeList(maxMobs);
             _mobIndex = new Dictionary<EntityID, int>(maxMobs);
-            for (int i = 0; i < maxMobs; i++)
-            {
-                _mobFree[i] = maxMobs - 1 - i;
-            }
-
             _mobFreeCount = maxMobs;
 
             _rosterList = new List<EntityID>(maxPlayers);
+            _rosterPos = new int[maxPlayers];
             _roster = new ReadOnlyCollection<EntityID>(_rosterList);
         }
 
@@ -261,7 +194,8 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             _playerClient[index] = clientId;
             _playerState[index] = ZoneSessionState.Connected;
             _playerIndex.Add(minted, index);
-            RebuildRoster();
+            _rosterPos[index] = _rosterList.Count;
+            _rosterList.Add(minted);
 
             slot = (byte)index;
             id = minted;
@@ -289,7 +223,17 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             _playerClient[index] = 0u;
             _playerState[index] = ZoneSessionState.Connected;
             _playerFree[_playerFreeCount++] = index;
-            RebuildRoster();
+
+            int pos = _rosterPos[index];
+            int last = _rosterList.Count - 1;
+            if (pos != last)
+            {
+                EntityID moved = _rosterList[last];
+                _rosterList[pos] = moved;
+                _rosterPos[_playerIndex[moved]] = pos;
+            }
+
+            _rosterList.RemoveAt(last);
 
             _listener.OnOccupiedPlayerSlotsChanged(OccupiedPlayerCount, _ticks.ServerTickNumber);
             return true;
@@ -414,16 +358,76 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         }
 
         /// <summary>
-        /// The EntityIDs of all occupied player slots in slot-index order (CR-ZI-15): no empty slots,
+        /// The EntityIDs of all occupied player slots in unspecified order (CR-ZI-15): no empty slots,
         /// no mobs. The same read-only instance is returned on every call and is refreshed on each
-        /// player allocation or release, so reading it every tick allocates nothing. A foreign zone
-        /// logs one warning and gets a shared empty read-only list.
+        /// player allocation or release (O(1)), so reading it every tick allocates nothing. A foreign
+        /// zone gets a shared empty read-only list; the first such call per pool logs one warning, later
+        /// ones are silent (this is polled every tick).
         /// </summary>
         /// <param name="zone">Must equal <see cref="Zone"/>.</param>
         /// <returns>A read-only view; casting to a mutable list type fails or throws on mutation.</returns>
         public IReadOnlyList<EntityID> GetPlayerEntityIDsInZone(ZoneID zone)
         {
-            return IsOwnZone(zone, nameof(GetPlayerEntityIDsInZone)) ? _roster : EMPTY_ROSTER;
+            if (zone == _zone)
+            {
+                return _roster;
+            }
+
+            if (!_foreignRosterWarned)
+            {
+                _foreignRosterWarned = true;
+                IsOwnZone(zone, nameof(GetPlayerEntityIDsInZone));
+            }
+
+            return EMPTY_ROSTER;
+        }
+
+        private static void ValidateArguments(ZoneID zone, IServerTickSource ticks, IZoneSlotPoolListener listener,
+            int maxPlayers, int maxMobs, uint firstEntityId)
+        {
+            if (ticks == null)
+            {
+                throw new ArgumentNullException(nameof(ticks));
+            }
+
+            if (listener == null)
+            {
+                throw new ArgumentNullException(nameof(listener));
+            }
+
+            if (zone == ZoneID.Invalid)
+            {
+                throw new ArgumentException($"{LOG_PREFIX} zone must not be ZoneID.Invalid.", nameof(zone));
+            }
+
+            if (maxPlayers < 1 || maxPlayers > MAX_PLAYER_SLOT_CEILING)
+            {
+                throw new ArgumentOutOfRangeException(nameof(maxPlayers), maxPlayers,
+                    $"{LOG_PREFIX} maxPlayers must be in [1, {MAX_PLAYER_SLOT_CEILING}].");
+            }
+
+            if (maxMobs < 1 || maxMobs > MAX_MOB_SLOT_CEILING)
+            {
+                throw new ArgumentOutOfRangeException(nameof(maxMobs), maxMobs,
+                    $"{LOG_PREFIX} maxMobs must be in [1, {MAX_MOB_SLOT_CEILING}].");
+            }
+
+            if (firstEntityId == 0u)
+            {
+                throw new ArgumentOutOfRangeException(nameof(firstEntityId), firstEntityId,
+                    $"{LOG_PREFIX} firstEntityId must not be 0 (EntityID.Invalid).");
+            }
+        }
+
+        private static int[] CreateFreeList(int size)
+        {
+            var free = new int[size];
+            for (int i = 0; i < size; i++)
+            {
+                free[i] = size - 1 - i; // top of the stack is index 0
+            }
+
+            return free;
         }
 
         private bool IsOwnZone(ZoneID zone, string operation)
@@ -465,18 +469,6 @@ namespace IronGrind.ServerLogic.ZoneInstancing
 
             id = new EntityID(raw);
             return true;
-        }
-
-        private void RebuildRoster()
-        {
-            _rosterList.Clear();
-            for (int i = 0; i < _maxPlayers; i++)
-            {
-                if (_playerEntity[i] != EntityID.Invalid)
-                {
-                    _rosterList.Add(_playerEntity[i]);
-                }
-            }
         }
     }
 }
