@@ -4172,3 +4172,23 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Verdict: NEEDS WORK (4 gaps) → all fixed at the user's request; Story Ready (10 h). QL-STORY-READY skipped (lean).
 - Fixes: AC-8 leaves incomplete-task alerts to TickCompletionQueue.DrainOnShutdown (it already raises them; returns void) and checks the exit code is unchanged, also when the drain throws; AC-9 names `bool TryBeginTeardown()` (true once); new AC-14 `Dispose()` = `TeardownNow()`, idempotent; `internal RegisterDisposable(IDisposable)` named (Story 044 calls it, data source first); drain timeout computed 200 / 20 = 10 s; DrainOnShutdown's AssertTickThread noted for tests.
 - Uncommitted: story-042, this file. Next: commit → /dev-story Story 042.
+
+## Session Extract — /dev-story 2026-10-22 (Networking Core Story 042)
+- Story: production/epics/networking-core/story-042-zone-server-composition-lifecycle-teardown.md — Zone Server Composition: Lifecycle Shell, Teardown 1–8, Exit Codes, Quit Interception
+- Files changed: NEW src/ServerLogic/ZoneServer/{ZoneExitCode, IZoneApplication, IZoneNetwork, IZoneNavigation, IZoneBoundsValidator, IGatewayRegistration, IZoneCloseSteps, IZoneStaticDataLoader, IZoneRelayListener, IZoneInboundTransport, ZoneServerStandIns, ZoneServerComposition}.cs (+ .meta)
+- Test written: tests/EditMode/Networking/ZoneServer_CompositionTeardown_tests.cs (38 tests, AC-1..AC-14 all covered)
+- Internal API: AttachOwnedObjects(queue, outbound, listener, transport, currentTick, tickHandler), RegisterDisposable, RunStepsForTest (test hook for a partial teardown).
+- Notes: AC-8 uses a fake queue (the queue's own shutdown alert not exercised here); unused usings System.Threading / System.Threading.Tasks in the test file (review nit).
+- EditMode 2026-10-22 12:22Z: 3360 / 3295 passed, 0 failed, 65 skipped (64 Explicit DB + 1) — +38 vs 3322.
+- Blockers: None. Next: /code-review then /story-done (uncommitted).
+- /code-review 2026-10-22 (Story 042; unity-specialist + qa-tester): CHANGES REQUIRED (2 defects: transport Stop() throwing skipped NGO Shutdown(); no IsAlive guard before UnsubscribeTick/Shutdown) → "fix all" applied: step 6 transport stop in its own try; IsAlive guards; RunStep split into RunStepBody + per-step helpers, _step marked before the body (re-entrancy); LAST_SYNC_STEP → LAST_INTERNAL_STEP, internal/ADR step mapping in remarks; DRAIN_TIMEOUT static readonly. Tests added: transport throw, dead manager, steps 3/4/4b/5 throwing (TestCase), Quit throwing, TeardownNow/Dispose while suspended in NGO wait, second RunTeardown while suspended, RunTeardown after partial steps, RequestTeardown after TeardownNow, wait ending at cap without warning, real empty TickCompletionQueue; tightened missing-listener, dead-manager wait, dispose-twice. Story AC-8 deviation note added. Session note correction: System.Threading usings in the test file ARE used (fake queue).
+- Decision (user, 2026-10-22): keep OnWantsToQuit false until step 8; Story 045 avoids the state — new AC-14 (host never stops/disables/destroys itself or the teardown coroutine; source search) + implementation notes (coroutine kept to step 8; IsAlive via Unity == null; frame cap wall time logged in AC-10). Story 045 edited, uncommitted.
+- EditMode 2026-10-22 12:30Z (batch mode, after fixes): 3374 total, 3309 passed, 0 failed, 65 skipped; Story 042 fixture 52/52 (+14). Next: /story-done (uncommitted).
+
+## Session Extract — /story-done 2026-10-22
+- Verdict: COMPLETE WITH NOTES (14/14 AC; advisory: AC-8 real-queue edge case covered by the queue's own tests + real empty queue). QL-TEST-COVERAGE / LP-CODE-REVIEW skipped (lean).
+- Story: production/epics/networking-core/story-042-zone-server-composition-lifecycle-teardown.md — Zone Server Composition: Lifecycle Shell, Teardown 1–8, Exit Codes, Quit Interception
+- EPIC.md: row 042 Complete, 42/45. Story 045 gained AC-14 (doc only).
+- Tech debt logged: None
+- Uncommitted: src/ServerLogic/ZoneServer/ (+ .meta, ZoneServer.meta), tests/EditMode/Networking/ZoneServer_CompositionTeardown_tests.cs (+ .meta), story-042, story-045, EPIC.md, this file. Do NOT commit ProjectSettings/SceneTemplateSettings.json or bash.exe.stackdump.
+- Next recommended: commit → /story-readiness production/epics/networking-core/story-043-zone-startup-sequence-and-config.md (Ready). PAT rotation still unconfirmed.

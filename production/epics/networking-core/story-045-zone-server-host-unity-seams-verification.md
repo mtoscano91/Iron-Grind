@@ -53,6 +53,7 @@ Also: **ADR-004** (NGO substrate; `NetworkManager.NetworkTickSystem.Tick`; Amend
 - [ ] **AC-11** (A1-5 and ADR-015 Verification 6, Editor, portable PostgreSQL) With the zone running in Play mode on the real listener, leaving Play mode is not blocked by the `wantsToQuit` handler, the host's `OnDestroy` runs teardown 1–7 without step 8, the listener thread stops within `RELAY_LISTENER_STOP_TIMEOUT_MS`, and no `NullReferenceException` appears also when `NetworkManager.OnDestroy` ran first (the order observed is logged).
 - [ ] **AC-12** A1-1, A1-2, A1-7 and the final A1-4 are recorded in the evidence document as NOT RUN — carried by the epic's Linux IL2CPP headless-build gate — and the EPIC's engine-risk gate note lists them.
 - [ ] **AC-13** After the Build Profile is created, the side effects of a Windows Server build (`com.unity.dedicated-server` in `Packages/manifest.json`, changed `ProjectSettings`) are reverted; only the profile asset, the scenes and the code are committed.
+- [ ] **AC-14** The host never interrupts a running `RunTeardown()` coroutine: it does not call `StopAllCoroutines` / `StopCoroutine`, never deactivates or disables itself (`SetActive(false)`, `enabled = false`) and never destroys itself or its GameObject (`Destroy`); a source search of `ZoneServerHost.cs` (comments stripped) finds none of these. *(Added 2026-10-22, Story 042 `/code-review`, user decision: `ZoneServerComposition.OnWantsToQuit()` keeps returning `false` until step 8, so a host killed mid-teardown in a player would leave `TeardownNow()` done and quit blocked; the host must not reach that state.)*
 
 ---
 
@@ -65,6 +66,8 @@ Also: **ADR-004** (NGO substrate; `NetworkManager.NetworkTickSystem.Tick`; Amend
 - Tick handler: `NetworkTickSystem.Tick` is `event Action` and may fire twice in one frame; each event is one `AdvanceTick` (ADR-004 Decision 5). Measure with a `Stopwatch` between events.
 - Step 6 in a player: yield `null` per frame while `IsAlive && ShutdownInProgress`, cap from config. In `TeardownNow` (`OnDestroy`): call `Shutdown()` only, no wait.
 - `OnWantsToQuit` in the Editor returns `true` (ADR-009 A1 unity-specialist BLOCKING fix) — the Editor path is `OnDestroy`.
+- Keep the teardown coroutine alive to step 8 (AC-14). In a player, `OnWantsToQuit()` returns `true` only after step 8 sets the quit flag; if the coroutine is cut short (host stopped, disabled, deactivated or destroyed) while it waits in step 6, `OnDestroy` → `TeardownNow()` finishes steps 1–7 but nothing ever calls `Quit`, and later quit requests are refused. The host lives on a `DontDestroyOnLoad` root (S1) and starts the coroutine on itself. Story 042 test `test_teardown_now_while_suspended_in_ngo_wait_runs_dispose_pass_only_and_never_quits` pins the composition side of this.
+- `IsAlive` in `NgoZoneNetwork` uses Unity's overloaded `==` on the `NetworkManager` (`manager != null`), never `?.` or `is null`, so a destroyed manager reads as not alive (Story 042 `/code-review`). The NGO shutdown cap counts frames, so its wall time depends on `targetFrameRate` set at S8; log the observed wait in the AC-10 run.
 - Verification runs follow Story 041's pattern: build manually from the Build Profile to git-ignored `Builds/ZoneServer/`; two command lines (V4 happy path, V4 unreachable DB) and one Editor session; logs captured with `-logFile`; exit status read in PowerShell (`$LASTEXITCODE` after `Start-Process -Wait -PassThru` → `.ExitCode`). Portable PostgreSQL started via PowerShell `Start-Process` (memory: portable dev PostgreSQL). `IRONGRIND_PG_PASSWORD` set per process, never echoed.
 - Server config for the runs: a JSON file under `Builds/ZoneServer/` (git-ignored), host `127.0.0.1`, the portable PG port.
 - Evidence document: `production/qa/evidence/networking-core-045-zone-process-verification.md` with, per check, the command line (password redacted), the relevant log excerpt, the exit status and PASS / FAIL / NOT RUN.
@@ -92,6 +95,8 @@ Also: **ADR-004** (NGO substrate; `NetworkManager.NetworkTickSystem.Tick`; Amend
   - PlayMode test (Editor, loopback, as Story 038/039): `NgoZoneNetwork` S1 + S8 + `StartServer()` true; three `Tick` events observed → three handler calls; step 6 `Shutdown()` then `ShutdownInProgress` false within the cap. `UnitySceneLoader` with an unknown name reports failure.
 - **AC-5**: profile scene list
   - Manual: open the ZoneServer Build Profile → scene list = the two scenes. Search client profiles' scene lists → neither scene present. Record in the evidence doc.
+- **AC-14**: host never interrupts the teardown
+  - Given: `ZoneServerHost.cs` with comments stripped. Then: no `StopAllCoroutines`, `StopCoroutine`, `SetActive(false)`, `enabled = false`, `Destroy(`.
 - **AC-6**: development-only argument
   - Given: source. Then: the parsing branch sits inside `#if DEVELOPMENT_BUILD || UNITY_EDITOR`.
 - **AC-7** (A1-3) — Manual check

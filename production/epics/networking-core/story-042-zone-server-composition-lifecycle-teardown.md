@@ -1,7 +1,7 @@
 # Story 042: Zone Server Composition — Lifecycle Shell, Teardown 1–8, Exit Codes, Quit Interception
 
 > **Epic**: Networking Core
-> **Status**: Ready — `/story-readiness` 2026-10-22: NEEDS WORK (4 gaps), all fixed the same day at the user's request (AC-8 relies on the queue's own shutdown alerts; AC-9 names `TryBeginTeardown()`; AC-14 defines `Dispose()`; `RegisterDisposable` named, drain timeout 10 s stated).
+> **Status**: Complete — 2026-10-22 (`/story-done`, COMPLETE WITH NOTES; `/code-review` CHANGES REQUIRED → fixed; EditMode 3374 total, 3309 passed, 0 failed, 65 skipped).
 > **Layer**: Foundation
 > **Type**: Logic
 > **Manifest Version**: 2026-10-19
@@ -40,20 +40,20 @@ Also: **ADR-011** Decision 2 (shutdown drain, dated note 2026-10-19 — one of t
 
 *From ADR-009 Amendment 1 Decision 3 / Decision 5 and the Key Interfaces, scoped to this story:*
 
-- [ ] **AC-1** `ZoneExitCode` exists with exactly `Clean = 0`, `StartupFailed = 1`, `Fatal = 2`.
-- [ ] **AC-2** `RequestTeardown(code)` records the first code it receives and ignores later codes; it never tears anything down itself, and calling it any number of times from any state is safe.
-- [ ] **AC-3** `RunTeardown()` runs the steps in exactly this order against the seams and the owned objects: 1 tick unsubscribe → 2a listener `Stop()` → 3 `IZoneNavigation.Teardown()` → 4 CR-ZI-12 (through `IZoneCloseSteps`) → 4b one `outbound.Flush(currentTick)` → 5 `queue.DrainOnShutdown(watchdog duration)` → 6 transport shell `Stop()`, NGO `Shutdown()`, wait → 7 Dispose pass → 8 `quitAllowed = true`, `Quit((int)code)` with the recorded code.
-- [ ] **AC-4** Step 6 yields one frame at a time while the NGO seam reports a live manager with `ShutdownInProgress`, for at most `NGO_SHUTDOWN_WAIT_FRAMES` frames; at the cap it logs one warning and continues; a null or destroyed manager ends the wait at once.
-- [ ] **AC-5** The Dispose pass disposes every `IDisposable` registered through `RegisterDisposable`, in reverse registration order; the data source is registered first so it is disposed last; an exception from one `Dispose` is logged (type name only) and the pass continues.
-- [ ] **AC-6** Every teardown step null-guards what it touches: a step whose object was never built (or whose NGO manager is already destroyed) is skipped without throwing, and the following steps still run.
-- [ ] **AC-7** An exception thrown inside a step is logged with the step name and the teardown continues with the next step; the exit code is not changed by it.
-- [ ] **AC-8** Step 5 calls `DrainOnShutdown(timeout)` once and leaves the alerts for tasks still incomplete to the queue (`TickCompletionQueue` already raises them inside `DrainOnShutdown`; the composition does not count or re-log them). The recorded exit code is the same after step 5 as before it, also when `DrainOnShutdown` throws — the exception is logged as step 5 and the teardown goes on to step 6.
-- [ ] **AC-9** The host contract: `bool TryBeginTeardown()` returns `true` exactly once, on the first call after `RequestTeardown`, and `false` before any request and on every later call; the host's `Update` starts `RunTeardown()` only when it returns `true`. `RunTeardown()` called a second time yields nothing and does nothing.
-- [ ] **AC-10** `OnWantsToQuit()` returns `true` when the Application seam reports the Editor; returns `true` after step 8 set `quitAllowed`; otherwise calls `RequestTeardown(Clean)` and returns `false`.
-- [ ] **AC-11** `TeardownNow()` runs steps 1–7 synchronously (step 6 issues `Shutdown()` without yielding or waiting) and never calls `Quit`; it does nothing if the teardown already finished, and if a coroutine teardown is part-way, it runs only the remaining steps up to 7.
-- [ ] **AC-12** Stand-ins for `IZoneNavigation`, `IZoneBoundsValidator`, `IGatewayRegistration`, `IZoneCloseSteps` and `IZoneStaticDataLoader` each log `"[ZoneServer] <step> not implemented"` exactly once per instance, however often they are called, and do nothing else.
-- [ ] **AC-13** A source search finds no `Process.Exit`, `Environment.Exit` or `OnApplicationQuit` in `src/ServerLogic/ZoneServer/`.
-- [ ] **AC-14** `ZoneServerComposition : IDisposable` (ADR-009 A1 Key Interfaces): `Dispose()` does the same as `TeardownNow()` — steps 1–7, no `Quit`, idempotent; calling `Dispose()` twice, or after `TeardownNow()` or a finished `RunTeardown()`, adds no teardown call.
+- [x] **AC-1** `ZoneExitCode` exists with exactly `Clean = 0`, `StartupFailed = 1`, `Fatal = 2`.
+- [x] **AC-2** `RequestTeardown(code)` records the first code it receives and ignores later codes; it never tears anything down itself, and calling it any number of times from any state is safe.
+- [x] **AC-3** `RunTeardown()` runs the steps in exactly this order against the seams and the owned objects: 1 tick unsubscribe → 2a listener `Stop()` → 3 `IZoneNavigation.Teardown()` → 4 CR-ZI-12 (through `IZoneCloseSteps`) → 4b one `outbound.Flush(currentTick)` → 5 `queue.DrainOnShutdown(watchdog duration)` → 6 transport shell `Stop()`, NGO `Shutdown()`, wait → 7 Dispose pass → 8 `quitAllowed = true`, `Quit((int)code)` with the recorded code.
+- [x] **AC-4** Step 6 yields one frame at a time while the NGO seam reports a live manager with `ShutdownInProgress`, for at most `NGO_SHUTDOWN_WAIT_FRAMES` frames; at the cap it logs one warning and continues; a null or destroyed manager ends the wait at once.
+- [x] **AC-5** The Dispose pass disposes every `IDisposable` registered through `RegisterDisposable`, in reverse registration order; the data source is registered first so it is disposed last; an exception from one `Dispose` is logged (type name only) and the pass continues.
+- [x] **AC-6** Every teardown step null-guards what it touches: a step whose object was never built (or whose NGO manager is already destroyed) is skipped without throwing, and the following steps still run.
+- [x] **AC-7** An exception thrown inside a step is logged with the step name and the teardown continues with the next step; the exit code is not changed by it.
+- [x] **AC-8** Step 5 calls `DrainOnShutdown(timeout)` once and leaves the alerts for tasks still incomplete to the queue (`TickCompletionQueue` already raises them inside `DrainOnShutdown`; the composition does not count or re-log them). The recorded exit code is the same after step 5 as before it, also when `DrainOnShutdown` throws — the exception is logged as step 5 and the teardown goes on to step 6.
+- [x] **AC-9** The host contract: `bool TryBeginTeardown()` returns `true` exactly once, on the first call after `RequestTeardown`, and `false` before any request and on every later call; the host's `Update` starts `RunTeardown()` only when it returns `true`. `RunTeardown()` called a second time yields nothing and does nothing.
+- [x] **AC-10** `OnWantsToQuit()` returns `true` when the Application seam reports the Editor; returns `true` after step 8 set `quitAllowed`; otherwise calls `RequestTeardown(Clean)` and returns `false`.
+- [x] **AC-11** `TeardownNow()` runs steps 1–7 synchronously (step 6 issues `Shutdown()` without yielding or waiting) and never calls `Quit`; it does nothing if the teardown already finished, and if a coroutine teardown is part-way, it runs only the remaining steps up to 7.
+- [x] **AC-12** Stand-ins for `IZoneNavigation`, `IZoneBoundsValidator`, `IGatewayRegistration`, `IZoneCloseSteps` and `IZoneStaticDataLoader` each log `"[ZoneServer] <step> not implemented"` exactly once per instance, however often they are called, and do nothing else.
+- [x] **AC-13** A source search finds no `Process.Exit`, `Environment.Exit` or `OnApplicationQuit` in `src/ServerLogic/ZoneServer/`.
+- [x] **AC-14** `ZoneServerComposition : IDisposable` (ADR-009 A1 Key Interfaces): `Dispose()` does the same as `TeardownNow()` — steps 1–7, no `Quit`, idempotent; calling `Dispose()` twice, or after `TeardownNow()` or a finished `RunTeardown()`, adds no teardown call.
 
 ---
 
@@ -112,6 +112,7 @@ Also: **ADR-011** Decision 2 (shutdown drain, dated note 2026-10-19 — one of t
   - Given: a queue fake recording `DrainOnShutdown` calls; code `Fatal` recorded. When: teardown. Then: one `DrainOnShutdown(10 s)` call; `Quit(2)`; no composition log about incomplete tasks.
   - Given: the queue fake throws from `DrainOnShutdown`, code `Clean`. Then: one log naming step 5 and the exception type; step 6 onward run; `Quit(0)`.
   - Edge cases: a real `TickCompletionQueue` with one tracked task that never completes and a test-sized watchdog → the queue's own alert appears once (`LogAssert.Expect`), the composition adds none.
+  - *Deviation (`/code-review` 2026-10-22):* the drain timeout is computed from constants (10 s) and is not injectable, so this edge case is not run through the composition. The queue's own alert is covered by `TickLoop_CompletionQueue_tests` (`DrainOnShutdown_OneTaskIncomplete_LogsItNoCallbackAndHandlesTheFinishedOne`, `DrainOnShutdown_TimedOutTaskStillIncomplete_AlertsOnce`); the composition test drives a real, empty `TickCompletionQueue` through the teardown (wiring and tick-thread assertion, no logs).
 - **AC-9**: single start
   - Given: no request. When: `TryBeginTeardown()`. Then: `false`.
   - Given: `RequestTeardown(Clean)`. When: `TryBeginTeardown()` called 3 times. Then: `true`, `false`, `false`; a second `RunTeardown()` enumerator ends immediately with an empty call log.
@@ -140,7 +141,7 @@ Also: **ADR-011** Decision 2 (shutdown drain, dated note 2026-10-19 — one of t
 **Required evidence**:
 - `tests/EditMode/Networking/ZoneServer_CompositionTeardown_tests.cs` — must exist and pass (project convention: EditMode tests under `tests/EditMode/<System>/`)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — 52 / 52 (2026-10-22)
 
 ---
 
@@ -148,3 +149,12 @@ Also: **ADR-011** Decision 2 (shutdown drain, dated note 2026-10-19 — one of t
 
 - Depends on: Stories 030, 037, 039, 041 (Complete) — queue, pipeline, outbox, listener types it calls
 - Unlocks: Story 043
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-22
+**Criteria**: 14/14 passing (none deferred)
+**Deviations**: ADVISORY — AC-8 edge case with a real `TickCompletionQueue` holding a never-completing task is not run through the composition (the 10 s drain timeout is computed from constants, not injectable); covered by `TickLoop_CompletionQueue_tests` plus a real, empty queue driven through the teardown (see the AC-8 note under QA Test Cases). No GDD or ADR deviation.
+**Test Evidence**: Logic — `tests/EditMode/Networking/ZoneServer_CompositionTeardown_tests.cs`, 52 / 52; full EditMode suite 3374 total, 3309 passed, 0 failed, 65 skipped (batch mode, 2026-10-22 12:30Z).
+**Code Review**: Complete — `/code-review` 2026-10-22 (unity-specialist + qa-tester): CHANGES REQUIRED → all applied (transport stop in its own try so NGO `Shutdown()` always runs; `IsAlive` guards on tick unsubscribe and shutdown; `RunStep` split, step marked before its body; 14 tests added). User decision: `OnWantsToQuit()` stays `false` until step 8; Story 045 AC-14 keeps the host from cutting the teardown short. QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean).
