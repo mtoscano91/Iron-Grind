@@ -4220,3 +4220,9 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: None (user decision)
 - Next recommended: Story 044 — production/epics/networking-core/story-044-zone-composition-wiring-database-graph-listener.md (Ready). Note for 044: S6/S9 set the teardown marks; 044 only attaches objects in S5 (AttachOwnedObjects, AttachTickLoop, AttachOutboundSender, RegisterDisposable)
 - Not committed.
+
+## Session Extract — /story-readiness Story 044, 2026-10-22
+- First pass: NEEDS WORK (6 gaps). Fixed in the story at the user's request, then re-checked: READY.
+- Fixes: estimate confirmed 12 h (9 code + EditMode, 3 Database run); Files section; performance note; seams IZoneEnvironment, IZoneNetwork.CreateSendSeam(), IZoneNetwork.CreateInboundTransport(intake, dispatcher, listener); AC-6 exact constructors (dispatcher gets tickLoop, MessageRoutingRegistry.TryGetEntry, BuildConfiguration.IsDevelopmentBuild per ADR-014/manifest; ZoneTickPipeline 7-arg); AC-1 RandomProvider property (no S5 object takes IRandomProvider yet); AC-8 NpgsqlRelayListener implements IZoneRelayListener, AttachListener before Start; AC-9 rewritten (data source is the only IDisposable); real backend lives in ZoneServerComposition.cs (AC-10); WarmUpOverride seam (tests never touch Npgsql types); ConstructionObserver for AC-6.
+- QL-STORY-READY skipped (lean). Not committed.
+- Next: commit, then /dev-story Story 044.
