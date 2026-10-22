@@ -4339,3 +4339,12 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Files: design/gdd/zone-instancing.md; design/registry/entities.yaml (DisconnectReason note + referenced_by, revised 2026-10-22). Propagation: networking-ghost-session.md CR-GH-6 already death-only, networking-session.md:116 and CGS-4 teardown note consistent, wire-protocol 273 consistent — unchanged.
 - User chose "Mark Approved" (no third pass): GDD header Approved 2026-10-22; systems-index row 17 Approved; review log entry appended. Uncommitted: zone-instancing.md, entities.yaml, systems-index.md, reviews/zone-instancing-review-log.md, this file.
 - Next: commit -> /clear -> /create-stories zone-instancing (networking-session.md still In Review). PAT rotation still unconfirmed.
+
+## Session Extract — /create-stories zone-instancing 2026-10-22
+- Verdict: COMPLETE — 14 stories written to production/epics/zone-instancing/ (8 Logic, 6 Integration), all Ready. Lean: QL-STORY-READY skipped. Not committed.
+- Stories: 001 lifecycle state machine (rewrites ZoneSessionStateMachine, ZoneState.Empty -> Loading); 002 slot pools + EntityID + roster view; 003 mob slot interface; 004 ZoneDefinition + registry + bounds (HIGH); 005 GetTownRespawnPoint; 006 zone wire codecs (ZoneFullResponse, ZoneSnapshotRequest, ZoneSessionEnded, PlayerJoinedZone, EntityState, ZoneStateSnapshotFragment); 007 snapshot assembly; 008 ZoneSnapshotRequest; 009 entry admission; 010 entry completion; 011 stale slot; 012 teardown close steps; 013 player exit; 014 composition wiring + quit drain.
+- User decisions: SessionHandshake/SessionReady codecs out (OQ-NC-SER-2 pending) — 009/010 use a decoded entry request + SessionReady seam; zone-entry token validator stand-in rejects all, logs once (cross-process token validation is part of the gateway gap).
+- Findings for readiness: AC-ZI-17 arithmetic is inconsistent (51 adds after removing 50 of 150 -> 50 succeed); AC-ZI-14 has no server-side signal for "snapshot not acked" + unspecified timeout response (Story 011 open decision 1, may need a GDD clarification); MessageTypeIDs for the zone messages unassigned (Story 006).
+- Not covered: TR-zi-001/005/018 (AC-ZI-1,2,3,16,19,20 — gateway), AC-ZI-6 (client).
+- Files: 14 story files, EPIC.md (Stories table, header, Next Step), epics/index.md row, this file.
+- Next: commit -> /story-readiness story-001 (002, 004, 006 have no dependencies). PAT rotation still unconfirmed.

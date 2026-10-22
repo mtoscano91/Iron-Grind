@@ -4,7 +4,7 @@
 > **GDD**: design/gdd/zone-instancing.md
 > **Architecture Module**: Zone Instancing (zone-process side) — the zone `State` owner, player and mob slot pools, EntityID minting, the player entry sequence, `ZoneStateSnapshot` assembly, bounds validation, `ZoneDefinition` / `ZoneSceneRegistry`, the CR-ZI-12 close steps, and the mob, party and relevance interfaces
 > **Status**: Ready
-> **Stories**: Not yet created — run `/create-stories zone-instancing`
+> **Stories**: 14 (001–014), written 2026-10-22 — see Stories below
 > **Manifest Version**: 2026-10-19
 
 ## Overview
@@ -69,6 +69,27 @@ Zone Instancing is the server-side runtime of one zone instance: it owns the ins
 5. **No zone content exists.** `ZoneTemplate_Empty.unity` (Story 045) has no `ZoneDefinition`, bounds or baked NavMesh; stories that need real content use crafted test assets (AC-ZI-5).
 6. **GDD header** said "Needs Revision" while the review log (2026-05-30) and `systems-index.md` said Approved; header corrected 2026-10-22 (no rule change).
 
+## Stories
+
+*Written 2026-10-22 (`/create-stories`, lean — QL-STORY-READY skipped). User decisions: `SessionHandshake` / `SessionReady` codecs stay out (schemas pending OQ-NC-SER-2) — Stories 009 / 010 use a decoded entry request and a `SessionReady` seam; the zone-entry token validator stand-in rejects every token and logs once. Not covered here: the gateway-blocked TR-zi-001 / 005 / 018 (AC-ZI-1, 2, 3, 16, 19, 20) and AC-ZI-6 (client dual-gate, client app).*
+
+| # | Story | Type | Status | ADR |
+|---|-------|------|--------|-----|
+| 001 | [Zone lifecycle state machine](story-001-zone-lifecycle-state-machine.md) | Logic | Ready | ADR-009 A1 |
+| 002 | [Slot pools, EntityID minting, player roster view](story-002-slot-pools-and-entity-ids.md) | Logic | Ready | design rule, ADR-010 |
+| 003 | [Mob slot interface](story-003-mob-slot-interface.md) | Logic | Ready | ADR-010 |
+| 004 | [ZoneDefinition, ZoneSceneRegistry, bounds validation](story-004-zone-definition-and-bounds-validation.md) | Integration | Ready | ADR-009 |
+| 005 | [GetTownRespawnPoint](story-005-town-respawn-point.md) | Logic | Ready | ADR-009 |
+| 006 | [Zone wire messages and codecs](story-006-zone-wire-messages.md) | Logic | Ready | ADR-004 |
+| 007 | [Snapshot assembly and fragmentation](story-007-snapshot-assembly-and-fragmentation.md) | Logic | Ready | ADR-004 |
+| 008 | [ZoneSnapshotRequest retransmit](story-008-snapshot-request-retransmit.md) | Logic | Ready | ADR-014 |
+| 009 | [Entry part 1 — admission](story-009-entry-admission.md) | Integration | Ready | ADR-014, ADR-011, ADR-006 |
+| 010 | [Entry part 2 — snapshot, SessionReady, party, PlayerJoinedZone](story-010-entry-completion.md) | Integration | Ready | ADR-014, ADR-010 |
+| 011 | [Stale slot reclamation and entry stall](story-011-stale-slot-reclamation.md) | Logic | Ready (open decision 1 at readiness) | design rule |
+| 012 | [Teardown close steps](story-012-teardown-close-steps.md) | Integration | Ready | ADR-009 A1, ADR-006, ADR-011 |
+| 013 | [Player exit and slot release](story-013-player-exit-and-slot-release.md) | Integration | Ready | ADR-010, ADR-011 |
+| 014 | [Composition wiring, quit-request drain](story-014-composition-wiring-and-drain.md) | Integration | Ready | ADR-009 A1 |
+
 ## Definition of Done
 
 This epic is complete when:
@@ -79,4 +100,4 @@ This epic is complete when:
 
 ## Next Step
 
-Run `/create-stories zone-instancing` to break this epic into implementable stories.
+Run `/story-readiness production/epics/zone-instancing/story-001-zone-lifecycle-state-machine.md`, then `/dev-story`. Stories 002, 004 and 006 have no dependencies and can go in any order.
