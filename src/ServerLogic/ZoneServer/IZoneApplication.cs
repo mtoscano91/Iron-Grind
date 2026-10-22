@@ -20,6 +20,9 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// <param name="code">The <see cref="ZoneExitCode"/> value as an int.</param>
         void Quit(int code);
 
+        /// <summary>Keeps the host object alive across scene loads (<c>DontDestroyOnLoad</c>), startup S1.</summary>
+        void KeepAcrossSceneLoads();
+
         /// <summary>Subscribes a handler to <c>Application.wantsToQuit</c>.</summary>
         /// <param name="handler">A named method; the same delegate value must be passed to unsubscribe.</param>
         void SubscribeWantsToQuit(Func<bool> handler);

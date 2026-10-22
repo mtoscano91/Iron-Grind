@@ -1,7 +1,7 @@
 # Story 043: Zone Startup S0–S10, S-fail and ZoneServerConfig
 
 > **Epic**: Networking Core
-> **Status**: Ready — `/story-readiness` 2026-10-22: NEEDS WORK (4 gaps), all fixed the same day at the user's request (AC-7 drain/flush gate `_tickStarted` set by S9 via `MarkTickStarted()`, a change to Story 042's composition; AC-12 names `IZoneBackendSteps`; performance note; estimate confirmed).
+> **Status**: Complete — 2026-10-22 (`/story-done`, COMPLETE WITH NOTES; `/code-review` CHANGES REQUIRED → fixed; EditMode 3484 total, 3419 passed, 0 failed, 65 skipped).
 > **Layer**: Foundation
 > **Type**: Logic
 > **Manifest Version**: 2026-10-19
@@ -112,7 +112,7 @@ Also: **ADR-006 Amendment 3** (the pool values and connection fields come from s
   - Given: Story 042's teardown fixture without `MarkTickStarted()`. Then: no `Flush`, no `Drain`; with it, the existing 52 tests unchanged.
 - **AC-8**: quit during startup
   - Given: `OnWantsToQuit()` called (player) while S4 runs. Then: S4 completes; S5 not called; teardown; `Quit(0)`.
-  - Edge cases: quit during the S6 wait → no S7; quit, then a later step fault → still `Quit(0)`.
+  - Edge cases: quit during the S6 wait → no S7; quit, then the same step fails → still `Quit(0)` (a later step cannot run after a quit, so the fault can only come from the step in progress — reworded at `/code-review` 2026-10-22).
 - **AC-9**: no retry
   - Given: a step fake that fails once then would succeed. Then: called once; `Quit(1)`.
 - **AC-10**: tick values
@@ -130,7 +130,7 @@ Also: **ADR-006 Amendment 3** (the pool values and connection fields come from s
 **Required evidence**:
 - `tests/EditMode/Networking/ZoneServer_CompositionStartup_tests.cs` and `tests/EditMode/Networking/ZoneServer_Config_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — startup 54 / 54, config 54 / 54; teardown file 54 / 54 (2026-10-22)
 
 ---
 
@@ -138,3 +138,45 @@ Also: **ADR-006 Amendment 3** (the pool values and connection fields come from s
 
 - Depends on: Story 042 (Done)
 - Unlocks: Story 044
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-22
+**Criteria**: 12/12 passing (none deferred)
+**Deviations**: ADVISORY, all accepted (none logged as tech debt, user decision):
+1. `Start(string[] commandLine)` instead of ADR-009 A1's `Start(ZoneStartupArgs)`, so parse failures go through S-fail at S0. A dated note was added to the ADR's Key Interfaces.
+2. Seams not named in the story:
+   - `IZoneConfigSource` (reads the config file);
+   - `IZoneOutboundSender` with `AttachOutboundSender` (no startable sender exists yet);
+   - `IZoneScene.AddNavMeshData()`;
+   - `AttachTickLoop` (S9 fails without a tick loop);
+   - an injectable clock for tick durations.
+3. Teardown steps 3 and 4 are gated on `_navigationInitialized` (set just before S6 calls `Initialize`) and `_zoneStateEntered` (set just before `MarkActive` or `MarkClosedInvalidBounds`). Together with `_tickStarted`, the S-fail teardown starts from the first step with something to undo. `ZsRig` sets all three marks.
+4. A quit during the S6 scene wait stops waiting and skips S6b.
+5. S-fail log details:
+   - a step that returns false logs the token `StepReturnedFalse`;
+   - S0 also logs `[ZoneServer] S0: <reason>`, which names the flag or field, never a value or the path.
+6. `TeardownNow`/`Dispose` unsubscribe the `wantsToQuit` handler; `RunTeardown` never does.
+
+No GDD deviation: TR-net-008 and TR-net-002 hold.
+
+**Test Evidence**: Logic.
+- `tests/EditMode/Networking/ZoneServer_CompositionStartup_tests.cs`: 54 tests.
+- `tests/EditMode/Networking/ZoneServer_Config_tests.cs`: 54 tests.
+- `ZoneServer_CompositionTeardown_tests.cs`: 54 tests (the 52 Story 042 test methods unchanged, plus 2).
+- Full EditMode suite: 3484 total, 3419 passed, 0 failed, 65 skipped (batch mode, 2026-10-22 13:03Z).
+
+**Code Review**: Complete. `/code-review` 2026-10-22 (unity-specialist + qa-tester) returned CHANGES REQUIRED; all 3 required changes and all 6 suggestions were applied:
+- teardown-scope gates;
+- the password-key regex now catches any key containing password, passwd or pwd;
+- the class doc example was corrected;
+- the S0 reason line;
+- the quit handler is unsubscribed;
+- `ZoneStartupArgs.Parse` was split, and a value starting with `-` counts as missing;
+- error texts carry no digits;
+- `IZoneNavigation` documents removal of the NavMesh data;
+- the AC-8 QA wording;
+- the Story 045 notes.
+
+QL-TEST-COVERAGE and LP-CODE-REVIEW were skipped (lean mode).

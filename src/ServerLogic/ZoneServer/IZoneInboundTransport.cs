@@ -12,6 +12,9 @@ namespace IronGrind.ServerLogic.ZoneServer
     /// </example>
     public interface IZoneInboundTransport
     {
+        /// <summary>Starts receiving from NGO (startup S8, after <c>StartServer</c>).</summary>
+        void Start();
+
         /// <summary>Stops receiving from NGO.</summary>
         void Stop();
     }

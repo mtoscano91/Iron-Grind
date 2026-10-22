@@ -117,6 +117,31 @@ namespace IronGrind.ServerLogic.ZoneServer
     }
 
     /// <summary>
+    /// Stand-in for <see cref="IZoneStateOwner"/>: logs "[ZoneServer] zone state not implemented" once.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// new StandInZoneStateOwner().MarkActive(zone);
+    /// </code>
+    /// </example>
+    public sealed class StandInZoneStateOwner : IZoneStateOwner
+    {
+        private readonly StandInLogOnce _log = new StandInLogOnce("zone state");
+
+        /// <inheritdoc/>
+        public void MarkActive(ZoneID zone)
+        {
+            _log.Log();
+        }
+
+        /// <inheritdoc/>
+        public void MarkClosedInvalidBounds(ZoneID zone)
+        {
+            _log.Log();
+        }
+    }
+
+    /// <summary>
     /// Stand-in for <see cref="IZoneStaticDataLoader"/>: logs "[ZoneServer] static data loading not implemented"
     /// once and returns true.
     /// </summary>

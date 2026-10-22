@@ -71,6 +71,12 @@ Also: **ADR-004** (NGO substrate; `NetworkManager.NetworkTickSystem.Tick`; Amend
 - Verification runs follow Story 041's pattern: build manually from the Build Profile to git-ignored `Builds/ZoneServer/`; two command lines (V4 happy path, V4 unreachable DB) and one Editor session; logs captured with `-logFile`; exit status read in PowerShell (`$LASTEXITCODE` after `Start-Process -Wait -PassThru` → `.ExitCode`). Portable PostgreSQL started via PowerShell `Start-Process` (memory: portable dev PostgreSQL). `IRONGRIND_PG_PASSWORD` set per process, never echoed.
 - Server config for the runs: a JSON file under `Builds/ZoneServer/` (git-ignored), host `127.0.0.1`, the portable PG port.
 - Evidence document: `production/qa/evidence/networking-core-045-zone-process-verification.md` with, per check, the command line (password redacted), the relevant log excerpt, the exit status and PASS / FAIL / NOT RUN.
+- **Notes from Story 043 `/code-review` (2026-10-22):**
+  - Wrap the body of the composition's tick handler path so an exception from `AdvanceTick` does not escape into NGO's `Tick` event: log the exception type once and call `RequestTeardown(ZoneExitCode.Fatal)` (decide whether this sits in the host or in `ZoneServerComposition.OnNetworkTick`).
+  - `NgoZoneNetwork.PrepareObject()` (S1) attaches `UnityTransport` to `NetworkConfig.NetworkTransport`, keeps the `NetworkManager` a root object with NGO's `DontDestroy = true`, and sets `EnableSceneManagement = false`; `Configure` sets `NetworkConfig.TickRate` (`uint`) before `StartServer`, while the manager is not listening.
+  - `UnsubscribeTick` must be null-safe: `NetworkTickSystem` exists only after `StartServer` and may be gone after a shutdown or a failed S8.
+  - The real `IZoneNavigation.Teardown` removes the `NavMeshDataInstance` passed to `Initialize` and tolerates a partial `Initialize` (the composition calls it whenever `Initialize` was called, also when it threw).
+  - `JsonUtility` ignores a type mismatch (`"Port":"abc"` keeps the default) — the `IZoneConfigSource` file is hand-written, so the AC-10 run's config is checked by eye.
 - Doc comments on every public type and member.
 
 ---

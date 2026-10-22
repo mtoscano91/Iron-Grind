@@ -4197,3 +4197,26 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Verdict: NEEDS WORK (4 gaps) → all fixed at the user's request; Story Ready (11 h). QL-STORY-READY skipped (lean).
 - Fixes: AC-7 gate `_tickStarted` + `internal MarkTickStarted()` called by S9 (Story 042's null-guards do not cover it: queue/outbound are built in S5) — changes Story 042's ZoneServerComposition; ZsRig calls MarkTickStarted(), one new test without it; AC-12 names `internal IZoneBackendSteps` (InitializeRandom, OpenDatabase, ConstructObjects, StartListener — bool, throw or false = S-fail); performance note; estimate 10 → 11 h.
 - Uncommitted: story-043, this file. Next: commit → /dev-story Story 043. PAT rotation still unconfirmed.
+
+## Session Extract — /dev-story 2026-10-22
+- Story: production/epics/networking-core/story-043-zone-startup-sequence-and-config.md — Zone Startup S0–S10, S-fail and ZoneServerConfig
+- Files changed: src/ServerLogic/ZoneServer/{ZoneServerComposition, IZoneNetwork, IZoneApplication, IZoneInboundTransport, ZoneServerStandIns}.cs (modified); ZoneStartupArgs, ZoneServerConfig, IZoneScene, IZoneStateOwner, IZoneConfigSource, IZoneBackendSteps (internal), IZoneOutboundSender .cs (new, + .meta); tests/EditMode/Networking/ZoneServer_CompositionTeardown_tests.cs (fakes + MarkTickStarted in ZsRig + 1 test)
+- Test written: tests/EditMode/Networking/ZoneServer_CompositionStartup_tests.cs (51), ZoneServer_Config_tests.cs (43). EditMode 3469 total, 3404 passed, 0 failed, 65 skipped (baseline 3374/3309).
+- Deviations to review: Start(string[]) instead of ADR's Start(ZoneStartupArgs); new seams IZoneConfigSource, IZoneOutboundSender, IZoneScene.AddNavMeshData(); AttachTickLoop (S9 fails without a tick loop); injectable clock; S-fail on a false return logs "StepReturnedFalse"; S0 error detail (which flag/field) not logged; quit during S6 wait abandons the wait and skips S6b.
+- Blockers: None. Not committed.
+- Next: /code-review src/ServerLogic/ZoneServer/*.cs tests/EditMode/Networking/ZoneServer_*_tests.cs then /story-done story-043
+
+## Session Extract — /code-review Story 043, 2026-10-22
+- Verdict CHANGES REQUIRED (3 required + 6 suggestions; unity-specialist + qa-tester) → user "fix all, use your recommendation for item 1" → all applied.
+- Fixes: teardown steps 3 and 4 gated on _navigationInitialized (set before S6 Initialize) and _zoneStateEntered (set before MarkActive / MarkClosedInvalidBounds), ZsRig sets both; password key regex catches any key containing password/passwd/pwd; class doc example updated; S0 logs "[ZoneServer] S0: <reason>" (flag/field name only); TeardownNow/Dispose unsubscribe wantsToQuit (RunTeardown never does); ZoneStartupArgs.Parse split, value starting with "-" counts as missing; error texts carry no digits; IZoneNavigation documents NavMesh instance removal; story 043 AC-8 QA wording; Story 045 Implementation Notes got the Unity notes.
+- Tests: startup 54, config 54, teardown 54 (52 original unchanged + 2). EditMode 3484 total, 3419 passed, 0 failed, 65 skipped.
+- Open: ADR-009 A1 Key Interfaces says Start(ZoneStartupArgs); code uses Start(string[]) — record a dated note at /story-done.
+- Next: /code-review re-run (or /story-done story-043). Not committed.
+
+## Session Extract — /story-done 2026-10-22
+- Verdict: COMPLETE WITH NOTES (12/12 ACs; lean: QL-TEST-COVERAGE and LP-CODE-REVIEW skipped)
+- Story: production/epics/networking-core/story-043-zone-startup-sequence-and-config.md — Zone Startup S0–S10, S-fail and ZoneServerConfig
+- Updated: story Status/Test Evidence/Completion Notes; EPIC.md row 043 Complete + status 43/45; ADR-009 A1 Key Interfaces dated note (Start(string[]), teardown gates)
+- Tech debt logged: None (user decision)
+- Next recommended: Story 044 — production/epics/networking-core/story-044-zone-composition-wiring-database-graph-listener.md (Ready). Note for 044: S6/S9 set the teardown marks; 044 only attaches objects in S5 (AttachOwnedObjects, AttachTickLoop, AttachOutboundSender, RegisterDisposable)
+- Not committed.

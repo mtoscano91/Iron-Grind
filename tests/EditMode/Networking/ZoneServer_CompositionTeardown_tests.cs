@@ -37,6 +37,7 @@ namespace IronGrind.Tests.EditMode.Networking
         }
         public void SubscribeWantsToQuit(Func<bool> handler) { }
         public void UnsubscribeWantsToQuit(Func<bool> handler) { }
+        public void KeepAcrossSceneLoads() { }
     }
 
     internal sealed class ZsNetwork : IZoneNetwork
@@ -55,6 +56,9 @@ namespace IronGrind.Tests.EditMode.Networking
         public void UnsubscribeTick(Action handler) { _log.Add("TickUnsubscribe"); UnsubscribedHandler = handler; }
         public void Shutdown() { _log.Add("NgoShutdown"); }
         public bool IsAlive => Alive;
+        public void PrepareObject() { }
+        public void Configure(uint tickRate, int targetFrameRate, int vSyncCount) { }
+        public bool StartServer() { return true; }
 
         public bool ShutdownInProgress
         {
@@ -152,6 +156,7 @@ namespace IronGrind.Tests.EditMode.Networking
         private readonly List<string> _log;
         public bool Throw;
         public ZsTransport(List<string> log) { _log = log; }
+        public void Start() { _log.Add("ShellStart"); }
         public void Stop() { _log.Add("ShellStop"); if (Throw) { throw new InvalidOperationException("secret"); } }
     }
 
@@ -206,6 +211,9 @@ namespace IronGrind.Tests.EditMode.Networking
             Transport = new ZsTransport(Log);
             Comp = new ZoneServerComposition(App, Net, Nav, Close, waitFrames);
             Comp.AttachOwnedObjects(Queue, Outbound, Listener, Transport, () => LAST_TICK, TickHandler);
+            Comp.MarkNavigationInitialized();
+            Comp.MarkZoneStateEntered();
+            Comp.MarkTickStarted();
         }
 
         public static string[] Steps1To7()
@@ -531,6 +539,37 @@ namespace IronGrind.Tests.EditMode.Networking
 
             Assert.IsTrue(rig.Comp.OnWantsToQuit(), "The quit flag is set before Quit is called.");
             LogAssert.NoUnexpectedReceived();
+        }
+
+        // Story 043 AC-7: before MarkTickStarted() (startup S9) the teardown has no flush and no drain.
+        [Test]
+        public void test_teardown_without_mark_tick_started_has_no_flush_and_no_drain()
+        {
+            var log = new List<string>();
+            var comp = new ZoneServerComposition(new ZsApp(log), new ZsNetwork(log), new ZsNav(log), new ZsClose(log), 100);
+            comp.AttachOwnedObjects(
+                new ZsQueue(log), new ZsOutbound(log), new ZsListener(log), new ZsTransport(log), () => 1u, () => { });
+
+            Drive(comp.RunTeardown());
+
+            CollectionAssert.DoesNotContain(log, "OutboundFlush");
+            CollectionAssert.DoesNotContain(log, "Drain");
+            CollectionAssert.Contains(log, "ListenerStop");
+            CollectionAssert.Contains(log, "ShellStop");
+            Assert.AreEqual("Quit:0", log[log.Count - 1]);
+        }
+
+        [Test]
+        public void test_teardown_without_navigation_and_zone_state_marks_skips_steps_3_and_4()
+        {
+            var log = new List<string>();
+            var comp = new ZoneServerComposition(new ZsApp(log), new ZsNetwork(log), new ZsNav(log), new ZsClose(log), 100);
+
+            Drive(comp.RunTeardown());
+
+            CollectionAssert.DoesNotContain(log, "NavTeardown");
+            CollectionAssert.DoesNotContain(log, "CloseSteps");
+            CollectionAssert.AreEqual(new[] { "NgoShutdown", "Quit:0" }, log);
         }
 
         // ---------------------------------------------------------------- AC-8

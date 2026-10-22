@@ -476,6 +476,12 @@ public interface IZoneNavigation { void Initialize(ZoneID zone, NavMeshDataInsta
 public interface IGatewayRegistration { void RegisterZone(ZoneID zone, ushort port); }
 ```
 
+> **Note 2026-10-22 (Networking Core Story 043, `/story-done`).**
+> - **Start signature.** As implemented it is `public IEnumerator Start(string[] commandLine)`. S0 itself runs `ZoneStartupArgs.Parse` and loads the config through `IZoneConfigSource`, so a bad command line or config goes through S-fail at S0 like any other step. `ZoneStartupArgs` remains the parsed form.
+> - **Teardown on S-fail.** Step 3 runs only once S6 has called `Initialize`. Step 4 runs only once the zone state owner was told of T-2 or T-3. Steps 4b and 5 run only after S9 subscribed the tick. That is how "from the first step that has something to undo" is enforced for seams injected at construction.
+>
+> The Decision text is unchanged.
+
 ### Migration Plan (Amendment 1)
 
 1. ADR-006 Amendment 3 (pool) and a dated note on ADR-011 Decision 2 (two blocking waits) — with this amendment.

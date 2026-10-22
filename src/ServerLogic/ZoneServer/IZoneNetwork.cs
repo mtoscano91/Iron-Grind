@@ -14,6 +14,22 @@ namespace IronGrind.ServerLogic.ZoneServer
     /// </example>
     public interface IZoneNetwork
     {
+        /// <summary>
+        /// Startup S1: creates the NGO object as a root object outside the zone scene with
+        /// <c>EnableSceneManagement = false</c>.
+        /// </summary>
+        void PrepareObject();
+
+        /// <summary>Startup S8: sets the tick rate, <c>Application.targetFrameRate</c> and vSync before start.</summary>
+        /// <param name="tickRate">NGO <c>NetworkConfig.TickRate</c>.</param>
+        /// <param name="targetFrameRate">Application target frame rate.</param>
+        /// <param name="vSyncCount">Quality vSync count.</param>
+        void Configure(uint tickRate, int targetFrameRate, int vSyncCount);
+
+        /// <summary>Startup S8: <c>NetworkManager.StartServer()</c>.</summary>
+        /// <returns>False when NGO could not start; startup then fails at S8.</returns>
+        bool StartServer();
+
         /// <summary>Subscribes a handler to <c>NetworkTickSystem.Tick</c>.</summary>
         /// <param name="handler">A named method; pass the same delegate value to unsubscribe.</param>
         void SubscribeTick(Action handler);
