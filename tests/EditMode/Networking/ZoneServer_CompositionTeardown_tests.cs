@@ -57,7 +57,7 @@ namespace IronGrind.Tests.EditMode.Networking
         public void Shutdown() { _log.Add("NgoShutdown"); }
         public bool IsAlive => Alive;
         public void PrepareObject() { }
-        public void Configure(uint tickRate, int targetFrameRate, int vSyncCount) { }
+        public void Configure(uint tickRate, int targetFrameRate, int vSyncCount, ushort port) { }
         public bool StartServer() { return true; }
         public IClientMessageSendSeam CreateSendSeam() { return null; }
 
@@ -322,6 +322,54 @@ namespace IronGrind.Tests.EditMode.Networking
             CollectionAssert.AreEqual(
                 Concat(ZsRig.Steps1To7(), "Dispose:B", "Dispose:A", "Quit:0"),
                 rig.Log);
+        }
+
+        [Test]
+        public void test_run_teardown_logs_one_timed_line_per_step_in_order_then_the_quit_line()
+        {
+            // Story 045 AC-10 evidence lines (Editor and development builds).
+            var rig = new ZsRig();
+            rig.Comp.LogTeardownSteps = true;
+            rig.Comp.RequestTeardown(ZoneExitCode.Clean);
+            foreach (string step in new[] { "1", "2a", "3", "4", "4b", "5", "6", "7" })
+            {
+                LogAssert.Expect(LogType.Log, new Regex(@"^\[ZoneServer\] teardown step " + step + @" done in \d+ ms$"));
+            }
+
+            LogAssert.Expect(LogType.Log, "[ZoneServer] teardown step 8: quit(0)");
+
+            Drive(rig.Comp.RunTeardown());
+
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_teardown_step_lines_are_off_by_default()
+        {
+            var rig = new ZsRig();
+            rig.Comp.RequestTeardown(ZoneExitCode.Clean);
+
+            Drive(rig.Comp.RunTeardown());
+
+            Assert.IsFalse(rig.Comp.LogTeardownSteps);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_teardown_now_with_step_lines_on_logs_steps_1_to_7_and_no_quit_line()
+        {
+            // The Editor OnDestroy path (Story 045 AC-11): no step 8.
+            var rig = new ZsRig();
+            rig.Comp.LogTeardownSteps = true;
+            foreach (string step in new[] { "1", "2a", "3", "4", "4b", "5", "6", "7" })
+            {
+                LogAssert.Expect(LogType.Log, new Regex(@"^\[ZoneServer\] teardown step " + step + @" done in \d+ ms$"));
+            }
+
+            rig.Comp.TeardownNow();
+
+            LogAssert.NoUnexpectedReceived();
+            Assert.AreEqual(0, rig.App.QuitCodes.Count);
         }
 
         [Test]

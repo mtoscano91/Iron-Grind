@@ -482,6 +482,11 @@ public interface IGatewayRegistration { void RegisterZone(ZoneID zone, ushort po
 >
 > The Decision text is unchanged.
 
+> **Note 2026-10-22 (Networking Core Story 045, `/dev-story`, user decision).**
+> - **Listen port at S8.** S8 did not say where the transport's port comes from, and `-port` reached only `Gateway.RegisterZone` at S10, so every zone would have listened on `UnityTransport`'s default 127.0.0.1:7777. S8 now also sets the transport's port: `IZoneNetwork.Configure(tickRate, targetFrameRate, vSyncCount, ushort port)` receives the parsed `-port`, and `NgoZoneNetwork` sets `UnityTransport.ConnectionData` (`Address` and `ServerListenAddress` "0.0.0.0", `Port`), so the server listens on all interfaces. It does not call `SetConnectionData`: an overload takes a `NetworkEndpoint`, which would add `Unity.Networking.Transport` to ServerLogic's references (ADR-012 Decision 1). The port registered at S10 is the port the server listens on.
+>
+> The Decision text is unchanged.
+
 ### Migration Plan (Amendment 1)
 
 1. ADR-006 Amendment 3 (pool) and a dated note on ADR-011 Decision 2 (two blocking waits) — with this amendment.

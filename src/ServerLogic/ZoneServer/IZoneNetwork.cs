@@ -21,11 +21,15 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// </summary>
         void PrepareObject();
 
-        /// <summary>Startup S8: sets the tick rate, <c>Application.targetFrameRate</c> and vSync before start.</summary>
+        /// <summary>
+        /// Startup S8: sets the tick rate, <c>Application.targetFrameRate</c>, vSync and the port the server listens
+        /// on, before start.
+        /// </summary>
         /// <param name="tickRate">NGO <c>NetworkConfig.TickRate</c>.</param>
         /// <param name="targetFrameRate">Application target frame rate.</param>
         /// <param name="vSyncCount">Quality vSync count.</param>
-        void Configure(uint tickRate, int targetFrameRate, int vSyncCount);
+        /// <param name="port">The <c>-port</c> command-line value; the transport listens on it on all interfaces.</param>
+        void Configure(uint tickRate, int targetFrameRate, int vSyncCount, ushort port);
 
         /// <summary>Startup S8: <c>NetworkManager.StartServer()</c>.</summary>
         /// <returns>False when NGO could not start; startup then fails at S8.</returns>

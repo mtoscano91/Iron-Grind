@@ -51,7 +51,7 @@ namespace IronGrind.Tests.EditMode.Networking
         public WiNetwork(List<string> log) { _log = log; }
 
         public void PrepareObject() { }
-        public void Configure(uint tickRate, int targetFrameRate, int vSyncCount) { }
+        public void Configure(uint tickRate, int targetFrameRate, int vSyncCount, ushort port) { }
         public bool StartServer() { return true; }
         public void SubscribeTick(Action handler) { SubscribedHandler = handler; }
         public void UnsubscribeTick(Action handler) { _log.Add("TickUnsubscribe"); }

@@ -56,18 +56,20 @@ namespace IronGrind.Tests.EditMode.Networking
         public uint ConfiguredTickRate;
         public int ConfiguredFrameRate = -1;
         public int ConfiguredVSync = -1;
+        public ushort ConfiguredPort;
         public bool ShutdownForever;
 
         public SuNetwork(List<string> log, SuPlan plan) { _log = log; _plan = plan; }
 
         public void PrepareObject() { _plan.Step(_log, "S1:PrepareObject"); }
 
-        public void Configure(uint tickRate, int targetFrameRate, int vSyncCount)
+        public void Configure(uint tickRate, int targetFrameRate, int vSyncCount, ushort port)
         {
             _log.Add("S8:Configure");
             ConfiguredTickRate = tickRate;
             ConfiguredFrameRate = targetFrameRate;
             ConfiguredVSync = vSyncCount;
+            ConfiguredPort = port;
         }
 
         public bool StartServer() { return _plan.Step(_log, "S8:StartServer"); }
@@ -646,7 +648,7 @@ namespace IronGrind.Tests.EditMode.Networking
         // ---------------------------------------------------------------- AC-10
 
         [Test]
-        public void test_s8_configures_20_20_0_before_start_server()
+        public void test_s8_configures_20_20_0_and_the_port_argument_before_start_server()
         {
             var rig = new SuRig();
 
@@ -655,6 +657,7 @@ namespace IronGrind.Tests.EditMode.Networking
             Assert.AreEqual(20u, rig.Net.ConfiguredTickRate);
             Assert.AreEqual(20, rig.Net.ConfiguredFrameRate);
             Assert.AreEqual(0, rig.Net.ConfiguredVSync);
+            Assert.AreEqual((ushort)7777, rig.Net.ConfiguredPort, "the -port argument reaches the transport");
             Assert.Less(rig.Log.IndexOf("S8:Configure"), rig.Log.IndexOf("S8:StartServer"));
         }
 

@@ -4272,3 +4272,32 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Next: fix the 6 gaps in the story (user approval), then /dev-story 045. Portable PG running.
 - 2026-10-22 (cont.): all 6 gaps fixed in the story -> READY (15 h). User decisions: tick-exception catch in ZoneServerComposition.OnNetworkTick (new AC-15, Story 043 file changed); Editor args from host [SerializeField] _editorArgs under #if UNITY_EDITOR; AddNavMeshData() returns default + "[StandIn] no zone NavMesh data" once (real NavMesh -> Zone Instancing/Navigation epic). Also: AC-1 names CreateWithRealBackend(..., new ProcessZoneEnvironment(), null); AC-2 rewritten to the real IZoneApplication members + FileZoneConfigSource; AC-3 NgoZoneInboundTransport wraps NgoInboundTransportShell; Files section; performance note; QA cases AC-15 + AC-4 nav; evidence adds ZoneServer_CompositionTick_tests.cs. QL-STORY-READY skipped (lean). Not committed.
 - Next: commit, then /dev-story Story 045.
+
+## Session Extract — /dev-story 2026-10-22 (Story 045) — CODE PART DONE, manual Editor/build part pending
+- Story: production/epics/networking-core/story-045-zone-server-host-unity-seams-verification.md — ZoneServerHost, Unity seams, server scene, local verification
+- Committed before: 4e57830 (Story 044), 6cf389f (045 readiness).
+- Files (not committed): new src/ServerLogic/ZoneServer/ZoneServerHost.cs; new Unity/ {UnityZoneApplication, FileZoneConfigSource, NgoZoneNetwork, NgoZoneInboundTransport, UnitySceneLoader, ZoneTickProbe}.cs + Unity.meta + .metas; changed ZoneServerComposition.cs (AC-15 tick catch; S8 passes _args.Port), IZoneNetwork.cs (Configure gains ushort port), 3 EditMode fakes; tests ZoneServer_CompositionTick_tests.cs (7) and PlayMode ZoneServer_UnitySeams_tests.cs (7, port 7803); ADR-009 A1 dated note (listen port).
+- User decision (dev-story): -port reaches the transport through Configure(..., ushort port); NgoZoneNetwork sets UnityTransport.ConnectionData Address/ServerListenAddress 0.0.0.0 + Port (not SetConnectionData — would need Unity.Networking.Transport ref, ADR-012 boundary test fails).
+- Tests: EditMode 3530 total, 3460 passed, 0 failed, 70 skipped. PlayMode 27/27.
+- AC-7 ids logged by UnitySceneLoader ("A1-3 before/after load"); AC-9 probe ZoneTickProbe wired in NgoZoneNetwork.SubscribeTick (dev/Editor only, realtime seconds).
+- Pending (user, Editor): scenes Assets/Scenes/Server/ZoneServer.unity (one root GO + ZoneServerHost) and Assets/Scenes/Zones/ZoneTemplate_Empty.unity; Build Profile Assets/Settings/Build Profiles/ZoneServer.asset (Windows Server, Mono, Development, those 2 scenes); build to Builds/ZoneServer/; revert com.unity.dedicated-server/ProjectSettings side effects. Then runs AC-7..AC-11 + evidence doc + EPIC note (AC-12).
+- Next: user creates scenes/profile and builds; then verification runs; then /code-review, /story-done.
+
+## Checkpoint 2026-10-22 — Story 045 verification runs DONE
+- User made scenes + Build Profile ZoneServer (Server subtarget, Development) and built; build side effects reverted twice (git checkout; ProjectSettings/Packages/, SceneTemplateSettings.json, bash.exe.stackdump left untracked — deletion denied by permissions; never stage them).
+- Builds/ZoneServer/zone-config.json written (git-ignored, no password). Rebuild works in batch mode: Unity.exe -batchmode -quit -activeBuildProfile "Assets/Settings/Build Profiles/ZoneServer.asset" -build <exe>.
+- Extra code (user decisions): ZoneServerComposition.LogTeardownSteps (dev/Editor "teardown step N done in X ms" + "step 8: quit(code)", opt-in because LogAssert.NoUnexpectedReceived fails on Log lines — 48 tests broke when unconditional); host sets it + logs "host OnDestroy: NetworkManager alive=..."; ZoneTickProbe excludes the first second as warm-up. New test test_run_teardown_logs_one_timed_line_per_step_in_order_then_the_quit_line.
+- Results: AC-7, AC-8, AC-10, AC-11 PASS; AC-9 PASS with note (one second of 73 at 22 ticks, user accepted); AC-12 EPIC note added; AC-13 done. Evidence: production/qa/evidence/networking-core-045-zone-process-verification.md.
+- Tests: EditMode 3531 total, 3461 passed, 0 failed, 70 skipped.
+- Next: /code-review Story 045 files, /story-done, commit.
+- /code-review 045 (unity-specialist + qa-tester): CHANGES REQUIRED (small) -> fixed (user "continue"): host Awake try/catch -> log type + Application.Quit(Fatal), Start/Update return when no composition; NgoZoneNetwork.PrepareObject destroys a half-built object; tests +2 (step lines off by default; TeardownNow logs 1-7, no quit); PlayMode test renamed "at least three"; story AC-3 Configure(..., port) and AC-9 QA amendment; evidence AC-5, AC-13, no-connection-string, probe manual-only. Not changed (S3, AC-15 accepts it): later failing ticks still call AdvanceTick until step 1.
+- Tests: EditMode 3533 total, 3463 passed, 0 failed, 70 skipped; PlayMode 27/27. Re-review of the fix diff: APPROVED.
+- Next: /story-done 045, commit (stage by name; never ProjectSettings/Packages/, SceneTemplateSettings.json, bash.exe.stackdump).
+
+## Session Extract — /story-done 2026-10-22
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/networking-core/story-045-zone-server-host-unity-seams-verification.md — ZoneServerHost, the Unity seams, the server scene and local verification
+- 15/15 ACs. Advisory: extra files (ZoneTickProbe, IZoneNetwork port, LogTeardownSteps); TR-net-002 wording still names ServerTime.Tick (noted only, user decision); AC-15 later failing ticks still advance until step 1.
+- Tech debt logged: None
+- EPIC.md: row 045 Complete, 45/45; the Linux IL2CPP headless-build engine-risk gate (A1-1, A1-2, A1-7, final A1-4) stays open.
+- Next recommended: None in this epic. Options: the headless-build gate (needs the Linux IL2CPP module), Zone Instancing / Navigation stories replacing the stand-ins, or /sprint-plan. PAT rotation still unconfirmed.

@@ -130,6 +130,7 @@ namespace IronGrind.ServerLogic.ZoneServer
         private bool _navigationInitialized;
         private bool _zoneStateEntered;
         private bool _quitSubscribed;
+        private bool _tickFailureReported;
 
         private bool _startCalled;
         private bool _sceneFaulted;
@@ -275,6 +276,14 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// thread, which EditMode tests must not do). Receives the connection string and the receiver. Null in production.
         /// </summary>
         internal Func<string, CrossZoneRelayReceiver, IStartableZoneRelayListener> ListenerFactoryOverride;
+
+        /// <summary>
+        /// When true, Editor and development builds log <c>[ZoneServer] teardown step &lt;n&gt; done in &lt;ms&gt; ms</c>
+        /// after each teardown step and <c>[ZoneServer] teardown step 8: quit(&lt;code&gt;)</c> before the quit
+        /// (Story 045 AC-10/AC-11 evidence; step 2a's time is the listener stop). Release builds never log these.
+        /// The host sets it; off by default so EditMode tests see no extra log lines.
+        /// </summary>
+        public bool LogTeardownSteps { get; set; }
 
         /// <summary>
         /// Test seam: when set, S5 calls it with each constructed type name and once each with <c>Seal</c>,
@@ -448,6 +457,12 @@ namespace IronGrind.ServerLogic.ZoneServer
             RunStep(LAST_INTERNAL_STEP);
 
             _quitAllowed = true;
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
+            if (LogTeardownSteps)
+            {
+                Debug.Log(LOG_PREFIX + " teardown step 8: quit(" + (int)_exitCode + ")");
+            }
+#endif
             try
             {
                 _application?.Quit((int)_exitCode);
@@ -633,7 +648,22 @@ namespace IronGrind.ServerLogic.ZoneServer
             float seconds = (float)(now - _previousTickSeconds);
             _previousTickSeconds = now;
             LastTickDurationSeconds = seconds;
-            _tickLoop.AdvanceTick(seconds);
+            try
+            {
+                _tickLoop.AdvanceTick(seconds);
+            }
+            catch (Exception ex)
+            {
+                // AC-15 (Story 045): no exception escapes into NGO's Tick event. The first failure is logged (type
+                // name only: no message, no stack, nothing that could carry a connection detail) and requests a
+                // Fatal teardown; later failing ticks do neither.
+                if (!_tickFailureReported)
+                {
+                    _tickFailureReported = true;
+                    Debug.LogError(LOG_PREFIX + " tick failed: " + ex.GetType().Name);
+                    RequestTeardown(ZoneExitCode.Fatal);
+                }
+            }
         }
 
         // Reads the scene seam's IsDone; an exception becomes S-fail at S6 and ends the wait.
@@ -766,7 +796,7 @@ namespace IronGrind.ServerLogic.ZoneServer
 
         private bool StartupStartNetwork()
         {
-            _network.Configure((uint)ServerTickLoop.TICK_RATE_HZ, ServerTickLoop.TICK_RATE_HZ, 0);
+            _network.Configure((uint)ServerTickLoop.TICK_RATE_HZ, ServerTickLoop.TICK_RATE_HZ, 0, _args.Port);
             if (!_network.StartServer())
             {
                 return false;
@@ -821,6 +851,9 @@ namespace IronGrind.ServerLogic.ZoneServer
 
             // Marked before the body runs, so a step that re-enters TeardownNow() is not run a second time.
             _step = n;
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
+            long started = Stopwatch.GetTimestamp();
+#endif
             try
             {
                 RunStepBody(n);
@@ -829,6 +862,14 @@ namespace IronGrind.ServerLogic.ZoneServer
             {
                 LogStepFailure(n, ex);
             }
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
+            // Story 045 AC-10/AC-11 evidence: one line per step, in order; step 2a's time is the listener stop.
+            if (LogTeardownSteps)
+            {
+                long elapsedMs = (Stopwatch.GetTimestamp() - started) * 1000L / Stopwatch.Frequency;
+                Debug.Log(LOG_PREFIX + " teardown step " + STEP_NAMES[n] + " done in " + elapsedMs + " ms");
+            }
+#endif
         }
 
         private void RunStepBody(int n)
