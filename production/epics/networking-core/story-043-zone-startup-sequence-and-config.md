@@ -1,11 +1,11 @@
 # Story 043: Zone Startup S0–S10, S-fail and ZoneServerConfig
 
 > **Epic**: Networking Core
-> **Status**: Ready
+> **Status**: Ready — `/story-readiness` 2026-10-22: NEEDS WORK (4 gaps), all fixed the same day at the user's request (AC-7 drain/flush gate `_tickStarted` set by S9 via `MarkTickStarted()`, a change to Story 042's composition; AC-12 names `IZoneBackendSteps`; performance note; estimate confirmed).
 > **Layer**: Foundation
 > **Type**: Logic
 > **Manifest Version**: 2026-10-19
-> **Estimate**: 10 hours (provisional — confirm at `/story-readiness`)
+> **Estimate**: 11 hours
 
 *Added 2026-10-22 (`/create-stories networking-core`, ADR-009 Amendment 1 Migration Plan step 2, second of four). User decisions 2026-10-22: server config is a JSON file named by `-serverConfig <path>`, parsed with `JsonUtility` into `ZoneServerConfig`, with defaults and validation at S0; the password never goes in it (`IRONGRIND_PG_PASSWORD`, Story 044). S2 static data goes through an `IZoneStaticDataLoader` seam with a logging stand-in; production loaders and the game systems are wired by later stories of their own epics (EPIC Known Gap).*
 
@@ -45,12 +45,12 @@ Also: **ADR-006 Amendment 3** (the pool values and connection fields come from s
 - [ ] **AC-4** `Start(args)` calls the steps in exactly this order: S0 args + config → S1 quit subscription, `DontDestroyOnLoad`, NGO object prepared (`EnableSceneManagement = false`) → S2 static data → S3 random → S4 database → S5 construct → S6 scene + nav + bounds → S7 listener start → S8 NGO start (tick rate, target frame rate, vSync 0, `StartServer`, shell start, outbound sender) → S9 zone `Active`, tick subscription → S10 gateway registration.
 - [ ] **AC-5** The coroutine yields only between steps and while the S6 scene seam reports the load in progress; every step method is non-yielding and wrapped in its own `try`/`catch`.
 - [ ] **AC-6** A step that throws or reports failure (S0 invalid input, S2 loader failure, S4 failure, S6 invalid bounds — zone `T-3`, S8 `StartServer()` returning `false`, any other exception) ends startup at once: one log line names the step (`"[ZoneServer] startup failed at S<n>: <ExceptionType>"`), no later step runs, `RequestTeardown(StartupFailed)` is called, and the teardown runs from the first step that has something to undo.
-- [ ] **AC-7** On S-fail before S9 (no tick ever ran) the teardown skips the drain (step 5) and the outbound flush (step 4b); from S9 on it runs them.
+- [ ] **AC-7** If S-fail happens before S9 has completed the tick subscription, the teardown skips the outbound flush (step 4b) and the drain (step 5). Once S9 has completed, it runs them. The gate is `_tickStarted`, set through `MarkTickStarted()` by S9.
 - [ ] **AC-8** A quit request (`OnWantsToQuit` in a player, or `RequestTeardown(Clean)`) received during startup lets the current step finish, runs no further step, and tears down with `Clean`; a later `StartupFailed` cannot override it (first code wins, Story 042).
 - [ ] **AC-9** No step is retried: each step method is called at most once per process.
 - [ ] **AC-10** S8 passes `(uint)ServerTickLoop.TICK_RATE_HZ` as the NGO tick rate and `ServerTickLoop.TICK_RATE_HZ` as the target frame rate, and vSync 0, to the NGO seam before calling start; S9's tick handler calls `ServerTickLoop.AdvanceTick(measured seconds)` exactly once per tick event.
 - [ ] **AC-11** S10 (`IGatewayRegistration.RegisterZone(zoneId, port)`) is called only after the tick subscription of S9; S9 only after `IZoneNavigation.Initialize` and `IZoneBoundsValidator.Validate` succeeded in S6 (TR-net-008).
-- [ ] **AC-12** In this story S3, S4, S5 and S7 run through a narrow internal seam (`IZoneBackendSteps` or equivalent) that the tests fake; Story 044 supplies the real implementation without changing the step order.
+- [ ] **AC-12** In this story S3, S4, S5 and S7 run through `internal interface IZoneBackendSteps` with `bool InitializeRandom()` (S3), `bool OpenDatabase()` (S4), `bool ConstructObjects()` (S5) and `bool StartListener()` (S7). Each method may throw or return `false`, and either one is S-fail. Tests fake it. Story 044 supplies the real implementation without changing the step order.
 
 ---
 
@@ -68,7 +68,10 @@ Also: **ADR-006 Amendment 3** (the pool values and connection fields come from s
       while (step == S6 && !scene.IsDone) yield return null
   ```
   The S6 scene load is started inside `RunStep(S6a)` and its result checked inside `RunStep(S6b)`, so the wait loop has no `try` around it.
-- "First step that has something to undo" falls out of Story 042's null-guards: S-fail calls the same `RunTeardown` with only the objects built so far; the drain and flush skip when the tick never started (a `_tickEverRan` flag set by S9's first tick, or by S9 itself — pick one and test it).
+- **First step with something to undo.** S-fail calls the same `RunTeardown`. Story 042's null-guards skip every step whose object was never built.
+- **Extra gate for the drain and flush.** Null-guards are not enough here, because Story 044 builds the queue and the outbound step in S5, before the S6–S8 failure points. Add `private bool _tickStarted` to `ZoneServerComposition`. An `internal void MarkTickStarted()` sets it, and S9 calls it once the tick subscription succeeds. Teardown steps 4b (flush) and 5 (drain) run only when the flag is `true`.
+- **Change to Story 042's code (Complete).** This touches `ZoneServerComposition`. `ZsRig` in `ZoneServer_CompositionTeardown_tests.cs` calls `MarkTickStarted()`, so the 52 existing tests stay green unchanged. One new test there checks that a teardown without the flag has no `Flush` and no `Drain`.
+- **Performance:** startup only (S0–S10 run once per process). On the tick path, `OnNetworkTick` adds one `Stopwatch` read and no allocation, so there is no impact on the 50 ms server tick budget at 20 Hz.
 - The tick handler is a named method (`OnNetworkTick`), not a lambda, so step 1 can unsubscribe it (manifest: no lambda captures for persistent subscriptions). It measures the time since the previous tick with a `Stopwatch` and passes seconds to `AdvanceTick`.
 - Zone `State` (T-2 `Active`, T-3 on invalid bounds) is set through a stand-in (`IZoneStateOwner`, logs once) — the owner is Zone Instancing.
 - Config validation error messages carry the field name only.
@@ -106,6 +109,7 @@ Also: **ADR-006 Amendment 3** (the pool values and connection fields come from s
   - Edge cases: S8 `StartServer` returns `false` → S-fail at S8; S6 bounds invalid → zone state T-3 recorded, S-fail.
 - **AC-7**: drain skipped before the first tick
   - Given: fault at S7. Then: no `Drain`, no `Flush` in the call log. Given: fault at S10. Then: `Flush` and `Drain` present.
+  - Given: Story 042's teardown fixture without `MarkTickStarted()`. Then: no `Flush`, no `Drain`; with it, the existing 52 tests unchanged.
 - **AC-8**: quit during startup
   - Given: `OnWantsToQuit()` called (player) while S4 runs. Then: S4 completes; S5 not called; teardown; `Quit(0)`.
   - Edge cases: quit during the S6 wait → no S7; quit, then a later step fault → still `Quit(0)`.

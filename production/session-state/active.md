@@ -4192,3 +4192,8 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: None
 - Uncommitted: src/ServerLogic/ZoneServer/ (+ .meta, ZoneServer.meta), tests/EditMode/Networking/ZoneServer_CompositionTeardown_tests.cs (+ .meta), story-042, story-045, EPIC.md, this file. Do NOT commit ProjectSettings/SceneTemplateSettings.json or bash.exe.stackdump.
 - Next recommended: commit → /story-readiness production/epics/networking-core/story-043-zone-startup-sequence-and-config.md (Ready). PAT rotation still unconfirmed.
+
+## Session Extract — /story-readiness 2026-10-22 (Networking Core Story 043)
+- Verdict: NEEDS WORK (4 gaps) → all fixed at the user's request; Story Ready (11 h). QL-STORY-READY skipped (lean).
+- Fixes: AC-7 gate `_tickStarted` + `internal MarkTickStarted()` called by S9 (Story 042's null-guards do not cover it: queue/outbound are built in S5) — changes Story 042's ZoneServerComposition; ZsRig calls MarkTickStarted(), one new test without it; AC-12 names `internal IZoneBackendSteps` (InitializeRandom, OpenDatabase, ConstructObjects, StartListener — bool, throw or false = S-fail); performance note; estimate 10 → 11 h.
+- Uncommitted: story-043, this file. Next: commit → /dev-story Story 043. PAT rotation still unconfirmed.
