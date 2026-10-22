@@ -1,7 +1,7 @@
 # Story 001: Zone Lifecycle State Machine (CR-ZI-2, T-1 to T-7)
 
 > **Epic**: Zone Instancing
-> **Status**: Ready — written 2026-10-22
+> **Status**: Ready — written 2026-10-22; `/story-readiness` 2026-10-22: NEEDS WORK (open decisions, T-4 mechanism, TR-ID) → decisions recorded → Ready
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-19
@@ -33,13 +33,13 @@
 - [ ] **States**: Loading → Active → Draining → Closed (terminal). `ZoneState.Empty` in `src/Foundation/Networking/ZoneState.cs` is renamed `Loading` (same value 0; not on the wire or persisted). Draining never returns to Active; Closed never leaves.
 - [ ] **T-2 / T-3**: `MarkActive` moves Loading → Active; an init failure (bounds, missing data) or `ZONE_LOAD_TIMEOUT_SECONDS × TICK_RATE_HZ` ticks in Loading moves Loading → Closed.
 - [ ] **T-7 (AC-ZI-21)**: with `ZONE_IDLE_CLOSE_SECONDS = 60` (test config), when the last occupied player slot is released and the tick counter advances `60 × TICK_RATE_HZ` ticks with no slot allocated, Active → Closed fires exactly once at that tick; a slot allocated one tick before expiry cancels it and the zone stays Active; a zone that reaches Active with no slot allocated closes after the same tick count.
-- [ ] **T-4**: a quit request in Active moves Active → Draining, cancels the idle timer and starts a `ZONE_DRAIN_GRACE_SECONDS × TICK_RATE_HZ` grace countdown; the transition is observable (event or callback) so Story 014 can broadcast `ZoneSessionEnded`.
+- [ ] **T-4**: a quit request in Active moves Active → Draining, cancels the idle timer, starts a `ZONE_DRAIN_GRACE_SECONDS × TICK_RATE_HZ` grace countdown and calls `IZoneLifecycleListener.OnDraining(serverTick)` once (Decision 3).
 - [ ] **T-5**: Draining → Closed on the tick the occupied player slot count reaches 0, or on the tick the grace expires, whichever comes first.
 - [ ] **AC-ZI-25**: a quit request on an Active zone with no occupied player slot fires T-4 and T-5 on the same tick.
 - [ ] **T-6 (AC-ZI-24, AC-ZI-26 state side)**: a fatal request, `EntityIDCounterExhausted`, a second quit request while Draining, or a quit request while Loading moves the zone to Closed on that tick.
-- [ ] **One close**: every path into Closed raises exactly one close notification carrying the transition (T-3, T-5, T-6, T-7) — the teardown (Story 012) runs once.
+- [ ] **One close**: every path into Closed calls `IZoneLifecycleListener.OnClosed(ZoneCloseTransition, serverTick)` exactly once with the transition (`LoadFailed = 3`, `Drained = 5`, `Emergency = 6`, `Idle = 7`); requests after Closed are no-ops. Every transition also calls `INetworkTestObserver.OnZoneStateTransitioned(zoneId, from, to)` when an observer is supplied (development builds).
 - [ ] **Join gate**: the state machine answers "accepts players" true only in Active.
-- [ ] The old population-driven behaviour is gone: no population Draining, no `Draining → Active`, no `ReinitializeFromClosed`, no immediate `Active → Closed` on explicit disconnect. The existing tests that asserted it (`Session_ZoneStateMachine_Capacity_tests.cs`, `GhostSession_Cleanup_Crash_Dismissal_tests.cs`, `ZoneTestConfigurator`) are rewritten to the CR-ZI-2 behaviour, not deleted.
+- [ ] The old population-driven behaviour is gone: no population Draining, no `Draining → Active`, no `ReinitializeFromClosed`, no immediate `Active → Closed` on explicit disconnect. `ZoneSessionStateMachine` and `Session_ZoneStateMachine_Capacity_tests.cs` are deleted (Decision 1); test cases for behaviour that still exists are rewritten in `ZoneInstancing_Lifecycle_tests.cs`, and the dropped cases are listed in the completion notes. `GhostSession_Cleanup_Crash_Dismissal_tests.cs` loses its `EvaluateJoinAttempt` case (Decision 2); `ZoneTestConfigurator` defaults to `ZoneState.Loading`.
 
 ---
 
@@ -53,10 +53,12 @@
 - Knobs as `public const` defaults passed through constructor parameters (Networking Core Story 040 pattern), so tests set 60 s and production reads the GDD default.
 - The per-template `loadingInProgress` flag and the routing disable at T-4 are gateway-owned (epic gap 1) — not here.
 
-**Open decisions for `/story-readiness`**
+**Decisions (`/story-readiness` 2026-10-22, user approved)**
 
-1. Rewrite `ZoneSessionStateMachine` in place or add `src/ServerLogic/ZoneInstancing/ZoneLifecycle.cs` and delete the old class (and move its test-harness callers).
-2. The old class's capacity check (`EvaluateJoinAttempt`) moves to Story 002 / 009 — confirm nothing else calls it.
+1. **New class, old one deleted.** `ZoneLifecycle` in `src/ServerLogic/ZoneInstancing/`; `src/ServerLogic/Networking/ZoneSessionStateMachine/` is deleted. No production code calls the old class (only `<see cref>` doc references); its API is keyed by zone instance id and built around the removed population rules; Zone Instancing owns the lifecycle (CR-ZI-2). The doc references in `GhostCleanupSequencer`, `GhostDismissalCoordinator`, `GhostEntityTracker`, `ZoneCrashCleanupHandler`, `LastBeatServerTickTracker` and `SessionTokenStore` are repointed to `ZoneLifecycle` or reworded where the method no longer exists. Dropped test cases (population Draining, `Draining → Active`, `ReinitializeFromClosed`, `CompleteExplicitDisconnectTeardown` closing at once, `CompleteTTLExpiryTeardown`) are listed in the completion notes.
+2. **`EvaluateJoinAttempt` removed with the class.** Its only callers are tests. The capacity check is Story 002's `TryAllocatePlayer`; the ghost-counts-toward-capacity case moves to Story 002 (criterion added there). Between Story 001 and Story 002 that case has no test, and no production code depends on it.
+3. **Listener, not an event.** One consumer whose order matters (broadcast before teardown), so a direct call on an injected interface (ADR-010): `IZoneLifecycleListener` with `OnDraining(uint serverTick)` (T-4 — Story 014 broadcasts `ZoneSessionEnded(grace)`) and `OnClosed(ZoneCloseTransition transition, uint serverTick)` (T-3, T-5, T-6, T-7, exactly once — Story 014 maps it to `RequestTeardown`). `enum ZoneCloseTransition : byte { LoadFailed = 3, Drained = 5, Emergency = 6, Idle = 7 }`. The existing `INetworkTestObserver.OnZoneStateTransitioned` hook is kept for development builds.
+4. **TR-ID.** `TR-zi-002` stays an epic placeholder until the next `/architecture-review` registers the TR-zi IDs (as in the other epics).
 
 ---
 
@@ -76,7 +78,7 @@
 - **T-5 by grace** — Given Draining with 1 slot, grace 60 s; When 1200 ticks pass; Then Closed (T-5) at tick 1200.
 - **AC-ZI-25** — Given Active, 0 slots; When quit; Then T-4 and T-5 on the same tick.
 - **AC-ZI-24 / 26** — second quit while Draining → Closed (T-6) that tick; quit while Loading → Closed (T-6), never Active.
-- **One close** — every path into Closed raises the close notification once; further requests after Closed are no-ops.
+- **One close** — a listener fake records exactly one `OnClosed` per path with the right `ZoneCloseTransition` (T-3 `LoadFailed`, T-5 `Drained`, T-6 `Emergency`, T-7 `Idle`); `OnDraining` once at T-4; requests after Closed are no-ops; an observer fake sees every `from → to`.
 - **No return** — occupancy rising during Draining never re-enters Active.
 
 ---

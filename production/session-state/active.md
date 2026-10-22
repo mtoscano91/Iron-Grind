@@ -4348,3 +4348,9 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Not covered: TR-zi-001/005/018 (AC-ZI-1,2,3,16,19,20 — gateway), AC-ZI-6 (client).
 - Files: 14 story files, EPIC.md (Stories table, header, Next Step), epics/index.md row, this file.
 - Next: commit -> /story-readiness story-001 (002, 004, 006 have no dependencies). PAT rotation still unconfirmed.
+
+## Session Extract — /story-readiness zone-instancing story-001 2026-10-22
+- Verdict NEEDS WORK (2 open decisions, T-4 "event or callback" unspecified, TR-zi-002 not in registry) -> user: "Yes, draft the answers" -> "Apply all" -> Ready. QL-STORY-READY skipped (lean).
+- Decisions in Story 001: (1) new ZoneLifecycle in src/ServerLogic/ZoneInstancing/, delete ZoneSessionStateMachine + Session_ZoneStateMachine_Capacity_tests.cs (no production caller; only crefs in 6 files), rewrite surviving cases, list dropped ones; (2) EvaluateJoinAttempt removed, ghost-counts-toward-capacity AC added to Story 002; (3) IZoneLifecycleListener OnDraining / OnClosed(ZoneCloseTransition LoadFailed=3, Drained=5, Emergency=6, Idle=7) per ADR-010 direct call, observer OnZoneStateTransitioned kept; (4) TR-zi-002 stays placeholder until /architecture-review.
+- Files: story-001, story-002 (one AC), this file. Not committed.
+- Next: commit -> /dev-story story-001. PAT rotation still unconfirmed.

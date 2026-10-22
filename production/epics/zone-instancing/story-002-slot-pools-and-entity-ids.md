@@ -29,6 +29,7 @@
 
 - [ ] **Player pool**: `MAX_PLAYERS_PER_ZONE` = 50 slots with `byte` indices [0, 49]; free-list; an index is never reassigned while occupied. A slot holds `EntityID`, `CharacterID`, `AccountID`, connection id and `ZoneSessionState` (`Connected = 0`, `Disconnected_SessionActive = 1`, `Dead = 2`, `Respawning = 3`).
 - [ ] **Capacity**: every slot-holding state counts toward capacity; the check and the write are one call (`TryAllocatePlayer`) that fails at cap.
+- [ ] **Ghost counts toward capacity** (moved from the deleted `ZoneSessionStateMachine.EvaluateJoinAttempt` tests, Story 001 Decision 2): 49 `Connected` + 1 `Disconnected_SessionActive` slot → the next `TryAllocatePlayer` fails.
 - [ ] **AC-ZI-4**: with 49 of 50 slots allocated, two allocations in the same tick give exactly one success and one failure; the occupied count is 50, never 51.
 - [ ] **Mob pool**: `MAX_MOBS_PER_ZONE` = 150 slots with `ushort` indices [0, 149]; OWL index of a mob slot = `MAX_PLAYERS_PER_ZONE + mobSlot` (range [50, 199]).
 - [ ] **AC-ZI-11**: in a fresh zone, 10 entities (players or mobs, mixed) get `EntityID` 1 to 10 in order; `0` is never issued.
