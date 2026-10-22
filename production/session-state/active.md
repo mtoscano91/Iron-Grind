@@ -4413,3 +4413,10 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - GDD: design/gdd/zone-instancing.md AC-ZI-17 corrected with dated note; header history notes it (status stays Approved, no rule change). entities.yaml: no entity change. Propagation: AC-ZI-17 appears only in the GDD and Story 003 (plus session logs).
 - Files: story-003, zone-instancing.md, this file. Not committed.
 - Next: commit -> /dev-story story-003. PAT rotation still unconfirmed.
+
+## Session Extract — /dev-story 2026-10-22 — Zone Instancing Story 003
+- Story: production/epics/zone-instancing/story-003-mob-slot-interface.md — mob slot interface (CR-ZI-13, EC-ZI-10, AC-ZI-17). Implemented by network-programmer; orchestrator reviewed. Not code-reviewed, not committed.
+- Created: src/ServerLogic/ZoneInstancing/{IZoneMobRoster, ZoneMobRoster}.cs, tests/EditMode/ZoneInstancing/ZoneInstancing_MobSlots_tests.cs (20 [Test]) + Unity-generated .meta files. ZoneSlotPool unchanged.
+- Agent choices (unspecified by story): interval 0 throws; roster keeps its own EntityID->slot Dictionary (pool map is private), so a mob allocated directly on the pool is "unknown" to RemoveMob; TryGetMob added to the interface; foreign-zone TryAddMob when full logs no MobSlotExhausted.
+- Tests: batch EditMode 3634 total, 3564 passed, 0 failed, 70 skipped (Npgsql); MobSlots 20/20; 0 compile errors.
+- Next: /code-review the 2 ZoneInstancing files -> /story-done story-003. PAT rotation still unconfirmed.
