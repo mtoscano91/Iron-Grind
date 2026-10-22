@@ -4370,4 +4370,11 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Verdict APPROVED WITH SUGGESTIONS (unity-specialist: no blocking; qa-tester: GAPS, none blocking). User: "fix all" -> all 6 applied.
 - Applied: Close() early return when Closed; _loadDeadlineTick readonly; class + IZoneLifecycleListener remarks (main thread, listeners must not throw, load timeout only in OnTick, late MarkActive wins); 8 tests added (Loading==0, release on grace tick, quit before idle deadline, idle/grace tick jump, backwards tick, late MarkActive pinned, OnClosed re-entry, release inside OnDraining); after-Closed warnings asserted per call; Story 014 implementation notes (tick lifecycle while Loading, observer #if at call sites, listener catches).
 - Tests: batch EditMode rerun 3550 total, 3480 passed, 0 failed, 70 skipped (Npgsql); Lifecycle fixture 54/54.
-- Not committed. Next: /story-done story-001. PAT rotation still unconfirmed.
+- Committed 06f0822.
+
+## Session Extract — /story-done 2026-10-22
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/zone-instancing/story-001-zone-lifecycle-state-machine.md — Zone lifecycle state machine (CR-ZI-2, T-1 to T-7)
+- Tech debt logged: None (4 advisory deviations recorded in the story's Completion Notes)
+- Next recommended: /story-readiness production/epics/zone-instancing/story-002-slot-pools-and-entity-ids.md (Story 002 picks up the ghost-capacity criterion)
+- PAT rotation still unconfirmed.

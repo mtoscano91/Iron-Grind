@@ -1,7 +1,7 @@
 # Story 001: Zone Lifecycle State Machine (CR-ZI-2, T-1 to T-7)
 
 > **Epic**: Zone Instancing
-> **Status**: Ready — written 2026-10-22; `/story-readiness` 2026-10-22: NEEDS WORK (open decisions, T-4 mechanism, TR-ID) → decisions recorded → Ready
+> **Status**: Complete — 2026-10-22 (`/story-done`: COMPLETE WITH NOTES). Written 2026-10-22; `/story-readiness` 2026-10-22: NEEDS WORK (open decisions, T-4 mechanism, TR-ID) → decisions recorded → Ready
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-19
@@ -88,7 +88,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/ZoneInstancing/ZoneInstancing_Lifecycle_tests.cs` — must exist and pass; the rewritten Networking Core tests pass.
 
-**Status**: [ ] Not yet created
+**Status**: [x] `tests/EditMode/ZoneInstancing/ZoneInstancing_Lifecycle_tests.cs` — 54/54 pass (batch EditMode 2026-10-22: 3550 total, 3480 passed, 0 failed, 70 skipped — Npgsql fixtures, PostgreSQL not running)
 
 ---
 
@@ -96,3 +96,17 @@
 
 - Depends on: None
 - Unlocks: Stories 012, 013, 014
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-22
+**Criteria**: 10/10 passing (none deferred)
+**Deviations** (advisory, accepted):
+- The `observer` constructor parameter exists only under `UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD` (release server builds carry no test hook); Story 014 call sites must use the same `#if`.
+- `EntityIDCounterExhausted` has no dedicated method: Story 002 routes it through `RequestFatal` (T-6, `Emergency`).
+- Slot-count changes after Closed are recorded silently (no warning); other requests after Closed log one warning each and change nothing. Public `Zone` getter added; deadlines stored as `long` ticks.
+- `TR-zi-002` is still an epic placeholder (Decision 4). Control-manifest "broadcast events are `event Action<T>`" does not apply: single ordered consumer → listener interface (Decision 3, ADR-010).
+**Dropped test cases** (behaviour removed by CR-ZI-2): population-driven Draining and `Draining → Active` (`EvaluatePlayerCountChange_*`); `ReinitializeFromClosed`; `CompleteExplicitDisconnectTeardown` closing at once (AC-NC-41); `CompleteTTLExpiryTeardown`; the `EvaluateJoinAttempt` capacity cases (AC-NC-22 / 24, EC-NET-3) and the ghost AC-GH-16 case — capacity and ghost-counts-toward-capacity move to Story 002 (no test covers them until then).
+**Test Evidence**: Logic — `tests/EditMode/ZoneInstancing/ZoneInstancing_Lifecycle_tests.cs` (54 cases); rewritten Networking Core tests pass (`NetworkingTestHarness_FaultCrashConfig_tests.cs`, `GhostSession_Cleanup_Crash_Dismissal_tests.cs`).
+**Code Review**: Complete — `/code-review` 2026-10-22 APPROVED WITH SUGGESTIONS, all 6 suggestions applied (commit `06f0822`). QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean mode).

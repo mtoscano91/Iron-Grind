@@ -75,7 +75,7 @@ Zone Instancing is the server-side runtime of one zone instance: it owns the ins
 
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
-| 001 | [Zone lifecycle state machine](story-001-zone-lifecycle-state-machine.md) | Logic | Ready | ADR-009 A1 |
+| 001 | [Zone lifecycle state machine](story-001-zone-lifecycle-state-machine.md) | Logic | Complete (2026-10-22) | ADR-009 A1 |
 | 002 | [Slot pools, EntityID minting, player roster view](story-002-slot-pools-and-entity-ids.md) | Logic | Ready | design rule, ADR-010 |
 | 003 | [Mob slot interface](story-003-mob-slot-interface.md) | Logic | Ready | ADR-010 |
 | 004 | [ZoneDefinition, ZoneSceneRegistry, bounds validation](story-004-zone-definition-and-bounds-validation.md) | Integration | Ready | ADR-009 |
