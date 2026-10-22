@@ -1,16 +1,16 @@
 # Story 003: Mob Slot Interface for Mob Spawning (CR-ZI-13)
 
 > **Epic**: Zone Instancing
-> **Status**: Ready — written 2026-10-22
+> **Status**: Ready — written 2026-10-22; lean readiness 2026-10-22 (NEEDS WORK → fixed → Ready)
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-19
-> **Estimate**: 2 hours (provisional — confirm at `/story-readiness`)
+> **Estimate**: 3 hours (confirmed at `/story-readiness` 2026-10-22)
 
 ## Context
 
-**GDD**: `design/gdd/zone-instancing.md` — CR-ZI-13, EC-ZI-10
-**Requirement**: `TR-zi-013` *(epic placeholder)*
+**GDD**: `design/gdd/zone-instancing.md` — CR-ZI-13, EC-ZI-10, AC-ZI-17
+**Requirement**: `TR-zi-013` *(epic placeholder — not in `tr-registry.yaml`; stays a placeholder until `/architecture-review`, as in Stories 001 and 002)*
 
 **ADR Governing Implementation**: ADR-010: Event and Messaging Architecture
 **ADR Decision Summary**: Mob Spawning reaches Zone Instancing by direct calls on an injected interface; no event bus.
@@ -27,21 +27,26 @@
 
 ## Acceptance Criteria
 
-- [ ] An interface (for example `IZoneMobRoster`) with `TryAddMob(ZoneID, MobTypeID, Vector3) : EntityID`, `RemoveMob(ZoneID, EntityID)`, `GetMobCount(ZoneID) : int`, implemented over Story 002's mob pool and shared EntityID counter. The mob slot keeps `MobTypeID` and position for the snapshot (Story 007).
-- [ ] **AC-ZI-17**: with 0 mobs, 150 `TryAddMob` calls return distinct non-zero IDs and `GetMobCount` = 150; after 50 `RemoveMob`, `GetMobCount` = 100; 51 more `TryAddMob` calls … *(as the GDD states: each returns `EntityID(0)` and the count stays 100 — see open decision 1)*.
-- [ ] **EC-ZI-10**: `TryAddMob` at cap returns `EntityID(0)` without retrying; a sustained cap-full condition logs `MobSlotExhausted` at most once per zone per minute (`60 × TICK_RATE_HZ` ticks, counted from the server tick passed in).
-- [ ] `RemoveMob` with an unknown or already-removed `EntityID` is a no-op that logs a warning; a foreign `ZoneID` is rejected (log, no change).
+- [ ] Interface `IZoneMobRoster` (the GDD's `IZoneInstancing` mob API, kept as its own small interface) with `TryAddMob(ZoneID, MobTypeID, Vector3) : EntityID`, `RemoveMob(ZoneID, EntityID)`, `GetMobCount(ZoneID) : int`, implemented by class `ZoneMobRoster` in `src/ServerLogic/ZoneInstancing/` over an injected `ZoneSlotPool` (Story 002: `TryAllocateMob` / `ReleaseMob`, shared EntityID counter). `ZoneSlotPool` is not changed. `MobTypeID` is `IronGrind.LootTableSystem.MobTypeID`.
+- [ ] Each mob slot keeps its `MobTypeID` and **spawn** position in arrays inside `ZoneMobRoster`, indexed by mob slot and allocated once in the constructor; `TryGetMob(EntityID, out MobTypeID, out Vector3) : bool` reads them for Story 007. A mob's current position belongs to Enemy AI / Movement; Story 007 decides which one the snapshot uses.
+- [ ] **AC-ZI-17** (corrected 2026-10-22): with 0 mobs, 150 `TryAddMob` calls return distinct non-zero IDs and `GetMobCount` = 150; after 50 `RemoveMob`, `GetMobCount` = 100; of 51 more `TryAddMob` calls, the first 50 return distinct new non-zero IDs and the 51st returns `EntityID(0)`; `GetMobCount` = 150.
+- [ ] **EC-ZI-10**: `TryAddMob` at cap returns `EntityID(0)` without retrying. `MobSlotExhausted` is logged (warning) on the first cap-full failure, then again only on a cap-full failure at least `60 × TICK_RATE_HZ` = 1200 ticks after the last log (unsigned tick subtraction, wrap-safe), reading the tick from an injected `IServerTickSource`.
+- [ ] A `TryAddMob` that fails because the EntityID counter is spent (pool not full) returns `EntityID(0)` and logs no `MobSlotExhausted` (Story 002's counter alert covers it).
+- [ ] `RemoveMob` with an unknown or already-removed `EntityID` changes nothing and logs one warning per call.
+- [ ] Foreign `ZoneID`: `TryAddMob` returns `EntityID(0)` (with the pool's warning); `RemoveMob` logs one warning per call and changes nothing; `GetMobCount` returns 0 and warns once per roster (Mob Spawning polls it).
 
 ---
 
 ## Implementation Notes
 
 - The `Mob Spawning` → `CancelAllSpawnTimers(ZoneID)` direction belongs to Story 012 (teardown step 1).
-- The pool tracks the current server tick for the once-per-minute log through the call (or an injected `IServerTickSource`), not wall-clock time.
+- Constructor: `ZoneMobRoster(ZoneSlotPool pool, IServerTickSource ticks, uint exhaustedLogIntervalTicks = MOB_SLOT_EXHAUSTED_LOG_INTERVAL_TICKS)` with `public const uint MOB_SLOT_EXHAUSTED_LOG_INTERVAL_TICKS = 1200` (60 s × 20 Hz). The tick comes from `IServerTickSource`, never wall-clock time. To tell a full pool from a spent counter after a failed `TryAllocateMob`, compare `pool.OccupiedMobCount` with `pool.MaxMobs`.
 
-**Open decisions for `/story-readiness`**
+**Decisions at `/story-readiness` 2026-10-22**
 
-1. **AC-ZI-17 arithmetic.** After removing 50 of 150 there are 50 free slots, so 51 more `TryAddMob` calls give 50 successes and one `EntityID(0)`, ending at 150 — not "each returns `EntityID(0)` and the count stays 100". The GDD AC is internally inconsistent; readiness picks the intended assertion (likely: 50 succeed, the 51st returns `EntityID(0)`, count 150) and records the GDD correction.
+1. **AC-ZI-17 arithmetic.** After removing 50 of 150 there are 50 free slots, so the GDD's "each returns `EntityID(0)` and the count stays 100" cannot happen. Intended assertion: 50 succeed, the 51st returns `EntityID(0)`, count 150. GDD AC-ZI-17 corrected the same day.
+2. **Names and storage.** `IZoneMobRoster` / `ZoneMobRoster` wrap Story 002's pool; type and spawn position live in the roster, not the pool.
+3. **Tick source.** Injected `IServerTickSource` (as Story 002), because `TryAddMob` carries no tick.
 
 ---
 
@@ -54,10 +59,20 @@
 
 ## QA Test Cases
 
-- **AC-ZI-17** — per the assertion fixed at readiness.
+- **AC-ZI-17** — Given 0 mobs; When 150 adds, 50 removes, 51 adds; Then 150 distinct non-zero IDs, count 100 after the removes, 50 new distinct non-zero IDs then one `EntityID(0)`, count 150.
 - **Cap** — Given 150 mobs; When `TryAddMob`; Then `EntityID(0)`, count 150.
 - **Log rate** — Given cap full; When `TryAddMob` is called every tick for 2401 ticks; Then `MobSlotExhausted` logged 3 times (ticks 0, 1200, 2400).
 - **Unknown remove** — `RemoveMob` of an unknown id → count unchanged, warning logged.
+- **Stored data** — `TryAddMob(zone, type, pos)` then `TryGetMob(id)` → same type and position; after `RemoveMob`, `TryGetMob` false.
+- **Spent counter** — pool with `firstEntityId = uint.MaxValue`: first add succeeds, second returns `EntityID(0)` with the counter alert and no `MobSlotExhausted`.
+- **Foreign zone** — `TryAddMob` → `EntityID(0)` + one warning; `RemoveMob` → one warning; `GetMobCount` twice → 0, one warning.
+
+---
+
+## Files
+
+- New: `src/ServerLogic/ZoneInstancing/IZoneMobRoster.cs`, `ZoneMobRoster.cs`
+- New: `tests/EditMode/ZoneInstancing/ZoneInstancing_MobSlots_tests.cs`
 
 ---
 

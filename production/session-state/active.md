@@ -4406,3 +4406,10 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - EPIC.md row 002 Complete; Next Step points to Story 003.
 - Next recommended: /story-readiness production/epics/zone-instancing/story-003-mob-slot-interface.md (depends only on 002); 004 and 006 have no dependencies.
 - PAT rotation still unconfirmed.
+
+## Session Extract — /story-readiness zone-instancing story-003 2026-10-22
+- Verdict NEEDS WORK (5 gaps) -> user: "yes, apply all" -> Ready. QL-STORY-READY skipped (lean).
+- Fixes in Story 003: estimate 3 h; TR-zi-013 stays placeholder; IZoneMobRoster + ZoneMobRoster over injected ZoneSlotPool (pool unchanged), MobTypeID (LootTableSystem) + spawn position arrays in the roster, TryGetMob for Story 007; injected IServerTickSource; MobSlotExhausted on first cap-full failure then >= 1200 ticks after the last log (wrap-safe), none for a spent counter; RemoveMob unknown/foreign one warning per call; GetMobCount foreign -> 0, warn once; AC-ZI-17 corrected (50 succeed, 51st EntityID(0), count 150); 3 QA cases + Files section; Decisions block replaces open decision.
+- GDD: design/gdd/zone-instancing.md AC-ZI-17 corrected with dated note; header history notes it (status stays Approved, no rule change). entities.yaml: no entity change. Propagation: AC-ZI-17 appears only in the GDD and Story 003 (plus session logs).
+- Files: story-003, zone-instancing.md, this file. Not committed.
+- Next: commit -> /dev-story story-003. PAT rotation still unconfirmed.

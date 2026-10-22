@@ -1,6 +1,6 @@
 # Zone Instancing
 
-> **Status**: Approved 2026-10-22 (lean re-review #2 fixes accepted by user, no third pass; history: revised 2026-10-22: lifecycle reconciliation with `networking-session.md` ST-NET-2; lean re-review 2026-10-22 NEEDS REVISION — ghost teardown save, empty drain, Draining entry check, ACs 25–27 — fixed the same day; lean re-review #2 2026-10-22 NEEDS REVISION — teardown ghost no longer told `GhostDeath`, step 4/5 ordering, fragment count — fixed the same day; previously Approved, lean re-review 2026-05-30)
+> **Status**: Approved 2026-10-22 (lean re-review #2 fixes accepted by user, no third pass; history: revised 2026-10-22: lifecycle reconciliation with `networking-session.md` ST-NET-2; lean re-review 2026-10-22 NEEDS REVISION — ghost teardown save, empty drain, Draining entry check, ACs 25–27 — fixed the same day; lean re-review #2 2026-10-22 NEEDS REVISION — teardown ghost no longer told `GhostDeath`, step 4/5 ordering, fragment count — fixed the same day; AC-ZI-17 arithmetic corrected 2026-10-22 at Story 003 readiness, no rule change; previously Approved, lean re-review 2026-05-30)
 > **Author**: Manuel Toscano + agents
 > **Last Updated**: 2026-10-22
 > **Implements Pillar**: Social Gravity (primary — instanced shared zones are the social world), Earned Power (zone tiers gate content progression)
@@ -481,7 +481,7 @@ All Logic criteria are unit-testable without a running server. Integration crite
 
 **AC-ZI-16 (Logic)** — Given a server process that creates and closes 100 zone instances sequentially, When each `ZoneID` is recorded at allocation time, Then all 100 values are distinct; none equals `0`; none is reused after its zone enters Closed.
 
-**AC-ZI-17 (Logic)** — Given a zone with 0 mobs, When `TryAddMob` is called 150 times, Then each call returns a distinct non-zero `EntityID` and `GetMobCount` returns 150. When `RemoveMob` is called for 50 entities, Then `GetMobCount` returns 100. When `TryAddMob` is called 51 more times, Then each returns `EntityID(0)` and `GetMobCount` remains 100.
+**AC-ZI-17 (Logic)** — Given a zone with 0 mobs, When `TryAddMob` is called 150 times, Then each call returns a distinct non-zero `EntityID` and `GetMobCount` returns 150. When `RemoveMob` is called for 50 entities, Then `GetMobCount` returns 100. When `TryAddMob` is called 51 more times, Then the first 50 return distinct new non-zero `EntityID`s and the 51st returns `EntityID(0)`; `GetMobCount` returns 150. *(Corrected 2026-10-22 at Story 003 readiness: after 50 removals 50 slots are free, so "each returns `EntityID(0)`, count remains 100" could not hold.)*
 
 **AC-ZI-18 (Logic)** — Given a zone whose `ZoneDefinition` has no town respawn point authored **but has valid walkable bounds** (the typical under-authored zone that passed loading validation), When `GetTownRespawnPoint(ZoneID)` is called, Then it returns the bounds centroid `Vector3` (computed as `(boundsMin + boundsMax) * 0.5f`); a `TownRespawnPointNotAuthored` **warning** (not critical alert) is logged; `Vector3.zero` is NOT returned; no exception is thrown.
 
