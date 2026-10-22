@@ -4378,3 +4378,9 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: None (4 advisory deviations recorded in the story's Completion Notes)
 - Next recommended: /story-readiness production/epics/zone-instancing/story-002-slot-pools-and-entity-ids.md (Story 002 picks up the ghost-capacity criterion)
 - PAT rotation still unconfirmed.
+
+## Session Extract — /story-readiness zone-instancing story-002 2026-10-22
+- Verdict NEEDS WORK (4 gaps) -> user: "yes, draft the fixes" -> "yes, apply all" -> Ready. QL-STORY-READY skipped (lean).
+- Fixes in Story 002: estimate 6 h confirmed; TR-zi-003/004/015 stay placeholders until /architecture-review (as Story 001 Decision 4); API pinned — ZoneSlotPool with TryAllocatePlayer(ZoneID, CharacterID, AccountID, uint clientId, out byte, out EntityID), ReleasePlayer(EntityID), TryGetPlayerSlot, SetSessionState, TryAllocateMob / ReleaseMob (Story 003 wraps), counts; ZoneSessionState new byte enum in src/ServerLogic/ZoneInstancing (separate from Networking.SessionState); lifecycle seam — injected IServerTickSource + new IZoneSlotPoolListener (OnOccupiedPlayerSlotsChanged(int, uint tick), OnEntityIDCounterExhausted(uint tick)), Story 014 wires to ZoneLifecycle / RequestTeardown(Fatal); 4 QA cases + Files section.
+- Files: story-002, this file. Not committed.
+- Next: commit -> /dev-story story-002. PAT rotation still unconfirmed.
