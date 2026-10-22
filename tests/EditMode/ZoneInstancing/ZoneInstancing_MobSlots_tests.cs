@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using IronGrind.CharacterPersistence;
 using IronGrind.CharacterStats;
+using IronGrind.Currency;
 using IronGrind.LootTableSystem;
 using IronGrind.Networking;
 using IronGrind.ServerLogic.ZoneInstancing;
@@ -21,7 +22,10 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
     {
         private const uint ZONE_RAW = 7u;
         private const uint FOREIGN_ZONE_RAW = 8u;
-        private static readonly Regex FOREIGN_ZONE_LOG = new Regex("foreign zone");
+        private static readonly Regex POOL_FOREIGN_ADD_LOG = new Regex("TryAllocateMob rejected: foreign zone");
+        private static readonly Regex REMOVE_FOREIGN_LOG = new Regex("RemoveMob rejected: foreign zone");
+        private static readonly Regex COUNT_FOREIGN_LOG = new Regex("GetMobCount rejected: foreign zone");
+        private static readonly Regex NOT_IN_POOL_LOG = new Regex("was not held by the pool");
         private static readonly Regex EXHAUSTED_LOG = new Regex("MobSlotExhausted");
         private static readonly Regex COUNTER_LOG = new Regex("EntityIDCounterExhausted");
         private static readonly Regex UNKNOWN_LOG = new Regex("unknown or already removed");
@@ -148,6 +152,7 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
             LogAssert.Expect(LogType.Warning, EXHAUSTED_LOG);
             Assert.AreEqual(EntityID.Invalid, Add(roster));
             Assert.AreEqual(150, roster.GetMobCount(Zone));
+            LogAssert.NoUnexpectedReceived();
         }
 
         [Test]
@@ -162,6 +167,7 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
             roster.RemoveMob(Zone, ids[0]);
             Assert.IsFalse(Add(roster).Equals(EntityID.Invalid));
             Assert.AreEqual(2, roster.GetMobCount(Zone));
+            LogAssert.NoUnexpectedReceived();
         }
 
         // ----- Log rate -------------------------------------------------------------------------
@@ -224,6 +230,32 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
             LogAssert.NoUnexpectedReceived();
         }
 
+        [Test]
+        public void LogRate_RemoveAndAddBetweenCapHits_DoesNotResetTimer()
+        {
+            ZoneMobRoster roster = CreateRoster(CreatePool(maxMobs: 1));
+            EntityID first = Add(roster);
+
+            LogAssert.Expect(LogType.Warning, EXHAUSTED_LOG);
+            _ticks.Tick = 0u;
+            Assert.AreEqual(EntityID.Invalid, Add(roster));
+
+            _ticks.Tick = 400u;
+            roster.RemoveMob(Zone, first);
+            Assert.IsFalse(Add(roster).Equals(EntityID.Invalid));
+
+            // Cap hit again within the interval: silent.
+            _ticks.Tick = 500u;
+            Assert.AreEqual(EntityID.Invalid, Add(roster));
+
+            // 1200 ticks after the last log: logs again.
+            _ticks.Tick = 1200u;
+            LogAssert.Expect(LogType.Warning, EXHAUSTED_LOG);
+            Assert.AreEqual(EntityID.Invalid, Add(roster));
+
+            LogAssert.NoUnexpectedReceived();
+        }
+
         // ----- Remove ---------------------------------------------------------------------------
 
         [Test]
@@ -252,6 +284,70 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
             LogAssert.Expect(LogType.Warning, UNKNOWN_LOG);
             roster.RemoveMob(Zone, a);
             Assert.AreEqual(1, roster.GetMobCount(Zone));
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void Remove_InvalidId_WarnsAndCountUnchanged()
+        {
+            ZoneMobRoster roster = CreateRoster(CreatePool());
+            Add(roster);
+
+            LogAssert.Expect(LogType.Warning, UNKNOWN_LOG);
+            roster.RemoveMob(Zone, EntityID.Invalid);
+
+            Assert.AreEqual(1, roster.GetMobCount(Zone));
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void Remove_LivePlayerId_WarnsAndLeavesPlayerAndMobs()
+        {
+            ZoneSlotPool pool = CreatePool();
+            ZoneMobRoster roster = CreateRoster(pool);
+            Add(roster);
+            Assert.IsTrue(pool.TryAllocatePlayer(Zone, new CharacterID(1000u), new AccountID(2000u), 3000u,
+                out _, out EntityID player));
+
+            LogAssert.Expect(LogType.Warning, UNKNOWN_LOG);
+            roster.RemoveMob(Zone, player);
+
+            Assert.AreEqual(1, roster.GetMobCount(Zone));
+            Assert.AreEqual(1, pool.OccupiedPlayerCount);
+            Assert.IsTrue(pool.TryGetPlayerSlot(player, out _));
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void Remove_MobAllocatedDirectlyOnPool_CountedButUnknownToRoster()
+        {
+            ZoneSlotPool pool = CreatePool();
+            ZoneMobRoster roster = CreateRoster(pool);
+            Assert.IsTrue(pool.TryAllocateMob(Zone, out _, out EntityID direct));
+
+            Assert.AreEqual(1, roster.GetMobCount(Zone));
+            Assert.IsFalse(roster.TryGetMob(direct, out _, out _));
+
+            LogAssert.Expect(LogType.Warning, UNKNOWN_LOG);
+            roster.RemoveMob(Zone, direct);
+
+            Assert.AreEqual(1, roster.GetMobCount(Zone));
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void Remove_MobReleasedBehindRoster_WarnsAndDropsEntry()
+        {
+            ZoneSlotPool pool = CreatePool();
+            ZoneMobRoster roster = CreateRoster(pool);
+            EntityID id = Add(roster);
+            Assert.IsTrue(pool.ReleaseMob(id));
+
+            LogAssert.Expect(LogType.Warning, NOT_IN_POOL_LOG);
+            roster.RemoveMob(Zone, id);
+
+            Assert.IsFalse(roster.TryGetMob(id, out _, out _));
+            Assert.AreEqual(0, roster.GetMobCount(Zone));
             LogAssert.NoUnexpectedReceived();
         }
 
@@ -326,7 +422,7 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
         {
             ZoneMobRoster roster = CreateRoster(CreatePool());
 
-            LogAssert.Expect(LogType.Warning, FOREIGN_ZONE_LOG);
+            LogAssert.Expect(LogType.Warning, POOL_FOREIGN_ADD_LOG);
             Assert.AreEqual(EntityID.Invalid, roster.TryAddMob(Foreign, new MobTypeID(1u), Vector3.zero));
 
             Assert.AreEqual(0, roster.GetMobCount(Zone));
@@ -339,7 +435,7 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
             ZoneMobRoster roster = CreateRoster(CreatePool(maxMobs: 1));
             Add(roster);
 
-            LogAssert.Expect(LogType.Warning, FOREIGN_ZONE_LOG);
+            LogAssert.Expect(LogType.Warning, POOL_FOREIGN_ADD_LOG);
             Assert.AreEqual(EntityID.Invalid, roster.TryAddMob(Foreign, new MobTypeID(1u), Vector3.zero));
             LogAssert.NoUnexpectedReceived();
         }
@@ -350,8 +446,8 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
             ZoneMobRoster roster = CreateRoster(CreatePool());
             EntityID id = Add(roster);
 
-            LogAssert.Expect(LogType.Warning, FOREIGN_ZONE_LOG);
-            LogAssert.Expect(LogType.Warning, FOREIGN_ZONE_LOG);
+            LogAssert.Expect(LogType.Warning, REMOVE_FOREIGN_LOG);
+            LogAssert.Expect(LogType.Warning, REMOVE_FOREIGN_LOG);
             roster.RemoveMob(Foreign, id);
             roster.RemoveMob(Foreign, id);
 
@@ -366,7 +462,7 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
             ZoneMobRoster roster = CreateRoster(CreatePool());
             Add(roster);
 
-            LogAssert.Expect(LogType.Warning, FOREIGN_ZONE_LOG);
+            LogAssert.Expect(LogType.Warning, COUNT_FOREIGN_LOG);
             Assert.AreEqual(0, roster.GetMobCount(Foreign));
             Assert.AreEqual(0, roster.GetMobCount(Foreign));
             LogAssert.NoUnexpectedReceived();

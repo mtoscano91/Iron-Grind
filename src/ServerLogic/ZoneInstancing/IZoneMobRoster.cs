@@ -8,7 +8,8 @@ namespace IronGrind.ServerLogic.ZoneInstancing
     /// <summary>
     /// The mob API of Zone Instancing used by Mob Spawning (<c>zone-instancing.md</c> CR-ZI-13, EC-ZI-10).
     /// Callers reach it by direct calls on an injected interface (ADR-010); there is no event bus.
-    /// Main thread only: every call is serialised by the caller. Each call is O(1) and allocation-free.
+    /// Main thread only: every call is serialised by the caller. Each call is O(1) and allocation-free
+    /// except on warning paths (the log message is formatted).
     /// </summary>
     public interface IZoneMobRoster
     {

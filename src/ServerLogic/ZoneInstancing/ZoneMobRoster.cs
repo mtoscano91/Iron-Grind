@@ -11,8 +11,14 @@ namespace IronGrind.ServerLogic.ZoneInstancing
     /// <summary>
     /// <see cref="IZoneMobRoster"/> over an injected <see cref="ZoneSlotPool"/> (CR-ZI-13, EC-ZI-10).
     /// Keeps each mob's type and spawn position in arrays indexed by mob slot, allocated once.
-    /// Main thread only; O(1) and allocation-free per call.
+    /// Main thread only; O(1) and allocation-free per call except on warning paths.
     /// </summary>
+    /// <remarks>
+    /// The roster must be the only mob allocator of its pool. <see cref="GetMobCount"/> and the cap
+    /// check read the pool's counters, while <see cref="RemoveMob"/> and <see cref="TryGetMob"/> know
+    /// only mobs added through <see cref="TryAddMob"/>: a mob allocated directly on the pool is counted
+    /// but is unknown to the roster.
+    /// </remarks>
     public sealed class ZoneMobRoster : IZoneMobRoster
     {
         /// <summary>Minimum ticks between <c>MobSlotExhausted</c> warnings: 60 s x 20 Hz.</summary>
@@ -100,7 +106,12 @@ namespace IronGrind.ServerLogic.ZoneInstancing
                 return;
             }
 
-            _pool.ReleaseMob(id);
+            if (!_pool.ReleaseMob(id))
+            {
+                // Only possible if the pool was changed behind the roster; drop the stale entry anyway.
+                Debug.LogWarning($"{LOG_PREFIX} RemoveMob: {id} was not held by the pool; roster entry dropped.");
+            }
+
             _types[slot] = default;
             _positions[slot] = Vector3.zero;
             _slots.Remove(id);

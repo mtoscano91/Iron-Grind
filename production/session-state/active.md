@@ -4420,3 +4420,9 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Agent choices (unspecified by story): interval 0 throws; roster keeps its own EntityID->slot Dictionary (pool map is private), so a mob allocated directly on the pool is "unknown" to RemoveMob; TryGetMob added to the interface; foreign-zone TryAddMob when full logs no MobSlotExhausted.
 - Tests: batch EditMode 3634 total, 3564 passed, 0 failed, 70 skipped (Npgsql); MobSlots 20/20; 0 compile errors.
 - Next: /code-review the 2 ZoneInstancing files -> /story-done story-003. PAT rotation still unconfirmed.
+
+## Session Extract — /code-review ZoneMobRoster 2026-10-22 (Zone Instancing Story 003)
+- Verdict APPROVED WITH SUGGESTIONS (unity-specialist: CLEAN; qa-tester: TESTABLE, none blocking). User: "fix all" -> all 8 applied by the main session.
+- Applied: RemoveMob warns when pool.ReleaseMob returns false and still drops the roster entry; docs "allocation-free except on warning paths"; class remarks — roster must be the pool's only mob allocator; tests — NoUnexpectedReceived on both cap tests, method-specific foreign-zone regexes (pool TryAllocateMob / RemoveMob / GetMobCount), new: RemoveMob of EntityID.Invalid, of a live player id, of a mob allocated directly on the pool, of a mob released behind the roster, and timer not reset by remove/add between cap hits.
+- Tests: batch EditMode 3639 total, 3569 passed, 0 failed, 70 skipped (Npgsql); MobSlots 25/25; 0 compile errors.
+- Next: commit -> /story-done story-003. PAT rotation still unconfirmed.
