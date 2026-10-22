@@ -1,5 +1,12 @@
 # Zone Instancing — Design Review Log
 
+## Review — 2026-10-22 — Verdict: NEEDS REVISION (fixed same session)
+Scope signal: XL
+Specialists: None (lean mode — single-session analysis)
+Blocking items: 1 | Recommended: 3
+Summary: Lean re-review of the lifecycle reconciliation (`6153908`): CR-ZI-2, T-1..T-7, ST-NET-2 occupancy table, knobs and registry consistent; `ZONE_CLOSE_GRACE_PERIOD_SECONDS` fully retired. Blocker: a ghost slot was saved twice at teardown with conflicting HP — CR-ZI-12 step 2 `SaveSession(ZoneClosed)` (live HP) plus step 3 "normal TTL expiry" (CR-NET-6.5 write), against CGS-3 (ghost-period damage never persisted). Fixed (user decision): step 2 skips ghosts; step 3 applies the CGS-3 snapshot as the ghost's only save, no `GhostExpiredEvent` / `PlayerLeftZone`; propagated to networking-session.md, networking-ghost-character-state.md (CGS-4 note), character-persistence.md (save-trigger row). Recommended items fixed: T-5 fires on the T-4 tick when no slot is occupied; CR-ZI-8 step 4 requires Active (a load completing after T-4 gets `ZoneDoesNotExist`); T-6 from Loading clears `loadingInProgress`; AC-ZI-23 revised, AC-ZI-25..27 added.
+Prior verdict resolved: Yes — APPROVED 2026-05-30 (this pass reviews the 2026-10-22 revision)
+
 ## Review — 2026-05-30 — Verdict: APPROVED
 Scope signal: XL
 Specialists: None (lean mode — single-session analysis)

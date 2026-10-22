@@ -174,6 +174,7 @@ All saves are event-driven. There is no periodic or heartbeat save.
 | Session TTL expiry | `SaveSession(SessionTTLExpiry)` | 300s after disconnect (CR-NET-2) |
 | Zone teardown — alive slot | `SaveSession(ZoneClosed)` | Zone instance entering Closed state; per-slot (CR-ZI-12 step 2) |
 | Zone teardown — Dead/Respawning slot | `SaveSession(ZoneClosed, hpOverride: 0f)` | Same trigger; slot in `Dead` or `Respawning` state must persist HP=0 (CR-ZI-12 step 2) |
+| Zone teardown — ghost slot (`Disconnected_SessionActive`) | No `SaveSession` call — the ghost handler applies the pre-disconnect snapshot (`networking-ghost-character-state.md` CGS-3 WAL entry, CGS-4 step 1) | Same trigger; one write per ghost, same state as a TTL expiry (CR-ZI-12 step 3; added 2026-10-22) |
 
 Consecutive level-ups within a single tick: one atomic write for the final state after all levels are granted. No intermediate writes.
 

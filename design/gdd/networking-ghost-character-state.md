@@ -143,6 +143,12 @@ If a crash occurs between steps 1 and 3, character state is durable. Recovery
 on server restart: the session is already `Disconnected_SessionExpired` or
 recoverable from the persistence record — no action required.
 
+**Zone teardown (`zone-instancing.md` CR-ZI-12 step 3):** when a zone closes
+with ghosts still holding slots, each ghost runs step 1 (apply the WAL entry —
+its only teardown save; Zone Instancing makes no `SaveSession` call for it) and
+the session transition of step 2. Step 3's `GhostExpiredEvent` is not emitted —
+the zone is closing and every connection is being ended. *(Added 2026-10-22.)*
+
 **HP persisted**: Pre-disconnect snapshot HP (CGS-3). Ghost-period damage is
 not persisted. The character resumes at their pre-disconnect HP on next login.
 
