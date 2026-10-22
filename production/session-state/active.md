@@ -4156,3 +4156,14 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Open (see the 2026-10-19 "what's missing" list): composition-root stories (/create-stories networking-core 042+); A1-1..A1-7 (Linux IL2CPP module not installed); ADR-007 C1 amendment; Zone Instancing/Navigation/gateway stand-ins and the CR-ZI-12 step 5 ordering; P1, P2/P5, P3, G1/G2; CP 015/016 blocked; TD-073, TD-074.
 - Untracked, not committed: bash.exe.stackdump (delete), ProjectSettings/SceneTemplateSettings.json (commit or ignore). PAT rotation still unconfirmed.
 - Next: /create-stories networking-core (composition root, manifest 2026-10-19).
+
+## Session Extract — /create-stories networking-core (composition root, Stories 042–045) 2026-10-22
+- Verdict: COMPLETE — 4 stories written (2 Logic, 2 Integration), all Ready, Manifest Version 2026-10-19; chain 042 → 043 → 044 → 045. QL-STORY-READY skipped (lean); QA test cases written at creation.
+  - 042 lifecycle shell, seams, teardown 1–8, exit codes, OnWantsToQuit, TeardownNow, stand-ins (10 h)
+  - 043 startup S0–S10, S-fail, quit during startup, ZoneStartupArgs, ZoneServerConfig (10 h)
+  - 044 real S3/S4/S5/S7: pool + IRONGRIND_PG_PASSWORD + warm-up, object graph, listener, Dispose; Database-category S4 test; source search with RelayVerificationHost exemption (12 h)
+  - 045 ZoneServerHost, Unity/NGO/scene seams, ZoneServer.unity + ZoneTemplate_Empty.unity, Build Profile ZoneServer, -teardownAfterSeconds (dev only); A1-3, A1-6, first A1-4, ADR-015 V4 on Windows Dedicated Server; A1-5, V6 in the Editor; A1-1/2/7 + final A1-4 carried to the Linux IL2CPP gate (14 h)
+- User decisions: S2 static data through IZoneStaticDataLoader stand-in, S5 builds networking + persistence only (game systems/loaders wired later in their epics); server config = JSON file via -serverConfig, JsonUtility, defaults + validation at S0, no password in it.
+- Findings: no production loaders for the static data; IConnectionCharacterDirectory / IConnectionActivitySink have no production implementation (stand-ins → requests dropped as NoCharacter); no IZoneSimulationStep production class (composition supplies an empty ordered list); no zone scene exists.
+- EPIC.md: 41/45, rows 042–045, composition-root gap marked written, new Known Gap for the stand-ins.
+- Uncommitted: story-042..045, networking-core/EPIC.md, this file. Next: commit → /story-readiness story-042. PAT rotation still unconfirmed.
