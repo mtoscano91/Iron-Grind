@@ -2,7 +2,7 @@
 
 > **Status**: Approved (Pass 2 lean, 2026-05-14)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-10-09 (TD-046 revision: CR-NET-5.2 — a duplicate `requestId` is dropped with no response; CR-NET-5.3 step 2 — validation includes the scroll consumption, so the step 3 acknowledgment follows it; wording aligned with networking-wire-protocol.md, no other rule change); 2026-10-09 (TD-046: CR-NET-5.2 `EnhancementAttemptRequest` and the CR-NET-5.3 step 3 `EnhancementRequestReceived` body are slot based, following networking-wire-protocol.md; no rule change); 2026-10-09 (note on Cross-Cutting Constraint 3: rate limits are evaluated per dispatch tick, ADR-014; wording only, no rule change, no review pass); 2026-05-29
+> **Last Updated**: 2026-10-22 (knob row: `ZONE_CLOSE_GRACE_PERIOD_SECONDS` replaced by `ZONE_DRAIN_GRACE_SECONDS`, lifecycle reconciliation with zone-instancing.md CR-ZI-2; no rule change in this document); 2026-10-09 (TD-046 revision: CR-NET-5.2 — a duplicate `requestId` is dropped with no response; CR-NET-5.3 step 2 — validation includes the scroll consumption, so the step 3 acknowledgment follows it; wording aligned with networking-wire-protocol.md, no other rule change); 2026-10-09 (TD-046: CR-NET-5.2 `EnhancementAttemptRequest` and the CR-NET-5.3 step 3 `EnhancementRequestReceived` body are slot based, following networking-wire-protocol.md; no rule change); 2026-10-09 (note on Cross-Cutting Constraint 3: rate limits are evaluated per dispatch tick, ADR-014; wording only, no rule change, no review pass); 2026-05-29
 > **Implements Pillar**: Pillar 3 — Social Gravity (multiplayer world exists); all pillars require server authority
 
 ## Sub-Documents
@@ -415,7 +415,7 @@ None. Networking Core has no player-facing UI. Connection status display is owne
 |------|---------|------------|-----------------|
 | `TICK_RATE_HZ` | 20 | [10, 30] | Server tick frequency. Changing requires re-validating auto-attack cadence (1.0s = 20 ticks), all tick-expressed timeouts, and `networking-wire-protocol.md` F-NET-6. **Do not change without a full cross-system audit.** |
 | `MAX_PLAYERS_PER_ZONE` | 50 | [10, 100] | Zone instance capacity. Below 10: social gravity diminishes. Above 50: server tick budget and bandwidth must be re-validated (F-NET-2 in `networking-wire-protocol.md`); Zone Instancing mob density must also be re-authored. |
-| `ZONE_CLOSE_GRACE_PERIOD_SECONDS` | 30 | [10, 120] | See `networking-session.md`. |
+| `ZONE_DRAIN_GRACE_SECONDS` | 60 | [30, 300] | See `zone-instancing.md` (CR-ZI-2 T-4/T-5). Replaces `ZONE_CLOSE_GRACE_PERIOD_SECONDS` (30, [10, 120]), retired 2026-10-22. |
 | `ALLOC_FREE_POINT_RATE_LIMIT_MS` | 200 | [100, 1000] | Minimum milliseconds between `AllocateFreePoint` RPCs per entity. Below 100ms: an auto-attack beat could overlap with an open stat transaction. Above 500ms: the stat allocation UI becomes noticeably sluggish. |
 | `MAX_COMPENSATABLE_OWL_MS` | 120 | [60, 200] | Maximum one-way latency (ms) at which CR-NET-8 applies OWL compensation. Above this (adjusted for hysteresis band) compensation is suspended. Raising helps extreme-latency players but risks compensating artificially delayed inputs. |
 | `OWL_HYSTERESIS_BAND_MS` | 15 | [5, 30] | Hysteresis band applied to the OWL threshold. Entry into uncompensated mode: OWL > `MAX_COMPENSATABLE_OWL_MS + OWL_HYSTERESIS_BAND_MS`. Exit: OWL < `MAX_COMPENSATABLE_OWL_MS - OWL_HYSTERESIS_BAND_MS`. Prevents rapid oscillation of `ConnectionQualityUpdate`. |

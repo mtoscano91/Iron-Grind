@@ -1,8 +1,8 @@
 # Zone Instancing
 
-> **Status**: Approved (lean re-review 2026-05-30)
+> **Status**: In Review (revised 2026-10-22: lifecycle reconciliation with `networking-session.md` ST-NET-2 — lean re-review pending; previously Approved, lean re-review 2026-05-30)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-05-30
+> **Last Updated**: 2026-10-22
 > **Implements Pillar**: Social Gravity (primary — instanced shared zones are the social world), Earned Power (zone tiers gate content progression)
 
 ## Overview
@@ -41,6 +41,8 @@ Zone Instancing distinguishes two zone identifier types:
 **CR-ZI-2 — Zone Lifecycle**
 
 Zone instances transition through four states: Loading → Active → Draining → Closed (terminal). See States and Transitions table for full trigger and side-effect specification.
+
+**This is the only zone state machine.** `networking-session.md` ST-NET-2 (Zone Occupancy Rules) defines no zone states of its own: it lists the player session events (join, disconnect, ghost TTL expiry, reconnect) and which CR-ZI-2 transition or timer each one drives. A zone whose only remaining sessions are ghosts (`Disconnected_SessionActive`) stays **Active** — the tick loop runs in Active either way. **Draining** means only an operator drain or a process quit request (T-4); it never returns to Active. One zone process hosts one zone instance (ADR-007, ADR-009), so Closed is terminal and the process exits after teardown. *(Reconciled 2026-10-22, user decisions: CR-ZI-2 owns the lifecycle; empty zones close after `ZONE_IDLE_CLOSE_SECONDS`; one grace constant `ZONE_DRAIN_GRACE_SECONDS`; a quit request starts T-4.)*
 
 ---
 
@@ -172,13 +174,13 @@ When a zone enters `Closed` state, the following steps execute in order before a
    - Otherwise: call `SaveSession(id, ZoneClosed, ct)`.
    *(HP-override overload defined in `character-persistence.md` CR-CP-1 — OQ-ZI-6 resolved 2026-05-29.)*
 3. Ghost session handler notified for each `Disconnected_SessionActive` slot — must cache the `ZoneID` before the slot is freed (required for `ZoneSessionEnded(GhostDeath=3)` delivery on future reconnect — `networking-ghost-session.md` CR-GH-6).
-4. `ZoneSessionEnded(ZoneClosed=0, gracePeriodSeconds=ZONE_DRAIN_GRACE_SECONDS)` sent to all `Connected` clients. **Step 4 must execute before step 3's ghost handler notification triggers any outbound message to the ghost client's queued connection**, to prevent ghost-session messages racing with `ZoneSessionEnded` on the same connection.
+4. `ZoneSessionEnded(ZoneClosed=0, gracePeriodSeconds=0)` sent to every `Connected` client that did not already receive a `ZoneSessionEnded` at T-4 (T-6, or a client still connected when T-5 fires on grace expiry received it at T-4 and gets no second one); then every remaining transport connection is closed by the server without waiting for graceful logout, and those sessions enter `Disconnected_SessionExpired` (no resume — the zone is closing). **Step 4 must execute before step 3's ghost handler notification triggers any outbound message to the ghost client's queued connection**, to prevent ghost-session messages racing with `ZoneSessionEnded` on the same connection.
 5. `NotifyZoneExit(PartyID, EntityID)` called on Party System for every occupied player slot — ensures no `OutOfZone` state is left stale. **SaveSession (step 2) must complete (or be committed to the write queue with guaranteed ordering) before `NotifyZoneExit` fires**, to prevent the Party System from querying stale character state.
 6. All player slots zeroed and returned to the free-list.
 7. All mob slots zeroed and returned to the free-list.
 8. `ZoneID` removed from routing table and retired. Never reallocated.
 
-**Draining maximum duration:** A Draining zone waits for the last player session to be released. The maximum wait is ≥ `SESSION_TTL_SECONDS` (300s) — a ghost session can hold a slot for up to that duration. T-5 fires when the last session is released (including TTL expiry), not only on voluntary disconnect.
+**Draining maximum duration:** `ZONE_DRAIN_GRACE_SECONDS`. T-5 fires at the earlier of (a) the last player session released (voluntary disconnect or `SESSION_TTL_SECONDS` expiry) and (b) the grace window expiring. At (b), ghost sessions still holding slots have their TTL aborted: step 3 hands them to the ghost session handler as a normal TTL expiry (EC-NET-1 death rules apply; `wasKilledWhileDisconnected` is set correctly in the persisted record), and step 4 force-closes any client still connected. A ghost's `SESSION_TTL_SECONDS` (300s) never extends a drain. *(Revised 2026-10-22 — the earlier "≥ `SESSION_TTL_SECONDS`" wait contradicted the forced teardown in `ZONE_DRAIN_GRACE_SECONDS`.)*
 
 ---
 
@@ -237,8 +239,8 @@ For the disconnection case (client's TCP connection drops rather than reconnects
 | State | Description | Accepts players | Mobs spawning |
 |-------|-------------|----------------|---------------|
 | **Loading** | Initializing: ZoneDefinition loaded, bounds validated, slot arrays zeroed, respawn point cached, mob spawner primed | No | No |
-| **Active** | Normal gameplay | Yes | Yes |
-| **Draining** | No new player assignments; existing sessions continue until released | No | No |
+| **Active** | Normal gameplay. Includes zero `Connected` players with ghosts remaining (tick loop continues). Zero sessions of any kind runs the idle timer (T-7) | Yes | Yes |
+| **Draining** | Entered only through T-4. No new player assignments; existing sessions continue until released or `ZONE_DRAIN_GRACE_SECONDS` expires (T-5). Never returns to Active | No | No |
 | **Closed** | Terminal. All resources released. ZoneID retired. | — | — |
 
 | # | From | To | Trigger | Side Effects |
@@ -246,9 +248,10 @@ For the disconnection case (client's TCP connection drops rather than reconnects
 | T-1 | (new) | Loading | Server allocates ZoneID for a template | Slot arrays zeroed; ZoneDefinition loaded; bounds validated; respawn point cached; `loadingInProgress` flag set for template |
 | T-2 | Loading | Active | All initialization complete | Zone added to routing table; mob spawner starts; `loadingInProgress` flag cleared |
 | T-3 | Loading | Closed | Init failure (bounds error, data missing, or `ZONE_LOAD_TIMEOUT_SECONDS` elapsed) | ZoneID retired; `ZoneDefinitionLoadFailed` critical alert logged; `loadingInProgress` flag cleared; any coalesced-waiting clients proceed to CR-ZI-6 rule 4 to create a new instance |
-| T-4 | Active | Draining | Operator drain or server shutdown signal | New routing disabled; `ZoneSessionEnded(ZoneClosed=0, gracePeriodSeconds=ZONE_DRAIN_GRACE_SECONDS)` broadcast to Connected clients |
-| T-5 | Draining | Closed | Last player session released (including via `SESSION_TTL_SECONDS` expiry) | Teardown sequence (CR-ZI-12) runs in full |
-| T-6 | Active | Closed | Emergency shutdown | Immediate teardown; `ZoneSessionEnded(gracePeriodSeconds=0)` to all clients |
+| T-4 | Active | Draining | Process quit request (ADR-009 Amendment 1 `Application.wantsToQuit`, e.g. SIGTERM) or operator drain | Idle timer (T-7) cancelled; grace countdown of `ZONE_DRAIN_GRACE_SECONDS` starts; `ZoneSessionEnded(ZoneClosed=0, gracePeriodSeconds=ZONE_DRAIN_GRACE_SECONDS)` broadcast to Connected clients; new routing to this instance disabled. *Routing disable and the operator drain command are gateway-owned (Blocked until the gateway ADR + epic — Zone Instancing EPIC); the zone process itself rejects new `SessionHandshake`s while Draining (`auth-wire-messages.md` re-routing).* |
+| T-5 | Draining | Closed | Last player session released (including via `SESSION_TTL_SECONDS` expiry), **or** `ZONE_DRAIN_GRACE_SECONDS` elapsed since T-4 | Teardown sequence (CR-ZI-12) runs in full; on grace expiry, step 3 expires remaining ghosts and step 4 force-closes remaining connections |
+| T-6 | Loading, Active or Draining | Closed | Emergency shutdown: a fatal error (ADR-009 A1 `RequestTeardown(Fatal)`), `EntityIDCounterExhausted`, a **second** quit request while Draining, or a quit request while Loading | Immediate teardown (CR-ZI-12; no grace); `ZoneSessionEnded(gracePeriodSeconds=0)` to Connected clients not already notified at T-4 |
+| T-7 | Active | Closed | Zero player sessions of any kind (no `Connected`, no `Disconnected_SessionActive`, no allocated-but-entering slot) for `ZONE_IDLE_CLOSE_SECONDS`. The idle timer starts at T-2 if no slot is allocated, and again whenever the occupied player slot count drops to 0; any slot allocation (CR-ZI-8 step 4) cancels it. Timer and allocation both run on the main thread (Runtime Model), so they cannot race | Teardown sequence (CR-ZI-12) runs in full (no clients to notify); the process exits |
 
 **ZoneSessionState enum** (`byte`): defines the per-slot session state written at CR-ZI-8 step 5.
 
@@ -423,7 +426,8 @@ If the per-zone-instance EntityID counter approaches `uint.MaxValue` (requires ~
 | Max zone population | `MAX_PLAYERS_PER_ZONE` | 50 | [10, 100] | Hard player slot ceiling. **Cascade:** (1) Raising to 100 requires `MAX_MESSAGE_BODY_BYTES ≥ 1,002` for the CycleBroadcast packet. (2) All mob OWL compensation indices shift: mob OWL index = `MAX_PLAYERS_PER_ZONE + mob_slot_index` — `networking-owl-compensation.md` must be updated concurrently. (3) Buffer pool grows ~4× at n=100 (~300 KB/zone vs. ~76.7 KB/zone at n=50). (4) F-ZI-1 fragment count increases. Authoritative definition in `networking-wire-protocol.md`; cross-referenced here. `byte` slot index type caps effective max at 255. |
 | Max mob population | `MAX_MOBS_PER_ZONE` | 150 | [50, 500] | Hard mob slot ceiling. Drives `LastBeatServerTick[]` array size (`MAX_PLAYERS_PER_ZONE + MAX_MOBS_PER_ZONE`). Raising to 500: F-ZI-1 worst case = 44 fragments — significant mobile join latency risk. Content designers set actual density per template; this is the architecture ceiling. |
 | Zone routing density threshold | `ZONE_OPEN_THRESHOLD` | 35 | [20, 48] | Minimum player count that ALL Active same-template instances must reach before a new instance is created (fill-first routing, CR-ZI-6). Must be < `MAX_PLAYERS_PER_ZONE` by at least 2 to prevent immediate re-trigger. Lower values = earlier sharding (less social density). Higher values = denser worlds (slower shard creation at cap). Drives Social Gravity pillar delivery. |
-| Zone drain grace period | `ZONE_DRAIN_GRACE_SECONDS` | 60 | [30, 300] | Time given to Connected players after T-4 (ZoneSessionEnded broadcast) before teardown is forced. Does not prevent teardown if all sessions release before this window expires (T-5). Value is transmitted to clients in `ZoneSessionEnded.gracePeriodSeconds`. |
+| Zone drain grace period | `ZONE_DRAIN_GRACE_SECONDS` | 60 | [30, 300] | Time given to Connected players after T-4 (ZoneSessionEnded broadcast) before teardown is forced (T-5): remaining connections are force-closed and remaining ghost TTLs aborted. Does not prevent teardown if all sessions release before this window expires (T-5). Value is transmitted to clients in `ZoneSessionEnded.gracePeriodSeconds`. The only zone-close grace constant — `networking-session.md`'s `ZONE_CLOSE_GRACE_PERIOD_SECONDS` (30, [10, 120]) was retired into it 2026-10-22. **Deployment constraint:** grace + the teardown persistence drain (ADR-011 `PERSISTENCE_WATCHDOG_TICKS` duration, ADR-009 A1 Decision 3 step 5) must stay below the host's stop timeout (systemd `TimeoutStopSec`, default 90s) or the process is killed mid-drain. |
+| Zone idle close | `ZONE_IDLE_CLOSE_SECONDS` | 120 | [60, 600] | Time an Active zone may hold zero player sessions before T-7 closes it and the process exits. Also covers a freshly loaded zone whose routed player never arrives. Must be > `ZONE_ENTRY_STALL_TIMEOUT_SECONDS` so a new instance survives its first player's entry. Lower: fewer idle processes, more reloads when players leave and return. Higher: idle processes linger. |
 | Zone load timeout | `ZONE_LOAD_TIMEOUT_SECONDS` | 30 | [10, 120] | Maximum time a zone instance may remain in Loading state before T-3 abort is triggered. Prevents the per-template `loadingInProgress` coalescing flag from deadlocking routing indefinitely on asset load failure. |
 | Zone entry stall timeout | `ZONE_ENTRY_STALL_TIMEOUT_SECONDS` | 35 | [31, 60] | Server-side window for detecting a stale allocated slot when the same `CharacterID` reconnects (CR-ZI-17). Must be > `MaxZoneEntryStall` (30s) so the client's own retry logic fires before this triggers. |
 | Zone walkable bound | *(per-template, in ZoneDefinition asset)* | TBD per zone | max ±250m per axis | Hard constraint from CR-ZI-10 position encoding. Level Design authors bounds; Zone Instancing validates at Loading-phase init. Exceeding ±250m fails initialization (T-3). |
@@ -483,6 +487,14 @@ All Logic criteria are unit-testable without a running server. Integration crite
 **AC-ZI-19 (Logic)** — Given a server with exactly one Active `StartingZone` instance at exactly `ZONE_OPEN_THRESHOLD = 35` players, When a new character (no `LastZoneID`, not in a party) requests zone routing, Then routing creates a new `StartingZone` instance (transition T-1: Loading); the new player is assigned to the new instance; the existing 35-player instance receives no new assignment; the new `ZoneID` is non-zero and distinct from the existing zone's `ZoneID`.
 
 **AC-ZI-20 (Logic)** — Given a server with two Active `StartingZone` instances — instance A with 20 players and instance B with 30 players (both < `ZONE_OPEN_THRESHOLD = 35`) — When a new character (no party, no `LastZoneID`) requests zone routing, Then the character is assigned to instance B (player count 30, the highest below threshold, fill-first per CR-ZI-6 rule 3); instance A's player count is unchanged; no new zone instance is created.
+
+**AC-ZI-21 (Logic) — Idle close (T-7)** — Given `ZONE_IDLE_CLOSE_SECONDS = 60` (test config) and an Active zone with one player slot, When that last session is released (explicit disconnect) and the tick counter advances by `60 × TICK_RATE_HZ` ticks with no slot allocated, Then the zone transitions Active → Closed exactly once at that tick and CR-ZI-12 runs; and Given the same setup, When a slot is allocated one tick before expiry, Then no transition occurs and the zone stays Active. A zone that reaches Active with no slot allocated closes after the same tick count. *Advance ticks programmatically — no wall-clock wait.*
+
+**AC-ZI-22 (Logic) — Quit request drains (T-4 → T-5)** — Given an Active zone with 2 Connected players and 1 ghost, When a quit request arrives, Then the zone transitions Active → Draining; `ZoneSessionEnded(ZoneClosed=0, gracePeriodSeconds=ZONE_DRAIN_GRACE_SECONDS)` is captured for both Connected clients and not for the ghost; a new `SessionHandshake` is not assigned a slot. When all 3 sessions are then released before the grace expires, Then T-5 fires on the tick the last one is released, not at grace expiry.
+
+**AC-ZI-23 (Logic) — Grace expiry forces teardown** — Given a Draining zone with 1 Connected player and 1 ghost whose `SESSION_TTL_SECONDS` has 250s left, When the tick counter advances by `ZONE_DRAIN_GRACE_SECONDS × TICK_RATE_HZ` ticks from T-4, Then T-5 fires at that tick; the ghost is handed to the ghost session handler as a TTL expiry (its persisted record has `wasKilledWhileDisconnected` per EC-NET-1); the Connected client's transport is closed by the server and its session enters `Disconnected_SessionExpired`; that client receives no second `ZoneSessionEnded`.
+
+**AC-ZI-24 (Logic) — Second quit request (T-6)** — Given a Draining zone, When a second quit request arrives before the grace expires, Then the zone transitions Draining → Closed immediately via T-6; CR-ZI-12 runs in full (every occupied slot saved); no Connected client receives a second `ZoneSessionEnded`.
 
 ## Open Questions
 

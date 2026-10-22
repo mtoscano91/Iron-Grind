@@ -1,8 +1,8 @@
 # Networking Session Lifecycle
 
-> **Status**: In Review (Pass 9 lean re-review 2026-05-11 — 5 minor revisions applied)
+> **Status**: In Review (Pass 9 lean re-review 2026-05-11 — 5 minor revisions applied; revised 2026-10-22: ST-NET-2 reconciled with `zone-instancing.md` CR-ZI-2)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-05-11
+> **Last Updated**: 2026-10-22
 > **Parent**: networking-core.md
 
 ## Overview
@@ -95,32 +95,25 @@ Equipment state, active buff list, and full inventory are included in a follow-u
 
 ---
 
-**ST-NET-2 — Zone Session State Machine**
+**ST-NET-2 — Zone Occupancy Rules (drive `zone-instancing.md` CR-ZI-2)**
 
-| State | Description |
-|-------|-------------|
-| `Empty` | Zone instance exists, zero players present. Tick loop suspended. |
-| `Active` | One or more players present (Connected or Disconnected_SessionActive). Tick loop running. |
-| `Draining` | No `Connected` players remain; one or more sessions in `Disconnected_SessionActive` still have active TTLs. Tick loop continues. |
-| `Closed` | All session TTLs expired. Zone teardown eligible. Resources released. |
+*Revised 2026-10-22 (user decision): the zone lifecycle — states Loading → Active → Draining → Closed (terminal), transitions T-1..T-7 — is owned by `zone-instancing.md` CR-ZI-2. This section defines no zone states. It lists the player session events (ST-NET-1) and the CR-ZI-2 transition or timer each one drives. Removed: the `Empty` state (a loaded zone with no sessions is Active with the idle timer running), population-driven `Draining` (a zone with only ghosts is Active), `Draining → Active`, and `Closed → Empty` (one process per zone instance — ADR-007/ADR-009 — so Closed is terminal).*
 
-| From | To | Trigger | Server action |
-|------|----|---------|---------------|
-| `Empty` | `Active` | First player enters `Connected` state | Start tick loop; initialize zone-level state |
-| `Active` | `Draining` | Last remaining player enters `Disconnected_SessionActive` | Continue tick loop; monitor final session TTL |
-| `Active` | `Active` | Any player connects, reconnects, or disconnects while others remain | No zone-level state change |
-| `Active` | `Draining` | Last `Connected` player explicitly disconnects (`→ Disconnected_SessionExpired`) while one or more `Disconnected_SessionActive` sessions remain | Continue tick loop; monitor remaining session TTLs — same Draining behavior as heartbeat-timeout path |
-| `Active` | `Closed` | Last session of any kind enters `Disconnected_SessionExpired` via explicit disconnect — zero sessions remain | Stop tick loop; write final state to persistence for all sessions; release all instance resources |
-| `Draining` | `Active` | A player reconnects (reaches `Connected`) or a new player enters | Cancel Draining; zone remains Active |
-| `Draining` | `Draining` | Re-authentication attempt fails for a `Reconnecting` session; player returns to `Disconnected_SessionActive` | No zone-level state change; TTL countdown continues from original start time |
-| `Draining` | `Closed` | All remaining session TTLs expire | Stop tick loop; write zone-level state to persistence (see OQ-NET-2); release all instance resources |
-| `Closed` | `Empty` | Zone re-allocated for a new session | Reinitialize from template |
+| Zone state | Session event | Zone effect |
+|------------|---------------|-------------|
+| Active | Player slot allocated (join, or first player of a fresh instance) | Cancel the idle timer (CR-ZI-2 T-7) if running |
+| Active | Any player connects, reconnects, disconnects or becomes a ghost while at least one other session remains | None |
+| Active | Last `Connected` player enters `Disconnected_SessionActive`, or explicitly disconnects, while ghost sessions remain | None — zone stays Active, tick loop continues; ghost TTLs run (ghost entities need the tick, CR-GH-1–6) |
+| Active | Re-authentication fails for a `Reconnecting` session; player returns to `Disconnected_SessionActive` | None; TTL countdown continues from original start time |
+| Active | Last session of any kind released (explicit disconnect, `SESSION_TTL_SECONDS` expiry, `REAUTH_FAILURE_LIMIT`, `CONNECTING_TIMEOUT_SECONDS`) — zero sessions remain | Start the idle timer; after `ZONE_IDLE_CLOSE_SECONDS` with no slot allocated, T-7 Active → Closed |
+| Draining | Last session of any kind released | T-5 Draining → Closed |
+| Draining | New `SessionHandshake`, including a ghost's reconnect | Not admitted to this zone — re-routing per `auth-wire-messages.md` (the zone is no longer Active). The ghost's slot is released with its final save (CR-NET-6.5) before re-routing completes. *Re-routing to another instance is gateway-owned (Zone Instancing EPIC: Blocked until the gateway ADR).* |
 
-*Notes: Zone capacity enforcement (10–50 players) applied at `Empty`→`Active` and on each subsequent join. Full zones reject new joins with an overflow response. Teardown in `Closed` must complete any in-flight Beat resolution before stopping the tick loop.*
+*Notes: Zone capacity enforcement (10–50 players) applied on each join while Active. Full zones reject new joins with an overflow response. Teardown on any transition to `Closed` must complete any in-flight Beat resolution before stopping the tick loop (ADR-009 A1 Decision 3 step 1).*
 
-**Zone teardown enforcement:** When the zone transitions toward `Closed`, the server emits `ZoneSessionEnded` (R-OD) to all **transport-connected** clients with `gracePeriodSeconds = ZONE_CLOSE_GRACE_PERIOD_SECONDS`. Any client still transport-connected at countdown expiry is **forcibly disconnected**: the server closes the transport connection without waiting for graceful logout. Forcibly disconnected clients enter `Disconnected_SessionExpired` immediately — the zone is closing, so no session resume is possible.
+**Zone teardown enforcement:** Owned by `zone-instancing.md` CR-ZI-2 T-4/T-5/T-6 and CR-ZI-12 step 4. On T-4 the server emits `ZoneSessionEnded` (R-OD) to all **transport-connected** clients with `gracePeriodSeconds = ZONE_DRAIN_GRACE_SECONDS`. Any client still transport-connected when the grace expires is **forcibly disconnected**: the server closes the transport connection without waiting for graceful logout. Forcibly disconnected clients enter `Disconnected_SessionExpired` immediately — the zone is closing, so no session resume is possible.
 
-**Ghost sessions during zone forced-close:** Sessions in `Disconnected_SessionActive` have no transport connection and cannot receive `ZoneSessionEnded`. When `ZONE_CLOSE_GRACE_PERIOD_SECONDS` expires, all remaining ghost sessions are immediately transitioned to `Disconnected_SessionExpired` — their 5-minute TTL is aborted. Final character state is written to persistence for all sessions before teardown completes. Ghost-session state at zone-close is treated as normal TTL expiry: EC-NET-1 death rules apply, and `wasKilledWhileDisconnected` is set correctly in the persisted record.
+**Ghost sessions during zone forced-close:** Sessions in `Disconnected_SessionActive` have no transport connection and cannot receive `ZoneSessionEnded`. When `ZONE_DRAIN_GRACE_SECONDS` expires (or on T-6), all remaining ghost sessions are immediately transitioned to `Disconnected_SessionExpired` — their 5-minute TTL is aborted. Final character state is written to persistence for all sessions before teardown completes. Ghost-session state at zone-close is treated as normal TTL expiry: EC-NET-1 death rules apply, and `wasKilledWhileDisconnected` is set correctly in the persisted record.
 
 ---
 
@@ -239,7 +232,7 @@ A player in `Disconnected_SessionActive` retains their zone slot for the full se
 
 **EC-NET-4 — Zone Closes While Player is Disconnected**
 
-If the disconnected player's session TTL expires while the zone is `Draining`, the zone transitions to `Closed` and all resources (including the player's session) are released. A subsequent connection is treated as a fresh connection. Any in-progress activity (respec reservation, active combat) is not restored.
+If the zone closes while the player is disconnected — the ghost was the last session and its TTL expired (Active: T-7 after `ZONE_IDLE_CLOSE_SECONDS`; Draining: T-5), or the drain grace expired (T-5) or T-6 fired and aborted the TTL — the zone transitions to `Closed` and all resources (including the player's session) are released. A subsequent connection is treated as a fresh connection and is routed to a new or other instance (`zone-instancing.md` CR-ZI-6: an unrecognised `LastZoneID` falls through to same-template routing). Any in-progress activity (respec reservation, active combat) is not restored.
 
 ---
 
@@ -282,7 +275,7 @@ The dedup check has **no time window**: if `request.RequestID == character.LastE
 
 **EC-NET-10 — Zone Process Crash (Ungraceful Shutdown)**
 
-If the zone server process crashes without executing the ST-NET-2 graceful teardown sequence (no `ZoneSessionEnded` broadcast, no ordered `Draining → Closed` transition), recovery behavior is:
+If the zone server process crashes without executing the graceful teardown sequence (`zone-instancing.md` CR-ZI-12 / ADR-009 A1 Decision 3 — no `ZoneSessionEnded` broadcast, no ordered transition to `Closed`), recovery behavior is:
 
 1. **Sessions with completed persistence writes before the crash:** Character state is intact at the last write checkpoint. On reconnect, the server re-establishes the session from the persisted record and issues a new session token. The `ActiveSessionTokens` in-process store is cleared by the restart (EC-TOK-4 in `networking-session-token.md`) — reconnecting clients fall through to full auth.
 2. **Ghost sessions whose final-state write (CR-NET-6.5 step 3) had not completed:** The most recent successful persistence checkpoint is authoritative. Progress since that write (HP changes, XP accumulation during ghost period) is lost. `wasKilledWhileDisconnected` may not be set correctly if death occurred after the last write.
@@ -301,6 +294,7 @@ Zone crash recovery for replacement instance routing is a Zone Instancing GDD co
 | `networking-session-token.md` | Session token spec — CR-TOK-1–8 govern token generation, validation, and rotation used in all `Reconnecting` state transitions |
 | `networking-ghost-session.md` | Ghost session spec — CR-GH-1–6 govern ghost combat behavior, reward attribution, mob retarget contracts; authoritative detail for EC-NET-1 |
 | `networking-test-harness.md` | `IServerCrashInjector` required for AC-NC-16; `ITransportFaultInjector` for AC-NC-35 |
+| `zone-instancing.md` | Owns the zone lifecycle (CR-ZI-2, T-1..T-7) and teardown (CR-ZI-12) that ST-NET-2's occupancy rules drive; owns `ZONE_DRAIN_GRACE_SECONDS` and `ZONE_IDLE_CLOSE_SECONDS` (since 2026-10-22) |
 
 **Downstream:** Zone Instancing GDD (zone capacity, zone entry-point coordinates for AC-NC-33a), Death & Respawn GDD (EC-NET-1 full death rules — OQ-NET-3, blocking for implementation), Character Persistence GDD (complete session handshake schema — OQ-NC-SER-2).
 
@@ -314,10 +308,11 @@ Zone crash recovery for replacement instance routing is a Zone Instancing GDD co
 | `HEARTBEAT_TIMEOUT_SECONDS` | TBD — OQ-NET-1 (recommended 8–12) | [3, 30] | Seconds of silence before `Connected` → `Disconnected_SessionActive`. Must satisfy F-NET-5 constraints (strict `<` GHOST_COMBAT_TTL_MINUTES × 60). **Cross-knob note:** At minimum `GHOST_COMBAT_TTL_MINUTES` (0.5 min = 30s), the F-NET-5 strict inequality reduces the effective upper bound to 29s — 30s would violate the constraint. Too low: false positives on normal mobile jitter. Too high: crashed clients occupy the zone as ghost entities longer before the TTL starts. |
 | `GHOST_COMBAT_TTL_MINUTES` | 1 | [0.5, min(SESSION_TTL_SECONDS/60, 10)] | Minutes of auto-attack combat a ghost entity continues before disengaging. Upper bound is the lower of `SESSION_TTL_SECONDS/60` and 10 minutes — exceeding `SESSION_TTL_SECONDS/60` produces a combat TTL that outlasts the session (EC-GH-6 in `networking-ghost-session.md`). At 1 minute: ~20 mob hits of ghost combat with no reward to the disconnected player. |
 | `CONNECTING_TIMEOUT_SECONDS` | 30 | [10, 120] | Seconds a session may remain in `Connecting` before the server abandons it and releases the session slot. Prevents abandoned auth attempts from holding pending session slots indefinitely. Below 10s: slow auth backends may produce false timeouts. |
-| `ZONE_CLOSE_GRACE_PERIOD_SECONDS` | 30 | [10, 120] | Time clients have to react to `ZoneSessionEnded` before being forcibly disconnected. |
 | `REAUTH_FAILURE_LIMIT` | 3 | [1, 10] | Maximum failed re-authentication attempts before the server expires the session. Below 2: a single transient failure strands the player. Above 5: extends the window for brute-force session token attempts. |
 | `FRAGMENT_REASSEMBLY_TIMEOUT_SECONDS` | 10 | [5, 30] | Seconds the client waits for all `ZoneStateSnapshot` fragments before emitting `ZoneSnapshotRequest`. Default is 10s for production mobile deployments (4G congestion can delay packets 5–8s at the cellular retransmit layer). Use 5s for development/Wi-Fi environments. Below 5s: false retransmit requests on weak-signal 4G connections. Above 30s: failed zone entries stall too long before self-healing. |
 | `MAX_SNAPSHOT_RETRANSMIT_ATTEMPTS` | 3 | [1, 10] | Maximum `ZoneSnapshotRequest` retransmit attempts per zone-entry before the client abandons and starts a fresh reconnect. Bounds worst-case zone-entry stall to `MAX_SNAPSHOT_RETRANSMIT_ATTEMPTS × FRAGMENT_REASSEMBLY_TIMEOUT_SECONDS` = 30s at defaults. |
+
+*Zone-close timing knobs live in `zone-instancing.md`: `ZONE_DRAIN_GRACE_SECONDS` (60, [30, 300] — replaces this document's former `ZONE_CLOSE_GRACE_PERIOD_SECONDS`, 30, [10, 120], retired 2026-10-22) and `ZONE_IDLE_CLOSE_SECONDS` (120, [60, 600]).*
 
 ---
 
@@ -331,7 +326,7 @@ Zone crash recovery for replacement instance routing is a Zone Instancing GDD co
 
 **AC-NC-13** — Given a player who submitted Phase 1 of a respec and then disconnected: (a) When reconnecting within 30 seconds (respec TTL valid), Then Phase 2 is re-presented to the client. (b) When reconnecting after 30 seconds but within 5 minutes (respec TTL expired, session TTL valid), Then the client receives "Respec scroll returned to inventory" and the item is in inventory.
 
-**AC-NC-14** — Given a zone with one connected player who disconnects, When the player enters `Disconnected_SessionActive`, Then the zone transitions to `Draining` (tick loop continues) — not `Closed`.
+**AC-NC-14** — Given a zone with one connected player who disconnects, When the player enters `Disconnected_SessionActive`, Then the zone stays `Active` (tick loop continues; no `OnZoneStateTransitioned` fires) — not `Draining`, not `Closed` — and the idle timer is not started while the ghost session remains. *(Revised 2026-10-22: ST-NET-2 no longer has a population-driven Draining.)*
 
 **AC-NC-16** — Given a test server that crashes immediately after the persistence write completes and before emitting the outcome message (using `IServerCrashInjector` from `networking-test-harness.md`), When the server restarts and the player reconnects, Then the session handshake delivers the post-enhancement item state. The outcome is displayed without replaying the animation.
 
@@ -365,8 +360,8 @@ Given `CONNECTING_TIMEOUT_SECONDS = 10` (test config), When a client initiates t
 **AC-NC-40 (Logic) — Snapshot retransmit limit**
 Given `MAX_SNAPSHOT_RETRANSMIT_ATTEMPTS = 3` and `ITransportFaultInjector.DropSnapshotFragment(N-1)` injected on each of 3 consecutive retransmit cycles, When the 3rd `FRAGMENT_REASSEMBLY_TIMEOUT_SECONDS` elapses without reassembly, Then: `OnSnapshotRetransmitAttempt(characterId, 1, 3)`, `...(2, 3)`, `...(3, 3)` fired in order; after the 3rd, the client drops the transport connection and begins a fresh reconnect; the zone-entry gate never opened. *Verifies MAX_SNAPSHOT_RETRANSMIT_ATTEMPTS bounds the stall window.*
 
-**AC-NC-41 (Logic) — Active→Closed via explicit disconnect (last session)**
-Given a zone with exactly 1 connected player and no `Disconnected_SessionActive` sessions, When the player sends an explicit disconnect, Then: `OnZoneStateTransitioned(zoneId, Active, Closed)` fires — no intermediate `Draining` state is entered; `OnPersistenceWriteCompleted(characterId, ExplicitDisconnect)` fires; `IZoneTestConfigurator.GetCurrentZoneState(zoneId)` returns `Closed` on the same tick boundary. *Verifies the new ST-NET-2 Active→Closed row — no Draining when zero sessions remain.*
+**AC-NC-41 (Logic) — Last session released → idle close (T-7)**
+Given a zone with exactly 1 connected player, no `Disconnected_SessionActive` sessions and `ZONE_IDLE_CLOSE_SECONDS = 60` (test config), When the player sends an explicit disconnect, Then: `OnPersistenceWriteCompleted(characterId, ExplicitDisconnect)` fires; `IZoneTestConfigurator.GetCurrentZoneState(zoneId)` still returns `Active` on that tick boundary — no `Draining` state is entered; and When the tick counter then advances by `60 × 20 = 1200` ticks with no slot allocated, Then `OnZoneStateTransitioned(zoneId, Active, Closed)` fires exactly once at that tick. *Verifies the ST-NET-2 "last session released" row driving `zone-instancing.md` T-7. Revised 2026-10-22 — formerly an immediate Active→Closed. No wall-clock wait.*
 
 **AC-NC-42 (Logic) — In-flight RPC at disconnect boundary**
 Given a connected player with `heldFreePoints = 1`, When the server processes the heartbeat timeout on tick T (transitioning to `Disconnected_SessionActive`) while an `AllocateFreePointRequest` is simultaneously present in the server's input queue (inject with test client sending RPC at tick T-1), Then: either (a) the RPC was processed before the state machine advanced — `OnPersistenceWriteCompleted(characterId, ...)` fires with updated stats, `heldFreePoints = 0` in persistence; OR (b) the RPC was dropped without processing — `heldFreePoints = 1` in persistence. In both cases, no intermediate state (e.g., `heldFreePoints = 0` but stat not updated) is present in the persisted record. *Verifies EC-NET-6: transition is the authority boundary; no partial-application.*
@@ -379,7 +374,7 @@ Given a connected player with `heldFreePoints = 1`, When the server processes th
 The `Connected` → `Disconnected_SessionActive` transition fires after N seconds of no packets. Setting too low (2–3s) produces false disconnects on normal mobile jitter; too high (30s) means a crashed client's entity stays in `Connected` state and receives combat targeting too long. Recommended range: 8–12 seconds. The Networking ADR must specify the exact value based on the chosen library's keep-alive mechanism and mobile latency measurement data. Note: the heartbeat message schema (GAP-1) is defined in `networking-wire-protocol.md`.
 
 **OQ-NET-2 — Zone-level persistence on teardown**
-The `Draining` → `Closed` transition notes writing any zone-level state that requires persistence. Whether mob respawn timers, chest states, or any per-zone world state survives zone teardown is not defined in any current GDD. If zone state resets on every instance, this is trivial. Blocking for Zone Instancing GDD.
+Any transition to `Closed` (`zone-instancing.md` CR-ZI-2 T-5, T-6, T-7) may need to write zone-level state that requires persistence. Whether mob respawn timers, chest states, or any per-zone world state survives zone teardown is not defined in any current GDD. If zone state resets on every instance, this is trivial. Blocking for Zone Instancing GDD.
 
 **OQ-NET-3 — Death processing while disconnected**
 EC-NET-1 specifies server-side death processing during `Disconnected_SessionActive`. The exact death resolution rules (respawn point, HP restore value, death penalty) are not yet authored. Non-blocking for this GDD's completion; blocking for implementation. Also see OQ-NC-SER-2 for complete session handshake schema dependency.

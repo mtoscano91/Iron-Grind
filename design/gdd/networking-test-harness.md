@@ -2,7 +2,7 @@
 
 > **Status**: Approved (lean re-review, 2026-05-14)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-10-09 (TD-046: `EnhancementOutcomeBroadcast` is now `EnhancementAttemptResult`, owner only — comments and one acceptance criterion renamed; observer signatures unchanged, revision deferred to Enhancement Story 010; no review pass). Previous: 2026-05-29 (OQ-ZI-5: OnZoneGateOpened + GetOutboundMessageCount added to INetworkTestObserver)
+> **Last Updated**: 2026-10-22 (zone lifecycle reconciliation: `ZoneState.Empty` renamed `Loading` (same value 0), comments point to zone-instancing.md CR-ZI-2, AC-NC-14/41 support notes updated; no interface signature change). Previous: 2026-10-09 (TD-046: `EnhancementOutcomeBroadcast` is now `EnhancementAttemptResult`, owner only — comments and one acceptance criterion renamed; observer signatures unchanged, revision deferred to Enhancement Story 010; no review pass). Previous: 2026-05-29 (OQ-ZI-5: OnZoneGateOpened + GetOutboundMessageCount added to INetworkTestObserver)
 > **Parent**: networking-core.md
 
 ## Overview
@@ -110,7 +110,7 @@ public interface IZoneTestConfigurator
     // Setting to N means the (N+1)th join is rejected with an overflow response.
     void SetZoneCapacity(uint zoneInstanceId, int maxPlayers);
 
-    // Read the current ST-NET-2 zone state for assertion in zone state machine ACs.
+    // Read the current zone state (zone-instancing.md CR-ZI-2) for assertion in zone lifecycle ACs.
     // Returns the ZoneState enum value as of the last tick boundary.
     ZoneState GetCurrentZoneState(uint zoneInstanceId);
 
@@ -135,7 +135,7 @@ public interface IZoneTestConfigurator
 }
 ```
 
-*Supported ACs:* AC-NC-33a (entry-point coordinates via `SetZoneEntryPoint`; respawn position assertion via `GetEntityPosition`), AC-NC-24 (zone capacity override via `SetZoneCapacity`), AC-NC-14 (zone Draining assertion via `GetCurrentZoneState`), AC-NC-41 (zone Active→Closed via `GetCurrentZoneState`), AC-NC-29 and AC-OWL-01–05 (`SetLastBeatServerTick`, `SetClientOWL`).
+*Supported ACs:* AC-NC-33a (entry-point coordinates via `SetZoneEntryPoint`; respawn position assertion via `GetEntityPosition`), AC-NC-24 (zone capacity override via `SetZoneCapacity`), AC-NC-14 (zone stays Active via `GetCurrentZoneState`), AC-NC-41 (zone stays Active, then T-7 Active→Closed via `GetCurrentZoneState` / `OnZoneStateTransitioned`), AC-NC-29 and AC-OWL-01–05 (`SetLastBeatServerTick`, `SetClientOWL`).
 
 ---
 
@@ -247,7 +247,7 @@ public interface INetworkTestObserver
     // Called on a zone client when a GhostPromotionEvent is received at the transport boundary.
     void OnClientGhostPromotionEventReceived(uint characterId);
 
-    // Called when the zone instance's state machine transitions (ST-NET-2).
+    // Called when the zone instance's state machine transitions (zone-instancing.md CR-ZI-2).
     void OnZoneStateTransitioned(uint zoneInstanceId, ZoneState fromState, ZoneState toState);
 
     // Called when the server emits a SessionHandshake to a connecting or reconnecting client.
@@ -305,8 +305,8 @@ public interface INetworkTestObserver
 }
 
 // Production enums — declared UNCONDITIONALLY in a production namespace (NOT inside the test guard).
-// SessionState (ST-NET-1) and ZoneState (ST-NET-2) are referenced by production session management
-// and zone lifecycle code and must compile in all build configurations.
+// SessionState (ST-NET-1) and ZoneState (zone-instancing.md CR-ZI-2; ST-NET-2 until 2026-10-22) are referenced
+// by production session management and zone lifecycle code and must compile in all build configurations.
 public enum SessionState : byte
 {
     Connecting                  = 0,
@@ -318,7 +318,7 @@ public enum SessionState : byte
 
 public enum ZoneState : byte
 {
-    Empty    = 0,
+    Loading  = 0,   // was Empty until 2026-10-22 — same value; ZoneState is not on the wire or persisted
     Active   = 1,
     Draining = 2,
     Closed   = 3,
