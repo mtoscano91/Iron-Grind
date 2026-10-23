@@ -1,7 +1,7 @@
 # Story 011: Stale Slot Reclamation and Entry Stall (CR-ZI-17, CR-ZI-8 step 11, F-ZI-2)
 
 > **Epic**: Zone Instancing
-> **Status**: Ready — written 2026-10-22; rewritten at `/story-readiness` 2026-10-23 after the `ZoneEntryAck` GDD revision (Zone Instancing Approved 2026-10-23)
+> **Status**: Complete (2026-10-23) — written 2026-10-22; rewritten at `/story-readiness` 2026-10-23 after the `ZoneEntryAck` GDD revision (Zone Instancing Approved 2026-10-23)
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-19
@@ -97,7 +97,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/ZoneInstancing/ZoneInstancing_StaleSlot_tests.cs` (cases a/b/c, ack, leave path) and the codec cases in the existing wire-message test fixture from Story 006 — must exist and pass.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 34 tests in `ZoneInstancing_StaleSlot_tests.cs` + codec cases in `ZoneInstancing_WireMessages_tests.cs`, all passing (EditMode 2026-10-23: 3929 passed, 0 failed, 70 DB skips)
 
 ---
 
@@ -105,3 +105,19 @@
 
 - Depends on: Stories 009, 010 (both Complete)
 - Unlocks: Story 013 (reuses the leave path)
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-10-23
+**Criteria**: 11/11 passing (all covered by automated tests; ADR-014 row is a doc check)
+**Deviations** (advisory, user accepted):
+1. Case (b) `PlayerLeftZone` uses `DisconnectType.Timeout` — the enum has no session-stealing value (fallback the story allowed).
+2. `PlayerLeftZone` goes to every other directory-mapped client rather than a recorded "sent `PlayerJoinedZone`" set; Story 010 adds the directory entry and sends `PlayerJoinedZone` in the same call, so the sets coincide.
+3. Close seam: `IInboundTransportDisconnector.DisconnectClient` with the zone client id widened to `ulong` — assumes zone client id == transport client id (Story 014 composition must hold this).
+4. Acks are recorded in the receive callback and applied at the next `ZoneEntryReclamation.OnTick`; `OnTick` and `Register` are not wired into the tick pipeline yet (Story 014).
+5. Two in-flight loads for the same character (no slot yet) are invisible to case (b) — pre-dates this story, TD-078.
+**Test Evidence**: Logic — `tests/EditMode/ZoneInstancing/ZoneInstancing_StaleSlot_tests.cs` (34 tests) + `tests/EditMode/ZoneInstancing/ZoneInstancing_WireMessages_tests.cs` (codec cases)
+**Code Review**: Complete — `/code-review` 2026-10-23 CHANGES REQUIRED -> "fix all" applied (stall reply cap-exempt; transport close wrapped so the session sink always runs; ack warning text; 5 tests added; TD-078)
+**Implementation notes**: tick hook — `OnTick` belongs in the simulation step before the close steps (EC-ZI-15); the shared leave path is `ZoneEntryReclamation.LeaveZone(EntityID, DisconnectType)` (no save logic) for Story 013. Out-of-scope files touched (valid): `tests/EditMode/Architecture/AssemblyBoundaryLists.cs` (ADR-012 shared entries), `docs/tech-debt-register.md` (TD-078).

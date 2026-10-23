@@ -107,6 +107,8 @@ namespace IronGrind.Tests.EditMode.Architecture
             "IronGrind.Networking.ZoneSnapshotRequest",             // consumer (planned): client zone entry flow, snapshot retransmit sender (wire schema)
             "IronGrind.Networking.ZoneSessionEnded",                // consumer (planned): client session handler, zone teardown (wire schema)
             "IronGrind.Networking.PlayerJoinedZone",                // consumer (planned): client entity spawner, player appeared (wire schema)
+            "IronGrind.Networking.PlayerLeftZone",                  // consumer (planned): client entity spawner, player left (wire schema; Zone Instancing Story 011)
+            "IronGrind.Networking.ZoneEntryAck",                    // consumer (planned): client zone entry flow, dual-gate ack (wire schema; Zone Instancing Story 011)
             "IronGrind.Networking.EntityState",                     // consumer (planned): client zone snapshot reader, entity spawn state (wire schema; snapshot payload entry)
             "IronGrind.Networking.ZoneStateSnapshotFragment",       // consumer (planned): client zone snapshot reassembly (wire schema)
             // Networking: codecs
@@ -135,6 +137,8 @@ namespace IronGrind.Tests.EditMode.Architecture
             "IronGrind.Networking.ZoneSnapshotRequestCodec",             // consumer (planned): client zone entry flow, retransmit request writer (codec)
             "IronGrind.Networking.ZoneSessionEndedCodec",                // consumer (planned): client session handler, teardown reader (codec)
             "IronGrind.Networking.PlayerJoinedZoneCodec",                // consumer (planned): client entity spawner, player appeared reader (codec)
+            "IronGrind.Networking.PlayerLeftZoneCodec",                  // consumer (planned): client entity spawner, player left reader (codec)
+            "IronGrind.Networking.ZoneEntryAckCodec",                    // consumer (planned): client zone entry flow, ack writer (codec)
             "IronGrind.Networking.EntityStateCodec",                     // consumer (planned): client zone snapshot reader, entry reader (codec)
             "IronGrind.Networking.ZoneStateSnapshotFragmentCodec",       // consumer (planned): client zone snapshot reassembly, fragment reader (codec)
             "IronGrind.Networking.WireStringCodec",                      // consumer (planned): client message read path, length-prefixed UTF-8 names (codec helper)

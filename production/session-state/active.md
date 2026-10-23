@@ -4692,3 +4692,27 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Acked duplicate CharacterID handshake: ignored with one EntryHandshakeCharacterAlreadyInZone warning, relies on B-NP-7 ordering (TD-076).
 - Files: story-011 rewritten; story-012 AC-ZI-31/EC-ZI-15 + dep 011; story-013 leave-path note + dep 011; EPIC row 011 Ready + Known Gap 7 (client ack story, Networking Core session story); tech-debt-register TD-076, TD-077.
 - Next: commit -> /dev-story Story 011. Not committed. PAT rotation still unconfirmed.
+
+## Session Extract — /dev-story 2026-10-23 (Zone Instancing Story 011 — implemented, not reviewed, not committed)
+- Story: production/epics/zone-instancing/story-011-stale-slot-reclamation.md — network-programmer subagent.
+- Created: Foundation WireProtocol ZoneEntryAck(.cs/Codec, 0xE134), PlayerLeftZone(.cs/Codec, 0xE135); ServerLogic ZoneInstancing IZoneEntryReclaimSessionSink, LoggingZoneEntryReclaimSessionSink (TD-077), ZoneEntryReclamation (entering list, ack sink + Descriptor/Register, OnTick: acks -> removals (c) -> stall scan (a), PrepareHandshake (b), public LeaveZone shared with Story 013, no save); tests/EditMode/ZoneInstancing/ZoneInstancing_StaleSlot_tests.cs (29 tests).
+- Modified: MessageRoutingRegistry (0xE134/0xE135, TD-011 range), ZoneEntryAdmission (optional `reclamation` ctor param; case b hook after validator; RemoveClient records drop; RegisterEntering before OnPlayerAdmitted), ZoneConnectionCharacterDirectory (TryGetClientId reverse map), ZoneInstancing_WireMessages_tests (6 tests + 1 TestCase x2), AssemblyBoundaryLists (4 shared entries), ADR-014 (Decision 1 row + dated note), tech-debt-register TD-011.
+- Orchestrator fixes: missing `using IronGrind.CharacterPersistence;` in ZoneEntryAck(.cs/Codec); test fixture AdmitOther now acks the bystander; acked-handshake test expects the ack info log; boundary allow-list.
+- EditMode batch run: 3994 total, 3924 passed, 0 failed, 70 skipped (DB tests, no PostgreSQL running).
+- Choices: close seam IInboundTransportDisconnector.DisconnectClient (assumes zone clientId == transport id); DisconnectType Timeout for all cases (no session-stealing value); ack applied on next OnTick; OnTick/Register not wired (Story 014).
+- For /code-review: case (a) enqueues ZoneFullResponse then DisconnectClient immediately — reply may be lost if disconnect precedes outbox flush; PlayerLeftZone goes to all directory-mapped others (not only those sent PlayerJoinedZone); lifecycle test checks pool occupancy event only.
+- Next: /code-review (files above) -> /story-done Story 011 -> commit. PAT rotation still unconfirmed.
+
+## Session Extract — /code-review 2026-10-23 (Zone Instancing Story 011 — CHANGES REQUIRED -> "fix all" applied, not committed)
+- Specialists: unity-specialist (NGO 2.13.3 source: DisconnectClient deferred to PostLateUpdate; DisconnectRemoteClient flushes send queues first, so the queued reply normally arrives) + qa-tester (all ACs/QA cases mapped; 5 partial gaps).
+- Required fixed: ZoneFullResponse(Other) on stall now isCapExempt: true (cap deferral + close would drop it); DisconnectClient wrapped in try/catch (LogError) so ExpireEnteringSession always runs and the scan continues.
+- Suggestions fixed: ack warning says "names X, not Y" vs "no entering slot"; tests: stall cap-exempt assert, reclaimed-ack extended (no 2nd send, no directory entry), + 5 new (solo stall no party call, throwing close, ack applied before scan same tick, lifecycle idle T-7 via pool listener -> ZoneLifecycle, Register on fake dispatcher). TD-078 logged (two in-flight loads for the same character -> two slots; pre-dates 011).
+- EditMode: 3999 total, 3929 passed, 0 failed, 70 skipped (DB). StaleSlot tests now 34.
+- Next: /story-done production/epics/zone-instancing/story-011-stale-slot-reclamation.md -> commit (include generated .meta files). PAT rotation still unconfirmed.
+
+## Session Extract — /story-done 2026-10-23 (Zone Instancing Story 011)
+- Verdict: COMPLETE WITH NOTES (11/11 criteria, all test-covered; lean — QL-TEST-COVERAGE and LP-CODE-REVIEW skipped).
+- Story: production/epics/zone-instancing/story-011-stale-slot-reclamation.md — Status Complete, Completion Notes (5 advisory deviations: Timeout for case b, PlayerLeftZone audience = directory-mapped, close seam id assumption, OnTick/Register unwired, TD-078).
+- EPIC row 011 Complete. Story 014 Implementation Notes gained the Story 011 wiring note (reclamation ctor arg, Register before Seal, OnTick before close steps, client id == transport id, TD-077/078).
+- Tech debt logged: TD-078 (during /code-review). No new entries at story-done.
+- Next recommended: commit (include Unity-generated .meta files) -> /dev-story Story 012 (teardown close steps, Ready) or Story 013 (player exit, Ready, reuses LeaveZone). PAT rotation still unconfirmed.

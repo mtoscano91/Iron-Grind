@@ -1275,6 +1275,116 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
         }
 
         // -----------------------------------------------------------------------
+        // Story 011: ZoneEntryAck (0xE134, C->S) and PlayerLeftZone (0xE135, S->C).
+        // -----------------------------------------------------------------------
+
+        [Test]
+        public void ZoneEntryAck_WriteThenRead_BodyIs8BytesAndRoundTrips()
+        {
+            // Arrange
+            var buffer = new byte[16];
+            var message = new ZoneEntryAck(new ZoneID(ZoneIdValue), SnapshotVersionValue);
+
+            // Act
+            int written = ZoneEntryAckCodec.WriteBody(buffer, message);
+            bool ok = ZoneEntryAckCodec.TryReadBody(new ReadOnlySpan<byte>(buffer, 0, written), out ZoneEntryAck read);
+
+            // Assert
+            Assert.AreEqual(8, ZoneEntryAck.BodySize);
+            Assert.AreEqual(8, written);
+            Assert.IsTrue(ok);
+            Assert.AreEqual(message, read);
+            Assert.AreEqual(ZoneIdValue, BinaryPrimitives.ReadUInt32LittleEndian(buffer));
+            Assert.AreEqual(SnapshotVersionValue, BinaryPrimitives.ReadUInt32LittleEndian(new ReadOnlySpan<byte>(buffer, 4, 4)));
+        }
+
+        [Test]
+        public void ZoneEntryAck_TruncatedBuffer_ReturnsFalseAtEveryShorterLength()
+        {
+            var buffer = new byte[ZoneEntryAck.BodySize];
+            ZoneEntryAckCodec.WriteBody(buffer, new ZoneEntryAck(new ZoneID(ZoneIdValue), 1u));
+
+            for (int length = 0; length < ZoneEntryAck.BodySize; length++)
+            {
+                Assert.IsFalse(ZoneEntryAckCodec.TryReadBody(new ReadOnlySpan<byte>(buffer, 0, length), out _), $"length {length}");
+            }
+
+            Assert.IsTrue(ZoneEntryAckCodec.TryReadBody(new ReadOnlySpan<byte>(new byte[ZoneEntryAck.BodySize + 3]), out _), "trailing bytes are ignored");
+        }
+
+        [Test]
+        public void PlayerLeftZone_WriteThenRead_BodyIs5BytesAndRoundTrips()
+        {
+            // Arrange
+            var buffer = new byte[16];
+            var message = new PlayerLeftZone(new EntityID(77u), DisconnectType.ZoneTransfer);
+
+            // Act
+            int written = PlayerLeftZoneCodec.WriteBody(buffer, message);
+            bool ok = PlayerLeftZoneCodec.TryReadBody(new ReadOnlySpan<byte>(buffer, 0, written), out PlayerLeftZone read);
+
+            // Assert
+            Assert.AreEqual(5, PlayerLeftZone.BodySize);
+            Assert.AreEqual(5, written);
+            Assert.IsTrue(ok);
+            Assert.AreEqual(message, read);
+            Assert.AreEqual(77u, BinaryPrimitives.ReadUInt32LittleEndian(buffer));
+            Assert.AreEqual((byte)DisconnectType.ZoneTransfer, buffer[4]);
+        }
+
+        [Test]
+        public void PlayerLeftZone_TruncatedBuffer_ReturnsFalseAtEveryShorterLength()
+        {
+            var buffer = new byte[PlayerLeftZone.BodySize];
+            PlayerLeftZoneCodec.WriteBody(buffer, new PlayerLeftZone(new EntityID(1u), DisconnectType.Timeout));
+
+            for (int length = 0; length < PlayerLeftZone.BodySize; length++)
+            {
+                Assert.IsFalse(PlayerLeftZoneCodec.TryReadBody(new ReadOnlySpan<byte>(buffer, 0, length), out _), $"length {length}");
+            }
+        }
+
+        [Test]
+        public void PlayerLeftZone_UnknownDisconnectType_DecodesAsTimeoutWithAnAnomalyLog()
+        {
+            // Arrange
+            var buffer = new byte[PlayerLeftZone.BodySize];
+            PlayerLeftZoneCodec.WriteBody(buffer, new PlayerLeftZone(new EntityID(5u), DisconnectType.Graceful));
+            buffer[4] = 50;
+            LogAssert.Expect(UnityEngine.LogType.Warning, new Regex("DecodeDisconnectType"));
+
+            // Act
+            bool ok = PlayerLeftZoneCodec.TryReadBody(buffer, out PlayerLeftZone read);
+
+            // Assert
+            Assert.IsTrue(ok);
+            Assert.AreEqual(DisconnectType.Timeout, read.DisconnectType);
+        }
+
+        [Test]
+        public void PlayerLeftZone_InvalidEntityId_ThrowsOnWrite()
+        {
+            var buffer = new byte[PlayerLeftZone.BodySize];
+            LogAssert.Expect(UnityEngine.LogType.Warning, new Regex("InvalidIdZeroWrite"));
+
+            Assert.Throws<InvalidOperationException>(() => PlayerLeftZoneCodec.WriteBody(buffer, new PlayerLeftZone(EntityID.Invalid, DisconnectType.Timeout)));
+        }
+
+        [TestCase(ZoneEntryAck.MessageTypeId, nameof(ZoneEntryAck), DesignPillar.Infrastructure, MessageDirection.ClientToServer, (ushort)0xE134)]
+        [TestCase(PlayerLeftZone.MessageTypeId, nameof(PlayerLeftZone), DesignPillar.SocialSignals, MessageDirection.ServerToAllZoneClients, (ushort)0xE135)]
+        public void Registry_Story011Message_HasTheProvisionalIdAndTheRightDirectionOnThePriorityPath(
+            ushort messageTypeId, string name, DesignPillar pillar, MessageDirection direction, ushort expectedId)
+        {
+            Assert.AreEqual(expectedId, messageTypeId);
+            Assert.IsTrue(MessageRoutingRegistry.TryGetEntry(messageTypeId, out MessageRoutingEntry entry), $"{name} must have a routing row.");
+            Assert.AreEqual(name, entry.MessageName);
+            Assert.AreEqual(pillar, entry.Pillars);
+            Assert.AreEqual(direction, entry.Direction);
+            Assert.AreEqual(NetworkChannel.ReliableOrdered, entry.Channel);
+            Assert.AreEqual(MessageDeliveryContext.PriorityPath, entry.DeliveryContext);
+        }
+
+        // -----------------------------------------------------------------------
         // Routing rows.
         // -----------------------------------------------------------------------
 

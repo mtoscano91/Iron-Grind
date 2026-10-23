@@ -106,6 +106,7 @@ ADR-011 Decision 4 relies on "the session's inbound request dispatcher — the s
 | `RttProbeEcho` | U-U | connection-level | — | — | 4 |
 | `ClientBackgrounded` / `ClientForegrounded` | R-OD | connection-level | — | — | 0 |
 | `ZoneSnapshotRequest` | R-OD | connection-level | — | — | 8 |
+| `ZoneEntryAck` | R-OD | connection-level | — | — | 8 |
 
 Notes on the table:
 - **Held = yes** is every request that can change a character's bag, equipment or gold (ADR-011 Decision 4). Respec Phase 1 is one of them: it moves the scroll out of the active inventory into a reserved slot.
@@ -410,3 +411,6 @@ Nothing dispatches client requests today and nothing calls `RegisterTickDriven`,
 - ADR-002 — simulation phases 1–4.
 - ADR-001 — shop request deduplication.
 - `docs/architecture/architecture-review-2026-10-07.md` P1 — the finding this ADR closes.
+
+## Dated notes
+- 2026-10-23 (Zone Instancing Story 011): `ZoneEntryAck` (provisional id 0xE134, 8-byte body) is added to the Decision 1 table as a connection-level type. It is recorded in the receive callback and applied on the tick thread by `ZoneEntryReclamation.OnTick`, like `ZoneSnapshotRequest`. It is not a request, is not held, and needs no session-ready gate.

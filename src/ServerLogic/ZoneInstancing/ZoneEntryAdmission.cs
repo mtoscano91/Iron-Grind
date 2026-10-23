@@ -71,6 +71,8 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         private readonly Dictionary<uint, PendingEntry> _pending = new Dictionary<uint, PendingEntry>();
         private readonly HashSet<uint> _duplicateWarned = new HashSet<uint>();
         private readonly byte[] _replyBuffer = new byte[ZoneFullResponse.BodySize];
+        private readonly ZoneEntryReclamation _reclamation;
+        private readonly HashSet<uint> _inZoneWarned = new HashSet<uint>();
 
         /// <summary>Creates the service for one zone.</summary>
         /// <param name="zone">The zone this process hosts; not <see cref="ZoneID.Invalid"/>.</param>
@@ -84,13 +86,15 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         /// <param name="continuation">Receives an admitted player.</param>
         /// <param name="directory">Tells which connections already play a character (Story 010); a handshake from one is ignored.</param>
         /// <param name="retryAfterSeconds">Retry hint of <c>ZoneFull</c>.</param>
+        /// <param name="reclamation">Story 011: entering-slot tracking and stale slot reclamation; null disables cases (b) and (c) and the entering registration.</param>
         /// <exception cref="ArgumentNullException">A reference argument is null.</exception>
         /// <exception cref="ArgumentException"><paramref name="zone"/> is invalid.</exception>
         public ZoneEntryAdmission(ZoneID zone, ZoneSlotPool pool, ZoneLifecycle lifecycle, ICharacterPersistence persistence,
             ILoadedRecordApplier applier, ITickCompletionQueue queue, IZoneEntryTokenValidator validator,
             IClientMessageOutbox outbox, IZoneEntryContinuation continuation, IConnectionCharacterDirectory directory,
-            byte retryAfterSeconds = ZONE_FULL_RETRY_AFTER_SECONDS)
+            byte retryAfterSeconds = ZONE_FULL_RETRY_AFTER_SECONDS, ZoneEntryReclamation reclamation = null)
         {
+            _reclamation = reclamation;
             if (zone == ZoneID.Invalid)
             {
                 throw new ArgumentException($"{LOG_PREFIX} zone must not be ZoneID.Invalid.", nameof(zone));
@@ -154,6 +158,18 @@ namespace IronGrind.ServerLogic.ZoneInstancing
                 return;
             }
 
+            // Story 011 case (b): a stale entering slot of the same character is reclaimed before anything else starts.
+            if (_reclamation != null
+                && _reclamation.PrepareHandshake(request.Character, clientId) == HandshakeDisposition.CharacterAlreadyInZone)
+            {
+                if (_inZoneWarned.Add(clientId))
+                {
+                    Debug.LogWarning($"{LOG_PREFIX} EntryHandshakeCharacterAlreadyInZone: character {request.Character} already holds an acked slot on another connection; handshake from client {clientId} ignored.");
+                }
+
+                return;
+            }
+
             if (!TryPreCheck(clientId, request.TargetZone))
             {
                 return;
@@ -204,6 +220,8 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         {
             _duplicateWarned.Remove(clientId);
             _admittedWarned.Remove(clientId);
+            _inZoneWarned.Remove(clientId);
+            _reclamation?.NoteConnectionRemoved(clientId); // Story 011 case (c): recorded here, reclaimed on the next tick.
             if (_pending.TryGetValue(clientId, out PendingEntry entry))
             {
                 entry.Dropped = true;
@@ -288,6 +306,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
                 return;
             }
 
+            _reclamation?.RegisterEntering(clientId, entityId); // Story 011: the slot is entering until its ZoneEntryAck.
             _continuation.OnPlayerAdmitted(clientId, slot, entityId);
         }
 

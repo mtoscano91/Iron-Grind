@@ -210,7 +210,7 @@ namespace IronGrind.Networking
                 MessageDirection.ServerToOwningClient, "Whole-bag replacement once per zone entry; must arrive before any InventorySlotUpdate of the session.");
 
             // Zone Instancing Story 006: zone join / session / snapshot messages, R-OD priority path.
-            // MessageTypeIds 0xE130-0xE133 and 0xF000 are provisional (TD-011).
+            // MessageTypeIds 0xE130-0xE135 and 0xF000 are provisional (TD-011).
             AddPriority(ZoneFullResponse.MessageTypeId, nameof(ZoneFullResponse), DesignPillar.Infrastructure,
                 MessageDirection.ServerToOwningClient, "Join rejection; must arrive to release the client's pending join (CR-ZI-7). Provisional id (TD-011).");
             AddPriority(ZoneSnapshotRequest.MessageTypeId, nameof(ZoneSnapshotRequest), DesignPillar.Infrastructure,
@@ -220,6 +220,10 @@ namespace IronGrind.Networking
             AddPriority(PlayerJoinedZone.MessageTypeId, nameof(PlayerJoinedZone), DesignPillar.SocialSignals,
                 MessageDirection.ServerToAllZoneClients, "One-time social signal that a player appeared (CR-ZI-8 step 6). Audience is the joining player's own zone only, " +
                 "unlike ServerBroadcast_Enhancement9 which reaches every connected client in every zone. Provisional id (TD-011).");
+            AddPriority(ZoneEntryAck.MessageTypeId, nameof(ZoneEntryAck), DesignPillar.Infrastructure,
+                MessageDirection.ClientToServer, "Client's acknowledgement that the zone snapshot dual gate opened (CR-ZI-8 step 11); a lost ack lets the stall timer reclaim the slot (CR-ZI-17). Provisional id (TD-011).");
+            AddPriority(PlayerLeftZone.MessageTypeId, nameof(PlayerLeftZone), DesignPillar.SocialSignals,
+                MessageDirection.ServerToAllZoneClients, "One-time social signal that a player left the zone (CR-ZI-17 point 2); audience is the zone's other connected clients. Provisional id (TD-011).");
             AddPriority(ZoneStateSnapshotFragment.MessageTypeId, nameof(ZoneStateSnapshotFragment), DesignPillar.Infrastructure,
                 MessageDirection.ServerToOwningClient, "Bulk snapshot fragment (bulk range 0xF000-0xFFFF); the snapshot must arrive complete and ordered. Cap-exempt via isCapExempt at enqueue; " +
                 "transport fragmentation of the reliable send is the sender's concern. Provisional id (TD-011).");
