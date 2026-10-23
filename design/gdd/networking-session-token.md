@@ -2,7 +2,7 @@
 
 > **Status**: Approved (Pass 1 lean, 2026-05-14)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-05-14
+> **Last Updated**: 2026-10-23 (CR-TOK-6: entering-slot reclamation added as an invalidation condition — propagated from `zone-instancing.md` CR-ZI-17). Previous: 2026-05-14
 > **Parent**: networking-session.md
 
 ## Overview
@@ -45,6 +45,7 @@ Token is deleted from `ActiveSessionTokens` when:
 - Session TTL elapses (`Disconnected_SessionActive → Disconnected_SessionExpired`)
 - Explicit disconnect (`Connected → Disconnected_SessionExpired`, graceful logout)
 - Session-stealing — prior token deleted before the new connection receives its token (B-NP-7)
+- Entering-slot reclamation (`Connected → Disconnected_SessionExpired`, no persistence write) — `zone-instancing.md` CR-ZI-17: stall timeout, duplicate handshake, or transport drop before `ZoneEntryAck`. No ghost exists, so the client's retry is a fresh connect (EC-TOK-1). *(Added 2026-10-23.)*
 - Server restart — in-memory store cleared (see EC-TOK-4)
 
 **CR-TOK-7 — Token Binding**

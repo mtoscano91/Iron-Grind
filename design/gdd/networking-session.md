@@ -2,7 +2,7 @@
 
 > **Status**: In Review (Pass 9 lean re-review 2026-05-11 — 5 minor revisions applied; revised 2026-10-22: ST-NET-2 reconciled with `zone-instancing.md` CR-ZI-2)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-10-23 (`ZoneEntryAck`: B-NP-7 entering-slot exception, B-NP-8 ack sentence, ST-NET-1 heartbeat-timeout row exception — propagated from `zone-instancing.md` CR-ZI-17). Previous: 2026-10-22
+> **Last Updated**: 2026-10-23 (`ZoneEntryAck`: B-NP-7 entering-slot exception, B-NP-8 ack sentence, ST-NET-1 heartbeat-timeout row exception — propagated from `zone-instancing.md` CR-ZI-17; same day, after the zone-instancing lean re-review: new ST-NET-1 row `Connected → Disconnected_SessionExpired` on entering-slot reclamation — no write, token deleted, fresh connect). Previous: 2026-10-22
 > **Parent**: networking-core.md
 
 ## Overview
@@ -80,7 +80,8 @@ Equipment state, active buff list, and full inventory are included in a follow-u
 | — | `Connecting` | Client initiates transport connection | Allocate pending session slot; begin authentication |
 | `Connecting` | `Connected` | Auth succeeds, zone assignment completes | Emit session handshake; load entity into zone; begin tick delivery |
 | `Connecting` | `Disconnected_SessionExpired` | Auth fails, zone full, client drops during handshake, or `CONNECTING_TIMEOUT_SECONDS` elapses without auth completion | Release session slot; log failure reason; no TTL started |
-| `Connected` | `Disconnected_SessionActive` | Heartbeat timeout — no packet from client for >N seconds (OQ-NET-1) | Freeze client output; begin 5-minute TTL; continue processing entity; reset `_skillUsedThisCycle` to `false`. **Not taken for an entering slot** (no `ZoneEntryAck` yet): the slot is reclaimed instead, with no ghost (`zone-instancing.md` CR-ZI-17 case (c), added 2026-10-23) |
+| `Connected` | `Disconnected_SessionActive` | Heartbeat timeout — no packet from client for >N seconds (OQ-NET-1) | Freeze client output; begin 5-minute TTL; continue processing entity; reset `_skillUsedThisCycle` to `false`. **Not taken for an entering slot** (no `ZoneEntryAck` yet): the slot is reclaimed instead, with no ghost, and the session goes `Connected → Disconnected_SessionExpired` (row below) (`zone-instancing.md` CR-ZI-17 case (c), added 2026-10-23) |
+| `Connected` | `Disconnected_SessionExpired` | Entering slot reclaimed (`zone-instancing.md` CR-ZI-17: stall timeout, duplicate handshake on the same zone instance, or transport drop / heartbeat timeout before `ZoneEntryAck`) | **No persistence write**, no TTL; delete the session token (CR-TOK-6); release the session. Stall timeout: the server closes the connection after `ZoneFullResponse(Other)`. The client's retry is a fresh connect (EC-TOK-1). Added 2026-10-23 |
 | `Connected` | `Disconnected_SessionExpired` | Client sends explicit disconnect | Skip TTL; write final state to persistence immediately; release entity and session |
 | `Connected` | `Disconnected_SessionExpired` | New authenticated connection for same account arrives (session-stealing) | Invalidate prior session; write final state; release resources; new connection starts at `Connecting` |
 | `Disconnected_SessionActive` | `Reconnecting` | Client re-establishes transport within TTL; session token matches | Stop TTL countdown; begin re-authentication |

@@ -1,5 +1,12 @@
 # Zone Instancing — Design Review Log
 
+## Review — 2026-10-23 (lean, `ZoneEntryAck` revision `a2872f4`) — Verdict: NEEDS REVISION (fixed same session; lean verify pending)
+Scope signal: M (this revision; GDD overall XL)
+Specialists: None (lean mode — single-session analysis)
+Blocking items: 1 | Recommended: 4
+Summary: The ack design closed readiness gaps 1–4 (schema consistent across wire protocol, MCR-2, CCR-3, registry; knob conflict resolved; acked duplicate = session stealing). Blocker: reclamation left the session layer undefined — connection fate after case (a), session state and token after (a)/(c), client handling of a late `ZoneFullResponse(Other)` after the gate opened. Fixed (user decisions): (a) closes the connection; all cases `Connected → Disconnected_SessionExpired`, no write, token deleted (fresh connect); client tears down the zone view; propagated to networking-session.md ST-NET-1 (new row), networking-session-token.md CR-TOK-6, networking-wire-protocol.md `ZoneFullResponse` (fourth case). Recommended fixed: reclamation is the fourth exit cause (CR-ZI-14, Party row, AC-ZI-13); case (b) same instance only, reclaims at token validation before `LoadCharacter` (AC-ZI-28 both outcomes); teardown skips the save of an entering slot (CR-ZI-12 step 2, EC-ZI-15, AC-ZI-31). Nice-to-have fixed: CR-ZI-8 intro step 11; AC-ZI-30 heartbeat variant.
+Prior verdict resolved: Yes — NEEDS REVISION (2026-10-22 lean #2, fixed and marked Approved)
+
 ## Review — 2026-10-22 (lean #2) — Verdict: NEEDS REVISION (fixed same session; marked Approved by user)
 Scope signal: XL
 Specialists: None (lean mode — single-session analysis)
