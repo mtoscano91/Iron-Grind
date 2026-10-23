@@ -1,7 +1,7 @@
 # Story 007: ZoneStateSnapshot Assembly and Fragmentation (F-ZI-1)
 
 > **Epic**: Zone Instancing
-> **Status**: Ready — written 2026-10-22; readiness 2026-10-23: NEEDS WORK (7 gaps) → fixed → Ready
+> **Status**: Complete — 2026-10-23 (`/story-done`, COMPLETE WITH NOTES); readiness 2026-10-23: NEEDS WORK (7 gaps) → fixed → Ready
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-19
@@ -28,17 +28,17 @@
 
 ## Acceptance Criteria
 
-- [ ] `ZoneSnapshotBuilder.SendSnapshot(uint clientId)` (main thread; tick read from `IServerTickSource`) writes one `EntityState` per occupied slot: players first in `ZoneSlotPool.GetPlayerEntityIDsInZone` order, then mobs in the order of the new `ZoneSlotPool.GetMobEntityIDsInZone`. Player entries carry all player fields; mob entries carry `MobTypeId` from `IZoneMobRoster.TryGetMob`. The joining client's own slot is included.
-- [ ] `isInDeadState = true` exactly when the slot's `ZoneSessionState` is `Dead` or `Respawning`; then `respawnTicksRemaining = max(0, RespawnTick − currentTick)` with `RespawnTick` from the seam; otherwise false / 0. `isGhost = (state == Disconnected_SessionActive)`.
-- [ ] **Serialize first**: the whole entry stream is written into one per-zone buffer preallocated at `maxPlayers × 77 + maxMobs × 35` bytes (9,100 at defaults); then `totalFragments = max(1, ⌈actualBytes / 504⌉)`; never a worst-case estimate.
-- [ ] `snapshotVersion` = the current server tick, the same on every fragment of one snapshot.
-- [ ] **AC-ZI-8**: with P = 50 players and M = 150 mobs, `INetworkTestObserver.GetOutboundMessageCount(clientId, ZoneStateSnapshotFragment.MessageTypeId)` equals 17 with 11-byte names and 19 with names that encode to 24 bytes.
-- [ ] **Empty zone**: P = M = 0 sends exactly 1 fragment, `totalFragments = 1`, empty payload (dual-gate needs a complete snapshot).
-- [ ] **Contiguous split**: every fragment except the last carries exactly 504 payload bytes; concatenating the payloads in `fragmentIndex` order equals the serialized stream byte for byte, and walking it with `EntityStateCodec.TryReadBody` yields every entry (client reassembles before parsing — wire protocol step 3).
-- [ ] **Seam miss**: an entity the seam has no data for is skipped with one warning per call; the fragment count is computed from the bytes actually written.
-- [ ] **Outbox bulk range**: `ClientMessageOutbox.Enqueue` of 0xF000 (routing row present) is accepted; 0xF001 (no routing row) is refused; 0xDFFF is still refused. Existing `ClientMessageOutbox_tests` stay green.
-- [ ] **Observer counter**: the outbox calls `NetworkTestObserver.RecordOutboundMessage(clientId, messageTypeId)` once per accepted `Enqueue`, never for a refused one. The hook is set through a setter compiled only under `#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD` (the observer's own guard); with no observer set, nothing is recorded.
-- [ ] **Allocation**: a second `SendSnapshot` call at P = 50 / M = 150 passes `Is.Not.AllocatingGCMemory` (names cached by the seam double).
+- [x] `ZoneSnapshotBuilder.SendSnapshot(uint clientId)` (main thread; tick read from `IServerTickSource`) writes one `EntityState` per occupied slot: players first in `ZoneSlotPool.GetPlayerEntityIDsInZone` order, then mobs in the order of the new `ZoneSlotPool.GetMobEntityIDsInZone`. Player entries carry all player fields; mob entries carry `MobTypeId` from `IZoneMobRoster.TryGetMob`. The joining client's own slot is included.
+- [x] `isInDeadState = true` exactly when the slot's `ZoneSessionState` is `Dead` or `Respawning`; then `respawnTicksRemaining = max(0, RespawnTick − currentTick)` with `RespawnTick` from the seam; otherwise false / 0. `isGhost = (state == Disconnected_SessionActive)`.
+- [x] **Serialize first**: the whole entry stream is written into one per-zone buffer preallocated at `maxPlayers × 77 + maxMobs × 35` bytes (9,100 at defaults); then `totalFragments = max(1, ⌈actualBytes / 504⌉)`; never a worst-case estimate.
+- [x] `snapshotVersion` = the current server tick, the same on every fragment of one snapshot.
+- [x] **AC-ZI-8**: with P = 50 players and M = 150 mobs, `INetworkTestObserver.GetOutboundMessageCount(clientId, ZoneStateSnapshotFragment.MessageTypeId)` equals 17 with 11-byte names and 19 with names that encode to 24 bytes.
+- [x] **Empty zone**: P = M = 0 sends exactly 1 fragment, `totalFragments = 1`, empty payload (dual-gate needs a complete snapshot).
+- [x] **Contiguous split**: every fragment except the last carries exactly 504 payload bytes; concatenating the payloads in `fragmentIndex` order equals the serialized stream byte for byte, and walking it with `EntityStateCodec.TryReadBody` yields every entry (client reassembles before parsing — wire protocol step 3).
+- [x] **Seam miss**: an entity the seam has no data for is skipped with one warning per call; the fragment count is computed from the bytes actually written.
+- [x] **Outbox bulk range**: `ClientMessageOutbox.Enqueue` of 0xF000 (routing row present) is accepted; 0xF001 (no routing row) is refused; 0xDFFF is still refused. Existing `ClientMessageOutbox_tests` stay green.
+- [x] **Observer counter**: the outbox calls `NetworkTestObserver.RecordOutboundMessage(clientId, messageTypeId)` once per accepted `Enqueue`, never for a refused one. The hook is set through a setter compiled only under `#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD` (the observer's own guard); with no observer set, nothing is recorded.
+- [x] **Allocation**: a second `SendSnapshot` call at P = 50 / M = 150 passes `Is.Not.AllocatingGCMemory` (names cached by the seam double).
 
 ---
 
@@ -87,7 +87,7 @@
 - `tests/EditMode/ZoneInstancing/ZoneInstancing_SnapshotAssembly_tests.cs` — must exist and pass.
 - `tests/EditMode/Networking/ClientMessageOutbox_tests.cs` — bulk-range and observer-counter cases added, all passing.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing (SnapshotAssembly 25 tests; outbox +7, 1 rewritten; SlotPools +2)
 
 ---
 
@@ -95,3 +95,23 @@
 
 - Depends on: Stories 002, 003, 006 (all Complete)
 - Unlocks: Stories 008, 010
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-23
+**Criteria**: 11/11 passing, all by automated test. None deferred.
+**Deviations** (advisory, notes only — not logged as tech debt):
+1. Added at code review: a mob whose `MobTypeID.RawValue` is above `ushort.MaxValue` (wire field is 16-bit, OQ-ZI-2) is skipped with the one-per-call `SnapshotEntitySkipped` warning instead of being silently narrowed.
+2. `IClientMessageOutbox.Enqueue` returns nothing, so the builder cannot see a refused fragment; `SendSnapshot` returns `totalFragments` handed to the outbox. A refusal leaves the client without a complete snapshot; the outbox logs it and, on a full queue, requests the disconnect (documented on the class).
+3. The `ZoneSlotPool.TryGetPlayer` miss branch in the builder is unreachable today (roster and slot table move together) and has no test.
+4. GDD follow-ups (unchanged from readiness): AC-ZI-8 "22 chars" is the 24-byte UTF-8 cap; F-ZI-1 "avg ~65 B" is 64 B with 11-byte names.
+5. `TR-zi-008` remains a placeholder until `/architecture-review`.
+**Scope**: within the story (outbox, `ZoneSlotPool`, four new files in `src/ServerLogic/ZoneInstancing/`, three test files).
+**Notes for other stories**:
+- Story 008: reuse `ZoneSnapshotBuilder.SendSnapshot(clientId)` for the retransmit; the snapshot version is the tick at send time, so a retransmit gets a new version.
+- Story 010: call `SendSnapshot` at CR-ZI-8 step 6; the builder needs the zone's `IZoneMobRoster` and an `IZoneEntityStateSource`.
+- Story 014: wire the real `IZoneEntityStateSource` (Character Stats, combat, Equipment, Death & Respawn); it must not allocate, and character names must be cached strings, or the allocation guarantee breaks.
+- Wiring: call `ClientMessageOutbox.SetTestObserver` only under `UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD`.
+**Test Evidence**: Logic — `tests/EditMode/ZoneInstancing/ZoneInstancing_SnapshotAssembly_tests.cs`, `tests/EditMode/Networking/ClientMessageOutbox_tests.cs`, `tests/EditMode/ZoneInstancing/ZoneInstancing_SlotPools_tests.cs` (EditMode batch: 3850 total, 0 failed, 70 skipped Npgsql).
+**Code Review**: Complete — APPROVED WITH SUGGESTIONS, all 6 applied (`46ac08e`).
