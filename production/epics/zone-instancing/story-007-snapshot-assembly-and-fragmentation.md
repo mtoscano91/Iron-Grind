@@ -1,11 +1,11 @@
 # Story 007: ZoneStateSnapshot Assembly and Fragmentation (F-ZI-1)
 
 > **Epic**: Zone Instancing
-> **Status**: Ready — written 2026-10-22
+> **Status**: Ready — written 2026-10-22; readiness 2026-10-23: NEEDS WORK (7 gaps) → fixed → Ready
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-19
-> **Estimate**: 3 hours (provisional — confirm at `/story-readiness`)
+> **Estimate**: 6 hours
 
 ## Context
 
@@ -21,27 +21,37 @@
 **Control Manifest Rules (this layer)**:
 - Required: `IronGrind.ServerLogic` — ADR-012
 - Required: outbound messages go through the existing client message outbox — ADR-004 / ADR-014
+- Outbox bulk range (this story): `ClientMessageOutbox` accepts 0xE000–0xEFFF and 0xF000–0xFFFF (bulk); every type still needs a routing row
 - Guardrail: reuse one serialization buffer per zone; no per-entity allocation
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] A snapshot builder reads Story 002's player slots and Story 003's mob slots and writes one `EntityState` per occupied slot: player entries with all player fields, mob entries with `MobTypeID`; empty slots skipped.
-- [ ] Dead players: `isInDeadState = true`, `respawnTicksRemaining = max(0, RespawnTick − currentTick)`; otherwise false / 0.
-- [ ] **Serialize first**: the whole `EntityState[]` is serialized before splitting; `totalFragments = max(1, ⌈actualBytes / 504⌉)`; never a worst-case estimate.
+- [ ] `ZoneSnapshotBuilder.SendSnapshot(uint clientId)` (main thread; tick read from `IServerTickSource`) writes one `EntityState` per occupied slot: players first in `ZoneSlotPool.GetPlayerEntityIDsInZone` order, then mobs in the order of the new `ZoneSlotPool.GetMobEntityIDsInZone`. Player entries carry all player fields; mob entries carry `MobTypeId` from `IZoneMobRoster.TryGetMob`. The joining client's own slot is included.
+- [ ] `isInDeadState = true` exactly when the slot's `ZoneSessionState` is `Dead` or `Respawning`; then `respawnTicksRemaining = max(0, RespawnTick − currentTick)` with `RespawnTick` from the seam; otherwise false / 0. `isGhost = (state == Disconnected_SessionActive)`.
+- [ ] **Serialize first**: the whole entry stream is written into one per-zone buffer preallocated at `maxPlayers × 77 + maxMobs × 35` bytes (9,100 at defaults); then `totalFragments = max(1, ⌈actualBytes / 504⌉)`; never a worst-case estimate.
 - [ ] `snapshotVersion` = the current server tick, the same on every fragment of one snapshot.
-- [ ] **AC-ZI-8**: with P = 50 players and M = 150 mobs and known names, the number of `ZoneStateSnapshotFragment` messages sent to the joining client equals F-ZI-1 for those names (17 with average-length names, 19 with 24-byte names), asserted through `INetworkTestObserver.GetOutboundMessageCount(clientId, ZoneStateSnapshotFragment.MessageTypeId)`.
-- [ ] **Empty zone**: P = M = 0 sends exactly 1 fragment with an empty payload (dual-gate needs a complete snapshot).
-- [ ] An entry never straddles a fragment boundary in a way the client cannot reassemble: the payload is the contiguous byte stream split at 504-byte offsets (client reassembles before parsing — wire protocol step 3).
+- [ ] **AC-ZI-8**: with P = 50 players and M = 150 mobs, `INetworkTestObserver.GetOutboundMessageCount(clientId, ZoneStateSnapshotFragment.MessageTypeId)` equals 17 with 11-byte names and 19 with names that encode to 24 bytes.
+- [ ] **Empty zone**: P = M = 0 sends exactly 1 fragment, `totalFragments = 1`, empty payload (dual-gate needs a complete snapshot).
+- [ ] **Contiguous split**: every fragment except the last carries exactly 504 payload bytes; concatenating the payloads in `fragmentIndex` order equals the serialized stream byte for byte, and walking it with `EntityStateCodec.TryReadBody` yields every entry (client reassembles before parsing — wire protocol step 3).
+- [ ] **Seam miss**: an entity the seam has no data for is skipped with one warning per call; the fragment count is computed from the bytes actually written.
+- [ ] **Outbox bulk range**: `ClientMessageOutbox.Enqueue` of 0xF000 (routing row present) is accepted; 0xF001 (no routing row) is refused; 0xDFFF is still refused. Existing `ClientMessageOutbox_tests` stay green.
+- [ ] **Observer counter**: the outbox calls `NetworkTestObserver.RecordOutboundMessage(clientId, messageTypeId)` once per accepted `Enqueue`, never for a refused one. The hook is set through a setter compiled only under `#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD` (the observer's own guard); with no observer set, nothing is recorded.
+- [ ] **Allocation**: a second `SendSnapshot` call at P = 50 / M = 150 passes `Is.Not.AllocatingGCMemory` (names cached by the seam double).
 
 ---
 
 ## Implementation Notes
 
-- Fields this zone process does not own yet (HP, MP, level, rotation, `isInCombat`, `cycleTimer`, appearance flags) come through a read seam (for example `IZoneEntityStateSource`) with a test double; the real sources (Character Stats, combat, Equipment) are wired in Story 014 as far as they exist, the rest stay stand-ins.
-- `isGhost` comes from the slot's `ZoneSessionState == Disconnected_SessionActive`.
-- AC-ZI-8's "22 chars" wording in the GDD is the 24-byte UTF-8 cap — use names that encode to exactly 24 bytes for the worst case.
+- Read seam `IZoneEntityStateSource` (fields the zone process does not own):
+  - `bool TryGetPlayerState(EntityID id, out ZonePlayerStateView view)` — position, rotation, facing angle, HP/MP (current and max), level, `isInCombat`, `cycleTimer`, appearance flags, character name, `RespawnTick`.
+  - `bool TryGetMobState(EntityID id, out ZoneMobStateView view)` — current position, rotation, facing angle, HP (current and max), `isInCombat`, `cycleTimer`.
+  - Test double in this story; the real sources (Character Stats, combat, Equipment, Death & Respawn) are wired in Story 014 as far as they exist, the rest stay stand-ins.
+- Mob enumeration: add `IReadOnlyList<EntityID> GetMobEntityIDsInZone(ZoneID zone)` to `ZoneSlotPool`, built like the player roster (read-only view over a preallocated list, swap-remove, no allocation; foreign zone → empty list + warning, as for players).
+- Encode each entry with `EntityStateCodec.WriteBody` at the running offset (`GetBodySize` exact sizes), then slice at 504-byte offsets and encode each `ZoneStateSnapshotFragment`; enqueue every fragment with `isCapExempt: true`.
+- Outbox: widen the type guard in `ClientMessageOutbox.TryAcceptMessage` (now 0xE000–0xEFFF only, line ~369) to also accept 0xF000–0xFFFF; update the log text and the `PRIORITY_RANGE_*` docs (add `BULK_RANGE_FIRST` / `BULK_RANGE_LAST` constants). Call `RecordOutboundMessage` after the message is queued.
+- AC-ZI-8's "22 chars" wording in the GDD is the 24-byte UTF-8 cap — use names that encode to exactly 24 bytes for the worst case. 11-byte names give 64-byte player entries (the GDD's "avg ~65" is one byte high; the count is still 17).
 
 ---
 
@@ -49,23 +59,33 @@
 
 - Story 008: retransmit on `ZoneSnapshotRequest`
 - Story 010: when in the entry sequence the snapshot is sent
+- Story 014: wiring the real `IZoneEntityStateSource` sources
+- Client-side reassembly (already in `ZoneSnapshotReassemblyTracker`)
+- GDD F-ZI-1 "avg ~65 B" wording (follow-up note only)
 
 ---
 
 ## QA Test Cases
 
-- **AC-ZI-8 average** — 50 players with 11-byte names + 150 mobs → expected F computed from actual bytes (17); observer count matches.
+- **AC-ZI-8 average** — 50 players with 11-byte names + 150 mobs → 17; observer count matches.
 - **AC-ZI-8 worst** — 50 players with 24-byte names + 150 mobs → 19.
-- **Empty** — P = M = 0 → 1 fragment, `totalFragments = 1`.
-- **Dead player** — RespawnTick 140 at tick 100 → `respawnTicksRemaining = 40`; at tick 150 → 0.
+- **Empty** — P = M = 0 → 1 fragment, `totalFragments = 1`, empty payload.
+- **Dead player** — `Dead`, RespawnTick 140 at tick 100 → `respawnTicksRemaining = 40`; at tick 150 → 0; `Respawning` → dead flag true; `Connected` → false / 0.
+- **Ghost** — `Disconnected_SessionActive` → `isGhost = true`.
 - **Version** — all fragments carry the build tick.
+- **Contiguous** — reassembled payload equals the stream; all but the last fragment are 504 B; decoding walks every entry in order.
+- **Seam miss** — one player missing from the double → skipped, one warning, count from actual bytes.
+- **Outbox range** — 0xF000 accepted and counted; 0xF001 / 0xDFFF refused and not counted.
+- **Allocation** — second call does not allocate.
 
 ---
 
 ## Test Evidence
 
 **Story Type**: Logic
-**Required evidence**: `tests/EditMode/ZoneInstancing/ZoneInstancing_SnapshotAssembly_tests.cs` — must exist and pass.
+**Required evidence**:
+- `tests/EditMode/ZoneInstancing/ZoneInstancing_SnapshotAssembly_tests.cs` — must exist and pass.
+- `tests/EditMode/Networking/ClientMessageOutbox_tests.cs` — bulk-range and observer-counter cases added, all passing.
 
 **Status**: [ ] Not yet created
 
@@ -73,5 +93,5 @@
 
 ## Dependencies
 
-- Depends on: Stories 002, 003, 006
+- Depends on: Stories 002, 003, 006 (all Complete)
 - Unlocks: Stories 008, 010

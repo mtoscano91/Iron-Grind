@@ -4536,3 +4536,10 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - EPIC.md row 006 Complete, Next Step -> Story 007; epics/index.md row 001-006 Complete.
 - Next recommended: /story-readiness production/epics/zone-instancing/story-007-snapshot-assembly-and-fragmentation.md
 - Committed. PAT rotation still unconfirmed.
+
+## Session Extract — /story-readiness 2026-10-23 (Zone Instancing Story 007)
+- Verdict: NEEDS WORK (7 gaps) -> fixed -> Ready (6 h). Lean: QL-STORY-READY skipped.
+- Gaps found: outbox rejects 0xF000 (type guard 0xE000-0xEFFF, ClientMessageOutbox.cs ~369); NetworkTestObserver.RecordOutboundMessage had no production caller; no mob enumeration API; dead / RespawnTick source unstated; read seam undefined; entry point / buffer unstated; contiguous-split AC not testable as worded.
+- User decisions: widen the outbox to also accept the bulk range 0xF000-0xFFFF (routing row still required); the outbox records each accepted Enqueue into NetworkTestObserver via a setter under #if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD.
+- Story now specifies: ZoneSnapshotBuilder.SendSnapshot(clientId); IZoneEntityStateSource (TryGetPlayerState / TryGetMobState) with a test double; ZoneSlotPool.GetMobEntityIDsInZone; dead = Dead or Respawning; ghost = Disconnected_SessionActive; per-zone buffer maxPlayers*77 + maxMobs*35; seam miss skips + one warning; allocation check; 11 ACs.
+- EPIC.md row 007 Ready (6 h), Next Step -> /dev-story 007. Not committed. PAT rotation still unconfirmed.
