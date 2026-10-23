@@ -10,7 +10,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
     {
         /// <summary>
         /// The player holds a slot and its loaded record is applied. Called on the tick thread from the load's
-        /// completion callback.
+        /// completion callback. Implementations must not throw: an exception leaves the slot occupied with no reply.
         /// </summary>
         /// <param name="clientId">The player's connection.</param>
         /// <param name="slot">The allocated player slot index.</param>

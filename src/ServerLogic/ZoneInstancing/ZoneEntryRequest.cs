@@ -1,5 +1,4 @@
 using IronGrind.CharacterPersistence;
-using IronGrind.CharacterStats;
 using IronGrind.Currency;
 
 namespace IronGrind.ServerLogic.ZoneInstancing
@@ -38,7 +37,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         /// <summary>The zone the client asked for.</summary>
         public ZoneID TargetZone { get; }
 
-        /// <summary>The presented session token; may be null.</summary>
+        /// <summary>The presented session token; may be null. Validators must not retain or mutate it; the decoder hands over an array it will not reuse.</summary>
         public byte[] SessionToken { get; }
     }
 }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using System.Threading.Tasks;
 using IronGrind.CharacterPersistence;
 using IronGrind.CharacterStats;
 using IronGrind.Currency;
@@ -29,6 +30,17 @@ namespace IronGrind.ServerLogic.ZoneInstancing
     /// If <c>ApplyLoadedRecord</c> fails the slot is released and no persistence call follows. A connection removed
     /// while its load is pending is marked dropped: the callback sends nothing and allocates nothing. The service
     /// owns the <see cref="CancellationTokenSource"/> of each load and disposes it in the callback.
+    /// </para>
+    /// <para>
+    /// Source lifetime: disposed in the callback; disposed when <c>LoadCharacter</c> throws synchronously; cancelled
+    /// but NOT disposed when <see cref="ITickCompletionQueue.Track{T}"/> throws (the running task holds the token and
+    /// is orphaned on purpose, a failing Track is a programming error); NOT disposed for a task still incomplete at
+    /// <c>DrainOnShutdown</c> (no callback runs).
+    /// </para>
+    /// <para>
+    /// Failure cleanup: when <c>ApplyLoadedRecord</c> fails or throws, only the pool slot is released. Stat / Leveling
+    /// writes already made by <c>ApplyLoadedRecord</c> are not rolled back (see the remarks of
+    /// <c>CharacterPersistenceService.ApplyLoadedRecord</c>).
     /// </para>
     /// </remarks>
     public sealed class ZoneEntryAdmission : IClientConnectionListener
@@ -99,6 +111,8 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         /// Starts one entry. Tick thread only. See the class remarks for the order of checks.
         /// </summary>
         /// <param name="request">The decoded handshake.</param>
+        /// <exception cref="ArgumentNullException">Thrown by <see cref="ITickCompletionQueue.Track{T}"/> for a null argument; also any exception
+        /// <c>LoadCharacter</c> throws synchronously. The pending entry is cleaned up first and the client gets no reply.</exception>
         /// <exception cref="InvalidOperationException">Called off the tick thread (thrown by <see cref="ITickCompletionQueue.Track{T}"/>); the pending entry is cleaned up first.</exception>
         public void BeginEntry(in ZoneEntryRequest request)
         {
@@ -133,16 +147,33 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             var entry = new PendingEntry();
             var cts = new CancellationTokenSource();
             _pending[clientId] = entry;
+            ZoneID targetZone = request.TargetZone;
+            var character = request.Character;
+            var account = request.Account;
+
+            Task<CharacterLoadResult> load;
             try
             {
-                ZoneEntryRequest captured = request;
-                _queue.Track(_persistence.LoadCharacter(request.Character, request.Account, cts.Token), cts,
-                    result => OnLoadCompleted(captured, entry, cts, result));
+                load = _persistence.LoadCharacter(character, account, cts.Token);
             }
             catch (Exception)
             {
                 _pending.Remove(clientId);
                 cts.Dispose();
+                throw;
+            }
+
+            // Nothing may run between LoadCharacter and Track (ADR-011: started and tracked in the same statement).
+            try
+            {
+                _queue.Track(load, cts, result => OnLoadCompleted(clientId, targetZone, character, account, entry, cts, result));
+            }
+            catch (Exception)
+            {
+                _pending.Remove(clientId);
+                // Cancelled, not disposed: the running task holds the token. The task is orphaned on purpose; a
+                // failing Track is a programming error.
+                cts.Cancel();
                 throw;
             }
         }
@@ -182,11 +213,10 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             return true;
         }
 
-        private void OnLoadCompleted(ZoneEntryRequest request, PendingEntry entry, CancellationTokenSource cts,
-            TickTaskResult<CharacterLoadResult> result)
+        private void OnLoadCompleted(uint clientId, ZoneID targetZone, CharacterID character, AccountID account,
+            PendingEntry entry, CancellationTokenSource cts, TickTaskResult<CharacterLoadResult> result)
         {
             cts.Dispose();
-            uint clientId = request.ClientId;
             if (_pending.TryGetValue(clientId, out PendingEntry current) && ReferenceEquals(current, entry))
             {
                 _pending.Remove(clientId);
@@ -200,31 +230,45 @@ namespace IronGrind.ServerLogic.ZoneInstancing
 
             if (result.Status != TickTaskStatus.Completed || result.Value.Code != CharacterLoadCode.Success || result.Value.Record == null)
             {
-                string why = result.Status != TickTaskStatus.Completed ? result.Status.ToString() : result.Value.Code.ToString();
+                string why = result.Status != TickTaskStatus.Completed
+                    ? result.Status.ToString()
+                    : result.Value.Code == CharacterLoadCode.Success ? "NullRecord" : result.Value.Code.ToString();
                 Debug.LogWarning($"{LOG_PREFIX} LoadCharacter failed for client {clientId} ({why}); entry rejected.");
-                Reply(clientId, request.TargetZone, JoinRejectedReason.LoadCharacterFailed, 0);
+                Reply(clientId, targetZone, JoinRejectedReason.LoadCharacterFailed, 0);
                 return;
             }
 
             // Re-check (EC-ZI-1, AC-ZI-27, EC-ZI-4): the loaded record is discarded on any refusal.
-            if (!TryPreCheck(clientId, request.TargetZone))
+            if (!TryPreCheck(clientId, targetZone))
             {
                 return;
             }
 
-            if (!_pool.TryAllocatePlayer(_zone, request.Character, request.Account, clientId, out byte slot, out EntityID entityId))
+            if (!_pool.TryAllocatePlayer(_zone, character, account, clientId, out byte slot, out EntityID entityId))
             {
                 Debug.LogError($"{LOG_PREFIX} TryAllocatePlayer failed below the cap for client {clientId} in {_zone} (EntityID counter exhausted?).");
-                Reply(clientId, request.TargetZone, JoinRejectedReason.Other, 0);
+                Reply(clientId, targetZone, JoinRejectedReason.Other, 0);
                 return;
             }
 
-            CharacterLoadCode applied = _applier.ApplyLoadedRecord(entityId, result.Value.Record);
+            CharacterLoadCode applied;
+            try
+            {
+                applied = _applier.ApplyLoadedRecord(entityId, result.Value.Record);
+            }
+            catch (Exception ex)
+            {
+                _pool.ReleasePlayer(entityId);
+                Debug.LogError($"{LOG_PREFIX} ApplyLoadedRecord threw for client {clientId}; slot released.\n{ex}");
+                Reply(clientId, targetZone, JoinRejectedReason.LoadCharacterFailed, 0);
+                return;
+            }
+
             if (applied != CharacterLoadCode.Success)
             {
                 Debug.LogWarning($"{LOG_PREFIX} ApplyLoadedRecord returned {applied} for client {clientId}; slot released.");
                 _pool.ReleasePlayer(entityId);
-                Reply(clientId, request.TargetZone, JoinRejectedReason.LoadCharacterFailed, 0);
+                Reply(clientId, targetZone, JoinRejectedReason.LoadCharacterFailed, 0);
                 return;
             }
 

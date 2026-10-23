@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using IronGrind.CharacterPersistence;
@@ -28,6 +29,9 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
         private const uint CLIENT_A = 42u;
         private const uint CLIENT_B = 43u;
         private const int WATCHDOG_TICKS = 5;
+        private const uint TIMEOUT_MARGIN_TICKS = 5u;
+        private const int TOKEN_LENGTH = SessionTokenStore.TOKEN_LENGTH_BYTES;
+        private const byte CUSTOM_RETRY_SECONDS = 7;
 
         private sealed class FakeTicks : IServerTickSource
         {
@@ -55,21 +59,57 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             public void Enqueue(uint clientId, ushort messageTypeId, ReadOnlySpan<byte> body, bool isCapExempt)
             {
                 Assert.AreEqual(ZoneFullResponse.MessageTypeId, messageTypeId);
+                Assert.IsFalse(isCapExempt, "admission replies count against the outbox cap");
                 Assert.IsTrue(ZoneFullResponseCodec.TryReadBody(body, out ZoneFullResponse message));
                 Sent.Add(new KeyValuePair<uint, ZoneFullResponse>(clientId, message));
             }
         }
 
+        /// <summary>Delegates to a real queue, records the cancellation sources and can be told to throw on Track.</summary>
+        private sealed class RecordingQueue : ITickCompletionQueue
+        {
+            private readonly TickCompletionQueue _inner;
+            public readonly List<CancellationTokenSource> Tracked = new List<CancellationTokenSource>();
+            public bool ThrowOnTrack;
+
+            public RecordingQueue(TickCompletionQueue inner) => _inner = inner;
+
+            public void Track<T>(Task<T> task, CancellationTokenSource cancellation, Action<TickTaskResult<T>> onCompletedOnTick)
+            {
+                if (ThrowOnTrack)
+                {
+                    throw new InvalidOperationException("track failed");
+                }
+
+                Tracked.Add(cancellation);
+                _inner.Track(task, cancellation, onCompletedOnTick);
+            }
+
+            public void Drain(uint currentTick) => _inner.Drain(currentTick);
+
+            public int InFlightCount => _inner.InFlightCount;
+
+            public void DrainOnShutdown(TimeSpan timeout) => _inner.DrainOnShutdown(timeout);
+        }
+
         private sealed class FakePersistence : ICharacterPersistence
         {
             public readonly List<TaskCompletionSource<CharacterLoadResult>> Loads = new List<TaskCompletionSource<CharacterLoadResult>>();
+            public readonly List<CancellationToken> Tokens = new List<CancellationToken>();
+            public bool ThrowOnLoad;
             public int SaveSessionCalls;
             public int OtherCalls;
 
             public Task<CharacterLoadResult> LoadCharacter(CharacterID id, AccountID ownerAccountID, CancellationToken ct)
             {
+                if (ThrowOnLoad)
+                {
+                    throw new InvalidOperationException("load failed synchronously");
+                }
+
                 var source = new TaskCompletionSource<CharacterLoadResult>();
                 Loads.Add(source);
+                Tokens.Add(ct);
                 return source.Task;
             }
 
@@ -125,6 +165,7 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
         private sealed class FakeApplier : ILoadedRecordApplier
         {
             public CharacterLoadCode Result = CharacterLoadCode.Success;
+            public bool ThrowOnApply;
             public int Calls;
             public EntityID LastEntity;
 
@@ -132,6 +173,11 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             {
                 Calls++;
                 LastEntity = entityId;
+                if (ThrowOnApply)
+                {
+                    throw new InvalidOperationException("apply failed");
+                }
+
                 return Result;
             }
         }
@@ -140,10 +186,12 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
         {
             public bool Accept = true;
             public int Calls;
+            public ZoneEntryRequest LastRequest;
 
             public bool IsValid(in ZoneEntryRequest request)
             {
                 Calls++;
+                LastRequest = request;
                 return Accept;
             }
         }
@@ -162,7 +210,7 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
         private FakeOutbox _outbox;
         private ZoneSlotPool _pool;
         private ZoneLifecycle _lifecycle;
-        private TickCompletionQueue _queue;
+        private RecordingQueue _queue;
         private ZoneEntryAdmission _svc;
         private uint _nextCharacter;
         private uint _tick;
@@ -180,7 +228,7 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             _pool = new ZoneSlotPool(Zone, new FakeTicks(), new FakePoolListener());
             _lifecycle = new ZoneLifecycle(Zone, new FakeLifecycleListener(), 0u);
             _lifecycle.MarkActive(0u);
-            _queue = new TickCompletionQueue(WATCHDOG_TICKS);
+            _queue = new RecordingQueue(new TickCompletionQueue(WATCHDOG_TICKS));
             _svc = Build(_pool);
             _nextCharacter = 1000u;
             _tick = 0u;
@@ -188,13 +236,13 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
 
         // ----- helpers --------------------------------------------------------------------------
 
-        private ZoneEntryAdmission Build(ZoneSlotPool pool) =>
-            new ZoneEntryAdmission(Zone, pool, _lifecycle, _persistence, _applier, _queue, _validator, _outbox, _continuation);
+        private ZoneEntryAdmission Build(ZoneSlotPool pool, byte retryAfterSeconds = ZoneEntryAdmission.ZONE_FULL_RETRY_AFTER_SECONDS) =>
+            new ZoneEntryAdmission(Zone, pool, _lifecycle, _persistence, _applier, _queue, _validator, _outbox, _continuation, retryAfterSeconds);
 
         private ZoneEntryRequest Request(uint clientId, uint zoneRaw = ZONE_RAW)
         {
             uint n = _nextCharacter++;
-            return new ZoneEntryRequest(clientId, new AccountID(n + 5000u), new CharacterID(n), new ZoneID(zoneRaw), new byte[16]);
+            return new ZoneEntryRequest(clientId, new AccountID(n + 5000u), new CharacterID(n), new ZoneID(zoneRaw), new byte[TOKEN_LENGTH]);
         }
 
         private EntityID AddPlayer(uint clientId)
@@ -220,6 +268,8 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             _queue.Drain(_tick);
         }
 
+        private static Regex Rx(string pattern) => new Regex(pattern);
+
         private void AssertLastReply(uint clientId, JoinRejectedReason reason, byte retry, uint zoneRaw = ZONE_RAW)
         {
             Assert.IsNotEmpty(_outbox.Sent);
@@ -227,6 +277,9 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             Assert.AreEqual(clientId, last.Key);
             Assert.AreEqual(new ZoneFullResponse(new ZoneID(zoneRaw), reason, retry), last.Value);
         }
+
+        private static void AssertDisposed(CancellationTokenSource cts) =>
+            Assert.Throws<ObjectDisposedException>(() => { CancellationToken ignored = cts.Token; });
 
         // ----- pre-check order ------------------------------------------------------------------
 
@@ -240,6 +293,7 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             AssertLastReply(CLIENT_A, JoinRejectedReason.ZoneDoesNotExist, 0, OTHER_ZONE_RAW);
             Assert.AreEqual(0, _persistence.Loads.Count);
             Assert.AreEqual(0, _validator.Calls, "the zone check runs before the token check");
+            LogAssert.NoUnexpectedReceived();
         }
 
         [Test]
@@ -255,6 +309,8 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             svc.BeginEntry(in second);
 
             Assert.AreEqual(2, _outbox.Sent.Count);
+            Assert.AreEqual(CLIENT_A, _outbox.Sent[0].Key);
+            Assert.AreEqual(new ZoneFullResponse(Zone, JoinRejectedReason.Other, 0), _outbox.Sent[0].Value);
             AssertLastReply(CLIENT_B, JoinRejectedReason.Other, 0);
             Assert.AreEqual(0, _persistence.Loads.Count);
             LogAssert.NoUnexpectedReceived();
@@ -272,6 +328,23 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             Assert.AreEqual(0, _persistence.Loads.Count);
             Assert.AreEqual(0, _pool.OccupiedPlayerCount);
             Assert.AreEqual(0, _svc.PendingCount);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_validator_receives_the_full_request_once_on_success()
+        {
+            var request = Request(CLIENT_A);
+
+            _svc.BeginEntry(in request);
+
+            Assert.AreEqual(1, _validator.Calls);
+            Assert.AreEqual(request.ClientId, _validator.LastRequest.ClientId);
+            Assert.AreEqual(request.Account, _validator.LastRequest.Account);
+            Assert.AreEqual(request.Character, _validator.LastRequest.Character);
+            Assert.AreEqual(request.TargetZone, _validator.LastRequest.TargetZone);
+            Assert.AreSame(request.SessionToken, _validator.LastRequest.SessionToken);
+            LogAssert.NoUnexpectedReceived();
         }
 
         [Test]
@@ -285,6 +358,7 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
 
             AssertLastReply(CLIENT_A, JoinRejectedReason.ZoneDoesNotExist, 0);
             Assert.AreEqual(0, _persistence.Loads.Count);
+            LogAssert.NoUnexpectedReceived();
         }
 
         [Test]
@@ -297,6 +371,80 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
 
             AssertLastReply(CLIENT_A, JoinRejectedReason.ZoneFull, ZoneEntryAdmission.ZONE_FULL_RETRY_AFTER_SECONDS);
             Assert.AreEqual(0, _persistence.Loads.Count);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_precheck_zone_full_carries_the_configured_retry_after_seconds()
+        {
+            _svc = Build(_pool, CUSTOM_RETRY_SECONDS);
+            FillTo(ZoneSlotPool.MAX_PLAYERS_PER_ZONE);
+            var request = Request(CLIENT_A);
+
+            _svc.BeginEntry(in request);
+
+            AssertLastReply(CLIENT_A, JoinRejectedReason.ZoneFull, CUSTOM_RETRY_SECONDS);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_pending_client_with_other_zone_handshake_is_ignored_as_duplicate_without_reply()
+        {
+            var first = Request(CLIENT_A);
+            var wrongZone = Request(CLIENT_A, OTHER_ZONE_RAW);
+            _svc.BeginEntry(in first);
+            LogAssert.Expect(LogType.Warning, Rx("EntryHandshakeDuplicate"));
+
+            _svc.BeginEntry(in wrongZone);
+
+            Assert.IsEmpty(_outbox.Sent, "duplicate beats wrong zone");
+            Assert.AreEqual(1, _persistence.Loads.Count);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_rejected_token_beats_zone_loading_precheck()
+        {
+            _validator.Accept = false;
+            _lifecycle = new ZoneLifecycle(Zone, new FakeLifecycleListener(), 0u);
+            _svc = Build(_pool);
+            var request = Request(CLIENT_A);
+
+            _svc.BeginEntry(in request);
+
+            AssertLastReply(CLIENT_A, JoinRejectedReason.Other, 0);
+            Assert.AreEqual(0, _persistence.Loads.Count);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_rejected_token_beats_zone_full_precheck()
+        {
+            _validator.Accept = false;
+            FillTo(ZoneSlotPool.MAX_PLAYERS_PER_ZONE);
+            var request = Request(CLIENT_A);
+
+            _svc.BeginEntry(in request);
+
+            AssertLastReply(CLIENT_A, JoinRejectedReason.Other, 0);
+            Assert.AreEqual(0, _persistence.Loads.Count);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_draining_zone_at_cap_replies_zone_does_not_exist_not_zone_full()
+        {
+            FillTo(ZoneSlotPool.MAX_PLAYERS_PER_ZONE);
+            _lifecycle.OnOccupiedPlayerSlotsChanged(ZoneSlotPool.MAX_PLAYERS_PER_ZONE, 0u);
+            _lifecycle.RequestQuit(1u);
+            Assert.AreEqual(ZoneState.Draining, _lifecycle.State);
+            var request = Request(CLIENT_A);
+
+            _svc.BeginEntry(in request);
+
+            AssertLastReply(CLIENT_A, JoinRejectedReason.ZoneDoesNotExist, 0);
+            Assert.AreEqual(0, _persistence.Loads.Count);
+            LogAssert.NoUnexpectedReceived();
         }
 
         // ----- load outcome ---------------------------------------------------------------------
@@ -312,6 +460,7 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             Assert.AreEqual(1, _svc.PendingCount);
             Assert.IsEmpty(_outbox.Sent);
             Assert.AreEqual(0, _pool.OccupiedPlayerCount);
+            LogAssert.NoUnexpectedReceived();
         }
 
         [Test]
@@ -320,7 +469,7 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             var request = Request(CLIENT_A);
             _svc.BeginEntry(in request);
             _persistence.Loads[0].SetResult(new CharacterLoadResult(CharacterLoadCode.CharacterNotFound, ZoneID.Invalid));
-            LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex("LoadCharacter failed"));
+            LogAssert.Expect(LogType.Warning, Rx("LoadCharacter failed"));
 
             Drain();
 
@@ -328,6 +477,24 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             Assert.AreEqual(0, _pool.OccupiedPlayerCount);
             Assert.AreEqual(0, _applier.Calls);
             Assert.AreEqual(0, _svc.PendingCount);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_success_code_with_null_record_replies_load_character_failed_and_logs_null_record()
+        {
+            var request = Request(CLIENT_A);
+            _svc.BeginEntry(in request);
+            _persistence.Loads[0].SetResult(new CharacterLoadResult(CharacterLoadCode.Success, Zone, null));
+            LogAssert.Expect(LogType.Warning, Rx("NullRecord"));
+
+            Drain();
+
+            Assert.AreEqual(1, _outbox.Sent.Count);
+            AssertLastReply(CLIENT_A, JoinRejectedReason.LoadCharacterFailed, 0);
+            Assert.AreEqual(0, _pool.OccupiedPlayerCount);
+            Assert.AreEqual(0, _applier.Calls);
+            LogAssert.NoUnexpectedReceived();
         }
 
         [Test]
@@ -336,13 +503,13 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             var request = Request(CLIENT_A);
             _svc.BeginEntry(in request);
             _persistence.Loads[0].SetException(new InvalidOperationException("db"));
-            LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex("LoadCharacter failed"));
-            LogAssert.ignoreFailingMessages = false;
+            LogAssert.Expect(LogType.Warning, Rx("LoadCharacter failed"));
 
             Drain();
 
             AssertLastReply(CLIENT_A, JoinRejectedReason.LoadCharacterFailed, 0);
             Assert.AreEqual(0, _pool.OccupiedPlayerCount);
+            LogAssert.NoUnexpectedReceived();
         }
 
         [Test]
@@ -351,12 +518,13 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             var request = Request(CLIENT_A);
             _svc.BeginEntry(in request);
             _persistence.Loads[0].SetCanceled();
-            LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex("LoadCharacter failed"));
+            LogAssert.Expect(LogType.Warning, Rx("LoadCharacter failed"));
 
             Drain();
 
             AssertLastReply(CLIENT_A, JoinRejectedReason.LoadCharacterFailed, 0);
             Assert.AreEqual(0, _pool.OccupiedPlayerCount);
+            LogAssert.NoUnexpectedReceived();
         }
 
         [Test]
@@ -365,14 +533,107 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             var request = Request(CLIENT_A);
             _svc.BeginEntry(in request);
             _queue.Drain(1u);
-            LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex("watchdog"));
-            LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex("LoadCharacter failed"));
-            LogAssert.ignoreFailingMessages = false;
+            LogAssert.Expect(LogType.Error, Rx("watchdog"));
+            LogAssert.Expect(LogType.Warning, Rx("LoadCharacter failed"));
 
-            _queue.Drain(1u + WATCHDOG_TICKS + 5u);
+            _queue.Drain(1u + WATCHDOG_TICKS + TIMEOUT_MARGIN_TICKS);
 
             AssertLastReply(CLIENT_A, JoinRejectedReason.LoadCharacterFailed, 0);
             Assert.AreEqual(0, _pool.OccupiedPlayerCount);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        // ----- cancellation source lifetime -----------------------------------------------------
+
+        [Test]
+        public void test_token_given_to_load_belongs_to_the_tracked_source()
+        {
+            var request = Request(CLIENT_A);
+
+            _svc.BeginEntry(in request);
+
+            Assert.AreEqual(1, _queue.Tracked.Count);
+            Assert.AreEqual(_queue.Tracked[0].Token, _persistence.Tokens[0]);
+            Assert.IsFalse(_persistence.Tokens[0].IsCancellationRequested);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_source_is_disposed_after_a_successful_callback()
+        {
+            var request = Request(CLIENT_A);
+            _svc.BeginEntry(in request);
+            _persistence.Loads[0].SetResult(Loaded());
+
+            Drain();
+
+            AssertDisposed(_queue.Tracked[0]);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_source_is_disposed_after_a_failed_load_callback()
+        {
+            var request = Request(CLIENT_A);
+            _svc.BeginEntry(in request);
+            _persistence.Loads[0].SetException(new InvalidOperationException("db"));
+            LogAssert.Expect(LogType.Warning, Rx("LoadCharacter failed"));
+
+            Drain();
+
+            AssertDisposed(_queue.Tracked[0]);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_source_is_disposed_after_a_dropped_connection_callback()
+        {
+            var request = Request(CLIENT_A);
+            _svc.BeginEntry(in request);
+            _svc.RemoveClient(CLIENT_A);
+            _persistence.Loads[0].SetResult(Loaded());
+
+            Drain();
+
+            AssertDisposed(_queue.Tracked[0]);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_load_character_throwing_synchronously_rethrows_cleans_up_and_allows_a_fresh_entry()
+        {
+            _persistence.ThrowOnLoad = true;
+            var request = Request(CLIENT_A);
+
+            Assert.Throws<InvalidOperationException>(() => _svc.BeginEntry(in request));
+
+            Assert.AreEqual(0, _svc.PendingCount);
+            Assert.IsEmpty(_outbox.Sent);
+            Assert.AreEqual(0, _queue.Tracked.Count);
+            _persistence.ThrowOnLoad = false;
+            var retry = Request(CLIENT_A);
+
+            _svc.BeginEntry(in retry);
+
+            Assert.AreEqual(1, _persistence.Loads.Count, "not treated as a duplicate");
+            Assert.AreEqual(1, _svc.PendingCount);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_track_throwing_rethrows_cleans_up_cancels_but_does_not_dispose_the_source()
+        {
+            _queue.ThrowOnTrack = true;
+            var request = Request(CLIENT_A);
+
+            Assert.Throws<InvalidOperationException>(() => _svc.BeginEntry(in request));
+
+            Assert.AreEqual(0, _svc.PendingCount);
+            Assert.IsEmpty(_outbox.Sent);
+            Assert.AreEqual(1, _persistence.Tokens.Count);
+            Assert.IsTrue(_persistence.Tokens[0].IsCancellationRequested);
+            Assert.DoesNotThrow(() => { bool ignored = _persistence.Tokens[0].IsCancellationRequested; });
+            LogAssert.NoUnexpectedReceived();
         }
 
         // ----- re-check -------------------------------------------------------------------------
@@ -396,6 +657,7 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             Assert.AreEqual(0, _persistence.SaveSessionCalls);
             Assert.AreEqual(0, _persistence.OtherCalls);
             Assert.IsEmpty(_continuation.Admitted);
+            LogAssert.NoUnexpectedReceived();
         }
 
         [Test]
@@ -412,6 +674,7 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
 
             Drain();
 
+            // A is admitted first only because the queue delivers completions in tracking order.
             Assert.AreEqual(ZoneSlotPool.MAX_PLAYERS_PER_ZONE, _pool.OccupiedPlayerCount);
             Assert.AreEqual(1, _continuation.Admitted.Count);
             Assert.AreEqual(CLIENT_A, _continuation.Admitted[0].Client);
@@ -420,6 +683,25 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             Assert.AreEqual(1, _applier.Calls, "EC-ZI-4: the losing record is discarded");
             Assert.AreEqual(0, _persistence.SaveSessionCalls);
             Assert.AreEqual(0, _persistence.OtherCalls);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_recheck_zone_full_carries_the_configured_retry_after_seconds()
+        {
+            _svc = Build(_pool, CUSTOM_RETRY_SECONDS);
+            FillTo(ZoneSlotPool.MAX_PLAYERS_PER_ZONE - 1);
+            var first = Request(CLIENT_A);
+            var second = Request(CLIENT_B);
+            _svc.BeginEntry(in first);
+            _svc.BeginEntry(in second);
+            _persistence.Loads[0].SetResult(Loaded());
+            _persistence.Loads[1].SetResult(Loaded());
+
+            Drain();
+
+            AssertLastReply(CLIENT_B, JoinRejectedReason.ZoneFull, CUSTOM_RETRY_SECONDS);
+            LogAssert.NoUnexpectedReceived();
         }
 
         [Test]
@@ -431,14 +713,17 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             var request = Request(CLIENT_A);
             _svc.BeginEntry(in request);
             _persistence.Loads[0].SetResult(Loaded());
-            LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex("EntityIDCounterExhausted"));
-            LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex("TryAllocatePlayer failed below the cap"));
+            LogAssert.Expect(LogType.Error, Rx("EntityIDCounterExhausted"));
+            LogAssert.Expect(LogType.Error, Rx("TryAllocatePlayer failed below the cap"));
 
             Drain();
 
+            Assert.AreEqual(1, _outbox.Sent.Count);
             AssertLastReply(CLIENT_A, JoinRejectedReason.Other, 0);
             Assert.AreEqual(1, pool.OccupiedPlayerCount);
             Assert.AreEqual(0, _applier.Calls);
+            Assert.IsEmpty(_continuation.Admitted);
+            LogAssert.NoUnexpectedReceived();
         }
 
         // ----- apply / success ------------------------------------------------------------------
@@ -450,7 +735,7 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             var request = Request(CLIENT_A);
             _svc.BeginEntry(in request);
             _persistence.Loads[0].SetResult(Loaded());
-            LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex("ApplyLoadedRecord returned"));
+            LogAssert.Expect(LogType.Warning, Rx("ApplyLoadedRecord returned"));
 
             Drain();
 
@@ -459,7 +744,31 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             AssertLastReply(CLIENT_A, JoinRejectedReason.LoadCharacterFailed, 0);
             Assert.IsEmpty(_continuation.Admitted);
             Assert.AreEqual(0, _persistence.SaveSessionCalls);
+            Assert.AreEqual(0, _persistence.OtherCalls);
             Assert.IsFalse(_pool.TryGetPlayer(_applier.LastEntity, out _));
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_apply_throws_releases_slot_logs_error_and_replies_load_character_failed()
+        {
+            _applier.ThrowOnApply = true;
+            var request = Request(CLIENT_A);
+            _svc.BeginEntry(in request);
+            _persistence.Loads[0].SetResult(Loaded());
+            LogAssert.Expect(LogType.Error, Rx(@"\[ZoneEntryAdmission\] ApplyLoadedRecord threw"));
+
+            Drain();
+
+            Assert.AreEqual(1, _applier.Calls);
+            Assert.AreEqual(0, _pool.OccupiedPlayerCount);
+            Assert.AreEqual(1, _outbox.Sent.Count);
+            AssertLastReply(CLIENT_A, JoinRejectedReason.LoadCharacterFailed, 0);
+            Assert.IsEmpty(_continuation.Admitted);
+            Assert.AreEqual(0, _persistence.SaveSessionCalls);
+            Assert.AreEqual(0, _persistence.OtherCalls);
+            Assert.AreEqual(0, _svc.PendingCount);
+            LogAssert.NoUnexpectedReceived();
         }
 
         [Test]
@@ -484,9 +793,11 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             Assert.IsTrue(_pool.TryGetPlayerSlot(admitted.Entity, out byte index));
             Assert.AreEqual(index, admitted.Slot);
             Assert.AreEqual(1, _applier.Calls);
+            Assert.AreEqual(1, _validator.Calls);
             Assert.IsEmpty(_outbox.Sent);
             Assert.AreEqual(0, _svc.PendingCount);
             Assert.AreEqual(0, _persistence.SaveSessionCalls);
+            LogAssert.NoUnexpectedReceived();
         }
 
         // ----- duplicate / drop -----------------------------------------------------------------
@@ -497,7 +808,7 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             var first = Request(CLIENT_A);
             var second = Request(CLIENT_A);
             var third = Request(CLIENT_A);
-            LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex("EntryHandshakeDuplicate"));
+            LogAssert.Expect(LogType.Warning, Rx("EntryHandshakeDuplicate"));
 
             _svc.BeginEntry(in first);
             _svc.BeginEntry(in second);
@@ -506,6 +817,45 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             Assert.AreEqual(1, _persistence.Loads.Count);
             Assert.AreEqual(1, _svc.PendingCount);
             Assert.IsEmpty(_outbox.Sent);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_duplicate_warning_is_emitted_again_after_the_load_completed()
+        {
+            LogAssert.Expect(LogType.Warning, Rx("EntryHandshakeDuplicate"));
+            LogAssert.Expect(LogType.Warning, Rx("EntryHandshakeDuplicate"));
+            var first = Request(CLIENT_A);
+            _svc.BeginEntry(in first);
+            _svc.BeginEntry(in first);
+            _persistence.Loads[0].SetResult(Loaded());
+            Drain();
+            var second = Request(CLIENT_A);
+            _svc.BeginEntry(in second);
+
+            _svc.BeginEntry(in second);
+
+            Assert.AreEqual(2, _persistence.Loads.Count);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_duplicate_warning_is_emitted_again_after_remove_client()
+        {
+            LogAssert.Expect(LogType.Warning, Rx("EntryHandshakeDuplicate"));
+            LogAssert.Expect(LogType.Warning, Rx("EntryHandshakeDuplicate"));
+            var first = Request(CLIENT_A);
+            _svc.BeginEntry(in first);
+            _svc.BeginEntry(in first);
+            _svc.RemoveClient(CLIENT_A);
+            _svc.AddClient(CLIENT_A);
+            var second = Request(CLIENT_A);
+            _svc.BeginEntry(in second);
+
+            _svc.BeginEntry(in second);
+
+            Assert.AreEqual(2, _persistence.Loads.Count);
+            LogAssert.NoUnexpectedReceived();
         }
 
         [Test]
@@ -525,10 +875,11 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             Assert.AreEqual(0, _persistence.SaveSessionCalls);
             Assert.AreEqual(0, _persistence.OtherCalls);
             Assert.AreEqual(0, _svc.PendingCount);
+            LogAssert.NoUnexpectedReceived();
         }
 
         [Test]
-        public void test_fresh_entry_after_drop_and_add_client_is_admitted_and_stale_callback_does_not_interfere()
+        public void test_stale_callback_completing_first_leaves_the_fresh_entry_pending_and_untouched()
         {
             var stale = Request(CLIENT_A);
             _svc.BeginEntry(in stale);
@@ -538,6 +889,17 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             _svc.BeginEntry(in fresh);
             Assert.AreEqual(2, _persistence.Loads.Count);
             _persistence.Loads[0].SetResult(Loaded());
+
+            Drain();
+
+            Assert.AreEqual(1, _svc.PendingCount, "the stale callback must not clear the fresh pending entry");
+            Assert.IsEmpty(_outbox.Sent);
+            Assert.IsEmpty(_continuation.Admitted);
+            Assert.AreEqual(0, _pool.OccupiedPlayerCount);
+            LogAssert.Expect(LogType.Warning, Rx("EntryHandshakeDuplicate"));
+            var again = Request(CLIENT_A);
+            _svc.BeginEntry(in again);
+            Assert.AreEqual(2, _persistence.Loads.Count, "still pending, so a further handshake is a duplicate");
             _persistence.Loads[1].SetResult(Loaded());
 
             Drain();
@@ -547,6 +909,62 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             Assert.IsTrue(_pool.TryGetPlayer(_continuation.Admitted[0].Entity, out ZonePlayerSlot slot));
             Assert.AreEqual(fresh.Character, slot.Character);
             Assert.AreEqual(0, _svc.PendingCount);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_stale_callback_completing_after_the_fresh_one_sends_and_allocates_nothing()
+        {
+            var stale = Request(CLIENT_A);
+            _svc.BeginEntry(in stale);
+            _svc.RemoveClient(CLIENT_A);
+            _svc.AddClient(CLIENT_A);
+            var fresh = Request(CLIENT_A);
+            _svc.BeginEntry(in fresh);
+            _persistence.Loads[1].SetResult(Loaded());
+            Drain();
+            Assert.AreEqual(1, _continuation.Admitted.Count);
+            Assert.AreEqual(1, _applier.Calls);
+            _persistence.Loads[0].SetResult(Loaded());
+
+            Drain();
+
+            Assert.AreEqual(1, _continuation.Admitted.Count);
+            Assert.AreEqual(1, _pool.OccupiedPlayerCount);
+            Assert.AreEqual(1, _applier.Calls);
+            Assert.IsEmpty(_outbox.Sent);
+            Assert.AreEqual(0, _svc.PendingCount);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        // ----- pending count --------------------------------------------------------------------
+
+        [Test]
+        public void test_pending_count_drops_to_zero_right_after_remove_client_before_drain()
+        {
+            var request = Request(CLIENT_A);
+            _svc.BeginEntry(in request);
+            Assert.AreEqual(1, _svc.PendingCount);
+
+            _svc.RemoveClient(CLIENT_A);
+
+            Assert.AreEqual(0, _svc.PendingCount);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_pending_count_counts_two_clients_and_ignores_removal_of_an_unknown_client()
+        {
+            var first = Request(CLIENT_A);
+            var second = Request(CLIENT_B);
+            _svc.BeginEntry(in first);
+            _svc.BeginEntry(in second);
+            Assert.AreEqual(2, _svc.PendingCount);
+
+            Assert.DoesNotThrow(() => _svc.RemoveClient(9999u));
+
+            Assert.AreEqual(2, _svc.PendingCount);
+            LogAssert.NoUnexpectedReceived();
         }
 
         [Test]
@@ -558,6 +976,7 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
                 _applier, _queue, _validator, _outbox, _continuation));
             Assert.Throws<ArgumentNullException>(() => new ZoneEntryAdmission(Zone, _pool, _lifecycle, _persistence,
                 _applier, _queue, _validator, _outbox, null));
+            LogAssert.NoUnexpectedReceived();
         }
     }
 }

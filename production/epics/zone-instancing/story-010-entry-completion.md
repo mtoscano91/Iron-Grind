@@ -40,6 +40,8 @@
 
 - Steps 6–10 run in the same main-thread continuation as step 5, except step 10, which takes effect on the next tick boundary.
 - Character fields for `PlayerJoinedZone` (name, level, position) come from the loaded character (`CharacterLoadResult`).
+- **Open (from Story 009 `/code-review` 2026-10-23, decide at readiness):** once a player is admitted, `ZoneEntryAdmission` holds no entry for the connection, so a second `SessionHandshake` on the same connection would start a second load and take a second slot. Story 011 covers a duplicate `CharacterID`, not a duplicate connection. Decide whether this story (the connection directory knows the connection is admitted), Story 011 or Story 014 rejects or ignores it.
+- `IZoneEntryContinuation.OnPlayerAdmitted` must not throw: an exception leaves the slot occupied with no reply (Story 009 code review).
 
 ---
 
