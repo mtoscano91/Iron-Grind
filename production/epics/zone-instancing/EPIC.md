@@ -100,4 +100,4 @@ This epic is complete when:
 
 ## Next Step
 
-Stories 001-003 are Complete (2026-10-22), Stories 004 and 005 (2026-10-23). Next: `/story-readiness production/epics/zone-instancing/story-006-zone-wire-messages.md` (no dependencies), then `/dev-story`. Story 007 needs 002, 003 and 006.
+Stories 001-003 are Complete (2026-10-22), Stories 004 and 005 (2026-10-23). Story 006 passed `/story-readiness` 2026-10-23 (fixed → Ready, 6 h). Next: `/dev-story production/epics/zone-instancing/story-006-zone-wire-messages.md`. Story 007 needs 002, 003 and 006.

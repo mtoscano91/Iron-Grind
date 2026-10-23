@@ -4503,3 +4503,13 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - EPIC.md row 005 Complete, Next Step -> Story 006; epics/index.md row 001-005 Complete.
 - Next recommended: /story-readiness production/epics/zone-instancing/story-006-zone-wire-messages.md.
 - Committed. PAT rotation still unconfirmed.
+
+## Session Extract — /story-readiness 2026-10-23 (Story 006)
+- Verdict: NEEDS WORK (7 gaps) → fixed (user: "yes") → Ready, 6 h. Lean: QL-STORY-READY skipped.
+- Story: production/epics/zone-instancing/story-006-zone-wire-messages.md — zone wire messages and codecs (TR-zi-006/008 placeholders, ADR-004).
+- Decisions: provisional ids ZoneFullResponse 0xE130, ZoneSnapshotRequest 0xE131, ZoneSessionEnded 0xE132, PlayerJoinedZone 0xE133, ZoneStateSnapshotFragment 0xF000 (TD-011 convention); all rows R-OD PriorityPath; pillars Infrastructure except PlayerJoinedZone SocialSignals; EntityState is a payload element (no id, no row), read returns bytes consumed.
+- Enum handling: JoinRejectedReason / DisconnectReason substitute Other + anomaly (new WireEnumCodec.DecodeJoinRejectedReason); unknown EntityType fails the read (no length prefix, so no skip).
+- Schemas hold raw wire values (EntityPositionUpdate precedent); name truncated at char boundary on encode, rejected over 24 B on decode; fragment payload > 504 throws on encode; decode rejects totalFragments 0, fragmentIndex >= totalFragments.
+- Open (GDD, advisory): ZoneFullResponse / ZoneSnapshotRequest missing criticality + channel-contract rows; wire-protocol reassembly step 3 "length-prefixed EntityState" and EntityType "skip to next" contradict the schema.
+- EPIC.md Next Step updated. Not committed.
+- Next: commit → /dev-story Story 006. PAT rotation still unconfirmed.
