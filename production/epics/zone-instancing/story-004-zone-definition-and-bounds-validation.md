@@ -1,7 +1,7 @@
 # Story 004: ZoneDefinition, ZoneSceneRegistry and Bounds Validation (CR-ZI-10)
 
 > **Epic**: Zone Instancing
-> **Status**: Ready — written 2026-10-22
+> **Status**: Complete (2026-10-23) — written 2026-10-22
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-19
@@ -80,7 +80,7 @@
 **Story Type**: Integration
 **Required evidence**: `tests/EditMode/Integration/ZoneInstancing/ZoneInstancing_ZoneDefinitionBounds_tests.cs` — must exist and pass; the Story 045 local verification run still reaches Active.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — ZoneDefinitionBounds 58/58, ZoneAssets 4/4 (batch EditMode 3701 total, 0 failed, 70 skipped Npgsql, 2026-10-23); Editor verification run with `-zoneTemplate StartingZone` reached Active (Editor.log 09:27)
 
 ---
 
@@ -97,3 +97,26 @@
 
 - Depends on: None (uses the existing composition and Story 001's T-3 only through `IZoneStateOwner`)
 - Unlocks: Story 005, Story 014
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-23
+**Criteria**: 7/7 passing (six by automated test, AC-2 "fields only" by reading plus compile; AC-7 also by the Editor verification run). None deferred.
+**Deviations** (advisory, user: "Complete, notes only"):
+1. Bounds are `Vector3` min / max checked on all three axes, not the ADR-009 sketch's `Rect _walkableBoundsXZ` (Decision 3); no ADR rule changes.
+2. NaN / ±Infinity and min > max log `ZoneDefinitionLoadFailed`; only a finite coordinate beyond ±250 m logs `ZoneBoundsExceedEncoding`. Check order: finite → range → min ≤ max.
+3. `ZoneDefinitionSlot` is filled when `LoadSceneAsync` returns non-null, not on completion (the validator only runs after a successful load). `BeginLoad` is single use.
+4. Extra API: `[CreateAssetMenu]` on both ScriptableObjects; public `ZoneSceneRegistry.Entry` struct; public static `ZoneDefinitionBoundsValidator.AreBoundsValid`; internal `Initialize` test initialisers; the registry rejects an entry whose definition has another `TemplateId` (error log), first match wins, name parsed once (digits, signs, whitespace, commas rejected).
+5. A null registry is allowed in `UnitySceneLoader` (every load fails); a null slot throws.
+6. The AC-ZI-5 composition tests reuse the Networking test fakes (`SuBackend`, `SuNav`, `ZsClose`, ...); changes there can break them.
+7. `TR-zi-010` and `TR-zi-017` remain placeholders until `/architecture-review`.
+8. Assets live under `Assets/data/Zones/` (lowercase, the project's existing folder).
+**Scope**: `IZoneBoundsValidator.cs` (one doc line) and `tests/PlayMode/Networking/ZoneServer_UnitySeams_tests.cs` (constructor calls only; PlayMode suite not run) touched outside the Files list; `ZoneInstancing_ZoneAssets_tests.cs` added at code review.
+**Notes for other stories**:
+- Story 005: `ZoneDefinition.TownRespawnPoint` and `TownRespawnPointAuthored` are in place (the StartingZone asset has authored = false).
+- Story 014: the real `IZoneStateOwner` owns the Loading → Closed transition and the T-3 `ZoneDefinitionLoadFailed` alert; this story proves only the `MarkClosedInvalidBounds` call.
+- Navigation epic: remove the `AddNavMeshData` instance with `NavMesh.RemoveNavMeshData` at teardown step 3 and on Editor Play-mode exit.
+- Verification runs need the portable PostgreSQL started (PowerShell `Start-Process`) and the Editor launched from PowerShell with `IRONGRIND_PG_PASSWORD` set for that process; otherwise startup fails at S4.
+**Test Evidence**: Integration — `tests/EditMode/Integration/ZoneInstancing/ZoneInstancing_ZoneDefinitionBounds_tests.cs`, `ZoneInstancing_ZoneAssets_tests.cs`; Editor verification run (Editor.log 2026-10-23 09:27).
+**Code Review**: Complete — APPROVED WITH SUGGESTIONS, all 12 applied (`3ed5601`).

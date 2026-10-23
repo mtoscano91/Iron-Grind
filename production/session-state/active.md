@@ -4460,3 +4460,11 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - First attempt: S4 StepReturnedFalse — portable PostgreSQL not running and IRONGRIND_PG_PASSWORD not set in the Editor (not a Story 004 issue). Started PG via PowerShell Start-Process; relaunched the Editor from PowerShell with the variable set for that process (the user's "!" attempt failed: "!" runs Git Bash, not PowerShell).
 - Second attempt PASS (user: "now it ran correctly"; Editor.log 09:27): A1-3 before/after load, "Loaded scene 'Assets/Scenes/Zones/ZoneTemplate_Empty.unity'", "[StandIn] no zone NavMesh data", navigation stand-in, zone state stand-in (MarkActive), gateway registration stand-in (S9/S10 reached), ZoneTickProbe ticking; no ZoneBoundsExceedEncoding / ZoneDefinitionLoadFailed / startup failure. Clean teardown steps 1-7 on Stop.
 - Review fixes still not committed. Next: commit -> /story-done story-004.
+
+## Session Extract — /story-done 2026-10-23 (Story 004)
+- Verdict: COMPLETE WITH NOTES (7/7; ZoneDefinitionBounds 58/58, ZoneAssets 4/4; EditMode 3701 total, 0 failed, 70 skipped Npgsql; Editor verification run reached Active)
+- Story: production/epics/zone-instancing/story-004-zone-definition-and-bounds-validation.md — ZoneDefinition, ZoneSceneRegistry, bounds validation
+- Tech debt logged: None (user: "Complete, notes only"; 8 advisory deviations + Story 005/014/Navigation notes in Completion Notes)
+- EPIC.md row 004 Complete, Next Step -> Story 005; epics/index.md row: 001-004 Complete.
+- Next recommended: /story-readiness production/epics/zone-instancing/story-005-town-respawn-point.md; 006 also free; 007 needs 002, 003, 006.
+- Not committed. PAT rotation still unconfirmed.
