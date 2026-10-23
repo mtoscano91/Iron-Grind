@@ -1,7 +1,7 @@
 # Story 012: Teardown Close Steps (CR-ZI-12 steps 1–8)
 
 > **Epic**: Zone Instancing
-> **Status**: Ready — written 2026-10-22; `/story-readiness` 2026-10-23 NEEDS WORK (9 gaps) → fixed → Ready
+> **Status**: Complete (2026-10-23) — written 2026-10-22; `/story-readiness` 2026-10-23 NEEDS WORK (9 gaps) → fixed → Ready
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-19
@@ -32,13 +32,14 @@
 - **`NotifyZoneExit` ordering (user decision — save callback):** each step 2 `SaveSession` and step 3 ghost snapshot save is passed to `ITickCompletionQueue.Track`; `NotifyZoneExit` for that character is called from the completion callback, which runs inside `DrainOnShutdown` at teardown step 6. A save that completes with a failure, fault or cancellation still triggers `NotifyZoneExit` (the save has finished), with one `LogError` naming the character. A save still running when the drain times out gets no `NotifyZoneExit`; the drain's own timed-out alert covers it. The write-queue alternative was rejected: `CharacterWriteQueue` orders writes inside this process only, so it does not stop the Party System reading stale state.
 - **Connection close (user decision — leave to teardown step 7):** step 4 queues `ZoneSessionEnded(ZoneClosed=0, gracePeriodSeconds=0)` **cap-exempt** and expires the session through the session sink, but closes nothing. The outbound flush (teardown step 5) sends it; NGO shutdown (step 7) closes the connections. Closing in step 4 would drop the queued message (same finding as Story 011's code review).
 - **Throw policy:** each of the 8 steps runs in its own `try/catch` (`LogError` with the step number and exception type; the next step runs). Steps 2, 3, 5 and 6 also catch per slot, so one bad slot does not skip the others. A save call that throws synchronously counts as a finished failed save: `LogError`, and `NotifyZoneExit` for that character is called at once in step 5.
+- **Added at `/code-review` 2026-10-23:** a slot that is both a ghost and entering is handled as a ghost (snapshot save, no step 4, notify after the snapshot). If `TryGetFormalParty` throws for a character, that character's `NotifyZoneExit` is lost (one `LogError`). If `ITickCompletionQueue.Track` throws, the character is notified at once in step 5.
 - **Run once:** a `_ran` flag is set before step 1; a second `RunCloseSteps` returns at once and makes no calls.
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] A `ZoneCloseSteps : IZoneCloseSteps` class replaces `StandInZoneCloseSteps` as the real implementation (the stand-in stays for the composition until Story 014 wires this one). Its constructor takes: the player slot pool and mob slot pool, `ZoneConnectionCharacterDirectory`, `ZoneTickRoster`, `ZoneEntryReclamation` (for `IsEntering`), `ICharacterPersistence`, `ITickCompletionQueue`, `IPartyZonePresence`, `IZoneMobSpawnTimers`, `IZoneTeardownSessionSink`, `IZoneDrainNoticeLog`, the outbound message sink, and the `ZoneID`. `RunCloseSteps` runs, in this order:
+- [x] A `ZoneCloseSteps : IZoneCloseSteps` class replaces `StandInZoneCloseSteps` as the real implementation (the stand-in stays for the composition until Story 014 wires this one). Its constructor takes: the player slot pool and mob slot pool, `ZoneConnectionCharacterDirectory`, `ZoneTickRoster`, `ZoneEntryReclamation` (for `IsEntering`), `ICharacterPersistence`, `ITickCompletionQueue`, `IPartyZonePresence`, `IZoneMobSpawnTimers`, `IZoneTeardownSessionSink`, `IZoneDrainNoticeLog`, the outbound message sink, and the `ZoneID`. `RunCloseSteps` runs, in this order:
   1. `IZoneMobSpawnTimers.CancelAllSpawnTimers(ZoneID)`.
   2. Per occupied player slot: `Dead` / `Respawning` → `SaveSession(id, ZoneClosed, hpOverride: 0f, ct)`; ghost (`Disconnected_SessionActive`) → no `SaveSession`; entering (`IsEntering` true) → no `SaveSession`; otherwise (`Connected`) → `SaveSession(id, ZoneClosed, ct)`. Each started save is passed to `ITickCompletionQueue.Track`.
   3. Per ghost slot: `IZoneTeardownSessionSink.SaveGhostSnapshotAndExpire(characterId, clientId)` — the returned task is tracked like a step 2 save. Nothing else is sent or raised for a ghost: no `GhostExpiredEvent`, no `PlayerLeftZone`, no `ZoneSessionEnded`.
@@ -47,13 +48,13 @@
   6. Every player slot freed: `ZoneConnectionCharacterDirectory.Remove(clientId)`, `ZoneTickRoster.Deactivate(entityId)`, slot zeroed and returned to the free list. Story 011's `ZoneEntryReclamation.LeaveZone` is **not** used (it sends `PlayerLeftZone` and calls `NotifyZoneExit`, both forbidden here); the per-slot data the step 5 callbacks need (`PartyID`, `EntityID`) is captured before the slots are freed.
   7. Every mob slot zeroed and freed.
   8. The `ZoneID` retirement is logged once (`[ZoneInstancing] zone <id> retired`); the zone process has no routing table and exits after teardown.
-- [ ] **AC-ZI-12**: Active zone, 3 connected players (1 `Dead`), 5 mobs → `SaveSession` for the Dead one with HP override 0; the other 2 saved without override; after the queue drain the party fake has `NotifyZoneExit` for all 3; all player and mob slots empty; `ZoneSessionEnded(ZoneClosed, 0)` captured for all 3 clients.
-- [ ] **AC-ZI-31 / EC-ZI-15**: an entering slot is handled like a `Connected` slot except that step 2 makes no `SaveSession` for it and its `NotifyZoneExit` is not gated on a save. The close steps read `IsEntering` as the last tick left it (no tick runs during teardown); a slot that stall reclamation already freed is unoccupied and is skipped. Test: one acked `Connected` and one entering player, both in a formal party → `SaveSession` for the acked one only; `NotifyZoneExit` once each (the entering one before the drain, the acked one after its save completes); both get `ZoneSessionEnded(ZoneClosed)`.
-- [ ] **AC-ZI-23 (teardown side)**: a ghost that took damage after disconnecting → exactly one `SaveGhostSnapshotAndExpire` for it and no `SaveSession`; no `ZoneSessionEnded`, `PlayerLeftZone` or ghost-expired emission for it; its `NotifyZoneExit` fires only from the snapshot save's completion; a `Connected` client recorded by `IZoneDrainNoticeLog` gets no second `ZoneSessionEnded`, is still expired through the sink, and no `DisconnectClient` call is made.
-- [ ] **Ordering**: with saves that stay incomplete until the test completes them during `DrainOnShutdown`, no `NotifyZoneExit` for a saved character happens before its own save completes; completing them in reverse order produces `NotifyZoneExit` in that reverse order. A save completing with a failure → `NotifyZoneExit` still called, one `LogError`. A save that never completes within the drain timeout → no `NotifyZoneExit` for that character.
-- [ ] **EC-ZI-11**: a slot released before teardown (logout) → no save, no `ZoneSessionEnded`, no `NotifyZoneExit` for it.
-- [ ] **Run once / throw policy**: a second `RunCloseSteps` makes no calls on any fake. A fake that throws in step 1 → steps 2–8 still run; a `SaveSession` that throws synchronously for one slot → the other slots are still saved and that character's `NotifyZoneExit` is called at once; `NotifyZoneExit` throwing for one character → the others still get theirs; each failure logs one `LogError`.
-- [ ] New seams, each with a logging stand-in (log once, as `StandInLogOnce`):
+- [x] **AC-ZI-12**: Active zone, 3 connected players (1 `Dead`), 5 mobs → `SaveSession` for the Dead one with HP override 0; the other 2 saved without override; after the queue drain the party fake has `NotifyZoneExit` for all 3; all player and mob slots empty; `ZoneSessionEnded(ZoneClosed, 0)` captured for all 3 clients.
+- [x] **AC-ZI-31 / EC-ZI-15**: an entering slot is handled like a `Connected` slot except that step 2 makes no `SaveSession` for it and its `NotifyZoneExit` is not gated on a save. The close steps read `IsEntering` as the last tick left it (no tick runs during teardown); a slot that stall reclamation already freed is unoccupied and is skipped. Test: one acked `Connected` and one entering player, both in a formal party → `SaveSession` for the acked one only; `NotifyZoneExit` once each (the entering one before the drain, the acked one after its save completes); both get `ZoneSessionEnded(ZoneClosed)`.
+- [x] **AC-ZI-23 (teardown side)**: a ghost that took damage after disconnecting → exactly one `SaveGhostSnapshotAndExpire` for it and no `SaveSession`; no `ZoneSessionEnded`, `PlayerLeftZone` or ghost-expired emission for it; its `NotifyZoneExit` fires only from the snapshot save's completion; a `Connected` client recorded by `IZoneDrainNoticeLog` gets no second `ZoneSessionEnded`, is still expired through the sink, and no `DisconnectClient` call is made.
+- [x] **Ordering**: with saves that stay incomplete until the test completes them during `DrainOnShutdown`, no `NotifyZoneExit` for a saved character happens before its own save completes; completing them in reverse order produces `NotifyZoneExit` in that reverse order. A save completing with a failure → `NotifyZoneExit` still called, one `LogError`. A save that never completes within the drain timeout → no `NotifyZoneExit` for that character.
+- [x] **EC-ZI-11**: a slot released before teardown (logout) → no save, no `ZoneSessionEnded`, no `NotifyZoneExit` for it.
+- [x] **Run once / throw policy**: a second `RunCloseSteps` makes no calls on any fake. A fake that throws in step 1 → steps 2–8 still run; a `SaveSession` that throws synchronously for one slot → the other slots are still saved and that character's `NotifyZoneExit` is called at once; `NotifyZoneExit` throwing for one character → the others still get theirs; each failure logs one `LogError`.
+- [x] New seams, each with a logging stand-in (log once, as `StandInLogOnce`):
   - `IZoneMobSpawnTimers.CancelAllSpawnTimers(ZoneID)` — stand-in until the Mob Spawning epic.
   - `IZoneTeardownSessionSink.SaveGhostSnapshotAndExpire(CharacterID, uint clientId) : Task<CharacterSaveResult>` — contract: writes the ghost's CGS-3 pre-disconnect snapshot as its only teardown save, moves the session to `Disconnected_SessionExpired`, deletes `ActiveSessionTokens[AccountID]` only if its `sessionId` is this session's; emits nothing. Stand-in logs and returns a completed task with a success result (TD-079).
   - `IZoneTeardownSessionSink.ExpireConnectedSession(uint clientId)` — contract: `Connected → Disconnected_SessionExpired`, no resume, no persistence write, token deleted only if owned. Stand-in logs (TD-079).
@@ -98,7 +99,7 @@
 **Story Type**: Integration
 **Required evidence**: `tests/EditMode/Integration/ZoneInstancing/ZoneInstancing_Teardown_tests.cs` — must exist and pass.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 28 tests, all passing (EditMode batch 2026-10-23: 4027 total, 3957 passed, 0 failed, 70 skipped DB)
 
 ---
 
@@ -106,3 +107,16 @@
 
 - Depends on: Stories 001, 002, 003 (mob slots, step 7), 006 (`ZoneSessionEnded` codec), 010 (directory, tick roster, formal party), 011 (entering flag) — all Complete
 - Unlocks: Story 014
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-23
+**Criteria**: 8/8 passing, all covered by automated tests (`ZoneInstancing_Teardown_tests.cs`, 28 tests)
+**Deviations** (advisory, accepted):
+- `ZoneCloseSteps` is not yet wired: the composition keeps `StandInZoneCloseSteps` until Story 014 (wiring, `IZoneDrainNoticeLog`, drain-flag fix — Story 014 note (e)).
+- `IZoneTeardownSessionSink` has only the logging stand-in (TD-079): no ghost snapshot save, no session/token expiry at teardown.
+- Behaviours settled at `/code-review` (not in the GDD): ghost wins over entering; `TryGetFormalParty` throwing loses that notify (logged); `Track` throwing notifies at once; a save still running at the drain timeout gets no notify and its `CancellationTokenSource` is not disposed (process exits).
+- Constructor takes one `ZoneSlotPool` (players and mobs share it), not two pools.
+**Test Evidence**: Integration — `tests/EditMode/Integration/ZoneInstancing/ZoneInstancing_Teardown_tests.cs`
+**Code Review**: Complete — 2026-10-23 CHANGES REQUIRED (3 test gaps) → "fix all" (12 items) applied

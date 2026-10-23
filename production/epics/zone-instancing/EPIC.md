@@ -87,7 +87,7 @@ Zone Instancing is the server-side runtime of one zone instance: it owns the ins
 | 009 | [Entry part 1 — admission](story-009-entry-admission.md) | Integration | Complete (2026-10-23) | ADR-014, ADR-011, ADR-006 |
 | 010 | [Entry part 2 — snapshot, SessionReady, party, PlayerJoinedZone](story-010-entry-completion.md) | Integration | Complete (2026-10-23) | ADR-014, ADR-010 |
 | 011 | [Stale slot reclamation and entry stall](story-011-stale-slot-reclamation.md) | Logic | Complete (2026-10-23) | ADR-011, ADR-014, ADR-004, ADR-010 |
-| 012 | [Teardown close steps](story-012-teardown-close-steps.md) | Integration | Ready (readiness 2026-10-23, 10 h) | ADR-009 A1, ADR-006, ADR-011, ADR-010 |
+| 012 | [Teardown close steps](story-012-teardown-close-steps.md) | Integration | Complete (2026-10-23) | ADR-009 A1, ADR-006, ADR-011, ADR-010 |
 | 013 | [Player exit and slot release](story-013-player-exit-and-slot-release.md) | Integration | Ready | ADR-010, ADR-011 |
 | 014 | [Composition wiring, quit-request drain](story-014-composition-wiring-and-drain.md) | Integration | Ready | ADR-009 A1 |
 

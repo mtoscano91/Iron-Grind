@@ -4723,3 +4723,23 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Other fixes: new seams IZoneMobSpawnTimers, IZoneTeardownSessionSink (SaveGhostSnapshotAndExpire -> Task<CharacterSaveResult>, ExpireConnectedSession; stand-in TD-079), IZoneDrainNoticeLog (Story 014 implements); ZoneCrashCleanupHandler not reused (static, HP-only, no token/completion); LeaveZone not reused; per-step + per-slot try/catch, _ran flag; deps + 003, 010; AC-ZI-31 "same tick" reworded.
 - Files: story-012 rewritten; story-014 Implementation Notes (Story 012 wiring); EPIC row 012; tech-debt-register TD-079.
 - Next: commit -> /dev-story Story 012. Not committed. PAT rotation still unconfirmed.
+
+## Session Extract — /dev-story 2026-10-23 (Zone Instancing Story 012 — implemented, not reviewed, not committed)
+- Story: production/epics/zone-instancing/story-012-teardown-close-steps.md — network-programmer subagent (resumed once after its turn limit).
+- Created (ServerLogic/ZoneInstancing): ZoneCloseSteps (IZoneCloseSteps; captures slots first, steps 1-8 each in try/catch, per-slot catches in 2-7, Track per save, NotifyZoneExit from callback or at once), IZoneMobSpawnTimers + LoggingZoneMobSpawnTimers, IZoneTeardownSessionSink + LoggingZoneTeardownSessionSink (TD-079), IZoneDrainNoticeLog + NoZoneDrainNoticeLog; tests/EditMode/Integration/ZoneInstancing/ZoneInstancing_Teardown_tests.cs (23 tests). Composition not touched (Story 014).
+- EditMode batch run: 4022 total, 3952 passed, 0 failed, 70 skipped (DB).
+- Judgement calls for /code-review: party lookup in step 5 (callbacks rely on Track never invoking inline); Track throwing -> notify at once; slot both ghost and entering -> ghost; stand-ins log at Debug.Log with [ZoneServer] prefix via StandInLogOnce; reverse-order test uses a ManualQueue fake (real queue delivers in track order).
+- Next: /code-review (files above) -> /story-done Story 012 -> commit (include .meta files). PAT rotation still unconfirmed.
+
+## Session Extract — /code-review 2026-10-23 (Zone Instancing Story 012 — CHANGES REQUIRED -> "fix all" applied, not committed)
+- unity-specialist: no defects (Track never invokes callbacks; only Drain/DrainOnShutdown; outbox keeps cap-exempt entries until flush; ReleasePlayer listener harmless when Closed). qa-tester: 3 required (outbox fake dropped non-ZoneSessionEnded; vacuous zero-DisconnectClient; Track-throws untested).
+- Fixed: all-message outbox fake + total counts; reflection test (no IInboundTransportDisconnector ctor param); tests for Track throwing, ghost+entering, expire throwing, party lookup throwing; thread-id assert; mob id list; run-once cleanup; sink doc (ExpireConnectedSession must not drop outbox/close); class "Known limits"; SaveStartFailed keeps cts when Track failed after the save started.
+- Docs: Story 012 Readiness Decisions (ghost wins, lookup-throw loses notify, Track-throw notifies at once); Story 014 note (e) drain must run whenever close steps ran (T-3 path), ctor order.
+- EditMode: 4027 total, 3957 passed, 0 failed, 70 skipped. Teardown tests 28.
+- Next: /story-done Story 012 -> commit (include .meta files). PAT rotation still unconfirmed.
+
+## Session Extract — /story-done 2026-10-23 (Zone Instancing Story 012)
+- Verdict: COMPLETE WITH NOTES (8/8 criteria, all test-covered; lean — QL-TEST-COVERAGE and LP-CODE-REVIEW skipped).
+- Story: production/epics/zone-instancing/story-012-teardown-close-steps.md — Status Complete, Completion Notes (unwired until Story 014; TD-079 stand-in; code-review behaviours; one pool).
+- EPIC row 012 Complete. Tech debt logged: None new (TD-079 at readiness; drain-flag in Story 014 note e).
+- Next recommended: /story-readiness Story 013 (player exit, reuses LeaveZone) or Story 014 (composition wiring). PAT rotation still unconfirmed.
