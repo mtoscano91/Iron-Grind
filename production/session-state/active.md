@@ -4493,3 +4493,13 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Story 005: AC for the authored-point rule and the Invalid own zone; QA cases appended.
 - Run 1: positive control failed — GC.GetAllocatedBytesForCurrentThread returns 0 in Editor Mono (AC-ZI-9 zero check was vacuous). Switched both allocation tests to UnityEngine.TestTools.Constraints Is.Not.AllocatingGCMemory / Is.AllocatingGCMemory (project pattern). Story engine note superseded; GDD AC-ZI-9 still names the old measure -> GDD update needed (open).
 - Run 2 compile error (missing using UnityEngine.TestTools.Constraints for the extension method) -> fixed. Run 3 (Editor 09:48): EditMode 3721 total, 3651 passed, 0 failed, 70 skipped (Npgsql); TownRespawnPoint 20/20. Committed. Next: /story-done (raise GDD AC-ZI-9 measure update).
+
+## Session Extract — /story-done 2026-10-23 (Story 005)
+- Verdict: COMPLETE WITH NOTES (7/7; TownRespawnPoint 20/20; EditMode 3721 total, 0 failed, 70 skipped Npgsql). Lean: QL-TEST-COVERAGE and LP-CODE-REVIEW skipped.
+- Story: production/epics/zone-instancing/story-005-town-respawn-point.md — GetTownRespawnPoint (CR-ZI-11)
+- Tech debt logged: None (user: "Complete, notes only"; 6 advisory deviations in Completion Notes)
+- GDD design/gdd/zone-instancing.md updated (user: "Fix GDD now"): AC-ZI-9 measure -> Is.Not.AllocatingGCMemory + positive control; CR-ZI-11 authored-point validity and zone-process scope (no routing table, foreign ZoneID); header history + Last Updated 2026-10-23. Status stays Approved (implementation-driven clarification). entities.yaml: no change needed (no respawn-point entity). Propagation: death-and-respawn.md CR-DR-8 consistent; other "routing table" hits are gateway routing.
+- Open: Death & Respawn CR-DR-8 retry assumes "no valid position" can be returned; this implementation always returns a Vector3 (zero last) — check when the Death & Respawn epic starts.
+- EPIC.md row 005 Complete, Next Step -> Story 006; epics/index.md row 001-005 Complete.
+- Next recommended: /story-readiness production/epics/zone-instancing/story-006-zone-wire-messages.md.
+- Committed. PAT rotation still unconfirmed.

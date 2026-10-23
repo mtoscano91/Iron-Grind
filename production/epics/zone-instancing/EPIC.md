@@ -79,7 +79,7 @@ Zone Instancing is the server-side runtime of one zone instance: it owns the ins
 | 002 | [Slot pools, EntityID minting, player roster view](story-002-slot-pools-and-entity-ids.md) | Logic | Complete (2026-10-22) | design rule, ADR-010 |
 | 003 | [Mob slot interface](story-003-mob-slot-interface.md) | Logic | Complete (2026-10-22) | ADR-010 |
 | 004 | [ZoneDefinition, ZoneSceneRegistry, bounds validation](story-004-zone-definition-and-bounds-validation.md) | Integration | Complete (2026-10-23) | ADR-009 |
-| 005 | [GetTownRespawnPoint](story-005-town-respawn-point.md) | Logic | Ready | ADR-009 |
+| 005 | [GetTownRespawnPoint](story-005-town-respawn-point.md) | Logic | Complete (2026-10-23) | ADR-009 |
 | 006 | [Zone wire messages and codecs](story-006-zone-wire-messages.md) | Logic | Ready | ADR-004 |
 | 007 | [Snapshot assembly and fragmentation](story-007-snapshot-assembly-and-fragmentation.md) | Logic | Ready | ADR-004 |
 | 008 | [ZoneSnapshotRequest retransmit](story-008-snapshot-request-retransmit.md) | Logic | Ready | ADR-014 |
@@ -100,4 +100,4 @@ This epic is complete when:
 
 ## Next Step
 
-Stories 001-003 are Complete (2026-10-22) and Story 004 (2026-10-23). Next: `/story-readiness production/epics/zone-instancing/story-005-town-respawn-point.md` (needs 004), then `/dev-story`. Story 006 also has no dependencies; Story 007 needs 002, 003 and 006.
+Stories 001-003 are Complete (2026-10-22), Stories 004 and 005 (2026-10-23). Next: `/story-readiness production/epics/zone-instancing/story-006-zone-wire-messages.md` (no dependencies), then `/dev-story`. Story 007 needs 002, 003 and 006.

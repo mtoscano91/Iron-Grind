@@ -1,8 +1,8 @@
 # Zone Instancing
 
-> **Status**: Approved 2026-10-22 (lean re-review #2 fixes accepted by user, no third pass; history: revised 2026-10-22: lifecycle reconciliation with `networking-session.md` ST-NET-2; lean re-review 2026-10-22 NEEDS REVISION — ghost teardown save, empty drain, Draining entry check, ACs 25–27 — fixed the same day; lean re-review #2 2026-10-22 NEEDS REVISION — teardown ghost no longer told `GhostDeath`, step 4/5 ordering, fragment count — fixed the same day; AC-ZI-17 arithmetic corrected 2026-10-22 at Story 003 readiness, no rule change; previously Approved, lean re-review 2026-05-30)
+> **Status**: Approved 2026-10-22 (lean re-review #2 fixes accepted by user, no third pass; history: revised 2026-10-22: lifecycle reconciliation with `networking-session.md` ST-NET-2; lean re-review 2026-10-22 NEEDS REVISION — ghost teardown save, empty drain, Draining entry check, ACs 25–27 — fixed the same day; lean re-review #2 2026-10-22 NEEDS REVISION — teardown ghost no longer told `GhostDeath`, step 4/5 ordering, fragment count — fixed the same day; AC-ZI-17 arithmetic corrected 2026-10-22 at Story 003 readiness, no rule change; 2026-10-23 at Story 005 completion: AC-ZI-9 allocation measure replaced, CR-ZI-11 authored-point validity and zone-process scope clarified (user-approved, implementation-driven); previously Approved, lean re-review 2026-05-30)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-10-22
+> **Last Updated**: 2026-10-23
 > **Implements Pillar**: Social Gravity (primary — instanced shared zones are the social world), Earned Power (zone tiers gate content progression)
 
 ## Overview
@@ -160,6 +160,8 @@ Zone Instancing exposes: `GetTownRespawnPoint(ZoneID) : Vector3`
   2. Zone bounds centroid (computed from walkable bounds min/max) — return it; log `TownRespawnPointNotAuthored` warning.
   3. `Vector3.zero` — log `TownRespawnPointMissing` critical alert (content authoring error).
   No exception is thrown in any case. The caller (`death-and-respawn.md` CR-DR-8) handles the retry/fallback path.
+- **Authored point validity (2026-10-23, Story 005):** an authored point is used only when every coordinate is finite and its absolute value is at most 250 m (the CR-ZI-10 / position-encoding limit). An invalid authored point is treated as not authored: step 2 applies (the warning names the failing axis), or step 3 when the bounds are invalid too. "Valid walkable bounds" in steps 2–3 means the CR-ZI-10 bounds rule.
+- **Zone process scope (2026-10-23, Story 005):** a zone process serves one zone, so its cache holds one template and the `ZoneID → ZoneTemplateID` mapping for its own `ZoneID` only; there is no routing table in the zone process. A `ZoneID` other than the process's own is a caller error: `Vector3.zero` + `TownRespawnPointMissing` critical alert on every such call, no exception. The fallback is resolved and logged once, when the cache is built.
 - Resolves Death & Respawn OQ-DR-2.
 
 ---
@@ -465,7 +467,7 @@ All Logic criteria are unit-testable without a running server. Integration crite
 
 **AC-ZI-8 (Logic)** — Given a zone snapshot assembled at `P = 50` players and `M = 150` mobs with known `characterName` byte lengths, When F-ZI-1 is evaluated, Then the server emits exactly `F` `ZoneStateSnapshotFragment` messages where `F ∈ [17, 19]` — 17 if all character names encode to ≤ average length; 19 if all encode to maximum length (22 chars). The test must supply known character names to produce a deterministic expected value and assert the exact count via `INetworkTestObserver.GetOutboundMessageCount(clientId, ZoneStateSnapshotFragment.MessageTypeID)`.
 
-**AC-ZI-9 (Logic)** — Given an Active zone with an authored town respawn point in its `ZoneDefinition`, When `GetTownRespawnPoint(ZoneID)` is called 1,000 consecutive times, Then every call returns the same `Vector3`; heap allocation across all 1,000 calls is zero bytes as measured by `GC.GetAllocatedBytesForCurrentThread()` delta (record before, record after, assert delta = 0). `GC.Collect()` must not be called during the measurement. Note: `GC.GetTotalMemory(false)` is NOT an acceptable substitute — it reflects heap state, not allocation delta, and will produce unreliable results under Unity IL2CPP.
+**AC-ZI-9 (Logic)** — Given an Active zone with an authored town respawn point in its `ZoneDefinition`, When `GetTownRespawnPoint(ZoneID)` is called 1,000 consecutive times, Then every call returns the same `Vector3`; the 1,000 calls make zero GC allocations as measured by the Unity Test Framework constraint `UnityEngine.TestTools.Constraints.Is.Not.AllocatingGCMemory()` (it counts `GC.Alloc` profiler samples around the calls; warm up with one call first), and the same measure must register an allocation on a path known to allocate (positive control) in the same test file. `GC.Collect()` must not be called during the measurement. Note: neither `GC.GetTotalMemory(false)` (heap state, not allocation) nor `GC.GetAllocatedBytesForCurrentThread()` is acceptable — the latter returned 0 for an allocating path in the Unity 6.3 Editor's Mono (Story 005 code review, 2026-10-23), so a zero delta proves nothing.
 
 **AC-ZI-10 (Logic)** — Given a zone whose `ZoneDefinition` has no town respawn point authored **and no valid walkable bounds** (a minimal/empty content-error ZoneDefinition that never passed loading validation), When `GetTownRespawnPoint(ZoneID)` is called, Then it returns `Vector3.zero`; a `TownRespawnPointMissing` critical alert is logged; no exception is thrown.
 

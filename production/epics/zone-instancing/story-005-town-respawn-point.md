@@ -1,7 +1,7 @@
 # Story 005: GetTownRespawnPoint (CR-ZI-11)
 
 > **Epic**: Zone Instancing
-> **Status**: Ready — written 2026-10-22; readiness fixes 2026-10-23
+> **Status**: Complete (2026-10-23) — written 2026-10-22; readiness fixes 2026-10-23
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-19
@@ -85,7 +85,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/ZoneInstancing/ZoneInstancing_TownRespawnPoint_tests.cs` — must exist and pass.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — TownRespawnPoint 20/20 (Editor Test Runner 2026-10-23 09:48: EditMode 3721 total, 0 failed, 70 skipped Npgsql)
 
 ---
 
@@ -93,3 +93,23 @@
 
 - Depends on: Story 004 (Complete 2026-10-23 — `ZoneDefinition`, `TownRespawnPoint`, `TownRespawnPointAuthored`, `ZoneDefinitionBoundsValidator.AreBoundsValid`)
 - Unlocks: Story 014 (wires the cache into the composition), the Death & Respawn epic
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-23
+**Criteria**: 7/7 passing, all by automated test. None deferred.
+**Deviations** (advisory, user: "Complete, notes only"):
+1. AC-ZI-9 measure: `Is.Not.AllocatingGCMemory()` with an `Is.AllocatingGCMemory()` positive control, not `GC.GetAllocatedBytesForCurrentThread()` (returns 0 in the Editor's Mono). GDD AC-ZI-9 updated the same day.
+2. An authored point is validated (finite, |coord| <= 250 m); an invalid one is treated as not authored. Added at code review; GDD CR-ZI-11 updated.
+3. No routing table in the zone process: the cache maps only its own `ZoneID`; a foreign `ZoneID` -> `Vector3.zero` + `TownRespawnPointMissing` per call. GDD CR-ZI-11 updated.
+4. Extra API: `ZoneID.Invalid` own zone throws `ArgumentException`; a destroyed definition throws `ArgumentNullException`.
+5. The one-entry template dictionary is kept because CR-ZI-11 specifies it.
+6. `TR-zi-011` remains a placeholder until `/architecture-review`.
+**Scope**: within the Files list (plus `.meta` files).
+**Notes for other stories**:
+- Story 014: construct `TownRespawnPointCache` after S6 validation from `ZoneDefinitionSlot.Current` and the startup `ZoneID`, and hand `ITownRespawnPointProvider` to Death & Respawn.
+- Death & Respawn epic: call through `ITownRespawnPointProvider`; it never returns "no position" (zero is the last fallback), so CR-DR-8's retry loop never triggers against this implementation.
+- Allocation tests: use `UnityEngine.TestTools.Constraints` (needs the `using` for the `Is.Not.AllocatingGCMemory()` extension), never `GC.GetAllocatedBytesForCurrentThread()`.
+**Test Evidence**: Logic — `tests/EditMode/ZoneInstancing/ZoneInstancing_TownRespawnPoint_tests.cs` (20 runs).
+**Code Review**: Complete — APPROVED WITH SUGGESTIONS, all 7 applied (`c9737ac`).
