@@ -1,5 +1,12 @@
 # Zone Instancing — Design Review Log
 
+## Review — 2026-10-23 (lean verify of `7b2d65e`) — Verdict: NEEDS REVISION (fixed same session; marked Approved by user)
+Scope signal: S (this revision; GDD overall XL)
+Specialists: None (lean mode — single-session analysis)
+Blocking items: 1 | Recommended: 1
+Summary: All items from the first 2026-10-23 pass verified closed. Blocker introduced by that fix: tokens live in one `ActiveSessionTokens[AccountID]` entry per account, and in case (b) the new connection has already logged in (session stealing replaced A's token with B's), so "delete the token" on reclamation would delete B's. Fixed: (a)/(c) delete only when the entry's `sessionId` is the reclaimed session's; (b) leaves the entry; AC-ZI-28 asserts B's token stays valid; CR-TOK-6 bullet mirrored. Recommended fixed: ST-NET-1 reclamation row points its (b) trigger to the B-NP-7 entering-slot exception and states the token rule per case.
+Prior verdict resolved: Yes — NEEDS REVISION (2026-10-23 lean, fixed in `7b2d65e`)
+
 ## Review — 2026-10-23 (lean, `ZoneEntryAck` revision `a2872f4`) — Verdict: NEEDS REVISION (fixed same session; lean verify pending)
 Scope signal: M (this revision; GDD overall XL)
 Specialists: None (lean mode — single-session analysis)

@@ -45,7 +45,7 @@ Token is deleted from `ActiveSessionTokens` when:
 - Session TTL elapses (`Disconnected_SessionActive → Disconnected_SessionExpired`)
 - Explicit disconnect (`Connected → Disconnected_SessionExpired`, graceful logout)
 - Session-stealing — prior token deleted before the new connection receives its token (B-NP-7)
-- Entering-slot reclamation (`Connected → Disconnected_SessionExpired`, no persistence write) — `zone-instancing.md` CR-ZI-17: stall timeout, duplicate handshake, or transport drop before `ZoneEntryAck`. No ghost exists, so the client's retry is a fresh connect (EC-TOK-1). *(Added 2026-10-23.)*
+- Entering-slot reclamation (`Connected → Disconnected_SessionExpired`, no persistence write) — `zone-instancing.md` CR-ZI-17: stall timeout or transport drop before `ZoneEntryAck` — the entry is deleted only if its `sessionId` (CR-TOK-7) is the reclaimed session's. A duplicate handshake (CR-ZI-17 case (b)) deletes nothing here: the new connection already logged in, so session stealing (row above) removed the old token and the entry holds the new connection's. No ghost exists, so the client's retry is a fresh connect (EC-TOK-1). *(Added 2026-10-23; sessionId guard and case (b) exclusion added in the zone-instancing lean verify the same day.)*
 - Server restart — in-memory store cleared (see EC-TOK-4)
 
 **CR-TOK-7 — Token Binding**

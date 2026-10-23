@@ -4679,3 +4679,9 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Propagated: networking-session.md (new ST-NET-1 row + header), networking-session-token.md CR-TOK-6 (new condition + header), networking-wire-protocol.md ZoneFullResponse fourth case (Other) + header; entities.yaml ZONE_ENTRY_STALL_TIMEOUT_SECONDS + JoinRejectedReason notes, last_updated.
 - Story 011 note for readiness: Story 010's ZoneEntryAdmission "already admitted" check and the case (b) reclamation point (token validation, before LoadCharacter) must line up; session-layer expiry/token deletion may need a seam if Story 011 is zone-side only.
 - Next: commit -> /clear -> /design-review design/gdd/zone-instancing.md --depth lean (verify) -> /story-readiness Story 011. Not committed. PAT rotation still unconfirmed.
+
+## Session Extract — /design-review zone-instancing.md --depth lean 2026-10-23 (verify of 7b2d65e)
+- Verdict: NEEDS REVISION (1 blocking, 1 recommended) -> fixed; user accepted -> Zone Instancing Approved 2026-10-23 (GDD header + systems-index). Review log appended.
+- Blocker: ActiveSessionTokens has one entry per AccountID; in case (b) B already logged in, so session stealing already replaced A's token with B's — reclamation must not delete it. Fix: (a)/(c) delete only if sessionId matches the reclaimed session; (b) leaves the entry (CR-ZI-17 point 7, AC-ZI-28, networking-session-token.md CR-TOK-6 bullet). Recommended: networking-session.md ST-NET-1 reclamation row points (b) to the B-NP-7 exception + per-case token rule.
+- entities.yaml: no change needed (stall-timer note covers case (a), where sessionId matches).
+- Next: /story-readiness Story 011 (production/epics/zone-instancing/story-011-stale-slot-reclamation.md). PAT rotation still unconfirmed.
