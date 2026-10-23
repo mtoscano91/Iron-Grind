@@ -4716,3 +4716,10 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - EPIC row 011 Complete. Story 014 Implementation Notes gained the Story 011 wiring note (reclamation ctor arg, Register before Seal, OnTick before close steps, client id == transport id, TD-077/078).
 - Tech debt logged: TD-078 (during /code-review). No new entries at story-done.
 - Next recommended: commit (include Unity-generated .meta files) -> /dev-story Story 012 (teardown close steps, Ready) or Story 013 (player exit, Ready, reuses LeaveZone). PAT rotation still unconfirmed.
+
+## Session Extract — /story-readiness 2026-10-23 (Zone Instancing Story 012)
+- Verdict: NEEDS WORK (9 gaps) -> fixed -> Ready (10 h, was 4 h provisional). Lean: QL-STORY-READY skipped.
+- User decisions: NotifyZoneExit from each tracked save's completion callback (runs in DrainOnShutdown, teardown step 6; failed save still notifies + LogError; drain timeout -> no notify; entering slot / sync-throwing save -> notify at once); step 4 queues ZoneSessionEnded cap-exempt + expires session, never closes — NGO shutdown (teardown step 7) closes connections.
+- Other fixes: new seams IZoneMobSpawnTimers, IZoneTeardownSessionSink (SaveGhostSnapshotAndExpire -> Task<CharacterSaveResult>, ExpireConnectedSession; stand-in TD-079), IZoneDrainNoticeLog (Story 014 implements); ZoneCrashCleanupHandler not reused (static, HP-only, no token/completion); LeaveZone not reused; per-step + per-slot try/catch, _ran flag; deps + 003, 010; AC-ZI-31 "same tick" reworded.
+- Files: story-012 rewritten; story-014 Implementation Notes (Story 012 wiring); EPIC row 012; tech-debt-register TD-079.
+- Next: commit -> /dev-story Story 012. Not committed. PAT rotation still unconfirmed.
