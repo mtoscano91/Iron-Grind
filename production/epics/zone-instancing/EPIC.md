@@ -68,6 +68,7 @@ Zone Instancing is the server-side runtime of one zone instance: it owns the ins
 4. **Stand-ins this epic replaces** (Networking Core Stories 042–045): `IZoneStateOwner` (the zone `State` owner), `IZoneBoundsValidator`, `IZoneCloseSteps` (CR-ZI-12, including the step 5 ordering note of ADR-009 A1), and the static zone data behind `IZoneScene.AddNavMeshData()` (`ZoneDefinition`). `IConnectionCharacterDirectory` / `IConnectionActivitySink` are filled by the entry sequence (TR-zi-007) — until then every request is dropped as `NoCharacter`.
 5. **No zone content exists.** `ZoneTemplate_Empty.unity` (Story 045) has no `ZoneDefinition`, bounds or baked NavMesh; stories that need real content use crafted test assets (AC-ZI-5).
 6. **GDD header** said "Needs Revision" while the review log (2026-05-30) and `systems-index.md` said Approved; header corrected 2026-10-22 (no rule change).
+7. **Added 2026-10-23 (Story 011 readiness):** (a) no story sends `ZoneEntryAck` from the client or tears down the zone view on `ZoneFullResponse(Other)` after the gate opened (CR-ZI-8 step 11, CR-ZI-17 point 8) — needs a client zone-entry story; (b) the session side of entry-stall reclamation (`Connected → Disconnected_SessionExpired` with no persistence write, token deleted only if owned) is behind Story 011's `IZoneEntryReclaimSessionSink` stand-in — needs a Networking Core story (TD-077).
 
 ## Stories
 
@@ -85,7 +86,7 @@ Zone Instancing is the server-side runtime of one zone instance: it owns the ins
 | 008 | [ZoneSnapshotRequest retransmit](story-008-snapshot-request-retransmit.md) | Logic | Complete (2026-10-23) | ADR-014 |
 | 009 | [Entry part 1 — admission](story-009-entry-admission.md) | Integration | Complete (2026-10-23) | ADR-014, ADR-011, ADR-006 |
 | 010 | [Entry part 2 — snapshot, SessionReady, party, PlayerJoinedZone](story-010-entry-completion.md) | Integration | Complete (2026-10-23) | ADR-014, ADR-010 |
-| 011 | [Stale slot reclamation and entry stall](story-011-stale-slot-reclamation.md) | Logic | Needs Work — GDD revised 2026-10-23 (`ZoneEntryAck`); re-run `/story-readiness` | design rule |
+| 011 | [Stale slot reclamation and entry stall](story-011-stale-slot-reclamation.md) | Logic | Ready (11 h; readiness 2026-10-23, rewritten for `ZoneEntryAck`) | ADR-011, ADR-014, ADR-004, ADR-010 |
 | 012 | [Teardown close steps](story-012-teardown-close-steps.md) | Integration | Ready | ADR-009 A1, ADR-006, ADR-011 |
 | 013 | [Player exit and slot release](story-013-player-exit-and-slot-release.md) | Integration | Ready | ADR-010, ADR-011 |
 | 014 | [Composition wiring, quit-request drain](story-014-composition-wiring-and-drain.md) | Integration | Ready | ADR-009 A1 |

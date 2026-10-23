@@ -37,6 +37,7 @@
 
 ## Implementation Notes
 
+- **From Story 011 readiness (2026-10-23):** Story 011 builds the shared leave path (roster off / pending removed → `PlayerLeftZone` to the others → `NotifyZoneExit` for a formal party → slot + directory freed → occupancy change; no save). `ReleasePlayer` reuses it and adds the exit-save ordering before `NotifyZoneExit`. An acked slot's disconnect is this story's; an entering slot's is Story 011's case (c).
 - **From Story 010 readiness (2026-10-23):** on every slot release call `ZoneConnectionCharacterDirectory.Remove(clientId)` and `ZoneTickRoster.Deactivate(entityId)` (Story 010), and `IPartyZonePresence.NotifyZoneExit` only when `TryGetFormalParty` is true (solo pseudo-party: no call).
 - Who calls the entry point: the session layer's existing disconnect / TTL handling (`ConnectionStateMachine`, ghost TTL) — readiness lists the call sites; wiring is in Story 014 if they live in the composition.
 - The exit save itself (`SaveSession(Logout)` / TTL snapshot save) is Character Persistence Story 010's session-end triggers — this story orders `NotifyZoneExit` after it, it does not re-implement it.
@@ -71,5 +72,5 @@
 
 ## Dependencies
 
-- Depends on: Stories 001, 002, 010
+- Depends on: Stories 001, 002, 010, 011 (leave path)
 - Unlocks: Story 014

@@ -4685,3 +4685,10 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Blocker: ActiveSessionTokens has one entry per AccountID; in case (b) B already logged in, so session stealing already replaced A's token with B's — reclamation must not delete it. Fix: (a)/(c) delete only if sessionId matches the reclaimed session; (b) leaves the entry (CR-ZI-17 point 7, AC-ZI-28, networking-session-token.md CR-TOK-6 bullet). Recommended: networking-session.md ST-NET-1 reclamation row points (b) to the B-NP-7 exception + per-case token rule.
 - entities.yaml: no change needed (stall-timer note covers case (a), where sessionId matches).
 - Next: /story-readiness Story 011 (production/epics/zone-instancing/story-011-stale-slot-reclamation.md). PAT rotation still unconfirmed.
+
+## Session Extract — /story-readiness 2026-10-23 (Zone Instancing Story 011, re-run after ZoneEntryAck)
+- Verdict: NEEDS WORK (7 gaps: open decision still in story; ACs predate the GDD revision; no PlayerLeftZone / ZoneEntryAck codecs or ids; no session-layer path for Connected -> Expired without persistence; case (b) needs a CharacterID reverse lookup before TryPreCheck/LoadCharacter + acked-duplicate behaviour; AC-ZI-31 / client ack / Story 013 overlap; estimate 3 h) -> fixed -> Ready (11 h). Lean: QL-STORY-READY skipped.
+- User decisions: both codecs in Story 011 (provisional 0xE134 ZoneEntryAck, 0xE135 PlayerLeftZone, TD-011) + ADR-014 Decision 1 row; zone-side seam IZoneEntryReclaimSessionSink.ExpireEnteringSession(clientId, deleteTokenIfOwned) with logging stand-in (TD-077); Story 011 builds the shared no-save leave path, Story 013 reuses it.
+- Acked duplicate CharacterID handshake: ignored with one EntryHandshakeCharacterAlreadyInZone warning, relies on B-NP-7 ordering (TD-076).
+- Files: story-011 rewritten; story-012 AC-ZI-31/EC-ZI-15 + dep 011; story-013 leave-path note + dep 011; EPIC row 011 Ready + Known Gap 7 (client ack story, Networking Core session story); tech-debt-register TD-076, TD-077.
+- Next: commit -> /dev-story Story 011. Not committed. PAT rotation still unconfirmed.

@@ -35,6 +35,7 @@
   5. `NotifyZoneExit(PartyID, EntityID)` for every occupied player slot, ghosts included — each one only after that character's step 2 or step 3 save has completed (or is committed to the write queue with guaranteed ordering).
   6. All player slots zeroed and freed. 7. All mob slots zeroed and freed. 8. The `ZoneID` retired (no routing table in the zone process — log the retirement; the process exits).
 - [ ] **AC-ZI-12**: Active zone, 3 connected players (1 `Dead`), 5 mobs → `SaveSession` for the Dead one with HP 0; the other 2 saved; party fake receives `NotifyZoneExit` for all 3; all slots empty; `ZoneSessionEnded(ZoneClosed)` captured for the connected clients.
+- [ ] **AC-ZI-31 / EC-ZI-15 (added 2026-10-23, Story 011 readiness)**: an **entering** slot (no `ZoneEntryAck` yet — Story 011's flag) is treated like a `Connected` slot except that step 2 makes **no `SaveSession`** for it; it still gets `ZoneSessionEnded(ZoneClosed=0)` in step 4 and `NotifyZoneExit` in step 5 if in a formal party (not gated on a save). The stall timer is not consulted; a stall reclamation in the same tick runs first and step 5 skips the freed slot. Test: Active zone, one acked `Connected` and one entering player, both in a formal party → `SaveSession` for the acked one only; `NotifyZoneExit` once each; both get `ZoneSessionEnded(ZoneClosed)`.
 - [ ] **AC-ZI-23 (teardown side)**: a ghost that took damage after disconnecting is written exactly once, with the snapshot HP, with no `SaveSession` call; its session is expired with the token invalidated; `NotifyZoneExit` for it fires only after the snapshot save completes; a `Connected` client already told at T-4 gets no second `ZoneSessionEnded` and its transport is closed.
 - [ ] **EC-ZI-11**: step 5 runs only for occupied slots; a slot emptied earlier by a logout gets no second `NotifyZoneExit`.
 - [ ] Runs once per process; a second call is a no-op. A throwing step is logged and the remaining steps still run (the composition contract: "may throw; logged and goes on" — confirm per step at readiness).
@@ -80,5 +81,5 @@
 
 ## Dependencies
 
-- Depends on: Stories 001, 002, 006
+- Depends on: Stories 001, 002, 006, 011 (entering flag)
 - Unlocks: Story 014
