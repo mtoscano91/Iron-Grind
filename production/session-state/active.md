@@ -4528,3 +4528,11 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Applied (network-programmer, uncommitted): GetBodySize + exact-size WriteBody for EntityState / PlayerJoinedZone (WireStringCodec.GetEncodedByteCount); EntityState id guard before first byte, reported against 0xF000; 7 golden-byte layout tests; Invalid EntityID encode tests; bool rules; fragment empty/503/504/aliasing; null / lone-surrogate / invalid UTF-8 names; retryAfterSeconds 0/255; truncation test split; docs (stop on false, no ZoneID guard, consumer rejects EntityID 0); registry ZoneSnapshotRequest -> CR-ZI-9. Tests 53 -> 95.
 - Next: Test Runner run -> commit -> /story-done.
 - Run 1: lone-surrogate test failed (TestCase string args stored as UTF-8 metadata turn \uD800 into 3x U+FFFD) -> name built in the test body; unused Name22 removed. Run 2 (Editor): EditMode 3816 total, 3746 passed, 0 failed, 70 skipped (Npgsql); WireMessages 95/95. Committed. Next: /story-done.
+
+## Session Extract — /story-done 2026-10-23 (Story 006)
+- Verdict: COMPLETE WITH NOTES (7/7; WireMessages 95/95; EditMode 3816 total, 0 failed, 70 skipped Npgsql). Lean: QL-TEST-COVERAGE and LP-CODE-REVIEW skipped.
+- Story: production/epics/zone-instancing/story-006-zone-wire-messages.md — zone wire messages and codecs
+- Tech debt logged: None (notes only; 7 advisory deviations in Completion Notes, incl. GDD follow-ups for criticality/channel rows and the EntityState length-prefix wording)
+- EPIC.md row 006 Complete, Next Step -> Story 007; epics/index.md row 001-006 Complete.
+- Next recommended: /story-readiness production/epics/zone-instancing/story-007-snapshot-assembly-and-fragmentation.md
+- Committed. PAT rotation still unconfirmed.

@@ -80,7 +80,7 @@ Zone Instancing is the server-side runtime of one zone instance: it owns the ins
 | 003 | [Mob slot interface](story-003-mob-slot-interface.md) | Logic | Complete (2026-10-22) | ADR-010 |
 | 004 | [ZoneDefinition, ZoneSceneRegistry, bounds validation](story-004-zone-definition-and-bounds-validation.md) | Integration | Complete (2026-10-23) | ADR-009 |
 | 005 | [GetTownRespawnPoint](story-005-town-respawn-point.md) | Logic | Complete (2026-10-23) | ADR-009 |
-| 006 | [Zone wire messages and codecs](story-006-zone-wire-messages.md) | Logic | Ready | ADR-004 |
+| 006 | [Zone wire messages and codecs](story-006-zone-wire-messages.md) | Logic | Complete | ADR-004 |
 | 007 | [Snapshot assembly and fragmentation](story-007-snapshot-assembly-and-fragmentation.md) | Logic | Ready | ADR-004 |
 | 008 | [ZoneSnapshotRequest retransmit](story-008-snapshot-request-retransmit.md) | Logic | Ready | ADR-014 |
 | 009 | [Entry part 1 — admission](story-009-entry-admission.md) | Integration | Ready | ADR-014, ADR-011, ADR-006 |
@@ -100,4 +100,4 @@ This epic is complete when:
 
 ## Next Step
 
-Stories 001-003 are Complete (2026-10-22), Stories 004 and 005 (2026-10-23). Story 006 passed `/story-readiness` 2026-10-23 (fixed → Ready, 6 h). Next: `/dev-story production/epics/zone-instancing/story-006-zone-wire-messages.md`. Story 007 needs 002, 003 and 006.
+Stories 001-003 are Complete (2026-10-22), Stories 004-006 (2026-10-23). Next: `/story-readiness production/epics/zone-instancing/story-007-snapshot-assembly-and-fragmentation.md` (dependencies 002, 003, 006 all Complete), then `/dev-story`.

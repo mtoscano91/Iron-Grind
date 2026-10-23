@@ -1,7 +1,7 @@
 # Story 006: Zone Wire Messages and Codecs
 
 > **Epic**: Zone Instancing
-> **Status**: Ready — written 2026-10-22; `/story-readiness` 2026-10-23: NEEDS WORK (7 gaps) → fixed → Ready
+> **Status**: Complete — 2026-10-23 (`/story-done`, COMPLETE WITH NOTES); readiness 2026-10-23: NEEDS WORK (7 gaps) → fixed → Ready
 > **Layer**: Core (schemas in `IronGrind.Foundation`, shared with the client)
 > **Type**: Logic
 > **Manifest Version**: 2026-10-19
@@ -93,7 +93,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/ZoneInstancing/ZoneInstancing_WireMessages_tests.cs` — must exist and pass.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing (95 runs)
 
 ---
 
@@ -101,3 +101,23 @@
 
 - Depends on: None
 - Unlocks: Stories 007, 008, 009, 010, 012, 014
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-23
+**Criteria**: 7/7 passing, all by automated test. None deferred.
+**Deviations** (advisory, notes only — not logged as tech debt):
+1. Extra API: `EntityStateCodec.GetBodySize` / `PlayerJoinedZoneCodec.GetBodySize`; `WriteBody` slices to the exact encoded size (added at code review so Story 007 can pack entries tightly).
+2. Stricter encode: the fragment encoder also throws on `totalFragments == 0` / `fragmentIndex >= totalFragments`; `EntityID.Invalid` throws via `WireIdCodec` (an `EntityState` entry reports against `0xF000`).
+3. Not enforced in the codecs (stated in doc comments): decode accepts `EntityID` 0 — the consumer must reject it; encode has no `ZoneID.Invalid` guard.
+4. Invalid UTF-8 in a name decodes to U+FFFD rather than failing (GDD silent; pinned by a test).
+5. New constant `ZoneStateSnapshotFragment.MaxMessageBodyBytes = 512` (no CR-NET-7.6 constant existed in Foundation).
+6. GDD follow-ups: `ZoneFullResponse` / `ZoneSnapshotRequest` lack rows in `networking-message-criticality.md` and `networking-channel-contract.md`; `networking-wire-protocol.md` says "length-prefixed EntityState" (reassembly step 3) and "skip to the next entry" (EntityType note), but `EntityState` has no length prefix.
+7. `TR-zi-006` / `TR-zi-008` remain placeholders until `/architecture-review`.
+**Scope**: within the story plus `WireStringCodec.cs` (internal helper) and `tests/EditMode/Architecture/AssemblyBoundaryLists.cs` (15 ADR-012 allow-list entries, required).
+**Notes for other stories**:
+- Story 007: size each entry with `EntityStateCodec.GetBodySize`, serialize the whole snapshot first, then `totalFragments = ceil(bytes / 504)`; reject `EntityID.Invalid` from decoded entries on the client; stop walking a payload when `TryReadBody` returns false (`bytesConsumed` is 0).
+- Tests: a lone surrogate cannot pass through a `[TestCase]` string argument (attribute metadata is UTF-8; it arrives as three U+FFFD) — build such strings in the test body.
+**Test Evidence**: Logic — `tests/EditMode/ZoneInstancing/ZoneInstancing_WireMessages_tests.cs` (95 runs).
+**Code Review**: Complete — CHANGES REQUIRED, all 10 applied (`a5d4ba1`).
