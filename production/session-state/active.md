@@ -4522,3 +4522,9 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Review notes for /code-review: ZoneSnapshotRequest rationale cites CR-ZI-8 (should be CR-ZI-9 retransmit); EntityState encode passes messageTypeId 0 to SerializeEntityId.
 - Next: Test Runner run → commit → /code-review → /story-done.
 - Run 1: AssemblyBoundary test_every_foundation_type_is_listed failed (15 new Foundation types not on the ADR-012 allow-list) -> added with planned consumers. Run 2 (Editor 10:09): EditMode 3774 total, 3704 passed, 0 failed, 70 skipped (Npgsql); WireMessages 53/53. Committed. Next: /code-review.
+
+## Session Extract — /code-review 2026-10-23 (Story 006)
+- Verdict: CHANGES REQUIRED (unity-specialist clean/suggestions; qa-tester GAPS). User: "fix all" (1-4 required, 5-9 suggestions).
+- Applied (network-programmer, uncommitted): GetBodySize + exact-size WriteBody for EntityState / PlayerJoinedZone (WireStringCodec.GetEncodedByteCount); EntityState id guard before first byte, reported against 0xF000; 7 golden-byte layout tests; Invalid EntityID encode tests; bool rules; fragment empty/503/504/aliasing; null / lone-surrogate / invalid UTF-8 names; retryAfterSeconds 0/255; truncation test split; docs (stop on false, no ZoneID guard, consumer rejects EntityID 0); registry ZoneSnapshotRequest -> CR-ZI-9. Tests 53 -> 95.
+- Next: Test Runner run -> commit -> /story-done.
+- Run 1: lone-surrogate test failed (TestCase string args stored as UTF-8 metadata turn \uD800 into 3x U+FFFD) -> name built in the test body; unused Name22 removed. Run 2 (Editor): EditMode 3816 total, 3746 passed, 0 failed, 70 skipped (Npgsql); WireMessages 95/95. Committed. Next: /story-done.

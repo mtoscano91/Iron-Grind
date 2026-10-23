@@ -214,7 +214,7 @@ namespace IronGrind.Networking
             AddPriority(ZoneFullResponse.MessageTypeId, nameof(ZoneFullResponse), DesignPillar.Infrastructure,
                 MessageDirection.ServerToOwningClient, "Join rejection; must arrive to release the client's pending join (CR-ZI-7). Provisional id (TD-011).");
             AddPriority(ZoneSnapshotRequest.MessageTypeId, nameof(ZoneSnapshotRequest), DesignPillar.Infrastructure,
-                MessageDirection.ClientToServer, "Requests the zone snapshot (CR-ZI-8); a lost request leaves the client without zone state. Provisional id (TD-011).");
+                MessageDirection.ClientToServer, "Requests the zone snapshot (CR-ZI-9, snapshot retransmit after the reassembly timeout); a lost request leaves the client without zone state. Provisional id (TD-011).");
             AddPriority(ZoneSessionEnded.MessageTypeId, nameof(ZoneSessionEnded), DesignPillar.Infrastructure,
                 MessageDirection.ServerToOwningClient, "Session-ending signal with grace period (CR-ZI-9); must arrive once, in order. Provisional id (TD-011).");
             AddPriority(PlayerJoinedZone.MessageTypeId, nameof(PlayerJoinedZone), DesignPillar.SocialSignals,

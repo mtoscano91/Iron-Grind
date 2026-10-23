@@ -30,8 +30,20 @@ namespace IronGrind.Networking
         }
 
         /// <summary>
+        /// Returns the number of UTF-8 bytes <see cref="WriteString"/> writes for <paramref name="value"/> (null = empty)
+        /// after the cut to <paramref name="maxBytes"/>, excluding the length prefix. The size and the write share one
+        /// algorithm, so they always agree.
+        /// </summary>
+        internal static int GetEncodedByteCount(string value, int maxBytes)
+        {
+            CountCharsWithinByteLimit(value ?? string.Empty, maxBytes, out int byteCount);
+            return byteCount;
+        }
+
+        /// <summary>
         /// Reads a string at <paramref name="offset"/>. Returns <see langword="false"/> if the prefix does not fit, the
         /// length exceeds <paramref name="maxBytes"/>, or the body is shorter than the prefix claims.
+        /// Invalid UTF-8 bytes do not fail the read: they decode to U+FFFD replacement characters (pinned by tests).
         /// </summary>
         internal static bool TryReadString(ReadOnlySpan<byte> body, int offset, int maxBytes, out string value, out int nextOffset)
         {

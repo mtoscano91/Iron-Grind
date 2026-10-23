@@ -13,6 +13,8 @@ namespace IronGrind.Networking
         /// <summary>
         /// Writes the 9-byte body at offset 0 and returns 9. Throws <see cref="ArgumentOutOfRangeException"/> if
         /// <paramref name="destination"/> is shorter than <see cref="ZoneSessionEnded.BodySize"/>.
+        /// There is no <c>ZoneID.Invalid</c> guard on encode (no WireIdCodec ZoneID serializer exists); the sender must not
+        /// send an invalid zone id.
         /// </summary>
         public static int WriteBody(Span<byte> destination, in ZoneSessionEnded message)
         {

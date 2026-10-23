@@ -12,19 +12,32 @@ namespace IronGrind.Networking
     public static class EntityStateCodec
     {
         /// <summary>
-        /// Writes the entry at offset 0 and returns the bytes written (player 53 to 77, mob 35). A player name is cut to
-        /// 24 UTF-8 bytes at a character boundary. Throws <see cref="InvalidOperationException"/> (via
-        /// <see cref="WireIdCodec"/>, CR-NET-7.3) for <see cref="EntityID.Invalid"/> and
-        /// <see cref="ArgumentOutOfRangeException"/> if <paramref name="destination"/> is smaller than the maximum size
-        /// of the entry's type (<see cref="EntityState.PlayerMaxBodySize"/> / <see cref="EntityState.MobBodySize"/>).
+        /// Returns the exact encoded size of <paramref name="state"/>: mob 35; player 53 plus the UTF-8 byte count of the
+        /// name after the cut to 24 bytes at a character boundary.
+        /// </summary>
+        public static int GetBodySize(in EntityState state)
+            => state.Type == EntityType.Player
+                ? EntityState.PlayerMinBodySize + WireStringCodec.GetEncodedByteCount(state.CharacterName, EntityState.MaxNameBytes)
+                : EntityState.MobBodySize;
+
+        /// <summary>
+        /// Writes the entry at offset 0 and returns the bytes written (equal to <see cref="GetBodySize"/>; player 53 to 77,
+        /// mob 35). A player name is cut to 24 UTF-8 bytes at a character boundary. Throws
+        /// <see cref="InvalidOperationException"/> (via <see cref="WireIdCodec"/>, CR-NET-7.3) for
+        /// <see cref="EntityID.Invalid"/> before any byte is written, and <see cref="ArgumentOutOfRangeException"/> if
+        /// <paramref name="destination"/> is shorter than <see cref="GetBodySize"/> bytes (the destination must be at least
+        /// <c>GetBodySize(state)</c> bytes, not the maximum).
         /// </summary>
         public static int WriteBody(Span<byte> destination, in EntityState state)
         {
             bool isPlayer = state.Type == EntityType.Player;
-            destination = destination.Slice(0, isPlayer ? EntityState.PlayerMaxBodySize : EntityState.MobBodySize);
+            destination = destination.Slice(0, GetBodySize(state));
 
+            // The entry travels inside a ZoneStateSnapshotFragment, so a rejected id is reported against that message type.
+            // The guard runs before the first byte is written.
+            WireIdCodec.SerializeEntityId(destination.Slice(1, WireIdCodec.EntityIdWireSize), state.EntityId,
+                ZoneStateSnapshotFragment.MessageTypeId, nameof(state.EntityId));
             destination[0] = (byte)state.Type;
-            WireIdCodec.SerializeEntityId(destination.Slice(1, WireIdCodec.EntityIdWireSize), state.EntityId, 0, nameof(state.EntityId));
             BinaryPrimitives.WriteInt16LittleEndian(destination.Slice(5, 2), state.PosX);
             BinaryPrimitives.WriteInt16LittleEndian(destination.Slice(7, 2), state.PosY);
             BinaryPrimitives.WriteInt16LittleEndian(destination.Slice(9, 2), state.PosZ);
@@ -59,7 +72,10 @@ namespace IronGrind.Networking
         /// <summary>
         /// Attempts to read one entry from the start of <paramref name="source"/>. Returns <see langword="false"/>
         /// (default state, 0 bytes consumed) if the buffer is truncated, the entityType byte is unknown, or the name length
-        /// exceeds 24; never throws. Bytes after the entry are ignored, so a packed payload is walked by slicing
+        /// exceeds 24; never throws. On <see langword="false"/>, stop walking the payload; <paramref name="bytesConsumed"/> is 0.
+        /// An EntityID of 0 on the wire is not rejected here; the consumer must reject <see cref="EntityID.Invalid"/>.
+        /// A mob entry ignores the wire isGhost byte (always false for mobs). Invalid UTF-8 in a player name decodes to
+        /// U+FFFD characters and does not fail the read. Bytes after the entry are ignored, so a packed payload is walked by slicing
         /// <paramref name="source"/> by <paramref name="bytesConsumed"/>. No log is written.
         /// </summary>
         public static bool TryReadBody(ReadOnlySpan<byte> source, out EntityState state, out int bytesConsumed)

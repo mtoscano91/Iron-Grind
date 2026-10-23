@@ -36,6 +36,50 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
         private static EntityState MakeMob()
             => EntityState.CreateMob(new EntityID(EntityIdValue), -100, 200, -300, 0, 0, 0, 32767, 90, 100, false, 0, 450, MobTypeIdValue);
 
+        // Distinct field values for the golden-byte tests: every field has its own bytes, so any swap fails.
+        private const short GoldPosX = 0x0102;
+        private const short GoldPosY = 0x0304;
+        private const short GoldPosZ = 0x0506;
+        private const short GoldRotX = 0x0708;
+        private const short GoldRotY = 0x090A;
+        private const short GoldRotZ = 0x0B0C;
+        private const short GoldRotW = 0x0D0E;
+        private const int GoldCurrentHp = 0x11121314;
+        private const int GoldMaxHp = 0x21222324;
+        private const ushort GoldCycleTimer = 0x3132;
+        private const short GoldFacingAngle = 0x4142;
+        private const ushort GoldMobTypeId = 0x5152;
+        private const int GoldLevel = 0x61626364;
+        private const int GoldCurrentMp = 0x71727374;
+        private const int GoldMaxMp = 0x01020304;
+        private const byte GoldEquipmentFlags = 0x05;
+        private const uint GoldRespawnTicks = 0x91929394u;
+        private const ushort GoldFragmentTotal = 0x0203;
+        private const ushort GoldFragmentIndex = 0x0102;
+
+        private const string Name24 = "nnnnnnnn" + "nnnnnnnn" + "nnnnnnnn";
+        private const string Name30 = Name24 + "nnnnnn";
+
+        private const ushort FragmentWireId = ZoneStateSnapshotFragment.MessageTypeId;
+
+        private static byte[] Written(byte[] buffer, int written) => buffer.AsSpan(0, written).ToArray();
+
+        private static byte[] FilledBuffer(int size)
+        {
+            byte[] buffer = new byte[size];
+            buffer.AsSpan().Fill(0xFF);
+            return buffer;
+        }
+
+        private static EntityState MakeGoldPlayer(string name)
+            => EntityState.CreatePlayer(new EntityID(EntityIdValue), GoldPosX, GoldPosY, GoldPosZ, GoldRotX, GoldRotY, GoldRotZ, GoldRotW,
+                GoldCurrentHp, GoldMaxHp, true, true, GoldCycleTimer, GoldFacingAngle, name, GoldLevel, GoldCurrentMp, GoldMaxMp,
+                GoldEquipmentFlags, true, GoldRespawnTicks);
+
+        private static EntityState MakeGoldMob()
+            => EntityState.CreateMob(new EntityID(EntityIdValue), GoldPosX, GoldPosY, GoldPosZ, GoldRotX, GoldRotY, GoldRotZ, GoldRotW,
+                GoldCurrentHp, GoldMaxHp, true, GoldCycleTimer, GoldFacingAngle, GoldMobTypeId);
+
         // -----------------------------------------------------------------------
         // Round trips and body sizes.
         // -----------------------------------------------------------------------
@@ -255,11 +299,10 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
             Assert.AreEqual(mob, readSecond);
         }
 
-        [TestCase(0, 1, 0)]
-        [TestCase(1, 1, 0)]
-        [TestCase(5, 5, 4)]
-        [TestCase(5, 5, 0)]
-        public void ZoneStateSnapshotFragment_EmptyOrSmallPayload_RoundTrips(int unused, int total, int index)
+        [TestCase(1, 0)]
+        [TestCase(5, 4)]
+        [TestCase(5, 0)]
+        public void ZoneStateSnapshotFragment_SmallPayload_RoundTrips(int total, int index)
         {
             // Arrange
             byte[] buffer = new byte[BufferSize];
@@ -333,28 +376,44 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
         // -----------------------------------------------------------------------
 
         [Test]
-        public void TryReadBody_TruncatedBuffer_ReturnsFalseForEveryMessage()
+        public void ZoneFullResponse_TruncatedBuffer_ReturnsFalseAtEveryShorterLength()
         {
             // Arrange
             byte[] buffer = new byte[BufferSize];
             int full = ZoneFullResponseCodec.WriteBody(buffer, new ZoneFullResponse(new ZoneID(ZoneIdValue), JoinRejectedReason.ZoneFull, 1));
-            int request = ZoneSnapshotRequestCodec.WriteBody(buffer, new ZoneSnapshotRequest(new ZoneID(ZoneIdValue), 1u));
-            int ended = ZoneSessionEndedCodec.WriteBody(buffer, new ZoneSessionEnded(new ZoneID(ZoneIdValue), DisconnectReason.ZoneClosed, 1));
 
             // Act & Assert
             for (int length = 0; length < full; length++)
             {
-                Assert.IsFalse(ZoneFullResponseCodec.TryReadBody(new ReadOnlySpan<byte>(buffer, 0, length), out _), $"ZoneFullResponse length {length}");
+                Assert.IsFalse(ZoneFullResponseCodec.TryReadBody(new ReadOnlySpan<byte>(buffer, 0, length), out _), $"length {length}");
             }
+        }
 
+        [Test]
+        public void ZoneSnapshotRequest_TruncatedBuffer_ReturnsFalseAtEveryShorterLength()
+        {
+            // Arrange
+            byte[] buffer = new byte[BufferSize];
+            int request = ZoneSnapshotRequestCodec.WriteBody(buffer, new ZoneSnapshotRequest(new ZoneID(ZoneIdValue), 1u));
+
+            // Act & Assert
             for (int length = 0; length < request; length++)
             {
-                Assert.IsFalse(ZoneSnapshotRequestCodec.TryReadBody(new ReadOnlySpan<byte>(buffer, 0, length), out _), $"ZoneSnapshotRequest length {length}");
+                Assert.IsFalse(ZoneSnapshotRequestCodec.TryReadBody(new ReadOnlySpan<byte>(buffer, 0, length), out _), $"length {length}");
             }
+        }
 
+        [Test]
+        public void ZoneSessionEnded_TruncatedBuffer_ReturnsFalseAtEveryShorterLength()
+        {
+            // Arrange
+            byte[] buffer = new byte[BufferSize];
+            int ended = ZoneSessionEndedCodec.WriteBody(buffer, new ZoneSessionEnded(new ZoneID(ZoneIdValue), DisconnectReason.ZoneClosed, 1));
+
+            // Act & Assert
             for (int length = 0; length < ended; length++)
             {
-                Assert.IsFalse(ZoneSessionEndedCodec.TryReadBody(new ReadOnlySpan<byte>(buffer, 0, length), out _), $"ZoneSessionEnded length {length}");
+                Assert.IsFalse(ZoneSessionEndedCodec.TryReadBody(new ReadOnlySpan<byte>(buffer, 0, length), out _), $"length {length}");
             }
         }
 
@@ -631,6 +690,588 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
 
             // Act & Assert
             Assert.Throws<ArgumentException>(() => ZoneStateSnapshotFragmentCodec.WriteBody(buffer, header, new byte[1]));
+        }
+
+        // -----------------------------------------------------------------------
+        // Exact-size encode (GetBodySize).
+        // -----------------------------------------------------------------------
+
+        [TestCase("", 0)]
+        [TestCase("Aria", 4)]
+        [TestCase(Name24, 24)]
+        [TestCase(Name30, 24)]
+        public void PlayerJoinedZone_GetBodySize_EqualsWrittenLength(string name, int expectedNameBytes)
+        {
+            // Arrange
+            byte[] buffer = new byte[BufferSize];
+            var message = new PlayerJoinedZone(new EntityID(EntityIdValue), name, LevelValue, 1, 2, 3);
+
+            // Act
+            int size = PlayerJoinedZoneCodec.GetBodySize(message);
+            int written = PlayerJoinedZoneCodec.WriteBody(buffer, message);
+
+            // Assert
+            Assert.AreEqual(16 + expectedNameBytes, size);
+            Assert.AreEqual(size, written);
+        }
+
+        [TestCase("", 0)]
+        [TestCase("Aria", 4)]
+        [TestCase(Name24, 24)]
+        [TestCase(Name30, 24)]
+        public void EntityState_PlayerGetBodySize_EqualsWrittenLength(string name, int expectedNameBytes)
+        {
+            // Arrange
+            byte[] buffer = new byte[BufferSize];
+            EntityState state = MakePlayer(name);
+
+            // Act
+            int size = EntityStateCodec.GetBodySize(state);
+            int written = EntityStateCodec.WriteBody(buffer, state);
+
+            // Assert
+            Assert.AreEqual(53 + expectedNameBytes, size);
+            Assert.AreEqual(size, written);
+        }
+
+        [Test]
+        public void EntityState_MobGetBodySize_Is35AndEqualsWrittenLength()
+        {
+            // Arrange
+            byte[] buffer = new byte[BufferSize];
+            EntityState state = MakeMob();
+
+            // Act
+            int size = EntityStateCodec.GetBodySize(state);
+            int written = EntityStateCodec.WriteBody(buffer, state);
+
+            // Assert
+            Assert.AreEqual(35, size);
+            Assert.AreEqual(size, written);
+        }
+
+        [Test]
+        public void PlayerJoinedZone_ExactSizeDestination_Succeeds()
+        {
+            // Arrange
+            var message = new PlayerJoinedZone(new EntityID(EntityIdValue), "Ann", LevelValue, 1, 2, 3);
+            byte[] destination = new byte[PlayerJoinedZoneCodec.GetBodySize(message)];
+
+            // Act
+            int written = PlayerJoinedZoneCodec.WriteBody(destination, message);
+
+            // Assert
+            Assert.AreEqual(destination.Length, written);
+            Assert.IsTrue(PlayerJoinedZoneCodec.TryReadBody(destination, out PlayerJoinedZone read));
+            Assert.AreEqual(message, read);
+        }
+
+        [Test]
+        public void PlayerJoinedZone_DestinationOneByteShort_ThrowsArgumentOutOfRange()
+        {
+            // Arrange
+            var message = new PlayerJoinedZone(new EntityID(EntityIdValue), "Ann", LevelValue, 1, 2, 3);
+            int size = PlayerJoinedZoneCodec.GetBodySize(message);
+
+            // Act & Assert
+            Assert.Throws<ArgumentOutOfRangeException>(() => PlayerJoinedZoneCodec.WriteBody(new byte[size - 1], message));
+        }
+
+        [Test]
+        public void EntityState_ExactSizeDestination_SucceedsForPlayerAndMob()
+        {
+            // Arrange
+            EntityState player = MakePlayer("Ann");
+            EntityState mob = MakeMob();
+            byte[] playerDestination = new byte[EntityStateCodec.GetBodySize(player)];
+            byte[] mobDestination = new byte[EntityStateCodec.GetBodySize(mob)];
+
+            // Act
+            int playerWritten = EntityStateCodec.WriteBody(playerDestination, player);
+            int mobWritten = EntityStateCodec.WriteBody(mobDestination, mob);
+
+            // Assert
+            Assert.AreEqual(playerDestination.Length, playerWritten);
+            Assert.AreEqual(mobDestination.Length, mobWritten);
+            Assert.IsTrue(EntityStateCodec.TryReadBody(playerDestination, out EntityState readPlayer, out _));
+            Assert.IsTrue(EntityStateCodec.TryReadBody(mobDestination, out EntityState readMob, out _));
+            Assert.AreEqual(player, readPlayer);
+            Assert.AreEqual(mob, readMob);
+        }
+
+        [Test]
+        public void EntityState_DestinationOneByteShort_ThrowsArgumentOutOfRange()
+        {
+            // Arrange
+            EntityState player = MakePlayer("Ann");
+            EntityState mob = MakeMob();
+            int playerSize = EntityStateCodec.GetBodySize(player);
+            int mobSize = EntityStateCodec.GetBodySize(mob);
+
+            // Act & Assert
+            Assert.Throws<ArgumentOutOfRangeException>(() => EntityStateCodec.WriteBody(new byte[playerSize - 1], player));
+            Assert.Throws<ArgumentOutOfRangeException>(() => EntityStateCodec.WriteBody(new byte[mobSize - 1], mob));
+        }
+
+        [Test]
+        public void EntityState_PackingToExactly504Bytes_LastEntryFitsOnlyBecauseOfExactSizing()
+        {
+            // Arrange — 11 mobs (385) + player with a 7-byte name (60) + player with a 6-byte name (59) = 504.
+            byte[] payload = new byte[ZoneStateSnapshotFragment.MaxPayloadBytes];
+            int offset = 0;
+            for (int i = 0; i < 11; i++)
+            {
+                offset += EntityStateCodec.WriteBody(payload.AsSpan(offset), MakeMob());
+            }
+
+            offset += EntityStateCodec.WriteBody(payload.AsSpan(offset), MakePlayer("Charlie"));
+            int remaining = payload.Length - offset;
+
+            // Act
+            offset += EntityStateCodec.WriteBody(payload.AsSpan(offset), MakePlayer("Delta1"));
+
+            // Assert
+            Assert.AreEqual(59, remaining);
+            Assert.Less(remaining, EntityState.PlayerMaxBodySize, "A destination sized to the maximum would have rejected this entry.");
+            Assert.AreEqual(ZoneStateSnapshotFragment.MaxPayloadBytes, offset);
+
+            int count = 0;
+            ReadOnlySpan<byte> rest = payload;
+            while (rest.Length > 0)
+            {
+                Assert.IsTrue(EntityStateCodec.TryReadBody(rest, out _, out int consumed));
+                rest = rest.Slice(consumed);
+                count++;
+            }
+
+            Assert.AreEqual(13, count);
+        }
+
+        // -----------------------------------------------------------------------
+        // Golden bytes: every layout asserted whole, little-endian, written by hand from the spec.
+        // -----------------------------------------------------------------------
+
+        [Test]
+        public void ZoneFullResponse_GoldenBytes_MatchTheSpecifiedLayout()
+        {
+            // Arrange
+            byte[] buffer = FilledBuffer(BufferSize);
+            var message = new ZoneFullResponse(new ZoneID(ZoneIdValue), JoinRejectedReason.LoadCharacterFailed, RetryAfterSecondsValue);
+            byte[] expected = { 0x04, 0x03, 0x02, 0x01, 0x02, 0x1E };
+
+            // Act
+            int written = ZoneFullResponseCodec.WriteBody(buffer, message);
+
+            // Assert
+            CollectionAssert.AreEqual(expected, Written(buffer, written));
+        }
+
+        [Test]
+        public void ZoneSnapshotRequest_GoldenBytes_MatchTheSpecifiedLayout()
+        {
+            // Arrange
+            byte[] buffer = FilledBuffer(BufferSize);
+            var message = new ZoneSnapshotRequest(new ZoneID(ZoneIdValue), SnapshotVersionValue);
+            byte[] expected = { 0x04, 0x03, 0x02, 0x01, 0xEF, 0xBE, 0xAD, 0xDE };
+
+            // Act
+            int written = ZoneSnapshotRequestCodec.WriteBody(buffer, message);
+
+            // Assert
+            CollectionAssert.AreEqual(expected, Written(buffer, written));
+        }
+
+        [Test]
+        public void ZoneSessionEnded_GoldenBytes_MatchTheSpecifiedLayout()
+        {
+            // Arrange — grace period -300 = 0xFFFFFED4 (negative, multi-byte).
+            byte[] buffer = FilledBuffer(BufferSize);
+            var message = new ZoneSessionEnded(new ZoneID(ZoneIdValue), DisconnectReason.GhostDeath, -300);
+            byte[] expected = { 0x04, 0x03, 0x02, 0x01, 0x03, 0xD4, 0xFE, 0xFF, 0xFF };
+
+            // Act
+            int written = ZoneSessionEndedCodec.WriteBody(buffer, message);
+
+            // Assert
+            CollectionAssert.AreEqual(expected, Written(buffer, written));
+        }
+
+        [Test]
+        public void PlayerJoinedZone_GoldenBytes_MatchTheSpecifiedLayout()
+        {
+            // Arrange — level 300 = 0x012C, positions 100 / -200 / 300.
+            byte[] buffer = FilledBuffer(BufferSize);
+            var message = new PlayerJoinedZone(new EntityID(EntityIdValue), "Ab", 300, 100, -200, 300);
+            byte[] expected =
+            {
+                0x0D, 0x0C, 0x0B, 0x0A,
+                0x02, 0x00, 0x41, 0x62,
+                0x2C, 0x01, 0x00, 0x00,
+                0x64, 0x00,
+                0x38, 0xFF,
+                0x2C, 0x01,
+            };
+
+            // Act
+            int written = PlayerJoinedZoneCodec.WriteBody(buffer, message);
+
+            // Assert
+            CollectionAssert.AreEqual(expected, Written(buffer, written));
+        }
+
+        [Test]
+        public void EntityState_MobGoldenBytes_MatchTheSpecifiedLayout()
+        {
+            // Arrange
+            byte[] buffer = FilledBuffer(BufferSize);
+            byte[] expected =
+            {
+                0x01,
+                0x0D, 0x0C, 0x0B, 0x0A,
+                0x02, 0x01, 0x04, 0x03, 0x06, 0x05,
+                0x08, 0x07, 0x0A, 0x09, 0x0C, 0x0B, 0x0E, 0x0D,
+                0x14, 0x13, 0x12, 0x11,
+                0x24, 0x23, 0x22, 0x21,
+                0x01,
+                0x00,
+                0x32, 0x31,
+                0x42, 0x41,
+                0x52, 0x51,
+            };
+
+            // Act
+            int written = EntityStateCodec.WriteBody(buffer, MakeGoldMob());
+
+            // Assert
+            CollectionAssert.AreEqual(expected, Written(buffer, written));
+        }
+
+        [Test]
+        public void EntityState_PlayerGoldenBytes_MatchTheSpecifiedLayout()
+        {
+            // Arrange
+            byte[] buffer = FilledBuffer(BufferSize);
+            byte[] expected =
+            {
+                0x00,
+                0x0D, 0x0C, 0x0B, 0x0A,
+                0x02, 0x01, 0x04, 0x03, 0x06, 0x05,
+                0x08, 0x07, 0x0A, 0x09, 0x0C, 0x0B, 0x0E, 0x0D,
+                0x14, 0x13, 0x12, 0x11,
+                0x24, 0x23, 0x22, 0x21,
+                0x01,
+                0x01,
+                0x32, 0x31,
+                0x42, 0x41,
+                0x02, 0x00, 0x48, 0x69,
+                0x64, 0x63, 0x62, 0x61,
+                0x74, 0x73, 0x72, 0x71,
+                0x04, 0x03, 0x02, 0x01,
+                0x05,
+                0x01,
+                0x94, 0x93, 0x92, 0x91,
+            };
+
+            // Act
+            int written = EntityStateCodec.WriteBody(buffer, MakeGoldPlayer("Hi"));
+
+            // Assert
+            CollectionAssert.AreEqual(expected, Written(buffer, written));
+        }
+
+        [Test]
+        public void ZoneStateSnapshotFragment_GoldenBytes_MatchTheSpecifiedLayout()
+        {
+            // Arrange — total 0x0203, index 0x0102 (total != index).
+            byte[] buffer = FilledBuffer(BufferSize);
+            var header = new ZoneStateSnapshotFragment(SnapshotVersionValue, GoldFragmentTotal, GoldFragmentIndex);
+            byte[] payload = { 0xAA, 0xBB, 0xCC };
+            byte[] expected = { 0xEF, 0xBE, 0xAD, 0xDE, 0x03, 0x02, 0x02, 0x01, 0xAA, 0xBB, 0xCC };
+
+            // Act
+            int written = ZoneStateSnapshotFragmentCodec.WriteBody(buffer, header, payload);
+
+            // Assert
+            CollectionAssert.AreEqual(expected, Written(buffer, written));
+        }
+
+        // -----------------------------------------------------------------------
+        // Invalid EntityID on encode (CR-NET-7.3).
+        // -----------------------------------------------------------------------
+
+        [Test]
+        public void PlayerJoinedZone_EncodeInvalidEntityId_ThrowsInvalidOperationAndWarns()
+        {
+            // Arrange
+            byte[] buffer = new byte[BufferSize];
+            var message = new PlayerJoinedZone(EntityID.Invalid, "Ann", LevelValue, 1, 2, 3);
+            LogAssert.Expect(UnityEngine.LogType.Warning,
+                new Regex($@"\[WireIdCodec\] SerializeEntityId: InvalidIdZeroWrite.*messageTypeId={PlayerJoinedZone.MessageTypeId}\b"));
+
+            // Act & Assert
+            Assert.Throws<InvalidOperationException>(() => PlayerJoinedZoneCodec.WriteBody(buffer, message));
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [TestCase(true)]
+        [TestCase(false)]
+        public void EntityState_EncodeInvalidEntityId_ThrowsInvalidOperationWarnsWithFragmentIdAndWritesNothing(bool isPlayer)
+        {
+            // Arrange
+            byte[] buffer = new byte[BufferSize];
+            EntityState state = isPlayer
+                ? EntityState.CreatePlayer(EntityID.Invalid, 0, 0, 0, 0, 0, 0, 0, 1, 1, false, false, 0, 0, "Ann", 1, 1, 1, 0, false, 0)
+                : EntityState.CreateMob(EntityID.Invalid, 0, 0, 0, 0, 0, 0, 0, 1, 1, false, 0, 0, 1);
+            LogAssert.Expect(UnityEngine.LogType.Warning,
+                new Regex($@"\[WireIdCodec\] SerializeEntityId: InvalidIdZeroWrite.*messageTypeId={FragmentWireId}\b"));
+
+            // Act & Assert
+            Assert.Throws<InvalidOperationException>(() => EntityStateCodec.WriteBody(buffer, state));
+            Assert.AreEqual(0, buffer[0], "The id guard runs before the entityType byte is written.");
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        // -----------------------------------------------------------------------
+        // bool wire rules.
+        // -----------------------------------------------------------------------
+
+        [Test]
+        public void EntityState_MobWireGhostByteSetTo1_ReadsIsGhostFalse()
+        {
+            // Arrange
+            byte[] buffer = new byte[BufferSize];
+            int written = EntityStateCodec.WriteBody(buffer, MakeMob());
+            buffer[28] = 1;
+
+            // Act
+            bool ok = EntityStateCodec.TryReadBody(new ReadOnlySpan<byte>(buffer, 0, written), out EntityState read, out _);
+
+            // Assert
+            Assert.IsTrue(ok);
+            Assert.IsFalse(read.IsGhost);
+        }
+
+        [Test]
+        public void EntityState_MobWrite_LeavesGhostByteAt0()
+        {
+            // Arrange
+            byte[] buffer = FilledBuffer(BufferSize);
+
+            // Act
+            EntityStateCodec.WriteBody(buffer, MakeMob());
+
+            // Assert
+            Assert.AreEqual(0, buffer[28]);
+        }
+
+        [Test]
+        public void EntityState_PlayerBoolBytesSetTo2_ReadAsTrue()
+        {
+            // Arrange — empty name: isInDeadState is at 33 + 2 + 12 + 1 = 48.
+            byte[] buffer = new byte[BufferSize];
+            EntityState state = EntityState.CreatePlayer(new EntityID(EntityIdValue), 0, 0, 0, 0, 0, 0, 0, 1, 1, false, false, 0, 0,
+                string.Empty, 1, 1, 1, 0, false, 0);
+            int written = EntityStateCodec.WriteBody(buffer, state);
+            buffer[27] = 2;
+            buffer[28] = 2;
+            buffer[48] = 2;
+
+            // Act
+            bool ok = EntityStateCodec.TryReadBody(new ReadOnlySpan<byte>(buffer, 0, written), out EntityState read, out _);
+
+            // Assert
+            Assert.IsTrue(ok);
+            Assert.IsTrue(read.IsInCombat);
+            Assert.IsTrue(read.IsGhost);
+            Assert.IsTrue(read.IsInDeadState);
+        }
+
+        // -----------------------------------------------------------------------
+        // Fragment boundaries.
+        // -----------------------------------------------------------------------
+
+        [Test]
+        public void ZoneStateSnapshotFragment_EmptyPayload_Is8BytesAndRoundTrips()
+        {
+            // Arrange
+            byte[] buffer = new byte[BufferSize];
+            var header = new ZoneStateSnapshotFragment(SnapshotVersionValue, 2, 1);
+
+            // Act
+            int written = ZoneStateSnapshotFragmentCodec.WriteBody(buffer, header, ReadOnlySpan<byte>.Empty);
+            bool ok = ZoneStateSnapshotFragmentCodec.TryReadBody(new ReadOnlySpan<byte>(buffer, 0, written),
+                out ZoneStateSnapshotFragment read, out ReadOnlySpan<byte> payload);
+
+            // Assert
+            Assert.AreEqual(8, written);
+            Assert.IsTrue(ok);
+            Assert.AreEqual(header, read);
+            Assert.AreEqual(0, payload.Length);
+        }
+
+        [TestCase(503)]
+        [TestCase(504)]
+        public void ZoneStateSnapshotFragment_PayloadAtBoundary_RoundTrips(int payloadLength)
+        {
+            // Arrange
+            byte[] buffer = new byte[ZoneStateSnapshotFragment.MaxMessageBodyBytes];
+            byte[] payload = new byte[payloadLength];
+            for (int i = 0; i < payload.Length; i++)
+            {
+                payload[i] = (byte)(i * 7);
+            }
+
+            var header = new ZoneStateSnapshotFragment(SnapshotVersionValue, 4, 3);
+
+            // Act
+            int written = ZoneStateSnapshotFragmentCodec.WriteBody(buffer, header, payload);
+            bool ok = ZoneStateSnapshotFragmentCodec.TryReadBody(new ReadOnlySpan<byte>(buffer, 0, written),
+                out ZoneStateSnapshotFragment read, out ReadOnlySpan<byte> readPayload);
+
+            // Assert
+            Assert.AreEqual(8 + payloadLength, written);
+            Assert.IsTrue(ok);
+            Assert.AreEqual(header, read);
+            Assert.IsTrue(readPayload.SequenceEqual(payload));
+        }
+
+        [Test]
+        public void ZoneStateSnapshotFragment_DecodedPayload_IsAViewOfTheSourceBuffer()
+        {
+            // Arrange
+            byte[] buffer = new byte[BufferSize];
+            int written = ZoneStateSnapshotFragmentCodec.WriteBody(buffer, new ZoneStateSnapshotFragment(1u, 1, 0), new byte[] { 1, 2, 3 });
+            ZoneStateSnapshotFragmentCodec.TryReadBody(new ReadOnlySpan<byte>(buffer, 0, written), out _, out ReadOnlySpan<byte> payload);
+
+            // Act — mutate the source after decoding.
+            buffer[ZoneStateSnapshotFragment.HeaderSize] = 99;
+
+            // Assert
+            Assert.AreEqual(99, payload[0]);
+        }
+
+        // -----------------------------------------------------------------------
+        // Name edge cases and remaining encode/decode rules.
+        // -----------------------------------------------------------------------
+
+        [Test]
+        public void PlayerJoinedZone_NullName_EncodesAsEmpty()
+        {
+            // Arrange
+            byte[] buffer = new byte[BufferSize];
+            var message = new PlayerJoinedZone(new EntityID(EntityIdValue), null, LevelValue, 1, 2, 3);
+
+            // Act
+            int written = PlayerJoinedZoneCodec.WriteBody(buffer, message);
+            bool ok = PlayerJoinedZoneCodec.TryReadBody(new ReadOnlySpan<byte>(buffer, 0, written), out PlayerJoinedZone read);
+
+            // Assert
+            Assert.AreEqual(16, written);
+            Assert.IsTrue(ok);
+            Assert.AreEqual(string.Empty, read.CharacterName);
+        }
+
+        [Test]
+        public void EntityState_NullName_EncodesAsEmpty()
+        {
+            // Arrange
+            byte[] buffer = new byte[BufferSize];
+
+            // Act
+            int written = EntityStateCodec.WriteBody(buffer, MakePlayer(null));
+            bool ok = EntityStateCodec.TryReadBody(new ReadOnlySpan<byte>(buffer, 0, written), out EntityState read, out _);
+
+            // Assert
+            Assert.AreEqual(53, written);
+            Assert.IsTrue(ok);
+            Assert.AreEqual(string.Empty, read.CharacterName);
+        }
+
+        [TestCase(1, 5)]
+        [TestCase(22, 22)]
+        public void WireNames_LoneSurrogate_WrittenByteCountMatchesTheEncodedTruncatedString(int leadingAsciiChars, int expectedNameBytes)
+        {
+            // Arrange — a lone surrogate encodes as U+FFFD (3 bytes); the second case is cut before it (22 + 3 > 24).
+            // The name is built here, not passed through [TestCase]: attribute string arguments are stored as UTF-8
+            // metadata, which cannot hold a lone surrogate (it arrives as three U+FFFD characters).
+            string name = new string('a', leadingAsciiChars) + "\uD800" + "b";
+            byte[] buffer = new byte[BufferSize];
+            var message = new PlayerJoinedZone(new EntityID(EntityIdValue), name, LevelValue, 1, 2, 3);
+
+            // Act
+            int writtenMessage = PlayerJoinedZoneCodec.WriteBody(buffer, message);
+            PlayerJoinedZoneCodec.TryReadBody(new ReadOnlySpan<byte>(buffer, 0, writtenMessage), out PlayerJoinedZone readMessage);
+            int writtenState = EntityStateCodec.WriteBody(buffer, MakePlayer(name));
+            EntityStateCodec.TryReadBody(new ReadOnlySpan<byte>(buffer, 0, writtenState), out EntityState readState, out _);
+
+            // Assert
+            Assert.AreEqual(16 + expectedNameBytes, writtenMessage);
+            Assert.AreEqual(53 + expectedNameBytes, writtenState);
+            Assert.AreEqual(expectedNameBytes, Encoding.UTF8.GetByteCount(readMessage.CharacterName));
+            Assert.AreEqual(expectedNameBytes, Encoding.UTF8.GetByteCount(readState.CharacterName));
+            Assert.LessOrEqual(writtenMessage - 16, NameMaxBytes);
+            Assert.LessOrEqual(writtenState - 53, NameMaxBytes);
+        }
+
+        [Test]
+        public void WireNames_InvalidUtf8OnRead_DecodeToReplacementCharacterAndSucceed()
+        {
+            // Arrange — pins current behaviour: invalid UTF-8 does not fail the read, it yields U+FFFD.
+            byte[] joined = new byte[BufferSize];
+            int writtenJoined = PlayerJoinedZoneCodec.WriteBody(joined, new PlayerJoinedZone(new EntityID(EntityIdValue), "ab", LevelValue, 1, 2, 3));
+            joined[6] = 0xFF;
+            joined[7] = 0xFE;
+            byte[] state = new byte[BufferSize];
+            int writtenState = EntityStateCodec.WriteBody(state, MakePlayer("ab"));
+            state[EntityState.HeaderSize + 2] = 0xFF;
+            state[EntityState.HeaderSize + 3] = 0xFE;
+
+            // Act
+            bool okJoined = PlayerJoinedZoneCodec.TryReadBody(new ReadOnlySpan<byte>(joined, 0, writtenJoined), out PlayerJoinedZone readJoined);
+            bool okState = EntityStateCodec.TryReadBody(new ReadOnlySpan<byte>(state, 0, writtenState), out EntityState readState, out _);
+
+            // Assert
+            Assert.IsTrue(okJoined);
+            Assert.IsTrue(okState);
+            Assert.That(readJoined.CharacterName, Does.Contain("�"));
+            Assert.That(readState.CharacterName, Does.Contain("�"));
+        }
+
+        [TestCase((byte)0)]
+        [TestCase((byte)255)]
+        public void ZoneFullResponse_RetryAfterSecondsBoundaries_RoundTrip(byte retryAfter)
+        {
+            // Arrange
+            byte[] buffer = new byte[BufferSize];
+            var message = new ZoneFullResponse(new ZoneID(ZoneIdValue), JoinRejectedReason.ZoneFull, retryAfter);
+
+            // Act
+            int written = ZoneFullResponseCodec.WriteBody(buffer, message);
+            bool ok = ZoneFullResponseCodec.TryReadBody(new ReadOnlySpan<byte>(buffer, 0, written), out ZoneFullResponse read);
+
+            // Assert
+            Assert.IsTrue(ok);
+            Assert.AreEqual(retryAfter, read.RetryAfterSeconds);
+            Assert.AreEqual(message, read);
+        }
+
+        [TestCase((byte)0, JoinRejectedReason.ZoneFull)]
+        [TestCase((byte)1, JoinRejectedReason.ZoneDoesNotExist)]
+        [TestCase((byte)2, JoinRejectedReason.LoadCharacterFailed)]
+        public void ZoneFullResponse_KnownReasonBytes_DecodeWithoutLogging(byte raw, JoinRejectedReason expected)
+        {
+            // Arrange
+            byte[] buffer = new byte[BufferSize];
+            ZoneFullResponseCodec.WriteBody(buffer, new ZoneFullResponse(new ZoneID(ZoneIdValue), JoinRejectedReason.ZoneFull, 1));
+            buffer[4] = raw;
+
+            // Act
+            bool ok = ZoneFullResponseCodec.TryReadBody(new ReadOnlySpan<byte>(buffer, 0, 6), out ZoneFullResponse read);
+
+            // Assert
+            Assert.IsTrue(ok);
+            Assert.AreEqual(expected, read.Reason);
+            LogAssert.NoUnexpectedReceived();
         }
 
         // -----------------------------------------------------------------------
