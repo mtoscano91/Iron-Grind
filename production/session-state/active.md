@@ -4563,3 +4563,26 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: None.
 - EPIC.md row 007 Complete + Next Step; epics index row 001-007 Complete. Not committed.
 - Next recommended: Story 008 — ZoneSnapshotRequest retransmit (production/epics/zone-instancing/story-008-snapshot-request-retransmit.md), /story-readiness first. PAT rotation still unconfirmed.
+
+## Session Extract — /story-readiness 2026-10-23 (Zone Instancing Story 008)
+- Story 007 close-out committed (`a2ea538`).
+- Verdict: NEEDS WORK (7 gaps) -> fixed -> Ready (5 h). Lean; QL-STORY-READY skipped.
+- User decisions: ServePending(currentTick) runs last in ZoneTickPipeline step 3 (Simulation), fragments flush in step 4 of the same tick; SnapshotRequestRateLimited logged once per connection per window (later drops counted).
+- Defaults recorded: identity = senderEntityId's slot in this zone with ClientId == clientId; check order decode -> zone mismatch/Closed (ZoneFullResponse ZoneDoesNotExist, 0) -> identity -> rate limit -> serve; window SNAPSHOT_REQUEST_RATE_LIMIT_TICKS = 200 via ctor, served when T - last >= window, drops do not restart it; per-slot state tagged with occupant EntityID (no pool listener change); Register helper + descriptor (8 B, SenderEntityID) in story, composition wiring -> Story 014.
+- Files: story 008, EPIC.md (row 008 + Next Step), active.md. Not committed.
+- Next: commit, then /dev-story Story 008. PAT rotation still unconfirmed.
+
+## Session Extract — /dev-story 2026-10-23 (Zone Instancing Story 008)
+- Story: production/epics/zone-instancing/story-008-snapshot-request-retransmit.md — ZoneSnapshotRequest retransmit (CR-ZI-9). Implemented by a network-programmer subagent; diff reviewed by the main session.
+- Files: src/ServerLogic/ZoneInstancing/ZoneSnapshotRequestService.cs (+ .meta) — IConnectionMessageSink that records in the callback (decode, per-slot entry tagged with occupant EntityID, else foreign list cap 16); ServePending(currentTick): foreign list, overflow warning, slots; zone mismatch / Closed -> ZoneFullResponse(sent zoneId, ZoneDoesNotExist, 0); identity re-check; window SNAPSHOT_REQUEST_RATE_LIMIT_TICKS = 200 via ctor; Descriptor (8 B, SenderEntityID) + static Register. Log tokens added: SnapshotRequestMalformed, SnapshotRequestIdentityMismatch, SnapshotRequestForeignOverflow.
+- Test written: tests/EditMode/ZoneInstancing/ZoneInstancing_SnapshotRequest_tests.cs (+ .meta), 28 [Test]. Main-session fix: the previous-occupant test now expects the identity warning (code behaviour correct).
+- Batch-mode EditMode: 3878 total, 3808 passed, 0 failed, 70 skipped (Npgsql). Note: first run exited 0 with 1 failure — read the XML, not the exit code.
+- Blockers: none. Not committed (readiness edits also uncommitted).
+- Next: /code-review src/ServerLogic/ZoneInstancing/ZoneSnapshotRequestService.cs tests/EditMode/ZoneInstancing/ZoneInstancing_SnapshotRequest_tests.cs, then /story-done. PAT rotation still unconfirmed.
+
+## Session Extract — /code-review + fix all 2026-10-23 (Zone Instancing Story 008)
+- Lean review (unity-specialist + qa-tester): CHANGES REQUIRED — W1 malformed-body log inside the receive callback (unbounded flood), W2 foreign list per-entry warnings/replies and no per-client dedupe; tests R1 (identity before rate limit), R2 (Closed before identity), R3 (forged request on the owner's entity). User: "fix all", applied by a network-programmer subagent, diff checked by the main session.
+- Service: callback never logs (malformed counted, one aggregate SnapshotRequestMalformed warning per ServePending); foreign list one entry per client (last wins); one aggregate SnapshotRequestIdentityMismatch per call (foreign drops + overflow + serve-time re-check failures; SnapshotRequestForeignOverflow token removed); DroppedInWindow surfaced as a Debug.Log summary on the next serve when > 1 drop; Register braces; modular tick difference documented (fails open); remarks: last-wins coalescing, foreign not re-checked at serve, rate-limit state per slot (Story 011 note).
+- Story 008 text updated (Rate-limit logging, Identity, Malformed ACs; implementation notes).
+- Tests 28 -> 43. Batch-mode EditMode: 3893 total, 3823 passed, 0 failed, 70 skipped (Npgsql).
+- Not committed (readiness + implementation + fixes). Next: commit when the user says so, then /story-done Story 008. PAT rotation still unconfirmed.
