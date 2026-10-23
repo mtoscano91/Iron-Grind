@@ -4468,3 +4468,11 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - EPIC.md row 004 Complete, Next Step -> Story 005; epics/index.md row: 001-004 Complete.
 - Next recommended: /story-readiness production/epics/zone-instancing/story-005-town-respawn-point.md; 006 also free; 007 needs 002, 003, 006.
 - Not committed. PAT rotation still unconfirmed.
+
+## Session Extract — /story-readiness 2026-10-23 (Story 005)
+- Story 004 /story-done committed (a7de511).
+- Verdict: NEEDS WORK (6 gaps) -> fixed with the recommended answers (user: "yes, use your recommendations") -> Ready, 3 h (lean; QL-STORY-READY skipped).
+- Decisions: "no valid bounds" = ZoneDefinitionBoundsValidator.AreBoundsValid false (zero-size bounds are valid -> centroid path); a foreign ZoneID -> Vector3.zero + TownRespawnPointMissing per call (error path may allocate).
+- Shape: ITownRespawnPointProvider + TownRespawnPointCache(ownZone, definition) in src/ServerLogic/ZoneInstancing/; fallback resolved and logged once in the constructor; null definition throws. Logs: LogWarning TownRespawnPointNotAuthored, LogError TownRespawnPointMissing ("[ZoneInstancing] " prefix). Composition wiring -> Story 014. Engine note: custom byte comparer if the enum-keyed lookup allocates under Mono.
+- TR-zi-011 still a placeholder (no TR-zi entries in tr-registry.yaml) -> /architecture-review.
+- Not committed. Next: commit -> /dev-story production/epics/zone-instancing/story-005-town-respawn-point.md. PAT rotation still unconfirmed.
