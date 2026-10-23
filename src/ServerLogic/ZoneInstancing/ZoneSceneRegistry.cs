@@ -48,7 +48,10 @@ namespace IronGrind.ServerLogic.ZoneInstancing
 
         /// <summary>
         /// Resolves a <c>-zoneTemplate</c> value. Only the enum name matches (case-sensitive); numeric text, an
-        /// unknown name, a known value without an entry, an empty scene name or a null definition return false.
+        /// unknown name, an undefined value, surrounding whitespace, a comma list, a known value without an entry,
+        /// an empty scene name or a null definition return false. The first entry for a template wins: if it is
+        /// incomplete the call returns false even when a later duplicate is complete. An entry whose definition
+        /// describes a different template returns false and logs <c>ZoneDefinitionLoadFailed</c> as an error.
         /// </summary>
         /// <param name="templateName">The command-line value.</param>
         /// <param name="sceneName">The scene to load, or null.</param>
@@ -63,17 +66,38 @@ namespace IronGrind.ServerLogic.ZoneInstancing
                 return false;
             }
 
+            // Enum.TryParse also accepts numbers, signs, surrounding whitespace and comma lists; only a bare name is wanted.
+            char first = templateName[0];
+            if (char.IsDigit(first) || first == '-' || first == '+'
+                || char.IsWhiteSpace(first) || char.IsWhiteSpace(templateName[templateName.Length - 1])
+                || templateName.IndexOf(',') >= 0)
+            {
+                return false;
+            }
+
+            if (!Enum.TryParse<ZoneTemplateID>(templateName, false, out ZoneTemplateID id)
+                || !Enum.IsDefined(typeof(ZoneTemplateID), id))
+            {
+                return false;
+            }
+
             for (int i = 0; i < _entries.Length; i++)
             {
-                // GetName returns the cached enum name; an undefined value gives null and never matches.
-                string name = Enum.GetName(typeof(ZoneTemplateID), _entries[i].TemplateId);
-                if (!string.Equals(name, templateName, StringComparison.Ordinal))
+                if (_entries[i].TemplateId != id)
                 {
                     continue;
                 }
 
+                // First match wins: an incomplete first entry fails even when a later duplicate is complete.
                 if (string.IsNullOrEmpty(_entries[i].SceneName) || _entries[i].Definition == null)
                 {
+                    return false;
+                }
+
+                if (_entries[i].Definition.TemplateId != id)
+                {
+                    Debug.LogError("[ZoneInstancing] ZoneDefinitionLoadFailed: registry entry " + templateName
+                        + " points at a definition for template " + _entries[i].Definition.TemplateId);
                     return false;
                 }
 

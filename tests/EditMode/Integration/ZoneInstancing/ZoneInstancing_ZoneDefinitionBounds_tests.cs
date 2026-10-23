@@ -146,23 +146,30 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
             Assert.AreEqual(250f, ZoneDefinitionBoundsValidator.MAX_WALKABLE_HALF_EXTENT_M);
         }
 
-        [Test]
-        public void test_min_z_below_minus_250_is_invalid_and_logs_bounds_exceed_encoding_naming_z()
+        [TestCase("min", 0, -250.01f, "x", "-250.01")]
+        [TestCase("min", 1, -250.01f, "y", "-250.01")]
+        [TestCase("min", 2, -250.01f, "z", "-250.01")]
+        [TestCase("max", 0, 250.01f, "x", "250.01")]
+        [TestCase("max", 1, 250.01f, "y", "250.01")]
+        [TestCase("max", 2, 250.01f, "z", "250.01")]
+        public void test_coordinate_beyond_250_is_invalid_and_logs_bounds_exceed_encoding_naming_corner_axis_and_zone(
+            string corner, int axisIndex, float value, string axis, string valueText)
         {
-            var validator = new ZoneDefinitionBoundsValidator(SlotWith(
-                CreateDefinition(new Vector3(-50f, -50f, -250.01f), new Vector3(50f, 50f, 50f))));
-            LogAssert.Expect(LogType.Error, new Regex(@"ZoneBoundsExceedEncoding: min\.z = -250\.0"));
+            Vector3 min = new Vector3(-50f, -50f, -50f);
+            Vector3 max = new Vector3(50f, 50f, 50f);
+            if (corner == "min")
+            {
+                min[axisIndex] = value;
+            }
+            else
+            {
+                max[axisIndex] = value;
+            }
 
-            Assert.IsFalse(validator.Validate(ZONE));
-            LogAssert.NoUnexpectedReceived();
-        }
-
-        [Test]
-        public void test_max_y_above_250_is_invalid_and_logs_bounds_exceed_encoding_naming_y()
-        {
-            var validator = new ZoneDefinitionBoundsValidator(SlotWith(
-                CreateDefinition(new Vector3(-50f, -50f, -50f), new Vector3(50f, 250.01f, 50f))));
-            LogAssert.Expect(LogType.Error, new Regex(@"ZoneBoundsExceedEncoding: max\.y = 250\.0"));
+            var validator = new ZoneDefinitionBoundsValidator(SlotWith(CreateDefinition(min, max)));
+            LogAssert.Expect(LogType.Error, new Regex(
+                @"^\[ZoneInstancing\] ZoneBoundsExceedEncoding: " + corner + @"\." + axis + " = "
+                + Regex.Escape(valueText) + @" .*\(zone ZoneID\(7\)\)$"));
 
             Assert.IsFalse(validator.Validate(ZONE));
             LogAssert.NoUnexpectedReceived();
@@ -170,27 +177,89 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
 
         // ---------------------------------------------------------------- Malformed
 
-        [Test]
-        public void test_nan_coordinate_is_invalid()
+        private static Vector3 WithAxis(Vector3 v, int axis, float value)
+        {
+            v[axis] = value;
+            return v;
+        }
+
+        private static readonly Vector3 VALID_MIN = new Vector3(-50f, -50f, -50f);
+        private static readonly Vector3 VALID_MAX = new Vector3(50f, 50f, 50f);
+
+        [TestCase(0, "x")]
+        [TestCase(1, "y")]
+        [TestCase(2, "z")]
+        public void test_nan_on_min_is_invalid_and_names_the_axis(int axisIndex, string axis)
         {
             Assert.IsFalse(ZoneDefinitionBoundsValidator.AreBoundsValid(
-                new Vector3(float.NaN, -50f, -50f), new Vector3(50f, 50f, 50f), out string failure));
+                WithAxis(VALID_MIN, axisIndex, float.NaN), VALID_MAX, out string failure));
+            StringAssert.StartsWith("ZoneDefinitionLoadFailed", failure);
+            StringAssert.EndsWith("axis " + axis, failure);
+        }
+
+        [TestCase(0, "x")]
+        [TestCase(1, "y")]
+        [TestCase(2, "z")]
+        public void test_nan_on_max_is_invalid_and_names_the_axis(int axisIndex, string axis)
+        {
+            Assert.IsFalse(ZoneDefinitionBoundsValidator.AreBoundsValid(
+                VALID_MIN, WithAxis(VALID_MAX, axisIndex, float.NaN), out string failure));
+            StringAssert.StartsWith("ZoneDefinitionLoadFailed", failure);
+            StringAssert.EndsWith("axis " + axis, failure);
+        }
+
+        [Test]
+        public void test_positive_infinity_on_max_y_is_invalid_and_names_the_axis()
+        {
+            Assert.IsFalse(ZoneDefinitionBoundsValidator.AreBoundsValid(
+                VALID_MIN, WithAxis(VALID_MAX, 1, float.PositiveInfinity), out string failure));
+            StringAssert.StartsWith("ZoneDefinitionLoadFailed", failure);
+            StringAssert.EndsWith("axis y", failure);
+        }
+
+        [Test]
+        public void test_negative_infinity_on_min_z_is_invalid_and_names_the_axis()
+        {
+            Assert.IsFalse(ZoneDefinitionBoundsValidator.AreBoundsValid(
+                WithAxis(VALID_MIN, 2, float.NegativeInfinity), VALID_MAX, out string failure));
+            StringAssert.StartsWith("ZoneDefinitionLoadFailed", failure);
+            StringAssert.EndsWith("axis z", failure);
+        }
+
+        [TestCase(0, "x")]
+        [TestCase(1, "y")]
+        [TestCase(2, "z")]
+        public void test_min_above_max_is_invalid_and_names_the_axis(int axisIndex, string axis)
+        {
+            Assert.IsFalse(ZoneDefinitionBoundsValidator.AreBoundsValid(
+                WithAxis(VALID_MIN, axisIndex, 10f), WithAxis(VALID_MAX, axisIndex, 5f), out string failure));
+            StringAssert.StartsWith("ZoneDefinitionLoadFailed", failure);
+            StringAssert.EndsWith("axis " + axis, failure);
+        }
+
+        // ---------------------------------------------------------------- Ordering of the checks
+
+        [Test]
+        public void test_nan_together_with_an_out_of_range_coordinate_reports_zone_definition_load_failed()
+        {
+            Assert.IsFalse(ZoneDefinitionBoundsValidator.AreBoundsValid(
+                new Vector3(float.NaN, -50f, -50f), new Vector3(50f, 50f, 300f), out string failure));
             StringAssert.StartsWith("ZoneDefinitionLoadFailed", failure);
         }
 
         [Test]
-        public void test_positive_infinity_coordinate_is_invalid()
+        public void test_min_above_max_with_both_beyond_250_reports_bounds_exceed_encoding()
         {
             Assert.IsFalse(ZoneDefinitionBoundsValidator.AreBoundsValid(
-                new Vector3(-50f, -50f, -50f), new Vector3(50f, float.PositiveInfinity, 50f), out string failure));
-            StringAssert.StartsWith("ZoneDefinitionLoadFailed", failure);
+                new Vector3(300f, -50f, -50f), new Vector3(260f, 50f, 50f), out string failure));
+            StringAssert.StartsWith("ZoneBoundsExceedEncoding", failure);
         }
 
         [Test]
-        public void test_min_x_above_max_x_is_invalid()
+        public void test_min_above_max_with_both_in_range_reports_zone_definition_load_failed()
         {
             Assert.IsFalse(ZoneDefinitionBoundsValidator.AreBoundsValid(
-                new Vector3(10f, -50f, -50f), new Vector3(5f, 50f, 50f), out string failure));
+                new Vector3(100f, -50f, -50f), new Vector3(60f, 50f, 50f), out string failure));
             StringAssert.StartsWith("ZoneDefinitionLoadFailed", failure);
         }
 
@@ -206,7 +275,8 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
         {
             var validator = new ZoneDefinitionBoundsValidator(SlotWith(
                 CreateDefinition(new Vector3(float.NaN, 0f, 0f), new Vector3(1f, 1f, 1f))));
-            LogAssert.Expect(LogType.Error, new Regex(@"^\[ZoneInstancing\] ZoneDefinitionLoadFailed: "));
+            LogAssert.Expect(LogType.Error, new Regex(
+                @"^\[ZoneInstancing\] ZoneDefinitionLoadFailed: non-finite bound on axis x \(zone ZoneID\(7\)\)$"));
 
             Assert.IsFalse(validator.Validate(ZONE));
             LogAssert.NoUnexpectedReceived();
@@ -277,7 +347,124 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
             Assert.IsFalse(noDefinition.TryResolve("StartingZone", out _, out _));
         }
 
+        [Test]
+        public void test_registry_duplicate_entries_first_complete_entry_wins()
+        {
+            ZoneDefinition first = CreateValidDefinition();
+            ZoneDefinition second = CreateValidDefinition();
+            ZoneSceneRegistry registry = CreateRegistry(
+                new ZoneSceneRegistry.Entry(ZoneTemplateID.StartingZone, "FirstScene", first),
+                new ZoneSceneRegistry.Entry(ZoneTemplateID.StartingZone, "SecondScene", second));
+
+            Assert.IsTrue(registry.TryResolve("StartingZone", out string scene, out ZoneDefinition definition));
+            Assert.AreEqual("FirstScene", scene);
+            Assert.AreSame(first, definition);
+        }
+
+        [Test]
+        public void test_registry_incomplete_first_entry_does_not_resolve_even_with_a_complete_second_entry()
+        {
+            ZoneSceneRegistry registry = CreateRegistry(
+                new ZoneSceneRegistry.Entry(ZoneTemplateID.StartingZone, "", CreateValidDefinition()),
+                new ZoneSceneRegistry.Entry(ZoneTemplateID.StartingZone, SCENE_NAME, CreateValidDefinition()));
+
+            Assert.IsFalse(registry.TryResolve("StartingZone", out string scene, out ZoneDefinition definition));
+            Assert.IsNull(scene);
+            Assert.IsTrue(definition == null);
+        }
+
+        [Test]
+        public void test_registry_undefined_value_text_and_undefined_entry_never_resolve()
+        {
+            ZoneSceneRegistry registry = CreateRegistry(
+                new ZoneSceneRegistry.Entry((ZoneTemplateID)5, SCENE_NAME, CreateValidDefinition()));
+
+            Assert.IsFalse(registry.TryResolve("5", out _, out _));
+            Assert.IsFalse(registry.TryResolve("StartingZone", out _, out _));
+        }
+
+        [Test]
+        public void test_registry_never_initialised_does_not_resolve()
+        {
+            var registry = ScriptableObject.CreateInstance<ZoneSceneRegistry>();
+            _created.Add(registry);
+
+            Assert.IsFalse(registry.TryResolve("StartingZone", out string scene, out ZoneDefinition definition));
+            Assert.IsNull(scene);
+            Assert.IsTrue(definition == null);
+        }
+
+        [TestCase("StartingZone ")]
+        [TestCase(" StartingZone")]
+        [TestCase("StartingZone,StartingZone")]
+        [TestCase("-1")]
+        [TestCase("+0")]
+        public void test_registry_rejects_whitespace_padded_signed_and_comma_list_names(string name)
+        {
+            ZoneSceneRegistry registry = CreateRegistry(
+                new ZoneSceneRegistry.Entry(ZoneTemplateID.StartingZone, SCENE_NAME, CreateValidDefinition()));
+
+            Assert.IsFalse(registry.TryResolve(name, out _, out _));
+        }
+
+        [Test]
+        public void test_registry_entry_whose_definition_is_for_another_template_does_not_resolve_and_logs_an_error()
+        {
+            var wrong = ScriptableObject.CreateInstance<ZoneDefinition>();
+            wrong.Initialize((ZoneTemplateID)1, VALID_MIN, VALID_MAX, Vector3.zero, false, null);
+            _created.Add(wrong);
+            ZoneSceneRegistry registry = CreateRegistry(
+                new ZoneSceneRegistry.Entry(ZoneTemplateID.StartingZone, SCENE_NAME, wrong));
+            LogAssert.Expect(LogType.Error, new Regex(
+                @"^\[ZoneInstancing\] ZoneDefinitionLoadFailed: registry entry StartingZone points at a definition for template 1$"));
+
+            Assert.IsFalse(registry.TryResolve("StartingZone", out string scene, out ZoneDefinition definition));
+            Assert.IsNull(scene);
+            Assert.IsTrue(definition == null);
+            LogAssert.NoUnexpectedReceived();
+        }
+
         // ---------------------------------------------------------------- Loader
+
+        [Test]
+        public void test_loader_before_begin_load_is_not_done()
+        {
+            var loader = new UnitySceneLoader(null, CreateRegistry(), new ZoneDefinitionSlot());
+
+            Assert.IsFalse(loader.IsDone);
+            Assert.IsFalse(loader.Succeeded);
+        }
+
+        [TestCase(null)]
+        [TestCase("")]
+        public void test_loader_null_or_empty_template_is_done_not_succeeded_with_one_error(string name)
+        {
+            var loader = new UnitySceneLoader(null, CreateRegistry(), new ZoneDefinitionSlot());
+            LogAssert.Expect(LogType.Log, new Regex("A1-3 before load"));
+            LogAssert.Expect(LogType.Error, new Regex("ZoneDefinitionLoadFailed"));
+
+            loader.BeginLoad(name);
+
+            Assert.IsTrue(loader.IsDone);
+            Assert.IsFalse(loader.Succeeded);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_loader_begin_load_clears_a_preset_slot_when_the_template_is_unknown()
+        {
+            ZoneSceneRegistry registry = CreateRegistry(
+                new ZoneSceneRegistry.Entry(ZoneTemplateID.StartingZone, SCENE_NAME, CreateValidDefinition()));
+            ZoneDefinitionSlot slot = SlotWith(CreateValidDefinition());
+            var loader = new UnitySceneLoader(null, registry, slot);
+            LogAssert.Expect(LogType.Log, new Regex("A1-3 before load"));
+            LogAssert.Expect(LogType.Error, new Regex("ZoneDefinitionLoadFailed.*'Forest'"));
+
+            loader.BeginLoad("Forest");
+
+            Assert.IsTrue(slot.Current == null);
+            LogAssert.NoUnexpectedReceived();
+        }
 
         [TestCase("Forest")]
         [TestCase("0")]
@@ -340,12 +527,28 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
         public void test_add_nav_mesh_data_with_a_baked_nav_mesh_returns_a_valid_instance()
         {
             var navMesh = new NavMeshData();
+            _created.Add(navMesh);
             ZoneDefinition definition = CreateValidDefinition(navMesh);
             var loader = new UnitySceneLoader(null, null, SlotWith(definition));
 
             _navInstance = loader.AddNavMeshData();
 
             Assert.IsTrue(_navInstance.valid);
+            // NavMeshDataInstance.owner is caller-assigned (not set by AddNavMeshData), so only validity is asserted.
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_add_nav_mesh_data_with_an_empty_slot_returns_default_and_logs_the_stand_in_once()
+        {
+            var loader = new UnitySceneLoader(null, null, new ZoneDefinitionSlot());
+            LogAssert.Expect(LogType.Log, STAND_IN_LOG);
+
+            NavMeshDataInstance first = loader.AddNavMeshData();
+            NavMeshDataInstance second = loader.AddNavMeshData();
+
+            Assert.IsFalse(first.valid);
+            Assert.IsFalse(second.valid);
             LogAssert.NoUnexpectedReceived();
         }
 

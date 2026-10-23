@@ -44,8 +44,8 @@
 - S6 order is fixed by ADR-009 A1: scene load → `AddNavMeshData` → navigation init → bounds validation. Do not reorder; the composition (`ZoneServerComposition`) already calls `_boundsValidator.Validate(_zoneId)` after `AddNavMeshData`.
 - The validator gets the loaded definition through `ZoneDefinitionSlot` (a small shared holder the host creates and passes to both `UnitySceneLoader` and `ZoneDefinitionBoundsValidator`), so the `Validate(ZoneID)` call site does not change.
 - Asset delivery: the registry is a `[SerializeField]` reference on the host in `ZoneServer.unity`; no `Resources.Load` (synchronous, rejected by ADR-009 Alternatives); Addressables stay post-MVP.
-- Crafted test assets are created with `ScriptableObject.CreateInstance` in the test (fields set through a test-only/internal initialiser or `SerializedObject`), not committed under `Assets/` (epic gap 5). Only the StartingZone registry and definition assets are committed, under `Assets/Data/Zones/`.
-- NavMesh cleanup: the instance from `AddNavMeshData` must be removed at teardown with `NavMesh.RemoveNavMeshData`; that belongs to the Navigation epic's real `IZoneNavigation` (teardown step 3). The StartingZone definition has no NavMesh, so nothing leaks in the verification run. Tests remove any instance they create in `TearDown`.
+- Crafted test assets are created with `ScriptableObject.CreateInstance` in the test (fields set through a test-only/internal initialiser or `SerializedObject`), not committed under `Assets/` (epic gap 5). Only the StartingZone registry and definition assets are committed, under `Assets/data/Zones/`.
+- NavMesh cleanup: the instance from `AddNavMeshData` must be removed at teardown with `NavMesh.RemoveNavMeshData`; that belongs to the Navigation epic's real `IZoneNavigation` (teardown step 3). The StartingZone definition has no NavMesh, so nothing leaks in the verification run. Tests remove any instance they create in `TearDown`. **Note for the Navigation epic (code review 2026-10-23):** its real `IZoneNavigation` story must remove the instance with `NavMesh.RemoveNavMeshData` at teardown step 3 and on leaving Play mode in the Editor (with domain reload off, added NavMesh data can persist between Play sessions).
 
 **Decisions (`/story-readiness` 2026-10-23, user: "yes, apply all")**
 
@@ -87,8 +87,8 @@
 ## Files
 
 - New: `src/ServerLogic/ZoneInstancing/ZoneTemplateID.cs`, `ZoneDefinition.cs`, `ZoneSceneRegistry.cs`, `ZoneDefinitionSlot.cs`, `ZoneDefinitionBoundsValidator.cs` (+ `.meta`)
-- Changed: `src/ServerLogic/ZoneServer/Unity/UnitySceneLoader.cs` (registry lookup, slot fill, real `AddNavMeshData`), `src/ServerLogic/ZoneServer/ZoneServerHost.cs` (`_registry` field, slot, real validator), `Assets/Scenes/Server/ZoneServer.unity` (registry reference, `_editorArgs`)
-- New assets: `Assets/Data/Zones/ZoneSceneRegistry.asset`, `Assets/Data/Zones/ZoneDefinition_StartingZone.asset` (+ `.meta`)
+- Changed: `src/ServerLogic/ZoneServer/Unity/UnitySceneLoader.cs` (registry lookup, slot fill, real `AddNavMeshData`), `src/ServerLogic/ZoneServer/ZoneServerHost.cs` (`_registry` field, slot, real validator), `Assets/Scenes/Server/ZoneServer.unity` (registry reference, `_editorArgs`). Folder case: the project folder is `Assets/data` (lowercase).
+- New assets: `Assets/data/Zones/ZoneSceneRegistry.asset`, `Assets/data/Zones/ZoneDefinition_StartingZone.asset` (+ `.meta`)
 - Tests: `tests/EditMode/Integration/ZoneInstancing/ZoneInstancing_ZoneDefinitionBounds_tests.cs` (+ folder `.meta`)
 
 ---

@@ -56,6 +56,10 @@ namespace IronGrind.ServerLogic.ZoneServer
         }
 
         /// <inheritdoc/>
+        /// <remarks>
+        /// Single use per loader: a second call resets the loader state but does not cancel an earlier started load.
+        /// Startup S6 calls it once.
+        /// </remarks>
         public void BeginLoad(string zoneTemplate)
         {
             _operation = null;
