@@ -2,7 +2,7 @@
 
 > **Status**: Approved 2026-10-22 (lean re-review #2 fixes accepted by user, no third pass; history: revised 2026-10-22: lifecycle reconciliation with `networking-session.md` ST-NET-2; lean re-review 2026-10-22 NEEDS REVISION — ghost teardown save, empty drain, Draining entry check, ACs 25–27 — fixed the same day; lean re-review #2 2026-10-22 NEEDS REVISION — teardown ghost no longer told `GhostDeath`, step 4/5 ordering, fragment count — fixed the same day; AC-ZI-17 arithmetic corrected 2026-10-22 at Story 003 readiness, no rule change; 2026-10-23 at Story 005 completion: AC-ZI-9 allocation measure replaced, CR-ZI-11 authored-point validity and zone-process scope clarified (user-approved, implementation-driven); previously Approved, lean re-review 2026-05-30)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-10-23
+> **Last Updated**: 2026-10-23 (Story 011 readiness, user decisions: `ZoneEntryAck` added — CR-ZI-8 step 11, CR-ZI-17 rewritten (stall timer / duplicate handshake / transport drop; leave path; no save), stall-timeout knob reworded, AC-ZI-14 revised, AC-ZI-28–30 and EC-ZI-13–15 added. Status stays Approved pending a lean re-review.)
 > **Implements Pillar**: Social Gravity (primary — instanced shared zones are the social world), Earned Power (zone tiers gate content progression)
 
 ## Overview
@@ -126,6 +126,7 @@ The following steps execute in order. Steps 1–9 are connection-driven (outside
 | 8 | Party System notified if player is a party member: `NotifyZoneEntry(PartyID, EntityID, ZoneID)`. **Deferred to this step** (after `SessionReady` is queued) to prevent party state divergence — existing party members must not be told the player is "in zone" before the player has received zone state. | Zone Instancing |
 | 9 | `PlayerJoinedZone` broadcast to all existing zone clients (R-OD). | Networking Core |
 | 10 | Entity enters the server tick loop on the next tick boundary. | Networking Core |
+| 11 | Client sends `ZoneEntryAck { ZoneID zoneId; uint snapshotVersion; }` (C→S, R-OD) once, when its dual gate opens. On receipt the slot leaves the **entering** phase (it is *acked*). From step 4 until the ack the slot is **entering** — its `ZoneSessionState` is `Connected`, but CR-ZI-17's stall timer runs. Steps 6–10 do not wait for the ack. An ack from a connection with no entering slot, an already-acked slot, or naming another zone is ignored and logged once per connection (`UnexpectedZoneEntryAck`). *(Added 2026-10-23.)* | Client / Zone Instancing |
 
 **Dual-gate invariant (client):** The client must receive both `SessionReady` and a complete `ZoneStateSnapshot` reassembly before rendering or sending RPCs. Tick-rate messages (`EntityPositionUpdate`, `CycleTimerBroadcast`) received before the gate opens are **discarded** by the client — the next tick delivers fresh authoritative values.
 
@@ -221,19 +222,24 @@ Zone-to-zone player transfers are **out of scope for MVP**. With one authored zo
 
 ---
 
-**CR-ZI-17 — Stale Slot Reclamation on Reconnect**
+**CR-ZI-17 — Stale Slot Reclamation (Entry Stall)**
 
-If a player slot is allocated (CR-ZI-8 step 4) but the joining client exhausts `MAX_SNAPSHOT_RETRANSMIT_ATTEMPTS` and initiates a full reconnect (per F-ZI-2), the original slot may still be occupied when the new `SessionHandshake` arrives.
+*(Rewritten 2026-10-23 around `ZoneEntryAck`, user decisions at Story 011 readiness: reclamation uses the leave path; no save.)* A slot is **stale** when it is still entering (CR-ZI-8 step 11 — no `ZoneEntryAck` received) and either:
+- **(a) Stall timeout:** `ZONE_ENTRY_STALL_TIMEOUT_SECONDS` have elapsed since its allocation (CR-ZI-8 step 4). The timer runs on the main thread and is checked once per tick; or
+- **(b) Duplicate handshake:** a `SessionHandshake` for the same `CharacterID` arrives on a different connection (the client exhausted `MAX_SNAPSHOT_RETRANSMIT_ATTEMPTS` and reconnected, per F-ZI-2, or the app was suspended mid-entry). The slot is reclaimed at once, without waiting for the timer; or
+- **(c) Transport drop:** the entering connection closes or hits the heartbeat timeout. No ghost session is created for an entering slot — the player never had control of the character.
 
-On receipt of `SessionHandshake` from a `CharacterID` already occupying an allocated slot in the target zone:
-1. The stale slot is zeroed and returned to the free-list. Zone occupied count decrements by 1.
-2. New slot allocation proceeds normally (CR-ZI-8 step 4).
-3. No `PlayerJoinedZone` broadcast was emitted for the stale entry (Party notify at CR-ZI-8 step 8 had not yet fired — it occurs after `SessionReady`). No `NotifyZoneExit` is required.
-4. No `SaveSession` call is required — `LoadCharacter` in the original attempt was read-only (EC-ZI-4).
+Because steps 6–10 of CR-ZI-8 do not wait for the ack, a stale slot has already been announced: its entity is on the tick roster, other clients received `PlayerJoinedZone`, and a formal party received `NotifyZoneEntry`. Reclamation therefore runs the **leave path**, in this order:
+1. The entity is removed from the tick roster (or from the pending list if step 10 has not run yet).
+2. `PlayerLeftZone` is sent to every other zone client that was sent `PlayerJoinedZone` for this entity.
+3. If the character is in a formal party: `NotifyZoneExit(PartyID, EntityID)`.
+4. The slot is zeroed and returned to the free-list; zone occupied count decrements by 1 (this may start the T-7 idle timer). The connection-to-character directory entry is removed.
+5. **No `SaveSession`.** `LoadCharacter` was read-only (EC-ZI-4), and the client never opened its gate, so it sent no RPC and earned nothing. Any server-side change during the entering window (for example, mob damage) is discarded; the character re-enters with its persisted state.
+6. **Response:** in case (a), if the connection is still open, it receives `ZoneFullResponse(Other=255, retryAfterSeconds = 0)`; the client shows its retry prompt. In case (b) the old connection receives nothing — it is closed as under the session-stealing policy (`networking-session.md` B-NP-7), but without B-NP-7's persistence write (point 5 applies) — and the new handshake proceeds to CR-ZI-8 step 4 against the freed slot. In case (c) there is no one to answer.
 
-For the disconnection case (client's TCP connection drops rather than reconnects), ghost session machinery handles slot cleanup via `SESSION_TTL_SECONDS` expiry — this rule does not apply.
+**Not stale:** a duplicate `CharacterID` handshake against an **acked** slot is not covered by this rule. It is a duplicate login, handled by session stealing (`networking-session.md` B-NP-7, `authentication.md` EC-AUTH-6): the prior session is ended through its normal exit path, and the new handshake then enters normally.
 
-`ZONE_ENTRY_STALL_TIMEOUT_SECONDS` is a tuning knob (default 35s, slightly above `MaxZoneEntryStall = 30s`) representing the server-side staleness window before a duplicate-`CharacterID` handshake is considered a reconnect rather than a bug.
+`ZONE_ENTRY_STALL_TIMEOUT_SECONDS` (default 35s, slightly above `MaxZoneEntryStall = 30s`) is the stall timer of case (a). It is above F-ZI-2 so the client's own retransmit and reconnect logic always acts first; the server timer only catches clients that vanish without reconnecting. It does not delay case (b): an iOS app suspended for ~5s that reconnects is reclaimed by its new handshake, not by the timer.
 
 ---
 
@@ -346,7 +352,7 @@ MaxZoneEntryStall = MAX_SNAPSHOT_RETRANSMIT_ATTEMPTS × FRAGMENT_REASSEMBLY_TIME
 
 If all 3 retransmit attempts fail, the client abandons and begins a full reconnect. 30 seconds is the maximum zone-entry wait before the client is told to retry. Both input constants are owned by `networking-session.md` — not tuning knobs for this GDD.
 
-**Mobile lifecycle note:** 30 seconds exceeds the iOS app-backgrounding suspension window (~5s). If the player minimises the app during zone entry, the OS will suspend the process and reset the TCP connection. Zone Instancing's stale-slot reclamation (CR-ZI-17) handles the resulting reconnect. Client teams must handle mid-join process suspension as a normal path, not an error path.
+**Mobile lifecycle note:** 30 seconds exceeds the iOS app-backgrounding suspension window (~5s). If the player minimises the app during zone entry, the OS will suspend the process and reset the TCP connection. Zone Instancing's stale-slot reclamation (CR-ZI-17 case (b) on the reconnect's handshake, or case (c) when the server sees the transport drop) handles it. Client teams must handle mid-join process suspension as a normal path, not an error path.
 
 ## Edge Cases
 
@@ -385,6 +391,15 @@ If a player logs out during Active state (triggering `NotifyZoneExit`), their sl
 
 **EC-ZI-12 — EntityID counter exhaustion within a zone instance**
 If the per-zone-instance EntityID counter approaches `uint.MaxValue` (requires ~4.3 billion entity-lifetime events in one zone session — not a practical concern): the allocator must not wrap to `0` (Invalid). On potential wrap, the zone emits a `EntityIDCounterExhausted` critical alert and immediately enters T-6 emergency Closed.
+
+**EC-ZI-13 — ZoneEntryAck from a connection that is not entering**
+An ack from a connection with no slot, from an already-acked slot, from a slot already reclaimed by CR-ZI-17 (the ack lost the race with the stall timer), or naming a zone other than the slot's zone: ignored; one `UnexpectedZoneEntryAck` anomaly is logged per connection; no response and no state change. A late ack never revives a reclaimed slot — that client already holds a `ZoneFullResponse(Other)` and re-enters through a new handshake.
+
+**EC-ZI-14 — Transport drop while entering**
+The entering connection closes or hits the heartbeat timeout before `ZoneEntryAck`: CR-ZI-17 case (c) runs on the next tick — leave path, no ghost session (`Disconnected_SessionActive` is never entered from an entering slot), no `SaveSession`. A drop after the ack is a normal disconnect and creates a ghost session as usual (`networking-session.md` ST-NET-1).
+
+**EC-ZI-15 — Zone teardown while a slot is entering**
+CR-ZI-12 treats an entering slot like any other `Connected` slot (saved in step 2, `NotifyZoneExit` in step 5, `ZoneSessionEnded` in step 4). The stall timer is not consulted during teardown.
 
 ## Dependencies
 
@@ -432,7 +447,7 @@ If the per-zone-instance EntityID counter approaches `uint.MaxValue` (requires ~
 | Zone drain grace period | `ZONE_DRAIN_GRACE_SECONDS` | 60 | [30, 300] | Time given to Connected players after T-4 (ZoneSessionEnded broadcast) before teardown is forced (T-5): remaining connections are force-closed and remaining ghost TTLs aborted. Does not prevent teardown if all sessions release before this window expires (T-5). Value is transmitted to clients in `ZoneSessionEnded.gracePeriodSeconds`. The only zone-close grace constant — `networking-session.md`'s `ZONE_CLOSE_GRACE_PERIOD_SECONDS` (30, [10, 120]) was retired into it 2026-10-22. **Deployment constraint:** grace + the teardown persistence drain (ADR-011 `PERSISTENCE_WATCHDOG_TICKS` duration, ADR-009 A1 Decision 3 step 5) must stay below the host's stop timeout (systemd `TimeoutStopSec`, default 90s) or the process is killed mid-drain. |
 | Zone idle close | `ZONE_IDLE_CLOSE_SECONDS` | 120 | [60, 600] | Time an Active zone may hold zero player sessions before T-7 closes it and the process exits. Also covers a freshly loaded zone whose routed player never arrives. Must be > `ZONE_ENTRY_STALL_TIMEOUT_SECONDS` so a new instance survives its first player's entry. Lower: fewer idle processes, more reloads when players leave and return. Higher: idle processes linger. |
 | Zone load timeout | `ZONE_LOAD_TIMEOUT_SECONDS` | 30 | [10, 120] | Maximum time a zone instance may remain in Loading state before T-3 abort is triggered. Prevents the per-template `loadingInProgress` coalescing flag from deadlocking routing indefinitely on asset load failure. |
-| Zone entry stall timeout | `ZONE_ENTRY_STALL_TIMEOUT_SECONDS` | 35 | [31, 60] | Server-side window for detecting a stale allocated slot when the same `CharacterID` reconnects (CR-ZI-17). Must be > `MaxZoneEntryStall` (30s) so the client's own retry logic fires before this triggers. |
+| Zone entry stall timeout | `ZONE_ENTRY_STALL_TIMEOUT_SECONDS` | 35 | [31, 60] | Stall timer: a slot not acked by `ZoneEntryAck` within this many seconds of its allocation is reclaimed (CR-ZI-17 case (a)). Must be > `MaxZoneEntryStall` (30s) so the client's own retransmit/reconnect logic fires first. Lower: a vanished client's slot (and the phantom entity other players see) is freed sooner, but a client still retransmitting may be cut off. Higher: phantom entities linger. Does not affect reconnects (case (b) is immediate). |
 | Zone walkable bound | *(per-template, in ZoneDefinition asset)* | TBD per zone | max ±250m per axis | Hard constraint from CR-ZI-10 position encoding. Level Design authors bounds; Zone Instancing validates at Loading-phase init. Exceeding ±250m fails initialization (T-3). |
 | Fragment reassembly timeout | `FRAGMENT_REASSEMBLY_TIMEOUT_SECONDS` | 10s | [5, 30s] | Time before client retransmits `ZoneSnapshotRequest`. Authoritative in `networking-session.md`. |
 | Snapshot retransmit limit | `MAX_SNAPSHOT_RETRANSMIT_ATTEMPTS` | 3 | [1, 5] | Retransmit attempts before client abandons zone entry. `MaxZoneEntryStall = 3 × 10s = 30s` at defaults (F-ZI-2). Authoritative in `networking-session.md`. |
@@ -477,7 +492,13 @@ All Logic criteria are unit-testable without a running server. Integration crite
 
 **AC-ZI-13 (Integration)** — Given a mock notification bus that counts `NotifyZoneExit` calls per EntityID, When a player exits a zone by any single cause (logout, SESSION_TTL expiry, or teardown), Then the mock records exactly 1 `NotifyZoneExit` call for that EntityID — never 0, never 2.
 
-**AC-ZI-14 (Logic)** — Given a player whose zone entry stalls (slot allocated, snapshot not acked), When `MaxZoneEntryStall = 30s` elapses without reassembly (F-ZI-2), Then the player's slot is freed, zone player count decrements by 1, the player receives a timeout response, and no RPCs attributed to this player appear in subsequent tick batches.
+**AC-ZI-14 (Logic)** — Given a player admitted to a zone with one other connected client and no `ZoneEntryAck` received, When `ZONE_ENTRY_STALL_TIMEOUT_SECONDS` elapse since slot allocation (driven by a test tick/clock source), Then: the entity is off the tick roster; the other client is sent `PlayerLeftZone` for that EntityID; the stalled connection is sent `ZoneFullResponse(Other=255, retryAfterSeconds=0)`; the slot is free and the occupied count is one lower; the directory has no entry for the connection; no `SaveSession` is called. When the ack arrives one tick before the timeout instead, none of this happens. *(Revised 2026-10-23.)*
+
+**AC-ZI-28 (Logic) — Duplicate handshake reclaims an entering slot** — Given a character holding an un-acked slot on connection A, When a `SessionHandshake` for the same `CharacterID` arrives on connection B and `LoadCharacter` succeeds, Then A's slot is reclaimed by the leave path (no `SaveSession`, `PlayerLeftZone` to other clients, `NotifyZoneExit` if in a formal party) before B's slot is allocated; the occupied count after B's admission equals the count before A's reclamation; the character holds exactly one slot.
+
+**AC-ZI-29 (Logic) — Ack ends entering; stray acks ignored** — Given an entering slot, When a `ZoneEntryAck` for its zone arrives, Then the slot is acked and the stall timer no longer reclaims it. When an ack arrives from a connection with no slot, an acked slot, or naming another zone, Then no state changes and exactly one `UnexpectedZoneEntryAck` anomaly is logged for that connection, however many such acks it sends.
+
+**AC-ZI-30 (Logic) — Transport drop while entering** — Given an un-acked slot, When its connection closes, Then the leave path runs on the next tick with no ghost session created and no `SaveSession`; given an acked slot, the same close creates a ghost session (`Disconnected_SessionActive`).
 
 **AC-ZI-15 (Logic)** — Given a call to `GetPlayerEntityIDsInZone(ZoneID)`, When the returned `IReadOnlyList<EntityID>` is inspected, Then any attempt to cast to `IList<EntityID>` and call a mutating method results in `InvalidCastException` or `NotSupportedException` — no silent state corruption.
 

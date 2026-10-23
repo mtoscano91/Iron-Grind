@@ -54,7 +54,7 @@ Zone Instancing is the server-side runtime of one zone instance: it owns the ins
 | TR-zi-013 | CR-ZI-13 + EC-ZI-10 — `TryAddMob` / `RemoveMob` / `GetMobCount`; `EntityID(0)` at cap; `MobSlotExhausted` once per zone per minute | ✅ ADR-010 |
 | TR-zi-014 | CR-ZI-14 + EC-ZI-11 — `NotifyZoneEntry` / `NotifyZoneExit` on every entry and exit cause, exactly one exit call per exit | ✅ ADR-010 |
 | TR-zi-015 | CR-ZI-15 — `GetPlayerEntityIDsInZone(ZoneID) : IReadOnlyList<EntityID>`, not mutable through a cast | ✅ ADR-010 |
-| TR-zi-016 | CR-ZI-17 + AC-ZI-14 + F-ZI-2 — stale slot reclamation on a duplicate-`CharacterID` handshake; entry stall frees the slot after `MaxZoneEntryStall` | design rule |
+| TR-zi-016 | CR-ZI-8 step 11 + CR-ZI-17 + AC-ZI-14, AC-ZI-28–30 + EC-ZI-13–15 — `ZoneEntryAck` ends "entering"; an un-acked slot is reclaimed by the leave path (no save) on stall timeout (`ZONE_ENTRY_STALL_TIMEOUT_SECONDS`), duplicate-`CharacterID` handshake, or transport drop (GDD revised 2026-10-23) | design rule |
 | TR-zi-017 | `ZoneDefinition` ScriptableObject (fields only) + `ZoneSceneRegistry`; S6 adds the template's baked `NavMeshData` (replaces the `AddNavMeshData()` stand-in of Story 045) | ✅ ADR-009 |
 | TR-zi-018 | S10 `Gateway.RegisterZone(zoneId, port)` — the zone → gateway registration protocol | ❌ No ADR (ADR-007 names a Unix domain socket only); **Blocked** (gateway) |
 
@@ -85,7 +85,7 @@ Zone Instancing is the server-side runtime of one zone instance: it owns the ins
 | 008 | [ZoneSnapshotRequest retransmit](story-008-snapshot-request-retransmit.md) | Logic | Complete (2026-10-23) | ADR-014 |
 | 009 | [Entry part 1 — admission](story-009-entry-admission.md) | Integration | Complete (2026-10-23) | ADR-014, ADR-011, ADR-006 |
 | 010 | [Entry part 2 — snapshot, SessionReady, party, PlayerJoinedZone](story-010-entry-completion.md) | Integration | Complete (2026-10-23) | ADR-014, ADR-010 |
-| 011 | [Stale slot reclamation and entry stall](story-011-stale-slot-reclamation.md) | Logic | Ready (open decision 1 at readiness) | design rule |
+| 011 | [Stale slot reclamation and entry stall](story-011-stale-slot-reclamation.md) | Logic | Needs Work — GDD revised 2026-10-23 (`ZoneEntryAck`); re-run `/story-readiness` | design rule |
 | 012 | [Teardown close steps](story-012-teardown-close-steps.md) | Integration | Ready | ADR-009 A1, ADR-006, ADR-011 |
 | 013 | [Player exit and slot release](story-013-player-exit-and-slot-release.md) | Integration | Ready | ADR-010, ADR-011 |
 | 014 | [Composition wiring, quit-request drain](story-014-composition-wiring-and-drain.md) | Integration | Ready | ADR-009 A1 |

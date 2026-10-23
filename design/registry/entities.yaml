@@ -37,7 +37,7 @@
 #   Each entry: name, status, source, referenced_by[], attributes{}, added, revised
 
 version: 1
-last_updated: "2026-10-22"  # Zone lifecycle reconciliation (zone-instancing.md CR-ZI-2 owns the lifecycle; networking-session.md ST-NET-2 becomes occupancy rules): ZONE_DRAIN_GRACE_SECONDS revised (only grace constant, referenced_by + note), ZONE_IDLE_CLOSE_SECONDS added; ZONE_CLOSE_GRACE_PERIOD_SECONDS retired (was never registered). Prior (2026-10-09): TD-046 revision: InventorySlotUpdate note (hold covers InventoryFullSync). Same day, earlier: TD-046 wire-protocol amendment: EnhancementResultCode (values fixed 0-9) and InventorySlotUpdate (with InventoryFullSync) added. Prior (2026-10-01): TD-045/043/044 design session: InventorySlotRecord + InventorySnapshot added (per-slot EnhancementLevel); EquipmentSlotEntry, EquipResult, MAX_ENHANCEMENT_LEVEL revised. Prior (2026-06-14): client-side-prediction.md designed: TICK_RATE_HZ referenced_by updated. Prior: npc-shop.md blockers applied.  # npc-shop.md design review blockers applied: CompensatingRefund=8 added to GoldTransactionReason; npc-shop.md added to referenced_by for GOLD_CAP, SESSION_TTL_SECONDS, INVENTORY_SLOT_COUNT, GoldTransactionReason. Prior: networking-wire-protocol.md Zone Instancing amendment: EntityState restructured as tagged union (EntityType, MobTypeID, isInDeadState, respawnTicksRemaining); EntityType + JoinRejectedReason enums added; ZoneFullResponse + ZoneSnapshotRequest messages added. OQ-ZI-1/2/3/7 resolved. Prior: zone-instancing.md design review: ZONE_OPEN_THRESHOLD, ZONE_DRAIN_GRACE_SECONDS, ZONE_LOAD_TIMEOUT_SECONDS, ZONE_ENTRY_STALL_TIMEOUT_SECONDS, ZoneSessionState added; EntityState characterName encoding clarified. Prior: skill-system.md Phase 5: SkillID, SkillEffectType, TargetConstraint, SkillCastRejectionCode, ISkillSystem, MANA_COST_MULTIPLIER, SKILL_READY_AUDIO_COOLDOWN_THRESHOLD_TICKS added.
+last_updated: "2026-10-23"  # ZoneEntryAck added (C->S, ends the zone-entry entering phase); ZONE_ENTRY_STALL_TIMEOUT_SECONDS revised (now the stall timer, CR-ZI-17). Prior (2026-10-22): Zone lifecycle reconciliation (zone-instancing.md CR-ZI-2 owns the lifecycle; networking-session.md ST-NET-2 becomes occupancy rules): ZONE_DRAIN_GRACE_SECONDS revised (only grace constant, referenced_by + note), ZONE_IDLE_CLOSE_SECONDS added; ZONE_CLOSE_GRACE_PERIOD_SECONDS retired (was never registered). Prior (2026-10-09): TD-046 revision: InventorySlotUpdate note (hold covers InventoryFullSync). Same day, earlier: TD-046 wire-protocol amendment: EnhancementResultCode (values fixed 0-9) and InventorySlotUpdate (with InventoryFullSync) added. Prior (2026-10-01): TD-045/043/044 design session: InventorySlotRecord + InventorySnapshot added (per-slot EnhancementLevel); EquipmentSlotEntry, EquipResult, MAX_ENHANCEMENT_LEVEL revised. Prior (2026-06-14): client-side-prediction.md designed: TICK_RATE_HZ referenced_by updated. Prior: npc-shop.md blockers applied.  # npc-shop.md design review blockers applied: CompensatingRefund=8 added to GoldTransactionReason; npc-shop.md added to referenced_by for GOLD_CAP, SESSION_TTL_SECONDS, INVENTORY_SLOT_COUNT, GoldTransactionReason. Prior: networking-wire-protocol.md Zone Instancing amendment: EntityState restructured as tagged union (EntityType, MobTypeID, isInDeadState, respawnTicksRemaining); EntityType + JoinRejectedReason enums added; ZoneFullResponse + ZoneSnapshotRequest messages added. OQ-ZI-1/2/3/7 resolved. Prior: zone-instancing.md design review: ZONE_OPEN_THRESHOLD, ZONE_DRAIN_GRACE_SECONDS, ZONE_LOAD_TIMEOUT_SECONDS, ZONE_ENTRY_STALL_TIMEOUT_SECONDS, ZoneSessionState added; EntityState characterName encoding clarified. Prior: skill-system.md Phase 5: SkillID, SkillEffectType, TargetConstraint, SkillCastRejectionCode, ISkillSystem, MANA_COST_MULTIPLIER, SKILL_READY_AUDIO_COOLDOWN_THRESHOLD_TICKS added.
 
 # ─── ENTITIES ────────────────────────────────────────────────────────────────
 # Named game-world objects: enemies, NPCs, characters, factions, bosses.
@@ -794,9 +794,9 @@ constants:
     type: "int constant (tuning knob)"
     value: 35
     unit: "seconds"
-    note: "Server-side staleness window for detecting a duplicate CharacterID handshake after a failed zone entry (CR-ZI-17). Must be > MaxZoneEntryStall (30s) so the client's own retry logic fires before server-side stale detection triggers. Safe range: [31, 60]."
+    note: "Stall timer for an entering slot: a slot not acked by ZoneEntryAck within this many seconds of its allocation (CR-ZI-8 step 4) is reclaimed through the leave path without a save (CR-ZI-17) and the connection, if still open, gets ZoneFullResponse(Other). A duplicate CharacterID handshake against an un-acked slot reclaims it at once, independent of this timer. Must be > MaxZoneEntryStall (30s) so the client's own retransmit/reconnect logic fires first. Safe range: [31, 60]. Revised 2026-10-23: was a staleness window for classifying duplicate handshakes."
     added: "2026-05-29"
-    revised: ""
+    revised: "2026-10-23"
 
   - name: ZoneSessionState
     status: active
@@ -1429,6 +1429,21 @@ constants:
     wire_size: "8-byte body; 22 bytes standalone (R-OD, C→S)"
     note: "Sent by client when FRAGMENT_REASSEMBLY_TIMEOUT_SECONDS expires before all ZoneStateSnapshot fragments arrive. Server responds with fresh snapshot of current state (not the requested version). Rate-limited: 1 per FRAGMENT_REASSEMBLY_TIMEOUT_SECONDS per connection. If zone has closed: server responds with ZoneFullResponse(ZoneDoesNotExist=1). Added 2026-05-29 (Zone Instancing amendment, OQ-ZI-3 resolved)."
     added: "2026-05-29"
+    revised: ""
+
+  - name: ZoneEntryAck
+    status: active
+    source: design/gdd/networking-wire-protocol.md
+    referenced_by:
+      - design/gdd/networking-wire-protocol.md
+      - design/gdd/networking-message-criticality.md
+      - design/gdd/networking-channel-contract.md
+      - design/gdd/zone-instancing.md
+    type: "struct (network message)"
+    fields: "{zoneId: ZoneID(uint), snapshotVersion: uint}"
+    wire_size: "8-byte body; 22 bytes standalone (R-OD, C→S)"
+    note: "Sent once per zone-entry attempt when the client's dual gate opens (SessionReady + ZoneStateSnapshot reassembled). Ends the server-side entering phase (zone-instancing.md CR-ZI-8 step 11); a slot not acked within ZONE_ENTRY_STALL_TIMEOUT_SECONDS of allocation is reclaimed (CR-ZI-17). snapshotVersion logged, not validated. Ack from a connection with no entering slot or for another zone: ignored, one UnexpectedZoneEntryAck anomaly per connection. Connection-level (not session-ready gated). Added 2026-10-23 (Zone Instancing Story 011 readiness, open decision 1)."
+    added: "2026-10-23"
     revised: ""
 
   - name: LoginResult

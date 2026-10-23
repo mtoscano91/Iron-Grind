@@ -2,7 +2,7 @@
 
 > **Status**: Approved (lean re-review Pass 2, 2026-05-17)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-10-09 (TD-046 amendment: MCR-2 rows for the Enhancement message set and the two inventory sync messages; the schema-pending Enhancement outcome row is replaced; no channel assignment of an existing message changed; lean re-review done 2026-10-09 — no MCR-2 row changed by the revision that followed; lean verify of networking-wire-protocol.md 2026-10-09: APPROVED). Previous: 2026-05-17
+> **Last Updated**: 2026-10-23 (`ZoneEntryAck` added — new C→S zone-entry message; no existing schema, size or enum changed). Previous: 2026-10-09 (TD-046 amendment: MCR-2 rows for the Enhancement message set and the two inventory sync messages; the schema-pending Enhancement outcome row is replaced; no channel assignment of an existing message changed; lean re-review done 2026-10-09 — no MCR-2 row changed by the revision that followed; lean verify of networking-wire-protocol.md 2026-10-09: APPROVED). Previous: 2026-05-17
 > **Parent**: networking-wire-protocol.md
 
 ## Overview
@@ -105,6 +105,7 @@ None. This document is a pure infrastructure contract. Its correctness is felt i
 | `SetTarget` | Infrastructure | Guaranteed delivery | R-OD | Persistent server state change — updates the client's EntityHealthUpdate relevance set (networking-relevance-filter.md RFR-3a). A dropped `SetTarget` leaves the target-slot EHU stale indefinitely. Direction C→S. |
 | `SessionHandshake` | Infrastructure | Guaranteed delivery | R-OD | Zone entry session establishment (client → server). |
 | `SessionReady` | Infrastructure | Guaranteed delivery | R-OD | Zone-entry dual-gate signal (server → owning client). |
+| `ZoneEntryAck` | Infrastructure | Guaranteed delivery | R-OD | Client → server, once, when the zone-entry dual gate opens. Ends the server's "entering" phase; a lost ack would get a successfully entered player reclaimed after `ZONE_ENTRY_STALL_TIMEOUT_SECONDS` (zone-instancing.md CR-ZI-17). Added 2026-10-23. |
 | `ZoneSessionEnded` | Infrastructure | Guaranteed delivery | R-OD | Authoritative zone teardown. |
 | `ZoneStateSnapshotFragment` | Infrastructure | Guaranteed delivery | R-OD (bulk) | Fragment reassembly protocol. Uses `0xF000–0xFFFF` MessageTypeID range. |
 | `HeartbeatMessage` | Infrastructure | Self-correcting | U-U | Keepalive. Dropped heartbeat self-corrects — next heartbeat resets timeout. |
