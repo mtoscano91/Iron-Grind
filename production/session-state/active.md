@@ -4614,3 +4614,10 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tests 19 -> 39 (stale-callback test replaced by two that can fail; sync throws; NullRecord; CTS disposal; retry 7; duplicate-warning reset; precedence pairs; PendingCount; apply throws; strengthenings; NoUnexpectedReceived everywhere). EditMode batch: 3932 total, 3862 passed, 0 failed, 70 skipped (Npgsql).
 - Story 010 Implementation Notes: open item on a second handshake from an already-admitted connection (second slot) + OnPlayerAdmitted must not throw.
 - Not committed. Next: commit -> /story-done Story 009. PAT rotation still unconfirmed.
+
+## Session Extract — /story-done 2026-10-23 (Zone Instancing Story 009)
+- Verdict: COMPLETE WITH NOTES (lean; QL-TEST-COVERAGE and LP-CODE-REVIEW skipped). 8/8 by automated test (39 tests; results XML checked: EditMode 3932 total, 3862 passed, 0 failed, 70 skipped, written after the fixes).
+- Story: production/epics/zone-instancing/story-009-entry-admission.md — Entry part 1, admission. User accepted 6 advisories (Completion Notes).
+- Tech debt logged: None.
+- EPIC row 009 Complete + Next Step; epics index 001-009 Complete.
+- Next recommended: Story 010 — Entry part 2 (production/epics/zone-instancing/story-010-entry-completion.md), /story-readiness first; decide the second-handshake-on-admitted-connection item there. PAT rotation still unconfirmed.

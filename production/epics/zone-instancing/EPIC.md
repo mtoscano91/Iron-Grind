@@ -83,7 +83,7 @@ Zone Instancing is the server-side runtime of one zone instance: it owns the ins
 | 006 | [Zone wire messages and codecs](story-006-zone-wire-messages.md) | Logic | Complete | ADR-004 |
 | 007 | [Snapshot assembly and fragmentation](story-007-snapshot-assembly-and-fragmentation.md) | Logic | Complete (2026-10-23) | ADR-004 |
 | 008 | [ZoneSnapshotRequest retransmit](story-008-snapshot-request-retransmit.md) | Logic | Complete (2026-10-23) | ADR-014 |
-| 009 | [Entry part 1 — admission](story-009-entry-admission.md) | Integration | Ready (readiness 2026-10-23, 6 h) | ADR-014, ADR-011, ADR-006 |
+| 009 | [Entry part 1 — admission](story-009-entry-admission.md) | Integration | Complete (2026-10-23) | ADR-014, ADR-011, ADR-006 |
 | 010 | [Entry part 2 — snapshot, SessionReady, party, PlayerJoinedZone](story-010-entry-completion.md) | Integration | Ready | ADR-014, ADR-010 |
 | 011 | [Stale slot reclamation and entry stall](story-011-stale-slot-reclamation.md) | Logic | Ready (open decision 1 at readiness) | design rule |
 | 012 | [Teardown close steps](story-012-teardown-close-steps.md) | Integration | Ready | ADR-009 A1, ADR-006, ADR-011 |
@@ -100,4 +100,4 @@ This epic is complete when:
 
 ## Next Step
 
-Stories 001-003 are Complete (2026-10-22), Stories 004-008 (2026-10-23). Story 008 closed COMPLETE WITH NOTES (`76e7cad`; Story 014 must register the service and list `ServePending` last in step 3). Story 009 readiness 2026-10-23: NEEDS WORK (8 gaps) -> fixed -> Ready (6 h). Next: `/dev-story production/epics/zone-instancing/story-009-entry-admission.md`.
+Stories 001-003 are Complete (2026-10-22), Stories 004-009 (2026-10-23). Story 009 closed COMPLETE WITH NOTES (`643fdb8`; open for Story 010 readiness: a second handshake on an admitted connection; `OnPlayerAdmitted` must not throw). Next: `/story-readiness production/epics/zone-instancing/story-010-entry-completion.md`.
