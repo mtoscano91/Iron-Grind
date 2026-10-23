@@ -156,6 +156,35 @@ namespace IronGrind.Networking
         }
 
         // ---------------------------------------------------------------------------------------
+        // JoinRejectedReason — non-contiguous valid set {0,1,2,255}, substitute Other=255.
+        // Added by Zone Instancing Story 006 (ZoneFullResponse.Reason decode).
+        // ---------------------------------------------------------------------------------------
+
+        /// <summary>
+        /// Validates <paramref name="rawByte"/> against the non-contiguous <see cref="JoinRejectedReason"/> valid set
+        /// <c>{0, 1, 2, 255}</c> via an explicit switch and casts. A byte outside this set substitutes
+        /// <see cref="JoinRejectedReason.Other"/> and logs an anomaly — the message is <i>not</i> dropped (CR-NET-7.4).
+        /// </summary>
+        public static JoinRejectedReason DecodeJoinRejectedReason(byte rawByte, ushort messageTypeId)
+        {
+            switch (rawByte)
+            {
+                case (byte)JoinRejectedReason.ZoneFull:
+                    return JoinRejectedReason.ZoneFull;
+                case (byte)JoinRejectedReason.ZoneDoesNotExist:
+                    return JoinRejectedReason.ZoneDoesNotExist;
+                case (byte)JoinRejectedReason.LoadCharacterFailed:
+                    return JoinRejectedReason.LoadCharacterFailed;
+                case (byte)JoinRejectedReason.Other:
+                    return JoinRejectedReason.Other;
+                default:
+                    Debug.LogWarning($"[WireEnumCodec] DecodeJoinRejectedReason: received out-of-range byte {rawByte} " +
+                        $"for messageTypeId={messageTypeId} — substituting Other (255) and continuing (CR-NET-7.4).");
+                    return JoinRejectedReason.Other;
+            }
+        }
+
+        // ---------------------------------------------------------------------------------------
         // GoldTransactionReason — non-contiguous valid set {0..9, 255}, substitute Other=255.
         // Added by Networking Core Story 007 (GoldSyncEvent.Reason decode) — see class remarks
         // for why this enum (not explicitly listed in CR-NET-7.9) still gets a guarded decoder.

@@ -4513,3 +4513,12 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Open (GDD, advisory): ZoneFullResponse / ZoneSnapshotRequest missing criticality + channel-contract rows; wire-protocol reassembly step 3 "length-prefixed EntityState" and EntityType "skip to next" contradict the schema.
 - EPIC.md Next Step updated. Not committed.
 - Next: commit → /dev-story Story 006. PAT rotation still unconfirmed.
+
+## Session Extract — /dev-story 2026-10-23 (Story 006)
+- Story: production/epics/zone-instancing/story-006-zone-wire-messages.md — zone wire messages and codecs (network-programmer subagent).
+- Files: src/Foundation/Networking/{JoinRejectedReason,EntityType}.cs; src/Foundation/Networking/WireProtocol/{WireStringCodec, ZoneFullResponse(+Codec), ZoneSnapshotRequest(+Codec), ZoneSessionEnded(+Codec), PlayerJoinedZone(+Codec), EntityState(+Codec), ZoneStateSnapshotFragment(+Codec)}.cs; modified WireEnumCodec (DecodeJoinRejectedReason), MessageRoutingRegistry (5 rows).
+- Test: tests/EditMode/ZoneInstancing/ZoneInstancing_WireMessages_tests.cs (53 [Test]/[TestCase] on 31 methods). Not yet run (Editor open).
+- Agent decisions: MaxMessageBodyBytes 512 const added on ZoneStateSnapshotFragment; EntityID.Invalid throws on encode (WireIdCodec); fragment encode also throws on total 0 / index >= total; WriteBody slices to max size up front (player 77 / PlayerJoinedZone 40 even for short names) — review item; fragment decode returns payload as a slice (no alloc).
+- Review notes for /code-review: ZoneSnapshotRequest rationale cites CR-ZI-8 (should be CR-ZI-9 retransmit); EntityState encode passes messageTypeId 0 to SerializeEntityId.
+- Next: Test Runner run → commit → /code-review → /story-done.
+- Run 1: AssemblyBoundary test_every_foundation_type_is_listed failed (15 new Foundation types not on the ADR-012 allow-list) -> added with planned consumers. Run 2 (Editor 10:09): EditMode 3774 total, 3704 passed, 0 failed, 70 skipped (Npgsql); WireMessages 53/53. Committed. Next: /code-review.
