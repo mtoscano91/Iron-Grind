@@ -5,12 +5,12 @@
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-19
-> **Estimate**: 4 hours (provisional — confirm at `/story-readiness`)
+> **Estimate**: 5 hours (confirmed at `/story-readiness` 2026-10-23: registry, loader change, two assets and the scene edit)
 
 ## Context
 
 **GDD**: `design/gdd/zone-instancing.md` — CR-ZI-1 (`ZoneTemplateID`), CR-ZI-10, T-3, AC-ZI-5
-**Requirement**: `TR-zi-010`, `TR-zi-017` *(epic placeholders)*
+**Requirement**: `TR-zi-010`, `TR-zi-017` *(epic placeholders — stay placeholders until `/architecture-review`, as Stories 001–003)*
 
 **ADR Governing Implementation**: ADR-009: Scene / Zone-Load Management (+ Amendment 1)
 **ADR Decision Summary**: a `ZoneDefinition` ScriptableObject holds the walkable bounds, the town respawn point and the baked `NavMeshData`; `ZoneSceneRegistry` maps `ZoneTemplateID` → scene; startup S6 loads the scene, adds the NavMesh data, initialises navigation and validates bounds; a failure is T-3.
@@ -27,12 +27,13 @@
 
 ## Acceptance Criteria
 
-- [ ] `enum ZoneTemplateID : byte { StartingZone = 0 }`; the `-zoneTemplate` startup value maps to a template through `ZoneSceneRegistry` (unknown value → S-fail, logged).
-- [ ] `ZoneDefinition : ScriptableObject` with fields only: template id, walkable bounds min / max (`Vector3`), town respawn point and an "authored" flag, `NavMeshData`.
-- [ ] **Bounds rule (CR-ZI-10)**: valid only when every walkable bound coordinate is within ±250 m on every axis.
-- [ ] **AC-ZI-5**: with a crafted `ZoneDefinition` whose bound exceeds ±250 m on one axis, startup S6 fails validation: the zone goes Loading → Closed via T-3 (`MarkClosedInvalidBounds`), a `ZoneBoundsExceedEncoding` critical alert is logged, `MarkActive` and gateway registration are never called. A ±250.0 m bound passes; 250.01 m fails.
-- [ ] The real validator replaces `StandInZoneBoundsValidator`; `IZoneScene.AddNavMeshData()` adds the template's `NavMeshData` instead of returning `default` (the Story 045 `[StandIn] no zone NavMesh data` path is removed or kept only for a definition with no NavMesh data — open decision 2).
-- [ ] `ZoneTemplate_Empty.unity` (Story 045) has a `ZoneDefinition` registered so the local verification run still reaches Active.
+- [ ] `enum ZoneTemplateID : byte { StartingZone = 0 }`. `-zoneTemplate` takes the enum **name** (`StartingZone`; parsed case-sensitive, numeric text rejected). `ZoneSceneRegistry : ScriptableObject` holds entries of (`ZoneTemplateID`, scene name, `ZoneDefinition`); `UnitySceneLoader.BeginLoad` resolves the value through it. An unknown name or a template with no entry → the loader reports done and not succeeded (S-fail at S6), with one error log line naming the template value; no scene load starts.
+- [ ] `ZoneDefinition : ScriptableObject` with `[SerializeField] private` fields only and read-only properties: template id, walkable bounds min / max (`Vector3`), town respawn point and an "authored" flag, `NavMeshData` (may be null).
+- [ ] **Bounds rule (CR-ZI-10, Decision 1)**: valid only when every coordinate of min and max has absolute value ≤ 250.0 (inclusive), every coordinate is finite (no NaN / ±Infinity), and min ≤ max on every axis.
+- [ ] **AC-ZI-5** (this story's half): with a crafted `ZoneDefinition` whose bound exceeds ±250 m on one axis, startup S6 fails validation: `IZoneStateOwner.MarkClosedInvalidBounds` is called exactly once, an error log `[ZoneInstancing] ZoneBoundsExceedEncoding: …` naming the axis and value is written, `MarkActive` and `RegisterZone` are never called (fakes). A ±250.0 m bound passes; 250.01 m fails. The real Loading → Closed transition and its `ZoneDefinitionLoadFailed` alert (GDD T-3 row) arrive with Story 014's real `IZoneStateOwner`.
+- [ ] The new `ZoneDefinitionBoundsValidator` replaces `StandInZoneBoundsValidator` in `ZoneServerHost`. It reads the definition from a shared `ZoneDefinitionSlot` that the loader fills on a successful load; the `Validate(ZoneID)` call site is unchanged. No definition in the slot → `false` and an error log `[ZoneInstancing] ZoneDefinitionLoadFailed: no zone definition loaded`.
+- [ ] `IZoneScene.AddNavMeshData()` calls `NavMesh.AddNavMeshData` with the loaded definition's `NavMeshData` and returns its instance. A definition with no `NavMeshData` keeps the Story 045 `[StandIn] no zone NavMesh data` log (once) and returns `default` — not T-3 (Decision 2).
+- [ ] `ZoneServerHost` gets `[SerializeField] private ZoneSceneRegistry _registry`, set in `ZoneServer.unity` to a registry asset whose `StartingZone` entry maps to scene `ZoneTemplate_Empty` and a `ZoneDefinition` with bounds ±50 m, no NavMesh and "authored" false. The scene's `_editorArgs` change from `-zoneTemplate ZoneTemplate_Empty` to `-zoneTemplate StartingZone`, and the Story 045 local verification run still reaches Active.
 
 ---
 
@@ -41,13 +42,17 @@
 *Derived from ADR-009 Amendment 1:*
 
 - S6 order is fixed by ADR-009 A1: scene load → `AddNavMeshData` → navigation init → bounds validation. Do not reorder; the composition (`ZoneServerComposition`) already calls `_boundsValidator.Validate(_zoneId)` after `AddNavMeshData`.
-- The validator needs the loaded definition: pass it in through the constructor or a setter called after the load, without changing the `IZoneBoundsValidator` call site more than needed.
-- Crafted test assets are created with `ScriptableObject.CreateInstance` in the test, not committed under `Assets/` (epic gap 5).
+- The validator gets the loaded definition through `ZoneDefinitionSlot` (a small shared holder the host creates and passes to both `UnitySceneLoader` and `ZoneDefinitionBoundsValidator`), so the `Validate(ZoneID)` call site does not change.
+- Asset delivery: the registry is a `[SerializeField]` reference on the host in `ZoneServer.unity`; no `Resources.Load` (synchronous, rejected by ADR-009 Alternatives); Addressables stay post-MVP.
+- Crafted test assets are created with `ScriptableObject.CreateInstance` in the test (fields set through a test-only/internal initialiser or `SerializedObject`), not committed under `Assets/` (epic gap 5). Only the StartingZone registry and definition assets are committed, under `Assets/Data/Zones/`.
+- NavMesh cleanup: the instance from `AddNavMeshData` must be removed at teardown with `NavMesh.RemoveNavMeshData`; that belongs to the Navigation epic's real `IZoneNavigation` (teardown step 3). The StartingZone definition has no NavMesh, so nothing leaks in the verification run. Tests remove any instance they create in `TearDown`.
 
-**Open decisions for `/story-readiness`**
+**Decisions (`/story-readiness` 2026-10-23, user: "yes, apply all")**
 
-1. "Half-extent ≤ 250 m": check each bound coordinate's absolute value (what the position encoding needs) — confirm.
-2. A definition with no `NavMeshData`: T-3 with `ZoneDefinitionLoadFailed`, or the existing stand-in log while the Navigation epic is missing. The empty verification zone has no baked NavMesh.
+1. Bounds rule: each coordinate's absolute value ≤ 250.0 inclusive; NaN / ±Infinity and min > max on any axis are invalid.
+2. A definition with no `NavMeshData`: keep the stand-in log and return `default`, not T-3, while the Navigation epic is missing — otherwise the empty verification zone cannot reach Active.
+3. Bounds shape: `Vector3` min / max checked on all three axes. **Deviation from the ADR-009 code sketch** (`Rect _walkableBoundsXZ`): the position encoding (CR-NET-7.2) caps every axis, so Y is checked too. Record it in the Completion Notes; no ADR rule changes.
+4. `-zoneTemplate` carries the `ZoneTemplateID` name (ADR-009: "the gateway passes `ZoneTemplateID`"), resolved to a scene in `BeginLoad`; the unknown-name failure is S-fail at S6, not S0.
 
 ---
 
@@ -61,10 +66,12 @@
 
 ## QA Test Cases
 
-- **AC-ZI-5** — Given a definition with max.x = 251; When the composition runs S6; Then T-3, `ZoneBoundsExceedEncoding` logged, no `MarkActive`, no `RegisterZone`.
-- **Boundary** — ±250.0 on every axis → valid; −250.01 on z → invalid.
-- **Registry** — unknown template string → S-fail logged; `StartingZone` → its scene and definition.
-- **NavMesh** — a definition with `NavMeshData` → `AddNavMeshData` returns a valid instance that navigation receives.
+- **AC-ZI-5** — Given a definition with max.x = 251; When the composition runs S6 (fake scene seam over the real validator); Then `MarkClosedInvalidBounds` once, `ZoneBoundsExceedEncoding` logged naming x, no `MarkActive`, no `RegisterZone`.
+- **Boundary** — ±250.0 on every axis → valid; −250.01 on z → invalid; 250.01 on y → invalid.
+- **Malformed** — NaN on one coordinate → invalid; +Infinity → invalid; min.x > max.x → invalid; empty slot → invalid with `ZoneDefinitionLoadFailed`.
+- **Registry** — unknown name (`Forest`), numeric text (`0`) and a known enum value with no entry → done, not succeeded, one error log; `StartingZone` → its scene name and definition.
+- **NavMesh** — a definition with `NavMeshData` → `AddNavMeshData` returns a valid instance that a fake navigation receives (removed in `TearDown`); a definition without → `default` and one `[StandIn] no zone NavMesh data` log. **Engine check first:** `NavMesh.AddNavMeshData(new NavMeshData())` returns a valid instance in EditMode; if it does not, move this case to the verification run and record it.
+- **Verification run** — `ZoneServer.unity` with `-zoneTemplate StartingZone` reaches Active (Story 045 procedure).
 
 ---
 
@@ -74,6 +81,15 @@
 **Required evidence**: `tests/EditMode/Integration/ZoneInstancing/ZoneInstancing_ZoneDefinitionBounds_tests.cs` — must exist and pass; the Story 045 local verification run still reaches Active.
 
 **Status**: [ ] Not yet created
+
+---
+
+## Files
+
+- New: `src/ServerLogic/ZoneInstancing/ZoneTemplateID.cs`, `ZoneDefinition.cs`, `ZoneSceneRegistry.cs`, `ZoneDefinitionSlot.cs`, `ZoneDefinitionBoundsValidator.cs` (+ `.meta`)
+- Changed: `src/ServerLogic/ZoneServer/Unity/UnitySceneLoader.cs` (registry lookup, slot fill, real `AddNavMeshData`), `src/ServerLogic/ZoneServer/ZoneServerHost.cs` (`_registry` field, slot, real validator), `Assets/Scenes/Server/ZoneServer.unity` (registry reference, `_editorArgs`)
+- New assets: `Assets/Data/Zones/ZoneSceneRegistry.asset`, `Assets/Data/Zones/ZoneDefinition_StartingZone.asset` (+ `.meta`)
+- Tests: `tests/EditMode/Integration/ZoneInstancing/ZoneInstancing_ZoneDefinitionBounds_tests.cs` (+ folder `.meta`)
 
 ---
 

@@ -4434,3 +4434,9 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - EPIC.md row 003 Complete, Next Step -> Story 004; epics/index.md row: 001-003 Complete.
 - Next recommended: /story-readiness production/epics/zone-instancing/story-004-zone-definition-and-bounds-validation.md (no dependencies); 006 also free; 007 needs 002, 003, 006.
 - Not committed. PAT rotation still unconfirmed.
+
+## Session Extract — /story-readiness zone-instancing story-004 2026-10-23
+- Verdict NEEDS WORK (7 gaps) -> user: "yes, apply all" -> Ready. QL-STORY-READY skipped (lean).
+- Fixes in Story 004: estimate 5 h; TR-zi-010/017 stay placeholders; Decisions — bounds |coord| <= 250.0 inclusive, NaN/Inf and min > max invalid; no NavMeshData -> stand-in log + default (not T-3); Vector3 min/max on all 3 axes (deviation from ADR-009 Rect XZ sketch, to Completion Notes); -zoneTemplate carries the ZoneTemplateID name, resolved in UnitySceneLoader.BeginLoad through ZoneSceneRegistry (unknown -> S-fail at S6). Host gets [SerializeField] _registry; new ZoneDefinitionSlot shared by loader + ZoneDefinitionBoundsValidator (Validate(ZoneID) call site unchanged; empty slot -> ZoneDefinitionLoadFailed); AC-ZI-5 reworded to fakes (MarkClosedInvalidBounds once, no MarkActive/RegisterZone) — real Loading->Closed + T-3 alert with Story 014; NavMesh RemoveNavMeshData belongs to the Navigation epic; StartingZone -> ZoneTemplate_Empty + definition ±50 m, no NavMesh, under Assets/Data/Zones/; ZoneServer.unity _editorArgs -> StartingZone; QA cases (malformed, registry, NavMesh engine check, verification run) + Files section.
+- Files: story-004, this file. Not committed.
+- Next: commit -> /dev-story story-004. PAT rotation still unconfirmed.
