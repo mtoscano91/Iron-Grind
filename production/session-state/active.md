@@ -4476,3 +4476,12 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Shape: ITownRespawnPointProvider + TownRespawnPointCache(ownZone, definition) in src/ServerLogic/ZoneInstancing/; fallback resolved and logged once in the constructor; null definition throws. Logs: LogWarning TownRespawnPointNotAuthored, LogError TownRespawnPointMissing ("[ZoneInstancing] " prefix). Composition wiring -> Story 014. Engine note: custom byte comparer if the enum-keyed lookup allocates under Mono.
 - TR-zi-011 still a placeholder (no TR-zi entries in tr-registry.yaml) -> /architecture-review.
 - Not committed. Next: commit -> /dev-story production/epics/zone-instancing/story-005-town-respawn-point.md. PAT rotation still unconfirmed.
+
+## Session Extract — /dev-story 2026-10-23 (Story 005)
+- Story 005 /story-readiness committed (48c61cc).
+- Story: production/epics/zone-instancing/story-005-town-respawn-point.md — GetTownRespawnPoint (CR-ZI-11)
+- Files changed: src/ServerLogic/ZoneInstancing/ITownRespawnPointProvider.cs, src/ServerLogic/ZoneInstancing/TownRespawnPointCache.cs (new; byte comparer on the template dictionary)
+- Test written: tests/EditMode/ZoneInstancing/ZoneInstancing_TownRespawnPoint_tests.cs (8 [Test] + 1 method x 3 TestCase = 11 runs)
+- Test Runner (Editor, 09:37): EditMode 3712 total, 3642 passed, 0 failed, 70 skipped (Npgsql); TownRespawnPoint 11/11.
+- Blockers: None
+- Next: test results -> commit -> /code-review the three files -> /story-done
