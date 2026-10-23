@@ -366,6 +366,45 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
         // ----- Mob pool -------------------------------------------------------------------------
 
         [Test]
+        public void GetMobEntityIDsInZone_AllocateAndRelease_TracksOccupiedMobsOnly()
+        {
+            ZoneSlotPool pool = Create();
+            MustAllocPlayer(pool);
+            pool.TryAllocateMob(Zone, out _, out EntityID a);
+            pool.TryAllocateMob(Zone, out _, out EntityID b);
+            pool.TryAllocateMob(Zone, out _, out EntityID c);
+
+            IReadOnlyList<EntityID> roster = pool.GetMobEntityIDsInZone(Zone);
+            CollectionAssert.AreEqual(new[] { a, b, c }, roster);
+
+            pool.ReleaseMob(a); // swap-remove: the last one takes its place
+            CollectionAssert.AreEquivalent(new[] { b, c }, roster);
+            Assert.AreEqual(2, roster.Count);
+            Assert.AreSame(roster, pool.GetMobEntityIDsInZone(Zone));
+
+            pool.ReleaseMob(b);
+            pool.ReleaseMob(c);
+            Assert.AreEqual(0, roster.Count);
+            Assert.IsFalse(pool.ReleaseMob(c));
+            Assert.AreEqual(0, roster.Count);
+        }
+
+        [Test]
+        public void GetMobEntityIDsInZone_ForeignZone_ReturnsEmptyAndWarnsOnce()
+        {
+            ZoneSlotPool pool = Create();
+            pool.TryAllocateMob(Zone, out _, out _);
+            LogAssert.Expect(LogType.Warning, FOREIGN_ZONE_LOG);
+
+            IReadOnlyList<EntityID> first = pool.GetMobEntityIDsInZone(new ZoneID(FOREIGN_ZONE_RAW));
+            IReadOnlyList<EntityID> second = pool.GetMobEntityIDsInZone(new ZoneID(FOREIGN_ZONE_RAW));
+
+            Assert.AreEqual(0, first.Count);
+            Assert.AreEqual(0, second.Count);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
         public void TryAllocateMob_FreshPool_HandsOutIndicesInOrder()
         {
             ZoneSlotPool pool = Create();

@@ -87,10 +87,15 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         private readonly int[] _rosterPos;
         private readonly ReadOnlyCollection<EntityID> _roster;
 
+        private readonly List<EntityID> _mobRosterList;
+        private readonly int[] _mobRosterPos;
+        private readonly ReadOnlyCollection<EntityID> _mobRoster;
+
         private uint _nextEntityId;
         private bool _counterSpent;
         private bool _exhaustionRaised;
         private bool _foreignRosterWarned;
+        private bool _foreignMobRosterWarned;
 
         /// <summary>Creates empty pools for <paramref name="zone"/>.</summary>
         /// <param name="zone">The zone this process hosts. Must not be <see cref="ZoneID.Invalid"/>.</param>
@@ -136,6 +141,10 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             _rosterList = new List<EntityID>(maxPlayers);
             _rosterPos = new int[maxPlayers];
             _roster = new ReadOnlyCollection<EntityID>(_rosterList);
+
+            _mobRosterList = new List<EntityID>(maxMobs);
+            _mobRosterPos = new int[maxMobs];
+            _mobRoster = new ReadOnlyCollection<EntityID>(_mobRosterList);
         }
 
         /// <summary>The zone this pool serves.</summary>
@@ -317,6 +326,8 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             int index = _mobFree[--_mobFreeCount];
             _mobEntity[index] = minted;
             _mobIndex.Add(minted, index);
+            _mobRosterPos[index] = _mobRosterList.Count;
+            _mobRosterList.Add(minted);
 
             mobSlot = (ushort)index;
             id = minted;
@@ -336,6 +347,17 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             _mobIndex.Remove(id);
             _mobEntity[index] = EntityID.Invalid;
             _mobFree[_mobFreeCount++] = index;
+
+            int pos = _mobRosterPos[index];
+            int last = _mobRosterList.Count - 1;
+            if (pos != last)
+            {
+                EntityID moved = _mobRosterList[last];
+                _mobRosterList[pos] = moved;
+                _mobRosterPos[_mobIndex[moved]] = pos;
+            }
+
+            _mobRosterList.RemoveAt(last);
             return true;
         }
 
@@ -377,6 +399,30 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             {
                 _foreignRosterWarned = true;
                 IsOwnZone(zone, nameof(GetPlayerEntityIDsInZone));
+            }
+
+            return EMPTY_ROSTER;
+        }
+
+        /// <summary>
+        /// The EntityIDs of all occupied mob slots in unspecified order (swap-remove on release), built like
+        /// <see cref="GetPlayerEntityIDsInZone"/>: the same read-only instance on every call, refreshed in O(1) on
+        /// each mob allocation or release, so reading it allocates nothing. A foreign zone gets a shared empty
+        /// read-only list; the first such call per pool logs one warning, later ones are silent.
+        /// </summary>
+        /// <param name="zone">Must equal <see cref="Zone"/>.</param>
+        /// <returns>A read-only view.</returns>
+        public IReadOnlyList<EntityID> GetMobEntityIDsInZone(ZoneID zone)
+        {
+            if (zone == _zone)
+            {
+                return _mobRoster;
+            }
+
+            if (!_foreignMobRosterWarned)
+            {
+                _foreignMobRosterWarned = true;
+                IsOwnZone(zone, nameof(GetMobEntityIDsInZone));
             }
 
             return EMPTY_ROSTER;

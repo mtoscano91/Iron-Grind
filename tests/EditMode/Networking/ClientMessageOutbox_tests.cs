@@ -663,22 +663,117 @@ namespace IronGrind.Tests.EditMode.Networking
         }
 
         [Test]
-        public void test_delivery_range_boundaries_only_0xE000_to_0xEFFF_are_sent_even_when_a_row_exists_for_every_id()
+        public void test_delivery_range_boundaries_only_priority_and_bulk_ranges_are_sent_even_when_a_row_exists_for_every_id()
         {
+            // Story 007 widened the guard: 0xF000-0xFFFF (bulk) is accepted too; 0xDFFF is still refused.
             var routing = new OutboxFakeRouting { KnowsEveryId = true };
             ClientMessageOutbox outbox = NewOutbox(routing);
-            LogAssert.Expect(LogType.Error, Log("MessageTypeRejected", ClientA));
             LogAssert.Expect(LogType.Error, Log("MessageTypeRejected", ClientA));
 
             outbox.Enqueue(ClientA, 0xDFFF, Tag(1), false);
             outbox.Enqueue(ClientA, 0xE000, Tag(2), false);
             outbox.Enqueue(ClientA, 0xEFFF, Tag(3), false);
             outbox.Enqueue(ClientA, 0xF000, Tag(4), false);
+            outbox.Enqueue(ClientA, 0xFFFF, Tag(5), false);
             outbox.Flush(1u);
 
-            Assert.AreEqual(2, _sink.Sends.Count);
+            Assert.AreEqual(4, _sink.Sends.Count);
             Assert.AreEqual(0xE000, EnvelopeOf(_sink.Sends[0]).MessageTypeId);
             Assert.AreEqual(0xEFFF, EnvelopeOf(_sink.Sends[1]).MessageTypeId);
+            Assert.AreEqual(0xF000, EnvelopeOf(_sink.Sends[2]).MessageTypeId);
+            Assert.AreEqual(0xFFFF, EnvelopeOf(_sink.Sends[3]).MessageTypeId);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_bulk_range_constants_match_the_story()
+        {
+            Assert.AreEqual(0xF000, ClientMessageOutbox.BULK_RANGE_FIRST);
+            Assert.AreEqual(0xFFFF, ClientMessageOutbox.BULK_RANGE_LAST);
+        }
+
+        [Test]
+        public void test_bulk_0xF000_with_routing_row_is_accepted_and_counted()
+        {
+            var observer = (NetworkTestObserver)NetworkingTestHarness.CreateNetworkTestObserver();
+            _outbox.SetTestObserver(observer);
+
+            _outbox.Enqueue(ClientA, ZoneStateSnapshotFragment.MessageTypeId, Tag(1), true);
+            _outbox.Flush(1u);
+
+            Assert.AreEqual(1, _sink.Sends.Count);
+            Assert.AreEqual(1, observer.GetOutboundMessageCount(ClientA, ZoneStateSnapshotFragment.MessageTypeId));
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_bulk_0xF001_without_routing_row_is_refused_and_not_counted()
+        {
+            var observer = (NetworkTestObserver)NetworkingTestHarness.CreateNetworkTestObserver();
+            _outbox.SetTestObserver(observer);
+            Assert.IsFalse(MessageRoutingRegistry.TryGetEntry(0xF001, out _), "Precondition: the id has no row.");
+            LogAssert.Expect(LogType.Error, Log("MessageTypeRejected", ClientA));
+
+            _outbox.Enqueue(ClientA, 0xF001, Tag(1), true);
+            _outbox.Flush(1u);
+
+            Assert.AreEqual(0, _sink.Sends.Count);
+            Assert.AreEqual(0, observer.GetOutboundMessageCount(ClientA, 0xF001));
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_below_priority_range_0xDFFF_is_refused_and_not_counted()
+        {
+            var observer = (NetworkTestObserver)NetworkingTestHarness.CreateNetworkTestObserver();
+            _outbox.SetTestObserver(observer);
+            LogAssert.Expect(LogType.Error, Log("MessageTypeRejected", ClientA));
+
+            _outbox.Enqueue(ClientA, 0xDFFF, Tag(1), false);
+
+            Assert.AreEqual(0, observer.GetOutboundMessageCount(ClientA, 0xDFFF));
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_observer_counts_each_accepted_enqueue_once_per_client()
+        {
+            var observer = (NetworkTestObserver)NetworkingTestHarness.CreateNetworkTestObserver();
+            _outbox.SetTestObserver(observer);
+            _outbox.AddClient(ClientB);
+
+            _outbox.Enqueue(ClientA, TypeA, Tag(1), false);
+            _outbox.Enqueue(ClientA, TypeA, Tag(2), false);
+            _outbox.EnqueueToAllClients(TypeA, Tag(3), false);
+
+            Assert.AreEqual(3, observer.GetOutboundMessageCount(ClientA, TypeA));
+            Assert.AreEqual(1, observer.GetOutboundMessageCount(ClientB, TypeA));
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_observer_does_not_count_a_refused_oversize_body()
+        {
+            var observer = (NetworkTestObserver)NetworkingTestHarness.CreateNetworkTestObserver();
+            _outbox.SetTestObserver(observer);
+            LogAssert.Expect(LogType.Error, Log("BodyTooLarge", ClientA));
+
+            _outbox.Enqueue(ClientA, TypeA, Tag(1, MaxBody + 1), false);
+
+            Assert.AreEqual(0, observer.GetOutboundMessageCount(ClientA, TypeA));
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_no_observer_set_records_nothing_and_enqueue_still_works()
+        {
+            var observer = (NetworkTestObserver)NetworkingTestHarness.CreateNetworkTestObserver();
+
+            _outbox.Enqueue(ClientA, TypeA, Tag(1), false);
+            _outbox.Flush(1u);
+
+            Assert.AreEqual(1, _sink.Sends.Count);
+            Assert.AreEqual(0, observer.GetOutboundMessageCount(ClientA, TypeA));
             LogAssert.NoUnexpectedReceived();
         }
 

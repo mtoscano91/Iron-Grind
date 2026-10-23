@@ -22,7 +22,7 @@ namespace IronGrind.Networking
     /// </para>
     /// <para>
     /// <b>Never throws.</b> <see cref="Enqueue"/> and <see cref="Flush"/> log instead. A message type outside
-    /// 0xE000-0xEFFF or without a <see cref="MessageRoutingRegistry"/> row, a body above
+    /// 0xE000-0xEFFF and the bulk range 0xF000-0xFFFF, or without a <see cref="MessageRoutingRegistry"/> row, a body above
     /// <see cref="RUBatchWriter.MAX_MESSAGE_BODY_BYTES"/> is refused with one error, in development and release
     /// builds alike. A full queue refuses the message, and on the first refusal of that client logs one error
     /// and requests its disconnect through <see cref="SetDisconnectRequester"/>; without a requester the error
@@ -64,6 +64,12 @@ namespace IronGrind.Networking
 
         /// <summary>Last message type id of the priority range.</summary>
         public const ushort PRIORITY_RANGE_LAST = 0xEFFF;
+
+        /// <summary>First message type id of the bulk range (R-OD bulk transfer, 0xF000-0xFFFF; Zone Instancing Story 007).</summary>
+        public const ushort BULK_RANGE_FIRST = 0xF000;
+
+        /// <summary>Last message type id of the bulk range.</summary>
+        public const ushort BULK_RANGE_LAST = 0xFFFF;
 
         private const string LOG_PREFIX = "[ClientMessageOutbox]";
         private const int MAX_TRACKED_WARNINGS = 64;
@@ -112,6 +118,9 @@ namespace IronGrind.Networking
         private int _warnedCount;
         private bool _flushing;
         private bool _listDirty;
+#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
+        private NetworkTestObserver _testObserver;
+#endif
 
         /// <summary>Creates the outbox. No client exists until <see cref="AddClient"/>.</summary>
         /// <param name="sendSeam">Receives each finished message; not null.</param>
@@ -135,6 +144,20 @@ namespace IronGrind.Networking
         {
             _disconnectRequester = requester;
         }
+
+#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
+        /// <summary>
+        /// Test and development builds only: sets the observer that counts accepted messages. After a message is
+        /// queued, <c>RecordOutboundMessage(clientId, messageTypeId)</c> is called once; a refused message is
+        /// never counted. <see cref="EnqueueToAllClients"/> counts once per client because it calls
+        /// <see cref="Enqueue"/> per client. Null (the default) records nothing.
+        /// </summary>
+        /// <param name="observer">The recorder, or null.</param>
+        public void SetTestObserver(NetworkTestObserver observer)
+        {
+            _testObserver = observer;
+        }
+#endif
 
         /// <summary>Allocates the client's storage. Adding a known id does nothing.</summary>
         /// <param name="clientId">The client's connection id.</param>
@@ -186,7 +209,7 @@ namespace IronGrind.Networking
         /// Refusals (unknown client, bad type, oversize body, full queue) are logged and queue nothing.
         /// </summary>
         /// <param name="clientId">The connection that receives the message.</param>
-        /// <param name="messageTypeId">The wire message type; must be in 0xE000-0xEFFF and have a routing row.</param>
+        /// <param name="messageTypeId">The wire message type; must be in 0xE000-0xEFFF or the bulk range 0xF000-0xFFFF and have a routing row.</param>
         /// <param name="body">The encoded body, at most 512 bytes; valid only during the call.</param>
         /// <param name="isCapExempt">True when the message is exempt from the priority-path cap.</param>
         public void Enqueue(uint clientId, ushort messageTypeId, ReadOnlySpan<byte> body, bool isCapExempt)
@@ -360,15 +383,20 @@ namespace IronGrind.Networking
             state.LiveBytes += length;
             state.LiveCount++;
             state.Queue.Enqueue(index, isCapExempt);
+#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
+            _testObserver?.RecordOutboundMessage(clientId, messageTypeId);
+#endif
         }
 
         // The checks that do not depend on the client's queue: priority range, routing row, body size.
         private bool TryAcceptMessage(uint clientId, ushort messageTypeId, int length, out NetworkChannel channel)
         {
             channel = default;
-            if (messageTypeId < PRIORITY_RANGE_FIRST || messageTypeId > PRIORITY_RANGE_LAST)
+            bool inPriorityRange = messageTypeId >= PRIORITY_RANGE_FIRST && messageTypeId <= PRIORITY_RANGE_LAST;
+            bool inBulkRange = messageTypeId >= BULK_RANGE_FIRST && messageTypeId <= BULK_RANGE_LAST;
+            if (!inPriorityRange && !inBulkRange)
             {
-                Debug.LogError($"{LOG_PREFIX} MessageTypeRejected: clientId={clientId} - type 0x{messageTypeId:X4} is outside the priority range 0xE000-0xEFFF; not sent.");
+                Debug.LogError($"{LOG_PREFIX} MessageTypeRejected: clientId={clientId} - type 0x{messageTypeId:X4} is outside the priority range 0xE000-0xEFFF and the bulk range 0xF000-0xFFFF; not sent.");
                 return false;
             }
 

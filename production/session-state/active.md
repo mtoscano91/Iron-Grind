@@ -4543,3 +4543,10 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - User decisions: widen the outbox to also accept the bulk range 0xF000-0xFFFF (routing row still required); the outbox records each accepted Enqueue into NetworkTestObserver via a setter under #if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD.
 - Story now specifies: ZoneSnapshotBuilder.SendSnapshot(clientId); IZoneEntityStateSource (TryGetPlayerState / TryGetMobState) with a test double; ZoneSlotPool.GetMobEntityIDsInZone; dead = Dead or Respawning; ghost = Disconnected_SessionActive; per-zone buffer maxPlayers*77 + maxMobs*35; seam miss skips + one warning; allocation check; 11 ACs.
 - EPIC.md row 007 Ready (6 h), Next Step -> /dev-story 007. Not committed. PAT rotation still unconfirmed.
+
+## Session Extract — /dev-story 2026-10-23 (Zone Instancing Story 007 — implemented, not reviewed, not committed)
+- Implemented by a subagent, diff checked by the main session. Source: ClientMessageOutbox BULK_RANGE_FIRST/LAST (0xF000-0xFFFF accepted, routing row still required) + SetTestObserver under UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD (RecordOutboundMessage after queueing, never on refusal); ZoneSlotPool.GetMobEntityIDsInZone (preallocated, swap-remove, foreign zone -> empty + one warning); new IZoneEntityStateSource, ZonePlayerStateView, ZoneMobStateView, ZoneSnapshotBuilder (+ .meta).
+- Tests: SnapshotAssembly 17 (new file + .meta), ClientMessageOutbox +7 and 1 rewritten (0xF000 now sent), SlotPools +2. Main-session fix: two test compile errors (missing using IronGrind.Currency; Unity Constraints Is alias).
+- Batch-mode EditMode: 3842 total, 3772 passed, 0 failed, 70 skipped (Npgsql).
+- Review note to raise: builder narrows MobTypeID.RawValue (uint) to ushort without a check.
+- Next: /code-review Story 007, then /story-done. PAT rotation still unconfirmed.
