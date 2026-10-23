@@ -8,14 +8,19 @@ namespace IronGrind.ServerLogic.ZoneInstancing
 {
     /// <summary>
     /// <see cref="ITownRespawnPointProvider"/> for one zone process (CR-ZI-11, AC-ZI-9, AC-ZI-10, AC-ZI-18).
-    /// The constructor resolves the respawn point once: the authored point; otherwise the centroid of valid walkable
-    /// bounds (logs one <c>TownRespawnPointNotAuthored</c> warning); otherwise <see cref="Vector3.zero"/> (logs one
-    /// <c>TownRespawnPointMissing</c> critical alert). Later calls for the own zone log nothing and allocate nothing.
+    /// The constructor resolves the respawn point once: the authored point when it is valid; otherwise the centroid
+    /// of valid walkable bounds (logs one <c>TownRespawnPointNotAuthored</c> warning); otherwise
+    /// <see cref="Vector3.zero"/> (logs one <c>TownRespawnPointMissing</c> critical alert). Later calls for the own
+    /// zone log nothing and allocate nothing.
     /// </summary>
     /// <remarks>
-    /// The cache is keyed on the template and holds no lifecycle reference, so it keeps answering after the zone
-    /// closes. A <see cref="ZoneID"/> other than the own one is a caller error: it returns
-    /// <see cref="Vector3.zero"/> and logs a <c>TownRespawnPointMissing</c> alert on every call. Main thread only.
+    /// An authored point is valid when every coordinate is finite and its absolute value is at most
+    /// <see cref="ZoneDefinitionBoundsValidator.MAX_WALKABLE_HALF_EXTENT_M"/> (the position encoding limit,
+    /// CR-NET-7.2); an invalid one is treated as not authored and the warning names the failing axis.
+    /// The cache is keyed on the template and copies the values out of the definition, so it keeps answering after
+    /// the zone closes or the asset is destroyed. A <see cref="ZoneID"/> other than the own one is a caller error: it
+    /// returns <see cref="Vector3.zero"/> and logs a <c>TownRespawnPointMissing</c> alert on every call.
+    /// Main thread only.
     /// </remarks>
     /// <example>
     /// <code>
@@ -26,17 +31,26 @@ namespace IronGrind.ServerLogic.ZoneInstancing
     public sealed class TownRespawnPointCache : ITownRespawnPointProvider
     {
         private const string LOG_PREFIX = "[ZoneInstancing]";
+        private static readonly string[] AXES = { "x", "y", "z" };
 
         private readonly ZoneID _ownZone;
         private readonly ZoneTemplateID _template;
+
+        // One entry in a zone process; the template-keyed dictionary is the CR-ZI-11 contract (Story 005 AC-1).
         private readonly Dictionary<ZoneTemplateID, Vector3> _points;
 
         /// <summary>Resolves and caches the respawn point of the loaded zone definition.</summary>
-        /// <param name="ownZone">The <see cref="ZoneID"/> of this process.</param>
-        /// <param name="definition">The loaded definition; must not be null.</param>
-        /// <exception cref="ArgumentNullException"><paramref name="definition"/> is null.</exception>
+        /// <param name="ownZone">The <see cref="ZoneID"/> of this process; must not be <see cref="ZoneID.Invalid"/>.</param>
+        /// <param name="definition">The loaded definition; must not be null or destroyed.</param>
+        /// <exception cref="ArgumentException"><paramref name="ownZone"/> is <see cref="ZoneID.Invalid"/>.</exception>
+        /// <exception cref="ArgumentNullException"><paramref name="definition"/> is null or destroyed.</exception>
         public TownRespawnPointCache(ZoneID ownZone, ZoneDefinition definition)
         {
+            if (ownZone == ZoneID.Invalid)
+            {
+                throw new ArgumentException("The own zone must not be ZoneID.Invalid.", nameof(ownZone));
+            }
+
             if (definition == null)
             {
                 throw new ArgumentNullException(nameof(definition));
@@ -61,9 +75,10 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         /// </example>
         public Vector3 GetTownRespawnPoint(ZoneID zone)
         {
-            if (zone.Equals(_ownZone) && _points.TryGetValue(_template, out Vector3 point))
+            if (zone == _ownZone)
             {
-                return point;
+                // The constructor always stores the own template's entry.
+                return _points[_template];
             }
 
             Debug.LogError(LOG_PREFIX + " TownRespawnPointMissing: foreign zone " + zone.ToString()
@@ -74,40 +89,68 @@ namespace IronGrind.ServerLogic.ZoneInstancing
 
         private Vector3 Resolve(ZoneDefinition definition)
         {
+            string authoredFailure = null;
             if (definition.TownRespawnPointAuthored)
             {
-                return definition.TownRespawnPoint;
+                authoredFailure = CheckPoint(definition.TownRespawnPoint);
+                if (authoredFailure == null)
+                {
+                    return definition.TownRespawnPoint;
+                }
             }
+
+            string reason = authoredFailure == null
+                ? "has no authored respawn point"
+                : "has an invalid authored respawn point (" + authoredFailure + ")";
 
             Vector3 min = definition.WalkableBoundsMin;
             Vector3 max = definition.WalkableBoundsMax;
-            if (ZoneDefinitionBoundsValidator.AreBoundsValid(min, max, out string failure))
+            if (ZoneDefinitionBoundsValidator.AreBoundsValid(min, max, out string boundsFailure))
             {
                 Vector3 centroid = (min + max) * 0.5f;
                 Debug.LogWarning(LOG_PREFIX + " TownRespawnPointNotAuthored: template " + _template.ToString()
-                    + " has no authored respawn point; using the bounds centroid "
-                    + centroid.x.ToString("R", CultureInfo.InvariantCulture) + ", "
-                    + centroid.y.ToString("R", CultureInfo.InvariantCulture) + ", "
-                    + centroid.z.ToString("R", CultureInfo.InvariantCulture));
+                    + " " + reason + "; using the bounds centroid " + Format(centroid.x) + ", "
+                    + Format(centroid.y) + ", " + Format(centroid.z));
                 return centroid;
             }
 
             Debug.LogError(LOG_PREFIX + " TownRespawnPointMissing: template " + _template.ToString()
-                + " has no authored respawn point and no valid bounds (" + failure + "); returning zero");
+                + " " + reason + " and no valid bounds (" + boundsFailure + "); returning zero");
             return Vector3.zero;
         }
 
-        /// <summary>Compares the byte values so lookups never box the enum under Mono.</summary>
+        // Null when every coordinate is finite and within the encoding limit; otherwise the failing axis.
+        private static string CheckPoint(Vector3 point)
+        {
+            for (int axis = 0; axis < 3; axis++)
+            {
+                float value = point[axis];
+                if (float.IsNaN(value) || float.IsInfinity(value)
+                    || Mathf.Abs(value) > ZoneDefinitionBoundsValidator.MAX_WALKABLE_HALF_EXTENT_M)
+                {
+                    return "axis " + AXES[axis] + " = " + Format(value);
+                }
+            }
+
+            return null;
+        }
+
+        private static string Format(float value)
+        {
+            return value.ToString("R", CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>Compares the enum values directly so lookups never box under Mono.</summary>
         private sealed class TemplateComparer : IEqualityComparer<ZoneTemplateID>
         {
             public bool Equals(ZoneTemplateID x, ZoneTemplateID y)
             {
-                return (byte)x == (byte)y;
+                return x == y;
             }
 
             public int GetHashCode(ZoneTemplateID obj)
             {
-                return (byte)obj;
+                return (int)obj;
             }
         }
     }

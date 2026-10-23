@@ -4485,3 +4485,11 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Test Runner (Editor, 09:37): EditMode 3712 total, 3642 passed, 0 failed, 70 skipped (Npgsql); TownRespawnPoint 11/11.
 - Blockers: None
 - Next: test results -> commit -> /code-review the three files -> /story-done
+
+## Session Extract — /code-review 2026-10-23 (Story 005)
+- Verdict: APPROVED WITH SUGGESTIONS (unity-specialist CLEAN, qa-tester GAPS non-blocking) -> user "fix all" -> 7 applied.
+- Source: authored point validated (finite, |c| <= 250) else treated as not authored (warning names the axis); ZoneID.Invalid own zone throws ArgumentException; dead TryGetValue removed (comment); comparer x == y / (int) hash; dictionary comment.
+- Tests: exact log messages (centroid, bounds failure reason); allocation positive control; authored zero; authored + invalid bounds; invalid authored point x3; invalid point + invalid bounds; destroyed-after-construction (replaces Closed zone); destroyed definition; Invalid own zone; ParamName checks. 14 [Test] + 6 TestCase = 20 runs.
+- Story 005: AC for the authored-point rule and the Invalid own zone; QA cases appended.
+- Run 1: positive control failed — GC.GetAllocatedBytesForCurrentThread returns 0 in Editor Mono (AC-ZI-9 zero check was vacuous). Switched both allocation tests to UnityEngine.TestTools.Constraints Is.Not.AllocatingGCMemory / Is.AllocatingGCMemory (project pattern). Story engine note superseded; GDD AC-ZI-9 still names the old measure -> GDD update needed (open).
+- Run 2 compile error (missing using UnityEngine.TestTools.Constraints for the extension method) -> fixed. Run 3 (Editor 09:48): EditMode 3721 total, 3651 passed, 0 failed, 70 skipped (Npgsql); TownRespawnPoint 20/20. Committed. Next: /story-done (raise GDD AC-ZI-9 measure update).

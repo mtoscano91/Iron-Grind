@@ -17,7 +17,7 @@
 
 **Engine**: Unity 6.3 LTS | **Risk**: LOW
 **Engine Notes**:
-- `GC.GetAllocatedBytesForCurrentThread()` is the allocation measure (AC-ZI-9) — not `GC.GetTotalMemory`.
+- ~~`GC.GetAllocatedBytesForCurrentThread()` is the allocation measure (AC-ZI-9)~~ — **superseded at code review 2026-10-23**: in the Unity 6.3 Editor's Mono it returned 0 even for a path that builds a log string (positive-control test failed), so a zero delta proves nothing. The measure is `UnityEngine.TestTools.Constraints.Is.Not.AllocatingGCMemory()` (GC.Alloc sample count, the project's existing pattern in `TickLoop_CompletionQueue_tests.cs`), with an `Is.AllocatingGCMemory()` positive control on the foreign-zone path. `GC.GetTotalMemory` stays unacceptable. GDD AC-ZI-9 names the old measure — flag for a GDD update.
 - `ZoneTemplateID` is a `byte` enum. If the AC-ZI-9 test shows the enum-keyed `Dictionary` lookup allocating under Mono (default comparer boxing), give the dictionary a small `IEqualityComparer<ZoneTemplateID>` that compares the `byte` values; do not change the key type.
 
 **Control Manifest Rules (this layer)**:
@@ -28,7 +28,8 @@
 
 ## Acceptance Criteria
 
-- [ ] `ITownRespawnPointProvider.GetTownRespawnPoint(ZoneID) : Vector3` is implemented by `TownRespawnPointCache`, constructed once from the process's own `ZoneID` and the loaded `ZoneDefinition`. The constructor resolves the point (authored or fallback), stores it in a `Dictionary<ZoneTemplateID, Vector3>` keyed on `definition.TemplateId`, and logs any fallback. A null definition throws `ArgumentNullException`.
+- [ ] `ITownRespawnPointProvider.GetTownRespawnPoint(ZoneID) : Vector3` is implemented by `TownRespawnPointCache`, constructed once from the process's own `ZoneID` and the loaded `ZoneDefinition`. The constructor resolves the point (authored or fallback), stores it in a `Dictionary<ZoneTemplateID, Vector3>` keyed on `definition.TemplateId`, and logs any fallback. A null (or destroyed) definition throws `ArgumentNullException`; an own `ZoneID` of `ZoneID.Invalid` throws `ArgumentException` (code review 2026-10-23).
+- [ ] An authored point is used only when every coordinate is finite and its absolute value is at most 250 m (`ZoneDefinitionBoundsValidator.MAX_WALKABLE_HALF_EXTENT_M`, the position-encoding limit). An invalid authored point is treated as not authored: centroid + one `TownRespawnPointNotAuthored` warning naming the failing axis, or, with invalid bounds too, `Vector3.zero` + one `TownRespawnPointMissing` alert (code review 2026-10-23, user decision "fix all").
 - [ ] **AC-ZI-9**: with an authored point (`TownRespawnPointAuthored == true`), 1,000 consecutive calls with the own `ZoneID` return the same `Vector3` and the `GC.GetAllocatedBytesForCurrentThread()` delta across them is 0 (no `GC.Collect()` during the measurement).
 - [ ] **AC-ZI-18**: no authored point but valid bounds → returns `(boundsMin + boundsMax) * 0.5f`; logs one `TownRespawnPointNotAuthored` **warning**; never `Vector3.zero` for that case; no exception.
 - [ ] **AC-ZI-10**: no authored point and no valid bounds → returns `Vector3.zero`; logs one `TownRespawnPointMissing` critical alert; no exception. "No valid bounds" means `ZoneDefinitionBoundsValidator.AreBoundsValid(min, max, out _)` returns false (Story 004's rule — non-finite, beyond ±250 m, or min > max). Zero-size bounds (min == max) are valid under that rule and take the AC-ZI-18 path.
@@ -75,6 +76,7 @@
 - **Closed zone** — Given an authored point; When the call is made after the caller's lifecycle reached Closed (the cache holds no lifecycle reference); Then the same point.
 - **Foreign ZoneID** — Given own `ZoneID(1)`; When called with `ZoneID(2)` twice; Then `Vector3.zero` both times, two critical alerts naming `ZoneID(2)`, no throw; a following call with `ZoneID(1)` still returns the point.
 - **Null definition** — constructor throws `ArgumentNullException`.
+- *Added at code review 2026-10-23:* allocation positive control (the foreign-zone path moves the counter); authored `Vector3.zero` returns zero with no log; authored point with invalid bounds returns the point with no log; invalid authored point (x = 251, y = NaN, z = −300) → centroid + warning naming the axis; invalid authored point and invalid bounds → zero + one alert; definition destroyed after construction → point still returned (replaces the "Closed zone" case); destroyed definition → `ArgumentNullException`; `ZoneID.Invalid` own zone → `ArgumentException`. Log messages are matched exactly, including the centroid and the bounds failure reason.
 
 ---
 
