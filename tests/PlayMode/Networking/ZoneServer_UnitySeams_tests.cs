@@ -162,7 +162,7 @@ namespace IronGrind.PlayModeTests
         [UnityTest]
         public IEnumerator test_unity_scene_loader_unknown_scene_is_done_and_not_succeeded()
         {
-            var loader = new UnitySceneLoader();
+            var loader = new UnitySceneLoader(null, null, new IronGrind.ServerLogic.ZoneInstancing.ZoneDefinitionSlot());
             LogAssert.Expect(LogType.Error, new Regex("NoSuchZoneScene"));
 
             loader.BeginLoad("NoSuchZoneScene");
@@ -175,7 +175,7 @@ namespace IronGrind.PlayModeTests
         [Test]
         public void test_unity_scene_loader_add_nav_mesh_data_returns_default_and_logs_the_stand_in_line_once()
         {
-            var loader = new UnitySceneLoader();
+            var loader = new UnitySceneLoader(null, null, new IronGrind.ServerLogic.ZoneInstancing.ZoneDefinitionSlot());
             LogAssert.Expect(LogType.Log, "[StandIn] no zone NavMesh data");
 
             UnityEngine.AI.NavMeshDataInstance first = loader.AddNavMeshData();

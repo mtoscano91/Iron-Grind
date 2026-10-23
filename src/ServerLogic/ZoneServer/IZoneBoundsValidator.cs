@@ -4,7 +4,7 @@ namespace IronGrind.ServerLogic.ZoneServer
 {
     /// <summary>
     /// Validates a loaded zone's bounds (startup S6, ADR-009 Amendment 1). Replaced by the real validator
-    /// when its epic ships; <see cref="StandInZoneBoundsValidator"/> until then.
+    /// when its epic ships; <see cref="StandInZoneBoundsValidator"/> until then; the host uses ZoneDefinitionBoundsValidator since Zone Instancing Story 004.
     /// </summary>
     /// <example>
     /// <code>

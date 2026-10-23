@@ -1,3 +1,4 @@
+using IronGrind.ServerLogic.ZoneInstancing;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.AI;
@@ -7,20 +8,23 @@ namespace IronGrind.ServerLogic.ZoneServer
 {
     /// <summary>
     /// <see cref="IZoneScene"/> over <c>SceneManager.LoadSceneAsync(name, LoadSceneMode.Single)</c> (ADR-009
-    /// Decision 1, Amendment 1 S6). An unknown scene name makes <c>LoadSceneAsync</c> return null; the loader then
-    /// reports done and not succeeded, which is S-fail at S6. The zone has no baked NavMesh yet, so
-    /// <see cref="AddNavMeshData"/> is a stand-in. Main thread only.
+    /// Decision 1, Amendment 1 S6). <see cref="BeginLoad"/> resolves the <c>-zoneTemplate</c> value (a
+    /// <see cref="ZoneTemplateID"/> name) through the <see cref="ZoneSceneRegistry"/>; an unknown name, a template
+    /// without a complete entry, or a scene name <c>LoadSceneAsync</c> rejects makes the loader report done and not
+    /// succeeded, which is S-fail at S6. On a started load it publishes the definition through the
+    /// <see cref="ZoneDefinitionSlot"/>. <see cref="AddNavMeshData"/> adds the definition's baked NavMesh; a
+    /// definition without one keeps a once-logged stand-in and returns <c>default</c>. Main thread only.
     /// </summary>
     /// <remarks>
     /// In the Editor and development builds it logs the instance ids of the host object and of the
     /// <c>NetworkManager</c> object before the load starts and once the load completed
     /// (<c>[ZoneServer] A1-3 before load</c> / <c>after load</c>), so a run can show both survived the Single-mode load
-    /// (Story 045 AC-7).
+    /// (Story 045 AC-7). Removing the NavMesh instance at teardown belongs to the real navigation (Navigation epic).
     /// </remarks>
     /// <example>
     /// <code>
-    /// IZoneScene scene = new UnitySceneLoader(gameObject);
-    /// scene.BeginLoad("ZoneTemplate_Empty");
+    /// IZoneScene scene = new UnitySceneLoader(gameObject, registry, slot);
+    /// scene.BeginLoad("StartingZone");
     /// while (!scene.IsDone) { yield return null; }
     /// bool ok = scene.Succeeded;
     /// </code>
@@ -28,21 +32,27 @@ namespace IronGrind.ServerLogic.ZoneServer
     public sealed class UnitySceneLoader : IZoneScene
     {
         private readonly GameObject _hostObject;
+        private readonly ZoneSceneRegistry _registry;
+        private readonly ZoneDefinitionSlot _slot;
         private AsyncOperation _operation;
         private bool _nullOperation;
         private bool _afterLogged;
         private bool _standInLogged;
 
-        /// <summary>Creates a loader that logs no instance ids.</summary>
-        public UnitySceneLoader()
+        /// <summary>Creates a loader.</summary>
+        /// <param name="hostObject">The host's GameObject for the instance id logs; may be null.</param>
+        /// <param name="registry">The template registry; null makes every load fail.</param>
+        /// <param name="slot">The slot filled with the loaded definition; must not be null.</param>
+        public UnitySceneLoader(GameObject hostObject, ZoneSceneRegistry registry, ZoneDefinitionSlot slot)
         {
-        }
+            if (slot == null)
+            {
+                throw new System.ArgumentNullException(nameof(slot));
+            }
 
-        /// <summary>Creates a loader that logs the host object's instance id around the load (dev builds and Editor).</summary>
-        /// <param name="hostObject">The host's GameObject; may be null (then only the NetworkManager id is logged).</param>
-        public UnitySceneLoader(GameObject hostObject)
-        {
             _hostObject = hostObject;
+            _registry = registry;
+            _slot = slot;
         }
 
         /// <inheritdoc/>
@@ -51,9 +61,25 @@ namespace IronGrind.ServerLogic.ZoneServer
             _operation = null;
             _nullOperation = false;
             _afterLogged = false;
+            _slot.Clear();
             LogInstanceIds("A1-3 before load");
-            _operation = SceneManager.LoadSceneAsync(zoneTemplate, LoadSceneMode.Single);
+
+            string sceneName = null;
+            ZoneDefinition definition = null;
+            if (_registry == null || !_registry.TryResolve(zoneTemplate, out sceneName, out definition))
+            {
+                _nullOperation = true;
+                Debug.LogError("[ZoneInstancing] ZoneDefinitionLoadFailed: unknown or unregistered zone template '"
+                    + zoneTemplate + "'");
+                return;
+            }
+
+            _operation = SceneManager.LoadSceneAsync(sceneName, LoadSceneMode.Single);
             _nullOperation = _operation == null;
+            if (!_nullOperation)
+            {
+                _slot.Set(definition);
+            }
         }
 
         /// <inheritdoc/>
@@ -87,6 +113,12 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// <inheritdoc/>
         public NavMeshDataInstance AddNavMeshData()
         {
+            ZoneDefinition definition = _slot.Current;
+            if (definition != null && definition.BakedNavMesh != null)
+            {
+                return NavMesh.AddNavMeshData(definition.BakedNavMesh);
+            }
+
             if (!_standInLogged)
             {
                 _standInLogged = true;

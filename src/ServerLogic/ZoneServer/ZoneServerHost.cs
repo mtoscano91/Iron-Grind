@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using IronGrind.ServerLogic.ZoneInstancing;
 using UnityEngine;
 
 namespace IronGrind.ServerLogic.ZoneServer
@@ -22,7 +23,7 @@ namespace IronGrind.ServerLogic.ZoneServer
     /// </remarks>
     /// <example>
     /// <code>
-    /// // ZoneServer.exe -batchmode -nographics -zoneTemplate ZoneTemplate_Empty -zoneId 1 -port 7777 -serverConfig cfg.json
+    /// // ZoneServer.exe -batchmode -nographics -zoneTemplate StartingZone -zoneId 1 -port 7777 -serverConfig cfg.json
     /// </code>
     /// </example>
     public sealed class ZoneServerHost : MonoBehaviour
@@ -30,6 +31,8 @@ namespace IronGrind.ServerLogic.ZoneServer
 #if UNITY_EDITOR
         [SerializeField] private string[] _editorArgs;
 #endif
+
+        [SerializeField] private ZoneSceneRegistry _registry;
 
         private ZoneServerComposition _composition;
         private NgoZoneNetwork _network;
@@ -44,14 +47,15 @@ namespace IronGrind.ServerLogic.ZoneServer
         {
             try
             {
+                var slot = new ZoneDefinitionSlot();
                 _network = new NgoZoneNetwork();
                 _composition = ZoneServerComposition.CreateWithRealBackend(
                     new UnityZoneApplication(gameObject),
                     _network,
                     new StandInZoneNavigation(),
                     new StandInZoneCloseSteps(),
-                    new UnitySceneLoader(gameObject),
-                    new StandInZoneBoundsValidator(),
+                    new UnitySceneLoader(gameObject, _registry, slot),
+                    new ZoneDefinitionBoundsValidator(slot),
                     new StandInZoneStaticDataLoader(),
                     new StandInZoneStateOwner(),
                     new StandInGatewayRegistration(),

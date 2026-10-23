@@ -102,7 +102,7 @@ namespace IronGrind.ServerLogic.ZoneServer
     }
 
     /// <summary>
-    /// Stand-in for <see cref="IZoneBoundsValidator"/>: logs "[ZoneServer] bounds validation not implemented"
+    /// Stand-in for <see cref="IZoneBoundsValidator"/> (no longer used by the host, which uses ZoneDefinitionBoundsValidator): logs "[ZoneServer] bounds validation not implemented"
     /// once and always returns true.
     /// </summary>
     /// <example>

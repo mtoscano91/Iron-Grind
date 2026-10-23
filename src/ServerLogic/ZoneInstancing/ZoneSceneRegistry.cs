@@ -1,0 +1,94 @@
+using System;
+using UnityEngine;
+
+namespace IronGrind.ServerLogic.ZoneInstancing
+{
+    /// <summary>
+    /// Maps a <see cref="ZoneTemplateID"/> to its scene name and <see cref="ZoneDefinition"/> (ADR-009). Referenced
+    /// from the zone server host through a serialized field; never loaded through <c>Resources</c>.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// if (registry.TryResolve("StartingZone", out string scene, out ZoneDefinition definition)) { /* load scene */ }
+    /// </code>
+    /// </example>
+    [CreateAssetMenu(fileName = "ZoneSceneRegistry", menuName = "IronGrind/Zone Scene Registry")]
+    public sealed class ZoneSceneRegistry : ScriptableObject
+    {
+        /// <summary>One registry row.</summary>
+        [Serializable]
+        public struct Entry
+        {
+            [SerializeField] private ZoneTemplateID _templateId;
+            [SerializeField] private string _sceneName;
+            [SerializeField] private ZoneDefinition _definition;
+
+            /// <summary>Creates a row.</summary>
+            /// <param name="templateId">Template the row serves.</param>
+            /// <param name="sceneName">Name of the scene to load.</param>
+            /// <param name="definition">The zone definition.</param>
+            public Entry(ZoneTemplateID templateId, string sceneName, ZoneDefinition definition)
+            {
+                _templateId = templateId;
+                _sceneName = sceneName;
+                _definition = definition;
+            }
+
+            /// <summary>The template this row serves.</summary>
+            public ZoneTemplateID TemplateId => _templateId;
+
+            /// <summary>Scene name to load.</summary>
+            public string SceneName => _sceneName;
+
+            /// <summary>The zone definition.</summary>
+            public ZoneDefinition Definition => _definition;
+        }
+
+        [SerializeField] private Entry[] _entries;
+
+        /// <summary>
+        /// Resolves a <c>-zoneTemplate</c> value. Only the enum name matches (case-sensitive); numeric text, an
+        /// unknown name, a known value without an entry, an empty scene name or a null definition return false.
+        /// </summary>
+        /// <param name="templateName">The command-line value.</param>
+        /// <param name="sceneName">The scene to load, or null.</param>
+        /// <param name="definition">The definition, or null.</param>
+        /// <returns>True when the template resolved completely.</returns>
+        public bool TryResolve(string templateName, out string sceneName, out ZoneDefinition definition)
+        {
+            sceneName = null;
+            definition = null;
+            if (string.IsNullOrEmpty(templateName) || _entries == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < _entries.Length; i++)
+            {
+                // GetName returns the cached enum name; an undefined value gives null and never matches.
+                string name = Enum.GetName(typeof(ZoneTemplateID), _entries[i].TemplateId);
+                if (!string.Equals(name, templateName, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (string.IsNullOrEmpty(_entries[i].SceneName) || _entries[i].Definition == null)
+                {
+                    return false;
+                }
+
+                sceneName = _entries[i].SceneName;
+                definition = _entries[i].Definition;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>Test-only initialiser (EditMode tests see internals).</summary>
+        internal void Initialize(Entry[] entries)
+        {
+            _entries = entries;
+        }
+    }
+}
