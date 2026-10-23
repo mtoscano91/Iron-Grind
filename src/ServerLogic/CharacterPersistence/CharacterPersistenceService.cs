@@ -22,7 +22,7 @@ namespace IronGrind.CharacterPersistence
     /// dependencies a method needs (<c>ApplyLoadedRecord</c> without Inventory and Currency, a save method without
     /// the zone locator, write queue and clock) throws <see cref="InvalidOperationException"/> synchronously.</para>
     /// </remarks>
-    public sealed class CharacterPersistenceService : ICharacterPersistence, ICharacterSessionRelease, ICharacterNameLookup
+    public sealed class CharacterPersistenceService : ICharacterPersistence, ICharacterSessionRelease, ICharacterNameLookup, ILoadedRecordApplier
     {
         private readonly ICharacterRecordStore _store;
         private readonly IronGrind.CharacterStats.CharacterStats _stats;

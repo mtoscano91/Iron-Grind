@@ -4599,3 +4599,11 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - User decisions: rejected token -> ZoneFullResponse(Other, 0), connection kept; second handshake while pending -> ignored (one warning); Story 009 calls ApplyLoadedRecord right after TryAllocatePlayer, non-Success -> ReleasePlayer + LoadCharacterFailed; pre-check (zone id, token, Active, cap) before LoadCharacter, re-check at step 4.
 - Defaults written: non-Completed TickTaskStatus -> LoadCharacterFailed; EntityID exhaustion below cap -> Other + error log; connection drop via IClientConnectionListener.RemoveClient (Story 014 fan-out); hand-off IZoneEntryContinuation.OnPlayerAdmitted (Story 010); ZONE_FULL_RETRY_AFTER_SECONDS = 30; deps CP 003/004, NC 030.
 - EPIC row 009 Ready (6 h). Story 008 /story-done and this readiness not committed. Next: commit, then /dev-story Story 009. PAT rotation still unconfirmed.
+
+## Session Extract — /dev-story 2026-10-23 (Zone Instancing Story 009)
+- Story: production/epics/zone-instancing/story-009-entry-admission.md — Player Entry, Part 1 — Admission. Implemented by network-programmer; diff reviewed.
+- Files: src/ServerLogic/ZoneInstancing/ZoneEntryAdmission.cs, ZoneEntryRequest.cs, IZoneEntryTokenValidator.cs, RejectingZoneEntryTokenValidator.cs, IZoneEntryContinuation.cs; src/ServerLogic/CharacterPersistence/ILoadedRecordApplier.cs (seam; CharacterPersistenceService now implements it, no behaviour change); all with .meta.
+- Test written: tests/EditMode/Integration/ZoneInstancing/ZoneInstancing_EntryAdmission_tests.cs (19 tests). EditMode batch: 3912 total, 3842 passed, 0 failed, 70 skipped (Npgsql).
+- Agent decisions (not in story): token type byte[] (16-byte SessionTokenStore tokens, may be null); validator IsValid(in ZoneEntryRequest); RemoveClient flags the entry dropped and removes it from the table, callback removes only its own entry; Track/LoadCharacter sync throw -> entry removed, CTS disposed, rethrow; duplicate warning once per connection (HashSet, cleared on RemoveClient / callback).
+- Note: PendingPurchaseRecord exists in both IronGrind.CharacterPersistence and IronGrind.Networking — ICharacterPersistence fakes importing both need a using alias.
+- Blockers: none. Not committed. Next: commit -> /code-review the six source files + test -> /story-done Story 009. PAT rotation still unconfirmed.
