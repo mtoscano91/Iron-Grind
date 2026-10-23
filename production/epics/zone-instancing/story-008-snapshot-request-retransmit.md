@@ -1,7 +1,7 @@
 # Story 008: ZoneSnapshotRequest Retransmit (CR-ZI-9)
 
 > **Epic**: Zone Instancing
-> **Status**: Ready — written 2026-10-22; readiness 2026-10-23 (NEEDS WORK, 7 gaps -> fixed)
+> **Status**: Complete (2026-10-23) — written 2026-10-22; readiness 2026-10-23 (NEEDS WORK, 7 gaps -> fixed)
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-19
@@ -79,7 +79,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/ZoneInstancing/ZoneInstancing_SnapshotRequest_tests.cs` — must exist and pass.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 43 tests, all passing (EditMode 3893 total, 0 failed, 70 skipped Npgsql; commit `76e7cad`)
 
 ---
 
@@ -87,3 +87,22 @@
 
 - Depends on: Stories 001, 006, 007 (all Complete)
 - Unlocks: Story 014
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-23
+**Criteria**: 10/10 passing, all by automated test (`tests/EditMode/ZoneInstancing/ZoneInstancing_SnapshotRequest_tests.cs`, 43 tests).
+**Deviations** (advisory; user chose "Complete, notes only"):
+1. Log tokens added: `SnapshotRequestMalformed`, `SnapshotRequestIdentityMismatch`; malformed and identity drops aggregated to at most one warning each per `ServePending`; a `Debug.Log` drop-count summary on the next serve after 2+ drops (story text updated at code review).
+2. `ZoneFullResponse` carries the `zoneId` the client sent, not this zone's id.
+3. A request recorded as foreign is not re-checked against the pool at serve time (dropped even if the slot is allocated later in the same tick; the client retries).
+4. Rate-limit state is per player slot keyed by `EntityID`, not per connection — **note for Story 011**: a reconnect that keeps the slot and EntityID inherits the window.
+5. Coalescing keeps the last recorded `zoneId` (right-then-wrong zone in one tick yields only the reply).
+6. The tick difference is modular: a tick regression serves (fails open).
+7. Concrete dependencies (`ZoneSlotPool`, `ZoneLifecycle`, `ZoneSnapshotBuilder`), as in Story 007.
+8. `ZoneDoesNotExist` replies are not rate-limited; bounded to one per client per tick.
+9. `TR-zi-009` is an epic placeholder, not in `tr-registry.yaml`.
+**Story 014**: call `ZoneSnapshotRequestService.Register(dispatcher, service)` in `ZoneServerComposition` before `Seal()`, and list `ServePending(currentTick)` last in step 3 (Simulation).
+**Test Evidence**: Logic — `tests/EditMode/ZoneInstancing/ZoneInstancing_SnapshotRequest_tests.cs`.
+**Code Review**: Complete — lean (unity-specialist + qa-tester), CHANGES REQUIRED -> fix all (`76e7cad`). QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean).

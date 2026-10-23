@@ -4586,3 +4586,16 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Story 008 text updated (Rate-limit logging, Identity, Malformed ACs; implementation notes).
 - Tests 28 -> 43. Batch-mode EditMode: 3893 total, 3823 passed, 0 failed, 70 skipped (Npgsql).
 - Not committed (readiness + implementation + fixes). Next: commit when the user says so, then /story-done Story 008. PAT rotation still unconfirmed.
+
+## Session Extract — /story-done 2026-10-23 (Zone Instancing Story 008)
+- Verdict: COMPLETE WITH NOTES (lean; QL-TEST-COVERAGE and LP-CODE-REVIEW skipped). 10/10 by automated test; EditMode 3893 total, 0 failed, 70 skipped.
+- Story: production/epics/zone-instancing/story-008-snapshot-request-retransmit.md — ZoneSnapshotRequest retransmit. User chose "Complete, notes only" (9 advisories in Completion Notes; Story 014 and 011 hand-offs).
+- Tech debt logged: None.
+- EPIC.md row 008 Complete + Next Step; epics index 001-008 Complete. Not committed.
+- Next recommended: Story 009 — Entry part 1, admission (production/epics/zone-instancing/story-009-entry-admission.md), /story-readiness first. PAT rotation still unconfirmed.
+
+## Session Extract — /story-readiness 2026-10-23 (Zone Instancing Story 009)
+- Verdict: NEEDS WORK (8 gaps) -> fixed -> Ready (6 h). QL-STORY-READY skipped (lean).
+- User decisions: rejected token -> ZoneFullResponse(Other, 0), connection kept; second handshake while pending -> ignored (one warning); Story 009 calls ApplyLoadedRecord right after TryAllocatePlayer, non-Success -> ReleasePlayer + LoadCharacterFailed; pre-check (zone id, token, Active, cap) before LoadCharacter, re-check at step 4.
+- Defaults written: non-Completed TickTaskStatus -> LoadCharacterFailed; EntityID exhaustion below cap -> Other + error log; connection drop via IClientConnectionListener.RemoveClient (Story 014 fan-out); hand-off IZoneEntryContinuation.OnPlayerAdmitted (Story 010); ZONE_FULL_RETRY_AFTER_SECONDS = 30; deps CP 003/004, NC 030.
+- EPIC row 009 Ready (6 h). Story 008 /story-done and this readiness not committed. Next: commit, then /dev-story Story 009. PAT rotation still unconfirmed.
