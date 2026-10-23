@@ -399,3 +399,5 @@ The rule of Decision 5 stands: a network callback enqueues and never calls game 
 - ADR-006: Persistence Layer — `ICharacterPersistence` is the established direct-injection interface pattern this ADR generalises
 - ADR-008: Combat UI Framework — `SkillBarPresenter + Queue<T>` is the established NGO→logic decoupling pattern this ADR formalises in Decision 5
 - ADR-009: Scene/Zone-Load Management — zone startup wiring is the injection point for Tier 1 service dependencies
+
+Note 2026-10-23 (Zone Instancing Story 010 readiness, user decision): Zone Instancing reaches the Party System through a narrow `IPartyZonePresence` (`TryGetFormalParty(CharacterID, out PartyID)`, `NotifyZoneEntry(PartyID, EntityID, ZoneID)`, `NotifyZoneExit(PartyID, EntityID)`) in `src/ServerLogic/ZoneInstancing/`, not on `IPartyService` (whose current shape in `src/ServerLogic/LootTableSystem/` has no zone methods). Same Tier 1 direct call on an injected interface; the Party System implements both. A solo pseudo-party is "not in a party": no `NotifyZoneEntry` / `NotifyZoneExit`. No decision of this ADR changes.

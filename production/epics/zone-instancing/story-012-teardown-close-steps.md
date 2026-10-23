@@ -43,6 +43,7 @@
 
 ## Implementation Notes
 
+- **From Story 010 readiness (2026-10-23):** on every slot release call `ZoneConnectionCharacterDirectory.Remove(clientId)` and `ZoneTickRoster.Deactivate(entityId)` (Story 010), and `IPartyZonePresence.NotifyZoneExit` only when `TryGetFormalParty` is true (solo pseudo-party: no call).
 *Derived from ADR-009 A1 Decision 3 (step 5 ordering note) and ADR-011:*
 
 - Step 5's "after the save" is satisfied by starting `NotifyZoneExit` from the save task's tracked completion on the main thread, or by the write queue's per-character ordering (Character Persistence `CharacterWriteQueue`) — readiness picks one and the test proves it.

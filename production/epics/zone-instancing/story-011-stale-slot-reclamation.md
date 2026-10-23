@@ -30,6 +30,7 @@
 - [ ] **AC-ZI-14**: an "entering" slot that has not completed entry within `ZONE_ENTRY_STALL_TIMEOUT_SECONDS × TICK_RATE_HZ` ticks is freed; the occupied count drops by 1; the player gets the timeout response (open decision 1); no request attributed to that player is processed afterwards (directory entry removed).
 - [ ] A duplicate-`CharacterID` handshake against a slot that has completed entry (`Connected`, or a ghost) is not a stale slot: it follows the session contract (reconnect / duplicate-login rules), not this rule.
 - [ ] Freeing a stale slot raises the occupancy change (Story 001: may start the idle timer).
+- [ ] **"Entering" state (moved from Story 010 at its readiness, 2026-10-23)**: a slot counts as "entering" from allocation (Story 009 step 5) until entry completes (open decision 1; Story 010's step 10 activation, `ZoneTickRoster.IsInTickLoop`, is a candidate end point). T-7 cannot fire while the slot is occupied (the occupied count is already > 0).
 
 ---
 

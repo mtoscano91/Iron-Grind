@@ -4621,3 +4621,10 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: None.
 - EPIC row 009 Complete + Next Step; epics index 001-009 Complete.
 - Next recommended: Story 010 — Entry part 2 (production/epics/zone-instancing/story-010-entry-completion.md), /story-readiness first; decide the second-handshake-on-admitted-connection item there. PAT rotation still unconfirmed.
+
+## Session Extract — /story-readiness 2026-10-23 (Zone Instancing Story 010)
+- Verdict: NEEDS WORK (10 gaps) -> fixed -> Ready (7 h). QL-STORY-READY skipped (lean).
+- User decisions: second handshake on an admitted connection -> ZoneEntryAdmission takes the directory and ignores it (EntryHandshakeAlreadyAdmitted, once per connection); party seam IPartyZonePresence (TryGetFormalParty / NotifyZoneEntry / NotifyZoneExit), solo pseudo-party -> no call, stand-in NoPartyZonePresence; real IConnectionActivitySink deferred to the session epic (ConnectionStateMachine not constructed in the composition); step 10 = ZoneTickRoster pending list -> ActivatePending(tick) in ZoneTickPipeline step 3, IsInTickLoop, Deactivate; "entering" criterion moved to Story 011.
+- Defaults written: PlayerJoinedZone data from IZoneEntityStateSource.TryGetPlayerState (miss -> warning, no message, step 10 still runs); IZoneEntryResponder + LoggingZoneEntryResponder; ZoneConnectionCharacterDirectory (add at admission, Remove by Stories 012/013); continuation never throws; shared call log for the order test; performance note.
+- Propagated: Story 011 (entering criterion), Story 012 / 013 implementation notes (directory Remove, Deactivate, NotifyZoneExit only for formal party), Story 014 (wiring + stand-in list incl. activity sink and IZoneEntityStateSource, ActivatePending in step 3), ADR-010 dated note (IPartyZonePresence), EPIC row 010 Ready + Next Step.
+- Next: /dev-story Story 010. PAT rotation still unconfirmed.

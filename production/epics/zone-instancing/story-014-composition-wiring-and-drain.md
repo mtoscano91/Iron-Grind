@@ -27,8 +27,8 @@
 
 ## Acceptance Criteria
 
-- [ ] The composition constructs Stories 001–013's systems and replaces the stand-ins: `IZoneStateOwner` → the lifecycle (S9 `MarkActive` = T-2, S6 failure = T-3), bounds validator and `AddNavMeshData` (Story 004), close steps (Story 012), connection directory / activity sink (Story 010). Stand-ins remain only for Party, Mob Spawning, navigation, gateway registration, token validation and `SessionReady`, each logging once.
-- [ ] The lifecycle is ticked from `ZoneTickPipeline` (not `RegisterTickDriven`).
+- [ ] The composition constructs Stories 001–013's systems and replaces the stand-ins: `IZoneStateOwner` → the lifecycle (S9 `MarkActive` = T-2, S6 failure = T-3), bounds validator and `AddNavMeshData` (Story 004), close steps (Story 012), connection directory (Story 010 `ZoneConnectionCharacterDirectory`, passed to the dispatcher and to `ZoneEntryAdmission`; `ZoneEntryCompletion` as the admission continuation). Stand-ins remain only for Party (`NoPartyZonePresence`), Mob Spawning, navigation, gateway registration, token validation, `SessionReady` (`LoggingZoneEntryResponder`), the connection activity sink (session epic; readiness of Story 010, 2026-10-23) and `IZoneEntityStateSource` (unless a production implementation exists by then), each logging once.
+- [ ] The lifecycle is ticked from `ZoneTickPipeline` (not `RegisterTickDriven`); `ZoneTickRoster.ActivatePending(currentTick)` (Story 010, step 10) runs at the start of step 3.
 - [ ] **Quit (T-4)**: `OnWantsToQuit` in Active starts T-4 instead of `RequestTeardown(Clean)`; a second quit request while Draining → T-6; a quit while Loading → T-6.
 - [ ] **T-4 broadcast**: `ZoneSessionEnded(ZoneClosed=0, gracePeriodSeconds=ZONE_DRAIN_GRACE_SECONDS)` to every `Connected` client, none to ghosts; the set of told clients is recorded for Story 012 step 4.
 - [ ] **Draining rejection**: a new `SessionHandshake` while Draining gets no slot (`ZoneFullResponse(ZoneDoesNotExist)` via Story 009's step 4).
