@@ -1,7 +1,7 @@
 # Story 010: Player Entry, Part 2 — Snapshot, SessionReady, Party, PlayerJoinedZone (CR-ZI-8 steps 6–10)
 
 > **Epic**: Zone Instancing
-> **Status**: Ready — written 2026-10-22; readiness 2026-10-23 (NEEDS WORK, 10 gaps -> fixed)
+> **Status**: Complete (2026-10-23) — written 2026-10-22; readiness 2026-10-23 (NEEDS WORK, 10 gaps -> fixed)
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-19
@@ -28,14 +28,14 @@
 
 ## Acceptance Criteria
 
-- [ ] **Hand-off**: a `ZoneEntryCompletion` implements Story 009's `IZoneEntryContinuation`; `OnPlayerAdmitted(clientId, slot, entityId)` runs steps 6–9 in that call and schedules step 10. It never throws out of the call (an exception is caught, logged as an error, and the remaining steps are skipped).
-- [ ] **Order** for an admitted player: (6) `ZoneSnapshotBuilder.SendSnapshot(clientId)` (Story 007) → (7) `SessionReady`, then `SkillCooldownSnapshot`, to the joiner → (8) `NotifyZoneEntry(PartyID, EntityID, ZoneID)` if the player is in a formal party → (9) `PlayerJoinedZone` to every other client in the zone (not the joiner) → (10) the entity enters the tick loop on the next tick boundary. A test asserts the order through one shared call log across the outbox fake, the responder fake and the party fake.
-- [ ] **Steps 7 seam (user decision 2026-10-22)**: `SessionReady` and `SkillCooldownSnapshot` go through an injected `IZoneEntryResponder` (`SendSessionReady(clientId)`, `SendSkillCooldownSnapshot(clientId, entityId)`); the codecs are not part of this story (schema pending OQ-NC-SER-2). Its stand-in `LoggingZoneEntryResponder` logs "[ZoneServer] SessionReady not implemented" once per instance.
-- [ ] **Step 8 party seam (user decision 2026-10-23)**: an injected `IPartyZonePresence` with `bool TryGetFormalParty(CharacterID, out PartyID)`, `NotifyZoneEntry(PartyID, EntityID, ZoneID)` and `NotifyZoneExit(PartyID, EntityID)`. A solo pseudo-party counts as "not in a party" (`TryGetFormalParty` → false): no `NotifyZoneEntry` call. The stand-in `NoPartyZonePresence` returns false and logs "[ZoneServer] party zone presence not implemented" once per instance.
-- [ ] **Step 9 data**: `PlayerJoinedZone(entityId, characterName, level, posX, posY, posZ)` is filled from `IZoneEntityStateSource.TryGetPlayerState(entityId)` (the snapshot's read seam). A miss → one warning, no `PlayerJoinedZone`, step 10 still runs. Sent through `IClientMessageOutbox` to every client id of `GetPlayerEntityIDsInZone` except the joiner; queued in the same call as step 5, so before any R-U / U-U message that names the EntityID (channel contract ordering).
-- [ ] **Step 10 (user decision 2026-10-23)**: the EntityID is added to a pending-activation list; `ActivatePending(currentTick)` (called by `ZoneTickPipeline` step 3 — Story 014 wires it) moves every pending EntityID into the active set at the start of the next tick. `IsInTickLoop(EntityID)` is false in the admission tick and true after the next `ActivatePending`. An EntityID whose slot was released before activation is dropped from the pending list (checked with `ZoneSlotPool.TryGetPlayerSlot`). `Deactivate(EntityID)` removes it (Story 013 calls it on exit).
-- [ ] **Connection directory**: `ZoneConnectionCharacterDirectory` implements `IConnectionCharacterDirectory`. `OnPlayerAdmitted` adds (clientId → `CharacterID` of the slot) before step 6; `TryGetCharacterId` then returns it, and the dispatcher no longer drops that connection's requests as `NoCharacter`. `Remove(clientId)` deletes the entry (Story 012 teardown and Story 013 exit call it; this story tests it directly).
-- [ ] **Second handshake on an admitted connection (user decision 2026-10-23)**: `ZoneEntryAdmission` (Story 009 file) takes the directory through its constructor; `BeginEntry` from a connection the directory already maps is ignored with one warning per connection (`EntryHandshakeAlreadyAdmitted`), checked first, together with the pending-duplicate check: no reply, no load. The warning flag is cleared by `RemoveClient`.
+- [x] **Hand-off**: a `ZoneEntryCompletion` implements Story 009's `IZoneEntryContinuation`; `OnPlayerAdmitted(clientId, slot, entityId)` runs steps 6–9 in that call and schedules step 10. It never throws out of the call (an exception is caught, logged as an error, and the remaining steps are skipped).
+- [x] **Order** for an admitted player: (6) `ZoneSnapshotBuilder.SendSnapshot(clientId)` (Story 007) → (7) `SessionReady`, then `SkillCooldownSnapshot`, to the joiner → (8) `NotifyZoneEntry(PartyID, EntityID, ZoneID)` if the player is in a formal party → (9) `PlayerJoinedZone` to every other client in the zone (not the joiner) → (10) the entity enters the tick loop on the next tick boundary. A test asserts the order through one shared call log across the outbox fake, the responder fake and the party fake.
+- [x] **Steps 7 seam (user decision 2026-10-22)**: `SessionReady` and `SkillCooldownSnapshot` go through an injected `IZoneEntryResponder` (`SendSessionReady(clientId)`, `SendSkillCooldownSnapshot(clientId, entityId)`); the codecs are not part of this story (schema pending OQ-NC-SER-2). Its stand-in `LoggingZoneEntryResponder` logs "[ZoneServer] SessionReady not implemented" once per instance.
+- [x] **Step 8 party seam (user decision 2026-10-23)**: an injected `IPartyZonePresence` with `bool TryGetFormalParty(CharacterID, out PartyID)`, `NotifyZoneEntry(PartyID, EntityID, ZoneID)` and `NotifyZoneExit(PartyID, EntityID)`. A solo pseudo-party counts as "not in a party" (`TryGetFormalParty` → false): no `NotifyZoneEntry` call. The stand-in `NoPartyZonePresence` returns false and logs "[ZoneServer] party zone presence not implemented" once per instance.
+- [x] **Step 9 data**: `PlayerJoinedZone(entityId, characterName, level, posX, posY, posZ)` is filled from `IZoneEntityStateSource.TryGetPlayerState(entityId)` (the snapshot's read seam). A miss → one warning, no `PlayerJoinedZone`, step 10 still runs. Sent through `IClientMessageOutbox` to every client id of `GetPlayerEntityIDsInZone` except the joiner; queued in the same call as step 5, so before any R-U / U-U message that names the EntityID (channel contract ordering).
+- [x] **Step 10 (user decision 2026-10-23)**: the EntityID is added to a pending-activation list; `ActivatePending(currentTick)` (called by `ZoneTickPipeline` step 3 — Story 014 wires it) moves every pending EntityID into the active set at the start of the next tick. `IsInTickLoop(EntityID)` is false in the admission tick and true after the next `ActivatePending`. An EntityID whose slot was released before activation is dropped from the pending list (checked with `ZoneSlotPool.TryGetPlayerSlot`). `Deactivate(EntityID)` removes it (Story 013 calls it on exit).
+- [x] **Connection directory**: `ZoneConnectionCharacterDirectory` implements `IConnectionCharacterDirectory`. `OnPlayerAdmitted` adds (clientId → `CharacterID` of the slot) before step 6; `TryGetCharacterId` then returns it, and the dispatcher no longer drops that connection's requests as `NoCharacter`. `Remove(clientId)` deletes the entry (Story 012 teardown and Story 013 exit call it; this story tests it directly).
+- [x] **Second handshake on an admitted connection (user decision 2026-10-23)**: `ZoneEntryAdmission` (Story 009 file) takes the directory through its constructor; `BeginEntry` from a connection the directory already maps is ignored with one warning per connection (`EntryHandshakeAlreadyAdmitted`), checked first, together with the pending-duplicate check: no reply, no load. The warning flag is cleared by `RemoveClient`.
 
 ---
 
@@ -80,7 +80,7 @@
 **Story Type**: Integration
 **Required evidence**: `tests/EditMode/Integration/ZoneInstancing/ZoneInstancing_EntryCompletion_tests.cs` — must exist and pass.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing (EntryCompletion 22 tests; EntryAdmission +2)
 
 ---
 
@@ -88,3 +88,19 @@
 
 - Depends on: Stories 007, 009 (Complete); Networking Core Story 044 (`IConnectionCharacterDirectory` seam and dispatcher, Complete)
 - Unlocks: Stories 011, 013, 014
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-23
+**Criteria**: 8/8 passing, all by automated test (`tests/EditMode/Integration/ZoneInstancing/ZoneInstancing_EntryCompletion_tests.cs`, 22 tests; second handshake in `ZoneInstancing_EntryAdmission_tests.cs`, +2). EditMode 3956 total, 3886 passed, 0 failed, 70 skipped (Database).
+**Deviations** (advisory):
+1. Choices the story left open: `ZoneEntryCompletion(zone, pool, directory, snapshot, responder, party, state, outbox, roster)`, taking the concrete `ZoneConnectionCharacterDirectory` (needs `Add`); `ZoneEntryAdmission` takes `IConnectionCharacterDirectory` after `continuation`.
+2. `ZoneTickRoster(pool, IServerTickSource)` records the admission tick; `ActivatePending(currentTick)` activates only entries from an earlier tick, because admission completes in pipeline step 1 and activation runs in step 3 of the same tick (code review 2026-10-23). Story 014 line updated.
+3. An exception after the directory `Add` leaves the directory entry and the slot; re-handshakes from that connection are ignored until Story 013's exit path removes them (pinned by tests).
+4. A state-source miss warns even when the joiner is alone in the zone.
+5. `ZoneEntryCompletion` depends on the concrete `ZoneSnapshotBuilder` (codebase pattern, like `ZoneSlotPool`).
+6. `TR-zi-007` is an epic placeholder, not in `tr-registry.yaml`; checked against the GDD references in the story. `TR-zi-014` entry half done here; the exit half is Story 013.
+**Story 013**: call `ZoneConnectionCharacterDirectory.Remove`, `ZoneTickRoster.Deactivate`, `NotifyZoneExit` (formal party only), and make sure every disconnect reaches `ZoneEntryAdmission.RemoveClient`. **Story 014**: wire the directory into the dispatcher and `ZoneEntryAdmission`, `ActivatePending` at the start of step 3, the roster with the pipeline's `IServerTickSource`, stand-ins `LoggingZoneEntryResponder` / `NoPartyZonePresence` / an `IZoneEntityStateSource`.
+**Test Evidence**: Integration — `tests/EditMode/Integration/ZoneInstancing/ZoneInstancing_EntryCompletion_tests.cs`.
+**Code Review**: Complete — lean (unity-specialist + qa-tester), CHANGES REQUIRED -> fix all. QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean).

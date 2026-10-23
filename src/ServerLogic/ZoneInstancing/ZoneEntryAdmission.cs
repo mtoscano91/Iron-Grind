@@ -17,7 +17,8 @@ namespace IronGrind.ServerLogic.ZoneInstancing
     /// <remarks>
     /// <para>
     /// <see cref="BeginEntry"/> runs on the tick thread with an already-decoded <see cref="ZoneEntryRequest"/>. Order
-    /// of checks: (1) a load already pending for the connection is ignored with one warning
+    /// of checks: (0) a connection the directory already maps is ignored with one warning
+    /// (<c>EntryHandshakeAlreadyAdmitted</c>); (1) a load already pending for the connection is ignored with one warning
     /// (<c>EntryHandshakeDuplicate</c>); (2) wrong zone -> <c>ZoneDoesNotExist</c>; (3) token rejected -> <c>Other</c>,
     /// connection kept open; (4) pre-check: zone not Active -> <c>ZoneDoesNotExist</c>, at cap -> <c>ZoneFull</c> with
     /// <see cref="ZONE_FULL_RETRY_AFTER_SECONDS"/>; (5) <c>LoadCharacter</c> is started and passed to
@@ -64,6 +65,8 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         private readonly IZoneEntryTokenValidator _validator;
         private readonly IClientMessageOutbox _outbox;
         private readonly IZoneEntryContinuation _continuation;
+        private readonly IConnectionCharacterDirectory _directory;
+        private readonly HashSet<uint> _admittedWarned = new HashSet<uint>();
         private readonly byte _retryAfterSeconds;
         private readonly Dictionary<uint, PendingEntry> _pending = new Dictionary<uint, PendingEntry>();
         private readonly HashSet<uint> _duplicateWarned = new HashSet<uint>();
@@ -79,12 +82,13 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         /// <param name="validator">Checks the session token.</param>
         /// <param name="outbox">Receives the <see cref="ZoneFullResponse"/> replies.</param>
         /// <param name="continuation">Receives an admitted player.</param>
+        /// <param name="directory">Tells which connections already play a character (Story 010); a handshake from one is ignored.</param>
         /// <param name="retryAfterSeconds">Retry hint of <c>ZoneFull</c>.</param>
         /// <exception cref="ArgumentNullException">A reference argument is null.</exception>
         /// <exception cref="ArgumentException"><paramref name="zone"/> is invalid.</exception>
         public ZoneEntryAdmission(ZoneID zone, ZoneSlotPool pool, ZoneLifecycle lifecycle, ICharacterPersistence persistence,
             ILoadedRecordApplier applier, ITickCompletionQueue queue, IZoneEntryTokenValidator validator,
-            IClientMessageOutbox outbox, IZoneEntryContinuation continuation,
+            IClientMessageOutbox outbox, IZoneEntryContinuation continuation, IConnectionCharacterDirectory directory,
             byte retryAfterSeconds = ZONE_FULL_RETRY_AFTER_SECONDS)
         {
             if (zone == ZoneID.Invalid)
@@ -101,6 +105,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             _validator = validator ?? throw new ArgumentNullException(nameof(validator));
             _outbox = outbox ?? throw new ArgumentNullException(nameof(outbox));
             _continuation = continuation ?? throw new ArgumentNullException(nameof(continuation));
+            _directory = directory ?? throw new ArgumentNullException(nameof(directory));
             _retryAfterSeconds = retryAfterSeconds;
         }
 
@@ -117,6 +122,16 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         public void BeginEntry(in ZoneEntryRequest request)
         {
             uint clientId = request.ClientId;
+            if (_directory.TryGetCharacterId(clientId, out _))
+            {
+                if (_admittedWarned.Add(clientId))
+                {
+                    Debug.LogWarning($"{LOG_PREFIX} EntryHandshakeAlreadyAdmitted: client {clientId} already plays a character; handshake ignored.");
+                }
+
+                return;
+            }
+
             if (_pending.ContainsKey(clientId))
             {
                 if (_duplicateWarned.Add(clientId))
@@ -188,6 +203,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         public void RemoveClient(uint clientId)
         {
             _duplicateWarned.Remove(clientId);
+            _admittedWarned.Remove(clientId);
             if (_pending.TryGetValue(clientId, out PendingEntry entry))
             {
                 entry.Dropped = true;

@@ -4628,3 +4628,26 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Defaults written: PlayerJoinedZone data from IZoneEntityStateSource.TryGetPlayerState (miss -> warning, no message, step 10 still runs); IZoneEntryResponder + LoggingZoneEntryResponder; ZoneConnectionCharacterDirectory (add at admission, Remove by Stories 012/013); continuation never throws; shared call log for the order test; performance note.
 - Propagated: Story 011 (entering criterion), Story 012 / 013 implementation notes (directory Remove, Deactivate, NotifyZoneExit only for formal party), Story 014 (wiring + stand-in list incl. activity sink and IZoneEntityStateSource, ActivatePending in step 3), ADR-010 dated note (IPartyZonePresence), EPIC row 010 Ready + Next Step.
 - Next: /dev-story Story 010. PAT rotation still unconfirmed.
+
+## Session Extract — /dev-story 2026-10-23 (Zone Instancing Story 010)
+- Story: production/epics/zone-instancing/story-010-entry-completion.md — Player Entry, Part 2 (CR-ZI-8 steps 6-10)
+- Files changed: new src/ServerLogic/ZoneInstancing/ZoneEntryCompletion.cs, IZoneEntryResponder.cs, LoggingZoneEntryResponder.cs, IPartyZonePresence.cs, NoPartyZonePresence.cs, ZoneConnectionCharacterDirectory.cs, ZoneTickRoster.cs; modified ZoneEntryAdmission.cs (IConnectionCharacterDirectory ctor param after continuation, EntryHandshakeAlreadyAdmitted guard checked first, flag cleared in RemoveClient) and ZoneInstancing_EntryAdmission_tests.cs (+2 second-handshake tests, directory in all constructions).
+- Test written: tests/EditMode/Integration/ZoneInstancing/ZoneInstancing_EntryCompletion_tests.cs (17 tests). EditMode batch run: 3951 total, 3881 passed, 0 failed, 70 skipped (Database category, unchanged); +19 vs Story 009.
+- Choices for Story 014 to match: ZoneEntryCompletion ctor (zone, pool, ZoneConnectionCharacterDirectory concrete, snapshot, responder, party, state, outbox, roster); ZoneTickRoster.ActivatePending(uint tick) ignores the tick; AddPending ignores duplicates; Deactivate also clears pending; state-source miss warns even when the joiner is alone.
+- Blockers: None.
+- Next: /code-review on the 9 files, then /story-done Story 010. PAT rotation still unconfirmed.
+
+## Session Extract — /code-review 2026-10-23 (Zone Instancing Story 010)
+- Verdict: CHANGES REQUIRED -> "fix all" applied. Specialists: unity-specialist (no blocking; 2 warnings, 3 info), qa-tester (GAPS, none blocking). ADR-010/012/014 compliant.
+- Fixed: ZoneTickRoster now takes IServerTickSource, records the admission tick in AddPending, ActivatePending(currentTick) activates only entries from an earlier tick (admission completes in pipeline step 1, ActivatePending runs in step 3 of the same tick — would have activated in the admission tick); unused using IronGrind.Currency removed from ZoneEntryCompletion; tests +5 (admission-tick ActivatePending, AddPending duplicates, directory Add replace, party-notify throw, outbox throw in step 9) and stronger asserts (directory entry kept after exception, miss still runs steps 7-8, unknown entity leaves roster empty); unused local removed.
+- Rejected: unity-specialist's "always run step 10 after a step 8/9 exception" — contradicts the AC (remaining steps skipped).
+- Propagated: Story 014 line 31 (roster built with the pipeline's IServerTickSource).
+- EditMode: 3956 total, 3886 passed, 0 failed, 70 skipped (Database). EntryCompletion 22 tests.
+- Next: /story-done Story 010. Not committed. PAT rotation still unconfirmed.
+
+## Session Extract — /story-done 2026-10-23 (Zone Instancing Story 010)
+- Verdict: COMPLETE WITH NOTES (lean; QL-TEST-COVERAGE and LP-CODE-REVIEW skipped). 8/8 by automated test (EntryCompletion 22 tests + 2 admission tests; EditMode 3956 total, 3886 passed, 0 failed, 70 skipped).
+- Deviations (advisory, in Completion Notes): ctor order choices; ZoneTickRoster takes IServerTickSource; exception after directory Add leaves entry + slot until Story 013; miss warns when alone; concrete ZoneSnapshotBuilder; TR-zi-007 placeholder, TR-zi-014 exit half in Story 013.
+- Tech debt logged: None.
+- EPIC row 010 Complete + Next Step; epics index 001-010 Complete. Committed with the user's "commit".
+- Next recommended: Story 011 — Stale slot reclamation and entry stall (production/epics/zone-instancing/story-011-stale-slot-reclamation.md), /story-readiness first (open decision 1). PAT rotation still unconfirmed.

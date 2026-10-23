@@ -207,6 +207,7 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
         private FakeApplier _applier;
         private FakeValidator _validator;
         private FakeContinuation _continuation;
+        private ZoneConnectionCharacterDirectory _directory;
         private FakeOutbox _outbox;
         private ZoneSlotPool _pool;
         private ZoneLifecycle _lifecycle;
@@ -224,6 +225,7 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             _applier = new FakeApplier();
             _validator = new FakeValidator();
             _continuation = new FakeContinuation();
+            _directory = new ZoneConnectionCharacterDirectory();
             _outbox = new FakeOutbox();
             _pool = new ZoneSlotPool(Zone, new FakeTicks(), new FakePoolListener());
             _lifecycle = new ZoneLifecycle(Zone, new FakeLifecycleListener(), 0u);
@@ -237,7 +239,7 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
         // ----- helpers --------------------------------------------------------------------------
 
         private ZoneEntryAdmission Build(ZoneSlotPool pool, byte retryAfterSeconds = ZoneEntryAdmission.ZONE_FULL_RETRY_AFTER_SECONDS) =>
-            new ZoneEntryAdmission(Zone, pool, _lifecycle, _persistence, _applier, _queue, _validator, _outbox, _continuation, retryAfterSeconds);
+            new ZoneEntryAdmission(Zone, pool, _lifecycle, _persistence, _applier, _queue, _validator, _outbox, _continuation, _directory, retryAfterSeconds);
 
         private ZoneEntryRequest Request(uint clientId, uint zoneRaw = ZONE_RAW)
         {
@@ -300,7 +302,7 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
         public void test_rejecting_validator_replies_other_zero_starts_no_load_and_logs_once_per_instance()
         {
             var rejecting = new RejectingZoneEntryTokenValidator();
-            var svc = new ZoneEntryAdmission(Zone, _pool, _lifecycle, _persistence, _applier, _queue, rejecting, _outbox, _continuation);
+            var svc = new ZoneEntryAdmission(Zone, _pool, _lifecycle, _persistence, _applier, _queue, rejecting, _outbox, _continuation, _directory);
             LogAssert.Expect(LogType.Warning, RejectingZoneEntryTokenValidator.NOT_IMPLEMENTED_MESSAGE);
             var first = Request(CLIENT_A);
             var second = Request(CLIENT_B);
@@ -971,11 +973,65 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
         public void test_constructor_rejects_invalid_zone_and_null_arguments()
         {
             Assert.Throws<ArgumentException>(() => new ZoneEntryAdmission(ZoneID.Invalid, _pool, _lifecycle, _persistence,
-                _applier, _queue, _validator, _outbox, _continuation));
+                _applier, _queue, _validator, _outbox, _continuation, _directory));
             Assert.Throws<ArgumentNullException>(() => new ZoneEntryAdmission(Zone, null, _lifecycle, _persistence,
-                _applier, _queue, _validator, _outbox, _continuation));
+                _applier, _queue, _validator, _outbox, _continuation, _directory));
             Assert.Throws<ArgumentNullException>(() => new ZoneEntryAdmission(Zone, _pool, _lifecycle, _persistence,
-                _applier, _queue, _validator, _outbox, null));
+                _applier, _queue, _validator, _outbox, null, _directory));
+            Assert.Throws<ArgumentNullException>(() => new ZoneEntryAdmission(Zone, _pool, _lifecycle, _persistence,
+                _applier, _queue, _validator, _outbox, _continuation, null));
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        // ----- second handshake on an admitted connection (Story 010) ---------------------------
+
+        [Test]
+        public void test_second_handshake_on_admitted_connection_is_ignored_with_one_warning_no_reply_no_load()
+        {
+            var first = Request(CLIENT_A);
+            _svc.BeginEntry(in first);
+            _persistence.Loads[0].SetResult(Loaded());
+            Drain();
+            _directory.Add(CLIENT_A, first.Character);
+            LogAssert.Expect(LogType.Warning, Rx("EntryHandshakeAlreadyAdmitted"));
+            var second = Request(CLIENT_A);
+            var third = Request(CLIENT_A);
+
+            _svc.BeginEntry(in second);
+            _svc.BeginEntry(in third);
+
+            Assert.AreEqual(1, _persistence.Loads.Count, "no further load");
+            Assert.IsEmpty(_outbox.Sent, "no reply");
+            Assert.AreEqual(0, _svc.PendingCount);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_handshake_after_remove_client_and_directory_remove_is_a_fresh_entry_and_rewarns_on_next_admit()
+        {
+            var first = Request(CLIENT_A);
+            _svc.BeginEntry(in first);
+            _persistence.Loads[0].SetResult(Loaded());
+            Drain();
+            _directory.Add(CLIENT_A, first.Character);
+            LogAssert.Expect(LogType.Warning, Rx("EntryHandshakeAlreadyAdmitted"));
+            var ignored = Request(CLIENT_A);
+            _svc.BeginEntry(in ignored);
+            _svc.RemoveClient(CLIENT_A);
+            _directory.Remove(CLIENT_A);
+            var fresh = Request(CLIENT_A);
+
+            _svc.BeginEntry(in fresh);
+
+            Assert.AreEqual(2, _persistence.Loads.Count, "a fresh entry starts a load");
+            Assert.AreEqual(1, _svc.PendingCount);
+            _directory.Add(CLIENT_A, fresh.Character);
+            LogAssert.Expect(LogType.Warning, Rx("EntryHandshakeAlreadyAdmitted"));
+            _svc.RemoveClient(CLIENT_A);
+            _directory.Add(CLIENT_A, fresh.Character);
+            var again = Request(CLIENT_A);
+            _svc.BeginEntry(in again);
+            Assert.AreEqual(2, _persistence.Loads.Count);
             LogAssert.NoUnexpectedReceived();
         }
     }
