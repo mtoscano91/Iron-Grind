@@ -30,6 +30,9 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
         private const int PAYLOAD_MAX = ZoneStateSnapshotFragment.MaxPayloadBytes;
         private const int AVERAGE_NAME_BYTES = 11;
         private const int WORST_NAME_BYTES = EntityState.MaxNameBytes;
+        private const int AVERAGE_PLAYER_BODY = EntityState.PlayerMinBodySize + AVERAGE_NAME_BYTES;
+        private const int MOB_BODY = EntityState.MobBodySize;
+        private const int AVERAGE_STREAM_BYTES = 50 * AVERAGE_PLAYER_BODY + 150 * MOB_BODY;
         private static readonly Regex SKIPPED_LOG = new Regex("SnapshotEntitySkipped");
 
         private sealed class FakeTicks : IServerTickSource
@@ -64,6 +67,7 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
         private NetworkTestObserver _observer;
         private ZoneSnapshotBuilder _builder;
         private uint _nextCharacter;
+        private int _lastSent;
 
         private static ZoneID Zone => new ZoneID(ZONE_RAW);
 
@@ -85,10 +89,11 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
 
         // ----- helpers --------------------------------------------------------------------------
 
-        private EntityID AddPlayer(string name, ZoneSessionState state = ZoneSessionState.Connected, uint respawnTick = 0u)
+        private EntityID AddPlayer(string name, ZoneSessionState state = ZoneSessionState.Connected, uint respawnTick = 0u,
+            uint? clientId = null)
         {
             uint n = _nextCharacter++;
-            Assert.IsTrue(_pool.TryAllocatePlayer(Zone, new CharacterID(n), new AccountID(n + 5000u), n + 9000u,
+            Assert.IsTrue(_pool.TryAllocatePlayer(Zone, new CharacterID(n), new AccountID(n + 5000u), clientId ?? n + 9000u,
                 out _, out EntityID id));
             _pool.SetSessionState(id, state);
             _source.Players[id] = new ZonePlayerStateView(1, 2, 3, 4, 5, 6, 7, 8, 90, 100, 40, 50, 12, true, 2500, 3, name, respawnTick);
@@ -120,7 +125,7 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
         // Flushes the outbox and decodes every sent fragment (header + payload copy), in send order.
         private List<(ZoneStateSnapshotFragment Header, byte[] Payload)> SendAndCollect()
         {
-            _builder.SendSnapshot(CLIENT);
+            _lastSent = _builder.SendSnapshot(CLIENT);
             _outbox.Flush(_ticks.Tick);
 
             var result = new List<(ZoneStateSnapshotFragment, byte[])>();
@@ -174,7 +179,8 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
 
             Assert.AreEqual(17, _observer.GetOutboundMessageCount(CLIENT, ZoneStateSnapshotFragment.MessageTypeId));
             Assert.AreEqual(17, fragments.Count);
-            Assert.AreEqual(50 * 64 + 150 * 35, Concat(fragments).Length);
+            Assert.AreEqual(17, _lastSent);
+            Assert.AreEqual(AVERAGE_STREAM_BYTES, Concat(fragments).Length);
             LogAssert.NoUnexpectedReceived();
         }
 
@@ -187,7 +193,8 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
 
             Assert.AreEqual(19, _observer.GetOutboundMessageCount(CLIENT, ZoneStateSnapshotFragment.MessageTypeId));
             Assert.AreEqual(19, fragments.Count);
-            Assert.AreEqual(50 * 77 + 150 * 35, Concat(fragments).Length);
+            Assert.AreEqual(19, _lastSent);
+            Assert.AreEqual(50 * EntityState.PlayerMaxBodySize + 150 * MOB_BODY, Concat(fragments).Length);
             LogAssert.NoUnexpectedReceived();
         }
 
@@ -333,7 +340,7 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
                 Assert.AreEqual(PAYLOAD_MAX, fragments[i].Payload.Length, "fragment " + i);
             }
 
-            Assert.AreEqual(8450 - 16 * PAYLOAD_MAX, fragments[fragments.Count - 1].Payload.Length);
+            Assert.AreEqual(AVERAGE_STREAM_BYTES - 16 * PAYLOAD_MAX, fragments[fragments.Count - 1].Payload.Length);
 
             List<EntityState> entries = Walk(Concat(fragments));
             var expected = new List<EntityID>(_pool.GetPlayerEntityIDsInZone(Zone));
@@ -362,7 +369,7 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
 
             // 48 players x 64 + 149 mobs x 35 = 8287 bytes -> ceil(8287 / 504) = 17.
             byte[] stream = Concat(fragments);
-            Assert.AreEqual(48 * 64 + 149 * 35, stream.Length);
+            Assert.AreEqual(48 * AVERAGE_PLAYER_BODY + 149 * MOB_BODY, stream.Length);
             Assert.AreEqual(17, fragments.Count);
             List<EntityState> entries = Walk(stream);
             Assert.AreEqual(197, entries.Count);
@@ -401,6 +408,120 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
             Assert.Throws<ArgumentNullException>(() => new ZoneSnapshotBuilder(Zone, _pool, _roster, _source, null, _outbox));
             Assert.Throws<ArgumentNullException>(() => new ZoneSnapshotBuilder(Zone, _pool, _roster, _source, _ticks, null));
             Assert.Throws<ArgumentException>(() => new ZoneSnapshotBuilder(ZoneID.Invalid, _pool, _roster, _source, _ticks, _outbox));
+        }
+
+        // ----- review additions -----------------------------------------------------------------
+
+        [Test]
+        public void test_snapshot_mob_entry_carries_all_mob_fields()
+        {
+            EntityID id = AddMob(321u);
+
+            EntityState entry = SnapshotEntries()[0];
+
+            Assert.AreEqual(EntityState.CreateMob(id, -1, -2, -3, 4, 5, 6, 7, 30, 60, false, 0, 8, 321), entry);
+        }
+
+        [Test]
+        public void test_snapshot_includes_the_joining_clients_own_slot()
+        {
+            AddPlayer("other");
+            EntityID own = AddPlayer("self", clientId: CLIENT);
+
+            List<EntityState> entries = SnapshotEntries();
+
+            Assert.AreEqual(2, entries.Count);
+            Assert.IsTrue(entries.Exists(e => e.EntityId == own));
+        }
+
+        [Test]
+        public void test_snapshot_stream_of_exactly_504_bytes_sends_one_full_fragment()
+        {
+            // 8 players x (53 + 10) = 504 bytes: exactly one payload, no trailing empty fragment.
+            Populate(8, 0, PAYLOAD_MAX / 8 - EntityState.PlayerMinBodySize);
+
+            List<(ZoneStateSnapshotFragment Header, byte[] Payload)> fragments = SendAndCollect();
+
+            Assert.AreEqual(1, _lastSent);
+            Assert.AreEqual(1, fragments.Count);
+            Assert.AreEqual(1, fragments[0].Header.TotalFragments);
+            Assert.AreEqual(PAYLOAD_MAX, fragments[0].Payload.Length);
+        }
+
+        [Test]
+        public void test_snapshot_stream_of_505_bytes_sends_a_one_byte_last_fragment()
+        {
+            // 7 players x 63 + 1 player x 64 = 505 bytes.
+            int nameBytes = PAYLOAD_MAX / 8 - EntityState.PlayerMinBodySize;
+            Populate(7, 0, nameBytes);
+            AddPlayer(new string('n', nameBytes + 1));
+
+            List<(ZoneStateSnapshotFragment Header, byte[] Payload)> fragments = SendAndCollect();
+
+            Assert.AreEqual(2, _lastSent);
+            Assert.AreEqual(2, fragments.Count);
+            Assert.AreEqual(PAYLOAD_MAX, fragments[0].Payload.Length);
+            Assert.AreEqual(1, fragments[1].Payload.Length);
+            Assert.AreEqual(8, Walk(Concat(fragments)).Count);
+        }
+
+        [Test]
+        public void test_snapshot_dead_player_at_its_respawn_tick_has_zero_remaining()
+        {
+            AddPlayer("dead", ZoneSessionState.Dead, 100u);
+
+            EntityState entry = SnapshotEntries()[0];
+
+            Assert.IsTrue(entry.IsInDeadState);
+            Assert.AreEqual(0u, entry.RespawnTicksRemaining);
+        }
+
+        [Test]
+        public void test_snapshot_player_and_mob_seam_misses_in_one_call_log_one_warning()
+        {
+            EntityID player = AddPlayer("x");
+            EntityID mob = AddMob();
+            AddMob();
+            _source.Players.Remove(player);
+            _source.Mobs.Remove(mob);
+            LogAssert.Expect(LogType.Warning, SKIPPED_LOG);
+
+            List<EntityState> entries = SnapshotEntries();
+
+            Assert.AreEqual(1, entries.Count);
+            Assert.AreEqual(EntityType.Mob, entries[0].Type);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_snapshot_mob_only_seam_miss_is_skipped_with_one_warning()
+        {
+            AddPlayer("x");
+            EntityID mob = AddMob();
+            _source.Mobs.Remove(mob);
+            LogAssert.Expect(LogType.Warning, SKIPPED_LOG);
+
+            List<EntityState> entries = SnapshotEntries();
+
+            Assert.AreEqual(1, entries.Count);
+            Assert.AreEqual(EntityType.Player, entries[0].Type);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_snapshot_mob_type_id_65535_is_sent_and_65536_is_skipped_with_a_warning()
+        {
+            EntityID fits = AddMob(ushort.MaxValue);
+            EntityID tooLarge = AddMob(ushort.MaxValue + 1u);
+            LogAssert.Expect(LogType.Warning, new Regex("SnapshotEntitySkipped.*16-bit"));
+
+            List<EntityState> entries = SnapshotEntries();
+
+            Assert.AreEqual(1, entries.Count);
+            Assert.AreEqual(fits, entries[0].EntityId);
+            Assert.AreEqual(ushort.MaxValue, entries[0].MobTypeId);
+            Assert.AreNotEqual(tooLarge, entries[0].EntityId);
+            LogAssert.NoUnexpectedReceived();
         }
 
         // ----- allocation -----------------------------------------------------------------------

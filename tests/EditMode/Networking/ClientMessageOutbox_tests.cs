@@ -730,8 +730,10 @@ namespace IronGrind.Tests.EditMode.Networking
             LogAssert.Expect(LogType.Error, Log("MessageTypeRejected", ClientA));
 
             _outbox.Enqueue(ClientA, 0xDFFF, Tag(1), false);
+            _outbox.Flush(1u);
 
             Assert.AreEqual(0, observer.GetOutboundMessageCount(ClientA, 0xDFFF));
+            Assert.AreEqual(0, _sink.Sends.Count);
             LogAssert.NoUnexpectedReceived();
         }
 

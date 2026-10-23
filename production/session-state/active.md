@@ -4550,3 +4550,9 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Batch-mode EditMode: 3842 total, 3772 passed, 0 failed, 70 skipped (Npgsql).
 - Review note to raise: builder narrows MobTypeID.RawValue (uint) to ushort without a check.
 - Next: /code-review Story 007, then /story-done. PAT rotation still unconfirmed.
+
+## Session Extract — /code-review 2026-10-23 (Zone Instancing Story 007 — APPROVED WITH SUGGESTIONS -> "fix all" applied, not committed)
+- Lean review (unity-specialist + qa-tester): no required changes; ADR-004 / ADR-012 compliant. Story 007 itself committed as 438c036 (not pushed).
+- Fixes: ZoneSnapshotBuilder skips a mob whose MobTypeID is above ushort.MaxValue (one-per-call warning); SendSnapshot split into AppendPlayers / AppendMobs / SendFragments; docs on refused fragments (outbox logs + disconnects on full queue; return = totalFragments attempted) and the allocation caveat. Tests: +8 snapshot tests (mob full entry, own slot, 504 / 505-byte boundaries, respawn tick == tick, combined and mob-only seam miss, type id 65535 / 65536), return value asserted, sizes computed from EntityState constants; outbox 0xDFFF test asserts nothing sent.
+- Batch-mode EditMode: 3850 total, 3780 passed, 0 failed, 70 skipped (Npgsql).
+- Next: commit the fixes when the user says so, then /story-done Story 007. PAT rotation still unconfirmed.

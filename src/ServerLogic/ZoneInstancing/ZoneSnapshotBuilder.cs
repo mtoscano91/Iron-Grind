@@ -23,14 +23,18 @@ namespace IronGrind.ServerLogic.ZoneInstancing
     /// </para>
     /// <para>
     /// <b>Data.</b> Fields the zone does not own come from <see cref="IZoneEntityStateSource"/>; an entity the seam
-    /// has no data for is skipped and one warning per call is logged. A player is dead (<c>isInDeadState</c>) in
+    /// has no data for is skipped and one warning per call is logged. A mob whose type id does not fit the 16-bit
+    /// wire field (above <see cref="ushort.MaxValue"/>) is skipped the same way. A player is dead (<c>isInDeadState</c>) in
     /// <see cref="ZoneSessionState.Dead"/> or <see cref="ZoneSessionState.Respawning"/>, with
     /// <c>respawnTicksRemaining = max(0, RespawnTick - tick)</c>; a ghost is
     /// <see cref="ZoneSessionState.Disconnected_SessionActive"/>.
     /// </para>
     /// <para>
-    /// Main thread only. Buffers are allocated once in the constructor; a call allocates nothing unless it warns.
-    /// Fragments are enqueued with <c>isCapExempt: true</c> (bulk transfer, ADR-004).
+    /// Main thread only. Buffers are allocated once in the constructor; a call allocates nothing unless it warns,
+    /// provided the <see cref="IZoneEntityStateSource"/> implementation does not allocate either.
+    /// Fragments are enqueued with <c>isCapExempt: true</c> (bulk transfer, ADR-004). The outbox may refuse one
+    /// (full queue, unknown client); it logs that itself and, on a full queue, requests the client's disconnect, so
+    /// the client never completes this snapshot. The builder does not see refusals and does not retry.
     /// </para>
     /// </remarks>
     public sealed class ZoneSnapshotBuilder
@@ -103,20 +107,29 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         /// <paramref name="clientId"/>. The joining client's own slot is included.
         /// </summary>
         /// <param name="clientId">The connection that receives the snapshot.</param>
-        /// <returns>The number of fragments enqueued (at least 1).</returns>
+        /// <returns>
+        /// The number of fragments handed to the outbox (at least 1), which is <c>totalFragments</c>. A fragment the
+        /// outbox refuses is still counted (see the class remarks).
+        /// </returns>
         public int SendSnapshot(uint clientId)
         {
             uint tick = _ticks.ServerTickNumber;
             bool warned = false;
-            int length = 0;
+            int length = AppendPlayers(tick, 0, ref warned);
+            length = AppendMobs(length, ref warned);
+            return SendFragments(clientId, tick, length);
+        }
 
+        // Writes one entry per player in roster order from offset; returns the new stream length.
+        private int AppendPlayers(uint tick, int length, ref bool warned)
+        {
             IReadOnlyList<EntityID> players = _pool.GetPlayerEntityIDsInZone(_zone);
             for (int i = 0; i < players.Count; i++)
             {
                 EntityID id = players[i];
                 if (!_pool.TryGetPlayer(id, out ZonePlayerSlot slot) || !_source.TryGetPlayerState(id, out ZonePlayerStateView v))
                 {
-                    WarnSkipped(id, "player", ref warned);
+                    WarnSkipped(id, "player", "has no state data", ref warned);
                     continue;
                 }
 
@@ -129,13 +142,25 @@ namespace IronGrind.ServerLogic.ZoneInstancing
                 length += EntityStateCodec.WriteBody(new Span<byte>(_stream, length, _stream.Length - length), in entry);
             }
 
+            return length;
+        }
+
+        // Writes one entry per mob in roster order after the players; returns the new stream length.
+        private int AppendMobs(int length, ref bool warned)
+        {
             IReadOnlyList<EntityID> mobIds = _pool.GetMobEntityIDsInZone(_zone);
             for (int i = 0; i < mobIds.Count; i++)
             {
                 EntityID id = mobIds[i];
                 if (!_mobs.TryGetMob(id, out MobTypeID type, out _) || !_source.TryGetMobState(id, out ZoneMobStateView v))
                 {
-                    WarnSkipped(id, "mob", ref warned);
+                    WarnSkipped(id, "mob", "has no state data", ref warned);
+                    continue;
+                }
+
+                if (type.RawValue > ushort.MaxValue)
+                {
+                    WarnSkipped(id, "mob", "has a type id above the 16-bit wire field", ref warned);
                     continue;
                 }
 
@@ -144,6 +169,12 @@ namespace IronGrind.ServerLogic.ZoneInstancing
                 length += EntityStateCodec.WriteBody(new Span<byte>(_stream, length, _stream.Length - length), in entry);
             }
 
+            return length;
+        }
+
+        // Cuts the stream at 504-byte offsets and enqueues each fragment; returns totalFragments.
+        private int SendFragments(uint clientId, uint tick, int length)
+        {
             int payloadMax = ZoneStateSnapshotFragment.MaxPayloadBytes;
             int total = Math.Max(1, (length + payloadMax - 1) / payloadMax);
             for (int index = 0; index < total; index++)
@@ -161,7 +192,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         }
 
         // At most one warning per SendSnapshot call; the string is built only here.
-        private void WarnSkipped(EntityID id, string kind, ref bool warned)
+        private void WarnSkipped(EntityID id, string kind, string reason, ref bool warned)
         {
             if (warned)
             {
@@ -169,7 +200,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             }
 
             warned = true;
-            Debug.LogWarning($"{LOG_PREFIX} SnapshotEntitySkipped: {kind} {id} in {_zone} has no state data; left out of the snapshot (one warning per call).");
+            Debug.LogWarning($"{LOG_PREFIX} SnapshotEntitySkipped: {kind} {id} in {_zone} {reason}; left out of the snapshot (one warning per call).");
         }
     }
 }
