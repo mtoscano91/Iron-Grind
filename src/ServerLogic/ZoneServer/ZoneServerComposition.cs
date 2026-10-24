@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using IronGrind.CharacterPersistence;
 using IronGrind.Networking;
 using IronGrind.Randomness;
+using IronGrind.ServerLogic.ZoneInstancing;
 using Npgsql;
 using UnityEngine;
 using UnityEngine.AI;
@@ -82,6 +83,13 @@ namespace IronGrind.ServerLogic.ZoneServer
         private const string PASSWORD_VARIABLE = "IRONGRIND_PG_PASSWORD";
         private const string APPLICATION_NAME_PREFIX = "irongrind-zone-";
 
+        /// <summary>
+        /// Seconds without a completed network tick, with a quit pending (or the zone Draining), after which
+        /// <see cref="PollQuitStall"/> forces a Clean teardown. A quit in Active or Draining is applied by the next
+        /// tick, so stopped ticks would otherwise leave the zone open and <c>wantsToQuit</c> answering false forever.
+        /// </summary>
+        public const float QUIT_TICK_STALL_SECONDS = 5f;
+
         // Internal step numbers 1..8 and the names the ADR gives them (used in logs).
         private static readonly string[] STEP_NAMES = { "", "1", "2a", "3", "4", "4b", "5", "6", "7" };
 
@@ -131,6 +139,10 @@ namespace IronGrind.ServerLogic.ZoneServer
         private bool _zoneStateEntered;
         private bool _quitSubscribed;
         private bool _tickFailureReported;
+        private ZoneInstancingWiring _wiring;
+        private uint _lastLoadingTick;
+        private double _lastTickSeconds;
+        private double _quitStallStartSeconds = double.NaN;
 
         private bool _startCalled;
         private bool _sceneFaulted;
@@ -359,9 +371,16 @@ namespace IronGrind.ServerLogic.ZoneServer
                     continue;
                 }
 
-                // The wait has no try around it; reading IsDone is guarded inside PollSceneDone.
+                // The wait has no try around it; reading IsDone is guarded inside PollSceneDone. The server tick does not
+                // advance before S9, so each polled frame ticks the lifecycle with the loading time (T-3 by timeout).
+                double sceneWaitStart = _clock();
                 while (!_teardownRequested && !PollSceneDone())
                 {
+                    if (TickLoadingLifecycle(sceneWaitStart))
+                    {
+                        break;
+                    }
+
                     yield return null;
                 }
 
@@ -396,8 +415,90 @@ namespace IronGrind.ServerLogic.ZoneServer
                 return;
             }
 
+            // The first code is recorded before the wiring is called: the wiring's OnClosed calls back here and returns above.
             _exitCode = code;
             _teardownRequested = true;
+
+            // A direct Fatal (tick failure) also closes the zone, so admission stops before the next Update.
+            if (code == ZoneExitCode.Fatal && _wiring != null && _wiring.Lifecycle.State != ZoneState.Closed)
+            {
+                _wiring.RequestFatal(ReadCurrentTick());
+            }
+        }
+
+        /// <summary>
+        /// The quit path (Zone Instancing Story 014, T-4/T-6): before the wiring exists (before S5) or once the zone is
+        /// Closed it requests a Clean teardown; while Loading it quits the zone at once (T-6); in Active or Draining the
+        /// wiring applies it on the next tick (T-4, or T-6 for a second quit). Does nothing once a teardown was requested.
+        /// The host's <c>-teardownAfterSeconds</c> trigger and <see cref="OnWantsToQuit"/> both call it.
+        /// </summary>
+        public void RequestQuit()
+        {
+            if (_teardownRequested)
+            {
+                return;
+            }
+
+            if (_wiring == null)
+            {
+                RequestTeardown(ZoneExitCode.Clean);
+                return;
+            }
+
+            switch (_wiring.Lifecycle.State)
+            {
+                case ZoneState.Loading:
+                    _wiring.RequestQuitNow(_lastLoadingTick);
+                    break;
+                case ZoneState.Active:
+                case ZoneState.Draining:
+                    // Only the first quit starts the stall clock, so repeated wantsToQuit calls cannot postpone the forced close.
+                    if (double.IsNaN(_quitStallStartSeconds))
+                    {
+                        _quitStallStartSeconds = _clock();
+                    }
+
+                    _wiring.RequestQuit();
+                    break;
+                default:
+                    RequestTeardown(ZoneExitCode.Clean);
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// Quit stall guard, called by the host's Update before <see cref="TryBeginTeardown"/>. A quit in Active or
+        /// Draining is applied by the next server tick; if the network ticks have stopped, the zone would never close.
+        /// When no teardown was requested, a wiring exists, a quit is pending or the zone is Draining, and
+        /// <see cref="QUIT_TICK_STALL_SECONDS"/> have passed since the later of the last completed tick and the first
+        /// quit request (so a quit right after a long gap is not forced at once), it logs one warning and requests a
+        /// Clean teardown. Does nothing otherwise.
+        /// </summary>
+        public void PollQuitStall()
+        {
+            if (_teardownRequested || _wiring == null)
+            {
+                return;
+            }
+
+            if (_wiring.PendingQuitCount <= 0 && _wiring.Lifecycle.State != ZoneState.Draining)
+            {
+                return;
+            }
+
+            double reference = double.IsNaN(_quitStallStartSeconds)
+                ? _lastTickSeconds
+                : Math.Max(_lastTickSeconds, _quitStallStartSeconds);
+            double stalled = _clock() - reference;
+            if (stalled < QUIT_TICK_STALL_SECONDS)
+            {
+                return;
+            }
+
+            Debug.LogWarning(LOG_PREFIX + " no tick for "
+                + stalled.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)
+                + " s with a quit pending: requesting a Clean teardown");
+            RequestTeardown(ZoneExitCode.Clean);
         }
 
         /// <summary>
@@ -504,7 +605,7 @@ namespace IronGrind.ServerLogic.ZoneServer
 
         /// <summary>
         /// Application.wantsToQuit handler. True in the Editor and once teardown step 8 set the quit flag;
-        /// otherwise requests a Clean teardown and returns false. Does no teardown work itself.
+        /// otherwise takes the <see cref="RequestQuit"/> path and returns false. Does no teardown work itself.
         /// </summary>
         /// <returns>True when the application may quit now.</returns>
         public bool OnWantsToQuit()
@@ -519,8 +620,48 @@ namespace IronGrind.ServerLogic.ZoneServer
                 return true;
             }
 
-            RequestTeardown(ZoneExitCode.Clean);
+            RequestQuit();
             return false;
+        }
+
+        /// <summary>
+        /// Attaches the Zone Instancing wiring built at S5 (before the dispatcher is sealed). From now on the zone state
+        /// owner, the close steps, the quit path and a direct Fatal go through it; without it the injected
+        /// <see cref="IZoneStateOwner"/> and <see cref="IZoneCloseSteps"/> are used. Tests call it with a wiring over fakes.
+        /// </summary>
+        /// <param name="wiring">The wiring; its lifecycle starts Loading with loading tick 0.</param>
+        internal void AttachZoneInstancing(ZoneInstancingWiring wiring)
+        {
+            _wiring = wiring;
+        }
+
+        /// <summary>The attached Zone Instancing wiring, or null before S5.</summary>
+        internal ZoneInstancingWiring ZoneInstancing => _wiring;
+
+        private IZoneStateOwner StateOwner => _wiring != null ? (IZoneStateOwner)_wiring : _zoneStateOwner;
+
+        private IZoneCloseSteps CloseStepsOwner => _wiring != null ? (IZoneCloseSteps)_wiring : _closeSteps;
+
+        // One loading-time tick of the lifecycle during the S6 scene wait. True when it closed the zone without a
+        // teardown request (T-3 by timeout): the wait ends as S-fail, one error line like the other S6 failures.
+        private bool TickLoadingLifecycle(double waitStartSeconds)
+        {
+            if (_wiring == null)
+            {
+                return false;
+            }
+
+            double elapsed = _clock() - waitStartSeconds;
+            _lastLoadingTick = elapsed > 0d ? (uint)Math.Floor(elapsed * ServerTickLoop.TICK_RATE_HZ) : 0u;
+            _wiring.OnLoadingTick(_lastLoadingTick);
+            if (_wiring.Lifecycle.State != ZoneState.Closed || _teardownRequested)
+            {
+                return false;
+            }
+
+            LogStartupFailure(SCENE_STEP, "LoadTimeout");
+            _sceneFaulted = true;
+            return true;
         }
 
         /// <summary>
@@ -664,6 +805,8 @@ namespace IronGrind.ServerLogic.ZoneServer
                     RequestTeardown(ZoneExitCode.Fatal);
                 }
             }
+
+            _lastTickSeconds = now;
         }
 
         // Reads the scene seam's IsDone; an exception becomes S-fail at S6 and ends the wait.
@@ -787,7 +930,7 @@ namespace IronGrind.ServerLogic.ZoneServer
             if (!_boundsValidator.Validate(_zoneId))
             {
                 MarkZoneStateEntered();
-                _zoneStateOwner.MarkClosedInvalidBounds(_zoneId);
+                StateOwner.MarkClosedInvalidBounds(_zoneId);
                 return false;
             }
 
@@ -815,8 +958,9 @@ namespace IronGrind.ServerLogic.ZoneServer
             }
 
             MarkZoneStateEntered();
-            _zoneStateOwner.MarkActive(_zoneId);
+            StateOwner.MarkActive(_zoneId);
             _previousTickSeconds = _clock();
+            _lastTickSeconds = _previousTickSeconds;
             _network.SubscribeTick(_networkTickHandler);
             _tickHandler = _networkTickHandler;
             MarkTickStarted();
@@ -892,7 +1036,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                 case 4:
                     if (_zoneStateEntered)
                     {
-                        _closeSteps?.RunCloseSteps();
+                        CloseStepsOwner?.RunCloseSteps();
                     }
 
                     break;
@@ -904,7 +1048,8 @@ namespace IronGrind.ServerLogic.ZoneServer
 
                     break;
                 case 6:
-                    if (_tickStarted)
+                    // Also after the close steps when the tick never started (T-3 path): their save callbacks complete here.
+                    if (_tickStarted || _zoneStateEntered)
                     {
                         _queue?.DrainOnShutdown(DRAIN_TIMEOUT);
                     }
@@ -1062,6 +1207,18 @@ namespace IronGrind.ServerLogic.ZoneServer
             }
         }
 
+        // The transport close seam for the Zone Instancing wiring. The wiring is built before the dispatcher is sealed, the
+        // NGO shell after it, so the target is set later; a close before then (or with a fake transport) does nothing.
+        private sealed class DeferredTransportDisconnector : IInboundTransportDisconnector
+        {
+            public IInboundTransportDisconnector Target;
+
+            public void DisconnectClient(ulong transportClientId)
+            {
+                Target?.DisconnectClient(transportClientId);
+            }
+        }
+
         // The real S3, S4, S5, S7. A private nested class so the construction stays inside this file (AC-10).
         private sealed class RealBackend : IZoneBackendSteps
         {
@@ -1077,6 +1234,9 @@ namespace IronGrind.ServerLogic.ZoneServer
             private CrossZoneRelayAllowlist _allowlist;
             private CrossZoneRelayInbox _inbox;
             private NpgsqlRelayPublisher _publisher;
+            private CharacterMutationGate _gate;
+            private ZoneConnectionCharacterDirectory _directory;
+            private readonly DeferredTransportDisconnector _disconnector = new DeferredTransportDisconnector();
 
             public RealBackend(ZoneServerComposition owner, IZoneEnvironment environment)
             {
@@ -1228,10 +1388,12 @@ namespace IronGrind.ServerLogic.ZoneServer
             {
                 var guardChain = new CrossCuttingRpcGuardChain();
                 Observe(nameof(CrossCuttingRpcGuardChain));
-                var gate = new CharacterMutationGate();
+                _gate = new CharacterMutationGate();
                 Observe(nameof(CharacterMutationGate));
+                // One directory, shared by the dispatcher and the Zone Instancing wiring (Story 014).
+                _directory = new ZoneConnectionCharacterDirectory();
                 var dispatcher = new InboundRequestDispatcher(
-                    guardChain, gate, new StandInConnectionCharacterDirectory(), new StandInConnectionActivitySink(),
+                    guardChain, _gate, _directory, new StandInConnectionActivitySink(),
                     _tickLoop, MessageRoutingRegistry.TryGetEntry, BuildConfiguration.IsDevelopmentBuild);
                 Observe(nameof(InboundRequestDispatcher));
                 return dispatcher;
@@ -1241,6 +1403,17 @@ namespace IronGrind.ServerLogic.ZoneServer
             {
                 var outbox = new ClientMessageOutbox(_owner._network.CreateSendSeam());
                 Observe(nameof(ClientMessageOutbox));
+
+                // Zone Instancing (Story 014): built after the outbox exists and before the dispatcher is sealed. Its tick
+                // step joins the phase 3 list; it is not registered with the tick loop (ADR-014).
+                var wiring = new ZoneInstancingWiring(_owner._zoneId, _tickLoop, _queue, dispatcher, outbox,
+                    _owner.PersistenceService, _owner.PersistenceService, _owner.PersistenceService, _gate,
+                    new StandInZoneInventoryService(), _disconnector, _owner.RequestTeardown,
+                    new ZoneInstancingWiringOptions { Directory = _directory });
+                Observe(nameof(ZoneInstancingWiring));
+                _owner._simulationSteps.Add(wiring);
+                _owner.AttachZoneInstancing(wiring);
+
                 // Built for the game-system stories to take; this story registers no handler.
                 _owner._broadcaster = new ServerWideBroadcaster(outbox, _publisher, _allowlist);
                 Observe(nameof(ServerWideBroadcaster));
@@ -1257,6 +1430,9 @@ namespace IronGrind.ServerLogic.ZoneServer
                 Observe("RegisterTickDriven");
                 IZoneInboundTransport transport = _owner._network.CreateInboundTransport(dispatcher, dispatcher, outbox);
                 Observe("CreateInboundTransport");
+
+                // The NGO shell implements the disconnect seam but only exists after the dispatcher is sealed.
+                _disconnector.Target = (transport as NgoZoneInboundTransport)?.Shell;
 
                 _owner.AttachOwnedObjects(_queue, outbox, null, transport, _owner._currentTickReader, null);
                 _owner.AttachTickLoop(_tickLoop);

@@ -1,7 +1,11 @@
+using System;
 using IronGrind.CharacterPersistence;
+using IronGrind.CharacterStats;
+using IronGrind.InventorySystem;
 using IronGrind.Networking;
 using UnityEngine;
 using UnityEngine.AI;
+using CharacterID = IronGrind.Currency.CharacterID;
 
 namespace IronGrind.ServerLogic.ZoneServer
 {
@@ -183,6 +187,105 @@ namespace IronGrind.ServerLogic.ZoneServer
         {
             _log.Log();
         }
+    }
+
+    /// <summary>
+    /// Stand-in for <see cref="IInventoryService"/> in the zone composition (Zone Instancing Story 014). The session end
+    /// coordinator only calls <see cref="UnregisterCharacter"/>; it logs "[ZoneServer] inventory service not implemented"
+    /// once and does nothing. Every other member throws <see cref="NotSupportedException"/>. The real
+    /// <c>InventoryService</c> needs the item database wiring (inventory epic).
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// new StandInZoneInventoryService().UnregisterCharacter(characterId); // logs once
+    /// </code>
+    /// </example>
+    public sealed class StandInZoneInventoryService : IInventoryService
+    {
+        private readonly StandInLogOnce _log = new StandInLogOnce("inventory service");
+
+        /// <inheritdoc/>
+        public event Action<InventoryChangedEventArgs> OnInventoryChanged
+        {
+            add { }
+            remove { }
+        }
+
+        /// <inheritdoc/>
+        public event Action<InventoryFullEventArgs> OnInventoryFull
+        {
+            add { }
+            remove { }
+        }
+
+        /// <inheritdoc/>
+        public void UnregisterCharacter(CharacterID charId)
+        {
+            _log.Log();
+        }
+
+        /// <inheritdoc/>
+        public void RegisterCharacter(CharacterID charId) => throw new NotSupportedException();
+
+        /// <inheritdoc/>
+        public InventorySlot GetSlot(CharacterID charId, int slotIndex) => throw new NotSupportedException();
+
+        /// <inheritdoc/>
+        public bool IsFull(CharacterID charId) => throw new NotSupportedException();
+
+        /// <inheritdoc/>
+        public int FilledSlots(CharacterID charId) => throw new NotSupportedException();
+
+        /// <inheritdoc/>
+        public bool HasFreeSlot(CharacterID charId) => throw new NotSupportedException();
+
+        /// <inheritdoc/>
+        public bool IsSlotLocked(CharacterID charId, int slotIndex) => throw new NotSupportedException();
+
+        /// <inheritdoc/>
+        public bool HasItem(CharacterID charId, ItemID itemId) => throw new NotSupportedException();
+
+        /// <inheritdoc/>
+        public PickupResult Pickup(CharacterID characterId, ItemID itemId, int quantity) => throw new NotSupportedException();
+
+        /// <inheritdoc/>
+        public void LockSlot(CharacterID charId, int slotIndex) => throw new NotSupportedException();
+
+        /// <inheritdoc/>
+        public void UnlockSlot(CharacterID charId, int slotIndex) => throw new NotSupportedException();
+
+        /// <inheritdoc/>
+        public void RemoveItem(CharacterID charId, int slotIndex) => throw new NotSupportedException();
+
+        /// <inheritdoc/>
+        public DiscardResult Discard(CharacterID charId, int slotIndex, int quantity) => throw new NotSupportedException();
+
+        /// <inheritdoc/>
+        public MoveResult Move(CharacterID charId, int fromSlot, int toSlot) => throw new NotSupportedException();
+
+        /// <inheritdoc/>
+        public MoveItemOutResult MoveItemOut(CharacterID charId, int slotIndex) => throw new NotSupportedException();
+
+        /// <inheritdoc/>
+        public MoveItemInResult MoveItemIn(CharacterID charId, ItemID itemId, byte enhancementLevel) => throw new NotSupportedException();
+
+        /// <inheritdoc/>
+        public bool ForceInsert(CharacterID charId, ItemID itemId, byte enhancementLevel) => throw new NotSupportedException();
+
+        /// <inheritdoc/>
+        public bool SetEnhancementLevel(CharacterID charId, int slotIndex, byte level) => throw new NotSupportedException();
+
+        /// <inheritdoc/>
+        public SellItemResult SellItem(CharacterID charId, int slotIndex, ItemID itemId, int quantity) => throw new NotSupportedException();
+
+        /// <inheritdoc/>
+        public ConsumeItemResult ConsumeItem(CharacterID charId, ItemID itemId, int quantity) => throw new NotSupportedException();
+
+        /// <inheritdoc/>
+        public InventorySnapshot ExportSnapshot(CharacterID charId) => throw new NotSupportedException();
+
+        /// <inheritdoc/>
+        public bool ImportSnapshot(CharacterID charId, InventorySnapshot? snapshot) => throw new NotSupportedException();
     }
 
     /// <summary>

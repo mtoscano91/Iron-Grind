@@ -18,7 +18,7 @@ namespace IronGrind.ServerLogic.ZoneServer
     /// Put it on one root GameObject in <c>Assets/Scenes/Server/ZoneServer.unity</c>, a scene only the Dedicated
     /// Server build includes (ADR-012). In the Editor the command line comes from the <c>_editorArgs</c> field; in a
     /// player from <c>Environment.GetCommandLineArgs()</c>. In the Editor and development builds the extra argument
-    /// <c>-teardownAfterSeconds &lt;n&gt;</c> requests a Clean teardown after n seconds (verification trigger, Story 045
+    /// <c>-teardownAfterSeconds &lt;n&gt;</c> takes the composition's quit path after n seconds (a drain, then a Clean teardown) (verification trigger, Story 045
     /// AC-6); a release build ignores it.
     /// </remarks>
     /// <example>
@@ -53,11 +53,11 @@ namespace IronGrind.ServerLogic.ZoneServer
                     new UnityZoneApplication(gameObject),
                     _network,
                     new StandInZoneNavigation(),
-                    new StandInZoneCloseSteps(),
+                    null, // close steps: the Zone Instancing wiring built at S5 (Story 014)
                     new UnitySceneLoader(gameObject, _registry, slot),
                     new ZoneDefinitionBoundsValidator(slot),
                     new StandInZoneStaticDataLoader(),
-                    new StandInZoneStateOwner(),
+                    null, // zone state owner: the Zone Instancing wiring built at S5 (Story 014)
                     new StandInGatewayRegistration(),
                     new FileZoneConfigSource(),
                     new ProcessZoneEnvironment(),
@@ -111,10 +111,11 @@ namespace IronGrind.ServerLogic.ZoneServer
             {
                 _teardownTriggerFired = true;
                 Debug.Log("[ZoneServer] -teardownAfterSeconds " + _teardownAfterSeconds.ToString(CultureInfo.InvariantCulture)
-                    + " reached: requesting a Clean teardown");
-                _composition.RequestTeardown(ZoneExitCode.Clean);
+                    + " reached: requesting a quit (drain)");
+                _composition.RequestQuit();
             }
 #endif
+            _composition.PollQuitStall();
             if (_composition.TryBeginTeardown())
             {
                 StartCoroutine(_composition.RunTeardown());

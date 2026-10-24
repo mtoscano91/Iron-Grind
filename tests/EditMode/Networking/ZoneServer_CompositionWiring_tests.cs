@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using IronGrind.Currency;
 using IronGrind.Networking;
+using IronGrind.ServerLogic.ZoneInstancing;
 using IronGrind.ServerLogic.ZoneServer;
 using NUnit.Framework;
 using UnityEngine;
@@ -200,7 +201,7 @@ namespace IronGrind.Tests.EditMode.Networking
             "TickCompletionQueue", "ServerTickLoop", "NpgsqlCharacterRecordStore", "CharacterPersistenceService",
             "CrossZoneRelayAllowlist", "CrossZoneRelayOrigin", "CrossZoneRelayInbox", "CrossZoneRelayReceiver",
             "NpgsqlRelayPublisher", "CrossCuttingRpcGuardChain", "CharacterMutationGate", "InboundRequestDispatcher",
-            "ClientMessageOutbox", "ServerWideBroadcaster", "ZoneClientRelayHandler", "ZoneSimulationStep",
+            "ClientMessageOutbox", "ZoneInstancingWiring", "ServerWideBroadcaster", "ZoneClientRelayHandler", "ZoneSimulationStep",
             "ZoneTickPipeline", "Seal", "RegisterTickDriven", "CreateInboundTransport"
         };
 
@@ -471,10 +472,36 @@ namespace IronGrind.Tests.EditMode.Networking
             SuRig.Drive(rig.Comp.Start(SuRig.ARGS));
 
             rig.Now = 10.05;
+            // The Zone Instancing wiring's tick step reads the stand-in ghost source (Story 014), which logs once.
+            LogAssert.Expect(LogType.Log, "[ZoneServer] ghost session TTL enumeration not implemented");
             rig.Net.FireTick();
 
             Assert.AreEqual(1u, rig.Comp.TickLoop.ServerTickNumber);
             LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_the_zone_instancing_wiring_is_a_simulation_step_and_a_quit_is_applied_by_the_next_real_tick()
+        {
+            var rig = new WiRig();
+            rig.Now = 10.0;
+            LogAssert.Expect(LogType.Log, new System.Text.RegularExpressions.Regex(@"^\[Random\] PRNG seed: -?\d+$"));
+            SuRig.Drive(rig.Comp.Start(SuRig.ARGS));
+            ZoneInstancingWiring wiring = rig.Comp.ZoneInstancing;
+
+            Assert.IsNotNull(wiring);
+            CollectionAssert.Contains(rig.Comp.SimulationSteps, wiring, "the wiring is a phase 3 step");
+            Assert.AreEqual(1, rig.Observed.FindAll(s => s == "RegisterTickDriven").Count, "only the pipeline is tick-driven");
+            Assert.AreEqual(ZoneState.Active, wiring.Lifecycle.State);
+
+            rig.Comp.RequestQuit();
+            Assert.AreEqual(1, wiring.PendingQuitCount);
+            rig.Now = 10.05;
+            LogAssert.Expect(LogType.Log, "[ZoneServer] ghost session TTL enumeration not implemented");
+            rig.Net.FireTick();
+
+            Assert.AreEqual(0, wiring.PendingQuitCount, "the pipeline ran the wiring, which applied the quit");
+            Assert.IsTrue(wiring.Lifecycle.State == ZoneState.Draining || wiring.Lifecycle.State == ZoneState.Closed, "lifecycle after the quit tick was " + wiring.Lifecycle.State);
         }
 
         [Test]

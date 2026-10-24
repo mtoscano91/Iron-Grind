@@ -33,6 +33,19 @@ namespace IronGrind.ServerLogic.ZoneInstancing
     /// owns the <see cref="CancellationTokenSource"/> of each load and disposes it in the callback.
     /// </para>
     /// <para>
+    /// <b>Duplicate character in flight (TD-078).</b> Pending loads are also keyed by <see cref="CharacterID"/>. A
+    /// handshake for a character whose load is still in flight on another connection (neither holds a slot yet, so
+    /// the directory cannot see the first) is treated like reclamation case (b): the first pending entry is dropped
+    /// and that connection is closed with no message through <see cref="ZoneEntryReclamation.CloseConnection"/>
+    /// (the same <see cref="IInboundTransportDisconnector"/> seam; without a reclamation service nothing is closed).
+    /// The dropped load's callback finds no pending entry and does nothing (no slot, no save, no reply). The new
+    /// handshake proceeds, so a character ends with at most one slot. The check runs after case (b), so a character
+    /// that already holds an acked slot still ignores the new handshake and keeps its pending load untouched,
+    /// and after the pre-check (4): a handshake the zone rejects (not Active, full) supersedes nothing, so the first
+    /// entry stays pending and its connection open. The dropped entry's <see cref="CancellationTokenSource"/> is
+    /// cancelled when it is superseded (the callback still disposes it).
+    /// </para>
+    /// <para>
     /// Source lifetime: disposed in the callback; disposed when <c>LoadCharacter</c> throws synchronously; cancelled
     /// but NOT disposed when <see cref="ITickCompletionQueue.Track{T}"/> throws (the running task holds the token and
     /// is orphaned on purpose, a failing Track is a programming error); NOT disposed for a task still incomplete at
@@ -54,6 +67,9 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         private sealed class PendingEntry
         {
             public bool Dropped;
+            public uint ClientId;
+            public CharacterID Character;
+            public CancellationTokenSource Cts;
         }
 
         private readonly ZoneID _zone;
@@ -73,6 +89,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         private readonly byte[] _replyBuffer = new byte[ZoneFullResponse.BodySize];
         private readonly ZoneEntryReclamation _reclamation;
         private readonly HashSet<uint> _inZoneWarned = new HashSet<uint>();
+        private readonly Dictionary<CharacterID, PendingEntry> _pendingByCharacter = new Dictionary<CharacterID, PendingEntry>();
 
         /// <summary>Creates the service for one zone.</summary>
         /// <param name="zone">The zone this process hosts; not <see cref="ZoneID.Invalid"/>.</param>
@@ -115,6 +132,9 @@ namespace IronGrind.ServerLogic.ZoneInstancing
 
         /// <summary>Number of connections with a load in flight.</summary>
         public int PendingCount => _pending.Count;
+
+        /// <summary>Number of characters with a load in flight. Test seam for the TD-078 character key; equals <see cref="PendingCount"/> when nothing leaked.</summary>
+        internal int PendingCharacterCount => _pendingByCharacter.Count;
 
         /// <summary>
         /// Starts one entry. Tick thread only. See the class remarks for the order of checks.
@@ -170,14 +190,26 @@ namespace IronGrind.ServerLogic.ZoneInstancing
                 return;
             }
 
+            // The pre-check runs before anything is superseded: a handshake the zone rejects leaves the first entry untouched.
             if (!TryPreCheck(clientId, request.TargetZone))
             {
                 return;
             }
 
-            var entry = new PendingEntry();
+            // TD-078: a load for the same character is in flight on another connection; the new handshake wins.
+            if (_pendingByCharacter.TryGetValue(request.Character, out PendingEntry earlier))
+            {
+                uint earlierClient = earlier.ClientId;
+                DropPending(earlier);
+                CancelLoad(earlier);
+                Debug.LogWarning($"{LOG_PREFIX} EntryHandshakeSupersededInFlight: character {request.Character} has a load in flight on client {earlierClient}; that entry is dropped and the connection closed in favour of client {clientId}.");
+                _reclamation?.CloseConnection(earlierClient);
+            }
+
             var cts = new CancellationTokenSource();
+            var entry = new PendingEntry { ClientId = clientId, Character = request.Character, Cts = cts };
             _pending[clientId] = entry;
+            _pendingByCharacter[request.Character] = entry;
             ZoneID targetZone = request.TargetZone;
             var character = request.Character;
             var account = request.Account;
@@ -189,7 +221,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             }
             catch (Exception)
             {
-                _pending.Remove(clientId);
+                RemovePending(entry);
                 cts.Dispose();
                 throw;
             }
@@ -201,7 +233,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             }
             catch (Exception)
             {
-                _pending.Remove(clientId);
+                RemovePending(entry);
                 // Cancelled, not disposed: the running task holds the token. The task is orphaned on purpose; a
                 // failing Track is a programming error.
                 cts.Cancel();
@@ -224,8 +256,41 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             _reclamation?.NoteConnectionRemoved(clientId); // Story 011 case (c): recorded here, reclaimed on the next tick.
             if (_pending.TryGetValue(clientId, out PendingEntry entry))
             {
-                entry.Dropped = true;
-                _pending.Remove(clientId);
+                DropPending(entry);
+            }
+        }
+
+        // Cancels the load of a superseded entry; the callback still disposes the source. A disposed source is ignored.
+        private static void CancelLoad(PendingEntry entry)
+        {
+            try
+            {
+                entry.Cts?.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+        }
+
+        // Marks the entry dropped and removes both of its keys (only if they still point at this entry).
+        private void DropPending(PendingEntry entry)
+        {
+            entry.Dropped = true;
+            RemovePending(entry);
+            _duplicateWarned.Remove(entry.ClientId);
+        }
+
+        // Removes the entry from both maps, never an entry that replaced it under the same key.
+        private void RemovePending(PendingEntry entry)
+        {
+            if (_pending.TryGetValue(entry.ClientId, out PendingEntry byClient) && ReferenceEquals(byClient, entry))
+            {
+                _pending.Remove(entry.ClientId);
+            }
+
+            if (_pendingByCharacter.TryGetValue(entry.Character, out PendingEntry byCharacter) && ReferenceEquals(byCharacter, entry))
+            {
+                _pendingByCharacter.Remove(entry.Character);
             }
         }
 
@@ -251,9 +316,9 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             PendingEntry entry, CancellationTokenSource cts, TickTaskResult<CharacterLoadResult> result)
         {
             cts.Dispose();
-            if (_pending.TryGetValue(clientId, out PendingEntry current) && ReferenceEquals(current, entry))
+            if (!entry.Dropped)
             {
-                _pending.Remove(clientId);
+                RemovePending(entry);
                 _duplicateWarned.Remove(clientId);
             }
 

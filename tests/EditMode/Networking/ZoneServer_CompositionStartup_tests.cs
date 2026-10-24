@@ -465,10 +465,11 @@ namespace IronGrind.Tests.EditMode.Networking
             Assert.AreEqual(navInitialized, rig.Log.Contains("NavTeardown"));
             Assert.AreEqual(zoneStateEntered, rig.Log.Contains("CloseSteps"));
 
-            // AC-7: flush and drain only once S9 completed the tick subscription.
+            // AC-7: the flush only once S9 completed the tick subscription. The drain also runs whenever the close steps
+            // ran (Zone Instancing Story 014: their save callbacks complete in it, also when the tick never started).
             bool tickStarted = step == 10;
             Assert.AreEqual(tickStarted, rig.Log.Contains("OutboundFlush"));
-            Assert.AreEqual(tickStarted, rig.Log.Contains("Drain"));
+            Assert.AreEqual(tickStarted || zoneStateEntered, rig.Log.Contains("Drain"));
             Assert.AreEqual(tickStarted, rig.Log.Contains("TickUnsubscribe"));
             LogAssert.NoUnexpectedReceived();
         }

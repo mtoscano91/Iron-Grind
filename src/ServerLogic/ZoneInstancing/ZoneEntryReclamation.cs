@@ -327,6 +327,24 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         }
 
         /// <summary>
+        /// Closes a connection through the same transport seam as the reclamation cases, with no message and no slot
+        /// change. Used by <see cref="ZoneEntryAdmission"/> when a second handshake supersedes a load in flight
+        /// (TD-078). A throwing (shut-down) transport is logged, not rethrown.
+        /// </summary>
+        /// <param name="clientId">The connection to close.</param>
+        public void CloseConnection(uint clientId)
+        {
+            try
+            {
+                _disconnector.DisconnectClient(clientId);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"{LOG_PREFIX} closing client {clientId} failed.\n{ex}");
+            }
+        }
+
+        /// <summary>
         /// The shared leave path (CR-ZI-17 points 1-4; Story 013 reuses it and adds its save ordering): (1) entity off
         /// the tick roster or the pending list; (2) <c>PlayerLeftZone</c> to every other connected zone client;
         /// (3) <see cref="IPartyZonePresence.NotifyZoneExit"/> only when the character is in a formal party; (4) slot
