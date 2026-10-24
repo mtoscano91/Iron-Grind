@@ -4743,3 +4743,11 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Story: production/epics/zone-instancing/story-012-teardown-close-steps.md — Status Complete, Completion Notes (unwired until Story 014; TD-079 stand-in; code-review behaviours; one pool).
 - EPIC row 012 Complete. Tech debt logged: None new (TD-079 at readiness; drain-flag in Story 014 note e).
 - Next recommended: /story-readiness Story 013 (player exit, reuses LeaveZone) or Story 014 (composition wiring). PAT rotation still unconfirmed.
+
+## Session Extract — /story-readiness 2026-10-23 (Zone Instancing Story 013)
+- Verdict: NEEDS WORK (8 gaps) -> fixed -> Ready (5 h, was 3 h provisional). Lean: QL-STORY-READY skipped.
+- User decisions: (1) ReleasePlayer(uint characterId, DisconnectType) is the state machine's broadcastPlayerLeftZone callback, removeEntityFromZone a no-op (LeaveZone sends the one PlayerLeftZone); slot found by scanning occupied slots for Character; no ExitCause enum. (2) AC-ZI-22 release side (ghost reconnect while Draining) deferred with gateway re-routing — needs an early ghost-end entry point on SessionEndCoordinator + an admission branch.
+- Other fixes: AC-ZI-13 now covers all four GDD causes (+ same-tick reclamation/teardown); ordering after save holds by construction (SessionEndCoordinator completion callback) and is tested with the real coordinator; failed logout save -> no release, failed TTL save -> release; logout-in-flight-at-teardown QA case; deps + Story 012 and Character Persistence Story 010.
+- Found: SessionEndCoordinator is not constructed anywhere in src/ and BeginCleanLogout / EvaluateSessionTTL have no callers -> Story 014 note added; Story 014 AC-ZI-22 releases the ghost by TTL expiry.
+- Files: story-013 rewritten; story-014 (AC-ZI-22 note, Story 013 wiring note); EPIC row 013.
+- Next: commit -> /dev-story Story 013. Not committed. PAT rotation still unconfirmed.
