@@ -4751,3 +4751,23 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Found: SessionEndCoordinator is not constructed anywhere in src/ and BeginCleanLogout / EvaluateSessionTTL have no callers -> Story 014 note added; Story 014 AC-ZI-22 releases the ghost by TTL expiry.
 - Files: story-013 rewritten; story-014 (AC-ZI-22 note, Story 013 wiring note); EPIC row 013.
 - Next: commit -> /dev-story Story 013. Not committed. PAT rotation still unconfirmed.
+
+## Session Extract — /dev-story 2026-10-23 (Zone Instancing Story 013 — implemented, not reviewed, not committed)
+- Story: production/epics/zone-instancing/story-013-player-exit-and-slot-release.md — network-programmer subagent (resumed once after its turn limit).
+- Created: src/ServerLogic/ZoneInstancing/ZonePlayerExit.cs (ZonePlayerExit(pool, reclamation).ReleasePlayer(uint characterId, DisconnectType) -> scan occupied slots -> LeaveZone once; warning if LeaveZone returns false for a found slot); tests/EditMode/Integration/ZoneInstancing/ZoneInstancing_PlayerExit_tests.cs (17 tests, real SessionEndCoordinator / ConnectionStateMachine / ZoneLifecycle / ZoneCloseSteps / TickCompletionQueue).
+- EditMode batch run: 4044 total, 3974 passed, 0 failed, 70 skipped (DB).
+- For /code-review: possibly unused usings in the test file (UnityEngine.TestTools, maybe IronGrind.LootTableSystem); test reuses internal RecordingInventory from CharacterPersistence test fakes; two fake persistence instances (coordinator vs close steps).
+- Next: /code-review (files above) -> /story-done Story 013 -> commit (include .meta files). PAT rotation still unconfirmed.
+
+## Session Extract — /code-review 2026-10-23 (Zone Instancing Story 013 — CHANGES REQUIRED -> "fix all" applied, not committed)
+- unity-specialist: no defects (break before LeaveZone mutates the live roster; no alloc; wiring/order claims match the state machine; one-slot-per-character held by PrepareHandshake). qa-tester: 5 required (outbox Assert swallowed by LeaveZone's catch; recipients unchecked; dead warning branch; roster/directory under-asserted; ordering not tied to the save).
+- Fixed: outbox counts DecodeFailures/OtherCount (asserted at end of TearDown); 3-player recipients test; warning branch + UnityEngine using removed; AssertFullyReleased helper; event-sequence ordering; party id asserted; failed logout [TestCase] x3 + faulted + cancelled; character id 0; 1-of-2 release while Draining; TearDown completes pending saves and drains; remarks (one-slot invariant, coordinator-only ordering); names/constants.
+- Story 014 note: zone.RemoveEntity does not exist; future per-entity removal hooks go in the leave path; ReleasePlayer only on the coordinator path.
+- EditMode: 4051 total, 3981 passed, 0 failed, 70 skipped. PlayerExit tests 24. (TearDown assert moved last afterwards — no behaviour change on pass.)
+- Next: /story-done Story 013 -> commit (include .meta files). PAT rotation still unconfirmed.
+
+## Session Extract — /story-done 2026-10-23 (Zone Instancing Story 013)
+- Verdict: COMPLETE WITH NOTES (7/7 criteria, all test-covered; lean — QL-TEST-COVERAGE and LP-CODE-REVIEW skipped).
+- Story: production/epics/zone-instancing/story-013-player-exit-and-slot-release.md — Status Complete, Completion Notes (unwired until Story 014; AC-ZI-22 release deferred; test-name convention; one-slot invariant).
+- EPIC row 013 Complete. Tech debt logged: None.
+- Next recommended: /story-readiness Story 014 (composition wiring, quit-request drain) — last Zone Instancing story. PAT rotation still unconfirmed.

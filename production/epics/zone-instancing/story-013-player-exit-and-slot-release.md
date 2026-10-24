@@ -1,7 +1,7 @@
 # Story 013: Player Exit and Slot Release (CR-ZI-14 exit, AC-ZI-13)
 
 > **Epic**: Zone Instancing
-> **Status**: Ready — written 2026-10-22; `/story-readiness` 2026-10-23: NEEDS WORK (8 gaps) → fixed → Ready
+> **Status**: Complete (2026-10-23) — written 2026-10-22; `/story-readiness` 2026-10-23: NEEDS WORK (8 gaps) → fixed → Ready
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-19
@@ -77,7 +77,7 @@
 **Story Type**: Integration
 **Required evidence**: `tests/EditMode/Integration/ZoneInstancing/ZoneInstancing_PlayerExit_tests.cs` — must exist and pass.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created 2026-10-23 — 24 test cases after `/code-review`; EditMode batch 4051 total, 3981 passed, 0 failed, 70 skipped (DB)
 
 ---
 
@@ -85,3 +85,12 @@
 
 - Depends on: Stories 001, 002, 010, 011 (leave path), 012 (teardown case) — all Complete; Character Persistence Story 010 (`SessionEndCoordinator`, Complete)
 - Unlocks: Story 014
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-23
+**Criteria**: 7/7 passing (all test-covered)
+**Deviations**: (1) Unwired until Story 014 — nothing constructs `SessionEndCoordinator` yet, so logout / TTL exits do not run in the live server. (2) AC-ZI-22 release side (ghost reconnect while Draining) deferred with gateway re-routing (readiness decision). (3) Test names omit the `[system]` part of `test-standards.md` (implied by the fixture, as in Stories 011–012). (4) "First match" relies on admission's one-slot-per-character invariant (`PrepareHandshake`), documented in the `ReleasePlayer` remarks.
+**Test Evidence**: Integration — `tests/EditMode/Integration/ZoneInstancing/ZoneInstancing_PlayerExit_tests.cs` (24 cases); EditMode batch 4051 total, 3981 passed, 0 failed, 70 skipped (DB).
+**Code Review**: Complete — CHANGES REQUIRED (5 test gaps + dead branch) → fix all.
