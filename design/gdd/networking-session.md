@@ -32,8 +32,8 @@ Closing the app mid-grind on a 4G connection doesn't end the session. Their char
 **CR-NET-6.4** On reconnect within the TTL, the server:
 1. Re-authenticates the session
 2. **PendingPurchase reconciliation** (ADR-001 Decision 4 — applied 2026-06-27): Before emitting the session handshake, query all `PendingPurchase` records for this `charId` with `state = GoldDebited`. For each record:
-   a. Call `AddGold(charId, record.totalCost, CompensatingRefund)` — credits the refund before any further session activity.
-   b. Update the record to `state = Refunded` and delete it.
+   a. Call `RefundPurchase(record.id, charId, goldBalance, goldVersion)` with `goldBalance` = cap-safe (F-CS-1) in-memory balance + `record.totalCost` and `goldVersion` = in-memory version + 1 — deletes the record and writes the balance in one transaction (ADR-001 Amendment A2, 2026-10-26: store first, so a failed refund stays outstanding and is refunded exactly once later).
+   b. Only on `Success`: call `AddGold(charId, record.totalCost, CompensatingRefund)` — credits memory before any further session activity. On failure, log a critical alert and leave the record for the next reconnect.
    c. Log the reconciliation event: `charId`, `itemId`, `quantity`, `totalCost`, `requestId`.
    This step completes before step 3 (handshake emission) so that the gold balance in the handshake already reflects any compensating refunds. No `BuyRequest` or `SellRequest` is accepted until this step is complete.
 3. Emits the session handshake — `CharacterID`, current gold balance (post-reconciliation), `GoldSyncEvent.Version`, zone assignment, current HP, current MP, current XP, current level, `heldFreePoints`, `ClassType`; and `wasKilledWhileDisconnected: bool` (true if HP reached 0 while in `Disconnected_SessionActive` — client shows "You were defeated while offline" on reconnect); and the following per-subsystem requestId continuity fields for dedup-safe reconnect (OQ-CUS-1 resolved 2026-06-11):

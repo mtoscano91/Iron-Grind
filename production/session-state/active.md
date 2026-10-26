@@ -4826,3 +4826,12 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: None (user: notes only).
 - Uncommitted: ZoneInstancingWiring.cs, ZoneServerComposition.cs, ZoneInstancing_Wiring_tests.cs, story-014, EPIC.md, tech-debt-register.md, 045 evidence, active.md. Leave untracked ProjectSettings/Packages/, SceneTemplateSettings.json, bash.exe.stackdump.
 - Next recommended: commit → no Ready story left in the Zone Instancing epic; pick the next epic/story (e.g. /help or /sprint-status). PAT rotation still unconfirmed.
+
+## Session Extract — /story-readiness 2026-10-26 (Character Persistence Story 011)
+- Verdict: NEEDS WORK (10 gaps) -> fixed -> Ready (7 h, was 4 h provisional). Lean: QL-STORY-READY skipped.
+- User decisions: (1) write Story 011 now (unblocks 015/016); (2) in-memory Currency is the gold authority -> ADR-001 Amendment A2.
+- Refinement found during drafting: the store writes absolute gold_balance / gold_version (caller's in-memory values), no stored-balance check, no save_version bump; buy = TrySpendGold -> BeginPurchase -> on fail AddGold(CompensatingRefund); refund = RefundPurchase FIRST (delete + absolute write) -> AddGold only on Success (memory-first could double-refund via SaveSession + reconciliation). Refunded/Completed never stored. Store never returns InsufficientGold/ConcurrencyConflict; unknown character -> DatabaseError.
+- Also found: BeginPurchase returned no purchase id -> new PendingPurchaseBeginResult { Result, PurchaseId }; atomicity needs new FailNextAfterInsert fault point; new sibling IPendingPurchaseStore (ICharacterRecordStore unchanged); RefundPurchase on another character's id -> CharacterNotFound.
+- Files: ADR-001 (status line + Amendment A2), ADR-006 (Decision 3 note), character-persistence.md CR-CP-12 rewritten, networking-session.md CR-NET-6.4 step 2 (store first), npc-shop.md (9d note, ADR note, PickupRequest-failure edge case), control-manifest.md lines 47/68 (version unchanged — regenerate with /create-control-manifest), story-011 rewritten, story-015 header (blocked only on 011 implementation), EPIC rows 011 Ready / 015 + header. entities.yaml: no change (CompensatingRefund already registered). systems-index: no status change.
+- Propagation check: CR-CP-1 interface listing (character-persistence.md lines 41/43) and architecture.md line 245 updated to the A2 signatures.
+- Next: /dev-story Story 011. PAT rotation still unconfirmed.

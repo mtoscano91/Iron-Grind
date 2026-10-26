@@ -104,6 +104,8 @@ await conn.ExecuteAsync(UpdateGoldBalanceSql, goldParams, transaction: tx);
 await tx.CommitAsync(ct);
 ```
 
+> **Note 2026-10-26 (ADR-001 Amendment A2):** the gold UPDATE writes absolute values supplied by the caller — `gold_balance = @goldBalance, gold_version = @goldVersion`, the in-memory Currency values after `TrySpendGold` — not `gold_balance - totalCost`, and has no stored-balance check; it does not advance `save_version`. `RefundPurchase` deletes the record and writes the caller's balance and version in one transaction the same way. The in-memory Currency balance is the authority during a session.
+
 A separate table (rather than co-located columns in `character_records`) ensures:
 - The character save path and the purchase transaction path are independent SQL statements — each can be issued and optimised separately
 - `PendingPurchase` records can be queried and reconciled independently during reconnect (ADR-001 Decision 4)

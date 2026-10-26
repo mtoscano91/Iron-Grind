@@ -1,7 +1,7 @@
 # Story 015: The Npgsql Pending-Purchase Store
 
 > **Epic**: Character Persistence
-> **Status**: Blocked — written 2026-10-12. Blocked on Stories 012, 013 and 014, and on Story 011's open decision 1 (in-memory gold against stored gold).
+> **Status**: Blocked — written 2026-10-12. Stories 012–014 Complete (2026-10-19); Story 011 decision 1 resolved 2026-10-26 (ADR-001 Amendment A2). Now blocked only on Story 011's implementation: it implements `IPendingPurchaseStore` (new), with the A2 signatures — `BeginPurchase(charId, record, goldBalance, goldVersion)` returning `PendingPurchaseBeginResult`, `RefundPurchase(purchaseId, charId, goldBalance, goldVersion)` — and the gold UPDATE writes absolute `gold_balance` / `gold_version`, no `save_version` bump. Re-run `/story-readiness` after Story 011.
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-09
@@ -13,7 +13,7 @@
 **Requirement**: `TR-cp-012`
 
 **ADR Governing Implementation**: ADR-006 Decision 3 (the `pending_purchases` INSERT and the gold-debit UPDATE inside the same `NpgsqlTransaction`; the DDL); ADR-001 Decisions 2–4.
-**ADR Decision Summary**: `BeginPurchase` is the only write that shares a transaction with another system's data; if either statement fails, both roll back.
+**ADR Decision Summary**: `BeginPurchase` is the only write that shares a transaction with another system's data; if either statement fails, both roll back. Since ADR-001 Amendment A2 (2026-10-26) the gold UPDATE writes the caller's in-memory balance and version as absolute values and has no balance check.
 
 **Engine**: Unity 6.3 LTS | **Risk**: MEDIUM
 **Engine Notes**: as Story 014 — read the pinned Npgsql and Dapper API, and Story 012's findings.

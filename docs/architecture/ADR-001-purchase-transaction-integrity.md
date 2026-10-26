@@ -1,6 +1,6 @@
 # ADR-001: Purchase Transaction Integrity
 
-> **Status**: Accepted (2026-06-07); Amended A1 (2026-06-09 — dedup key extended with messageType discriminator; see Amendment A1)
+> **Status**: Accepted (2026-06-07); Amended A1 (2026-06-09 — dedup key extended with messageType discriminator; see Amendment A1); Amended A2 (2026-10-26 — gold authority during a purchase: in-memory Currency first, the store writes the resulting balance; see Amendment A2)
 > **Date**: 2026-06-07
 > **Deciders**: Technical Director, Lead Programmer
 > **Affected systems**: NPC Shop, Currency System, Inventory System, Character Persistence, Networking Session, Consumable Use System
@@ -229,3 +229,49 @@ Wire-protocol type IDs are authoritative in `networking-wire-protocol.md`. Do no
 | `networking-channel-contract.md` | `BuyRequest`, `UseItemRequest` channel note dedup key updated |
 | `consumable-use-system.md` | OQ-CUS-3 marked RESOLVED 2026-06-09 |
 | `design/registry/entities.yaml` | `UseItemRequest` note OQ-CUS-3 flag updated to RESOLVED |
+
+---
+
+## Amendment A2 — 2026-10-26: Gold Authority During a Purchase
+
+### Problem
+
+Decision 2 orders "record, then `TrySpendGold`" (the in-memory Currency System). ADR-006 Decision 3 and `character-persistence.md` CR-CP-12 instead have `BeginPurchase` debit `character_records.gold_balance` in the database, with an `InsufficientGold` check against the stored balance. During a session the two balances differ: the in-memory balance carries every change since the last `SaveSession`. A stored-balance check can accept a purchase that the in-memory balance cannot pay (stored 500, in memory 300 after an unsaved spend, cost 400), and a later `SaveSession` overwrites a database-only debit with the in-memory value. Found at Character Persistence Story 011 `/story-readiness` 2026-10-26 (open decision 1).
+
+### Decision
+
+**The Currency System's in-memory balance is the authority during a session. The store writes the resulting balance and gold version as absolute values, in the same transaction as the record; it never computes a debit or a credit.** `save_version` is not advanced by a purchase write, so the next `SaveSession` (which writes `gold_balance` and `gold_version` from memory, guarded by `save_version`) writes the same values.
+
+| Step | Action |
+|------|--------|
+| Buy (a) | `TrySpendGold(charId, totalCost, reason)` in memory — the authoritative gate (`npc-shop.md` CR-SHOP-5 step 9d). Insufficient funds → reject; the store is not called. |
+| Buy (b) | `BeginPurchase(charId, record, goldBalance, goldVersion)` with the in-memory values after (a): one transaction — INSERT the record in state `GoldDebited` and `UPDATE character_records SET gold_balance = @goldBalance, gold_version = @goldVersion`. |
+| Buy (c) | (b) fails → `AddGold(charId, totalCost, CompensatingRefund)` in memory; reject. Nothing was made durable. |
+| Grant succeeds | `CompletePurchase(purchaseId)` deletes the record. No gold write. |
+| Grant fails (Decision 3) / reconnect (Decision 4) | **Store first:** compute `goldBalance` = cap-safe (F-CS-1) in-memory balance + `totalCost` and `goldVersion` = in-memory version + 1; `RefundPurchase(purchaseId, charId, goldBalance, goldVersion)` deletes the record and writes those values in one transaction; only on `Success` call `AddGold(charId, totalCost, CompensatingRefund)` in memory. |
+
+"Record before the debit" (Decision 2) now reads "record before the debit is **durable**": the in-memory debit of Buy (a) is lost with the process on a crash, and the durable debit and the record commit together, so no crash leaves a durable debit without a record.
+
+The refund runs the store first so that a refund is applied at most once. If memory were credited first and `RefundPurchase` then failed, a later `SaveSession` could persist the credit while the record survives as `GoldDebited`, and reconnect reconciliation would refund it a second time. With the store first, a failed `RefundPurchase` leaves the record outstanding and memory not credited: the player sees the debit until the next reconnect refunds it once (Decision 3's critical alert still applies).
+
+`Refunded` and `Completed` are never stored: both methods delete the record in the same write. The `PendingPurchaseState` values stay for logs and the enum's wire stability.
+
+**Store results.** `BeginPurchase` no longer returns `InsufficientGold` or `ConcurrencyConflict` (the Currency System rejects first; the purchase write is not version-guarded); an unknown character returns `DatabaseError` and writes nothing. The enum values stay.
+
+**Known side effect.** A purchase write also persists any gold change made in memory since the last save, slightly ahead of the rest of the character record. Accepted: memory is the authority, and the next `SaveSession` writes the same gold values.
+
+### Alternatives Considered and Rejected
+
+- **Debit the stored balance, then reload Currency from it** — adds a read and a Currency sync point that does not exist, and still disagrees with unsaved in-memory changes.
+- **Record only, no stored gold write (ADR-001 Decision 2 literally)** — the debit becomes durable only at the next `SaveSession`; a crash after the record and before that save leaves a record whose debit never reached the database, and reconciliation would refund gold that was never taken.
+
+### Downstream Updates Applied (2026-10-26)
+
+| Document | Change |
+|----------|--------|
+| `ADR-006-persistence-layer.md` | Dated note under Decision 3: absolute balance and version, no `save_version` bump |
+| `design/gdd/character-persistence.md` | CR-CP-12 Begin / Complete / Refund paragraphs rewritten |
+| `design/gdd/networking-session.md` | CR-NET-6.4 step 2: store first, then `AddGold` |
+| `design/gdd/npc-shop.md` | CR-SHOP-5 step 9d note: `BeginPurchase` after `TrySpendGold` |
+| `docs/architecture/control-manifest.md` | Two ADR-001 / ADR-006 lines reworded (manifest version unchanged; regenerate with `/create-control-manifest`) |
+| `production/epics/character-persistence/story-011-*.md`, `story-015-*.md` | New method signatures and criteria |

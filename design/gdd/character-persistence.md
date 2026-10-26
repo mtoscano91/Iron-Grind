@@ -38,9 +38,9 @@ interface ICharacterPersistence
     Task                       CreateStub(AccountID accountId, CharacterID characterId, ClassType classType, CancellationToken ct);
 
     // PendingPurchase lifecycle — ADR-001 Decisions 2–4; stored in separate pending_purchases table, same DB (ADR-006 Decision 3)
-    Task<PendingPurchaseResult>                BeginPurchase(CharacterID charId, PendingPurchaseRecord record, CancellationToken ct);
+    Task<PendingPurchaseBeginResult>           BeginPurchase(CharacterID charId, PendingPurchaseRecord record, uint goldBalance, uint goldVersion, CancellationToken ct); // ADR-001 A2
     Task<CharacterSaveResult>                  CompletePurchase(long purchaseId, CancellationToken ct);
-    Task<CharacterSaveResult>                  RefundPurchase(long purchaseId, CharacterID charId, uint refundAmount, CancellationToken ct);
+    Task<CharacterSaveResult>                  RefundPurchase(long purchaseId, CharacterID charId, uint goldBalance, uint goldVersion, CancellationToken ct); // ADR-001 A2
     Task<IReadOnlyList<PendingPurchaseRecord>> LoadOutstandingPurchases(CharacterID charId, CancellationToken ct);
 }
 
@@ -281,13 +281,15 @@ CR-CP-5 (caller-rollback + session-preservation + disconnect) applies **exclusiv
 
 `PendingPurchase` records are stored in a dedicated `pending_purchases` table in the same PostgreSQL database as `character_records` (ADR-006 Decision 3). They are **not** part of the character record schema (CR-CP-2) and are not read or written by `LoadCharacter`, `SaveSession`, or `SaveIrreversibleOutcome`.
 
-`BeginPurchase` is the only write path that shares a database transaction with another system: the `pending_purchases` INSERT and the Currency System's gold-debit UPDATE on `character_records.gold_balance` execute atomically in a single `NpgsqlTransaction`. If the gold balance is insufficient (`gold_balance < totalCost`), both operations are rolled back and `InsufficientGold` is returned — no record is created and no gold is debited.
+**Gold authority (ADR-001 Amendment A2, 2026-10-26).** During a session the Currency System's in-memory balance is the authority. The purchase methods never compute a debit or a credit: the caller passes the in-memory `goldBalance` and `goldVersion`, and the store writes them as absolute values on `character_records` without advancing `save_version`, so the next `SaveSession` writes the same values.
 
-`LoadOutstandingPurchases` returns all records with `state = GoldDebited` for a given `charId`. This is called during the reconnect reconciliation step (CR-NET-6.4 step 2 in `networking-session.md`) to refund any purchases whose item-grant step did not complete before a server crash or session expiry. Each outstanding record is resolved by `RefundPurchase`, which calls `AddGold(charId, totalCost, CompensatingRefund)` and deletes the record.
+`BeginPurchase(charId, record, goldBalance, goldVersion)` is the only write path that shares a database transaction with another system: the `pending_purchases` INSERT (state `GoldDebited`, store-generated id) and the UPDATE of `character_records.gold_balance` and `gold_version` execute atomically in a single `NpgsqlTransaction` — both or neither. The caller has already debited in memory with `TrySpendGold` (the authoritative funds check; `npc-shop.md` CR-SHOP-5 step 9d) and passes the values after it; if `BeginPurchase` fails, the caller restores memory with `AddGold(charId, totalCost, CompensatingRefund)`. The store does not check the balance and does not return `InsufficientGold` or `ConcurrencyConflict`; an unknown character returns `DatabaseError` and writes nothing.
 
-`CompletePurchase` is called on successful `PickupRequest` — it marks the record `Completed` and deletes it.
+`LoadOutstandingPurchases` returns all records with `state = GoldDebited` for a given `charId` (an empty list when there is none). This is called during the reconnect reconciliation step (CR-NET-6.4 step 2 in `networking-session.md`) to refund any purchases whose item-grant step did not complete before a server crash or session expiry. Each outstanding record is resolved by a refund (below).
 
-`RefundPurchase` is called on `PickupRequest` failure (ADR-001 Decision 3) or on reconnect reconciliation — it credits the gold, marks the record `Refunded`, and deletes it.
+`CompletePurchase(purchaseId)` is called on successful `PickupRequest` — it deletes the record. No gold is written.
+
+`RefundPurchase(purchaseId, charId, goldBalance, goldVersion)` is called on `PickupRequest` failure (ADR-001 Decision 3) or on reconnect reconciliation — it deletes the record and writes the given balance and version in one transaction. The caller runs it **before** crediting memory: it computes `goldBalance` = cap-safe (F-CS-1) in-memory balance + `totalCost` and `goldVersion` = in-memory version + 1, and calls `AddGold(charId, totalCost, CompensatingRefund)` only after `RefundPurchase` returns `Success`, so a failed refund leaves the record outstanding and is refunded exactly once later. No record is ever stored as `Refunded` or `Completed`.
 
 Both `CompletePurchase` and `RefundPurchase` are idempotent on missing `purchaseId` (record already deleted by a prior reconciliation) — they return `Success` without error.
 

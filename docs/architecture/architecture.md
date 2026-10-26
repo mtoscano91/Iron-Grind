@@ -242,7 +242,7 @@ interface ICharacterPersistence {
     Task<CharacterLoadResult>  LoadCharacter(CharacterID id, CancellationToken ct);
     Task<CharacterSaveResult>  SaveSession(CharacterRecord rec, CancellationToken ct);
     Task<CharacterSaveResult>  SaveIrreversibleOutcome(CharacterRecord rec, CancellationToken ct);
-    Task<PendingPurchaseResult> BeginPurchase(CharacterID id, PendingPurchaseRecord r, CancellationToken ct);
+    Task<PendingPurchaseBeginResult> BeginPurchase(CharacterID id, PendingPurchaseRecord r, uint goldBalance, uint goldVersion, CancellationToken ct); // ADR-001 A2 (2026-10-26)
     Task                       CompletePurchase(...);  Task RefundPurchase(...);
     Task<IReadOnlyList<PendingPurchaseRecord>> LoadOutstandingPurchases(CharacterID id, CancellationToken ct);
 }

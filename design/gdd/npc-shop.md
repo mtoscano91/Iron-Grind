@@ -70,11 +70,11 @@ The shop does not sell equipment gear. Gear is earned from monster drops only �
    - a. `NPCInteractionActive = true` → else `RejectedNoNPCSession`
    - b. `quantity ≥ 1` → else `RejectedInvalidQuantity`
    - c. `itemId` is in the catalog → else `RejectedItemNotInCatalog`
-   - d. `TrySpendGold(charId, shopPrice × quantity, reason)` → if `InsufficientFunds`, `RejectedInsufficientFunds`; no gold debited
+   - d. `TrySpendGold(charId, shopPrice × quantity, reason)` → if `InsufficientFunds`, `RejectedInsufficientFunds`; no gold debited. Then `BeginPurchase(charId, record, goldBalance, goldVersion)` with the in-memory values after the debit (one transaction: the `PendingPurchase` record and the stored balance); if it fails, `AddGold(charId, totalCost, CompensatingRefund)` and reject (ADR-001 Amendment A2, 2026-10-26). On step e's failure the refund runs `RefundPurchase` first and `AddGold` only on its success (ADR-001 A2).
    - e. `PickupRequest(charId, itemId, quantity)` → if fail, call compensating `AddGold(charId, totalCost, CompensatingRefund)` immediately; return `RejectedInventoryFull`. Currency System event delivery is architecture-defined — do not specify wire batching behavior here (see OQ-NS-5).
 10. On success: send `BuyResult(success=true, itemId, quantity, newGoldBalance)`.
 
-> ✅ **ADR-001 Accepted (OQ-NS-5 resolved 2026-06-07)**: The Purchase Transaction Integrity ADR is accepted. Implementing CR-SHOP-5 requires: `requestId: uint` on `BuyRequest`, `PendingPurchase` durable record created before `TrySpendGold`, and reconnect reconciliation step in `SessionHandshake`. See `docs/architecture/ADR-001-purchase-transaction-integrity.md`.
+> ✅ **ADR-001 Accepted (OQ-NS-5 resolved 2026-06-07)**: The Purchase Transaction Integrity ADR is accepted. Implementing CR-SHOP-5 requires: `requestId: uint` on `BuyRequest`, `PendingPurchase` durable record written with the stored gold in one `BeginPurchase` right after `TrySpendGold` (ADR-001 Amendment A2, 2026-10-26), and reconnect reconciliation step in `SessionHandshake`. See `docs/architecture/ADR-001-purchase-transaction-integrity.md`.
 
 **CR-SHOP-6 — Buy Quantity Selector**
 
@@ -249,7 +249,7 @@ Integer form: `(BuyPrice × 10) ≥ (SellPriceGold × 15)` — equivalent to `Bu
 
 **Inventory full / PickupRequest failure**
 
-- **If `PickupRequest` fails after `TrySpendGold` succeeds**: Call compensating `AddGold(charId, totalCost, CompensatingRefund)` immediately and return `RejectedInventoryFull`. The net gold effect is zero (debit then equal credit). Currency System event delivery behavior is implementation-defined — wire batching is not specified here (see OQ-NS-5). The net-zero balance assertion in AC-NS-15 is the observable correctness gate.
+- **If `PickupRequest` fails after `TrySpendGold` succeeds**: Call compensating `AddGold(charId, totalCost, CompensatingRefund)` only after `RefundPurchase` succeeds (ADR-001 Amendment A2: store first) and return `RejectedInventoryFull`. The net gold effect is zero (debit then equal credit). Currency System event delivery behavior is implementation-defined — wire batching is not specified here (see OQ-NS-5). The net-zero balance assertion in AC-NS-15 is the observable correctness gate.
 - **If `PickupRequest` fails for a partial quantity** (first N units absorbed by partial stacks, remaining units have no slot): Inventory System Rule 3 is atomic — either all units are placed or none. No partial grant occurs. Apply the same compensating refund path as a full failure.
 - **If the compensating `AddGold` itself fails** (e.g., `ConcurrencyConflict` — two retries exhausted, or pathological `CharacterNotFound`): Log a critical server alert with `charId`, `totalCost`, and the `GoldMutationError` code. Flag for manual remediation. Return `RejectedInventoryFull` to the client (the item was not delivered). Do not silently discard the outstanding debit.
 

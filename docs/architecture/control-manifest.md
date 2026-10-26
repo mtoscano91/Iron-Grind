@@ -44,7 +44,7 @@ This manifest is a programmer's quick-reference extracted from all Accepted ADRs
 - Server dedup key for all R-OD messages carrying `requestId`: `(charId, messageType, requestId)`. `messageType` is the `ushort` wire-protocol envelope identifier — source: ADR-001 Amendment A1
 - Dedup layer must resolve `messageType` from the envelope field — never hardcode numeric type IDs in the dedup layer — source: ADR-001 Amendment A1
 - Dedup window: `SESSION_TTL_SECONDS` (300s) — source: ADR-001
-- Create `PendingPurchase` record in durable storage **before** calling `TrySpendGold` — source: ADR-001
+- Create the `PendingPurchase` record and make the gold debit durable in **one** store write (`BeginPurchase`) right after the in-memory `TrySpendGold` (the authoritative funds check); on failure restore memory with `AddGold(CompensatingRefund)`. Refunds call `RefundPurchase` first and `AddGold` only on its success — source: ADR-001 Amendment A2 (2026-10-26)
 - Reconnect reconciliation: query `GoldDebited` PendingPurchase records after `SessionHandshake` accepted, before any gameplay messages are processed — source: ADR-001
 - Rate-limit `BuyRequest`/`SellRequest`: 10 requests/second per `charId` (sliding 1-second window) — source: ADR-001
 - Use `CompensatingRefund` (GoldTransactionReason enum value = 8) for refund-on-failure and reconnect reconciliation — source: ADR-001
@@ -65,7 +65,7 @@ This manifest is a programmer's quick-reference extracted from all Accepted ADRs
 - PostgreSQL is the sole persistence store; accessed via Npgsql + Dapper — source: ADR-006
 - All SQL is explicit parameterized SQL — no dynamic query generation, no ORM change tracking — source: ADR-006
 - Optimistic-concurrency UPDATE: `WHERE character_id = @id AND save_version = @expected`; rows-affected = 0 → return `ConcurrencyConflict` — source: ADR-006
-- `PendingPurchase` INSERT and `TrySpendGold` UPDATE share one `NpgsqlTransaction` — source: ADR-006
+- `PendingPurchase` INSERT and the `character_records` gold UPDATE share one `NpgsqlTransaction`; the UPDATE writes the caller's in-memory `gold_balance` and `gold_version` as absolute values and does not advance `save_version` — source: ADR-006 Decision 3, ADR-001 Amendment A2
 - IL2CPP `link.xml` must preserve Npgsql and Dapper: `<assembly fullname="Npgsql" preserve="all" />` + `<assembly fullname="Dapper" preserve="all" />` — source: ADR-006. The `link.xml` is project-wide and must not be what brings the DLLs into a client build — source: ADR-012
 - At-most-one write in flight per `CharacterID` (service-layer per-CharacterID write-queue) — source: ADR-006
 - Per-zone-process connection pool: one `NpgsqlDataSource` per zone process with `Timeout=5;Command Timeout=5;Pooling=true;Minimum Pool Size=2;Maximum Pool Size=10;Connection Idle Lifetime=60` (ADR-006's original 20 is superseded). The composition root builds it at startup step S4 with `NpgsqlConnectionStringBuilder` from server config (host, port, database, username, pool values) and the password from `IRONGRIND_PG_PASSWORD`. `IRONGRIND_DEV_PG` is a test-and-verification variable only — source: ADR-006 Amendment 3, ADR-007

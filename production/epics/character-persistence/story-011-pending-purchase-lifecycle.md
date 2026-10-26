@@ -1,72 +1,86 @@
 # Story 011: `PendingPurchase` Lifecycle on the Store Seam
 
 > **Epic**: Character Persistence
-> **Status**: Deferred — `/story-readiness` 2026-10-15: NEEDS WORK (3 open decisions, provisional estimate, no performance note). Deferred until the NPC Shop epic, its only caller. Recommended answer to decision 1: in-memory Currency is the authority during a session; the store's `BeginPurchase` / `RefundPurchase` also write the stored balance in the same transaction but do not advance `save_version`, and the caller mirrors them with `TrySpendGold` / `AddGold(CompensatingRefund)` in memory, so the next `SaveSession` writes the same value — needs an ADR-001 amendment (it orders "record, then a separate debit").
+> **Status**: Ready — written 2026-10-12; `/story-readiness` 2026-10-15: NEEDS WORK (3 open decisions) → Deferred; `/story-readiness` 2026-10-26: NEEDS WORK (10 gaps) → fixed → Ready. User decisions 2026-10-26: write it now (unblocks Story 015); in-memory Currency is the gold authority (ADR-001 Amendment A2).
 > **Layer**: Core
 > **Type**: Logic
-> **Manifest Version**: 2026-10-09
-> **Estimate**: 4 hours (provisional — confirm at `/story-readiness`)
+> **Manifest Version**: 2026-10-19
+> **Estimate**: 7 hours (readiness 2026-10-26; was 4 h provisional — includes the signature change and the new store seam)
 
 ## Context
 
-**GDD**: `design/gdd/character-persistence.md` — CR-CP-12 (storage and lifecycle); CR-CP-1 (the four purchase methods, `PendingPurchaseResult`, `PendingPurchaseRecord`). The GDD has no acceptance criterion for CR-CP-12: the criteria below are written from the rule's text. `design/gdd/networking-session.md` — CR-NET-6.4 step 2 (reconnect reconciliation).
+**GDD**: `design/gdd/character-persistence.md` — CR-CP-12 (storage and lifecycle, rewritten 2026-10-26 for ADR-001 A2); CR-CP-1 (the four purchase methods, `PendingPurchaseResult`, `PendingPurchaseRecord`). The GDD has no acceptance criterion for CR-CP-12: the criteria below are written from the rule's text. `design/gdd/networking-session.md` — CR-NET-6.4 step 2 (reconnect reconciliation: store first, then `AddGold`).
 **Requirement**: `TR-cp-012`
 
-**ADR Governing Implementation**: ADR-001 (Purchase Transaction Integrity) Decisions 2–4; ADR-006 Decision 3 (a separate `pending_purchases` table; the INSERT and the gold-debit UPDATE in one transaction).
-**ADR Decision Summary**: a purchase debits gold and records a pending purchase atomically; the record is completed on a successful item grant or refunded otherwise, and reconciled on reconnect.
+**ADR Governing Implementation**: ADR-001 (Purchase Transaction Integrity) Decisions 2–4 and **Amendment A2 (2026-10-26)**; ADR-006 Decision 3 (a separate `pending_purchases` table; the INSERT and the gold UPDATE in one transaction) and its 2026-10-26 note.
+**ADR Decision Summary**: the Currency System's in-memory balance is the authority during a session. The caller debits in memory with `TrySpendGold` first, then `BeginPurchase` records the purchase and writes the resulting balance and gold version as absolute values in one write, without advancing `save_version`. A refund runs `RefundPurchase` (delete + absolute write) first and credits memory only on its success. Nothing is ever stored as `Refunded` or `Completed`.
 
 **Engine**: Unity 6.3 LTS | **Risk**: LOW
-**Engine Notes**: none.
+**Engine Notes**: N/A — no engine API involved (plain C#, `IronGrind.ServerLogic`).
 
 **Control Manifest Rules (this layer)**:
 - Required: PostgreSQL is the sole persistence store — ADR-006 (the in-memory store of this story is a test and no-database stand-in, not a second store)
 - Required: `ConfigureAwait(false)` on every `await` in the persistence layer — ADR-011
+- Required: `PendingPurchase` record and the durable gold write in one store write; refunds store first — ADR-001 Amendment A2 (manifest lines 47 and 68, reworded 2026-10-26)
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] **`BeginPurchase` — success**: with a stored gold balance ≥ `TotalCost`, one record is created in state `GoldDebited` with a store-generated id, the stored gold balance is lowered by `TotalCost`, and `Success` is returned. Both happen or neither.
-- [ ] **`BeginPurchase` — insufficient gold**: with a balance below `TotalCost`, `InsufficientGold` is returned, no record exists and the balance is unchanged. A balance exactly equal to the cost succeeds.
-- [ ] **`BeginPurchase` — atomicity**: a store failure between the two operations leaves neither applied (shown with the in-memory store's fault injection) and returns `DatabaseError`.
-- [ ] **`CompletePurchase`**: removes the record and returns `Success`; no gold changes.
-- [ ] **`RefundPurchase`**: credits `refundAmount` to the character's stored gold, removes the record and returns `Success`.
-- [ ] **Idempotent on a missing id**: `CompletePurchase` and `RefundPurchase` for an id that does not exist return `Success` and change nothing.
+- [ ] **Signatures (ADR-001 A2)**: `ICharacterPersistence.BeginPurchase(CharacterID charId, PendingPurchaseRecord record, uint goldBalance, uint goldVersion, CancellationToken ct)` returning `Task<PendingPurchaseBeginResult>` (new readonly struct: `Result`, `PurchaseId` — 0 unless `Success`) and `RefundPurchase(long purchaseId, CharacterID charId, uint goldBalance, uint goldVersion, CancellationToken ct)` replace today's signatures (`refundAmount` is removed); `CompletePurchase` and `LoadOutstandingPurchases` keep theirs. `CharacterPersistenceService` implements all four (no `NotSupportedException` left). Doc comments state the caller's order (debit in memory first; refund store first).
+- [ ] **Store seam**: a new sibling interface `IPendingPurchaseStore` (`src/ServerLogic/CharacterPersistence/IPendingPurchaseStore.cs`) holds the four store operations; `ICharacterRecordStore` is unchanged. The in-memory implementation shares its data with `InMemoryCharacterRecordStore` (one class implements both, or the purchase store takes the record store), so a purchase write and a `FetchAsync` see the same gold. `CharacterPersistenceService` takes the purchase store through its constructor. Story 015 implements the interface in SQL.
+- [ ] **`BeginPurchase` — success**: for a stored character, one record is created in state `GoldDebited` with a store-generated id (> 0, unique), the stored `GoldBalance` and `GoldVersion` become exactly `goldBalance` and `goldVersion`, the stored `SaveVersion` is unchanged, and `Success` is returned.
+- [ ] **`BeginPurchase` — no balance check**: the store does not compare `goldBalance` with `TotalCost` or with the stored balance (a `goldBalance` above the stored balance is written as given) and never returns `InsufficientGold` or `ConcurrencyConflict`.
+- [ ] **`BeginPurchase` — unknown character**: no stored record for `charId` → `DatabaseError`, no purchase record, nothing written.
+- [ ] **`BeginPurchase` — atomicity**: with the new fault point `FailNextAfterInsert` armed (the in-memory store fails after staging the record and before the gold write), neither the record nor the gold write is applied and `DatabaseError` is returned. `FailNext` (whole operation) also gives `DatabaseError` with nothing applied.
+- [ ] **`CompletePurchase`**: removes the record and returns `Success`; the stored gold, gold version and save version are unchanged.
+- [ ] **`RefundPurchase`**: removes the record and sets the stored `GoldBalance` / `GoldVersion` to exactly `goldBalance` / `goldVersion` in one write; `SaveVersion` unchanged; `Success`. With `FailNextAfterInsert` (or `FailNext`) armed, the record stays `GoldDebited`, the gold is unchanged and `DatabaseError` is returned.
+- [ ] **Idempotent on a missing id**: `CompletePurchase` and `RefundPurchase` for an id that does not exist (or was already removed) return `Success` and change nothing — `RefundPurchase` writes no gold in that case.
+- [ ] **`RefundPurchase` — wrong character**: a `purchaseId` that exists but belongs to another character returns `CharacterNotFound` and changes nothing.
 - [ ] **`LoadOutstandingPurchases`**: returns every record of the character in state `GoldDebited`, and none of another character; an empty list, not null, when there is none.
-- [ ] **Outside the character record**: `LoadCharacter`, `SaveSession` and `SaveIrreversibleOutcome` neither read nor write pending purchases; a pending record survives a `SaveSession`.
-- [ ] **Store seam**: the purchase operations are on the store seam of Story 002 (or a sibling interface), so Story 015 can implement them in SQL.
+- [ ] **Outside the character record**: `LoadCharacter`, `SaveSession` and `SaveIrreversibleOutcome` neither read nor write pending purchases; a pending record survives a `SaveSession`. A `SaveSession` after a `BeginPurchase` (with the `SaveVersion` loaded before the purchase) succeeds — the purchase did not advance it.
+- [ ] **Cancellation and threading**: a cancelled token returns `DatabaseError` with nothing applied; every `await` uses `ConfigureAwait(false)` (ADR-011); the in-memory store is safe to call from several threads (same locking as `InMemoryCharacterRecordStore`).
 
 ---
 
 ## Implementation Notes
 
-- CR-CP-12 says `RefundPurchase` "calls `AddGold(charId, totalCost, CompensatingRefund)` and deletes the record", and also that it "credits the gold, marks the record `Refunded`, and deletes it". Gold lives in two places at that moment — the Currency System's memory and the stored record: see open decision 1.
-- `BeginPurchase` debits `character_records.gold_balance` in the database directly. The in-memory balance of the Currency System and its `GoldVersion` must agree with it afterwards: open decision 1 again.
-
-**Open decisions for `/story-readiness`**
-
-1. **In-memory gold against stored gold.** Who debits and credits the Currency System's in-memory balance around `BeginPurchase` and `RefundPurchase`, in what order with the store write, and what happens to `gold_version` and to the record's `save_version` when the purchase transaction updates the row (a later `SaveSession` carries an expected `SaveVersion` — does a purchase advance it).
-2. **Tick code and these methods.** They return tasks, so ADR-011 applies: the NPC Shop's handler tracks them. Whether a purchase closes the mutation gate is ADR-001's and the shop's question.
-3. **Write this story now or with the NPC Shop.** With no caller, every criterion here is tested against the in-memory store alone.
+- Caller order (for the NPC Shop and reconnect reconciliation, not implemented here — ADR-001 A2): buy = `TrySpendGold` → `BeginPurchase(balanceAfter, versionAfter)` → on failure `AddGold(CompensatingRefund)`; refund = compute cap-safe `balance + totalCost` and `version + 1` → `RefundPurchase` → on `Success` `AddGold(CompensatingRefund)`. Put this order in the `ICharacterPersistence` doc comments with an `<example>`.
+- `PendingPurchaseResult.InsufficientGold` and `ConcurrencyConflict` stay in the enum (wire and log stability); update their doc comments to say the store no longer returns them (ADR-001 A2).
+- `PendingPurchaseRecord.Id` is 0 before insert; the store assigns ids from a counter starting at 1 (the SQL store uses `BIGSERIAL`). `BeginPurchase` did not return the id before 2026-10-26; the caller needs it for `CompletePurchase` / `RefundPurchase`, so it now returns `PendingPurchaseBeginResult` (Signatures criterion; result-struct style of Story 001).
+- The in-memory store's fault points: `FailNext` (existing) fails the whole call before any change; `FailNextAfterInsert` (new) fails between the two halves of `BeginPurchase` and of `RefundPurchase` (after the record change is staged, before the gold write) and rolls the staged change back. Both are test and diagnostic seams like the existing ones.
+- Gold values are written as given: `goldBalance` above `GOLD_CAP` is the caller's error; the store does not clamp (Currency already did).
 
 ---
 
 ## Out of Scope
 
-- The NPC Shop's `PurchaseRequest` / `PickupRequest` handlers (ADR-001)
+- The NPC Shop's `PurchaseRequest` / `PickupRequest` handlers and the in-memory `TrySpendGold` / `AddGold` calls around the store (ADR-001; NPC Shop epic)
+- Whether a purchase holds the character mutation gate, and tracking the returned tasks from tick code (ADR-011) — the NPC Shop's handler design (former open decision 2)
+- Reconnect reconciliation wiring (session epic, CR-NET-6.4 step 2)
 - Story 015: the SQL and the shared `NpgsqlTransaction`
 - A `PendingSell` record (ADR-001 OQ-ADR1-2)
 
 ---
 
+## Performance
+
+No tick-path cost: the methods return tasks and run off the tick (ADR-011); the in-memory store is O(records of the character) for `LoadOutstandingPurchases` and O(1) for the others. No per-tick allocation is added.
+
+---
+
 ## QA Test Cases
 
-- **Begin** — Balance 500, cost 200 → `Success`, balance 300, one `GoldDebited` record. Edge: cost 500 → balance 0; cost 501 → `InsufficientGold`, balance 500, no record.
-- **Atomicity** — Fault injected after the insert → no record, balance unchanged, `DatabaseError`.
-- **Complete** — Then the record is gone, balance unchanged; again with the same id → `Success`.
-- **Refund** — Refund 200 → balance back to 500, record gone; again → `Success`, balance still 500.
-- **Outstanding** — Two records for A, one for B → A's list has two.
-- **Independence** — A pending record, then `SaveSession` → the record is still outstanding.
+- **Begin** — Stored balance 500, version 4, save version 7; `BeginPurchase(record cost 200, goldBalance 300, goldVersion 5)` → `Success`, id > 0, stored 300 / 5, save version still 7, one `GoldDebited` record. Edge: `goldBalance 0` → stored 0. Edge: `goldBalance 600` (above stored) → stored 600 (no check).
+- **Unknown character** — no record → `DatabaseError`, no purchase record.
+- **Atomicity** — `FailNextAfterInsert` → no record, stored 500 / 4, `DatabaseError`; `FailNext` → same.
+- **Complete** — Then the record is gone, gold unchanged; again with the same id → `Success`.
+- **Refund** — After Begin (300 / 5): `RefundPurchase(id, goldBalance 500, goldVersion 6)` → record gone, stored 500 / 6, save version 7; again → `Success`, stored still 500 / 6. Fault armed → record still outstanding, stored 300 / 5, `DatabaseError`.
+- **Wrong character** — A's purchase id refunded as B → `CharacterNotFound`, A's record and gold unchanged.
+- **Outstanding** — Two records for A, one for B → A's list has two; C → empty list.
+- **Independence** — A pending record, then `SaveSession` with the pre-purchase save version → `Success`, the record is still outstanding.
+- **Cancellation** — Cancelled token on each method → `DatabaseError`, nothing applied.
+- **Ids** — Three Begins → three distinct increasing ids.
 
 ---
 
@@ -81,5 +95,5 @@
 
 ## Dependencies
 
-- Depends on: Stories 001, 002
+- Depends on: Stories 001, 002 (Complete)
 - Unlocks: Story 015; the NPC Shop epic
