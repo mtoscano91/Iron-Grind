@@ -3,7 +3,7 @@
 > **Layer**: Core
 > **GDD**: design/gdd/zone-instancing.md
 > **Architecture Module**: Zone Instancing (zone-process side) — the zone `State` owner, player and mob slot pools, EntityID minting, the player entry sequence, `ZoneStateSnapshot` assembly, bounds validation, `ZoneDefinition` / `ZoneSceneRegistry`, the CR-ZI-12 close steps, and the mob, party and relevance interfaces
-> **Status**: Ready
+> **Status**: Complete (2026-10-26) — all 14 stories closed; routing ACs (AC-ZI-1, 2, 3, 16, 19, 20) move with the gateway work
 > **Stories**: 14 (001–014), written 2026-10-22 — see Stories below
 > **Manifest Version**: 2026-10-19
 
@@ -89,7 +89,7 @@ Zone Instancing is the server-side runtime of one zone instance: it owns the ins
 | 011 | [Stale slot reclamation and entry stall](story-011-stale-slot-reclamation.md) | Logic | Complete (2026-10-23) | ADR-011, ADR-014, ADR-004, ADR-010 |
 | 012 | [Teardown close steps](story-012-teardown-close-steps.md) | Integration | Complete (2026-10-23) | ADR-009 A1, ADR-006, ADR-011, ADR-010 |
 | 013 | [Player exit and slot release](story-013-player-exit-and-slot-release.md) | Integration | Complete (2026-10-23) | ADR-010, ADR-011 |
-| 014 | [Composition wiring, quit-request drain](story-014-composition-wiring-and-drain.md) | Integration | Ready (readiness 2026-10-23, 18 h) | ADR-009 A1 |
+| 014 | [Composition wiring, quit-request drain](story-014-composition-wiring-and-drain.md) | Integration | Complete (2026-10-26) | ADR-009 A1 |
 
 ## Definition of Done
 
@@ -102,3 +102,5 @@ This epic is complete when:
 ## Next Step
 
 Stories 001-003 are Complete (2026-10-22), Stories 004-010 (2026-10-23). Story 009 closed COMPLETE WITH NOTES (`643fdb8`; open for Story 010 readiness: a second handshake on an admitted connection; `OnPlayerAdmitted` must not throw). Story 010 readiness 2026-10-23: NEEDS WORK (10 gaps) -> fixed -> Ready (7 h); "entering" moved to Story 011, activity sink stays a stand-in (Story 014). Story 010 closed COMPLETE WITH NOTES 2026-10-23 (roster records the admission tick; Story 014 builds it with the pipeline tick source). Next: `/story-readiness production/epics/zone-instancing/story-011-stale-slot-reclamation.md` (open decision 1).
+
+Story 014 closed COMPLETE WITH NOTES 2026-10-26 (composition wiring, quit drain, TD-078; local Dedicated Server run: Active → T-4 + T-5 on tick 1185 → exit Clean; dev-only transition log added). All 14 stories Complete. Remaining for the module: the gateway-blocked routing ACs, the session-epic inputs (disconnect, logout, ghost TTL), TD-077 / TD-079 sinks, and the Linux IL2CPP headless-build gate.

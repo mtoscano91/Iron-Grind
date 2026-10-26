@@ -19,6 +19,8 @@
 IronGrind.exe -batchmode -nographics -logFile <run>.log -zoneTemplate ZoneTemplate_Empty -zoneId 1 -port 7777 -serverConfig <config> -teardownAfterSeconds <n>
 ```
 
+> **Note 2026-10-26 (rerun for Zone Instancing Story 014):** since Zone Instancing Story 004, `-zoneTemplate` takes the `ZoneTemplateID` name resolved through `Assets/data/Zones/ZoneSceneRegistry.asset`; pass `-zoneTemplate StartingZone` (template 0, scene `ZoneTemplate_Empty`). `-zoneTemplate ZoneTemplate_Empty` now fails at S6 (`ZoneDefinitionLoadFailed: unknown or unregistered zone template`, exit 1). Since Story 014, `-teardownAfterSeconds` takes the quit (drain) path, and development builds also log the zone lifecycle transitions (`[ZoneInstancingWiring] ZoneID(1) Active|Draining|Closed(<transition>) at tick <n>`). The rerun result is in Story 014's Completion Notes.
+
 | Run | Config | `-teardownAfterSeconds` | Exit | Wall time |
 |-----|--------|-------------------------|------|-----------|
 | A | `zone-config.json` | 75 | 0 | 76.7 s |

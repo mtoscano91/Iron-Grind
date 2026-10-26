@@ -292,7 +292,8 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// <summary>
         /// When true, Editor and development builds log <c>[ZoneServer] teardown step &lt;n&gt; done in &lt;ms&gt; ms</c>
         /// after each teardown step and <c>[ZoneServer] teardown step 8: quit(&lt;code&gt;)</c> before the quit
-        /// (Story 045 AC-10/AC-11 evidence; step 2a's time is the listener stop). Release builds never log these.
+        /// (Story 045 AC-10/AC-11 evidence; step 2a's time is the listener stop), and the zone lifecycle transitions
+        /// through <see cref="ZoneInstancingWiringOptions.LogTransitions"/> (read at S5). Release builds never log these.
         /// The host sets it; off by default so EditMode tests see no extra log lines.
         /// </summary>
         public bool LogTeardownSteps { get; set; }
@@ -1409,7 +1410,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                 var wiring = new ZoneInstancingWiring(_owner._zoneId, _tickLoop, _queue, dispatcher, outbox,
                     _owner.PersistenceService, _owner.PersistenceService, _owner.PersistenceService, _gate,
                     new StandInZoneInventoryService(), _disconnector, _owner.RequestTeardown,
-                    new ZoneInstancingWiringOptions { Directory = _directory });
+                    new ZoneInstancingWiringOptions { Directory = _directory, LogTransitions = _owner.LogTeardownSteps });
                 Observe(nameof(ZoneInstancingWiring));
                 _owner._simulationSteps.Add(wiring);
                 _owner.AttachZoneInstancing(wiring);

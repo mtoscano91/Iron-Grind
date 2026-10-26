@@ -678,6 +678,57 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
                 (ZoneState.Draining, ZoneState.Closed, 50u));
         }
 
+        // ----- Transition log (Story 045 rerun evidence) -----------------------------------------
+
+        [Test]
+        public void test_wiring_log_transitions_on_logs_active_draining_and_closed_with_ticks()
+        {
+            // Arrange
+            LogAssert.Expect(LogType.Log, @"[ZoneInstancingWiring] ZoneID(7) Active at tick 0");
+            LogAssert.Expect(LogType.Log, @"[ZoneInstancingWiring] ZoneID(7) Draining at tick 50");
+            LogAssert.Expect(LogType.Log, @"[ZoneInstancingWiring] ZoneID(7) Closed(Drained) at tick 50");
+            Build(o => o.LogTransitions = true);
+
+            // Act
+            _wiring.RequestQuit();
+            RunTick(50u);
+
+            // Assert
+            Assert.AreEqual(ZoneState.Closed, _wiring.Lifecycle.State);
+            AssertExit(ZoneExitCode.Clean, 50u);
+        }
+
+        [Test]
+        public void test_wiring_log_transitions_off_by_default_logs_no_transition()
+        {
+            // Arrange
+            int transitionLines = 0;
+            Application.LogCallback count = (message, _, __) =>
+            {
+                if (message.StartsWith("[ZoneInstancingWiring] ZoneID(", StringComparison.Ordinal))
+                {
+                    transitionLines++;
+                }
+            };
+            Application.logMessageReceived += count;
+            try
+            {
+                Build();
+
+                // Act
+                _wiring.RequestQuit();
+                RunTick(50u);
+            }
+            finally
+            {
+                Application.logMessageReceived -= count;
+            }
+
+            // Assert
+            Assert.AreEqual(ZoneState.Closed, _wiring.Lifecycle.State);
+            Assert.AreEqual(0, transitionLines);
+        }
+
         // ----- Exhaustion and exit-code table ----------------------------------------------------
 
         [Test]

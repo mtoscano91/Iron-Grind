@@ -4771,3 +4771,58 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Story: production/epics/zone-instancing/story-013-player-exit-and-slot-release.md — Status Complete, Completion Notes (unwired until Story 014; AC-ZI-22 release deferred; test-name convention; one-slot invariant).
 - EPIC row 013 Complete. Tech debt logged: None.
 - Next recommended: /story-readiness Story 014 (composition wiring, quit-request drain) — last Zone Instancing story. PAT rotation still unconfirmed.
+
+## Session Extract — /story-readiness 2026-10-23 (Zone Instancing Story 014)
+- Verdict: NEEDS WORK (13 gaps) -> fixed -> Ready (18 h, was 4 h provisional). Lean: QL-STORY-READY skipped.
+- User decisions: (1) new ZoneInstancingWiring (src/ServerLogic/ZoneServer/) built at S5 owns all zone systems + adapters (IZoneStateOwner, IZoneCloseSteps, IZoneLifecycleListener, IZoneSlotPoolListener, IZoneDrainNoticeLog); host drops its zone-state / close-steps / bounds stand-ins; AC-ZI tests on the wiring with fakes (no DB). (2) Session layer: construct SessionEndCoordinator + ZonePlayerExit only; disconnect/logout routing and ghost TTL enumeration stay stand-ins (session epic). (3) TD-078 fixed in Story 014.
+- Found: nothing in src/ constructs the zone systems or ConnectionStateMachine; ZoneLifecycle does not implement IZoneSlotPoolListener (adapter needed for T-5 by release, T-7, exhaustion); server tick does not advance before S9, so T-3 timeout needs a clock-derived loading tick; ZoneCloseTransition.Emergency is ambiguous for the exit code (quit -> Clean, fatal/exhaustion -> Fatal); -teardownAfterSeconds bypasses T-4; idle zone now exits Clean after 120 s (T-7); no IZoneEntityStateSource implementation (logging stand-in to create).
+- Files: story-014 rewritten; EPIC row 014; tech-debt-register TD-078 "scheduled: Story 014".
+- Next: commit -> /dev-story Story 014. PAT rotation still unconfirmed.
+
+## Session Extract — /dev-story 2026-10-23 (Zone Instancing Story 014 — implemented, not reviewed, not committed)
+- Story: production/epics/zone-instancing/story-014-composition-wiring-and-drain.md — three network-programmer subagents (A wiring, C TD-078 in parallel; B composition, resumed once after its turn limit).
+- Created: src/ServerLogic/ZoneServer/ZoneInstancingWiring.cs (wiring + options + IZoneGhostSessionSource/LoggingZoneGhostSessionSource); src/ServerLogic/ZoneInstancing/LoggingZoneEntityStateSource.cs; tests ZoneInstancing_Wiring_tests.cs (27), ZoneInstancing_EntryAdmissionDuplicateLoad_tests.cs (6), ZoneServer_CompositionDrain_tests.cs (13).
+- Modified: ZoneEntryAdmission.cs (TD-078: pending loads keyed by CharacterID, superseded first load dropped + closed), ZoneEntryReclamation.cs (new public CloseConnection), ZoneServerComposition.cs (S5 wiring, AttachZoneInstancing, RequestQuit, loading tick T-3 -> StartupFailed "LoadTimeout", direct Fatal -> wiring.RequestFatal, drain when zone state entered, DeferredTransportDisconnector), ZoneServerHost.cs (null state owner / close steps; -teardownAfterSeconds -> RequestQuit), ZoneServerStandIns.cs (StandInZoneInventoryService), CompositionStartup/Wiring tests (drain expectation, ghost-TTL stand-in log, construction order).
+- Deviations: wiring constructs an unfed ConnectionStateMachine (SessionEndCoordinator requires one); ServePending added as last simulation action (Story 008 needs a tick); StandInZoneInventoryService (no InventoryService in src/); RequestQuit early-returns if teardown already requested; two pending quits in one tick applied in order (T-4 then T-6).
+- Fixed by me: missing `using IronGrind.LootTableSystem;` in the duplicate-load test; `_ticks.Now = 10u` in test_request_fatal_closes_emergency_with_fatal_exit_code.
+- EditMode batch run: 4097 total, 4027 passed, 0 failed, 70 skipped (DB). +46 vs 4051.
+- Not done: Story 045 local Dedicated Server rerun (user, needs the build); non-development server build compile check; completion-note deployment constraint (at /story-done).
+- For /code-review: a pending quit in Active waits for the next tick — if ticks stop, the quit never completes; DeferredTransportDisconnector no-ops until CreateInboundTransport; TD-078 drop happens before the capacity pre-check; Dr* fakes duplicated in the drain tests.
+- Next: /code-review (files above) -> Story 045 rerun -> /story-done Story 014 -> commit (include .meta files). PAT rotation still unconfirmed.
+
+## Session Extract — /code-review 2026-10-23 (Zone Instancing Story 014 — CHANGES REQUIRED -> "fix all" applied, not committed)
+- unity-specialist: no defects; warnings: quit waits for a tick (hang if ticks stop), TD-078 supersede before pre-check, dropped load keeps running (LoadCharacter checked: plain read, no lock). qa-tester: 5 required (TD-078 map-empty weak, close cause/tick unobserved, AC-ZI-23 ghost TTL missing, stand-in log-once 2/11, no allocation test).
+- Fixed: composition QUIT_TICK_STALL_SECONDS = 5 + PollQuitStall() (host Update) -> Clean teardown when a quit is pending or Draining and no tick for 5 s; TD-078 pre-check before supersede + dropped load's token cancelled; PendingCharacterCount test seam; transitions observed with tick via NetworkTestObserver; AC-ZI-23 ghost 250 s TTL; stand-in log-once over a driven lifecycle (responder unreached) + inventory stand-in test; GC.GetAllocatedBytesForCurrentThread zero-alloc tests (pass); full tick-order test; AC-24 save reasons; drain-notice per-client catch test; options defaults = consts; composition: real invalid-bounds T-3 drain, direct Fatal Closed/Draining, quit when Closed, real-tick quit through SimulationSteps; Dr* fakes nested private.
+- Fixed by me after the agents: Is.AnyOf (not in Unity NUnit) -> Assert.IsTrue; DUP TearDown completes pending fake loads before the drain; tick-order recorder filtered to the requester's serves (excludes ZoneSessionEnded, PlayerLeftZone).
+- Not done: ZoneCloseTransition not observable without a production seam (tests infer from path/occupancy/tick); duplicated fakes not merged into one file; loading-tick value passed to a Loading quit not asserted.
+- EditMode: 4120 total, 4050 passed, 0 failed, 70 skipped. Tests: Wiring 34, DuplicateLoad 12, CompositionDrain 22, CompositionWiring 30.
+- Next: Story 045 local Dedicated Server rerun (user) -> /story-done Story 014 -> commit (include .meta files). PAT rotation still unconfirmed.
+
+## Session Extract — Story 045 local rerun for Zone Instancing Story 014 (2026-10-26, not committed)
+- Batch rebuild of Build Profile ZoneServer (Development) → Builds/ZoneServer/IronGrind.exe: Success. PG started via PowerShell Start-Process.
+- Run 1 with `-zoneTemplate ZoneTemplate_Empty` (the 045 evidence argument) → S6 S-fail "unknown or unregistered zone template", exit 1: expected since Story 004 (registry template StartingZone → scene ZoneTemplate_Empty). Not a Story 014 regression; the 045 evidence procedure is stale on this argument.
+- Run 2 `-zoneTemplate StartingZone -teardownAfterSeconds 60`: exit 0, 62.5 s wall. A1-3 ids equal, stand-ins logged once (static data, navigation, gateway registration, ghost TTL, mob spawn timers), ticks 1 per frame, "-teardownAfterSeconds 60 reached: requesting a quit (drain)", teardown steps 1, 2a (108 ms), 3, 4 ("zone 1 retired"), 4b, 5, 6, 7, "step 8: quit(0)"; no "no tick for" quit-stall warning; 0 credential lines. Log: scratchpad run014b.log (session 6aff9ac5).
+- GAP (resolved, user chose dev-only log): no production log of lifecycle transitions; see the follow-up extract below.
+- Non-development server build (profile m_Development temporarily 0, output to scratchpad): Build Finished Success, no error CS → Release build QA case PASS. Profile restored.
+- Build side effects (PC_RPAsset, URP global settings, ProjectSettings, UnityConnectSettings) reverted; manifest has no dedicated-server.
+- Next: see the follow-up extract below.
+
+## Session Extract — dev-only transition log + rerun (2026-10-26, not committed)
+- User decision: add a dev-only transition log rather than accept inferred evidence.
+- Code: `ZoneInstancingWiringOptions.LogTransitions` (bool, off by default); the wiring logs `[ZoneInstancingWiring] ZoneID(<id>) Active|Draining|Closed(<transition>) at tick <n>` from MarkActive / OnDraining / OnClosed (inside the listener try blocks), compiled only under `DEVELOPMENT_BUILD || UNITY_EDITOR`; the composition passes `LogTransitions = _owner.LogTeardownSteps` at S5 (host sets it in Awake, before Start). LogTeardownSteps doc updated.
+- Tests (ZoneInstancing_Wiring_tests.cs, +2): test_wiring_log_transitions_on_logs_active_draining_and_closed_with_ticks (LogAssert.Expect x3), test_wiring_log_transitions_off_by_default_logs_no_transition (logMessageReceived count = 0).
+- EditMode batch: 4122 total, 4052 passed, 0 failed, 70 skipped.
+- Dev rebuild Success; run `-zoneTemplate StartingZone -teardownAfterSeconds 60`: exit 0, 68.8 s; "ZoneID(1) Active at tick 0", "-teardownAfterSeconds 60 reached: requesting a quit (drain)", "Draining at tick 1185", "Closed(Drained) at tick 1185" (T-4 + T-5 same tick, ~59 s after Active < 120 s), teardown 1–7 (2a 335 ms), "step 8: quit(0)"; no quit-stall warning; 0 credential lines. Story 014 Verification criterion MET. Log: scratchpad run014c.log (session 6aff9ac5).
+- Release (non-development) server build compiles (earlier today). Build side effects reverted again.
+- Note for the 045 evidence: its procedure's `-zoneTemplate ZoneTemplate_Empty` is stale since Story 004 (use StartingZone).
+- Next: /story-done Story 014 (record evidence + deployment-constraint completion note) → commit (code + tests + .meta if any). PAT rotation still unconfirmed.
+
+## Session Extract — /story-done 2026-10-26
+- Verdict: COMPLETE WITH NOTES (lean: QL-TEST-COVERAGE and LP-CODE-REVIEW skipped)
+- Story: production/epics/zone-instancing/story-014-composition-wiring-and-drain.md — Composition Wiring, Quit-Request Drain and Draining Rejection. 19/19 criteria; Completion Notes: 7 advisory deviations, deployment constraint (60 s grace + drain < 90 s TimeoutStopSec), verification run, test evidence.
+- EPIC: row 014 Complete; epic Status Complete (all 14 stories); Next Step paragraph appended (remaining: gateway routing ACs, session-epic inputs, TD-077/TD-079, Linux IL2CPP gate).
+- TD-078 RESOLVED in docs/tech-debt-register.md (Last updated 2026-10-26).
+- Story 045 evidence: dated note on -zoneTemplate StartingZone and the transition log.
+- Tech debt logged: None (user: notes only).
+- Uncommitted: ZoneInstancingWiring.cs, ZoneServerComposition.cs, ZoneInstancing_Wiring_tests.cs, story-014, EPIC.md, tech-debt-register.md, 045 evidence, active.md. Leave untracked ProjectSettings/Packages/, SceneTemplateSettings.json, bash.exe.stackdump.
+- Next recommended: commit → no Ready story left in the Zone Instancing epic; pick the next epic/story (e.g. /help or /sprint-status). PAT rotation still unconfirmed.

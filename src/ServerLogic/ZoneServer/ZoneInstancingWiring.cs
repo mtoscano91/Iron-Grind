@@ -114,6 +114,13 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// <summary>Leveling's <c>UnregisterPlayerEntity</c>. Null: no-op.</summary>
         public Action<EntityID> UnregisterPlayerEntity;
 
+        /// <summary>
+        /// When true, Editor and development builds log <c>[ZoneInstancingWiring] ZoneID(&lt;id&gt;) Active / Draining /
+        /// Closed(&lt;transition&gt;) at tick &lt;n&gt;</c> (Story 014 verification evidence). Release builds never log these.
+        /// The composition passes its <c>LogTeardownSteps</c>; off by default.
+        /// </summary>
+        public bool LogTransitions;
+
 #if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
         /// <summary>Development-build lifecycle observer.</summary>
         public INetworkTestObserver Observer;
@@ -185,6 +192,7 @@ namespace IronGrind.ServerLogic.ZoneServer
         private readonly HashSet<uint> _notifiedAtDrain;
         private readonly byte[] _drainBody = new byte[ZoneSessionEnded.BodySize];
         private readonly int _drainBodySize;
+        private readonly bool _logTransitions;
         private int _pendingQuits;
         private bool _fatalRecorded;
 
@@ -211,6 +219,7 @@ namespace IronGrind.ServerLogic.ZoneServer
         {
             options = options ?? new ZoneInstancingWiringOptions();
             _zone = zone;
+            _logTransitions = options.LogTransitions;
             _ticks = ticks ?? throw new ArgumentNullException(nameof(ticks));
             _outbox = outbox ?? throw new ArgumentNullException(nameof(outbox));
             _requestTeardown = requestTeardown ?? throw new ArgumentNullException(nameof(requestTeardown));
@@ -338,6 +347,7 @@ namespace IronGrind.ServerLogic.ZoneServer
         public void MarkActive(ZoneID zone)
         {
             _lifecycle.MarkActive(_ticks.ServerTickNumber);
+            LogTransition("Active", _ticks.ServerTickNumber);
         }
 
         /// <inheritdoc/>
@@ -386,6 +396,7 @@ namespace IronGrind.ServerLogic.ZoneServer
         {
             try
             {
+                LogTransition("Draining", serverTick);
                 IReadOnlyList<EntityID> players = _pool.GetPlayerEntityIDsInZone(_zone);
                 for (int i = 0; i < players.Count; i++)
                 {
@@ -417,6 +428,7 @@ namespace IronGrind.ServerLogic.ZoneServer
         {
             try
             {
+                LogTransition("Closed(" + transition + ")", serverTick);
                 if (transition == ZoneCloseTransition.LoadFailed)
                 {
                     return; // S-fail already requested StartupFailed
@@ -431,6 +443,17 @@ namespace IronGrind.ServerLogic.ZoneServer
             {
                 Debug.LogError($"{LOG_PREFIX} OnClosed({transition}) teardown request failed ({ex.GetType().Name}).\n{ex}");
             }
+        }
+
+        // Editor and development builds only, when LogTransitions is on (Story 014 verification evidence).
+        private void LogTransition(string state, uint serverTick)
+        {
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
+            if (_logTransitions)
+            {
+                Debug.Log(LOG_PREFIX + " " + _zone + " " + state + " at tick " + serverTick);
+            }
+#endif
         }
 
         // ----- IZoneSlotPoolListener ----------------------------------------------------------------
