@@ -460,6 +460,115 @@ namespace IronGrind.EquipmentSystem
             return ExecuteMerge(charId, gear, itemId, resultId.Value, slotIdx1, slotIdx2, slotIdx3);
         }
 
+        /// <inheritdoc/>
+        public GearRestoreResult RestoreSlots(CharacterID charId, ReadOnlySpan<SavedGearSlot> slots)
+        {
+            // CR-EQS-15. Validate everything before the first mutation, so a throw leaves the character
+            // untouched. An exception from Character Stats while applying is not rolled back.
+            CharacterGear gear = GetRestorableGear(charId);
+            ValidateSavedSlots(slots, _enhancementConfig.MaxEnhancementLevel);
+
+            byte droppedMask = 0;
+            for (int i = 0; i < GEAR_SLOT_COUNT; i++)
+            {
+                if (!TryRestoreSlot(charId, gear, i, slots[i]))
+                {
+                    droppedMask |= (byte)(1 << i);
+                }
+            }
+
+            // Cache only, no OnAppearanceChanged: initial state reaches clients through the zone snapshot.
+            gear.AppearanceFlags = ComputeAppearanceFlags(gear);
+            return new GearRestoreResult(droppedMask);
+        }
+
+        // RestoreSlots preconditions on the character: registered, and every slot empty (a second
+        // restore would register its modifiers twice).
+        private CharacterGear GetRestorableGear(CharacterID charId)
+        {
+            if (!_characters.TryGetValue(charId, out var gear))
+            {
+                throw new InvalidOperationException($"{LOG_PREFIX} {nameof(RestoreSlots)}: {charId} is not a registered character.");
+            }
+
+            for (int i = 0; i < GEAR_SLOT_COUNT; i++)
+            {
+                if (!gear.Slots[i].IsEmpty)
+                {
+                    throw new InvalidOperationException($"{LOG_PREFIX} {nameof(RestoreSlots)}: {charId} already has {gear.Slots[i].ItemId} in {(GearSlot)i}; a second restore would register its modifiers twice.");
+                }
+            }
+
+            return gear;
+        }
+
+        // RestoreSlots preconditions on the saved pairs: length, then every level (one pass), then
+        // empty slots at level 0 (a second pass), so the exception type does not depend on slot order.
+        private static void ValidateSavedSlots(ReadOnlySpan<SavedGearSlot> slots, byte maxLevel)
+        {
+            if (slots.Length != GEAR_SLOT_COUNT)
+            {
+                throw new ArgumentException($"{LOG_PREFIX} {nameof(RestoreSlots)}: expected {GEAR_SLOT_COUNT} slots, got {slots.Length}.", nameof(slots));
+            }
+
+            for (int i = 0; i < GEAR_SLOT_COUNT; i++)
+            {
+                if (slots[i].EnhancementLevel > maxLevel)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(slots), slots[i].EnhancementLevel, $"{LOG_PREFIX} {nameof(RestoreSlots)}: {(GearSlot)i} level exceeds the maximum {maxLevel}.");
+                }
+            }
+
+            for (int i = 0; i < GEAR_SLOT_COUNT; i++)
+            {
+                if (slots[i].ItemId == ItemID.Invalid && slots[i].EnhancementLevel != 0)
+                {
+                    throw new ArgumentException($"{LOG_PREFIX} {nameof(RestoreSlots)}: {(GearSlot)i} is empty but has level {slots[i].EnhancementLevel}.", nameof(slots));
+                }
+            }
+        }
+
+        // Restores one validated slot. Returns false when the slot was dropped: an EC-CP-1 miss, or a
+        // GearSlot that differs from the index it was saved under (defence against a corrupt record) —
+        // left empty, logged. An empty saved slot stays empty and is not a drop.
+        private bool TryRestoreSlot(CharacterID charId, CharacterGear gear, int index, SavedGearSlot saved)
+        {
+            if (saved.ItemId == ItemID.Invalid)
+            {
+                return true;
+            }
+
+            EquipmentData? equipment = GetEquipmentData(saved.ItemId);
+            if (equipment == null || equipment.GearSlot != (GearSlot)index)
+            {
+                string reason = equipment == null ? "is not equipment in the Item Database" : $"belongs to {equipment.GearSlot}";
+                Debug.LogError($"{LOG_PREFIX} {nameof(RestoreSlots)}: {charId} slot {(GearSlot)index} item {saved.ItemId} {reason}; slot left empty.");
+                return false;
+            }
+
+            RegisterEnhancedModifiers(gear.EntityId, saved.ItemId, equipment, saved.EnhancementLevel);
+            gear.Slots[index] = new EquipmentSlotEntry(saved.ItemId, false, saved.EnhancementLevel);
+            return true;
+        }
+
+        /// <inheritdoc/>
+        public SavedGearSlot[] ExportSlots(CharacterID charId)
+        {
+            if (!_characters.TryGetValue(charId, out var gear))
+            {
+                throw new InvalidOperationException($"{LOG_PREFIX} {nameof(ExportSlots)}: {charId} is not a registered character; exporting empty slots would wipe saved gear.");
+            }
+
+            var result = new SavedGearSlot[GEAR_SLOT_COUNT];
+            for (int i = 0; i < GEAR_SLOT_COUNT; i++)
+            {
+                EquipmentSlotEntry entry = gear.Slots[i];
+                result[i] = new SavedGearSlot(entry.ItemId, entry.EnhancementLevel);
+            }
+
+            return result;
+        }
+
         // CR-EQS-14 execution steps 1-3. Touches the bag only.
         private MergeResult ExecuteMerge(
             CharacterID charId, CharacterGear gear, ItemID sourceId, ItemID resultId, int slot1, int slot2, int slot3)

@@ -1,7 +1,7 @@
 # Story 007: Restore and Export Gear Slots — the Load and Save Seam
 
 > **Epic**: Equipment System
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-26
@@ -30,13 +30,13 @@
 
 *From GDD `design/gdd/equipment-system.md` (and the Character Persistence rows it cites), scoped to this story:*
 
-- [ ] **AC-EQS-25** — restoring 7 saved `{ItemID, EnhancementLevel}` pairs into a freshly registered character: `IsSlotTransitioning` false for all 7; the modifier stack holds every item's enhanced modifiers (re-registered from the Item Database at each slot's saved level through `GetFlatBonus`)
-- [ ] Restore reads every slot's level and item, sets the read surface (`GetEquipmentSlotState`, `GetSlotEnhancementLevel`, weapon reads) and the cached appearance byte; it raises no `OnAppearanceChanged` (initial state reaches clients through the zone snapshot)
-- [ ] An occupied slot whose `ItemID` the Item Database does not know is left empty, logged with `Debug.LogError` (character id, slot, item id), and reported in the return value so Character Persistence can set `ItemDatabaseMiss`; the other slots still restore (EC-CP-1)
-- [ ] An item whose `GearSlot` does not match the slot index it was saved under is treated the same way (left empty, logged, reported) — defence against a corrupt record; documented
-- [ ] No startup cleanup pass: an item that is both in a saved gear slot and in the saved bag stays in both (CR-EQS-15 point 3 — the saved slot is authoritative; duplicate resolution is manual)
-- [ ] `ExportSlots(charId)` returns the 7 `{ItemID, EnhancementLevel}` pairs of the live registry; `IsTransitioning` is never part of it; empty slots export as `ItemID.Invalid` / 0
-- [ ] Round trip: export → unregister → register → restore → identical read surface, effective stats and appearance byte
+- [x] **AC-EQS-25** — restoring 7 saved `{ItemID, EnhancementLevel}` pairs into a freshly registered character: `IsSlotTransitioning` false for all 7; the modifier stack holds every item's enhanced modifiers (re-registered from the Item Database at each slot's saved level through `GetFlatBonus`)
+- [x] Restore reads every slot's level and item, sets the read surface (`GetEquipmentSlotState`, `GetSlotEnhancementLevel`, weapon reads) and the cached appearance byte; it raises no `OnAppearanceChanged` (initial state reaches clients through the zone snapshot)
+- [x] An occupied slot whose `ItemID` the Item Database does not know is left empty, logged with `Debug.LogError` (character id, slot, item id), and reported in the return value so Character Persistence can set `ItemDatabaseMiss`; the other slots still restore (EC-CP-1)
+- [x] An item whose `GearSlot` does not match the slot index it was saved under is treated the same way (left empty, logged, reported) — defence against a corrupt record; documented
+- [x] No startup cleanup pass: an item that is both in a saved gear slot and in the saved bag stays in both (CR-EQS-15 point 3 — the saved slot is authoritative; duplicate resolution is manual)
+- [x] `ExportSlots(charId)` returns the 7 `{ItemID, EnhancementLevel}` pairs of the live registry; `IsTransitioning` is never part of it; empty slots export as `ItemID.Invalid` / 0
+- [x] Round trip: export → unregister → register → restore → identical read surface, effective stats and appearance byte
 
 ---
 
@@ -101,7 +101,7 @@
 **Story Type**: Integration
 **Required evidence**: the test file above — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 17 tests, all passing 2026-10-26
 
 ---
 
@@ -109,3 +109,15 @@
 
 - Depends on: Stories 002, 004, 005
 - Unlocks: Character Persistence Story 005 (then Story 016)
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-10-26
+**Criteria**: 7/7 passing, all covered by `EquipmentSystem_RestoreExport_tests.cs` (no deferred items)
+**Deviations** (advisory, accepted):
+1. An exception thrown by Character Stats itself while the slots are applied is not rolled back (the slots before it stay restored); the story requires validation-first only. Documented in the `RestoreSlots` remarks.
+2. For Character Persistence Story 005, not a deviation here: `UnregisterCharacter` does not remove Character Stats modifiers (the stats entity is discarded with the session). A load that reuses a stats entity must clear them first; the round-trip test removes them itself.
+**Test Evidence**: Integration — `tests/EditMode/EquipmentSystem/EquipmentSystem_RestoreExport_tests.cs` (17 tests); full EditMode 4454 total / 4343 passed / 0 failed / 111 skipped. `EquipmentSystem_TestDoubles.cs` gained `InventoryDecorator.TotalForwardedCalls` (valid knock-on, outside the story file list).
+**Code Review**: Complete — 2026-10-26, APPROVED WITH SUGGESTIONS (unity-specialist: `RestoreSlots` length/complexity WARNING; qa-tester GAPS, none blocking; ADR-006/010/011 compliant) → "fix all" applied (`RestoreSlots` split into `GetRestorableGear` / `ValidateSavedSlots` / `TryRestoreSlot`, levels checked in one pass before empty-with-level; `GearRestoreResult` `#nullable enable` and `GEAR_SLOT_COUNT` bound; tests 13 → 17). QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean).

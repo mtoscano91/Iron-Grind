@@ -4969,3 +4969,23 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - User decision: pinned API in story Implementation Notes — SavedGearSlot, GearRestoreResult (DroppedSlotMask/DroppedCount/IsDropped), RestoreSlots(CharacterID, ReadOnlySpan<SavedGearSlot>), SavedGearSlot[] ExportSlots(CharacterID); all validation before any registration; empty slot with non-zero level → ArgumentException; ExportSlots unregistered → InvalidOperationException. QA Preconditions case extended.
 - Passing: ADR-006 Accepted, TR-equip-010 active, manifest 2026-10-26 current, deps 002/004/005 Complete. QL-STORY-READY skipped (lean).
 - Next: /dev-story Story 007.
+
+## Session Extract — /dev-story 2026-10-26 (Equipment Story 007)
+- Story: production/epics/equipment-system/story-007-restore-and-export-gear-slots.md — Restore and Export Gear Slots
+- Files changed: src/ServerLogic/EquipmentSystem/{SavedGearSlot.cs, GearRestoreResult.cs (new, + .meta), IEquipmentService.cs (RestoreSlots, ExportSlots), EquipmentService.cs}; tests/EditMode/EquipmentSystem/{EquipmentSystem_RestoreExport_tests.cs (new, 13 tests, + .meta), EquipmentSystem_TestDoubles.cs (TotalForwardedCalls spy)}
+- Fix by orchestrator: missing `using IronGrind.ItemDatabase;` in GearRestoreResult.cs (compile error on first run).
+- Test results: full EditMode 4450 total / 4339 passed / 0 failed / 111 skipped.
+- Note: UnregisterCharacter does not remove Character Stats modifiers (entity discarded with the session); the round-trip test removes them itself.
+- Next: /code-review then /story-done story 007.
+
+## Session Extract — /code-review 2026-10-26 (Story 007)
+- Verdict: APPROVED WITH SUGGESTIONS (unity-specialist: RestoreSlots length/complexity WARNING, else clean; qa-tester GAPS, none blocking; ADR-006/010/011 compliant). User: "fix all".
+- Applied: RestoreSlots split into GetRestorableGear / ValidateSavedSlots (levels pass, then empty-with-level pass) / TryRestoreSlot; interface remark (Character Stats exception mid-apply not rolled back); GearRestoreResult #nullable enable + GEAR_SLOT_COUNT bound; tests: mismatch test strengthened, + miss-and-mismatch (mask 0b101), + known non-equipment item, + double-restore read-surface check, + export after unequip, + export right after restore (13 → 17 tests).
+- Full EditMode: 4454 total / 4343 passed / 0 failed / 111 skipped.
+- Next: /story-done story 007, then commit.
+
+## Session Extract — /story-done 2026-10-26 (Story 007)
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/equipment-system/story-007-restore-and-export-gear-slots.md — Restore and Export Gear Slots
+- Tech debt logged: None (2 advisory notes in Completion Notes; #2 is for Character Persistence Story 005)
+- Next recommended: /story-readiness Equipment Story 008 (equip request and result delivery); Character Persistence Story 005 now unblocked

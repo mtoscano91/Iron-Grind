@@ -205,5 +205,44 @@ namespace IronGrind.EquipmentSystem
         /// <param name="slotIdx3">Third source bag slot.</param>
         /// <returns>The outcome; see <see cref="MergeResult"/>.</returns>
         MergeResult RequestMerge(CharacterID charId, int slotIdx1, int slotIdx2, int slotIdx3);
+
+        /// <summary>
+        /// Rebuilds a freshly registered character's gear from the 7 saved pairs (CR-EQS-15, Story 007).
+        /// The Equipment System owns re-registration on load (epic decision 2026-10-26): each
+        /// restored item's enhanced modifiers are registered at its saved level. Character Persistence
+        /// Story 005 calls this at load step 4.
+        /// </summary>
+        /// <remarks>
+        /// <para>All inputs are validated before anything changes, in this order: character registered,
+        /// every slot empty (stops a double restore from double-registering modifiers), length 7, every
+        /// level within the <c>EnhancementConfig</c> maximum (checked for all slots first), then an
+        /// empty saved slot has level 0. An exception thrown by Character Stats itself while the slots
+        /// are applied is not rolled back: the slots before it stay restored.</para>
+        /// <para>An occupied slot whose item the Item Database does not know, or whose gear slot differs
+        /// from the slot index it was saved under (a corrupt record), is left empty, logged with
+        /// <c>Debug.LogError</c> and reported in the result. The other slots still restore.</para>
+        /// <para>Raises no <see cref="OnAppearanceChanged"/> (initial state reaches clients through the
+        /// zone snapshot), makes no Inventory call and does no startup cleanup: an item both saved in a
+        /// gear slot and in the bag stays in both (CR-EQS-15 point 3).</para>
+        /// </remarks>
+        /// <param name="charId">A registered character with 7 empty slots.</param>
+        /// <param name="slots">The saved pairs, index = <c>(int)GearSlot</c>.</param>
+        /// <returns>The slots left empty because of an Item Database miss or a slot mismatch.</returns>
+        /// <exception cref="System.InvalidOperationException">The character is unregistered or any slot is occupied.</exception>
+        /// <exception cref="System.ArgumentException"><paramref name="slots"/> is not length 7, or an empty saved slot has a non-zero level.</exception>
+        /// <exception cref="System.ArgumentOutOfRangeException">A level exceeds the enhancement maximum.</exception>
+        GearRestoreResult RestoreSlots(CharacterID charId, System.ReadOnlySpan<SavedGearSlot> slots);
+
+        /// <summary>
+        /// Returns the character's 7 gear slots as saveable pairs (CR-EQS-15, Story 007). Character
+        /// Persistence calls it at save step 3. <c>IsTransitioning</c> is never exported.
+        /// </summary>
+        /// <param name="charId">A registered character.</param>
+        /// <returns>A new array of length 7, index = <c>(int)GearSlot</c>; empty slots are <see cref="SavedGearSlot.Empty"/>.</returns>
+        /// <exception cref="System.InvalidOperationException">
+        /// The character is unregistered. Unlike the read surface this throws: a silent empty export
+        /// would wipe the player's saved gear.
+        /// </exception>
+        SavedGearSlot[] ExportSlots(CharacterID charId);
     }
 }

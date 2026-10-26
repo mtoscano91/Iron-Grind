@@ -55,6 +55,18 @@ namespace IronGrind.Tests.EditMode.EquipmentSystem
     {
         private readonly IInventoryService _inner;
 
+        /// <summary>Count of calls forwarded to the real inventory, across all methods (the "no Inventory call" spy).</summary>
+        public int TotalForwardedCalls;
+
+        private IInventoryService Inner
+        {
+            get
+            {
+                TotalForwardedCalls++;
+                return _inner;
+            }
+        }
+
         public MoveItemOutCode? MoveItemOutOverride;
         public bool FailMoveItemIn;
         public int MoveItemInCalls;
@@ -100,41 +112,41 @@ namespace IronGrind.Tests.EditMode.EquipmentSystem
 
             return MoveItemOutOverride.HasValue
                 ? MoveItemOutResult.Fail(MoveItemOutOverride.Value)
-                : _inner.MoveItemOut(charId, slotIndex);
+                : Inner.MoveItemOut(charId, slotIndex);
         }
 
         public MoveItemInResult MoveItemIn(CharacterID charId, ItemID itemId, byte enhancementLevel)
         {
             MoveItemInCalls++;
             BeforeMoveItemIn?.Invoke();
-            return FailMoveItemIn ? MoveItemInResult.Failed : _inner.MoveItemIn(charId, itemId, enhancementLevel);
+            return FailMoveItemIn ? MoveItemInResult.Failed : Inner.MoveItemIn(charId, itemId, enhancementLevel);
         }
 
-        public void RegisterCharacter(CharacterID charId) => _inner.RegisterCharacter(charId);
+        public void RegisterCharacter(CharacterID charId) => Inner.RegisterCharacter(charId);
 
-        public InventorySlot GetSlot(CharacterID charId, int slotIndex) => _inner.GetSlot(charId, slotIndex);
+        public InventorySlot GetSlot(CharacterID charId, int slotIndex) => Inner.GetSlot(charId, slotIndex);
 
-        public bool IsFull(CharacterID charId) => _inner.IsFull(charId);
+        public bool IsFull(CharacterID charId) => Inner.IsFull(charId);
 
-        public int FilledSlots(CharacterID charId) => _inner.FilledSlots(charId);
+        public int FilledSlots(CharacterID charId) => Inner.FilledSlots(charId);
 
-        public bool HasFreeSlot(CharacterID charId) => _inner.HasFreeSlot(charId);
+        public bool HasFreeSlot(CharacterID charId) => Inner.HasFreeSlot(charId);
 
-        public bool IsSlotLocked(CharacterID charId, int slotIndex) => _inner.IsSlotLocked(charId, slotIndex);
+        public bool IsSlotLocked(CharacterID charId, int slotIndex) => Inner.IsSlotLocked(charId, slotIndex);
 
-        public bool HasItem(CharacterID charId, ItemID itemId) => _inner.HasItem(charId, itemId);
+        public bool HasItem(CharacterID charId, ItemID itemId) => Inner.HasItem(charId, itemId);
 
-        public PickupResult Pickup(CharacterID characterId, ItemID itemId, int quantity) => _inner.Pickup(characterId, itemId, quantity);
+        public PickupResult Pickup(CharacterID characterId, ItemID itemId, int quantity) => Inner.Pickup(characterId, itemId, quantity);
 
-        public void LockSlot(CharacterID charId, int slotIndex) => _inner.LockSlot(charId, slotIndex);
+        public void LockSlot(CharacterID charId, int slotIndex) => Inner.LockSlot(charId, slotIndex);
 
-        public void UnlockSlot(CharacterID charId, int slotIndex) => _inner.UnlockSlot(charId, slotIndex);
+        public void UnlockSlot(CharacterID charId, int slotIndex) => Inner.UnlockSlot(charId, slotIndex);
 
-        public void RemoveItem(CharacterID charId, int slotIndex) => _inner.RemoveItem(charId, slotIndex);
+        public void RemoveItem(CharacterID charId, int slotIndex) => Inner.RemoveItem(charId, slotIndex);
 
-        public DiscardResult Discard(CharacterID charId, int slotIndex, int quantity) => _inner.Discard(charId, slotIndex, quantity);
+        public DiscardResult Discard(CharacterID charId, int slotIndex, int quantity) => Inner.Discard(charId, slotIndex, quantity);
 
-        public MoveResult Move(CharacterID charId, int fromSlot, int toSlot) => _inner.Move(charId, fromSlot, toSlot);
+        public MoveResult Move(CharacterID charId, int fromSlot, int toSlot) => Inner.Move(charId, fromSlot, toSlot);
 
         public bool ForceInsert(CharacterID charId, ItemID itemId, byte enhancementLevel)
         {
@@ -144,19 +156,19 @@ namespace IronGrind.Tests.EditMode.EquipmentSystem
                 return false;
             }
 
-            return _inner.ForceInsert(charId, itemId, enhancementLevel);
+            return Inner.ForceInsert(charId, itemId, enhancementLevel);
         }
 
-        public bool SetEnhancementLevel(CharacterID charId, int slotIndex, byte level) => _inner.SetEnhancementLevel(charId, slotIndex, level);
+        public bool SetEnhancementLevel(CharacterID charId, int slotIndex, byte level) => Inner.SetEnhancementLevel(charId, slotIndex, level);
 
-        public SellItemResult SellItem(CharacterID charId, int slotIndex, ItemID itemId, int quantity) => _inner.SellItem(charId, slotIndex, itemId, quantity);
+        public SellItemResult SellItem(CharacterID charId, int slotIndex, ItemID itemId, int quantity) => Inner.SellItem(charId, slotIndex, itemId, quantity);
 
-        public ConsumeItemResult ConsumeItem(CharacterID charId, ItemID itemId, int quantity) => _inner.ConsumeItem(charId, itemId, quantity);
+        public ConsumeItemResult ConsumeItem(CharacterID charId, ItemID itemId, int quantity) => Inner.ConsumeItem(charId, itemId, quantity);
 
-        public InventorySnapshot ExportSnapshot(CharacterID charId) => _inner.ExportSnapshot(charId);
+        public InventorySnapshot ExportSnapshot(CharacterID charId) => Inner.ExportSnapshot(charId);
 
-        public bool ImportSnapshot(CharacterID charId, InventorySnapshot snapshot) => _inner.ImportSnapshot(charId, snapshot);
+        public bool ImportSnapshot(CharacterID charId, InventorySnapshot snapshot) => Inner.ImportSnapshot(charId, snapshot);
 
-        public void UnregisterCharacter(CharacterID charId) => _inner.UnregisterCharacter(charId);
+        public void UnregisterCharacter(CharacterID charId) => Inner.UnregisterCharacter(charId);
     }
 }
