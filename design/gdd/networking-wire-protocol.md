@@ -1513,8 +1513,8 @@ enum EquipFailReason : byte
     StatRequirementNotMet = 1,   // GetBaseStat(entityID, item.EquipRequirementStat) < item.EquipRequirementMin; client displays shortfall from local stat cache (last StatSnapshotEvent)
     InventoryFull         = 2,   // Slot occupied (or unequip requested) and no free inventory slot for the displaced item
     SlotMismatch          = 3,   // item.GearSlot != requested gearSlot
-    ItemLocked            = 4,   // Item locked by Enhancement System
-    ItemNotInInventory    = 5,   // itemId not found in player's inventory
+    ItemLocked            = 4,   // Item locked by Enhancement System — equipment-system.md EquipResult.ItemLocked (MoveItemOut returned SlotLocked; OQ-EQS-9, 2026-10-26)
+    ItemNotInInventory    = 5,   // itemId not found in player's inventory — equipment-system.md EquipResult.ItemNotInInventory (CR-EQS-13 stale-render guard, or MoveItemOut returned SlotEmpty; OQ-EQS-9, 2026-10-26)
     InventoryError        = 6,   // Inventory refused a transfer mid-operation; the operation was rolled back and the old item is still equipped (equipment-system.md CR-EQS-6 step 7, CR-EQS-7 step 5, CR-EQS-8). Client shows a generic equip failure with retry. Added 2026-10-01.
     CriticalFailure       = 255, // Reserved. No longer produced by equip/swap/unequip — equipment-system.md CR-EQS-8 (rewritten 2026-10-01) aborts a failed swap and keeps the old item equipped
 }

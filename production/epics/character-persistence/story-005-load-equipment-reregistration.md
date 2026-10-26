@@ -1,7 +1,7 @@
 # Story 005: `LoadCharacter` — Equipment Re-registration
 
 > **Epic**: Character Persistence
-> **Status**: Blocked — written 2026-10-12. **The Equipment System has no code** (no `EquipmentSystem` folder under `src/ServerLogic`; its epic is Ready with design gate OQ-EQS-9 open), and the GDD contradicts itself on who holds the gear slots in memory (open decision 1).
+> **Status**: Blocked — written 2026-10-12. **The Equipment System has no code** (no `EquipmentSystem` folder under `src/ServerLogic`; its epic is Ready, design gate OQ-EQS-9 resolved 2026-10-26, stories not yet written), and the GDD contradicts itself on who holds the gear slots in memory (open decision 1).
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-09

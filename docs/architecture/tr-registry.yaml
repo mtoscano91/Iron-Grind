@@ -436,9 +436,9 @@ requirements:
   - id: TR-equip-011
     system: equip
     gdd: design/gdd/equipment-system.md
-    requirement: "Wire request handling: `EquipRequest` (`gearSlot`, `itemId`, `inventorySlot`; `itemId = 0` routes to `Unequip`) answered by `EquipResult` with the stated `EquipResult` → `EquipFailReason` mapping (CR-EQS-13) — **the source of `ItemLocked` and `ItemNotInInventory` is undecided (OQ-EQS-9)**"
+    requirement: "Wire request handling: `EquipRequest` (`gearSlot`, `itemId`, `inventorySlot`; `itemId = 0` routes to `Unequip`) answered by `EquipResult` with the stated `EquipResult` → `EquipFailReason` mapping (CR-EQS-13); `ItemLocked` and `ItemNotInInventory` come from `EquipResult` members of the same name and the handler maps 1:1 (OQ-EQS-9 resolved 2026-10-26, option a)"
     created: 2026-10-07
-    revised: ""
+    revised: 2026-10-26
     status: active
 
   # --- inv: design/gdd/inventory-system.md (production/epics/inventory-system/EPIC.md) ---

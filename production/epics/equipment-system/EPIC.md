@@ -3,7 +3,7 @@
 > **Layer**: Core
 > **GDD**: design/gdd/equipment-system.md
 > **Architecture Module**: Equipment (core gameplay/data — by-design no ADR, `architecture.md` Engine Knowledge Gap Summary: 🟢 LOW)
-> **Status**: Ready — **one design gate open before `/create-stories`: OQ-EQS-9**
+> **Status**: Ready — design gate OQ-EQS-9 resolved 2026-10-26 (option a); `/create-stories` unblocked
 > **Stories**: Not yet created — run `/create-stories equipment-system`
 
 ## Overview
@@ -34,13 +34,13 @@ The Equipment System manages the seven gear slots of a player character (Weapon,
 | TR-equip-008 | Read surface for other systems: `GetEquippedWeaponItemID()`, `GetEquippedWeaponEnhancementLevel()`, `GetSlotEnhancementLevel(GearSlot)`, `GetEquipmentSlotState(GearSlot)`; no elemental data is written to Character Stats (CR-EQS-12) | ❌ No ADR (design-only, LOW risk) |
 | TR-equip-009 | Accessory Merge: `RequestMerge(slotIdx1, slotIdx2, slotIdx3)` consumes three identical Ring / Necklace items and inserts `MergeResultItemID` at level 0, atomically, with rollback and a critical log if the rollback itself fails (CR-EQS-14) | ADR-010 (Tier 1 calls) |
 | TR-equip-010 | Save and load: state is fully reconstructible from 7 `{ItemID, EnhancementLevel}` pairs; on load modifiers are re-registered at each slot's saved level and `IsTransitioning` is false; no startup cleanup pass (CR-EQS-15, AC-EQS-25) | ADR-006 |
-| TR-equip-011 | Wire request handling: `EquipRequest` (`gearSlot`, `itemId`, `inventorySlot`; `itemId = 0` routes to `Unequip`) answered by `EquipResult` with the stated `EquipResult` → `EquipFailReason` mapping (CR-EQS-13) — **the source of `ItemLocked` and `ItemNotInInventory` is undecided (OQ-EQS-9)** | ADR-004 — ⚠️ blocked on OQ-EQS-9 |
+| TR-equip-011 | Wire request handling: `EquipRequest` (`gearSlot`, `itemId`, `inventorySlot`; `itemId = 0` routes to `Unequip`) answered by `EquipResult` with the stated `EquipResult` → `EquipFailReason` mapping (CR-EQS-13); `ItemLocked` and `ItemNotInInventory` come from `EquipResult` and the handler maps 1:1 (OQ-EQS-9 resolved 2026-10-26) | ADR-004 |
 
 > **TR registry note**: All TR-IDs above are placeholders — `docs/architecture/tr-registry.yaml` is empty. Populate the registry before running `/story-readiness` checks.
 
 ## Open Gates
 
-- **OQ-EQS-9 (before `/create-stories`)** — which layer produces the wire reasons `ItemLocked` and `ItemNotInInventory`: (a) add both to `EquipResult`, or (b) the request handler derives them before calling `Equip`. Owner: Game Designer + Network Programmer. Stories under TR-equip-002 and TR-equip-011 cannot be written unambiguously until this is decided.
+- **OQ-EQS-9 — RESOLVED 2026-10-26, option (a)** — `EquipResult` gains `ItemLocked` and `ItemNotInInventory`: CR-EQS-13's stale-render guard returns `ItemNotInInventory`; a failed `MoveItemOut` (CR-EQS-5 step 2, CR-EQS-6 step 7) maps `SlotLocked` → `ItemLocked`, `SlotEmpty` → `ItemNotInInventory`. New AC-EQS-32 and AC-EQS-33; AC-EQS-31 now expects `ItemLocked`.
 - **OQ-EQS-5 (open, not blocking)** — F-EQS-3 stat requirement thresholds are not yet calibrated against base-stat growth in `leveling-system.md`. The thresholds are data, so stories can proceed with the current values.
 - **OQ-EQS-6 (open, not blocking the logic stories)** — confirm `EquipmentAppearanceFlags` is present in every full zone snapshot, not only deltas.
 - **Known naming drift** — `damage-calculation.md` calls the weapon reads `GetEquippedWeaponID(AttackerID)` / `GetEquippedWeaponEnhancementLevel(EntityID)`; this GDD names them without parameters. Reconcile when the read-surface story is written.
@@ -49,10 +49,10 @@ The Equipment System manages the seven gear slots of a player character (Weapon,
 
 This epic is complete when:
 - All stories are implemented, reviewed, and closed via `/story-done`
-- All acceptance criteria from `design/gdd/equipment-system.md` (AC-EQS-1 to AC-EQS-31) are verified
+- All acceptance criteria from `design/gdd/equipment-system.md` (AC-EQS-1 to AC-EQS-33) are verified
 - All Logic and Integration stories have passing test files in `tests/`
 - Wire-facing stories that need a live client are scoped as forward-dependency placeholders where no codec or request handler exists yet, matching the project's established pattern
 
 ## Next Step
 
-Decide OQ-EQS-9, then run `/create-stories equipment-system` to break this epic into implementable stories.
+Run `/create-stories equipment-system` (in a fresh session) to break this epic into implementable stories.

@@ -2,6 +2,14 @@
 
 ---
 
+## Design decision — 2026-10-26 — OQ-EQS-9 resolved (no review run)
+
+Decision: option (a), user decision. `EquipResult` gains `ItemLocked` and `ItemNotInInventory`; CR-EQS-13's stale-render guard returns `ItemNotInInventory`; CR-EQS-5 step 2 and CR-EQS-6 step 7 map `MoveItemOutCode.SlotLocked` → `ItemLocked` and `SlotEmpty` → `ItemNotInInventory` (CR-EQS-6 step 7 previously returned `InventoryError`). Option (b), a handler-side derivation, was rejected: it duplicates validation and its lock check is not atomic with `MoveItemOut`.
+Changes: wire mapping table rows 4 and 5; EC-EQS-4 rule and stale `MoveItemOut` note (a Pass 7 recommended item); UI Requirements list both codes; AC-EQS-31 Pass → `ItemLocked`; AC-EQS-32 (locked source slot, empty target) and AC-EQS-33 (stale-render guard, three cases — the AC Pass 7 asked for) added. Propagated to entities.yaml (`EquipResult`), networking-wire-protocol.md (`EquipFailReason` comments, no schema change), systems-index.md, tr-registry.yaml (TR-equip-011), the Equipment epic, the epics index and Character Persistence Story 005.
+Status: stays Approved — a gate closure with targeted additions, no structural change; no re-review by user decision.
+
+---
+
 ## Review — 2026-10-01 — Verdict: APPROVED (Pass 7 lean)
 
 Scope signal: XL
