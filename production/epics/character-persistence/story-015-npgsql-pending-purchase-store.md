@@ -1,75 +1,96 @@
 # Story 015: The Npgsql Pending-Purchase Store
 
 > **Epic**: Character Persistence
-> **Status**: Not Started — unblocked 2026-10-26 (Story 011 Complete); was Blocked — written 2026-10-12. Stories 012–014 Complete (2026-10-19); Story 011 decision 1 resolved 2026-10-26 (ADR-001 Amendment A2). Now blocked only on Story 011's implementation: it implements `IPendingPurchaseStore` (new), with the A2 signatures — `BeginPurchase(charId, record, goldBalance, goldVersion)` returning `PendingPurchaseBeginResult`, `RefundPurchase(purchaseId, charId, goldBalance, goldVersion)` — and the gold UPDATE writes absolute `gold_balance` / `gold_version`, no `save_version` bump. Re-run `/story-readiness` after Story 011. `/code-review` of Story 011 (2026-10-26, ADR-001 A2 addendum): `CompletePurchaseAsync` takes `charId`; `BeginPurchaseAsync` is idempotent on `(character_id, request_id)` — add a unique index on `pending_purchases (character_id, request_id)` and return the existing id on conflict; subclass `PendingPurchaseStoreContractTests` and override `CleanUp()` to delete the test rows; a retry may overlap an abandoned call, so the conflict path must be safe under concurrency.
+> **Status**: Ready — `/story-readiness` 2026-10-26: NEEDS WORK (14 gaps) → fixed → Ready. Written 2026-10-12; was Blocked on Stories 011–014, all Complete (011 on 2026-10-26).
 > **Layer**: Core
 > **Type**: Integration
-> **Manifest Version**: 2026-10-09
-> **Estimate**: 4 hours (provisional — confirm at `/story-readiness`)
+> **Manifest Version**: 2026-10-26
+> **Estimate**: 6 hours (was 4 h provisional: migration 003, the idempotent conflict path, the test trigger and the contract subclass were added at readiness)
 
 ## Context
 
-**GDD**: `design/gdd/character-persistence.md` — CR-CP-12.
-**Requirement**: `TR-cp-012`
+**GDD**: `design/gdd/character-persistence.md` — CR-CP-12 (PendingPurchase storage and lifecycle; "Gold authority (ADR-001 Amendment A2)": the store writes the caller's in-memory `goldBalance` / `goldVersion` as absolute values on `character_records`, without advancing `save_version`).
+**Requirement**: `TR-cp-012` — "`PendingPurchase` in its own `pending_purchases` table, outside the character record".
 
-**ADR Governing Implementation**: ADR-006 Decision 3 (the `pending_purchases` INSERT and the gold-debit UPDATE inside the same `NpgsqlTransaction`; the DDL); ADR-001 Decisions 2–4.
-**ADR Decision Summary**: `BeginPurchase` is the only write that shares a transaction with another system's data; if either statement fails, both roll back. Since ADR-001 Amendment A2 (2026-10-26) the gold UPDATE writes the caller's in-memory balance and version as absolute values and has no balance check.
+**ADR Governing Implementation**: ADR-006 Decision 3 (the `pending_purchases` INSERT and the gold UPDATE in one `NpgsqlTransaction`; the DDL; the 2026-10-26 note); ADR-001 Decisions 2–4 and Amendment A2 with its addendum (in-memory gold authority, write queue, `OutcomeUnknown`, idempotent `BeginPurchase`). Both Accepted.
+**ADR Decision Summary**: `BeginPurchase` is the only write that shares a transaction with another system's data; if either statement fails, both roll back. The gold UPDATE writes the caller's balance and version as given — no balance check, no `save_version` bump. A retry of `BeginPurchase` after an unknown outcome must find the first call's record instead of writing a second one.
 
 **Engine**: Unity 6.3 LTS | **Risk**: MEDIUM
-**Engine Notes**: as Story 014 — read the pinned Npgsql and Dapper API, and Story 012's findings.
+**Engine Notes**: no Unity API. Npgsql 8.0.9 and Dapper 2.1.66 (pinned, `docs/engine-reference/unity/plugins/npgsql-dapper.md`), as Story 014: SQL as explicit text constants, Dapper binds parameters and maps rows. TD-073 (Dapper under IL2CPP) stays open and is not this story's to decide; follow Story 014's pattern so that whatever TD-073 decides applies to both stores at once. `PostgresException.SqlState` is the Npgsql way to tell a foreign-key violation (`23503`) from other errors.
 
-**Control Manifest Rules (this layer)**:
-- Required: `ConfigureAwait(false)` on every `await`, including `await using` — ADR-011
-- Forbidden: Entity Framework Core — ADR-006
+**Control Manifest Rules (this layer, Manifest 2026-10-26)**:
+- Required: `BeginPurchase` writes no balance check, never returns `InsufficientGold` / `ConcurrencyConflict`; an unknown character writes nothing — ADR-001 A2 (manifest lines 48, 52)
+- Required: `BeginPurchase` is idempotent on (character, `RequestId`); the SQL store enforces it with a unique index (manifest line 55; the column is `char_id`, see Implementation Notes)
+- Required: the purchase writes run through the per-character write queue — done by `CharacterPersistenceService` (Story 011); the store adds no queue of its own (manifest line 53)
+- Required: the store takes the zone's `NpgsqlDataSource` and never creates or disposes one (manifest lines 79, 223)
+- Required: `ConfigureAwait(false)` on every `await`, including `await using` — ADR-011 (manifest lines 90, 238)
+- Forbidden: Entity Framework Core — ADR-006 (manifest line 207)
 
 ---
 
 ## Acceptance Criteria
 
-*Against a real PostgreSQL instance, as Story 014.*
+*Against a real PostgreSQL instance with migrations 001–003 applied, as Story 014. The tests are `[Explicit]` and `[Category("Database")]` and are run with `-testFilter` (tools/postgres/README.md).*
 
-- [ ] **Shared suite**: Story 011's purchase tests pass against this store unchanged.
-- [ ] **One transaction**: `BeginPurchase` issues the INSERT and the gold UPDATE in one `NpgsqlTransaction`; a failure of the second statement leaves no row in `pending_purchases` (shown by forcing the UPDATE to fail).
-- [ ] **Insufficient gold is decided in the database**: the debit's predicate refuses a balance below the cost, so two concurrent `BeginPurchase` calls for one character whose balance covers only one of them end with one `Success` and one `InsufficientGold`, and the balance is never negative.
-- [ ] **Generated id**: the `BIGSERIAL` id is returned to the caller.
-- [ ] **`CompletePurchase` / `RefundPurchase`**: remove the row; idempotent on a missing id; the refund's credit and the delete are one transaction.
-- [ ] **`LoadOutstandingPurchases`**: uses `ix_pending_purchases_char_id`; returns only `state = GoldDebited` rows of that character.
-- [ ] **Foreign key**: a purchase for a `char_id` with no character record fails and is mapped to a result, not an unhandled exception.
+- [ ] **Where**: `NpgsqlCharacterRecordStore` implements `IPendingPurchaseStore` as well as `ICharacterRecordStore` (the service finds the purchase store as `store as IPendingPurchaseStore`, so it must be the same object); no new constructor parameter; `ICharacterRecordStore` and `IPendingPurchaseStore` unchanged.
+- [ ] **Shared suite**: a subclass of `PendingPurchaseStoreContractTests` (Story 011, 23 tests) passes unchanged against this store. It overrides `CreateStore`, `SeedCharacter`, `ReadCharacter` and `CleanUp` (deletes the test characters' `pending_purchases` rows, then their character rows, through `PgTestDatabase.DeleteCharacters`).
+- [ ] **Migration 003**: `tools/db/migrations/003_pending_purchases_request_unique.sql` adds `CREATE UNIQUE INDEX ux_pending_purchases_char_request ON pending_purchases (char_id, request_id)`; `tools/db/README.md` lists it as step 3 (runs after 002, not re-runnable, how to check it ran). It is applied to the dev database before the tests run.
+- [ ] **One transaction (Begin)**: `BeginPurchaseAsync` issues the INSERT and the gold UPDATE (`gold_balance = @goldBalance, gold_version = @goldVersion WHERE character_id = @charId`, no `save_version` change) in one `NpgsqlTransaction`. With a test trigger that makes the UPDATE raise for one test character, the call ends faulted, `pending_purchases` has no row for it, and the character row is unchanged.
+- [ ] **One transaction (Refund)**: `RefundPurchaseAsync` deletes the row and writes the gold in one transaction. With the same trigger, the call ends faulted and the purchase row is still there.
+- [ ] **Idempotent Begin**: a second `BeginPurchaseAsync` with the same (`char_id`, `request_id`) as an outstanding record returns that record's id and writes nothing (no second row, gold unchanged from the first call). Implemented with `INSERT … ON CONFLICT (char_id, request_id) DO NOTHING RETURNING id`; when no id comes back, the existing id is read and the gold UPDATE is skipped.
+- [ ] **Idempotent Begin under concurrency**: two `BeginPurchaseAsync` calls with the same (`char_id`, `request_id`) started together on two connections both return the same id; the table holds one row for that request; neither call faults.
+- [ ] **Generated id**: the `BIGSERIAL` id is returned, greater than 0, and increases from one new purchase to the next.
+- [ ] **Unknown character**: `BeginPurchaseAsync` for a `char_id` with no character row returns 0 and writes nothing — the foreign-key violation (`SqlState 23503`) is caught inside the store, the transaction rolled back, and no exception reaches the caller.
+- [ ] **Complete / Refund outcomes**: `CompletePurchaseAsync` and `RefundPurchaseAsync` return `Applied` when they delete the row, `NotFound` when no row has that id (including a second call), `OtherCharacter` when the row belongs to another character — and only `Applied` writes anything (a refund's gold included).
+- [ ] **`LoadOutstandingAsync`**: returns only that character's rows (all stored rows are `GoldDebited`: Completed and Refunded records are deleted, never stored), in ascending id order, as a new list, never null; the query filters on `char_id`, which `ix_pending_purchases_char_id` serves.
+- [ ] **Cancellation and faults**: the token reaches every Npgsql / Dapper call; a cancelled token ends the task cancelled; a database failure other than the foreign-key case ends the task faulted (Story 014's failure contract).
 
 ---
 
 ## Implementation Notes
 
-- CR-CP-12 says the completed or refunded record is marked and deleted; with the row deleted the mark is never observable. Keep to the delete unless readiness wants an audit trail.
-- The debit touches `character_records.gold_balance`: see Story 011's open decision 1 for `gold_version` and `save_version`.
-
-**Open decisions for `/story-readiness`**
-
-1. **Does the purchase UPDATE advance `save_version`.** If it does, the in-memory expected version must follow; if it does not, a `SaveSession` snapshot taken before the purchase overwrites the debited balance.
+- **Column name**: the table's column is `char_id` (ADR-006 DDL, migration 002). The manifest line 55 and the Story 011 review note say `(character_id, request_id)`; that means the character column of `pending_purchases`, i.e. `char_id`. Correct the manifest wording at its next regeneration (not in this story).
+- **Idempotent conflict path under READ COMMITTED**: a second transaction's `INSERT … ON CONFLICT DO NOTHING` waits for the first transaction's row; if the first commits, it inserts nothing and the following `SELECT id … WHERE char_id = @c AND request_id = @r` sees the committed row; if the first rolls back, the second inserts. Skip the gold UPDATE whenever the INSERT returned no id.
+- **Complete / Refund SQL**: `DELETE FROM pending_purchases WHERE id = @id AND char_id = @c RETURNING id`; when nothing is deleted, a `SELECT char_id … WHERE id = @id` decides `NotFound` versus `OtherCharacter`. The refund's gold UPDATE follows the DELETE in the same transaction. A refund whose character row is missing cannot happen (foreign key); if the UPDATE affects 0 rows anyway, throw (faulted task), as the in-memory store does.
+- **Test trigger** (user decision 2026-10-26, instead of a production test hook): the test creates `BEFORE UPDATE ON character_records FOR EACH ROW WHEN (OLD.character_id = <test id>)` with a function that `RAISE EXCEPTION`s, and drops both in `TearDown` (also when the test fails). Test ids stay in the 9 000 000 range. The `irongrind` role owns the tables, so it may create the trigger.
+- CR-CP-12 marks a completed or refunded record and deletes it; the mark is never observable, so the store only deletes.
+- `RequestId` (`uint`) and the gold values (`uint`) map to `BIGINT` (ADR-006 type mapping notes).
 
 ---
 
 ## Out of Scope
 
-- The NPC Shop's handlers
+- The NPC Shop's handlers and the buy / refund caller order (ADR-001 A2, NPC Shop epic)
 - Reconnect reconciliation's caller (Networking Core session contract)
+- The write queue, `OutcomeUnknown` mapping and retry — `CharacterPersistenceService`, Story 011
+- TD-073 (Dapper under IL2CPP) and TD-082 (late-commit residual risk)
+- The full real-database verification run — Story 016
 
 ---
 
 ## QA Test Cases
 
-- **Shared suite** — Story 011's tests against PostgreSQL.
-- **Rollback** — Given a forced failure of the gold UPDATE, Then `pending_purchases` has no new row.
-- **Race** — Given balance 300 and two concurrent purchases of 200, Then one `Success`, one `InsufficientGold`, balance 100.
-- **Foreign key** — Given an unknown `char_id`, Then a non-success result.
-- **Idempotency** — Complete twice, refund twice → `Success` each time, one effect.
+- **Shared suite** — Story 011's 23 contract tests against PostgreSQL.
+- **Rollback (Begin)** — Given the UPDATE trigger on the test character, When `BeginPurchaseAsync`, Then the task faults, no `pending_purchases` row for it, gold and versions unchanged.
+- **Rollback (Refund)** — Given an outstanding purchase and the trigger, When `RefundPurchaseAsync`, Then the task faults and the row is still there.
+- **Retry** — Given an outstanding purchase for request R, When `BeginPurchaseAsync` again for R with other gold values, Then the same id, one row, the first call's gold.
+- **Concurrent retry** — Given two connections, When both begin request R together, Then one id, one row, no fault.
+- **Unknown character** — Given an unknown `char_id`, Then 0, no row, no exception.
+- **Outcomes** — Complete twice → `Applied`, then `NotFound`; refund on another character's id → `OtherCharacter`, nothing written.
+- **Migration 003** — the index exists (`pg_indexes`) and is unique.
+
+---
+
+## Performance
+
+Off the tick: every call is an async store call that the service queues and tracks (ADR-011). Each write is one round trip of two or three statements in one transaction, inside ADR-006's ≤50 ms P95 write budget (`PERSISTENCE_WRITE_WARNING_MS`). No measurement in this story; Story 016 measures.
 
 ---
 
 ## Test Evidence
 
 **Story Type**: Integration
-**Required evidence**: the database test file named at readiness — must exist and pass against a PostgreSQL instance.
+**Required evidence**: `tests/EditMode/CharacterPersistence/CharacterPersistence_NpgsqlPendingPurchase_tests.cs` (the contract subclass plus this story's own tests) — must exist and pass against the local PostgreSQL (`-testFilter`, batch mode); the run is recorded in the story's Completion Notes. The non-database EditMode suite must stay green.
 
 **Status**: [ ] Not yet created
 
@@ -77,5 +98,5 @@
 
 ## Dependencies
 
-- Depends on: **Stories 012, 013, 014 (blocking)**; Story 011
+- Depends on: Stories 011 (Complete 2026-10-26), 012, 013, 014 (Complete 2026-10-19)
 - Unlocks: Story 016; the NPC Shop epic

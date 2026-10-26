@@ -4866,3 +4866,12 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - EPIC: row 011 Complete; row 015 Not Started (unblocked — run /story-readiness); header 14 Complete, 1 Not Started (015), 2 Blocked (005, 016). Story 015 status line updated.
 - Tech debt logged: 3 items — TD-080 (manifest regeneration, P3, before Story 015 readiness), TD-081 (untested row-missing fault, P4), TD-082 (late-commit residual risk, P3, before NPC Shop purchases). Register total 68.
 - Next recommended: /create-control-manifest (TD-080) → /story-readiness production/epics/character-persistence/story-015-npgsql-pending-purchase-store.md. PAT rotation still unconfirmed.
+
+## Session Extract — /story-readiness 2026-10-26 (Character Persistence Story 015)
+- Verdict: NEEDS WORK (14 gaps) -> fixed -> Ready (6 h, was 4 h provisional). Lean: QL-STORY-READY skipped.
+- Gaps: manifest 2026-10-09 stale; status header stale; criteria predated ADR-001 A2 (DB-side InsufficientGold race, "Success" on missing id, FK "result"); no idempotency / unique index / migration; open decision on save_version (answered by A2); no forced-failure method; class and test file not named; no performance note.
+- User decision: force the failing UPDATE with a test-created BEFORE UPDATE trigger on character_records (dropped in TearDown), not a production hook.
+- Story rewritten: NpgsqlCharacterRecordStore also implements IPendingPurchaseStore; migration 003 unique index (char_id, request_id); INSERT ... ON CONFLICT DO NOTHING RETURNING id + SELECT, no gold UPDATE on conflict; FK 23503 -> 0; Applied/NotFound/OtherCharacter; 12 criteria; test file tests/EditMode/CharacterPersistence/CharacterPersistence_NpgsqlPendingPurchase_tests.cs.
+- Note: manifest line 55 says (character_id, request_id) — the column is char_id; fix at next manifest regeneration.
+- EPIC row 015 Ready. Not committed.
+- Next: commit → /dev-story Story 015 (needs the local PostgreSQL running). PAT rotation still unconfirmed.
