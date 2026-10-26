@@ -33,10 +33,12 @@
 - [ ] `EquipmentSlotEntry` is a `readonly struct { ItemID ItemId; bool IsTransitioning; byte EnhancementLevel }`; an empty slot is `ItemID.Invalid` with level 0 (CR-EQS-1)
 - [ ] Each registered character holds a fixed array of 7 entries indexed by `(int)GearSlot` (Weapon = 0 … Necklace = 6); no `Dictionary` keyed by `GearSlot` (CR-EQS-1)
 - [ ] `EquipResult` enum exists with `Success`, `NoChange`, `StatRequirementNotMet`, `InventoryFull`, `SlotMismatch`, `ItemLocked`, `ItemNotInInventory`, `InventoryError`, `CriticalFailure` (Interactions mapping table); `MergeResult` enum exists with `Success`, `RejectedEquipped`, `RejectedMaxLevel`, `RejectedInventoryFull`, `RejectedMergeError`, `CriticalRollbackFailed` (UI Requirements); `SlotState` enum `Empty`, `Occupied`, `Transitioning`
-- [ ] `RegisterCharacter(CharacterID, EntityID)` creates 7 empty slots; `UnregisterCharacter(CharacterID)` drops them; a second register of the same character, or any call for an unregistered character, follows the `IInventoryService` convention (documented on the interface)
+- [ ] `RegisterCharacter(CharacterID, EntityID)` creates 7 empty slots. A second register of an already-registered `CharacterID`, or an `EntityID` already mapped to another character, throws `InvalidOperationException` with no state change — a caller bug; a reload calls `UnregisterCharacter` first. (Unlike Inventory's reset-on-register: resetting an occupied slot would orphan its modifiers in Character Stats. User decision 2026-10-26.)
+- [ ] `UnregisterCharacter(CharacterID)` drops the slots and both map entries; it does not remove modifiers from Character Stats (the entity is discarded with the session). An unknown `CharacterID` is a silent no-op — no log, no exception (as Inventory).
+- [ ] Every read method called for an unregistered character logs a server error (`Debug.LogError`, fixed prefix) and returns the empty value — `(ItemID.Invalid, SlotState.Empty)`, level 0, `false`, `ItemID.Invalid` — never throws (as `IInventoryService.GetSlot`)
 - [ ] Read surface (TR-equip-008): `GetEquipmentSlotState(charId, slot)` → `(ItemID, SlotState)`; `GetSlotEnhancementLevel(charId, slot)` → `byte` (0 when empty); `IsSlotTransitioning(charId, slot)` → `bool`; `GetEquippedWeaponItemID(charId)` → `ItemID.Invalid` when no weapon (AC-EQS-12); `GetEquippedWeaponEnhancementLevel(charId)` = `GetSlotEnhancementLevel(charId, GearSlot.Weapon)`
 - [ ] `EquipmentService` implements the existing `IEquippedWeaponQuery` (`GetEquippedWeaponID(EntityID)`, `GetEquippedWeaponEnhancementLevel(EntityID)`) through the EntityID → CharacterID map kept by `RegisterCharacter`; an unknown entity returns `ItemID.Invalid` / 0 (EC-EQS-9)
-- [ ] Every read method rejects a `GearSlot` value outside `[0, 6]` before indexing the array — no `IndexOutOfRangeException` (CR-EQS-13 bullet 2 applies to reads too)
+- [ ] Every read method given a `GearSlot` value outside `[0, 6]` checks it before indexing the array, logs a server error and returns the empty value (as above) — never throws, no `IndexOutOfRangeException` (CR-EQS-13 bullet 2 applies to reads too; same handling as `IInventoryService.GetSlot` for a bad index)
 
 ---
 
@@ -69,9 +71,10 @@
 - **AC-EQS-12** — registered character, nothing equipped: `GetEquippedWeaponItemID` = `ItemID.Invalid`, no exception; `GetEquippedWeaponEnhancementLevel` = 0.
 - **Empty registry** — for each of the 7 `GearSlot` values: state `(Invalid, Empty)`, level 0, `IsSlotTransitioning` false.
 - **`IEquippedWeaponQuery`** — via the interface with the registered `EntityID`: `GetEquippedWeaponID` = Invalid, level 0. Unknown `EntityID`: Invalid / 0, no exception.
-- **Out-of-range slot** — `(GearSlot)7` and `(GearSlot)255` on each read method: rejected per the documented convention, no `IndexOutOfRangeException`.
-- **Unregistered character** — each read method follows the documented convention (assert the exact behaviour chosen and documented).
-- **Register / unregister** — after `UnregisterCharacter`, reads behave as unregistered; the EntityID map entry is gone (`IEquippedWeaponQuery` returns Invalid).
+- **Out-of-range slot** — `(GearSlot)7` and `(GearSlot)255` on each slot-taking read: empty value returned, one `LogError` each (`LogAssert.Expect`), no exception.
+- **Unregistered character** — each read method: empty value, one `LogError`, no exception.
+- **Double register** — same `CharacterID` twice → `InvalidOperationException`, the first registration's state unchanged; a second character with an `EntityID` already in use → `InvalidOperationException`, second character not registered.
+- **Unregister** — after `UnregisterCharacter`, reads behave as unregistered (empty + `LogError`); the EntityID map entry is gone (`IEquippedWeaponQuery` returns Invalid); register again succeeds. Unregister of an unknown character: no log (`LogAssert.NoUnexpectedReceived`), no exception.
 - **Enum values** — `EquipResult`, `MergeResult`, `SlotState` member names present (reflection or exhaustive switch test).
 
 ---
