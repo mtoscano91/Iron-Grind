@@ -46,9 +46,29 @@
 
 - **Epic decision (2026-10-26): the Equipment System owns re-registration on load** (CR-EQS-15 point 1). Character Persistence does not call `AddEquipmentModifier` itself; its Story 005 becomes a thin caller of `RestoreSlots` at load step 4 and of `ExportSlots` at save step 3 (CR-CP-10). This settles open decisions 1 and 2 of Character Persistence Story 005 — note it there when that story is picked up.
 - Dependency direction is one-way, Persistence → Equipment: define an equipment-owned `readonly struct SavedGearSlot { ItemID ItemId; byte EnhancementLevel }`; Character Persistence converts from its `GearSlotRecord`. The Equipment System never references Character Persistence types.
-- `RestoreSlots(CharacterID, ReadOnlySpan<SavedGearSlot> slots)` (or an array of length 7 — length ≠ 7 throws `ArgumentException`). Precondition: the character is registered (Story 001) and every slot is empty — otherwise `InvalidOperationException`, so a double restore cannot double-register modifiers.
-- Level validation (`≤ MAX_ENHANCEMENT_LEVEL`, else `CorruptRecord`) is Character Persistence's job before the call (CR-CP-3 step 4); restore re-checks and throws `ArgumentOutOfRangeException` rather than passing an out-of-range level to `GetFlatBonus`.
-- Return value: a small `readonly struct` naming the dropped slots (e.g. a 7-bit mask plus a count).
+- **Pinned API (resolved at `/story-readiness` 2026-10-26, user decision).** Both methods on `IEquipmentService` (ADR-010 Tier 1 — Character Persistence calls them through the interface); the two types are new files in `src/ServerLogic/EquipmentSystem/`:
+  ```csharp
+  public readonly struct SavedGearSlot : IEquatable<SavedGearSlot>
+  {
+      public SavedGearSlot(ItemID itemId, byte enhancementLevel);
+      public ItemID ItemId { get; }
+      public byte EnhancementLevel { get; }
+      public static readonly SavedGearSlot Empty;   // ItemID.Invalid, 0
+  }
+
+  public readonly struct GearRestoreResult
+  {
+      public byte DroppedSlotMask { get; }           // bit (int)GearSlot set = that slot was left empty
+      public int DroppedCount { get; }               // popcount of the mask
+      public bool IsDropped(GearSlot slot);
+  }
+
+  GearRestoreResult RestoreSlots(CharacterID charId, ReadOnlySpan<SavedGearSlot> slots);
+  SavedGearSlot[] ExportSlots(CharacterID charId);   // new array, length 7, index = (int)GearSlot
+  ```
+  Character Persistence already holds `GearSlotRecord[]`; a converted `SavedGearSlot[]` passes to the span parameter implicitly.
+- `RestoreSlots` validates everything before registering anything, so a throw leaves the character untouched: unregistered character or any occupied slot (double restore) → `InvalidOperationException`; length ≠ 7 → `ArgumentException`; a level above the `EnhancementConfig` maximum → `ArgumentOutOfRangeException` (Character Persistence validates first and maps to `CorruptRecord`, CR-CP-3 step 4 — this is the re-check, so `GetFlatBonus` never sees an out-of-range level); an empty saved slot (`ItemID.Invalid`) with a non-zero level → `ArgumentException`. An Item Database miss or a `GearSlot` mismatch is not an exception: the slot is left empty, logged, and set in `DroppedSlotMask`.
+- `ExportSlots` on an unregistered character throws `InvalidOperationException` — unlike the read surface (log + empty value), because a save that silently exported 7 empty slots would wipe the player's gear. `IsTransitioning` is never exported (CR-EQS-15); there is no mid-swap case, since a swap completes inside one tick-thread call.
 - Use the same enhanced-modifier helper as Story 002 and the same appearance recompute as Story 005, without the event.
 - **Drift to note in Character Persistence Story 005, not fixed here:** CR-CP-3 step 4 also lists `GetElementalBonus` on load. Equipment writes no elemental data to Character Stats (CR-EQS-12) — Damage Calculation calls `GetElementalBonus` per hit — so that call has no target.
 
@@ -70,7 +90,7 @@
 - **Item Database miss** — slot 2 holds an unknown id → slot 2 Empty, one `LogError` with character id / slot / item id, return value reports slot 2, the other six restored.
 - **Slot mismatch** — a Helmet id saved under Weapon → same treatment as a miss.
 - **No cleanup** — the weapon's `ItemID` also present in the bag → both remain; no Inventory call during restore (spy).
-- **Preconditions** — restore twice → second throws `InvalidOperationException`, modifiers registered once; unregistered character throws; length 6 throws; level 11 throws `ArgumentOutOfRangeException` before any `AddEquipmentModifier`.
+- **Preconditions** — restore twice → second throws `InvalidOperationException`, modifiers registered once; unregistered character throws; length 6 throws; level 11 throws `ArgumentOutOfRangeException` before any `AddEquipmentModifier`; an empty saved slot with level 3 throws `ArgumentException`; `ExportSlots` on an unregistered character throws `InvalidOperationException`.
 - **Export** — after equips and a swap, `ExportSlots` matches the read surface; empty slots `Invalid` / 0.
 - **Round trip** — export → unregister → register → restore: read surface, effective stats and appearance byte equal the originals.
 

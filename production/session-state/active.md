@@ -4963,3 +4963,9 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Story: production/epics/equipment-system/story-006-accessory-merge.md — Accessory Merge
 - Tech debt logged: None (2 advisory deviations recorded in Completion Notes)
 - Next recommended: /story-readiness Story 007 (restore and export gear slots), then 008, 009
+
+## Session Extract — /story-readiness 2026-10-26 (Equipment Story 007)
+- Verdict: NEEDS WORK (1 gap: RestoreSlots/ExportSlots API left open — span or array, return type "e.g.") → fixed → Ready.
+- User decision: pinned API in story Implementation Notes — SavedGearSlot, GearRestoreResult (DroppedSlotMask/DroppedCount/IsDropped), RestoreSlots(CharacterID, ReadOnlySpan<SavedGearSlot>), SavedGearSlot[] ExportSlots(CharacterID); all validation before any registration; empty slot with non-zero level → ArgumentException; ExportSlots unregistered → InvalidOperationException. QA Preconditions case extended.
+- Passing: ADR-006 Accepted, TR-equip-010 active, manifest 2026-10-26 current, deps 002/004/005 Complete. QL-STORY-READY skipped (lean).
+- Next: /dev-story Story 007.
