@@ -3,7 +3,7 @@
 > **Status**: Approved (Pass 7 lean, 2026-10-01 — all 5 Pass 6 blockers verified closed; pre-implementation gate OQ-EQS-9 resolved 2026-10-26 — option (a), no re-review). Previous: NEEDS REVISION (Pass 6 lean, 2026-10-01 — TD-044/045 amendments); Approved (Pass 5 lean, 2026-05-22)
 > **Revision 2026-10-01 (post-review)**: `Inventory.GetSlot` read added for CR-EQS-4/13; `GetSlotEnhancementLevel(GearSlot)` added; `EquipResult` → wire mapping stated (`InventoryError = 6`); OQ-EQS-8 resolved (PrestigeBand = Weapon slot only); Dependencies refreshed; F-EQS-4 collapsed to the F-ENH-3 result; AC-EQS-2/11/16/29 revised, AC-EQS-30–31 added; OQ-EQS-9 added. Same day, after approval (Enhancement System Revision Pass 2): the `GetElementalBonus` signature quoted in the elemental-weapon rule gains `baseElementalDamage` — reference update only, no rule change.
 > **Author**: Manuel Toscano + Claude Code agents
-> **Last Updated**: 2026-10-26 (OQ-EQS-9 resolved, option (a): `EquipResult` gains `ItemLocked` and `ItemNotInInventory`; CR-EQS-13's stale-render guard returns `ItemNotInInventory`; CR-EQS-5 step 2 and CR-EQS-6 step 7 map the failed `MoveItemOut` code (`SlotLocked` → `ItemLocked`, `SlotEmpty` → `ItemNotInInventory`); wire mapping rows 4 and 5 added; EC-EQS-4 and its stale note corrected; UI Requirements list both codes; AC-EQS-31 Pass revised; AC-EQS-32 and AC-EQS-33 added.) Previous: 2026-10-01 (TD-045/TD-044 design session: `EquipmentSlotEntry` gains `EnhancementLevel: byte` — Enhancement System upstream amendment #2, previously unapplied in this body; the level is carried through equip, auto-swap and unequip via the Inventory interface; modifiers registered through `IEnhancementBonusProvider.GetFlatBonus`; `GetEquippedWeaponEnhancementLevel()` added; CR-EQS-4 guard compares ItemID and level; CR-EQS-8 rewritten — failed swap aborts and keeps the old item equipped, no `ForceInsert` retry, no Empty-slot outcome; AC-EQS-8/16/17 revised, AC-EQS-28–29 added; OQ-EQS-8 added. **Lean re-review pending.**) Previous: 2026-05-22 (Pass 4: MergeResult code gap resolved — RejectedMergeError added for clean-rollback path; CriticalRollbackFailed reserved for rollback-fails path; CR-EQS-14 precondition 1 and rollback block updated; CR-EQS-15 crash recovery language clarified; RejectedEquipped documented as defense-in-depth; AC-EQS-24 updated; AC-EQS-26–27 added)
+> **Last Updated**: 2026-10-26 (Equipment Story 006 `/story-readiness`, user decision: `MergeResult` gains `RejectedInvalidSources` (value 6, appended) for CR-EQS-14 preconditions 0–2 — new precondition 0 (indices in `[0, 19]`, pairwise distinct); UI Requirements list the code; AC-EQS-34 added; no re-review.) Same day, earlier: (OQ-EQS-9 resolved, option (a): `EquipResult` gains `ItemLocked` and `ItemNotInInventory`; CR-EQS-13's stale-render guard returns `ItemNotInInventory`; CR-EQS-5 step 2 and CR-EQS-6 step 7 map the failed `MoveItemOut` code (`SlotLocked` → `ItemLocked`, `SlotEmpty` → `ItemNotInInventory`); wire mapping rows 4 and 5 added; EC-EQS-4 and its stale note corrected; UI Requirements list both codes; AC-EQS-31 Pass revised; AC-EQS-32 and AC-EQS-33 added.) Previous: 2026-10-01 (TD-045/TD-044 design session: `EquipmentSlotEntry` gains `EnhancementLevel: byte` — Enhancement System upstream amendment #2, previously unapplied in this body; the level is carried through equip, auto-swap and unequip via the Inventory interface; modifiers registered through `IEnhancementBonusProvider.GetFlatBonus`; `GetEquippedWeaponEnhancementLevel()` added; CR-EQS-4 guard compares ItemID and level; CR-EQS-8 rewritten — failed swap aborts and keeps the old item equipped, no `ForceInsert` retry, no Empty-slot outcome; AC-EQS-8/16/17 revised, AC-EQS-28–29 added; OQ-EQS-8 added. **Lean re-review pending.**) Previous: 2026-05-22 (Pass 4: MergeResult code gap resolved — RejectedMergeError added for clean-rollback path; CriticalRollbackFailed reserved for rollback-fails path; CR-EQS-14 precondition 1 and rollback block updated; CR-EQS-15 crash recovery language clarified; RejectedEquipped documented as defense-in-depth; AC-EQS-24 updated; AC-EQS-26–27 added)
 > **Implements Pillar**: Legendary Gear (primary), Earned Power (secondary)
 
 ## Overview
@@ -149,10 +149,13 @@ Players may upgrade an accessory by merging three identical accessories of the s
 
 Preconditions (all must hold; reject with no state change if any fail):
 
+0. The three indices are within `[0, 19]` and pairwise distinct.
 1. Three items with the same `ItemID` exist at the three passed inventory slot indices, and none are locked by the Enhancement System. (Defense-in-depth equipped check: items in equipment slots cannot simultaneously be in inventory slots under normal gameplay. If the system detects — through an internal consistency check — that any passed slot's item is also present in an equipment slot, reject with `RejectedEquipped`. A player with 4 identical accessories, 1 equipped and 3 in inventory, may merge the 3 inventory copies; the equipped copy is unaffected and does not trigger this check.)
 2. The item's `GearSlot` is `Ring` or `Necklace` (only accessories are mergeable).
 3. The item's `EquipmentData.MergeResultItemID` is non-null (i.e., AccessoryLevel < 10).
 4. At least one free inventory slot exists to receive the merged result (checked via `HasFreeSlot()` before consuming source items).
+
+A failure of precondition 0, 1 (other than the defense-in-depth equipped check) or 2 returns `MergeResult.RejectedInvalidSources`: an index out of range or repeated, an empty slot, differing `ItemID`s, a locked source slot, or a non-accessory item. Precondition 3 returns `RejectedMaxLevel`, precondition 4 `RejectedInventoryFull`. Under normal play the Inventory UI only offers valid selections, so `RejectedInvalidSources` means a stale client view or a crafted request; the UI refreshes the bag. *(Added 2026-10-26, Story 006 readiness.)*
 
 Merge execution (atomic — all or nothing):
 1. Remove three source items from inventory (`MoveItemOut` on each occupied slot).
@@ -493,6 +496,7 @@ All UI surfaces are owned by the Inventory UI GDD. The Equipment System exposes 
   - `RejectedInventoryFull` — no free inventory slot for merge result; no state change
   - `RejectedMergeError` — `ForceInsert(MergeResultItemID, 0)` failed; all 3 source items restored via rollback; no item loss; no CriticalError
   - `CriticalRollbackFailed` — `ForceInsert(MergeResultItemID, 0)` failed AND one or more rollback `ForceInsert` calls also failed; CriticalError logged; monitoring alert sent; one or more source items unrecovered
+  - `RejectedInvalidSources` — CR-EQS-14 preconditions 0–2 failed (index out of range or repeated, empty slot, differing `ItemID`s, locked source slot, or not a Ring/Necklace); no state change. Stale client view or crafted request; the UI refreshes the bag and shows no error text. Enum value 6, appended after `CriticalRollbackFailed = 5` *(added 2026-10-26)*
 
 The equipment panel layout, slot visual design, tap/drag interaction model, and stat comparison overlays are specified in the Inventory UI GDD — not here.
 
@@ -674,6 +678,18 @@ Action / Pass — each case independently from the same setup:
 (b) `Equip(GearSlot.Weapon, BronzeSwordID, S)` (slot holds a different item) → `EquipResult.ItemNotInInventory`.
 (c) `Equip(GearSlot.Weapon, IronSwordID, 20)` (index outside `[0, 19]`) → `EquipResult.ItemNotInInventory`.
 In every case: zero `MoveItemOut` and `MoveItemIn` calls, Weapon slot still Empty, slot S still holds the Iron Sword, no stat change and no `OnStatChanged` event.
+
+**AC-EQS-34 [BLOCKING]: Accessory merge — invalid sources return RejectedInvalidSources with no state change** *(added 2026-10-26 — Story 006 readiness, CR-EQS-14 preconditions 0–2)*
+Note: Uses an Inventory spy that counts `MoveItemOut` calls.
+Setup: Iron Ring of Attack +1 (`MergeResultItemID` non-null) in inventory slots 2, 5 and 9; at least one free slot. A different Ring `ItemID` in slot 11; slot 13 empty.
+Action / Pass — each case independently from the same setup:
+(a) `RequestMerge(2, 5, 11)` (differing `ItemID`) → `RejectedInvalidSources`.
+(b) `RequestMerge(2, 5, 9)` with slot 9 locked (`IsSlotLocked(9)` = true) → `RejectedInvalidSources`.
+(c) `RequestMerge(2, 5, 13)` (empty slot) → `RejectedInvalidSources`.
+(d) Three identical Iron Swords in slots 2, 5, 9 instead of the rings (not an accessory) → `RejectedInvalidSources`.
+(e) `RequestMerge(2, 2, 5)` (repeated index) → `RejectedInvalidSources`.
+(f) `RequestMerge(2, 5, 20)` (index outside `[0, 19]`) → `RejectedInvalidSources`.
+In every case: zero `MoveItemOut` calls; every inventory slot unchanged; no equipment slot touched.
 
 ## Open Questions
 

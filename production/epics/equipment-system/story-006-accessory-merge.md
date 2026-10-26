@@ -36,7 +36,7 @@
 - [ ] **AC-EQS-24** — result `ForceInsert` fails, rollback `ForceInsert × 3` succeeds → `RejectedMergeError`; all three restored; no CriticalError log; no equipment slot touched
 - [ ] **AC-EQS-26** — result `ForceInsert` fails and ≥ 1 rollback `ForceInsert` fails → `CriticalRollbackFailed`; a CriticalError log containing the entity id and the unrestored count (≥ 1); no equipment slot touched
 - [ ] **AC-EQS-27** [ADVISORY] — the internal equipped-item consistency check (injectable) reports a source item as equipped → `RejectedEquipped`; no `MoveItemOut`
-- [ ] Preconditions 1–2: the three indices hold the same `ItemID`, none is locked, the item's `GearSlot` is Ring or Necklace; otherwise rejected with no state change and no `MoveItemOut`
+- [ ] **AC-EQS-34** — preconditions 0–2: indices in `[0, 19]` and pairwise distinct, the three slots hold the same `ItemID`, none is locked, the item's `GearSlot` is Ring or Necklace; otherwise `RejectedInvalidSources` with no state change and no `MoveItemOut`
 - [ ] Merge never reads or writes an equipment slot; `IsSlotTransitioning` is unaffected
 
 ---
@@ -49,7 +49,7 @@
 - Execution: `MoveItemOut` ×3 → `ForceInsert(MergeResultItemID, 0)` → on false, `ForceInsert(sourceItemId, 0)` ×3 (attempt all three even after one fails, count the failures) → `RejectedMergeError` or `CriticalRollbackFailed` with `Debug.LogError("Merge rollback incomplete — {count} source item(s) not restored for entity {entityID}")`. "Alert monitoring" = that log line (no alert service exists; same convention as Character Persistence).
 - A `MoveItemOut` failing during execution cannot happen after the lock check on a single-threaded tick; if it does, restore the ones already removed and return `RejectedMergeError` — document it as defence.
 - **Defense-in-depth equipped check (precondition 1):** make it an injectable seam (e.g. an internal `Func`-free interface or a protected virtual) so AC-EQS-27 can force it; the production check compares each source `ItemID` against the character's equipped entries **only when** it would mean the same physical item — under the current model an `ItemID` in the bag and the same `ItemID` equipped are two items (GDD: "a player with 4 identical accessories, 1 equipped and 3 in inventory, may merge the 3"), so the production implementation returns "not equipped". Record that in the doc comment.
-- **GDD gap — confirm at `/story-readiness`:** `MergeResult` has no code for "the three slots do not hold three identical, unlocked accessories" (precondition 1–2 failures other than `RejectedEquipped`). Options: add `RejectedInvalidSources` to `MergeResult` (a GDD amendment), or reuse an existing code. Do not invent silently.
+- **`RejectedInvalidSources` (resolved at `/story-readiness` 2026-10-26, user decision):** append `RejectedInvalidSources = 6` to `src/ServerLogic/EquipmentSystem/MergeResult.cs` (values 0–5 unchanged; doc comment like the others). Every precondition 0–2 failure (out-of-range or repeated index, empty slot, differing `ItemID`, locked slot, non-accessory) returns it; `RejectedEquipped` stays the defense-in-depth code only. GDD CR-EQS-14 (new precondition 0), UI Requirements and AC-EQS-34 amended the same day.
 - No wire message for merge exists in `networking-wire-protocol.md`; the entry point is server-side only in this epic.
 
 ---
@@ -71,7 +71,7 @@
 - **AC-EQS-24** — result `ForceInsert` fails → `RejectedMergeError`; three source rings back in the bag at level 0; `LogAssert.NoUnexpectedReceived`; Ring and Necklace equipment slots unchanged.
 - **AC-EQS-26** — result insert fails and the second rollback insert fails → `CriticalRollbackFailed`; one `LogError` containing the entity id and "1"; the other two rollback inserts were still attempted.
 - **AC-EQS-27** — consistency seam reports equipped → `RejectedEquipped`; 0 `MoveItemOut`.
-- **Preconditions** — one ring different `ItemID`; one slot locked; three identical swords (not accessories); an empty slot; a repeated index (2, 2, 5); an index 20 → each rejected (documented code), 0 `MoveItemOut`.
+- **AC-EQS-34 preconditions** — one ring different `ItemID`; one slot locked; three identical swords (not accessories); an empty slot; a repeated index (2, 2, 5); an index 20; a negative index → each `RejectedInvalidSources`, 0 `MoveItemOut`, bag unchanged.
 - **Four identical, one equipped** — Ring slot holds the same `ItemID`; three in the bag → `Success`; the equipped ring untouched.
 
 ---
