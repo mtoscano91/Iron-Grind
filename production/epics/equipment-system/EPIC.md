@@ -53,7 +53,7 @@ The Equipment System manages the seven gear slots of a player character (Weapon,
 | 002 | [Equip Into an Empty Slot, Unequip, Enhanced Modifiers](story-002-equip-unequip-enhanced-modifiers.md) | Logic | Complete (2026-10-26) | ADR-010 |
 | 003 | [Validation Guards — Input, Slot Type, Stat Gate, Same Item](story-003-validation-guards.md) | Logic | Complete (2026-10-26) | ADR-010 |
 | 004 | [Auto-Swap, Rollback and the Transitioning Guard](story-004-auto-swap-and-transitioning.md) | Logic | Complete (2026-10-26) | ADR-010 |
-| 005 | [`equipmentAppearanceFlags` Encoding and Change Event](story-005-appearance-flags.md) | Logic | Ready | ADR-010 |
+| 005 | [`equipmentAppearanceFlags` Encoding and Change Event](story-005-appearance-flags.md) | Logic | Complete (2026-10-26) | ADR-010 |
 | 006 | [Accessory Merge](story-006-accessory-merge.md) | Logic | Ready | ADR-010 |
 | 007 | [Restore and Export Gear Slots — the Load and Save Seam](story-007-restore-and-export-gear-slots.md) | Integration | Ready | ADR-006, ADR-010 |
 | 008 | [`EquipRequest` / `EquipResult` — Codecs, Request Handler, Owner Delivery](story-008-equip-request-and-result-delivery.md) | Integration | Ready | ADR-004, ADR-014, ADR-012 |
@@ -78,4 +78,4 @@ This epic is complete when:
 
 ## Next Step
 
-Stories 001-004 Complete 2026-10-26. Run `/story-readiness production/epics/equipment-system/story-005-appearance-flags.md`, then `/dev-story` (Story 005 wires CR-EQS-6 step 10 into the swap). Carry-over from 004: CR-EQS-6 has no rule for a failed step-7 reclaim; the code leaves the slot Empty with the old item in the bag (user decision, option A) — candidate GDD note. Carry-over from 003: the server composition root must pass `throwOnInvalidItem` explicitly (Story 008 or the server bootstrap).
+Stories 001-005 Complete 2026-10-26. Run `/story-readiness production/epics/equipment-system/story-006-accessory-merge.md`, then `/dev-story`. Carry-over from 005: the appearance byte is cached per character and recomputed at the end of every `Equip` / `Unequip`; Story 007 (restore) must call the same recompute (`RefreshAppearance`) after writing restored slots, and Story 009 reads `GetAppearanceFlags` / subscribes to `OnAppearanceChanged`. Carry-over from 004: CR-EQS-6 has no rule for a failed step-7 reclaim; the code leaves the slot Empty with the old item in the bag (user decision, option A) — candidate GDD note. Carry-over from 003: the server composition root must pass `throwOnInvalidItem` explicitly (Story 008 or the server bootstrap).

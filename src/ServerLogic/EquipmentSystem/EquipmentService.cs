@@ -44,6 +44,9 @@ namespace IronGrind.EquipmentSystem
             public readonly EquipmentSlotEntry[] Slots = new EquipmentSlotEntry[GEAR_SLOT_COUNT];
             public readonly EntityID EntityId;
 
+            // CR-EQS-11 byte, cached so readers (Story 009, the snapshot source) read a field.
+            public byte AppearanceFlags;
+
             public CharacterGear(EntityID entityId)
             {
                 EntityId = entityId;
@@ -53,8 +56,8 @@ namespace IronGrind.EquipmentSystem
         private readonly Dictionary<CharacterID, CharacterGear> _characters = new Dictionary<CharacterID, CharacterGear>();
         private readonly Dictionary<EntityID, CharacterID> _entityToCharacter = new Dictionary<EntityID, CharacterID>();
 
-        // _enhancementConfig is for a later story (accessory merge); taken now so the constructor
-        // does not change between stories.
+        // _enhancementConfig owns the prestige band thresholds (CR-EQS-11); the accessory merge
+        // (a later story) reads it too.
         private readonly IInventoryService _inventory;
         private readonly IronGrind.CharacterStats.CharacterStats _stats;
         private readonly IItemDatabase _itemDatabase;
@@ -67,7 +70,7 @@ namespace IronGrind.EquipmentSystem
         /// <param name="stats">Character Stats, where equipment modifiers are registered.</param>
         /// <param name="itemDatabase">Item definitions (gear slot, requirements, modifiers).</param>
         /// <param name="bonuses">Flat enhancement bonus per level.</param>
-        /// <param name="enhancementConfig">Enhancement tuning (maximum level).</param>
+        /// <param name="enhancementConfig">Enhancement tuning (maximum level, prestige band thresholds).</param>
         /// <param name="throwOnInvalidItem">
         /// Whether <see cref="Equip"/> with <see cref="ItemID.Invalid"/> throws
         /// <see cref="InvalidOperationException"/> (dev builds) instead of returning
@@ -92,6 +95,9 @@ namespace IronGrind.EquipmentSystem
             _bonuses = bonuses ?? throw new ArgumentNullException(nameof(bonuses));
             _enhancementConfig = enhancementConfig ?? throw new ArgumentNullException(nameof(enhancementConfig));
         }
+
+        /// <inheritdoc/>
+        public event Action<EquipmentAppearanceChangedEventArgs>? OnAppearanceChanged;
 
         /// <inheritdoc/>
         public void RegisterCharacter(CharacterID charId, EntityID entityId)
@@ -188,7 +194,26 @@ namespace IronGrind.EquipmentSystem
         }
 
         /// <inheritdoc/>
+        public byte GetAppearanceFlags(CharacterID charId)
+        {
+            if (!_characters.TryGetValue(charId, out var gear))
+            {
+                Debug.LogError($"{LOG_PREFIX} {nameof(GetAppearanceFlags)}: {charId} is not a registered character. Call RegisterCharacter before using equipment.");
+                return 0;
+            }
+
+            return gear.AppearanceFlags;
+        }
+
+        /// <inheritdoc/>
         public EquipResult Equip(CharacterID charId, GearSlot slot, ItemID itemId, int inventorySlotIndex)
+        {
+            EquipResult result = EquipCore(charId, slot, itemId, inventorySlotIndex);
+            RefreshAppearance(charId);
+            return result;
+        }
+
+        private EquipResult EquipCore(CharacterID charId, GearSlot slot, ItemID itemId, int inventorySlotIndex)
         {
             EquipResult validation = ValidateEquip(charId, slot, itemId, inventorySlotIndex, out var validGear, out var validEquipment);
             if (validation != EquipResult.Success)
@@ -219,13 +244,13 @@ namespace IronGrind.EquipmentSystem
             // ForceInsert), so no bag slot can hold one.
             RegisterEnhancedModifiers(gear.EntityId, itemId, equipment, moved.EnhancementLevel);
 
-            // CR-EQS-5 step 4. Step 5 (appearance flags) is Story 005.
+            // CR-EQS-5 step 4. Step 5 (appearance flags) runs in Equip, after this returns.
             gear.Slots[slotIndex] = new EquipmentSlotEntry(itemId, false, moved.EnhancementLevel);
             return EquipResult.Success;
         }
 
         // CR-EQS-6 steps 3-9 (auto-swap into an occupied slot), CR-EQS-8 and CR-EQS-9. Step 10
-        // (appearance flags) is Story 005. No BeginStatTransaction / EndStatTransaction (CR-EQS-15):
+        // (appearance flags) runs in Equip. No BeginStatTransaction / EndStatTransaction (CR-EQS-15):
         // OnStatChanged fires on the remove and again on the add, with the slot reading Transitioning
         // in between. ForceInsert is never used here (CR-EQS-8).
         private EquipResult Swap(
@@ -279,7 +304,7 @@ namespace IronGrind.EquipmentSystem
                 return RollBackSwap(charId, gear, slotIndex, entry, oldEquipment, oldItemReturnedSlotIndex, newItemId, newItemBagSlot, moved.Code);
             }
 
-            // Step 8, then step 9 (flag cleared by the new entry). Step 10 (appearance flags) is Story 005.
+            // Step 8, then step 9 (flag cleared by the new entry). Step 10 (appearance flags) runs in Equip.
             RegisterEnhancedModifiers(gear.EntityId, newItemId, newEquipment, moved.EnhancementLevel);
             gear.Slots[slotIndex] = new EquipmentSlotEntry(newItemId, false, moved.EnhancementLevel);
             return EquipResult.Success;
@@ -315,6 +340,13 @@ namespace IronGrind.EquipmentSystem
 
         /// <inheritdoc/>
         public EquipResult Unequip(CharacterID charId, GearSlot slot)
+        {
+            EquipResult result = UnequipCore(charId, slot);
+            RefreshAppearance(charId);
+            return result;
+        }
+
+        private EquipResult UnequipCore(CharacterID charId, GearSlot slot)
         {
             if (!IsSlotInRange(slot, nameof(Unequip)))
             {
@@ -361,9 +393,85 @@ namespace IronGrind.EquipmentSystem
                 return EquipResult.InventoryError;
             }
 
-            // CR-EQS-7 step 6. Step 7 (appearance flags) is Story 005.
+            // CR-EQS-7 step 6. Step 7 (appearance flags) runs in Unequip, after this returns.
             gear.Slots[slotIndex] = EquipmentSlotEntry.Empty;
             return EquipResult.Success;
+        }
+
+        // CR-EQS-5 step 5, CR-EQS-6 step 10, CR-EQS-7 step 7. Runs after every Equip / Unequip,
+        // whatever the result, and raises only when the byte changed (EC-EQS-8): a failure that left
+        // the slots unchanged never raises, and the swap rollback that leaves the slot empty (Story
+        // 004 option A) is covered without a special case. An unregistered character has no byte.
+        // Not in a finally: an exception out of EquipCore / UnequipCore (the dev-build ItemID.Invalid
+        // throw, which changes nothing, or an unexpected collaborator throw) skips the recompute.
+        private void RefreshAppearance(CharacterID charId)
+        {
+            if (!_characters.TryGetValue(charId, out var gear))
+            {
+                return;
+            }
+
+            byte flags = ComputeAppearanceFlags(gear);
+            if (flags == gear.AppearanceFlags)
+            {
+                return;
+            }
+
+            gear.AppearanceFlags = flags;
+            Raise(OnAppearanceChanged, new EquipmentAppearanceChangedEventArgs(charId, gear.EntityId, flags));
+        }
+
+        // CR-EQS-11. WeaponTier, ElementType and PrestigeBand come from the Weapon slot only (EC-EQS-9:
+        // all 0 with no weapon); the band is the weapon's level through EnhancementConfig, never
+        // another slot's. ArmorTier is 1 when any of Helmet / Chest / Legs / Boots is Steel or Dark
+        // Steel, i.e. the highest armor tier is. An equipped item whose definition vanished counts as
+        // empty here, silently; Unequip and the swap path log that defect when they reach the slot.
+        private byte ComputeAppearanceFlags(CharacterGear gear)
+        {
+            byte weaponTier = 0;
+            byte element = 0;
+            byte band = 0;
+            EquipmentSlotEntry weapon = gear.Slots[(int)GearSlot.Weapon];
+            EquipmentData? weaponData = weapon.IsEmpty ? null : GetEquipmentData(weapon.ItemId);
+            if (weaponData != null)
+            {
+                weaponTier = EquipmentAppearanceEncoder.GetTierBits(weaponData.GearTier);
+                element = (byte)weaponData.ElementType;
+                band = (byte)_enhancementConfig.GetPrestigeBand(weapon.EnhancementLevel);
+            }
+
+            byte armorBit = 0;
+            for (int i = (int)GearSlot.Helmet; i <= (int)GearSlot.Boots; i++)
+            {
+                EquipmentSlotEntry armor = gear.Slots[i];
+                EquipmentData? armorData = armor.IsEmpty ? null : GetEquipmentData(armor.ItemId);
+                if (armorData != null && (armorData.GearTier == GearTier.Steel || armorData.GearTier == GearTier.DarkSteel))
+                {
+                    armorBit = 1;
+                    break;
+                }
+            }
+
+            return EquipmentAppearanceEncoder.Encode(weaponTier, element, band, armorBit);
+        }
+
+        // The exception is logged and contained, as in EnhancementService: a faulty subscriber cannot
+        // undo an equip. A multicast delegate stops at its first throwing subscriber.
+        private static void Raise<TArgs>(Action<TArgs>? handlers, in TArgs args)
+        {
+            if (handlers == null)
+            {
+                return;
+            }
+
+            try
+            {
+                handlers(args);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogException(exception);
+            }
         }
 
         // The one place equipment modifiers are added (equip, swap and rollback paths), so the

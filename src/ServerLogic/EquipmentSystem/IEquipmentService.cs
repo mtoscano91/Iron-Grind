@@ -22,6 +22,33 @@ namespace IronGrind.EquipmentSystem
     public interface IEquipmentService
     {
         /// <summary>
+        /// Raised at the end of an <see cref="Equip"/> or <see cref="Unequip"/> call when the
+        /// character's <c>equipmentAppearanceFlags</c> byte (<see cref="GetAppearanceFlags"/>) changed
+        /// (CR-EQS-11, EC-EQS-8, Story 005) — never on <see cref="EquipResult.NoChange"/> or a failure
+        /// that left the slots unchanged, and never when the byte is unchanged. The one failure that
+        /// can raise it is the swap double failure described on <see cref="Equip"/>, which empties
+        /// the slot. Raised after the slot write and after <see cref="GetAppearanceFlags"/> already
+        /// returns the new byte, so a subscriber may call <see cref="Equip"/> / <see cref="Unequip"/>
+        /// (the nested change raises its own event). A subscriber's exception is logged and contained;
+        /// the subscribers after it on the same event are skipped (multicast delegate). If
+        /// <see cref="Equip"/> or <see cref="Unequip"/> throws, the byte is not recomputed and nothing
+        /// is raised. This is the only event the Equipment System raises (CR-EQS-10); stat changes
+        /// come from Character Stats.
+        /// </summary>
+        event System.Action<EquipmentAppearanceChangedEventArgs>? OnAppearanceChanged;
+
+        /// <summary>
+        /// Returns the character's cached <c>equipmentAppearanceFlags</c> byte (CR-EQS-11): WeaponTier
+        /// <c>[7:6]</c> and ElementType <c>[5:3]</c> of the Weapon slot's item, PrestigeBand
+        /// <c>[2:1]</c> from the Weapon slot's enhancement level only, ArmorTier <c>[0]</c> = 1 when
+        /// the highest equipped armor (Helmet, Chest, Legs, Boots) is Steel or Dark Steel. 0 for a
+        /// character with every slot empty (EC-EQS-11).
+        /// </summary>
+        /// <param name="charId">A registered character.</param>
+        /// <returns>The byte; 0 for an unregistered character (also logs a server error).</returns>
+        byte GetAppearanceFlags(CharacterID charId);
+
+        /// <summary>
         /// Creates 7 empty gear slots for <paramref name="charId"/> and maps
         /// <paramref name="entityId"/> to it.
         /// </summary>

@@ -1,7 +1,7 @@
 # Story 005: `equipmentAppearanceFlags` Encoding and Change Event
 
 > **Epic**: Equipment System
-> **Status**: Ready
+> **Status**: Complete (2026-10-26)
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-26
@@ -30,15 +30,15 @@
 
 *From GDD `design/gdd/equipment-system.md`, scoped to this story:*
 
-- [ ] `GetAppearanceFlags(charId)` returns `(weaponTier & 0x03) << 6 | (elementType & 0x07) << 3 | (prestigeBand & 0x03) << 1 | (armorBit & 0x01)` (CR-EQS-11)
-- [ ] WeaponTier and ElementType come from the Weapon slot's item; both 0 with no weapon (EC-EQS-9)
-- [ ] PrestigeBand comes from the **Weapon slot's** `EnhancementLevel` only, through `EnhancementConfig.GetPrestigeBand`; NONE with no weapon; no other slot's level affects the byte
-- [ ] ArmorTier = 1 when the highest-tier equipped armor (Helmet, Chest, Legs, Boots) is Steel or Dark Steel; 0 otherwise or with no armor
-- [ ] **AC-EQS-11** — Dark Steel Fire sword at level 0 + Steel / Dark Steel armor → `0xC9`
-- [ ] **AC-EQS-30** — (a) +9 Bronze Chest only → `0x00`, chest level reads 9; (b) +0 Iron Sword → `0x40`; (c) swap to +7 Iron Sword → `0x44`; (d) unequip weapon → `0x00`
-- [ ] **EC-EQS-11** — fresh character, all slots empty → `0x00`
-- [ ] The byte is recomputed after every successful equip, swap and unequip (incl. the `GetItem`-null unequip); `OnAppearanceChanged` (`readonly struct { CharacterID, EntityID, byte Flags }`) is raised only when the byte value actually changes; never on `NoChange` or a failure that leaves the slots unchanged (EC-EQS-8). The one failure that changes a slot — the failed step-7 reclaim in `RollBackSwap` (Story 004 option A: `InventoryError`, slot left Empty) — recomputes the byte and raises the event if it changed (user decision 2026-10-26)
-- [ ] **AC-EQS-18** — an equip produces exactly: `OnStatChanged` per registered modifier and the appearance update; the Equipment System raises no other event and calls no damage, healing, status-effect or audio API (CR-EQS-10)
+- [x] `GetAppearanceFlags(charId)` returns `(weaponTier & 0x03) << 6 | (elementType & 0x07) << 3 | (prestigeBand & 0x03) << 1 | (armorBit & 0x01)` (CR-EQS-11)
+- [x] WeaponTier and ElementType come from the Weapon slot's item; both 0 with no weapon (EC-EQS-9)
+- [x] PrestigeBand comes from the **Weapon slot's** `EnhancementLevel` only, through `EnhancementConfig.GetPrestigeBand`; NONE with no weapon; no other slot's level affects the byte
+- [x] ArmorTier = 1 when the highest-tier equipped armor (Helmet, Chest, Legs, Boots) is Steel or Dark Steel; 0 otherwise or with no armor
+- [x] **AC-EQS-11** — Dark Steel Fire sword at level 0 + Steel / Dark Steel armor → `0xC9`
+- [x] **AC-EQS-30** — (a) +9 Bronze Chest only → `0x00`, chest level reads 9; (b) +0 Iron Sword → `0x40`; (c) swap to +7 Iron Sword → `0x44`; (d) unequip weapon → `0x00`
+- [x] **EC-EQS-11** — fresh character, all slots empty → `0x00`
+- [x] The byte is recomputed after every successful equip, swap and unequip (incl. the `GetItem`-null unequip); `OnAppearanceChanged` (`readonly struct { CharacterID, EntityID, byte Flags }`) is raised only when the byte value actually changes; never on `NoChange` or a failure that leaves the slots unchanged (EC-EQS-8). The one failure that changes a slot — the failed step-7 reclaim in `RollBackSwap` (Story 004 option A: `InventoryError`, slot left Empty) — recomputes the byte and raises the event if it changed (user decision 2026-10-26)
+- [x] **AC-EQS-18** — an equip produces exactly: `OnStatChanged` per registered modifier and the appearance update; the Equipment System raises no other event and calls no damage, healing, status-effect or audio API (CR-EQS-10)
 
 ---
 
@@ -85,7 +85,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/EquipmentSystem/EquipmentSystem_AppearanceFlags_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 64 tests (39 `[Test]` + 25 `[TestCase]`), all passing (EditMode 4298 / 0 failed, 2026-10-26)
 
 ---
 
@@ -93,3 +93,18 @@
 
 - Depends on: Story 004 (swap step 10 is part of AC-EQS-30 (c))
 - Unlocks: Stories 007, 009
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-10-26
+**Criteria**: 9/9 passing, all covered by `EquipmentSystem_AppearanceFlags_tests.cs` (no deferred items)
+**Deviations** (advisory, accepted):
+1. The byte is recomputed at the end of every `Equip` / `Unequip` call whatever the result (public methods wrap `EquipCore` / `UnequipCore`), and `OnAppearanceChanged` is raised only on a byte change — the `RollBackSwap` empty-slot path (Story 004 option A) raises without a special case (user decision at `/story-readiness`).
+2. No production decoder (user decision at `/story-readiness`).
+3. An equipped item whose definition vanished from the Item Database counts as empty in the byte, silently; Unequip and the swap path log that defect when they reach the slot. No GDD rule.
+4. `RefreshAppearance` is not in a `finally`: a throw out of `Equip` / `Unequip` (the dev-build `ItemID.Invalid` throw changes nothing; any other is an unexpected collaborator throw) skips the recompute. Documented on `IEquipmentService.OnAppearanceChanged`, with re-entrancy (allowed) and multicast behaviour (a throwing subscriber skips later ones).
+**Scope**: new `EquipmentAppearanceEncoder.cs`, `EquipmentAppearanceChangedEventArgs.cs` (+ `.meta`); `EquipmentService.cs`, `IEquipmentService.cs`. No snapshot wiring (forward dependency, OQ-EQS-6 open), no wire event (Story 009), no restore path (Story 007). Not this story: the flaky `TickLoop_CommitBeforeBroadcast_Tests` 200 ms case failed once in this session (199 ms) → TD-083.
+**Test Evidence**: Logic — `tests/EditMode/EquipmentSystem/EquipmentSystem_AppearanceFlags_tests.cs`
+**Code Review**: Complete — 2026-10-26, APPROVED WITH SUGGESTIONS (unity-specialist CLEAN, qa-tester GAPS, all advisory) → "fix all" applied (3 doc/comment fixes, tests 54 → 64). QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean).
