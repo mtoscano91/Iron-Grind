@@ -375,39 +375,6 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(null));
         }
 
-        // The call itself must return (no synchronous throw): tick code passes it straight to Track (ADR-011).
-        private static void AssertFaultedNotSupported(Task task, string story)
-        {
-            Assert.IsNotNull(task);
-            Assert.IsTrue(task.IsFaulted, "the task is faulted, status " + task.Status);
-            Assert.IsInstanceOf<NotSupportedException>(task.Exception.InnerException);
-            StringAssert.Contains(story, task.Exception.InnerException.Message);
-        }
-
-        [Test]
-        public void CharacterPersistenceService_BeginPurchase_ReturnsFaultedTaskNamingStory011()
-        {
-            AssertFaultedNotSupported(Service.BeginPurchase(CHAR_A, default(PendingPurchaseRecord), CancellationToken.None), "Story 011");
-        }
-
-        [Test]
-        public void CharacterPersistenceService_CompletePurchase_ReturnsFaultedTaskNamingStory011()
-        {
-            AssertFaultedNotSupported(Service.CompletePurchase(1L, CancellationToken.None), "Story 011");
-        }
-
-        [Test]
-        public void CharacterPersistenceService_RefundPurchase_ReturnsFaultedTaskNamingStory011()
-        {
-            AssertFaultedNotSupported(Service.RefundPurchase(1L, CHAR_A, 10u, CancellationToken.None), "Story 011");
-        }
-
-        [Test]
-        public void CharacterPersistenceService_LoadOutstandingPurchases_ReturnsFaultedTaskNamingStory011()
-        {
-            AssertFaultedNotSupported(Service.LoadOutstandingPurchases(CHAR_A, CancellationToken.None), "Story 011");
-        }
-
         // ---------------------------------------------------------------- rows are keyed by character
 
         [Test]

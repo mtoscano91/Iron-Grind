@@ -101,11 +101,11 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
 
             public Task CreateStub(AccountID accountId, CharacterID characterId, byte classType, CancellationToken ct) => _inner.CreateStub(accountId, characterId, classType, ct);
 
-            public Task<PendingPurchaseResult> BeginPurchase(CharacterID charId, IronGrind.CharacterPersistence.PendingPurchaseRecord record, CancellationToken ct) => _inner.BeginPurchase(charId, record, ct);
+            public Task<PendingPurchaseBeginResult> BeginPurchase(CharacterID charId, IronGrind.CharacterPersistence.PendingPurchaseRecord record, uint goldBalance, uint goldVersion, CancellationToken ct) => _inner.BeginPurchase(charId, record, goldBalance, goldVersion, ct);
 
-            public Task<CharacterSaveResult> CompletePurchase(long purchaseId, CancellationToken ct) => _inner.CompletePurchase(purchaseId, ct);
+            public Task<CharacterSaveResult> CompletePurchase(long purchaseId, CharacterID charId, CancellationToken ct) => _inner.CompletePurchase(purchaseId, charId, ct);
 
-            public Task<CharacterSaveResult> RefundPurchase(long purchaseId, CharacterID charId, uint refundAmount, CancellationToken ct) => _inner.RefundPurchase(purchaseId, charId, refundAmount, ct);
+            public Task<CharacterSaveResult> RefundPurchase(long purchaseId, CharacterID charId, uint goldBalance, uint goldVersion, CancellationToken ct) => _inner.RefundPurchase(purchaseId, charId, goldBalance, goldVersion, ct);
 
             public Task<IReadOnlyList<IronGrind.CharacterPersistence.PendingPurchaseRecord>> LoadOutstandingPurchases(CharacterID charId, CancellationToken ct) => _inner.LoadOutstandingPurchases(charId, ct);
         }

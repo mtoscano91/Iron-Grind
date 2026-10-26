@@ -15,16 +15,20 @@ namespace IronGrind.CharacterPersistence
     /// and the synchronous <c>ApplyLoadedRecord</c> (Story 003 base stats; Story 004 inventory, gold and current HP / MP),
     /// both <c>SaveSession</c> overloads (Story 007: snapshot on the tick thread, then the per-character write queue)
     /// and <c>SaveIrreversibleOutcome</c> (Story 008: the same snapshot and queued write, with the version read at its turn).
-    /// Each of the purchase methods (Story 011) returns a task faulted with <see cref="NotSupportedException"/> naming the
-    /// story that implements it — a faulted task, not a throw, so that tick code passing the call to
-    /// <c>ITickCompletionQueue.Track</c> gets it through the normal failure path (ADR-011).
+    /// The four purchase methods (Story 011, ADR-001 Amendment A2) run over <see cref="IPendingPurchaseStore"/>, which the
+    /// record store must also implement (the in-memory store does). The three purchase writes go through the per-character
+    /// write queue like the saves, so a queued save cannot overwrite a purchase's gold; <c>LoadOutstandingPurchases</c> is read-only and unqueued.
     /// <para>The one exception to "returns a task, never throws" is a wiring error: a service built without the
     /// dependencies a method needs (<c>ApplyLoadedRecord</c> without Inventory and Currency, a save method without
-    /// the zone locator, write queue and clock) throws <see cref="InvalidOperationException"/> synchronously.</para>
+    /// the zone locator, write queue and clock, a purchase method over a store that is not an
+    /// <see cref="IPendingPurchaseStore"/>, a purchase write on a service without the write queue) throws <see cref="InvalidOperationException"/> synchronously.
+    /// <c>BeginPurchase</c> also throws <see cref="ArgumentException"/> synchronously for a record of another character.</para>
     /// </remarks>
     public sealed class CharacterPersistenceService : ICharacterPersistence, ICharacterSessionRelease, ICharacterNameLookup, ILoadedRecordApplier
     {
         private readonly ICharacterRecordStore _store;
+        // Null when the store does not implement the purchase seam; the purchase methods then throw (wiring error).
+        private readonly IPendingPurchaseStore _purchases;
         private readonly IronGrind.CharacterStats.CharacterStats _stats;
         private readonly LevelingService _leveling;
         private readonly IInventoryService _inventory;
@@ -56,10 +60,11 @@ namespace IronGrind.CharacterPersistence
         }
 
         /// <summary>Creates the service over a store, with no game-state wiring (<c>ApplyLoadedRecord</c> then throws).</summary>
-        /// <param name="store">The record store.</param>
+        /// <param name="store">The record store; if it also implements <see cref="IPendingPurchaseStore"/>, the purchase methods use it (otherwise they throw <see cref="InvalidOperationException"/>).</param>
         public CharacterPersistenceService(ICharacterRecordStore store)
         {
             _store = store ?? throw new ArgumentNullException(nameof(store));
+            _purchases = store as IPendingPurchaseStore;
         }
 
         /// <summary>Creates the service over a store and the live game-state services that <c>ApplyLoadedRecord</c> writes to.</summary>
@@ -1007,32 +1012,197 @@ namespace IronGrind.CharacterPersistence
             }
         }
 
-        /// <inheritdoc/>
-        /// <remarks>Not implemented yet (Character Persistence Story 011): returns a task faulted with <see cref="NotSupportedException"/>.</remarks>
-        public Task<PendingPurchaseResult> BeginPurchase(CharacterID charId, PendingPurchaseRecord record, CancellationToken ct)
+        private IPendingPurchaseStore RequirePurchaseStore()
         {
-            return Task.FromException<PendingPurchaseResult>(new NotSupportedException("BeginPurchase is implemented by Character Persistence Story 011."));
+            return _purchases ?? throw new InvalidOperationException(
+                "The store passed to CharacterPersistenceService does not implement IPendingPurchaseStore; the purchase methods need it.");
+        }
+
+        // Wiring rule of the purchase writes, like SaveCore's: they run through the per-character write queue.
+        private IPendingPurchaseStore RequirePurchaseWriteWiring()
+        {
+            IPendingPurchaseStore purchases = RequirePurchaseStore();
+            if (_queue == null)
+            {
+                throw new InvalidOperationException("The purchase write methods need the per-character write queue; build the service with the queue constructor.");
+            }
+
+            return purchases;
+        }
+
+        private sealed class StartFlag
+        {
+            public volatile bool Started;
+        }
+
+        // Queues one purchase write behind every earlier write of the character (so a stale queued save cannot overwrite
+        // the purchase gold), classifies its outcome (ADR-001 A2): a token cancelled at entry or while the write still
+        // waited -> databaseError, nothing applied; a started write that timed out or was cancelled -> unknown (it may have
+        // committed); any other failure -> databaseError.
+        private Task<TResult> EnqueuePurchaseWrite<TStore, TResult>(
+            string label,
+            CharacterID charId,
+            Func<CancellationToken, Task<TStore>> storeCall,
+            Func<TStore, TResult> map,
+            TResult databaseError,
+            TResult unknown,
+            CancellationToken ct)
+        {
+            if (ct.IsCancellationRequested)
+            {
+                UnityEngine.Debug.LogWarning("[CharacterPersistence] " + label + " for " + charId + " was cancelled before it was queued; nothing written.");
+                return Task.FromResult(databaseError);
+            }
+
+            var flag = new StartFlag();
+            Task<TStore> queued;
+            try
+            {
+                queued = _queue.Enqueue(charId, token =>
+                {
+                    flag.Started = true;
+                    return RaceAsync(storeCall, token);
+                }, ct);
+            }
+            catch (Exception e)
+            {
+                UnityEngine.Debug.LogError("[CharacterPersistence] " + label + " for " + charId + " could not be queued: " + e.Message);
+                return Task.FromResult(databaseError);
+            }
+
+            return AwaitPurchaseWrite(label, charId, queued, flag, map, databaseError, unknown);
+        }
+
+        private static async Task<TResult> AwaitPurchaseWrite<TStore, TResult>(
+            string label,
+            CharacterID charId,
+            Task<TStore> queued,
+            StartFlag flag,
+            Func<TStore, TResult> map,
+            TResult databaseError,
+            TResult unknown)
+        {
+            try
+            {
+                TStore value = await queued.ConfigureAwait(false);
+                return map(value);
+            }
+            catch (Exception e)
+            {
+                if (flag.Started && (e is TimeoutException || e is OperationCanceledException))
+                {
+                    UnityEngine.Debug.LogError("[CharacterPersistence] " + label + " for " + charId + " has an unknown outcome (it may have committed): " + e.GetType().Name + ": " + e.Message);
+                    return unknown;
+                }
+
+                if (!flag.Started && e is OperationCanceledException)
+                {
+                    UnityEngine.Debug.LogWarning("[CharacterPersistence] " + label + " for " + charId + " was cancelled before its write ran; nothing written.");
+                    return databaseError;
+                }
+
+                UnityEngine.Debug.LogError("[CharacterPersistence] " + label + " for " + charId + " failed: " + e.GetType().Name + ": " + e.Message);
+                return databaseError;
+            }
         }
 
         /// <inheritdoc/>
-        /// <remarks>Not implemented yet (Character Persistence Story 011): returns a task faulted with <see cref="NotSupportedException"/>.</remarks>
-        public Task<CharacterSaveResult> CompletePurchase(long purchaseId, CancellationToken ct)
+        /// <remarks>
+        /// Story 011, ADR-001 Amendment A2. The write is queued behind every earlier write of the character. Results:
+        /// <see cref="PendingPurchaseResult.Success"/> (also for a retry whose request was already recorded: same id, nothing written),
+        /// <see cref="PendingPurchaseResult.DatabaseError"/> (cancelled before the write started, unknown character, store failure; nothing applied) and
+        /// <see cref="PendingPurchaseResult.OutcomeUnknown"/> (the write started and timed out or was cancelled; retry with the same arguments).
+        /// Throws synchronously <see cref="ArgumentException"/> when <paramref name="charId"/> differs from <paramref name="record"/>'s
+        /// character, and <see cref="InvalidOperationException"/> when the store has no purchase seam or the service has no write queue.
+        /// </remarks>
+        public Task<PendingPurchaseBeginResult> BeginPurchase(CharacterID charId, PendingPurchaseRecord record, uint goldBalance, uint goldVersion, CancellationToken ct)
         {
-            return Task.FromException<CharacterSaveResult>(new NotSupportedException("CompletePurchase is implemented by Character Persistence Story 011."));
+            IPendingPurchaseStore purchases = RequirePurchaseWriteWiring();
+            if (!record.CharId.Equals(charId))
+            {
+                throw new ArgumentException("The record's CharId " + record.CharId + " differs from charId " + charId + ".", nameof(record));
+            }
+
+            return EnqueuePurchaseWrite(
+                "BeginPurchase",
+                charId,
+                token => purchases.BeginPurchaseAsync(record, goldBalance, goldVersion, token),
+                id =>
+                {
+                    if (id > 0L)
+                    {
+                        return new PendingPurchaseBeginResult(PendingPurchaseResult.Success, id);
+                    }
+
+                    UnityEngine.Debug.LogError("[CharacterPersistence] BeginPurchase for " + charId + " found no stored character record; nothing written.");
+                    return new PendingPurchaseBeginResult(PendingPurchaseResult.DatabaseError, 0L);
+                },
+                new PendingPurchaseBeginResult(PendingPurchaseResult.DatabaseError, 0L),
+                new PendingPurchaseBeginResult(PendingPurchaseResult.OutcomeUnknown, 0L),
+                ct);
         }
 
         /// <inheritdoc/>
-        /// <remarks>Not implemented yet (Character Persistence Story 011): returns a task faulted with <see cref="NotSupportedException"/>.</remarks>
-        public Task<CharacterSaveResult> RefundPurchase(long purchaseId, CharacterID charId, uint refundAmount, CancellationToken ct)
+        /// <remarks>
+        /// Queued like <see cref="BeginPurchase"/>. Idempotent: an id that does not exist is <see cref="CharacterSaveResult.Success"/>;
+        /// an id owned by another character is <see cref="CharacterSaveResult.CharacterNotFound"/>. Throws
+        /// <see cref="InvalidOperationException"/> synchronously when the store has no purchase seam or the service has no write queue.
+        /// </remarks>
+        public Task<CharacterSaveResult> CompletePurchase(long purchaseId, CharacterID charId, CancellationToken ct)
         {
-            return Task.FromException<CharacterSaveResult>(new NotSupportedException("RefundPurchase is implemented by Character Persistence Story 011."));
+            IPendingPurchaseStore purchases = RequirePurchaseWriteWiring();
+            return EnqueuePurchaseWrite(
+                "CompletePurchase",
+                charId,
+                token => purchases.CompletePurchaseAsync(purchaseId, charId, token),
+                MapWriteOutcome,
+                CharacterSaveResult.DatabaseError,
+                CharacterSaveResult.OutcomeUnknown,
+                ct);
         }
 
         /// <inheritdoc/>
-        /// <remarks>Not implemented yet (Character Persistence Story 011): returns a task faulted with <see cref="NotSupportedException"/>.</remarks>
+        /// <remarks>Queued like <see cref="BeginPurchase"/>. Throws <see cref="InvalidOperationException"/> synchronously when the store has no purchase seam or the service has no write queue.</remarks>
+        public Task<CharacterSaveResult> RefundPurchase(long purchaseId, CharacterID charId, uint goldBalance, uint goldVersion, CancellationToken ct)
+        {
+            IPendingPurchaseStore purchases = RequirePurchaseWriteWiring();
+            return EnqueuePurchaseWrite(
+                "RefundPurchase",
+                charId,
+                token => purchases.RefundPurchaseAsync(purchaseId, charId, goldBalance, goldVersion, token),
+                MapWriteOutcome,
+                CharacterSaveResult.DatabaseError,
+                CharacterSaveResult.OutcomeUnknown,
+                ct);
+        }
+
+        private static CharacterSaveResult MapWriteOutcome(PendingPurchaseWriteOutcome outcome)
+        {
+            return outcome == PendingPurchaseWriteOutcome.OtherCharacter ? CharacterSaveResult.CharacterNotFound : CharacterSaveResult.Success;
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>
+        /// Read-only, so not queued. The result type has no error code: a store failure faults the returned task with the
+        /// store's exception, a lost write-timeout race faults it with <see cref="TimeoutException"/>, and a token cancelled
+        /// at entry returns a cancelled task (the store is not called). Throws <see cref="InvalidOperationException"/>
+        /// synchronously when the store has no purchase seam.
+        /// </remarks>
         public Task<IReadOnlyList<PendingPurchaseRecord>> LoadOutstandingPurchases(CharacterID charId, CancellationToken ct)
         {
-            return Task.FromException<IReadOnlyList<PendingPurchaseRecord>>(new NotSupportedException("LoadOutstandingPurchases is implemented by Character Persistence Story 011."));
+            IPendingPurchaseStore purchases = RequirePurchaseStore();
+            if (ct.IsCancellationRequested)
+            {
+                return Task.FromCanceled<IReadOnlyList<PendingPurchaseRecord>>(ct);
+            }
+
+            return LoadOutstandingPurchasesAsync(purchases, charId, ct);
+        }
+
+        private async Task<IReadOnlyList<PendingPurchaseRecord>> LoadOutstandingPurchasesAsync(IPendingPurchaseStore purchases, CharacterID charId, CancellationToken ct)
+        {
+            IReadOnlyList<PendingPurchaseRecord> list = await RaceAsync(token => purchases.LoadOutstandingAsync(charId, token), ct).ConfigureAwait(false);
+            return list ?? new List<PendingPurchaseRecord>();
         }
     }
 }

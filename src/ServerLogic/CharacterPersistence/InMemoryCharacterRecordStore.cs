@@ -7,7 +7,8 @@ using IronGrind.Currency;
 namespace IronGrind.CharacterPersistence
 {
     /// <summary>
-    /// <see cref="ICharacterRecordStore"/> over a dictionary, for EditMode tests and a server run with no database.
+    /// <see cref="ICharacterRecordStore"/> and <see cref="IPendingPurchaseStore"/> over dictionaries, for EditMode tests
+    /// and a server run with no database.
     /// </summary>
     /// <remarks>
     /// Keeps and returns copies of records. The injected clock is the only time source. Store calls can arrive
@@ -17,8 +18,12 @@ namespace IronGrind.CharacterPersistence
     /// already-cancelled token (such a call leaves the control pending) — and setting one replaces any that is
     /// still pending. Every <see cref="TaskCompletionSource{TResult}"/> uses
     /// <see cref="TaskCreationOptions.RunContinuationsAsynchronously"/> (ADR-011).
+    /// <para>The purchase calls (Story 011) share the character rows and the lock with the record calls, so a purchase
+    /// write and a <see cref="FetchAsync"/> see the same gold, and they go through the same fault controls. Stored purchase
+    /// records are always in state <see cref="PendingPurchaseState.GoldDebited"/>; complete and refund delete them.
+    /// <see cref="FailNextAfterInsert"/> is a separate control for the two-part purchase writes.</para>
     /// </remarks>
-    public sealed class InMemoryCharacterRecordStore : ICharacterRecordStore
+    public sealed class InMemoryCharacterRecordStore : ICharacterRecordStore, IPendingPurchaseStore
     {
         private enum ControlKind
         {
@@ -64,6 +69,9 @@ namespace IronGrind.CharacterPersistence
         private readonly Dictionary<CharacterID, CharacterRecord> _rows = new Dictionary<CharacterID, CharacterRecord>();
         private readonly object _lock = new object();
         private FaultControl _pending;
+        private Exception _failAfterInsert;
+        private readonly Dictionary<long, PendingPurchaseRecord> _purchases = new Dictionary<long, PendingPurchaseRecord>();
+        private long _nextPurchaseId = 1;
 
         /// <summary>Creates an empty store.</summary>
         /// <param name="utcNow">The UTC clock; the only time source of this store.</param>
@@ -106,6 +114,26 @@ namespace IronGrind.CharacterPersistence
         public void NeverCompleteNext()
         {
             SetPending(new FaultControl { Kind = ControlKind.Never });
+        }
+
+        /// <summary>
+        /// Test and diagnostic seam showing the atomicity of the purchase writes: the next <see cref="BeginPurchaseAsync"/> or
+        /// <see cref="RefundPurchaseAsync"/> stages its record change, then fails with <paramref name="exception"/> before the
+        /// gold write, and rolls the staged change back, so nothing is applied. Other calls ignore it and do not consume it;
+        /// setting it again replaces a pending one. It is independent of <see cref="FailNext"/>.
+        /// </summary>
+        /// <param name="exception">The exception to fault with.</param>
+        public void FailNextAfterInsert(Exception exception)
+        {
+            if (exception == null)
+            {
+                throw new ArgumentNullException(nameof(exception));
+            }
+
+            lock (_lock)
+            {
+                _failAfterInsert = exception;
+            }
         }
 
         /// <summary>Changes a stored row's <c>SaveVersion</c> at once (the "separate connection" of AC-CP-19).</summary>
@@ -160,6 +188,148 @@ namespace IronGrind.CharacterPersistence
 
             CharacterRecord copy = record.Clone();
             return Run(ct, () => DoUpdate(copy, expectedSaveVersion));
+        }
+
+        /// <inheritdoc/>
+        public Task<long> BeginPurchaseAsync(PendingPurchaseRecord record, uint goldBalance, uint goldVersion, CancellationToken ct)
+        {
+            return Run(ct, () => DoBeginPurchase(record, goldBalance, goldVersion));
+        }
+
+        /// <inheritdoc/>
+        public Task<PendingPurchaseWriteOutcome> CompletePurchaseAsync(long purchaseId, CharacterID charId, CancellationToken ct)
+        {
+            return Run(ct, () => DoCompletePurchase(purchaseId, charId));
+        }
+
+        /// <inheritdoc/>
+        public Task<PendingPurchaseWriteOutcome> RefundPurchaseAsync(long purchaseId, CharacterID charId, uint goldBalance, uint goldVersion, CancellationToken ct)
+        {
+            return Run(ct, () => DoRefundPurchase(purchaseId, charId, goldBalance, goldVersion));
+        }
+
+        /// <inheritdoc/>
+        public Task<IReadOnlyList<PendingPurchaseRecord>> LoadOutstandingAsync(CharacterID charId, CancellationToken ct)
+        {
+            return Run<IReadOnlyList<PendingPurchaseRecord>>(ct, () =>
+            {
+                lock (_lock)
+                {
+                    // Only GoldDebited records are ever stored (complete and refund delete), so no state filter is needed.
+                    var list = new List<PendingPurchaseRecord>();
+                    foreach (PendingPurchaseRecord stored in _purchases.Values)
+                    {
+                        if (stored.CharId.Equals(charId))
+                        {
+                            list.Add(stored);
+                        }
+                    }
+
+                    list.Sort((a, b) => a.Id.CompareTo(b.Id));
+                    return list;
+                }
+            });
+        }
+
+        private long DoBeginPurchase(PendingPurchaseRecord record, uint goldBalance, uint goldVersion)
+        {
+            lock (_lock)
+            {
+                if (!_rows.TryGetValue(record.CharId, out CharacterRecord row))
+                {
+                    return 0L;
+                }
+
+                // A retry of a request that is already recorded (after an unknown outcome): same id, nothing written.
+                foreach (PendingPurchaseRecord existing in _purchases.Values)
+                {
+                    if (existing.CharId.Equals(record.CharId) && existing.RequestId == record.RequestId)
+                    {
+                        return existing.Id;
+                    }
+                }
+
+                // Stage the record, then the optional fault point, then the gold write; a fault rolls the record back.
+                long id = _nextPurchaseId++;
+                _purchases[id] = new PendingPurchaseRecord(
+                    id, record.CharId, record.RequestId, record.ItemId, record.Quantity, record.TotalCost, PendingPurchaseState.GoldDebited);
+                Exception fault = TakeFailAfterInsert();
+                if (fault != null)
+                {
+                    _purchases.Remove(id);
+                    throw fault;
+                }
+
+                row.GoldBalance = goldBalance;
+                row.GoldVersion = goldVersion;
+                return id;
+            }
+        }
+
+        private PendingPurchaseWriteOutcome DoCompletePurchase(long purchaseId, CharacterID charId)
+        {
+            lock (_lock)
+            {
+                if (!_purchases.TryGetValue(purchaseId, out PendingPurchaseRecord stored))
+                {
+                    return PendingPurchaseWriteOutcome.NotFound;
+                }
+
+                if (!stored.CharId.Equals(charId))
+                {
+                    return PendingPurchaseWriteOutcome.OtherCharacter;
+                }
+
+                if (!_rows.ContainsKey(charId))
+                {
+                    throw new InvalidOperationException("Purchase " + purchaseId + " exists but the character row of " + charId + " is missing.");
+                }
+
+                _purchases.Remove(purchaseId);
+                return PendingPurchaseWriteOutcome.Applied;
+            }
+        }
+
+        private PendingPurchaseWriteOutcome DoRefundPurchase(long purchaseId, CharacterID charId, uint goldBalance, uint goldVersion)
+        {
+            lock (_lock)
+            {
+                if (!_purchases.TryGetValue(purchaseId, out PendingPurchaseRecord stored))
+                {
+                    return PendingPurchaseWriteOutcome.NotFound;
+                }
+
+                if (!stored.CharId.Equals(charId))
+                {
+                    return PendingPurchaseWriteOutcome.OtherCharacter;
+                }
+
+                if (!_rows.TryGetValue(charId, out CharacterRecord row))
+                {
+                    // A record without its character row is a corrupt store, not "nothing to refund": fault the call.
+                    throw new InvalidOperationException("Purchase " + purchaseId + " exists but the character row of " + charId + " is missing.");
+                }
+
+                _purchases.Remove(purchaseId);
+                Exception fault = TakeFailAfterInsert();
+                if (fault != null)
+                {
+                    _purchases[purchaseId] = stored;
+                    throw fault;
+                }
+
+                row.GoldBalance = goldBalance;
+                row.GoldVersion = goldVersion;
+                return PendingPurchaseWriteOutcome.Applied;
+            }
+        }
+
+        // The caller holds _lock.
+        private Exception TakeFailAfterInsert()
+        {
+            Exception fault = _failAfterInsert;
+            _failAfterInsert = null;
+            return fault;
         }
 
         private bool DoInsert(CharacterRecord copy)

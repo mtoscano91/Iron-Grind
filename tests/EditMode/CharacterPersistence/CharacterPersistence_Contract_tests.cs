@@ -40,14 +40,14 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
         public void CharacterSaveResult_ValuesPinned()
         {
             AssertEnum(typeof(CharacterSaveResult), ("Success", 0), ("CharacterNotFound", 1),
-                ("ConcurrencyConflict", 2), ("DatabaseError", 255));
+                ("ConcurrencyConflict", 2), ("OutcomeUnknown", 254), ("DatabaseError", 255));
         }
 
         [Test]
         public void PendingPurchaseResult_ValuesPinned()
         {
             AssertEnum(typeof(PendingPurchaseResult), ("Success", 0), ("InsufficientGold", 1),
-                ("ConcurrencyConflict", 2), ("DatabaseError", 255));
+                ("ConcurrencyConflict", 2), ("OutcomeUnknown", 254), ("DatabaseError", 255));
         }
 
         [Test]
@@ -349,12 +349,12 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
                 new[] { typeof(CharacterID), typeof(SessionEndReason), typeof(float), typeof(CancellationToken) }),
             ("CreateStub", typeof(Task),
                 new[] { typeof(AccountID), typeof(CharacterID), typeof(byte), typeof(CancellationToken) }),
-            ("BeginPurchase", typeof(Task<PendingPurchaseResult>),
-                new[] { typeof(CharacterID), typeof(PendingPurchaseRecord), typeof(CancellationToken) }),
+            ("BeginPurchase", typeof(Task<PendingPurchaseBeginResult>),
+                new[] { typeof(CharacterID), typeof(PendingPurchaseRecord), typeof(uint), typeof(uint), typeof(CancellationToken) }),
             ("CompletePurchase", typeof(Task<CharacterSaveResult>),
-                new[] { typeof(long), typeof(CancellationToken) }),
+                new[] { typeof(long), typeof(CharacterID), typeof(CancellationToken) }),
             ("RefundPurchase", typeof(Task<CharacterSaveResult>),
-                new[] { typeof(long), typeof(CharacterID), typeof(uint), typeof(CancellationToken) }),
+                new[] { typeof(long), typeof(CharacterID), typeof(uint), typeof(uint), typeof(CancellationToken) }),
             ("LoadOutstandingPurchases", typeof(Task<IReadOnlyList<PendingPurchaseRecord>>),
                 new[] { typeof(CharacterID), typeof(CancellationToken) }),
         };

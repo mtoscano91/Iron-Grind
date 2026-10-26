@@ -260,6 +260,13 @@ The refund runs the store first so that a refund is applied at most once. If mem
 
 **Known side effect.** A purchase write also persists any gold change made in memory since the last save, slightly ahead of the rest of the character record. Accepted: memory is the authority, and the next `SaveSession` writes the same gold values.
 
+#### A2 addendum — 2026-10-26 (Story 011 `/code-review`, user decisions)
+
+1. **Write ordering.** `BeginPurchase`, `CompletePurchase` and `RefundPurchase` run through the per-character write queue (CR-CP-7, Story 006), like `SaveSession` and `SaveIrreversibleOutcome`. A save takes its snapshot at call time and only queues the write; without the queue, a save queued before a purchase could write its older gold balance after the purchase committed, leaving the record outstanding over an undebited balance (a later reconnect refund would create gold). `LoadOutstandingPurchases` is a read and is not queued. `CompletePurchase` gains a `charId` parameter (the queue key; an id of another character changes nothing and returns `CharacterNotFound`, as for `RefundPurchase`).
+2. **Unknown outcome.** A purchase write whose store call started and then timed out or was cancelled in flight may still commit. It returns `OutcomeUnknown` (value 254, added to `PendingPurchaseResult` and `CharacterSaveResult`; purchase methods only) instead of `DatabaseError`. On `OutcomeUnknown` the caller **does not compensate and does not touch memory**; it retries the same call with the same arguments (same `RequestId` / `purchaseId` and gold values) until a definite result. A call that never reached the store (token already cancelled, or cancelled while waiting in the queue) and a store fault return `DatabaseError` (definite: nothing applied).
+3. **Idempotent `BeginPurchase`.** A `BeginPurchase` for a character that already has an outstanding record with the same `RequestId` returns that record's id with `Success` and writes nothing. This makes the retry of rule 2 safe whether or not the first attempt committed. The SQL store enforces it with a unique `(character_id, request_id)` index (Story 015).
+4. **Residual risk.** A retry can overlap the abandoned call (the queue releases a timed-out write's turn while its store call may still run). Rule 3 and, in SQL, the unique index keep the outcome single. A late commit after a later definite `DatabaseError` is not covered; it surfaces as an outstanding record at the next reconnect and is refunded once, which matches the caller having restored memory.
+
 ### Alternatives Considered and Rejected
 
 - **Debit the stored balance, then reload Currency from it** — adds a read and a Currency sync point that does not exist, and still disagrees with unsaved in-memory changes.

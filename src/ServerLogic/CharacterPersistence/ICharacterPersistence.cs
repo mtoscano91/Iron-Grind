@@ -67,25 +67,75 @@ namespace IronGrind.CharacterPersistence
         /// <param name="ct">Cancellation token.</param>
         Task CreateStub(AccountID accountId, CharacterID characterId, byte classType, CancellationToken ct);
 
-        /// <summary>Begins a purchase: debits gold and records a pending purchase (ADR-001).</summary>
-        /// <param name="charId">The purchasing character.</param>
-        /// <param name="record">The purchase to record.</param>
+        /// <summary>
+        /// Records a pending purchase and stores the character's resulting gold in one write (ADR-001 Amendment A2).
+        /// The caller debits in memory FIRST; this method never computes a debit.
+        /// </summary>
+        /// <remarks>
+        /// Stores <paramref name="goldBalance"/> / <paramref name="goldVersion"/> as given (no balance check, no clamp) and
+        /// does not advance <c>SaveVersion</c>. The write is queued behind every earlier write of the character. Idempotent per
+        /// request: a retry whose (<c>CharId</c>, <c>RequestId</c>) is already recorded returns <see cref="PendingPurchaseResult.Success"/>
+        /// with the existing id and writes nothing. Results: <see cref="PendingPurchaseResult.Success"/>;
+        /// <see cref="PendingPurchaseResult.DatabaseError"/> (token cancelled before the write started, unknown character, store failure: nothing applied,
+        /// <see cref="PendingPurchaseBeginResult.PurchaseId"/> 0, safe to compensate); <see cref="PendingPurchaseResult.OutcomeUnknown"/> (the write started and
+        /// timed out or was cancelled: it may have committed, so the caller must NOT compensate and must retry the same call with the same arguments until a
+        /// definite result). <see cref="PendingPurchaseResult.InsufficientGold"/> and <see cref="PendingPurchaseResult.ConcurrencyConflict"/>
+        /// are never returned. Requires a store that also implements <see cref="IPendingPurchaseStore"/> and a service with a write queue.
+        /// </remarks>
+        /// <example>
+        /// Buy: <c>TrySpendGold(charId, totalCost, reason)</c> in memory (insufficient funds: reject, the store is not called);
+        /// then <c>BeginPurchase(charId, record, balanceAfter, versionAfter, ct)</c>; if that does not return
+        /// <see cref="PendingPurchaseResult.Success"/>, <c>AddGold(charId, totalCost, CompensatingRefund)</c> and reject.
+        /// On success keep <see cref="PendingPurchaseBeginResult.PurchaseId"/> for <see cref="CompletePurchase"/> or <see cref="RefundPurchase"/>.
+        /// </example>
+        /// <param name="charId">The purchasing character; must equal <paramref name="record"/>'s <see cref="PendingPurchaseRecord.CharId"/>.</param>
+        /// <param name="record">The purchase to record (its id and state are ignored; it is stored as <see cref="PendingPurchaseState.GoldDebited"/>).</param>
+        /// <param name="goldBalance">The in-memory gold balance after the debit.</param>
+        /// <param name="goldVersion">The in-memory gold version after the debit.</param>
         /// <param name="ct">Cancellation token.</param>
-        Task<PendingPurchaseResult> BeginPurchase(CharacterID charId, PendingPurchaseRecord record, CancellationToken ct);
+        /// <exception cref="System.ArgumentException">Thrown synchronously when <paramref name="charId"/> differs from the record's character (a caller bug).</exception>
+        /// <exception cref="System.InvalidOperationException">Thrown synchronously when the service has no purchase store or no write queue (a wiring error).</exception>
+        Task<PendingPurchaseBeginResult> BeginPurchase(CharacterID charId, PendingPurchaseRecord record, uint goldBalance, uint goldVersion, CancellationToken ct);
 
-        /// <summary>Marks a pending purchase completed (ADR-001).</summary>
+        /// <summary>
+        /// Deletes a pending purchase after the grant succeeded (ADR-001 Amendment A2). No gold write. Idempotent: an id that
+        /// does not exist returns <see cref="CharacterSaveResult.Success"/>; an id owned by another character returns
+        /// <see cref="CharacterSaveResult.CharacterNotFound"/> and deletes nothing. Queued behind every earlier write of the character.
+        /// A store failure or a token cancelled before the write started returns <see cref="CharacterSaveResult.DatabaseError"/>;
+        /// a started write that timed out or was cancelled returns <see cref="CharacterSaveResult.OutcomeUnknown"/> (retry the same call).
+        /// </summary>
         /// <param name="purchaseId">The <see cref="PendingPurchaseRecord.Id"/> of the purchase.</param>
+        /// <param name="charId">The purchasing character; it also names the write queue slot.</param>
         /// <param name="ct">Cancellation token.</param>
-        Task<CharacterSaveResult> CompletePurchase(long purchaseId, CancellationToken ct);
+        Task<CharacterSaveResult> CompletePurchase(long purchaseId, CharacterID charId, CancellationToken ct);
 
-        /// <summary>Refunds a pending purchase (ADR-001).</summary>
+        /// <summary>
+        /// Deletes a pending purchase and stores the refunded gold in one write, STORE FIRST (ADR-001 Amendment A2).
+        /// </summary>
+        /// <remarks>
+        /// The caller computes the cap-safe in-memory balance plus the purchase's total cost and the in-memory version plus 1,
+        /// calls this method, and only on <see cref="CharacterSaveResult.Success"/> calls
+        /// <c>AddGold(charId, totalCost, CompensatingRefund)</c> in memory. An id that does not exist returns
+        /// <see cref="CharacterSaveResult.Success"/> and writes nothing (idempotent; the caller must then not credit again if
+        /// it knows the refund already ran); an id owned by another character returns <see cref="CharacterSaveResult.CharacterNotFound"/>;
+        /// a store failure or a token cancelled before the write started returns <see cref="CharacterSaveResult.DatabaseError"/> and leaves the
+        /// record outstanding; a started write that timed out or was cancelled returns <see cref="CharacterSaveResult.OutcomeUnknown"/>: the caller
+        /// must NOT credit memory and must retry the same call with the same arguments until a definite result. Queued behind every earlier write
+        /// of the character.
+        /// </remarks>
         /// <param name="purchaseId">The <see cref="PendingPurchaseRecord.Id"/> of the purchase.</param>
         /// <param name="charId">The purchasing character.</param>
-        /// <param name="refundAmount">The gold to return.</param>
+        /// <param name="goldBalance">The gold balance to store (balance plus the refund, cap-safe).</param>
+        /// <param name="goldVersion">The gold version to store (version plus 1).</param>
         /// <param name="ct">Cancellation token.</param>
-        Task<CharacterSaveResult> RefundPurchase(long purchaseId, CharacterID charId, uint refundAmount, CancellationToken ct);
+        Task<CharacterSaveResult> RefundPurchase(long purchaseId, CharacterID charId, uint goldBalance, uint goldVersion, CancellationToken ct);
 
-        /// <summary>Loads the purchases of a character that are not yet completed or refunded (ADR-001).</summary>
+        /// <summary>
+        /// Loads the purchases of a character that are not yet completed or refunded (ADR-001). The list is empty, not null,
+        /// when there is none, in ascending <see cref="PendingPurchaseRecord.Id"/> order. Read-only, so not queued. The result type
+        /// has no error code: a store failure or a timeout faults the returned task, and a token cancelled at entry returns a
+        /// cancelled task without calling the store.
+        /// </summary>
         /// <param name="charId">The character.</param>
         /// <param name="ct">Cancellation token.</param>
         Task<IReadOnlyList<PendingPurchaseRecord>> LoadOutstandingPurchases(CharacterID charId, CancellationToken ct);

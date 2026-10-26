@@ -1,7 +1,7 @@
 # Story 011: `PendingPurchase` Lifecycle on the Store Seam
 
 > **Epic**: Character Persistence
-> **Status**: Ready — written 2026-10-12; `/story-readiness` 2026-10-15: NEEDS WORK (3 open decisions) → Deferred; `/story-readiness` 2026-10-26: NEEDS WORK (10 gaps) → fixed → Ready. User decisions 2026-10-26: write it now (unblocks Story 015); in-memory Currency is the gold authority (ADR-001 Amendment A2).
+> **Status**: Complete (2026-10-26) — `/story-done` 2026-10-26: COMPLETE WITH NOTES. Written 2026-10-12; `/story-readiness` 2026-10-15: NEEDS WORK (3 open decisions) → Deferred; `/story-readiness` 2026-10-26: NEEDS WORK (10 gaps) → fixed → Ready. User decisions 2026-10-26: write it now (unblocks Story 015); in-memory Currency is the gold authority (ADR-001 Amendment A2).
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-19
@@ -27,19 +27,23 @@
 
 ## Acceptance Criteria
 
-- [ ] **Signatures (ADR-001 A2)**: `ICharacterPersistence.BeginPurchase(CharacterID charId, PendingPurchaseRecord record, uint goldBalance, uint goldVersion, CancellationToken ct)` returning `Task<PendingPurchaseBeginResult>` (new readonly struct: `Result`, `PurchaseId` — 0 unless `Success`) and `RefundPurchase(long purchaseId, CharacterID charId, uint goldBalance, uint goldVersion, CancellationToken ct)` replace today's signatures (`refundAmount` is removed); `CompletePurchase` and `LoadOutstandingPurchases` keep theirs. `CharacterPersistenceService` implements all four (no `NotSupportedException` left). Doc comments state the caller's order (debit in memory first; refund store first).
-- [ ] **Store seam**: a new sibling interface `IPendingPurchaseStore` (`src/ServerLogic/CharacterPersistence/IPendingPurchaseStore.cs`) holds the four store operations; `ICharacterRecordStore` is unchanged. The in-memory implementation shares its data with `InMemoryCharacterRecordStore` (one class implements both, or the purchase store takes the record store), so a purchase write and a `FetchAsync` see the same gold. `CharacterPersistenceService` takes the purchase store through its constructor. Story 015 implements the interface in SQL.
-- [ ] **`BeginPurchase` — success**: for a stored character, one record is created in state `GoldDebited` with a store-generated id (> 0, unique), the stored `GoldBalance` and `GoldVersion` become exactly `goldBalance` and `goldVersion`, the stored `SaveVersion` is unchanged, and `Success` is returned.
-- [ ] **`BeginPurchase` — no balance check**: the store does not compare `goldBalance` with `TotalCost` or with the stored balance (a `goldBalance` above the stored balance is written as given) and never returns `InsufficientGold` or `ConcurrencyConflict`.
-- [ ] **`BeginPurchase` — unknown character**: no stored record for `charId` → `DatabaseError`, no purchase record, nothing written.
-- [ ] **`BeginPurchase` — atomicity**: with the new fault point `FailNextAfterInsert` armed (the in-memory store fails after staging the record and before the gold write), neither the record nor the gold write is applied and `DatabaseError` is returned. `FailNext` (whole operation) also gives `DatabaseError` with nothing applied.
-- [ ] **`CompletePurchase`**: removes the record and returns `Success`; the stored gold, gold version and save version are unchanged.
-- [ ] **`RefundPurchase`**: removes the record and sets the stored `GoldBalance` / `GoldVersion` to exactly `goldBalance` / `goldVersion` in one write; `SaveVersion` unchanged; `Success`. With `FailNextAfterInsert` (or `FailNext`) armed, the record stays `GoldDebited`, the gold is unchanged and `DatabaseError` is returned.
-- [ ] **Idempotent on a missing id**: `CompletePurchase` and `RefundPurchase` for an id that does not exist (or was already removed) return `Success` and change nothing — `RefundPurchase` writes no gold in that case.
-- [ ] **`RefundPurchase` — wrong character**: a `purchaseId` that exists but belongs to another character returns `CharacterNotFound` and changes nothing.
-- [ ] **`LoadOutstandingPurchases`**: returns every record of the character in state `GoldDebited`, and none of another character; an empty list, not null, when there is none.
-- [ ] **Outside the character record**: `LoadCharacter`, `SaveSession` and `SaveIrreversibleOutcome` neither read nor write pending purchases; a pending record survives a `SaveSession`. A `SaveSession` after a `BeginPurchase` (with the `SaveVersion` loaded before the purchase) succeeds — the purchase did not advance it.
-- [ ] **Cancellation and threading**: a cancelled token returns `DatabaseError` with nothing applied; every `await` uses `ConfigureAwait(false)` (ADR-011); the in-memory store is safe to call from several threads (same locking as `InMemoryCharacterRecordStore`).
+- [x] **Signatures (ADR-001 A2)**: `ICharacterPersistence.BeginPurchase(CharacterID charId, PendingPurchaseRecord record, uint goldBalance, uint goldVersion, CancellationToken ct)` returning `Task<PendingPurchaseBeginResult>` (new readonly struct: `Result`, `PurchaseId` — 0 unless `Success`) and `RefundPurchase(long purchaseId, CharacterID charId, uint goldBalance, uint goldVersion, CancellationToken ct)` replace today's signatures (`refundAmount` is removed); `CompletePurchase` gains `charId` (A2 addendum, below); `LoadOutstandingPurchases` keeps its signature. `CharacterPersistenceService` implements all four (no `NotSupportedException` left). Doc comments state the caller's order (debit in memory first; refund store first).
+- [x] **Store seam**: a new sibling interface `IPendingPurchaseStore` (`src/ServerLogic/CharacterPersistence/IPendingPurchaseStore.cs`) holds the four store operations; `ICharacterRecordStore` is unchanged. The in-memory implementation shares its data with `InMemoryCharacterRecordStore` (one class implements both, or the purchase store takes the record store), so a purchase write and a `FetchAsync` see the same gold. `CharacterPersistenceService` takes the purchase store through its constructor. Story 015 implements the interface in SQL.
+- [x] **`BeginPurchase` — success**: for a stored character, one record is created in state `GoldDebited` with a store-generated id (> 0, unique), the stored `GoldBalance` and `GoldVersion` become exactly `goldBalance` and `goldVersion`, the stored `SaveVersion` is unchanged, and `Success` is returned.
+- [x] **`BeginPurchase` — no balance check**: the store does not compare `goldBalance` with `TotalCost` or with the stored balance (a `goldBalance` above the stored balance is written as given) and never returns `InsufficientGold` or `ConcurrencyConflict`.
+- [x] **`BeginPurchase` — unknown character**: no stored record for `charId` → `DatabaseError`, no purchase record, nothing written.
+- [x] **`BeginPurchase` — atomicity**: with the new fault point `FailNextAfterInsert` armed (the in-memory store fails after staging the record and before the gold write), neither the record nor the gold write is applied and `DatabaseError` is returned. `FailNext` (whole operation) also gives `DatabaseError` with nothing applied.
+- [x] **`CompletePurchase`**: removes the record and returns `Success`; the stored gold, gold version and save version are unchanged.
+- [x] **`RefundPurchase`**: removes the record and sets the stored `GoldBalance` / `GoldVersion` to exactly `goldBalance` / `goldVersion` in one write; `SaveVersion` unchanged; `Success`. With `FailNextAfterInsert` (or `FailNext`) armed, the record stays `GoldDebited`, the gold is unchanged and `DatabaseError` is returned.
+- [x] **Idempotent on a missing id**: `CompletePurchase(purchaseId, charId)` and `RefundPurchase` for an id that does not exist (or was already removed) return `Success` and change nothing — `RefundPurchase` writes no gold in that case.
+- [x] **`RefundPurchase` — wrong character**: a `purchaseId` that exists but belongs to another character returns `CharacterNotFound` and changes nothing.
+- [x] **`LoadOutstandingPurchases`**: returns every record of the character in state `GoldDebited`, and none of another character; an empty list, not null, when there is none.
+- [x] **Outside the character record**: `LoadCharacter`, `SaveSession` and `SaveIrreversibleOutcome` neither read nor write pending purchases; a pending record survives a `SaveSession`. A `SaveSession` after a `BeginPurchase` (with the `SaveVersion` loaded before the purchase) succeeds — the purchase did not advance it.
+- [x] **Cancellation and threading**: a token cancelled before the call (or while it waits in the write queue) returns `DatabaseError` with nothing applied and the store not called; `LoadOutstandingPurchases` with a cancelled token returns a cancelled task; every `await` uses `ConfigureAwait(false)` (ADR-011); the in-memory store is safe to call from several threads (same locking as `InMemoryCharacterRecordStore`).
+- [x] **Write ordering (`/code-review` 2026-10-26, user decision)**: `BeginPurchase`, `CompletePurchase` and `RefundPurchase` run through the per-character write queue (CR-CP-7) like the save methods; a purchase called after a `SaveSession` whose write is still queued commits after that save (stored gold = the purchase's value). `CompletePurchase` takes `charId` (the queue key); another character's id → `CharacterNotFound`, nothing deleted. A service built without a write queue throws `InvalidOperationException` synchronously from the three purchase writes.
+- [x] **Unknown outcome (ADR-001 A2 addendum)**: `OutcomeUnknown = 254` is added to `PendingPurchaseResult` and `CharacterSaveResult` (purchase methods only). A purchase write whose store call started and then timed out or was cancelled in flight returns `OutcomeUnknown`; a store fault returns `DatabaseError`. Store failures are logged with the `[CharacterPersistence]` prefix.
+- [x] **Idempotent `BeginPurchase`**: with an outstanding record of the same `(charId, RequestId)`, `BeginPurchase` returns `Success` with that record's id and writes nothing (no second record, no gold write). A retry after `OutcomeUnknown` therefore yields one record whether or not the first attempt committed.
+- [x] **Order and copies**: `LoadOutstandingPurchases` returns records in ascending id order, as a fresh list.
 
 ---
 
@@ -89,7 +93,7 @@ No tick-path cost: the methods return tasks and run off the tick (ADR-011); the 
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/CharacterPersistence/CharacterPersistence_PendingPurchase_tests.cs` — must exist and pass.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 73 tests (service 36, in-memory store 37 incl. 23 contract), all pass 2026-10-26
 
 ---
 
@@ -97,3 +101,19 @@ No tick-path cost: the methods return tasks and run off the tick (ADR-011); the 
 
 - Depends on: Stories 001, 002 (Complete)
 - Unlocks: Story 015; the NPC Shop epic
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-26
+**Criteria**: 17/17 passing (all test-covered)
+**Deviations** (advisory, accepted):
+(1) The service reaches the purchase store through its record-store argument (`store as IPendingPurchaseStore`, base constructor); the five chained constructors are unchanged; no purchase seam → `InvalidOperationException` synchronously.
+(2) Beyond the readiness text, from `/code-review` 2026-10-26 (user decisions, ADR-001 A2 addendum): `CompletePurchase(purchaseId, charId)`; `OutcomeUnknown = 254` on `PendingPurchaseResult` and `CharacterSaveResult` (purchase methods only); idempotent `BeginPurchase` on `(CharId, RequestId)`; purchase writes through the per-character write queue (no queue → `InvalidOperationException`); `PendingPurchaseWriteOutcome` (Applied / NotFound / OtherCharacter) replaces the readiness-time `PendingPurchaseRefundOutcome`.
+(3) Untested: the in-memory "record exists but character row missing" fault on Complete / Refund (no seam; TD-081); a cancellation in flight returning `OutcomeUnknown` has no dedicated test (same path as the tested timeout).
+(4) Residual risk: a late commit after a retry returned a definite `DatabaseError` (A2 addendum rule 4; TD-082).
+(5) Control manifest lines 47 and 68 edited without a version bump (TD-080).
+**Scope**: also touched `CharacterSaveResult.cs`, `CharacterPersistence_Contract_tests.cs` (method table, enum pins), `CharacterPersistence_RecordStore_tests.cs` (4 `…NamingStory011` stub tests removed — ran in the in-memory and Npgsql contract subclasses), 13 test fakes of `ICharacterPersistence` (signature only); new `TokenIgnoringPurchaseStore` test fake.
+**Test Evidence**: Logic — `tests/EditMode/CharacterPersistence/CharacterPersistence_PendingPurchase_tests.cs` (abstract `PendingPurchaseStoreContractTests` with `CleanUp()` hook for Story 015; in-memory fixture 37, service fixture 36); EditMode batch 4188 total, 4122 passed, 0 failed, 66 skipped (DB).
+**Code Review**: Complete — `/code-review` 2026-10-26 CHANGES REQUIRED (write-queue bypass, unknown outcome, test gaps R1–R6, S1–S9) → fix all.
+**Tech debt**: TD-080, TD-081, TD-082.
