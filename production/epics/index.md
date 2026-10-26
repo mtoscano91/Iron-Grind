@@ -16,7 +16,7 @@ Control Manifest Version: 2026-06-28
 | [Inventory System](inventory-system/EPIC.md) | Core | Inventory System | design/gdd/inventory-system.md | 12 stories (001-012 Complete) | Complete |
 | [Loot Table System](loot-table-system/EPIC.md) | Core | Loot Table System | design/gdd/loot-table-system.md | Not yet created | Ready |
 | [Status Effects / Buffs](status-effects/EPIC.md) | Core | Status Effects | design/gdd/status-effects.md | Not yet created | Ready |
-| [Equipment System](equipment-system/EPIC.md) | Core | Equipment System | design/gdd/equipment-system.md | Not yet created | Ready — OQ-EQS-9 resolved 2026-10-26; next `/create-stories equipment-system` |
+| [Equipment System](equipment-system/EPIC.md) | Core | Equipment System | design/gdd/equipment-system.md | 9 stories (001-009 written 2026-10-26), all Ready | Ready — next `/story-readiness` on Story 001 |
 | [Zone Instancing](zone-instancing/EPIC.md) | Core | Zone Instancing (zone-process side) | design/gdd/zone-instancing.md | 14 stories (001-014, written 2026-10-22); 001-010 Complete, rest Ready | Ready — routing, `ZoneID` allocation and gateway registration (TR-zi-001 allocator, 005, 018) **Blocked** until a gateway ADR + epic exist |
 | [Character Persistence](character-persistence/EPIC.md) | Core | Character Persistence | design/gdd/character-persistence.md | 17 stories (001-016 written 2026-10-12, 017 added 2026-10-16): 15 Complete (001-004, 006-015, 017; last 015 on 2026-10-26), 2 Blocked (005 on the Equipment System; 016 on 005) | In Progress |
 | [Enhancement System](enhancement-system/EPIC.md) | Feature | Enhancement System | design/gdd/enhancement-system.md | 15 stories (001-010 and 012-014 Complete; 011 Blocked on Character Persistence; 015 Blocked on 011) | In Progress |

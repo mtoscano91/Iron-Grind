@@ -4,7 +4,7 @@
 > **GDD**: design/gdd/equipment-system.md
 > **Architecture Module**: Equipment (core gameplay/data — by-design no ADR, `architecture.md` Engine Knowledge Gap Summary: 🟢 LOW)
 > **Status**: Ready — design gate OQ-EQS-9 resolved 2026-10-26 (option a); `/create-stories` unblocked
-> **Stories**: Not yet created — run `/create-stories equipment-system`
+> **Stories**: 9 created 2026-10-26 (`/create-stories`, lean) — see Stories
 
 ## Overview
 
@@ -45,6 +45,29 @@ The Equipment System manages the seven gear slots of a player character (Weapon,
 - **OQ-EQS-6 (open, not blocking the logic stories)** — confirm `EquipmentAppearanceFlags` is present in every full zone snapshot, not only deltas.
 - **Known naming drift** — `damage-calculation.md` calls the weapon reads `GetEquippedWeaponID(AttackerID)` / `GetEquippedWeaponEnhancementLevel(EntityID)`; this GDD names them without parameters. Reconcile when the read-surface story is written.
 
+## Stories
+
+| # | Story | Type | Status | ADR |
+|---|-------|------|--------|-----|
+| 001 | [Slot Registry, Core Types and Read Surface](story-001-slot-registry-and-read-surface.md) | Logic | Ready | ADR-010 |
+| 002 | [Equip Into an Empty Slot, Unequip, Enhanced Modifiers](story-002-equip-unequip-enhanced-modifiers.md) | Logic | Ready | ADR-010 |
+| 003 | [Validation Guards — Input, Slot Type, Stat Gate, Same Item](story-003-validation-guards.md) | Logic | Ready | ADR-010 |
+| 004 | [Auto-Swap, Rollback and the Transitioning Guard](story-004-auto-swap-and-transitioning.md) | Logic | Ready | ADR-010 |
+| 005 | [`equipmentAppearanceFlags` Encoding and Change Event](story-005-appearance-flags.md) | Logic | Ready | ADR-010 |
+| 006 | [Accessory Merge](story-006-accessory-merge.md) | Logic | Ready | ADR-010 |
+| 007 | [Restore and Export Gear Slots — the Load and Save Seam](story-007-restore-and-export-gear-slots.md) | Integration | Ready | ADR-006, ADR-010 |
+| 008 | [`EquipRequest` / `EquipResult` — Codecs, Request Handler, Owner Delivery](story-008-equip-request-and-result-delivery.md) | Integration | Ready | ADR-004, ADR-014, ADR-012 |
+| 009 | [`AppearanceChangedEvent` Zone Delivery](story-009-appearance-changed-event-delivery.md) | Integration | Ready | ADR-004, ADR-015 |
+
+Order: 001 → 002 → 003 → 004 → 005 → 007 → 008 → 009; 006 needs only 002. All of AC-EQS-1 to AC-EQS-33 are assigned.
+
+**Decisions taken at `/create-stories` (2026-10-26):**
+1. Entry points take `CharacterID` first (multi-character server, as `IInventoryService`); `RegisterCharacter(CharacterID, EntityID)` maps to Character Stats. `EquipmentService` implements the existing `IEquippedWeaponQuery` — this closes the damage-calculation naming drift without a GDD rename.
+2. The Equipment System owns modifier re-registration on load (CR-EQS-15) through `RestoreSlots` / `ExportSlots` (Story 007); Character Persistence Story 005 becomes the caller at load step 4 and save step 3, which settles its open decisions 1 and 2.
+3. Forward dependencies left out: the real snapshot player-state source (OQ-EQS-6), `StatSnapshotEvent` on equip, the owner gear-slot sync message (wire protocol OQ-NC-SER-2), a merge wire message.
+
+**Open items for `/story-readiness`:** float → int conversion of `FlatBonus` for `GetFlatBonus` (002); detecting the modifier-cap drop (002); result codes the GDD does not name for out-of-range slot / `ItemID.Invalid` / non-equipment item (003); a `MergeResult` code for invalid merge sources — possibly a GDD amendment (006); message type ids and send path (008); `isCapExempt` for `AppearanceChangedEvent` (009).
+
 ## Definition of Done
 
 This epic is complete when:
@@ -55,4 +78,4 @@ This epic is complete when:
 
 ## Next Step
 
-Run `/create-stories equipment-system` (in a fresh session) to break this epic into implementable stories.
+Run `/story-readiness production/epics/equipment-system/story-001-slot-registry-and-read-surface.md`, then `/dev-story`.
