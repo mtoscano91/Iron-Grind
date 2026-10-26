@@ -119,7 +119,7 @@ namespace IronGrind.Tests.EditMode.EquipmentSystem
                 new[]
                 {
                     "Success", "RejectedEquipped", "RejectedMaxLevel", "RejectedInventoryFull",
-                    "RejectedMergeError", "CriticalRollbackFailed",
+                    "RejectedMergeError", "CriticalRollbackFailed", "RejectedInvalidSources",
                 },
                 Enum.GetNames(typeof(MergeResult)));
         }

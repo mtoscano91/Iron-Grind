@@ -56,8 +56,11 @@ namespace IronGrind.EquipmentSystem
         private readonly Dictionary<CharacterID, CharacterGear> _characters = new Dictionary<CharacterID, CharacterGear>();
         private readonly Dictionary<EntityID, CharacterID> _entityToCharacter = new Dictionary<EntityID, CharacterID>();
 
+        // CR-EQS-14 defense-in-depth equipped check; replaced only by tests (AC-EQS-27).
+        private IMergeEquippedCheck _mergeEquippedCheck = new NeverEquippedCheck();
+
         // _enhancementConfig owns the prestige band thresholds (CR-EQS-11); the accessory merge
-        // (a later story) reads it too.
+        // (CR-EQS-14) does not read it.
         private readonly IInventoryService _inventory;
         private readonly IronGrind.CharacterStats.CharacterStats _stats;
         private readonly IItemDatabase _itemDatabase;
@@ -94,6 +97,24 @@ namespace IronGrind.EquipmentSystem
             _itemDatabase = itemDatabase ?? throw new ArgumentNullException(nameof(itemDatabase));
             _bonuses = bonuses ?? throw new ArgumentNullException(nameof(bonuses));
             _enhancementConfig = enhancementConfig ?? throw new ArgumentNullException(nameof(enhancementConfig));
+        }
+
+        /// <summary>Production equipped check (CR-EQS-14 precondition 1): always "not equipped".</summary>
+        /// <remarks>
+        /// Under the current model an ItemID in the bag and the same ItemID equipped are two different
+        /// physical items (GDD: "a player with 4 identical accessories, 1 equipped and 3 in
+        /// inventory, may merge the 3"), so no state exists in which a bag item is also equipped.
+        /// The seam exists so AC-EQS-27 can force the rejection.
+        /// </remarks>
+        private sealed class NeverEquippedCheck : IMergeEquippedCheck
+        {
+            public bool IsSourceEquipped(CharacterID charId, int bagSlotIndex, ItemID itemId) => false;
+        }
+
+        /// <summary>Test seam: replaces the defense-in-depth equipped check (AC-EQS-27).</summary>
+        internal IMergeEquippedCheck MergeEquippedCheck
+        {
+            set => _mergeEquippedCheck = value ?? throw new ArgumentNullException(nameof(value));
         }
 
         /// <inheritdoc/>
@@ -396,6 +417,136 @@ namespace IronGrind.EquipmentSystem
             // CR-EQS-7 step 6. Step 7 (appearance flags) runs in Unequip, after this returns.
             gear.Slots[slotIndex] = EquipmentSlotEntry.Empty;
             return EquipResult.Success;
+        }
+
+        /// <inheritdoc/>
+        public MergeResult RequestMerge(CharacterID charId, int slotIdx1, int slotIdx2, int slotIdx3)
+        {
+            // The GDD names no code for an unregistered character (caller bug): logged, and
+            // RejectedInvalidSources returned so nothing is touched.
+            if (!_characters.TryGetValue(charId, out var gear))
+            {
+                Debug.LogError($"{LOG_PREFIX} {nameof(RequestMerge)}: {charId} is not a registered character. Call RegisterCharacter before using equipment.");
+                return MergeResult.RejectedInvalidSources;
+            }
+
+            // Preconditions 0-2, in order. Precondition 0 runs before any GetSlot (which would log).
+            if (!AreDistinctBagIndices(slotIdx1, slotIdx2, slotIdx3)
+                || !HoldSameUnlockedItem(charId, slotIdx1, slotIdx2, slotIdx3, out ItemID itemId)
+                || !IsMergeableAccessory(itemId, out EquipmentData? equipment))
+            {
+                return MergeResult.RejectedInvalidSources;
+            }
+
+            // Precondition 1, defense-in-depth equipped check (runs before any removal).
+            if (IsAnySourceEquipped(charId, itemId, slotIdx1, slotIdx2, slotIdx3))
+            {
+                return MergeResult.RejectedEquipped;
+            }
+
+            // Precondition 3.
+            ItemID? resultId = equipment.MergeResultItemID;
+            if (resultId == null)
+            {
+                return MergeResult.RejectedMaxLevel;
+            }
+
+            // Precondition 4.
+            if (!_inventory.HasFreeSlot(charId))
+            {
+                return MergeResult.RejectedInventoryFull;
+            }
+
+            return ExecuteMerge(charId, gear, itemId, resultId.Value, slotIdx1, slotIdx2, slotIdx3);
+        }
+
+        // CR-EQS-14 execution steps 1-3. Touches the bag only.
+        private MergeResult ExecuteMerge(
+            CharacterID charId, CharacterGear gear, ItemID sourceId, ItemID resultId, int slot1, int slot2, int slot3)
+        {
+            // Step 1.
+            int[] sources = { slot1, slot2, slot3 };
+            for (int i = 0; i < sources.Length; i++)
+            {
+                if (_inventory.MoveItemOut(charId, sources[i]).Code != MoveItemOutCode.Success)
+                {
+                    // Not a GDD rule (Story 006): after the lock check this cannot fail on a
+                    // single-threaded tick. If it does, put back the sources already removed.
+                    int unrestored = RestoreSources(charId, sourceId, i);
+                    return unrestored == 0 ? MergeResult.RejectedMergeError : ReportRollbackFailure(gear, unrestored);
+                }
+            }
+
+            // Step 2: the result is a new item at level 0.
+            if (_inventory.ForceInsert(charId, resultId, 0))
+            {
+                return MergeResult.Success;
+            }
+
+            // Step 3: attempt all three restores even after one fails.
+            int failures = RestoreSources(charId, sourceId, sources.Length);
+            return failures == 0 ? MergeResult.RejectedMergeError : ReportRollbackFailure(gear, failures);
+        }
+
+        // Attempts every restore and returns how many failed. A restored source lands in the lowest
+        // free slot, not necessarily the one it left; the sources are identical level-0 items
+        // (CR-EQS-14 step 3: ForceInsert(sourceItemID, 0)), so nothing but the position changes.
+        private int RestoreSources(CharacterID charId, ItemID sourceId, int count)
+        {
+            int failures = 0;
+            for (int i = 0; i < count; i++)
+            {
+                if (!_inventory.ForceInsert(charId, sourceId, 0))
+                {
+                    failures++;
+                }
+            }
+
+            return failures;
+        }
+
+        // "Alert monitoring" (CR-EQS-14) is this log line: no alert service exists yet (same
+        // convention as Character Persistence).
+        private static MergeResult ReportRollbackFailure(CharacterGear gear, int unrestored)
+        {
+            Debug.LogError($"{LOG_PREFIX} CRITICAL: Merge rollback incomplete — {unrestored} source item(s) not restored for entity {gear.EntityId}");
+            return MergeResult.CriticalRollbackFailed;
+        }
+
+        // CR-EQS-14 precondition 0.
+        private static bool AreDistinctBagIndices(int slot1, int slot2, int slot3)
+        {
+            return IsBagIndex(slot1) && IsBagIndex(slot2) && IsBagIndex(slot3)
+                && slot1 != slot2 && slot1 != slot3 && slot2 != slot3;
+        }
+
+        private static bool IsBagIndex(int index) => (uint)index < (uint)InventoryConstants.INVENTORY_SLOT_COUNT;
+
+        // CR-EQS-14 precondition 1: the three slots hold the same non-empty ItemID and none is locked.
+        private bool HoldSameUnlockedItem(CharacterID charId, int slot1, int slot2, int slot3, out ItemID itemId)
+        {
+            itemId = _inventory.GetSlot(charId, slot1).ItemId;
+            return itemId != ItemID.Invalid
+                && _inventory.GetSlot(charId, slot2).ItemId == itemId
+                && _inventory.GetSlot(charId, slot3).ItemId == itemId
+                && !_inventory.IsSlotLocked(charId, slot1)
+                && !_inventory.IsSlotLocked(charId, slot2)
+                && !_inventory.IsSlotLocked(charId, slot3);
+        }
+
+        // CR-EQS-14 precondition 2: only accessories merge.
+        private bool IsMergeableAccessory(ItemID itemId, [NotNullWhen(true)] out EquipmentData? equipment)
+        {
+            equipment = GetEquipmentData(itemId);
+            return equipment != null && (equipment.GearSlot == GearSlot.Ring || equipment.GearSlot == GearSlot.Necklace);
+        }
+
+        // CR-EQS-14 precondition 1, defense-in-depth equipped check.
+        private bool IsAnySourceEquipped(CharacterID charId, ItemID itemId, int slot1, int slot2, int slot3)
+        {
+            return _mergeEquippedCheck.IsSourceEquipped(charId, slot1, itemId)
+                || _mergeEquippedCheck.IsSourceEquipped(charId, slot2, itemId)
+                || _mergeEquippedCheck.IsSourceEquipped(charId, slot3, itemId);
         }
 
         // CR-EQS-5 step 5, CR-EQS-6 step 10, CR-EQS-7 step 7. Runs after every Equip / Unequip,

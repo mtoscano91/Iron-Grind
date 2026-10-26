@@ -22,5 +22,8 @@ namespace IronGrind.EquipmentSystem
 
         /// <summary>Inserting the result failed and at least one source item could not be restored; a critical error was logged.</summary>
         CriticalRollbackFailed = 5,
+
+        /// <summary>A source selection failed CR-EQS-14 preconditions 0–2 (index out of range or repeated, empty slot, differing ItemIDs, locked slot, or not a Ring / Necklace); nothing changed.</summary>
+        RejectedInvalidSources = 6,
     }
 }

@@ -65,6 +65,9 @@ namespace IronGrind.Tests.EditMode.EquipmentSystem
         public MoveItemOutCode FailMoveItemOutCode = MoveItemOutCode.SlotLocked;
         public int ForceInsertCalls;
 
+        /// <summary>1-based <c>ForceInsert</c> call numbers (counted in <see cref="ForceInsertCalls"/>) that return false without forwarding.</summary>
+        public readonly HashSet<int> FailForceInsertCallNumbers = new HashSet<int>();
+
         /// <summary>Invoked at the start of <c>MoveItemIn</c> / <c>MoveItemOut</c>, for mid-swap observation.</summary>
         public Action BeforeMoveItemIn;
         public Action BeforeMoveItemOut;
@@ -136,6 +139,11 @@ namespace IronGrind.Tests.EditMode.EquipmentSystem
         public bool ForceInsert(CharacterID charId, ItemID itemId, byte enhancementLevel)
         {
             ForceInsertCalls++;
+            if (FailForceInsertCallNumbers.Contains(ForceInsertCalls))
+            {
+                return false;
+            }
+
             return _inner.ForceInsert(charId, itemId, enhancementLevel);
         }
 

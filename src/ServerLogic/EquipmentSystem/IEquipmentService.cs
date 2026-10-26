@@ -177,5 +177,33 @@ namespace IronGrind.EquipmentSystem
         /// <c>MoveItemIn</c> failed (modifiers restored, slot unchanged).
         /// </returns>
         EquipResult Unequip(CharacterID charId, GearSlot slot);
+
+        /// <summary>
+        /// Merges three identical accessories (Ring / Necklace) in the bag into one item of the next
+        /// level (CR-EQS-14, TR-equip-009, Story 006). All-or-nothing; never reads or writes a gear
+        /// slot, never touches <see cref="IsSlotTransitioning"/>, registers no modifiers and raises no
+        /// appearance event.
+        /// </summary>
+        /// <remarks>
+        /// <para>Preconditions, all checked before any Inventory mutation, in this order: indices in
+        /// <c>[0, INVENTORY_SLOT_COUNT)</c> and pairwise distinct, the three slots hold the same
+        /// non-empty <see cref="ItemID"/> and none is locked, the item is equipment with
+        /// <see cref="GearSlot.Ring"/> or <see cref="GearSlot.Necklace"/> (all else
+        /// <see cref="MergeResult.RejectedInvalidSources"/>) → defense-in-depth equipped check
+        /// (<see cref="MergeResult.RejectedEquipped"/>) → <c>MergeResultItemID</c> non-null
+        /// (<see cref="MergeResult.RejectedMaxLevel"/>) → a free bag slot
+        /// (<see cref="MergeResult.RejectedInventoryFull"/>).</para>
+        /// <para>Execution: the three sources leave the bag, the result is inserted at level 0. If the
+        /// insert fails the sources are restored: <see cref="MergeResult.RejectedMergeError"/> when all
+        /// are back, <see cref="MergeResult.CriticalRollbackFailed"/> (with a critical error log naming
+        /// the entity and the unrestored count) otherwise. An unregistered character is a caller bug:
+        /// it logs a server error and returns <see cref="MergeResult.RejectedInvalidSources"/>.</para>
+        /// </remarks>
+        /// <param name="charId">A registered character.</param>
+        /// <param name="slotIdx1">First source bag slot.</param>
+        /// <param name="slotIdx2">Second source bag slot.</param>
+        /// <param name="slotIdx3">Third source bag slot.</param>
+        /// <returns>The outcome; see <see cref="MergeResult"/>.</returns>
+        MergeResult RequestMerge(CharacterID charId, int slotIdx1, int slotIdx2, int slotIdx3);
     }
 }

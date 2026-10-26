@@ -4943,3 +4943,23 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Next recommended: commit the Story 004 changeset (src/ServerLogic/EquipmentSystem/EquipmentService.cs + IEquipmentService.cs; tests/EditMode/EquipmentSystem/ AutoSwap + .meta, TestDoubles, EquipUnequip, Validation; story 004, EPIC.md, index.md; not ProjectSettings/* or bash.exe.stackdump); then /story-readiness production/epics/equipment-system/story-005-appearance-flags.md
 
 - Committed 2026-10-26 (Story 004 changeset + this file). Next: /story-readiness production/epics/equipment-system/story-005-appearance-flags.md. PAT rotation still unconfirmed.
+
+## Session Extract — /dev-story 2026-10-26
+- Story: production/epics/equipment-system/story-006-accessory-merge.md — Accessory Merge
+- Files changed: src/ServerLogic/EquipmentSystem/{MergeResult.cs (RejectedInvalidSources = 6), IEquipmentService.cs (RequestMerge), EquipmentService.cs (RequestMerge + helpers, NeverEquippedCheck, internal MergeEquippedCheck seam), IMergeEquippedCheck.cs (new) + .meta}; tests/EditMode/EquipmentSystem/{EquipmentSystem_AccessoryMerge_tests.cs (new, 18 [Test] + 9 TestCase rows = 27 cases) + .meta, EquipmentSystem_TestDoubles.cs (FailForceInsertCallNumbers), EquipmentSystem_SlotRegistry_tests.cs (MergeResult member list pin +RejectedInvalidSources)}
+- Test results: full EditMode run 4436 total / 4324 passed / 1 failed (MergeResult pin, expected) / 111 skipped; pin fixed; Equipment filter re-run 203/203 passed.
+- Deviation flagged: unregistered character → logs server error + RejectedInvalidSources (GDD names no code).
+- Blockers: None
+- Next: /code-review the changed files, then /story-done story 006. PAT rotation still unconfirmed.
+
+## Session Extract — /code-review 2026-10-26 (Story 006)
+- Verdict: APPROVED WITH SUGGESTIONS (unity-specialist CLEAN; qa-tester GAPS, none blocking; ADR-010/011/012 compliant). User: "fix all".
+- Applied: RequestMerge split into AreDistinctBagIndices / HoldSameUnlockedItem / IsMergeableAccessory / IsAnySourceEquipped (≤40 lines, complexity < 10); RestoreSources comment (restored sources land in the lowest free slot); AC-EQS-21 test now discriminating (fillers in 0–1, result in slot 2, 5→3); new test ThirdMoveItemOutFailsAndARestoreFails → CriticalRollbackFailed.
+- Equipment filter: 204/204 passed (28 merge cases).
+- Next: /story-done story 006, then commit.
+
+## Session Extract — /story-done 2026-10-26
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/equipment-system/story-006-accessory-merge.md — Accessory Merge
+- Tech debt logged: None (2 advisory deviations recorded in Completion Notes)
+- Next recommended: /story-readiness Story 007 (restore and export gear slots), then 008, 009

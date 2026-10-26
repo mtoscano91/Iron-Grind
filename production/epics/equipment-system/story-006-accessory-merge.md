@@ -1,7 +1,7 @@
 # Story 006: Accessory Merge
 
 > **Epic**: Equipment System
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-26
@@ -30,14 +30,14 @@
 
 *From GDD `design/gdd/equipment-system.md`, scoped to this story:*
 
-- [ ] **AC-EQS-21** — three identical +1 rings at three slots, a free slot → `Success`; the three removed; exactly one `MergeResultItemID` added at level 0; bag item count −2
-- [ ] **AC-EQS-22** — three +10 rings (`MergeResultItemID = null`) → `RejectedMaxLevel`; no state change
-- [ ] **AC-EQS-23** — full bag → `RejectedInventoryFull`; no `MoveItemOut` call (`HasFreeSlot` runs before any removal)
-- [ ] **AC-EQS-24** — result `ForceInsert` fails, rollback `ForceInsert × 3` succeeds → `RejectedMergeError`; all three restored; no CriticalError log; no equipment slot touched
-- [ ] **AC-EQS-26** — result `ForceInsert` fails and ≥ 1 rollback `ForceInsert` fails → `CriticalRollbackFailed`; a CriticalError log containing the entity id and the unrestored count (≥ 1); no equipment slot touched
-- [ ] **AC-EQS-27** [ADVISORY] — the internal equipped-item consistency check (injectable) reports a source item as equipped → `RejectedEquipped`; no `MoveItemOut`
-- [ ] **AC-EQS-34** — preconditions 0–2: indices in `[0, 19]` and pairwise distinct, the three slots hold the same `ItemID`, none is locked, the item's `GearSlot` is Ring or Necklace; otherwise `RejectedInvalidSources` with no state change and no `MoveItemOut`
-- [ ] Merge never reads or writes an equipment slot; `IsSlotTransitioning` is unaffected
+- [x] **AC-EQS-21** — three identical +1 rings at three slots, a free slot → `Success`; the three removed; exactly one `MergeResultItemID` added at level 0; bag item count −2
+- [x] **AC-EQS-22** — three +10 rings (`MergeResultItemID = null`) → `RejectedMaxLevel`; no state change
+- [x] **AC-EQS-23** — full bag → `RejectedInventoryFull`; no `MoveItemOut` call (`HasFreeSlot` runs before any removal)
+- [x] **AC-EQS-24** — result `ForceInsert` fails, rollback `ForceInsert × 3` succeeds → `RejectedMergeError`; all three restored; no CriticalError log; no equipment slot touched
+- [x] **AC-EQS-26** — result `ForceInsert` fails and ≥ 1 rollback `ForceInsert` fails → `CriticalRollbackFailed`; a CriticalError log containing the entity id and the unrestored count (≥ 1); no equipment slot touched
+- [x] **AC-EQS-27** [ADVISORY] — the internal equipped-item consistency check (injectable) reports a source item as equipped → `RejectedEquipped`; no `MoveItemOut`
+- [x] **AC-EQS-34** — preconditions 0–2: indices in `[0, 19]` and pairwise distinct, the three slots hold the same `ItemID`, none is locked, the item's `GearSlot` is Ring or Necklace; otherwise `RejectedInvalidSources` with no state change and no `MoveItemOut`
+- [x] Merge never reads or writes an equipment slot; `IsSlotTransitioning` is unaffected
 
 ---
 
@@ -81,7 +81,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/EquipmentSystem/EquipmentSystem_AccessoryMerge_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 19 tests + 9 TestCase rows (28 cases), all passing 2026-10-26
 
 ---
 
@@ -89,3 +89,15 @@
 
 - Depends on: Story 002 (service, registration and Inventory wiring); independent of Stories 003–005
 - Unlocks: None
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-10-26
+**Criteria**: 8/8 passing, all covered by `EquipmentSystem_AccessoryMerge_tests.cs` (no deferred items)
+**Deviations** (advisory, accepted):
+1. An unregistered character logs a server error and returns `RejectedInvalidSources` (the GDD names no code for this caller bug).
+2. Not a GDD rule: a `MoveItemOut` failing during execution (impossible after the lock check on a single-threaded tick) restores the sources already removed → `RejectedMergeError`, or `CriticalRollbackFailed` with the CR-EQS-14 critical log if a restore fails.
+**Test Evidence**: Logic — `tests/EditMode/EquipmentSystem/EquipmentSystem_AccessoryMerge_tests.cs`; Equipment System filter 204/204 passed. `EquipmentSystem_SlotRegistry_tests.cs` `MergeResult` member pin updated for `RejectedInvalidSources` (outside the story file list, valid knock-on).
+**Code Review**: Complete — 2026-10-26, APPROVED WITH SUGGESTIONS (unity-specialist CLEAN, qa-tester GAPS, all advisory; ADR-010/011/012 compliant) → "fix all" applied (`RequestMerge` split into precondition helpers, rollback position comment, discriminating AC-EQS-21 slot check, new restore-fails defence test). QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean).
