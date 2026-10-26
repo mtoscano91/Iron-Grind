@@ -3,7 +3,7 @@
 > **Layer**: Core
 > **GDD**: design/gdd/character-persistence.md
 > **Architecture Module**: Character Persistence — `CharacterPersistenceService : ICharacterPersistence` (async), PostgreSQL via Npgsql and Dapper
-> **Status**: In Progress (created 2026-10-12; 16 stories written 2026-10-12 — 13 Complete (001–004, 006–010, 012–014, 017 — 017 added and Complete 2026-10-16 for TD-070 / TD-060; 012–014 Complete 2026-10-19); 011 Complete 2026-10-26 → 14 Complete, 1 Ready (015), 2 Blocked (005, 016))
+> **Status**: In Progress (created 2026-10-12; 16 stories written 2026-10-12 — 13 Complete (001–004, 006–010, 012–014, 017 — 017 added and Complete 2026-10-16 for TD-070 / TD-060; 012–014 Complete 2026-10-19); 011 Complete 2026-10-26 → 14 Complete; 015 Complete 2026-10-26 → 15 Complete, 2 Blocked (005 on the Equipment System, 016 on 005))
 > **Stories**: 16 stories created 2026-10-12 (001–016); Story 017 added 2026-10-16
 > **Manifest Version**: 2026-10-09
 
@@ -90,8 +90,8 @@ This epic is complete when:
 | 012 | [Npgsql and Dapper in the Project](story-012-npgsql-and-dapper-in-the-project.md) | Integration | Complete (2026-10-19; COMPLETE WITH NOTES; 11 DLLs, Editor round trip PASS against a portable PostgreSQL 16.15 — no Docker on the dev machine; build items (b)–(d) carried by the epic; IL2CPP / Dapper risk TD-073; EditMode 3091: 3090 passed, 1 skipped) | ADR-006, ADR-012 |
 | 013 | [SQL Migrations for `character_records` and `pending_purchases`](story-013-sql-migrations.md) | Config/Data | Complete (2026-10-19) | ADR-006 |
 | 014 | [The Npgsql Character Record Store](story-014-npgsql-character-record-store.md) | Integration | Complete (2026-10-19; COMPLETE WITH NOTES; DB run 159/159; TD-075) | ADR-006, ADR-011 |
-| 015 | [The Npgsql Pending-Purchase Store](story-015-npgsql-pending-purchase-store.md) | Integration | Ready (2026-10-26, 6 h) | ADR-006, ADR-001 |
-| 016 | [The Real-Database Verification Run](story-016-real-database-verification-run.md) | Integration | Blocked (012–015 and Part A) | ADR-006 |
+| 015 | [The Npgsql Pending-Purchase Store](story-015-npgsql-pending-purchase-store.md) | Integration | Complete (2026-10-26, COMPLETE WITH NOTES) | ADR-006, ADR-001 |
+| 016 | [The Real-Database Verification Run](story-016-real-database-verification-run.md) | Integration | Blocked (012–015 Complete; waits for 005) | ADR-006 |
 | 017 | [Session-End Saves Wait for the Mutation Gate](story-017-session-end-waits-for-the-mutation-gate.md) | Integration | Complete (2026-10-16; 16 new test cases, EditMode 2932 / 2932; COMPLETE WITH NOTES; closes TD-070 and TD-060, adds TD-071) | ADR-011 |
 
 **Acceptance criteria owned outside this epic**: AC-CP-27 (enhancement commit before broadcast) — Enhancement Story 011. AC-CP-28 (respec failure with its compensating `AddGold`) and AC-CP-29 (item consumption) — the Respec and Consumable Use systems, which have no code.

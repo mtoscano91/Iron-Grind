@@ -16,5 +16,8 @@
     <type fullname="IronGrind.CharacterPersistence.NpgsqlCharacterRecordStore/RecordRow" preserve="all" />
     <type fullname="IronGrind.CharacterPersistence.NpgsqlCharacterRecordStore/RecordParameters" preserve="all" />
     <type fullname="IronGrind.CharacterPersistence.NpgsqlCharacterRecordStore/IdParameters" preserve="all" />
+    <type fullname="IronGrind.CharacterPersistence.NpgsqlCharacterRecordStore/PendingPurchaseRow" preserve="all" />
+    <type fullname="IronGrind.CharacterPersistence.NpgsqlCharacterRecordStore/BeginPurchaseParameters" preserve="all" />
+    <type fullname="IronGrind.CharacterPersistence.NpgsqlCharacterRecordStore/PurchaseKeyParameters" preserve="all" />
   </assembly>
 </linker>
