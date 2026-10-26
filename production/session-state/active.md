@@ -4909,3 +4909,27 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Note: manifest line 55 says (character_id, request_id) — the column is char_id; fix at next manifest regeneration.
 - EPIC row 015 Ready. Not committed.
 - Next: commit → /dev-story Story 015 (needs the local PostgreSQL running). PAT rotation still unconfirmed.
+
+## Session Extract — /dev-story 2026-10-26
+- Story: production/epics/equipment-system/story-004-auto-swap-and-transitioning.md — Auto-Swap, Rollback and the Transitioning Guard
+- Files changed: src/ServerLogic/EquipmentSystem/EquipmentService.cs (Swap + RestoreOldItem; NotSupportedException removed), IEquipmentService.cs (Equip doc), tests/EditMode/EquipmentSystem/EquipmentSystem_TestDoubles.cs (FailMoveItemOutSlot/Code, ForceInsertCalls, BeforeMoveItemIn/Out hooks), EquipmentSystem_EquipUnequip_tests.cs + EquipmentSystem_Validation_tests.cs (NotSupported tests rewritten as swap assertions)
+- Test written: tests/EditMode/EquipmentSystem/EquipmentSystem_AutoSwap_tests.cs (+ .meta) — 8 [Test] + 2 [TestCase] = 10 cases. EditMode 4231 passed / 0 failed / 111 skipped (first run had 2 failures from a fixture counter bug, fixed by zeroing decorator counters in EquipForSetup)
+- Non-GDD decisions to review: (1) old item's definition missing during a swap → logged, its modifiers left registered (leak, no test); (2) step-7 reclaim failure → CRITICAL log, old entry + modifiers restored, InventoryError, possible bag duplicate
+- Blockers: None
+- Next: /code-review EquipmentService.cs IEquipmentService.cs + test files, then /story-done story 004
+
+## Session Extract — /code-review Story 004 2026-10-26: CHANGES REQUIRED -> "fix all, option A" applied
+- R1: old-item definition missing -> swap refused before any mutation (InventoryError, one log); test added
+- R2 (user chose option A): step-7 reclaim failure -> slot left Empty, old modifiers stay removed, old item stays in bag, CRITICAL log, InventoryError (no dupe); IEquipmentService doc states the exception
+- R3: Swap split into Swap / CompleteSwap / RollBackSwap; RestoreOldItem takes non-null EquipmentData
+- S1-S6 applied (two-stat ItemC, event-time slot reads, call-count asserts, retry test, two-stat->one-stat test, stale _enhancementConfig comment)
+- AutoSwap tests now 11 [Test] + 2 [TestCase] = 13 cases. EditMode 4234 passed / 0 failed / 111 skipped
+- Next: /story-done production/epics/equipment-system/story-004-auto-swap-and-transitioning.md (record option A as a deviation/GDD note: CR-EQS-6 has no rule for reclaim failure)
+
+## Session Extract — /story-done 2026-10-26
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/equipment-system/story-004-auto-swap-and-transitioning.md — Auto-Swap, Rollback and the Transitioning Guard (7/7, EditMode 4234/0)
+- Tech debt logged: None (deviation 2 — reclaim-failure option A — carried in the Equipment EPIC Next Step as a candidate GDD note)
+- Next recommended: commit the Story 004 changeset (src/ServerLogic/EquipmentSystem/EquipmentService.cs + IEquipmentService.cs; tests/EditMode/EquipmentSystem/ AutoSwap + .meta, TestDoubles, EquipUnequip, Validation; story 004, EPIC.md, index.md; not ProjectSettings/* or bash.exe.stackdump); then /story-readiness production/epics/equipment-system/story-005-appearance-flags.md
+
+- Committed 2026-10-26 (Story 004 changeset + this file). Next: /story-readiness production/epics/equipment-system/story-005-appearance-flags.md. PAT rotation still unconfirmed.

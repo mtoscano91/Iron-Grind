@@ -53,7 +53,7 @@ namespace IronGrind.EquipmentSystem
         private readonly Dictionary<CharacterID, CharacterGear> _characters = new Dictionary<CharacterID, CharacterGear>();
         private readonly Dictionary<EntityID, CharacterID> _entityToCharacter = new Dictionary<EntityID, CharacterID>();
 
-        // _enhancementConfig is for later stories (auto-swap, merge); taken now so the constructor
+        // _enhancementConfig is for a later story (accessory merge); taken now so the constructor
         // does not change between stories.
         private readonly IInventoryService _inventory;
         private readonly IronGrind.CharacterStats.CharacterStats _stats;
@@ -202,7 +202,8 @@ namespace IronGrind.EquipmentSystem
             int slotIndex = (int)slot;
             if (!gear.Slots[slotIndex].IsEmpty)
             {
-                throw new NotSupportedException($"{LOG_PREFIX} Equip: {slot} is occupied; auto-swap is not implemented until Story 004.");
+                // CR-EQS-6 steps 1-2 (same-item guard, stat gate) already ran in ValidateEquip.
+                return Swap(charId, gear, slotIndex, itemId, equipment, inventorySlotIndex);
             }
 
             // CR-EQS-5 step 2: nothing else is called when the bag refuses to release the item.
@@ -221,6 +222,95 @@ namespace IronGrind.EquipmentSystem
             // CR-EQS-5 step 4. Step 5 (appearance flags) is Story 005.
             gear.Slots[slotIndex] = new EquipmentSlotEntry(itemId, false, moved.EnhancementLevel);
             return EquipResult.Success;
+        }
+
+        // CR-EQS-6 steps 3-9 (auto-swap into an occupied slot), CR-EQS-8 and CR-EQS-9. Step 10
+        // (appearance flags) is Story 005. No BeginStatTransaction / EndStatTransaction (CR-EQS-15):
+        // OnStatChanged fires on the remove and again on the add, with the slot reading Transitioning
+        // in between. ForceInsert is never used here (CR-EQS-8).
+        private EquipResult Swap(
+            CharacterID charId, CharacterGear gear, int slotIndex, ItemID newItemId, EquipmentData newEquipment, int newItemBagSlot)
+        {
+            EquipmentSlotEntry entry = gear.Slots[slotIndex];
+
+            // Step 3: before any mutation.
+            if (!_inventory.HasFreeSlot(charId))
+            {
+                return EquipResult.InventoryFull;
+            }
+
+            // Not a GDD rule (Story 004 code review): the old item's definition vanished while equipped.
+            // Its modifiers cannot be enumerated and the Inventory rejects an unknown item in
+            // MoveItemIn, so the swap could never complete; refuse it before any mutation.
+            // Unequip clears such a slot (CR-EQS-7 step 2).
+            EquipmentData? oldEquipment = GetEquipmentData(entry.ItemId);
+            if (oldEquipment == null)
+            {
+                Debug.LogError($"{LOG_PREFIX} Equip swap GetItem null: {entry.ItemId}; swap refused, Unequip clears the slot. Entity {gear.EntityId}.");
+                return EquipResult.InventoryError;
+            }
+
+            // Steps 4-5: OnStatChanged fires while the slot reads Transitioning.
+            gear.Slots[slotIndex] = new EquipmentSlotEntry(entry.ItemId, true, entry.EnhancementLevel);
+            RemoveModifiers(gear.EntityId, entry.ItemId, oldEquipment);
+
+            // Step 6 / CR-EQS-8: abort in place; nothing has moved yet.
+            MoveItemInResult returned = _inventory.MoveItemIn(charId, entry.ItemId, entry.EnhancementLevel);
+            if (!returned.Success)
+            {
+                RestoreOldItem(gear, slotIndex, entry, oldEquipment);
+                Debug.LogError($"{LOG_PREFIX} Auto-swap aborted: old item {entry.ItemId} could not return to inventory. Entity {gear.EntityId}.");
+                return EquipResult.InventoryError;
+            }
+
+            return CompleteSwap(charId, gear, slotIndex, entry, oldEquipment, returned.SlotIndex, newItemId, newEquipment, newItemBagSlot);
+        }
+
+        // CR-EQS-6 steps 7-9. The old item is in the bag at oldItemReturnedSlotIndex, its modifiers
+        // removed, and the slot still reads Transitioning.
+        private EquipResult CompleteSwap(
+            CharacterID charId, CharacterGear gear, int slotIndex, EquipmentSlotEntry entry, EquipmentData oldEquipment,
+            int oldItemReturnedSlotIndex, ItemID newItemId, EquipmentData newEquipment, int newItemBagSlot)
+        {
+            // Step 7: the new item leaves the bag.
+            MoveItemOutResult moved = _inventory.MoveItemOut(charId, newItemBagSlot);
+            if (moved.Code != MoveItemOutCode.Success)
+            {
+                return RollBackSwap(charId, gear, slotIndex, entry, oldEquipment, oldItemReturnedSlotIndex, newItemId, newItemBagSlot, moved.Code);
+            }
+
+            // Step 8, then step 9 (flag cleared by the new entry). Step 10 (appearance flags) is Story 005.
+            RegisterEnhancedModifiers(gear.EntityId, newItemId, newEquipment, moved.EnhancementLevel);
+            gear.Slots[slotIndex] = new EquipmentSlotEntry(newItemId, false, moved.EnhancementLevel);
+            return EquipResult.Success;
+        }
+
+        // CR-EQS-6 step 7 failure: reclaim the old item from the bag slot step 6 placed it in, then
+        // restore it (SlotLocked → ItemLocked, SlotEmpty → ItemNotInInventory).
+        private EquipResult RollBackSwap(
+            CharacterID charId, CharacterGear gear, int slotIndex, EquipmentSlotEntry entry, EquipmentData oldEquipment,
+            int oldItemReturnedSlotIndex, ItemID newItemId, int newItemBagSlot, MoveItemOutCode failure)
+        {
+            if (_inventory.MoveItemOut(charId, oldItemReturnedSlotIndex).Code != MoveItemOutCode.Success)
+            {
+                // Not a GDD rule (Story 004 code review, option A): the reclaim cannot fail on a
+                // single-threaded tick. If it does, the old item stays in the bag and the slot is left
+                // Empty with its modifiers removed - consistent, nothing lost. Restoring the slot
+                // instead would duplicate the item.
+                Debug.LogError($"{LOG_PREFIX} CRITICAL: auto-swap rollback failed. Old item {entry.ItemId} could not be reclaimed from bag slot {oldItemReturnedSlotIndex} after new item {newItemId} failed to leave bag slot {newItemBagSlot} ({failure}); the slot is left empty and the old item stays in the bag. Entity {gear.EntityId}.");
+                gear.Slots[slotIndex] = EquipmentSlotEntry.Empty;
+                return EquipResult.InventoryError;
+            }
+
+            RestoreOldItem(gear, slotIndex, entry, oldEquipment);
+            return failure == MoveItemOutCode.SlotLocked ? EquipResult.ItemLocked : EquipResult.ItemNotInInventory;
+        }
+
+        // Swap rollback: old item's enhanced modifiers back at the entry's level, entry restored with the flag cleared.
+        private void RestoreOldItem(CharacterGear gear, int slotIndex, EquipmentSlotEntry entry, EquipmentData oldEquipment)
+        {
+            RegisterEnhancedModifiers(gear.EntityId, entry.ItemId, oldEquipment, entry.EnhancementLevel);
+            gear.Slots[slotIndex] = entry;
         }
 
         /// <inheritdoc/>

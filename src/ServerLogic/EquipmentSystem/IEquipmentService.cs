@@ -97,8 +97,19 @@ namespace IronGrind.EquipmentSystem
         /// → base stat meets the requirement (else <see cref="EquipResult.StatRequirementNotMet"/>;
         /// buffs and equipment do not count; items with no requirement stat are never gated; a
         /// requirement stat outside <see cref="StatID"/> is logged and rejected the same way).</para>
-        /// <para>Auto-swap into an occupied slot is Story 004; until then an occupied target slot
-        /// that passes validation throws <see cref="System.NotSupportedException"/>.</para>
+        /// <para>An occupied target slot that passes validation auto-swaps (CR-EQS-6/8): the bag must
+        /// have a free slot (else <see cref="EquipResult.InventoryFull"/>, nothing changed); the old
+        /// item's modifiers are removed, the old item returns to the bag at its level, the new item
+        /// leaves the bag and its enhanced modifiers are registered. The slot reads
+        /// <see cref="SlotState.Transitioning"/> (<see cref="IsSlotTransitioning"/> true) from the first
+        /// modifier removal until the new entry is written or the swap is rolled back (CR-EQS-9).
+        /// <see cref="EquipResult.InventoryError"/> means the old item could not return to the bag (or
+        /// its definition is missing) and the swap was aborted in place; if the new item then cannot
+        /// leave the bag the old item is reclaimed and the result is <see cref="EquipResult.ItemLocked"/>
+        /// or <see cref="EquipResult.ItemNotInInventory"/>. The one exception to "nothing changed": if
+        /// that reclaim also fails (not expected on a single-threaded tick), the result is
+        /// <see cref="EquipResult.InventoryError"/>, a critical error is logged, the old item stays in
+        /// the bag and the gear slot is left empty, so no item is lost or duplicated.</para>
         /// <para>An unregistered character is a caller bug: it logs a server error and returns
         /// <see cref="EquipResult.NoChange"/> with nothing changed.</para>
         /// </remarks>
@@ -109,13 +120,14 @@ namespace IronGrind.EquipmentSystem
         /// <returns>
         /// <see cref="EquipResult.Success"/>, a validation code above, <see cref="EquipResult.ItemLocked"/>
         /// when the bag slot is locked, or <see cref="EquipResult.ItemNotInInventory"/> when
-        /// <c>MoveItemOut</c> finds the bag slot empty. On any failure nothing changed.
+        /// <c>MoveItemOut</c> finds the bag slot empty, <see cref="EquipResult.InventoryFull"/> or
+        /// <see cref="EquipResult.InventoryError"/> on the swap path. On any failure nothing changed,
+        /// except the swap's double-failure case described above.
         /// </returns>
         /// <exception cref="System.InvalidOperationException">
         /// <paramref name="itemId"/> is <see cref="ItemID.Invalid"/> and the service was built to throw
         /// on it (dev builds); release builds return <see cref="EquipResult.ItemNotInInventory"/> instead.
         /// </exception>
-        /// <exception cref="System.NotSupportedException">The target slot is occupied (removed by Story 004).</exception>
         EquipResult Equip(CharacterID charId, GearSlot slot, ItemID itemId, int inventorySlotIndex);
 
         /// <summary>

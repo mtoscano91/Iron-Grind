@@ -338,14 +338,18 @@ namespace IronGrind.Tests.EditMode.EquipmentSystem
         [Test]
         public void test_Equip_SameItemDifferentLevel_PassesTheSameItemGuard()
         {
-            // A different level is a different item (CR-EQS-4): it reaches the auto-swap path,
-            // which throws until Story 004 implements it.
+            // A different level is a different item (CR-EQS-4): it passes the guard (not NoChange)
+            // and auto-swaps (AC-EQS-28).
             EquipForSetup(GearSlot.Weapon, IronSwordId);
             int bagSlot = PutInBag(IronSwordId, 3);
             ResetCounters();
 
-            Assert.Throws<NotSupportedException>(() => _equipment.Equip(Player, GearSlot.Weapon, IronSwordId, bagSlot));
-            AssertNoMutation();
+            EquipResult result = _equipment.Equip(Player, GearSlot.Weapon, IronSwordId, bagSlot);
+
+            Assert.AreEqual(EquipResult.Success, result);
+            Assert.AreEqual(3, _equipment.GetSlotEnhancementLevel(Player, GearSlot.Weapon));
+            Assert.AreEqual(1, _inventory.MoveItemInCalls, "the level-0 sword returned to the bag");
+            Assert.AreEqual(1, _inventory.MoveItemOutCalls, "the level-3 sword left the bag");
         }
 
         [Test]

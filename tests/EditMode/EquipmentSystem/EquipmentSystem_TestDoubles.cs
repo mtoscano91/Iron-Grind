@@ -60,6 +60,15 @@ namespace IronGrind.Tests.EditMode.EquipmentSystem
         public int MoveItemInCalls;
         public int MoveItemOutCalls;
 
+        /// <summary>When set, <c>MoveItemOut</c> fails with <see cref="FailMoveItemOutCode"/> for this bag slot only.</summary>
+        public int? FailMoveItemOutSlot;
+        public MoveItemOutCode FailMoveItemOutCode = MoveItemOutCode.SlotLocked;
+        public int ForceInsertCalls;
+
+        /// <summary>Invoked at the start of <c>MoveItemIn</c> / <c>MoveItemOut</c>, for mid-swap observation.</summary>
+        public Action BeforeMoveItemIn;
+        public Action BeforeMoveItemOut;
+
         public InventoryDecorator(IInventoryService inner)
         {
             _inner = inner;
@@ -80,6 +89,12 @@ namespace IronGrind.Tests.EditMode.EquipmentSystem
         public MoveItemOutResult MoveItemOut(CharacterID charId, int slotIndex)
         {
             MoveItemOutCalls++;
+            BeforeMoveItemOut?.Invoke();
+            if (FailMoveItemOutSlot.HasValue && FailMoveItemOutSlot.Value == slotIndex)
+            {
+                return MoveItemOutResult.Fail(FailMoveItemOutCode);
+            }
+
             return MoveItemOutOverride.HasValue
                 ? MoveItemOutResult.Fail(MoveItemOutOverride.Value)
                 : _inner.MoveItemOut(charId, slotIndex);
@@ -88,6 +103,7 @@ namespace IronGrind.Tests.EditMode.EquipmentSystem
         public MoveItemInResult MoveItemIn(CharacterID charId, ItemID itemId, byte enhancementLevel)
         {
             MoveItemInCalls++;
+            BeforeMoveItemIn?.Invoke();
             return FailMoveItemIn ? MoveItemInResult.Failed : _inner.MoveItemIn(charId, itemId, enhancementLevel);
         }
 
@@ -117,7 +133,11 @@ namespace IronGrind.Tests.EditMode.EquipmentSystem
 
         public MoveResult Move(CharacterID charId, int fromSlot, int toSlot) => _inner.Move(charId, fromSlot, toSlot);
 
-        public bool ForceInsert(CharacterID charId, ItemID itemId, byte enhancementLevel) => _inner.ForceInsert(charId, itemId, enhancementLevel);
+        public bool ForceInsert(CharacterID charId, ItemID itemId, byte enhancementLevel)
+        {
+            ForceInsertCalls++;
+            return _inner.ForceInsert(charId, itemId, enhancementLevel);
+        }
 
         public bool SetEnhancementLevel(CharacterID charId, int slotIndex, byte level) => _inner.SetEnhancementLevel(charId, slotIndex, level);
 

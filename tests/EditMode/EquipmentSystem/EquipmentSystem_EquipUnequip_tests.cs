@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using IronGrind.CharacterStats;
@@ -399,7 +398,7 @@ namespace IronGrind.Tests.EditMode.EquipmentSystem
         }
 
         [Test]
-        public void test_Equip_OccupiedSlot_ThrowsNotSupportedAndLeavesBagUntouched()
+        public void test_Equip_OccupiedSlot_SwapsAndReturnsOldItemToBag()
         {
             AddItem(SwordId, GearSlot.Weapon, GearTier.Bronze, Mod(StatID.Strength, 10f));
             AddItem(OtherSwordId, GearSlot.Weapon, GearTier.Bronze, Mod(StatID.Strength, 20f));
@@ -407,11 +406,14 @@ namespace IronGrind.Tests.EditMode.EquipmentSystem
             int second = PutInBag(OtherSwordId);
             _equipment.Equip(Player, GearSlot.Weapon, SwordId, first);
 
-            Assert.Throws<NotSupportedException>(() => _equipment.Equip(Player, GearSlot.Weapon, OtherSwordId, second));
+            EquipResult result = _equipment.Equip(Player, GearSlot.Weapon, OtherSwordId, second);
 
-            Assert.AreEqual(OtherSwordId, _realInventory.GetSlot(Player, second).ItemId);
-            AssertSlot(GearSlot.Weapon, SwordId, SlotState.Occupied, 0);
-            Assert.AreEqual(60, Effective(StatID.Strength));
+            Assert.AreEqual(EquipResult.Success, result);
+            Assert.IsTrue(_realInventory.HasItem(Player, SwordId), "the old sword is in the bag");
+            Assert.IsTrue(_realInventory.GetSlot(Player, second).IsEmpty, "the new sword left the bag");
+            AssertSlot(GearSlot.Weapon, OtherSwordId, SlotState.Occupied, 0);
+            Assert.AreEqual(70, Effective(StatID.Strength));
+            LogAssert.NoUnexpectedReceived();
         }
 
         [Test]

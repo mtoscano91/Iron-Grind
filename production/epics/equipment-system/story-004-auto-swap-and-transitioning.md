@@ -1,7 +1,7 @@
 # Story 004: Auto-Swap, Rollback and the Transitioning Guard
 
 > **Epic**: Equipment System
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-26
@@ -30,13 +30,13 @@
 
 *From GDD `design/gdd/equipment-system.md`, scoped to this story:*
 
-- [ ] **AC-EQS-2** — Iron Sword (+25 STR) equipped, Steel Sword (+35, min 55) in the bag, base STR 60 → swap: net STR +10; ItemA in the bag; Weapon `(ItemB, Occupied)`; ItemB gone from the bag
-- [ ] **AC-EQS-10** — after a successful swap `IsSlotTransitioning(Weapon)` = false; during the swap (observed from an `AddEquipmentModifier` / `OnStatChanged` spy) it is true
-- [ ] **AC-EQS-16** — `MoveItemIn` fails at step 6 → `InventoryError`; slot `(ItemA, Occupied)` at level 3; effective stats equal the pre-call value (ItemA's enhanced modifiers re-added exactly once); not transitioning; ItemB still in slot S; `ForceInsert` called 0 times; a server error log containing old item id and entity id
-- [ ] **AC-EQS-28** — Iron Sword +0 equipped, Iron Sword +5 in slot S → `Success` (not `NoChange`); Weapon holds the +5; the +0 is in the bag at level 0; effective stats reflect only the +5's enhanced modifiers
-- [ ] **AC-EQS-31** — step 7 `MoveItemOut(S)` returns `SlotLocked` after step 6 placed ItemA in free slot F → `ItemLocked`; Weapon `(ItemA, Occupied)` level 3; stats equal pre-call; not transitioning; F empty again (no duplicate); ItemB still in S. `SlotEmpty` at step 7 → `ItemNotInInventory`, same restoration
-- [ ] CR-EQS-6 step 3 — swap with a full bag → `InventoryFull`, before any mutation (no flag set, no modifier removed)
-- [ ] CR-EQS-15 — no `BeginStatTransaction` / `EndStatTransaction` call; a successful swap of a 1-modifier item fires `OnStatChanged` twice (remove, then add)
+- [x] **AC-EQS-2** — Iron Sword (+25 STR) equipped, Steel Sword (+35, min 55) in the bag, base STR 60 → swap: net STR +10; ItemA in the bag; Weapon `(ItemB, Occupied)`; ItemB gone from the bag
+- [x] **AC-EQS-10** — after a successful swap `IsSlotTransitioning(Weapon)` = false; during the swap (observed from an `AddEquipmentModifier` / `OnStatChanged` spy) it is true
+- [x] **AC-EQS-16** — `MoveItemIn` fails at step 6 → `InventoryError`; slot `(ItemA, Occupied)` at level 3; effective stats equal the pre-call value (ItemA's enhanced modifiers re-added exactly once); not transitioning; ItemB still in slot S; `ForceInsert` called 0 times; a server error log containing old item id and entity id
+- [x] **AC-EQS-28** — Iron Sword +0 equipped, Iron Sword +5 in slot S → `Success` (not `NoChange`); Weapon holds the +5; the +0 is in the bag at level 0; effective stats reflect only the +5's enhanced modifiers
+- [x] **AC-EQS-31** — step 7 `MoveItemOut(S)` returns `SlotLocked` after step 6 placed ItemA in free slot F → `ItemLocked`; Weapon `(ItemA, Occupied)` level 3; stats equal pre-call; not transitioning; F empty again (no duplicate); ItemB still in S. `SlotEmpty` at step 7 → `ItemNotInInventory`, same restoration
+- [x] CR-EQS-6 step 3 — swap with a full bag → `InventoryFull`, before any mutation (no flag set, no modifier removed)
+- [x] CR-EQS-15 — no `BeginStatTransaction` / `EndStatTransaction` call; a successful swap of a 1-modifier item fires `OnStatChanged` twice (remove, then add)
 
 ---
 
@@ -86,7 +86,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/EquipmentSystem/EquipmentSystem_AutoSwap_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 13 tests (11 `[Test]` + 2 `[TestCase]`), all passing (EditMode 4234 / 0 failed, 2026-10-26)
 
 ---
 
@@ -94,3 +94,17 @@
 
 - Depends on: Stories 002, 003 (the same-item guard and stat gate are swap steps 1–2; AC-EQS-28 needs the level comparison)
 - Unlocks: Stories 005, 007
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-10-26
+**Criteria**: 7/7 passing, all covered by `EquipmentSystem_AutoSwap_tests.cs` (no deferred items)
+**Deviations** (advisory, accepted):
+1. Old item's definition missing from the Item Database during a swap: the swap is refused before any mutation (`InventoryError`, one server error naming the item and entity; Unequip clears such a slot per CR-EQS-7 step 2). No GDD rule; the Inventory rejects an unknown item in `MoveItemIn`, so the swap could never complete.
+2. Step 7 reclaim `MoveItemOut` also fails (user decision at `/code-review`, option A): the gear slot is left Empty, the old item stays in the bag with its modifiers removed, a `CRITICAL:` server error names both items, both bag slots, the failed code and the entity, and the result is `InventoryError` — no item lost or duplicated. The story note asked for log + flag cleared + `InventoryError`; leaving the slot Empty is new. CR-EQS-6 has no rule for this path — candidate GDD note.
+3. "CriticalError" is `Debug.LogError` with a `CRITICAL:` prefix (no separate critical log API; matches the file).
+**Scope**: `EquipmentSystem_TestDoubles.cs` (`InventoryDecorator`: per-slot `MoveItemOut` failure, `ForceInsertCalls`, `BeforeMoveItemIn` / `BeforeMoveItemOut` hooks); the two Story 002/003 tests that expected `NotSupportedException` rewritten as swap assertions (`EquipUnequip_tests`, `Validation_tests`). No source outside `src/ServerLogic/EquipmentSystem/`; appearance flags untouched (Story 005).
+**Test Evidence**: Logic — `tests/EditMode/EquipmentSystem/EquipmentSystem_AutoSwap_tests.cs`
+**Code Review**: Complete — 2026-10-26, CHANGES REQUIRED (missing-definition branch unreachable as written, reclaim-failure duplicate, `Swap` length) → "fix all, option A" applied (`Swap` / `CompleteSwap` / `RollBackSwap`, two-stat test item, 3 more tests). QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean).
