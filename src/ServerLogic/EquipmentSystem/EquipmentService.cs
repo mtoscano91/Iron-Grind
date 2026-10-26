@@ -53,13 +53,14 @@ namespace IronGrind.EquipmentSystem
         private readonly Dictionary<CharacterID, CharacterGear> _characters = new Dictionary<CharacterID, CharacterGear>();
         private readonly Dictionary<EntityID, CharacterID> _entityToCharacter = new Dictionary<EntityID, CharacterID>();
 
-        // Used from Story 002 on (equip/unequip, validation, auto-swap, merge); taken now so the
-        // constructor does not change between stories.
+        // _enhancementConfig is for later stories (auto-swap, merge); taken now so the constructor
+        // does not change between stories.
         private readonly IInventoryService _inventory;
         private readonly IronGrind.CharacterStats.CharacterStats _stats;
         private readonly IItemDatabase _itemDatabase;
         private readonly IEnhancementBonusProvider _bonuses;
         private readonly EnhancementConfig _enhancementConfig;
+        private readonly bool _throwOnInvalidItem;
 
         /// <summary>Creates the service over its collaborators.</summary>
         /// <param name="inventory">The inventory items move in and out of.</param>
@@ -67,14 +68,24 @@ namespace IronGrind.EquipmentSystem
         /// <param name="itemDatabase">Item definitions (gear slot, requirements, modifiers).</param>
         /// <param name="bonuses">Flat enhancement bonus per level.</param>
         /// <param name="enhancementConfig">Enhancement tuning (maximum level).</param>
-        /// <exception cref="ArgumentNullException">Any parameter is null.</exception>
+        /// <param name="throwOnInvalidItem">
+        /// Whether <see cref="Equip"/> with <see cref="ItemID.Invalid"/> throws
+        /// <see cref="InvalidOperationException"/> (dev builds) instead of returning
+        /// <see cref="EquipResult.ItemNotInInventory"/> (release builds) — CR-EQS-13. The
+        /// <see langword="null"/> default (<see cref="Debug.isDebugBuild"/>) is meant for the editor and
+        /// tests; the server composition root should pass it explicitly, so the behaviour does not hang
+        /// on the Development Build flag of the server build.
+        /// </param>
+        /// <exception cref="ArgumentNullException">Any collaborator is null.</exception>
         public EquipmentService(
             IInventoryService inventory,
             IronGrind.CharacterStats.CharacterStats stats,
             IItemDatabase itemDatabase,
             IEnhancementBonusProvider bonuses,
-            EnhancementConfig enhancementConfig)
+            EnhancementConfig enhancementConfig,
+            bool? throwOnInvalidItem = null)
         {
+            _throwOnInvalidItem = throwOnInvalidItem ?? Debug.isDebugBuild;
             _inventory = inventory ?? throw new ArgumentNullException(nameof(inventory));
             _stats = stats ?? throw new ArgumentNullException(nameof(stats));
             _itemDatabase = itemDatabase ?? throw new ArgumentNullException(nameof(itemDatabase));
@@ -179,22 +190,19 @@ namespace IronGrind.EquipmentSystem
         /// <inheritdoc/>
         public EquipResult Equip(CharacterID charId, GearSlot slot, ItemID itemId, int inventorySlotIndex)
         {
-            if (!TryResolveSlot(charId, slot, nameof(Equip), out var gear))
+            EquipResult validation = ValidateEquip(charId, slot, itemId, inventorySlotIndex, out var validGear, out var validEquipment);
+            if (validation != EquipResult.Success)
             {
-                return EquipResult.NoChange;
+                return validation;
             }
 
+            // Non-null whenever ValidateEquip returns Success.
+            CharacterGear gear = validGear!;
+            EquipmentData equipment = validEquipment!;
             int slotIndex = (int)slot;
             if (!gear.Slots[slotIndex].IsEmpty)
             {
                 throw new NotSupportedException($"{LOG_PREFIX} Equip: {slot} is occupied; auto-swap is not implemented until Story 004.");
-            }
-
-            EquipmentData? equipment = GetEquipmentData(itemId);
-            if (equipment == null)
-            {
-                Debug.LogError($"{LOG_PREFIX} Equip: {itemId} has no equipment data in the Item Database.");
-                return EquipResult.NoChange;
             }
 
             // CR-EQS-5 step 2: nothing else is called when the bag refuses to release the item.
@@ -218,6 +226,11 @@ namespace IronGrind.EquipmentSystem
         /// <inheritdoc/>
         public EquipResult Unequip(CharacterID charId, GearSlot slot)
         {
+            if (!IsSlotInRange(slot, nameof(Unequip)))
+            {
+                return EquipResult.SlotMismatch;
+            }
+
             if (!TryResolveSlot(charId, slot, nameof(Unequip), out var gear))
             {
                 return EquipResult.NoChange;
@@ -304,6 +317,120 @@ namespace IronGrind.EquipmentSystem
             }
         }
 
+        // Equip validation (CR-EQS-2/3/4/13) in its fixed order, rejecting before any Inventory
+        // mutation or Character Stats write. The order matches the wire EquipRequest validation
+        // (networking-wire-protocol.md), with the same-item guard before the stat gate (CR-EQS-6), so
+        // the Story 004 swap path inherits every check. On Success, gear and equipment are non-null.
+        private EquipResult ValidateEquip(
+            CharacterID charId, GearSlot slot, ItemID itemId, int inventorySlotIndex, out CharacterGear? gear, out EquipmentData? equipment)
+        {
+            gear = null;
+            equipment = null;
+
+            // 1. Slot range, before any _slots access.
+            if (!IsSlotInRange(slot, nameof(Equip)))
+            {
+                return EquipResult.SlotMismatch;
+            }
+
+            // 2. ItemID.Invalid. The wire routes itemId 0 to Unequip, so this is defence only.
+            if (itemId == ItemID.Invalid)
+            {
+                return RejectInvalidItem();
+            }
+
+            if (!TryResolveSlot(charId, slot, nameof(Equip), out gear))
+            {
+                return EquipResult.NoChange;
+            }
+
+            // 3. Stale-render guard.
+            if (!TryReadBagSlot(charId, itemId, inventorySlotIndex, out InventorySlot bagSlot))
+            {
+                return EquipResult.ItemNotInInventory;
+            }
+
+            // 4. The item is equipment for this slot.
+            equipment = GetEquipmentDataLogged(itemId);
+            if (equipment == null || equipment.GearSlot != slot)
+            {
+                return EquipResult.SlotMismatch;
+            }
+
+            // 5. Same item and level already equipped (EC-EQS-8). 6. Stat gate on the base value.
+            if (IsSameItem(gear.Slots[(int)slot], itemId, bagSlot.EnhancementLevel))
+            {
+                return EquipResult.NoChange;
+            }
+
+            return MeetsRequirement(gear.EntityId, itemId, equipment) ? EquipResult.Success : EquipResult.StatRequirementNotMet;
+        }
+
+        private EquipResult RejectInvalidItem()
+        {
+            if (_throwOnInvalidItem)
+            {
+                throw new InvalidOperationException($"{LOG_PREFIX} Equip: ItemID.Invalid is not an item; call Unequip to empty a slot.");
+            }
+
+            return EquipResult.ItemNotInInventory;
+        }
+
+        // Stale-render guard: the bag slot must still hold the item the client saw. The index is
+        // range-checked here because a stale index is a normal race, not a caller bug GetSlot would log.
+        private bool TryReadBagSlot(CharacterID charId, ItemID itemId, int inventorySlotIndex, out InventorySlot bagSlot)
+        {
+            if ((uint)inventorySlotIndex >= (uint)InventoryConstants.INVENTORY_SLOT_COUNT)
+            {
+                bagSlot = InventorySlot.Empty;
+                return false;
+            }
+
+            bagSlot = _inventory.GetSlot(charId, inventorySlotIndex);
+            return bagSlot.ItemId == itemId;
+        }
+
+        // A definition with no EquipmentData (a consumable) is normal client input and returns null
+        // silently. A bag item with no definition at all is a data or desync defect and is logged.
+        private EquipmentData? GetEquipmentDataLogged(ItemID itemId)
+        {
+            ItemDefinition? definition = _itemDatabase.GetItem(itemId);
+            if (definition == null)
+            {
+                Debug.LogError($"{LOG_PREFIX} Equip: {itemId} is in the bag but not in the Item Database.");
+                return null;
+            }
+
+            return definition.EquipmentData;
+        }
+
+        // Only an occupied slot can hold the same item; an empty slot never matches (ItemID.Invalid).
+        private static bool IsSameItem(EquipmentSlotEntry current, ItemID itemId, byte level)
+        {
+            return !current.IsEmpty && current.ItemId == itemId && current.EnhancementLevel == level;
+        }
+
+        // F-EQS-3: base value >= minimum, compared as float through the getter matching the stat's
+        // schema type; buffs and equipment never count. An item with no requirement stat
+        // (accessories) is never gated (CR-EQS-3). A requirement stat outside the StatID range is a
+        // data defect: logged and rejected, since Character Stats does not bounds-check the index.
+        private bool MeetsRequirement(EntityID entityId, ItemID itemId, EquipmentData equipment)
+        {
+            if (!(equipment.EquipRequirementStat is StatID stat))
+            {
+                return true;
+            }
+
+            if ((int)stat > (int)StatID.MovementSpeed)
+            {
+                Debug.LogError($"{LOG_PREFIX} Equip: {itemId} requires stat {(int)stat}, which is not a StatID. Fix the item data.");
+                return false;
+            }
+
+            float baseValue = StatSchema.IsFloatStat(stat) ? _stats.GetBaseStatFloat(entityId, stat) : _stats.GetBaseStat(entityId, stat);
+            return baseValue >= equipment.EquipRequirementMin;
+        }
+
         private EquipmentData? GetEquipmentData(ItemID itemId)
         {
             ItemDefinition? definition = _itemDatabase.GetItem(itemId);
@@ -337,12 +464,24 @@ namespace IronGrind.EquipmentSystem
             return true;
         }
 
+        // Logs and returns false for a slot outside [0, 6]. Equip and Unequip call it first so an
+        // out-of-range slot returns SlotMismatch rather than the registration guard's NoChange.
+        private static bool IsSlotInRange(GearSlot slot, string caller)
+        {
+            if ((uint)(int)slot < (uint)GEAR_SLOT_COUNT)
+            {
+                return true;
+            }
+
+            Debug.LogError($"{LOG_PREFIX} {caller}: gear slot {(int)slot} is out of range [0, {GEAR_SLOT_COUNT}).");
+            return false;
+        }
+
         // Shared range + registration guard for reads and the Equip/Unequip entry points.
         private bool TryResolveSlot(CharacterID charId, GearSlot slot, string caller, [NotNullWhen(true)] out CharacterGear? gear)
         {
-            if ((uint)(int)slot >= (uint)GEAR_SLOT_COUNT)
+            if (!IsSlotInRange(slot, caller))
             {
-                Debug.LogError($"{LOG_PREFIX} {caller}: gear slot {(int)slot} is out of range [0, {GEAR_SLOT_COUNT}).");
                 gear = null;
                 return false;
             }

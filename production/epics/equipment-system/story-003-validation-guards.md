@@ -1,7 +1,7 @@
 # Story 003: Validation Guards — Input, Slot Type, Stat Gate, Same Item
 
 > **Epic**: Equipment System
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-26
@@ -30,17 +30,17 @@
 
 *From GDD `design/gdd/equipment-system.md`, scoped to this story:*
 
-- [ ] **AC-EQS-4** — base STR 62 vs Dark Steel Sword min 85 → `StatRequirementNotMet`; sword stays in the bag; slot unchanged; no `OnStatChanged`
-- [ ] **AC-EQS-5** — base STR exactly 85 → not rejected; sword equipped; STR rises by the sword's modifier (gate is `>=`)
-- [ ] **AC-EQS-6** — base STR 62 with a +30 STR buff (effective 92) → `StatRequirementNotMet`; the gate reads `GetBaseStat` only
-- [ ] **AC-EQS-15** — base MaxHP 280 vs Iron Helmet min 350 → `StatRequirementNotMet`; helmet stays in the bag
-- [ ] Accessories (`EquipRequirementStat = null`) are never stat-gated (CR-EQS-3)
-- [ ] **AC-EQS-8** — the bag item has the same `ItemID` **and** `EnhancementLevel` as the equipped one → `NoChange`; no `MoveItemOut` / `MoveItemIn`, no stat call, slot unchanged, effective stats unchanged (CR-EQS-4, EC-EQS-8)
-- [ ] **AC-EQS-9** — a Helmet into the Weapon slot → `SlotMismatch`; no state change
-- [ ] **AC-EQS-19** — `ItemID.Invalid` → rejected (`ItemNotInInventory` in release mode), no state change, no Inventory or Character Stats call; no exception in release mode, `InvalidOperationException` in dev mode (CR-EQS-13)
-- [ ] **AC-EQS-20** — `(GearSlot)7` → `SlotMismatch` before any array access; no `IndexOutOfRangeException`; no Inventory or Character Stats call; same for `Unequip`
-- [ ] **AC-EQS-33** — stale-render guard: bag slot empty, holding a different item, or index outside `[0, 19]` → `ItemNotInInventory`; zero `MoveItemOut` / `MoveItemIn`; no state or stat change
-- [ ] Order of checks is fixed and documented: slot range → `itemId ≠ Invalid` → stale-render guard (`GetSlot`) → item is equipment and its `GearSlot` matches (`SlotMismatch`) → same-item guard (occupied target only) → stat gate. Matches `networking-wire-protocol.md` `EquipRequest` validation order.
+- [x] **AC-EQS-4** — base STR 62 vs Dark Steel Sword min 85 → `StatRequirementNotMet`; sword stays in the bag; slot unchanged; no `OnStatChanged`
+- [x] **AC-EQS-5** — base STR exactly 85 → not rejected; sword equipped; STR rises by the sword's modifier (gate is `>=`)
+- [x] **AC-EQS-6** — base STR 62 with a +30 STR buff (effective 92) → `StatRequirementNotMet`; the gate reads `GetBaseStat` only
+- [x] **AC-EQS-15** — base MaxHP 280 vs Iron Helmet min 350 → `StatRequirementNotMet`; helmet stays in the bag
+- [x] Accessories (`EquipRequirementStat = null`) are never stat-gated (CR-EQS-3)
+- [x] **AC-EQS-8** — the bag item has the same `ItemID` **and** `EnhancementLevel` as the equipped one → `NoChange`; no `MoveItemOut` / `MoveItemIn`, no stat call, slot unchanged, effective stats unchanged (CR-EQS-4, EC-EQS-8)
+- [x] **AC-EQS-9** — a Helmet into the Weapon slot → `SlotMismatch`; no state change
+- [x] **AC-EQS-19** — `ItemID.Invalid` → rejected (`ItemNotInInventory` in release mode), no state change, no Inventory or Character Stats call; no exception in release mode, `InvalidOperationException` in dev mode (CR-EQS-13)
+- [x] **AC-EQS-20** — `(GearSlot)7` → `SlotMismatch` before any array access; no `IndexOutOfRangeException`; no Inventory or Character Stats call; same for `Unequip`
+- [x] **AC-EQS-33** — stale-render guard: bag slot empty, holding a different item, or index outside `[0, 19]` → `ItemNotInInventory`; zero `MoveItemOut` / `MoveItemIn`; no state or stat change
+- [x] Order of checks is fixed and documented: slot range → `itemId ≠ Invalid` → stale-render guard (`GetSlot`) → item is equipment and its `GearSlot` matches (`SlotMismatch`) → same-item guard (occupied target only) → stat gate. Matches `networking-wire-protocol.md` `EquipRequest` validation order.
 
 ---
 
@@ -87,7 +87,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/EquipmentSystem/EquipmentSystem_Validation_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 36 tests (30 `[Test]` + 6 `[TestCase]`), all passing (EditMode 4221 / 0 failed, 2026-10-26)
 
 ---
 
@@ -95,3 +95,19 @@
 
 - Depends on: Story 002
 - Unlocks: Stories 004, 008
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-10-26
+**Criteria**: 11/11 passing, all covered by `EquipmentSystem_Validation_tests.cs` (no deferred items)
+**Deviations** (advisory, accepted):
+1. An out-of-range `GearSlot` logs a server error as well as returning `SlotMismatch` (CR-EQS-13 says only "reject before indexing"); keeps the Story 001/002 read-path behaviour.
+2. An unregistered character returns `NoChange` with a server error; the check sits after the `ItemID.Invalid` check and before the stale-render guard (a caller bug, not in the GDD order).
+3. Data-defect paths the GDD does not name: a bag item missing from the Item Database logs and returns `SlotMismatch` (a consumable stays silent); a requirement stat outside `StatID` logs and returns `StatRequirementNotMet`; a `NaN` `EquipRequirementMin` fails closed.
+4. `throwOnInvalidItem` defaults to `Debug.isDebugBuild`; the server composition root must pass it explicitly — to settle when the server wiring is written (Story 008 or the server bootstrap).
+5. Method length: `ValidateEquip` 42 lines, `Unequip` 49 lines including blanks and comments (44 of `Unequip`'s predate this story).
+**Scope**: `EquipmentSystem_EquipUnequip_tests.cs` revised (3 Story 002 tests updated for the new codes; fakes moved out) and new shared `EquipmentSystem_TestDoubles.cs` (`FakeItemDatabase`, `InventoryDecorator`). No source outside `src/ServerLogic/EquipmentSystem/`.
+**Test Evidence**: Logic — `tests/EditMode/EquipmentSystem/EquipmentSystem_Validation_tests.cs`
+**Code Review**: Complete — 2026-10-26, CHANGES REQUIRED (`Equip` length) → "fix all" applied (split into `ValidateEquip` + helpers, data-defect logging, 12 more tests)

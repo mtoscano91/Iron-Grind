@@ -86,22 +86,35 @@ namespace IronGrind.EquipmentSystem
         /// item carried in the bag (F-ENH-1), never the raw Item Database value.
         /// </summary>
         /// <remarks>
-        /// <para>Story 002 covers the empty-slot path only: validation (slot type, stat gate,
-        /// same-item guard) is Story 003, auto-swap into an occupied slot Story 004. Until then an
-        /// occupied target slot throws <see cref="System.NotSupportedException"/>.</para>
-        /// <para>A caller bug — unregistered character, slot outside <c>[0, 6]</c>, or an item
-        /// without equipment data — logs a server error and returns <see cref="EquipResult.NoChange"/>
-        /// with nothing changed.</para>
+        /// <para>Validation runs first, in this order, and rejects before any Inventory or Character
+        /// Stats call that changes state (CR-EQS-2/3/4/13, Story 003): slot in <c>[0, 6]</c>
+        /// (else <see cref="EquipResult.SlotMismatch"/>, logged) → <paramref name="itemId"/> is not
+        /// <see cref="ItemID.Invalid"/> → bag slot index in <c>[0, 19]</c> and holding
+        /// <paramref name="itemId"/> (stale-render guard, else <see cref="EquipResult.ItemNotInInventory"/>)
+        /// → the item has equipment data for this gear slot (else <see cref="EquipResult.SlotMismatch"/>;
+        /// a non-equipment item is silent, an item missing from the Item Database is also logged)
+        /// → same item and level already in an occupied target slot (<see cref="EquipResult.NoChange"/>)
+        /// → base stat meets the requirement (else <see cref="EquipResult.StatRequirementNotMet"/>;
+        /// buffs and equipment do not count; items with no requirement stat are never gated; a
+        /// requirement stat outside <see cref="StatID"/> is logged and rejected the same way).</para>
+        /// <para>Auto-swap into an occupied slot is Story 004; until then an occupied target slot
+        /// that passes validation throws <see cref="System.NotSupportedException"/>.</para>
+        /// <para>An unregistered character is a caller bug: it logs a server error and returns
+        /// <see cref="EquipResult.NoChange"/> with nothing changed.</para>
         /// </remarks>
         /// <param name="charId">A registered character.</param>
         /// <param name="slot">The target gear slot.</param>
         /// <param name="itemId">The item to equip.</param>
         /// <param name="inventorySlotIndex">The bag slot holding the item.</param>
         /// <returns>
-        /// <see cref="EquipResult.Success"/>; <see cref="EquipResult.ItemLocked"/> when the bag slot
-        /// is locked; <see cref="EquipResult.ItemNotInInventory"/> when the bag slot is empty. On any
-        /// failure nothing changed.
+        /// <see cref="EquipResult.Success"/>, a validation code above, <see cref="EquipResult.ItemLocked"/>
+        /// when the bag slot is locked, or <see cref="EquipResult.ItemNotInInventory"/> when
+        /// <c>MoveItemOut</c> finds the bag slot empty. On any failure nothing changed.
         /// </returns>
+        /// <exception cref="System.InvalidOperationException">
+        /// <paramref name="itemId"/> is <see cref="ItemID.Invalid"/> and the service was built to throw
+        /// on it (dev builds); release builds return <see cref="EquipResult.ItemNotInInventory"/> instead.
+        /// </exception>
         /// <exception cref="System.NotSupportedException">The target slot is occupied (removed by Story 004).</exception>
         EquipResult Equip(CharacterID charId, GearSlot slot, ItemID itemId, int inventorySlotIndex);
 
@@ -111,8 +124,9 @@ namespace IronGrind.EquipmentSystem
         /// </summary>
         /// <remarks>
         /// An empty slot returns <see cref="EquipResult.NoChange"/> (no GDD rule names a code for
-        /// it; Story 003 may revisit). An unregistered character or out-of-range slot logs a server
-        /// error and returns <see cref="EquipResult.NoChange"/>. If the item definition has been
+        /// it). A slot outside <c>[0, 6]</c> logs a server error and returns
+        /// <see cref="EquipResult.SlotMismatch"/> before any array access (CR-EQS-13); an
+        /// unregistered character logs and returns <see cref="EquipResult.NoChange"/>. If the item definition has been
         /// removed from the Item Database, the slot is cleared without touching modifiers and the
         /// call returns <see cref="EquipResult.Success"/> after a server error is logged.
         /// </remarks>

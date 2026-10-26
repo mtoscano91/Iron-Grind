@@ -415,7 +415,7 @@ namespace IronGrind.Tests.EditMode.EquipmentSystem
         }
 
         [Test]
-        public void test_EquipAndUnequip_UnregisteredCharacterOrBadSlot_LogAndReturnNoChange()
+        public void test_EquipAndUnequip_UnregisteredCharacter_LogAndReturnNoChange()
         {
             var unknown = new CharacterID(9999u);
 
@@ -423,10 +423,6 @@ namespace IronGrind.Tests.EditMode.EquipmentSystem
             Assert.AreEqual(EquipResult.NoChange, _equipment.Equip(unknown, GearSlot.Weapon, SwordId, 0));
             LogAssert.Expect(LogType.Error, new Regex(@"\[EquipmentService\] Unequip: CharacterID\(9999\) is not a registered character\."));
             Assert.AreEqual(EquipResult.NoChange, _equipment.Unequip(unknown, GearSlot.Weapon));
-            LogAssert.Expect(LogType.Error, new Regex(@"\[EquipmentService\] Equip: gear slot 7 is out of range"));
-            Assert.AreEqual(EquipResult.NoChange, _equipment.Equip(Player, (GearSlot)7, SwordId, 0));
-            LogAssert.Expect(LogType.Error, new Regex(@"\[EquipmentService\] Unequip: gear slot 7 is out of range"));
-            Assert.AreEqual(EquipResult.NoChange, _equipment.Unequip(Player, (GearSlot)7));
             LogAssert.NoUnexpectedReceived();
         }
 
@@ -589,17 +585,16 @@ namespace IronGrind.Tests.EditMode.EquipmentSystem
         }
 
         [Test]
-        public void test_Equip_ItemWithoutEquipmentData_LogsReturnsNoChangeAndTouchesNothing()
+        public void test_Equip_ItemWithoutEquipmentData_ReturnsSlotMismatchAndTouchesNothing()
         {
             ItemDefinition definition = ItemDefinitionBuilder.Build(SwordId.RawValue, "NoData", ItemCategory.Equipment, equipmentData: null);
             _created.Add(definition);
             _db.Add(definition);
             int bagSlot = PutInBag(SwordId);
 
-            LogAssert.Expect(LogType.Error, ItemLog("has no equipment data", SwordId));
             EquipResult result = _equipment.Equip(Player, GearSlot.Weapon, SwordId, bagSlot);
 
-            Assert.AreEqual(EquipResult.NoChange, result);
+            Assert.AreEqual(EquipResult.SlotMismatch, result);
             Assert.AreEqual(0, _inventory.MoveItemOutCalls);
             Assert.AreEqual(SwordId, _realInventory.GetSlot(Player, bagSlot).ItemId);
             AssertSlot(GearSlot.Weapon, ItemID.Invalid, SlotState.Empty, 0);
@@ -607,16 +602,16 @@ namespace IronGrind.Tests.EditMode.EquipmentSystem
         }
 
         [Test]
-        public void test_Equip_UnknownItemId_LogsReturnsNoChangeAndTouchesNothing()
+        public void test_Equip_UnknownItemId_ReturnsItemNotInInventoryAndTouchesNothing()
         {
             ItemID unknown = new ItemID(777u);
             AddItem(SwordId, GearSlot.Weapon, GearTier.Bronze, Mod(StatID.Strength, 10f));
             int bagSlot = PutInBag(SwordId);
 
-            LogAssert.Expect(LogType.Error, ItemLog("has no equipment data", unknown));
+            // The bag cannot hold an id the Item Database does not know, so the stale-render guard rejects it.
             EquipResult result = _equipment.Equip(Player, GearSlot.Weapon, unknown, bagSlot);
 
-            Assert.AreEqual(EquipResult.NoChange, result);
+            Assert.AreEqual(EquipResult.ItemNotInInventory, result);
             Assert.AreEqual(0, _inventory.MoveItemOutCalls);
             Assert.AreEqual(SwordId, _realInventory.GetSlot(Player, bagSlot).ItemId);
             AssertSlot(GearSlot.Weapon, ItemID.Invalid, SlotState.Empty, 0);
@@ -713,45 +708,6 @@ namespace IronGrind.Tests.EditMode.EquipmentSystem
 
         // ── Fakes ──────────────────────────────────────────────────────────────────────────
 
-        private sealed class FakeItemDatabase : IItemDatabase
-        {
-            private readonly Dictionary<ItemID, ItemDefinition> _items = new Dictionary<ItemID, ItemDefinition>();
-
-            public bool IsReady => true;
-
-            public event Action OnDatabaseReady
-            {
-                add { }
-                remove { }
-            }
-
-            public void Add(ItemDefinition definition) => _items[definition.ItemId] = definition;
-
-            public void Remove(ItemID id) => _items.Remove(id);
-
-            public ItemDefinition GetItem(ItemID id) => TryGetItem(id, out var item) ? item : null;
-
-            public bool TryGetItem(ItemID id, out ItemDefinition item)
-            {
-                item = null;
-                return id != ItemID.Invalid && _items.TryGetValue(id, out item);
-            }
-
-            public IReadOnlyList<ItemDefinition> GetItemsByCategory(ItemCategory category)
-            {
-                var result = new List<ItemDefinition>();
-                foreach (ItemDefinition item in _items.Values)
-                {
-                    if (item.ItemCategory == category)
-                    {
-                        result.Add(item);
-                    }
-                }
-
-                return result;
-            }
-        }
-
         // Returns 28 for (5, 10, Bronze) and the base value otherwise; records the last call.
         private sealed class StubBonusProvider : IEnhancementBonusProvider
         {
@@ -770,88 +726,6 @@ namespace IronGrind.Tests.EditMode.EquipmentSystem
             }
 
             public int GetElementalBonus(int level, int baseElementalDamage, GearTier gearTier, bool isWeapon) => 0;
-        }
-
-        // Forwards to the real inventory; can force MoveItemOut / MoveItemIn to fail.
-        private sealed class InventoryDecorator : IInventoryService
-        {
-            private readonly IInventoryService _inner;
-
-            public MoveItemOutCode? MoveItemOutOverride;
-            public bool FailMoveItemIn;
-            public int MoveItemInCalls;
-            public int MoveItemOutCalls;
-
-            public InventoryDecorator(IInventoryService inner)
-            {
-                _inner = inner;
-            }
-
-            public event Action<InventoryChangedEventArgs> OnInventoryChanged
-            {
-                add { _inner.OnInventoryChanged += value; }
-                remove { _inner.OnInventoryChanged -= value; }
-            }
-
-            public event Action<InventoryFullEventArgs> OnInventoryFull
-            {
-                add { _inner.OnInventoryFull += value; }
-                remove { _inner.OnInventoryFull -= value; }
-            }
-
-            public MoveItemOutResult MoveItemOut(CharacterID charId, int slotIndex)
-            {
-                MoveItemOutCalls++;
-                return MoveItemOutOverride.HasValue
-                    ? MoveItemOutResult.Fail(MoveItemOutOverride.Value)
-                    : _inner.MoveItemOut(charId, slotIndex);
-            }
-
-            public MoveItemInResult MoveItemIn(CharacterID charId, ItemID itemId, byte enhancementLevel)
-            {
-                MoveItemInCalls++;
-                return FailMoveItemIn ? MoveItemInResult.Failed : _inner.MoveItemIn(charId, itemId, enhancementLevel);
-            }
-
-            public void RegisterCharacter(CharacterID charId) => _inner.RegisterCharacter(charId);
-
-            public InventorySlot GetSlot(CharacterID charId, int slotIndex) => _inner.GetSlot(charId, slotIndex);
-
-            public bool IsFull(CharacterID charId) => _inner.IsFull(charId);
-
-            public int FilledSlots(CharacterID charId) => _inner.FilledSlots(charId);
-
-            public bool HasFreeSlot(CharacterID charId) => _inner.HasFreeSlot(charId);
-
-            public bool IsSlotLocked(CharacterID charId, int slotIndex) => _inner.IsSlotLocked(charId, slotIndex);
-
-            public bool HasItem(CharacterID charId, ItemID itemId) => _inner.HasItem(charId, itemId);
-
-            public PickupResult Pickup(CharacterID characterId, ItemID itemId, int quantity) => _inner.Pickup(characterId, itemId, quantity);
-
-            public void LockSlot(CharacterID charId, int slotIndex) => _inner.LockSlot(charId, slotIndex);
-
-            public void UnlockSlot(CharacterID charId, int slotIndex) => _inner.UnlockSlot(charId, slotIndex);
-
-            public void RemoveItem(CharacterID charId, int slotIndex) => _inner.RemoveItem(charId, slotIndex);
-
-            public DiscardResult Discard(CharacterID charId, int slotIndex, int quantity) => _inner.Discard(charId, slotIndex, quantity);
-
-            public MoveResult Move(CharacterID charId, int fromSlot, int toSlot) => _inner.Move(charId, fromSlot, toSlot);
-
-            public bool ForceInsert(CharacterID charId, ItemID itemId, byte enhancementLevel) => _inner.ForceInsert(charId, itemId, enhancementLevel);
-
-            public bool SetEnhancementLevel(CharacterID charId, int slotIndex, byte level) => _inner.SetEnhancementLevel(charId, slotIndex, level);
-
-            public SellItemResult SellItem(CharacterID charId, int slotIndex, ItemID itemId, int quantity) => _inner.SellItem(charId, slotIndex, itemId, quantity);
-
-            public ConsumeItemResult ConsumeItem(CharacterID charId, ItemID itemId, int quantity) => _inner.ConsumeItem(charId, itemId, quantity);
-
-            public InventorySnapshot ExportSnapshot(CharacterID charId) => _inner.ExportSnapshot(charId);
-
-            public bool ImportSnapshot(CharacterID charId, InventorySnapshot snapshot) => _inner.ImportSnapshot(charId, snapshot);
-
-            public void UnregisterCharacter(CharacterID charId) => _inner.UnregisterCharacter(charId);
         }
     }
 }

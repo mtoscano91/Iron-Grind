@@ -51,7 +51,7 @@ The Equipment System manages the seven gear slots of a player character (Weapon,
 |---|-------|------|--------|-----|
 | 001 | [Slot Registry, Core Types and Read Surface](story-001-slot-registry-and-read-surface.md) | Logic | Complete (2026-10-26) | ADR-010 |
 | 002 | [Equip Into an Empty Slot, Unequip, Enhanced Modifiers](story-002-equip-unequip-enhanced-modifiers.md) | Logic | Complete (2026-10-26) | ADR-010 |
-| 003 | [Validation Guards — Input, Slot Type, Stat Gate, Same Item](story-003-validation-guards.md) | Logic | Ready | ADR-010 |
+| 003 | [Validation Guards — Input, Slot Type, Stat Gate, Same Item](story-003-validation-guards.md) | Logic | Complete (2026-10-26) | ADR-010 |
 | 004 | [Auto-Swap, Rollback and the Transitioning Guard](story-004-auto-swap-and-transitioning.md) | Logic | Ready | ADR-010 |
 | 005 | [`equipmentAppearanceFlags` Encoding and Change Event](story-005-appearance-flags.md) | Logic | Ready | ADR-010 |
 | 006 | [Accessory Merge](story-006-accessory-merge.md) | Logic | Ready | ADR-010 |
@@ -78,4 +78,4 @@ This epic is complete when:
 
 ## Next Step
 
-Stories 001-002 Complete 2026-10-26. Run `/story-readiness production/epics/equipment-system/story-003-validation-guards.md`, then `/dev-story`.
+Stories 001-003 Complete 2026-10-26. Run `/story-readiness production/epics/equipment-system/story-004-auto-swap-and-transitioning.md`, then `/dev-story`. Carry-over from 003: the server composition root must pass `throwOnInvalidItem` explicitly (Story 008 or the server bootstrap).
