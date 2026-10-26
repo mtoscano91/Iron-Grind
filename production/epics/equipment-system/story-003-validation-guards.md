@@ -77,7 +77,7 @@
 - **AC-EQS-9** — Helmet → Weapon slot → `SlotMismatch`, 0 Inventory mutations.
 - **AC-EQS-19** — release mode: `ItemID.Invalid` → rejected (documented code), 0 Inventory / stat calls, slot unchanged; dev mode: throws `InvalidOperationException`, same no-change assertions.
 - **AC-EQS-20** — `Equip((GearSlot)7, …)` and `Unequip((GearSlot)7)` → rejected, no exception, 0 calls.
-- **AC-EQS-33 (a)(b)(c)** — empty slot T; slot S holding a different item; index 20 (and -1) → `ItemNotInInventory` each, 0 `MoveItemOut` / `MoveItemIn`, Weapon still Empty, S unchanged, 0 stat events.
+- **AC-EQS-33 (a)(b)(c)** — empty slot T; slot S holding a different item; index 20 (and -1) → `ItemNotInInventory` each, 0 `MoveItemOut` / `MoveItemIn`, Weapon still Empty, S unchanged, 0 stat events. (b) closes a Story 002 `/code-review` 2026-10-26 gap: until this guard exists, `Equip` takes Y out of S but registers X's modifiers and records X in the slot.
 - **Order** — a request that fails two checks (e.g. wrong slot type and stat gate) returns the earlier code in the documented order.
 
 ---

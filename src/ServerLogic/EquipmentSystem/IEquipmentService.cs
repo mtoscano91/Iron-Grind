@@ -1,3 +1,5 @@
+#nullable enable
+
 using IronGrind.CharacterStats;
 using IronGrind.Currency;
 using IronGrind.ItemDatabase;
@@ -77,5 +79,50 @@ namespace IronGrind.EquipmentSystem
         /// <param name="charId">A registered character.</param>
         /// <returns>The level; 0 when no weapon is equipped or the character is unregistered.</returns>
         byte GetEquippedWeaponEnhancementLevel(CharacterID charId);
+
+        /// <summary>
+        /// Moves an item from the bag into an empty gear slot and registers its stat modifiers
+        /// (CR-EQS-5, Story 002). Each modifier's flat bonus is the enhanced value for the level the
+        /// item carried in the bag (F-ENH-1), never the raw Item Database value.
+        /// </summary>
+        /// <remarks>
+        /// <para>Story 002 covers the empty-slot path only: validation (slot type, stat gate,
+        /// same-item guard) is Story 003, auto-swap into an occupied slot Story 004. Until then an
+        /// occupied target slot throws <see cref="System.NotSupportedException"/>.</para>
+        /// <para>A caller bug — unregistered character, slot outside <c>[0, 6]</c>, or an item
+        /// without equipment data — logs a server error and returns <see cref="EquipResult.NoChange"/>
+        /// with nothing changed.</para>
+        /// </remarks>
+        /// <param name="charId">A registered character.</param>
+        /// <param name="slot">The target gear slot.</param>
+        /// <param name="itemId">The item to equip.</param>
+        /// <param name="inventorySlotIndex">The bag slot holding the item.</param>
+        /// <returns>
+        /// <see cref="EquipResult.Success"/>; <see cref="EquipResult.ItemLocked"/> when the bag slot
+        /// is locked; <see cref="EquipResult.ItemNotInInventory"/> when the bag slot is empty. On any
+        /// failure nothing changed.
+        /// </returns>
+        /// <exception cref="System.NotSupportedException">The target slot is occupied (removed by Story 004).</exception>
+        EquipResult Equip(CharacterID charId, GearSlot slot, ItemID itemId, int inventorySlotIndex);
+
+        /// <summary>
+        /// Returns the item in a gear slot to the bag at its enhancement level and removes its stat
+        /// modifiers (CR-EQS-7, Story 002).
+        /// </summary>
+        /// <remarks>
+        /// An empty slot returns <see cref="EquipResult.NoChange"/> (no GDD rule names a code for
+        /// it; Story 003 may revisit). An unregistered character or out-of-range slot logs a server
+        /// error and returns <see cref="EquipResult.NoChange"/>. If the item definition has been
+        /// removed from the Item Database, the slot is cleared without touching modifiers and the
+        /// call returns <see cref="EquipResult.Success"/> after a server error is logged.
+        /// </remarks>
+        /// <param name="charId">A registered character.</param>
+        /// <param name="slot">The gear slot to empty.</param>
+        /// <returns>
+        /// <see cref="EquipResult.Success"/>; <see cref="EquipResult.InventoryFull"/> when the bag
+        /// has no free slot (nothing changed); <see cref="EquipResult.InventoryError"/> when
+        /// <c>MoveItemIn</c> failed (modifiers restored, slot unchanged).
+        /// </returns>
+        EquipResult Unequip(CharacterID charId, GearSlot slot);
     }
 }
