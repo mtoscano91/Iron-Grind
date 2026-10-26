@@ -54,8 +54,8 @@ The Equipment System manages the seven gear slots of a player character (Weapon,
 | 003 | [Validation Guards — Input, Slot Type, Stat Gate, Same Item](story-003-validation-guards.md) | Logic | Complete (2026-10-26) | ADR-010 |
 | 004 | [Auto-Swap, Rollback and the Transitioning Guard](story-004-auto-swap-and-transitioning.md) | Logic | Complete (2026-10-26) | ADR-010 |
 | 005 | [`equipmentAppearanceFlags` Encoding and Change Event](story-005-appearance-flags.md) | Logic | Complete (2026-10-26) | ADR-010 |
-| 006 | [Accessory Merge](story-006-accessory-merge.md) | Logic | Ready | ADR-010 |
-| 007 | [Restore and Export Gear Slots — the Load and Save Seam](story-007-restore-and-export-gear-slots.md) | Integration | Ready | ADR-006, ADR-010 |
+| 006 | [Accessory Merge](story-006-accessory-merge.md) | Logic | Complete (2026-10-26) | ADR-010 |
+| 007 | [Restore and Export Gear Slots — the Load and Save Seam](story-007-restore-and-export-gear-slots.md) | Integration | Complete (2026-10-26) | ADR-006, ADR-010 |
 | 008 | [`EquipRequest` / `EquipResult` — Codecs, Request Handler, Owner Delivery](story-008-equip-request-and-result-delivery.md) | Integration | Ready | ADR-004, ADR-014, ADR-012 |
 | 009 | [`AppearanceChangedEvent` Zone Delivery](story-009-appearance-changed-event-delivery.md) | Integration | Ready | ADR-004, ADR-015 |
 

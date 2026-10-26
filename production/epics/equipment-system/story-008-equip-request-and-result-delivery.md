@@ -39,7 +39,7 @@
 - [ ] The result goes to the requesting connection only
 - [ ] Duplicate `requestId` from the same sender (retransmit) → the stored `EquipResult` of the original processing is re-sent; `Equip` / `Unequip` is not called again (wire protocol `EquipRequest` note)
 - [ ] `EquipRequest` is registered in `MessageRoutingRegistry` and with the dispatcher as a **held** request (ADR-014 table), so an equip that arrives during an irreversible write waits and runs in arrival order when the gate opens
-- [ ] Equipment service registration and unregistration happen with the player's session (wired in the zone composition root next to the Inventory registration)
+- [ ] Session end unregisters the character from the Equipment System: `SessionEndCoordinator.Release` calls `IEquipmentService.UnregisterCharacter(charId)` right after `_inventory.UnregisterCharacter(charId)` (new constructor dependency; update the callers in `ZoneInstancingWiring` and the three test fixtures that construct it); the handler's dedup entry for that sender is also cleared at session end, so a new session's `requestId` counter is not taken for a duplicate (the hook is chosen at `/dev-story` and tested). (Registration on load belongs to Character Persistence Story 005 — readiness decision 2026-10-26.)
 
 ---
 
@@ -48,11 +48,13 @@
 *Derived from ADR-004, ADR-014, ADR-012 and the existing Enhancement wire code:*
 
 - **Foundation** (`src/Foundation/Networking/WireProtocol/`): `EquipRequest.cs`, `EquipRequestCodec.cs`, `EquipResultMessage.cs` (name it so it does not clash with the server `EquipResult` enum — the precedent is `EnhancementAttemptResultMessage`), `EquipResultMessageCodec.cs`, `EquipFailReason.cs`. Use `WireIdCodec` / `WireEnumCodec` like the existing codecs.
-- **Message type ids:** assign two free ids following `MessageRoutingRegistry` conventions and the wire protocol's ranges (`0x0200–0xDFFF` application, `0xE000–0xEFFF` priority). Path 1 in the wire protocol does not list the equip messages — confirm the range and send path at `/story-readiness` and record the chosen ids here.
+- **Message type ids (readiness decision 2026-10-26):** `EquipRequest.MessageTypeId = 0xE140`, `EquipResultMessage.MessageTypeId = 0xE141` — a new equipment block after Inventory sync (`0xE120`) and zone (`0xE130`). Both R-OD on Path 1 (priority, not cap-exempt), registered in `MessageRoutingRegistry` with `AddPriority` (`EquipRequest` `ClientToServer`, `EquipResultMessage` `ServerToClient`). The wire protocol's Path 1 list names both (GDD note 2026-10-26).
+- **Rpc type tag:** add `RpcTypeTag.EquipRequest = 8` with no rate limit (ADR-014 table: "—"); the descriptor is `heldDuringIrreversibleWrite: true, maxBodyBytes: 10`.
 - **ServerLogic** (`src/ServerLogic/EquipmentSystem/`): `EquipmentClientRequestHandlers.cs` and `EquipmentInboundRegistration.cs`, mirroring `EnhancementClientRequestHandlers` / `EnhancementInboundRegistration`. Sender `EntityID` → `CharacterID` through the session lookup the Enhancement handlers use.
 - **Mapping** is one `static EquipFailReason ToWire(EquipResult)` with an exhaustive switch, unit-tested across all 9 values.
 - **Dedup store:** per sender, keep the last processed `requestId` and its encoded result (the client counter is monotonic — wire protocol). A `requestId` ≤ the last seen is a duplicate: re-send the stored result for an equal id, drop an older one (document). Clear on session end.
 - Validation order on the wire (gearSlot → stale-render guard → slot type → stat gate → free slot) is the service's (Story 003); the handler adds only body-length validation.
+- **Wiring (readiness decision 2026-10-26):** `EquipmentInboundRegistration.Register(dispatcher, handlers)` is driven by the tests, like `EnhancementInboundRegistration`; neither is called from `ZoneServerComposition` yet (it runs on stand-ins). Calling it from the composition root, and passing `throwOnInvalidItem` explicitly (Story 003 carry-over), belong to the server bootstrap work. `RegisterCharacter` on load is Character Persistence Story 005's.
 - **Forward dependencies — not in this story:** `StatSnapshotEvent` to the equipping player on success (no codec exists; Leveling / Networking); an owner gear-slot sync message on zone entry (wire protocol OQ-NC-SER-2 — "blocking for the Equipment UI"); a merge request message (no wire schema; ADR-014 table row "no wire schema yet").
 
 ---
@@ -60,6 +62,7 @@
 ## Out of Scope
 
 - Story 009: `AppearanceChangedEvent` to the zone
+- Equipment `RegisterCharacter` on load (Character Persistence Story 005) and calling the inbound registration from `ZoneServerComposition` (server bootstrap)
 - Client-side Inventory UI handling of `EquipResult`
 - The forward dependencies listed above
 
@@ -78,6 +81,8 @@
 - **Locked / stale** — locked source → `ItemLocked` (4); stale slot → `ItemNotInInventory` (5).
 - **Duplicate** — same `requestId` twice → two identical results sent, the service's `Equip` ran once (inventory and stats unchanged by the second).
 - **Held** — with the mutation gate closed, an `EquipRequest` is held and processed when it opens, in arrival order with a second held request.
+- **Session end** — `SessionEndCoordinator.Release` for a registered character → `IEquipmentService.UnregisterCharacter` called once, after the inventory unregister; a later request with the old `requestId` is processed, not answered from the dedup store. (File: `tests/EditMode/CharacterPersistence/CharacterPersistence_SessionEnd_tests.cs`.)
+- **Routing entries** — `MessageRoutingRegistry` holds `0xE140` and `0xE141` as R-OD priority-path entries with the right directions.
 - **Malformed body** — wrong length → no service call, no result (or the dispatcher's standard rejection — assert whichever the dispatcher defines).
 
 ---

@@ -45,6 +45,8 @@
 - **From Story 007 readiness (2026-10-15):** until an Equipment System exists, `SaveSession` writes back the gear slots kept in the service's session table from the load (the GDD Interactions table's "reads `GearSlots` directly from record"). When this story or the Equipment System makes gear live state, the save's gear source moves there.
 - **Test obligation from Story 004's code review (2026-10-15):** dead-on-load writes `GetEffectiveStat(MaxHP)`, but Story 004 has no gear, so effective equals base and that call is not really exercised. Once this story registers equipment, add a test where a gear modifier makes the effective MaxHP differ from the base, and a saved `CurrentHP <= 0` loads as the effective value. AC-CP-11 reads "Story 003's writes" (11 `SetBaseStat`, 5 `SetBaseStatFloat`, `RestoreLevelingState`) for "the `SetBaseStat` calls of step 3".
 
+- **From Equipment Story 008 readiness (2026-10-26):** this story owns `IEquipmentService.RegisterCharacter(charId, entityId)` on load (before `RestoreSlots`). Equipment Story 008 owns `UnregisterCharacter` at session end (`SessionEndCoordinator.Release`).
+
 **Open decisions for `/story-readiness`**
 
 1. **Who holds the gear slots in memory.** The Interactions table of the GDD says "Save: reads `GearSlots` directly from record — Equipment System does not provide a save API"; CR-CP-10 step 3 says "read `{ItemID, EnhancementLevel}` from Equipment System". With no Equipment System in code, either this system keeps the loaded gear until that system exists, or this story waits for it.

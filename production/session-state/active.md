@@ -4989,3 +4989,12 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Story: production/epics/equipment-system/story-007-restore-and-export-gear-slots.md — Restore and Export Gear Slots
 - Tech debt logged: None (2 advisory notes in Completion Notes; #2 is for Character Persistence Story 005)
 - Next recommended: /story-readiness Equipment Story 008 (equip request and result delivery); Character Persistence Story 005 now unblocked
+
+## Session Extract — /story-readiness 2026-10-26 (Equipment Story 008)
+- Verdict: NEEDS WORK (2 gaps) → fixed → Ready (not committed). 18/20 passing; QL-STORY-READY skipped (lean).
+- Gap 1 (message ids open): user chose `EquipRequest = 0xE140`, `EquipResultMessage = 0xE141`, R-OD Path 1 priority via `AddPriority`; `RpcTypeTag.EquipRequest = 8`, no rate limit; descriptor held, max body 10. GDD `networking-wire-protocol.md`: Path 1 list names both messages + Last Updated (no schema change; already R-OD P1 in the channel contract).
+- Gap 2 (registration criterion unimplementable — composition root runs on stand-ins): split. Character Persistence Story 005 owns `RegisterCharacter` on load (note added there); Story 008 adds `IEquipmentService.UnregisterCharacter` in `SessionEndCoordinator.Release` after the inventory unregister (constructor callers: ZoneInstancingWiring + 3 test fixtures) and clears the dedup entry at session end. Composition-root wiring + `throwOnInvalidItem` stay with the server bootstrap.
+- Story 008 text: criterion rewritten, ids/tag/wiring notes, Out of Scope line, 2 QA cases (session end, routing entries).
+- Housekeeping: EPIC.md rows 006/007 → Complete (2026-10-26).
+- entities.yaml: no change (no entity touched). Propagation: channel contract already lists both rows.
+- Next: commit this readiness changeset; then /dev-story Story 008. PAT rotation still unconfirmed.
