@@ -111,6 +111,9 @@ namespace IronGrind.Tests.EditMode.Architecture
             "IronGrind.Networking.ZoneEntryAck",                    // consumer (planned): client zone entry flow, dual-gate ack (wire schema; Zone Instancing Story 011)
             "IronGrind.Networking.EntityState",                     // consumer (planned): client zone snapshot reader, entity spawn state (wire schema; snapshot payload entry)
             "IronGrind.Networking.ZoneStateSnapshotFragment",       // consumer (planned): client zone snapshot reassembly (wire schema)
+            "IronGrind.Networking.EquipRequest",                    // consumer (planned): Inventory UI equipment panel, equip/unequip sender (wire schema; Equipment Story 008)
+            "IronGrind.Networking.EquipResultMessage",              // consumer (planned): Inventory UI equipment panel, result handler (wire schema; wire name EquipResult)
+            "IronGrind.Networking.EquipFailReason",                 // consumer (planned): Inventory UI equipment panel (wire enum of EquipResult)
             // Networking: codecs
             "IronGrind.Networking.MessageEnvelopeCodec",        // consumer (planned): client message read and write path (codec)
             "IronGrind.Networking.BatchHeaderCodec",            // consumer (planned): client message read and write path (codec)
@@ -141,6 +144,8 @@ namespace IronGrind.Tests.EditMode.Architecture
             "IronGrind.Networking.ZoneEntryAckCodec",                    // consumer (planned): client zone entry flow, ack writer (codec)
             "IronGrind.Networking.EntityStateCodec",                     // consumer (planned): client zone snapshot reader, entry reader (codec)
             "IronGrind.Networking.ZoneStateSnapshotFragmentCodec",       // consumer (planned): client zone snapshot reassembly, fragment reader (codec)
+            "IronGrind.Networking.EquipRequestCodec",                    // consumer (planned): Inventory UI equipment panel, request writer (codec)
+            "IronGrind.Networking.EquipResultMessageCodec",              // consumer (planned): Inventory UI equipment panel, result reader (codec)
             "IronGrind.Networking.WireStringCodec",                      // consumer (planned): client message read path, length-prefixed UTF-8 names (codec helper)
             "IronGrind.Networking.WireEnumCodec",               // consumer (planned): client message read and write path (codec)
             "IronGrind.Networking.WireFixedPointCodec",         // consumer (planned): client message read and write path (codec)

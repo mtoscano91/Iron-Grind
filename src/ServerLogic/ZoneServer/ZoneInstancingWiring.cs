@@ -115,6 +115,18 @@ namespace IronGrind.ServerLogic.ZoneServer
         public Action<EntityID> UnregisterPlayerEntity;
 
         /// <summary>
+        /// The Equipment System, unregistered at session end (Equipment Story 008). Null:
+        /// <see cref="StandInZoneEquipmentService"/>.
+        /// </summary>
+        public IronGrind.EquipmentSystem.IEquipmentService Equipment;
+
+        /// <summary>
+        /// <c>EquipmentClientRequestHandlers.ClearSession</c>, called at session end (Equipment Story 008). Null: no-op
+        /// (the composition registers no <c>EquipRequest</c> handler yet).
+        /// </summary>
+        public Action<CharacterID> ClearEquipRequestStore;
+
+        /// <summary>
         /// When true, Editor and development builds log <c>[ZoneInstancingWiring] ZoneID(&lt;id&gt;) Active / Draining /
         /// Closed(&lt;transition&gt;) at tick &lt;n&gt;</c> (Story 014 verification evidence). Release builds never log these.
         /// The composition passes its <c>LogTeardownSteps</c>; off by default.
@@ -277,6 +289,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                 options.TeardownSessionSink ?? new LoggingZoneTeardownSessionSink(), this, outbox, zone);
             _playerExit = new ZonePlayerExit(_pool, _reclamation);
             _sessionEnds = new SessionEndCoordinator(persistence, sessionRelease, queue, gate, _sessions, inventory,
+                options.Equipment ?? new StandInZoneEquipmentService(), options.ClearEquipRequestStore ?? (_ => { }),
                 options.UnregisterPlayerEntity ?? (_ => { }), _ => { },
                 (characterId, type) => _playerExit.ReleasePlayer(characterId, type));
         }

@@ -70,5 +70,8 @@ namespace IronGrind.Networking
 
         /// <summary><c>CloseNPCInteraction</c> (Enhancement Story 010, ADR-014 Decision 1). No rate limit.</summary>
         CloseNPCInteraction = 7,
+
+        /// <summary><c>EquipRequest</c> (Equipment Story 008, ADR-014 Decision 1). No rate limit.</summary>
+        EquipRequest = 8,
     }
 }

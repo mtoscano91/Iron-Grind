@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using IronGrind.CharacterStats;
 using IronGrind.Currency;
+using IronGrind.EquipmentSystem;
 using IronGrind.InventorySystem;
 using IronGrind.ItemDatabase;
 
@@ -170,5 +171,84 @@ namespace IronGrind.Tests.EditMode.EquipmentSystem
         public bool ImportSnapshot(CharacterID charId, InventorySnapshot snapshot) => Inner.ImportSnapshot(charId, snapshot);
 
         public void UnregisterCharacter(CharacterID charId) => Inner.UnregisterCharacter(charId);
+    }
+
+    /// <summary>
+    /// Scripted <see cref="IEquipmentService"/> for the session-end and request-handler tests (Story 008): records
+    /// <c>Equip</c> / <c>Unequip</c> / <c>UnregisterCharacter</c> calls, returns <see cref="NextResult"/> and an empty
+    /// slot; every other member throws <see cref="NotSupportedException"/>.
+    /// </summary>
+    internal sealed class RecordingEquipmentService : IEquipmentService
+    {
+        /// <summary>Call log: "Equip", "Unequip", "UnregisterCharacter".</summary>
+        public readonly List<string> Calls = new List<string>();
+
+        /// <summary>Characters passed to <see cref="UnregisterCharacter"/>, in call order.</summary>
+        public readonly List<CharacterID> Unregistered = new List<CharacterID>();
+
+        /// <summary>The result <see cref="Equip"/> and <see cref="Unequip"/> return.</summary>
+        public EquipResult NextResult = EquipResult.NoChange;
+
+        /// <summary>Runs inside <see cref="UnregisterCharacter"/>, before it records (call-order assertions).</summary>
+        public Action<CharacterID> OnUnregister;
+
+        /// <summary>When true, <see cref="UnregisterCharacter"/> records and then throws.</summary>
+        public bool ThrowOnUnregister;
+
+        /// <summary>The item every slot read returns (the slot echo).</summary>
+        public ItemID SlotItem = ItemID.Invalid;
+
+        /// <summary>The enhancement level every slot read returns.</summary>
+        public byte SlotLevel;
+
+        public event Action<EquipmentAppearanceChangedEventArgs> OnAppearanceChanged
+        {
+            add { }
+            remove { }
+        }
+
+        public void UnregisterCharacter(CharacterID charId)
+        {
+            OnUnregister?.Invoke(charId);
+            Calls.Add("UnregisterCharacter");
+            Unregistered.Add(charId);
+            if (ThrowOnUnregister)
+            {
+                throw new InvalidOperationException("equipment unregister failed");
+            }
+        }
+
+        public EquipResult Equip(CharacterID charId, GearSlot slot, ItemID itemId, int inventorySlotIndex)
+        {
+            Calls.Add("Equip");
+            return NextResult;
+        }
+
+        public EquipResult Unequip(CharacterID charId, GearSlot slot)
+        {
+            Calls.Add("Unequip");
+            return NextResult;
+        }
+
+        public EquipmentSlotState GetEquipmentSlotState(CharacterID charId, GearSlot slot)
+            => SlotItem == ItemID.Invalid ? EquipmentSlotState.Empty : new EquipmentSlotState(SlotItem, SlotState.Occupied);
+
+        public byte GetSlotEnhancementLevel(CharacterID charId, GearSlot slot) => SlotLevel;
+
+        public byte GetAppearanceFlags(CharacterID charId) => throw new NotSupportedException();
+
+        public void RegisterCharacter(CharacterID charId, EntityID entityId) => throw new NotSupportedException();
+
+        public bool IsSlotTransitioning(CharacterID charId, GearSlot slot) => throw new NotSupportedException();
+
+        public ItemID GetEquippedWeaponItemID(CharacterID charId) => throw new NotSupportedException();
+
+        public byte GetEquippedWeaponEnhancementLevel(CharacterID charId) => throw new NotSupportedException();
+
+        public MergeResult RequestMerge(CharacterID charId, int slotIdx1, int slotIdx2, int slotIdx3) => throw new NotSupportedException();
+
+        public GearRestoreResult RestoreSlots(CharacterID charId, ReadOnlySpan<SavedGearSlot> slots) => throw new NotSupportedException();
+
+        public SavedGearSlot[] ExportSlots(CharacterID charId) => throw new NotSupportedException();
     }
 }

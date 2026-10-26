@@ -8,10 +8,14 @@ using System.Threading.Tasks;
 using IronGrind.CharacterPersistence;
 using IronGrind.CharacterStats;
 using IronGrind.Currency;
+using IronGrind.EquipmentSystem;
 using IronGrind.InventorySystem;
+using IronGrind.ItemDatabase;
 using IronGrind.LevelingSystem;
 using IronGrind.Networking;
 using IronGrind.Tests.EditMode.CharacterStats;
+using IronGrind.Tests.EditMode.EquipmentSystem;
+using IronGrind.Tests.EditMode.Integration.EnhancementSystem;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
@@ -141,6 +145,13 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
         private readonly List<string> _steps = new List<string>();
         private bool _levelingThrows;
 
+        // Equipment Story 008: the equipment unregister and the EquipRequest retransmit-store clear, with the inventory
+        // unregister count seen at each (kept apart from _steps so the existing order test is unchanged).
+        private readonly List<string> _equipmentSteps = new List<string>();
+        private RecordingEquipmentService _equipment;
+        private EquipmentClientRequestHandlers _equipHandlers;
+        private RecordingClientMessageOutbox _equipOutbox;
+
         [SetUp]
         public void SetUp()
         {
@@ -157,6 +168,11 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             _steps.Clear();
             _levelingThrows = false;
             _gate = new CharacterMutationGate();
+            _equipmentSteps.Clear();
+            _equipment = new RecordingEquipmentService();
+            _equipment.OnUnregister = id => _equipmentSteps.Add($"equipment inventory={_rig.Inventory.UnregisterCalls.Count}");
+            _equipOutbox = new RecordingClientMessageOutbox();
+            _equipHandlers = new EquipmentClientRequestHandlers(_equipment, _equipOutbox);
             BuildEnds(LONG_WATCHDOG_TICKS);
         }
 
@@ -170,6 +186,12 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
                 _gate,
                 _sm,
                 _rig.Inventory,
+                _equipment,
+                characterId =>
+                {
+                    _equipmentSteps.Add($"dedup inventory={_rig.Inventory.UnregisterCalls.Count} equipment={_equipment.Unregistered.Count}");
+                    _equipHandlers.ClearSession(characterId);
+                },
                 entity =>
                 {
                     _steps.Add($"leveling persist={_persist.ReleaseCalls} inventory={_rig.Inventory.UnregisterCalls.Count}");
@@ -318,6 +340,7 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
         {
             Assert.AreEqual(0, _persist.ReleaseCalls, "persistence session release");
             Assert.AreEqual(0, _rig.Inventory.UnregisterCalls.Count, "inventory unregister");
+            Assert.AreEqual(0, _equipmentSteps.Count, "equipment unregister / EquipRequest store clear");
             Assert.AreEqual(0, _unregisteredEntities.Count, "leveling unregister");
             Assert.AreEqual(0, _removed.Count, "removeEntityFromZone");
             Assert.AreEqual(0, _left.Count, "PlayerLeftZone broadcast");
@@ -798,6 +821,94 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             DrainNextTick();
 
             CollectionAssert.AreEqual(new[] { "leveling persist=1 inventory=1", "remove leveling=1" }, _steps);
+        }
+
+        [Test]
+        public void Test_Release_AfterInventory_RequestStoreClearedThenEquipmentUnregisteredOnce()
+        {
+            // Arrange
+            SeedAndLoad();
+            ConnectAccount();
+            BeginLogout();
+            WaitUntil(() => _persist.LastTask.IsCompleted, "the logout save to complete");
+
+            // Act
+            DrainNextTick();
+
+            // Assert
+            CollectionAssert.AreEqual(new[] { CHAR_A }, _equipment.Unregistered);
+            CollectionAssert.AreEqual(new[] { "dedup inventory=1 equipment=0", "equipment inventory=1" }, _equipmentSteps);
+            Assert.AreEqual(1, _unregisteredEntities.Count, "Leveling still runs after the equipment steps.");
+        }
+
+        [Test]
+        public void Test_Release_TtlExpiry_RequestStoreClearedAndEquipmentUnregistered()
+        {
+            // Arrange
+            SeedAndLoad();
+            ConnectAccount();
+            DisconnectByHeartbeat();
+            Assert.IsTrue(_ends.EvaluateSessionTTL(ACCOUNT, EXPIRY_TICK, EXPIRY_TICK));
+            WaitUntil(() => _persist.LastTask.IsCompleted, "the TTL save to complete");
+
+            // Act
+            DrainNextTick();
+
+            // Assert
+            CollectionAssert.AreEqual(new[] { CHAR_A }, _equipment.Unregistered);
+            CollectionAssert.AreEqual(new[] { "dedup inventory=1 equipment=0", "equipment inventory=1" }, _equipmentSteps);
+            AssertReleasedOnce(DisconnectType.Timeout);
+        }
+
+        [Test]
+        public void Test_Release_EquipmentUnregisterThrows_StoreAlreadyCleared_OldRequestIdIsProcessed()
+        {
+            // Arrange: request 5 stored; the equipment unregister will throw during the release.
+            const uint REQUEST_ID = 5u;
+            var context = new InboundRequestContext(ACCOUNT, new EntityID(1u), CHAR_A, EquipRequest.MessageTypeId, 0u, 0u, false);
+            var body = new byte[EquipRequest.BodySize];
+            EquipRequestCodec.WriteBody(body, REQUEST_ID, (byte)GearSlot.Weapon, EquipRequest.UnequipItemId, EquipRequest.UnusedInventorySlot);
+            _equipHandlers.HandleEquipRequest(context, body);
+            _equipment.ThrowOnUnregister = true;
+            SeedAndLoad();
+            ConnectAccount();
+            BeginLogout();
+            WaitUntil(() => _persist.LastTask.IsCompleted, "the logout save to complete");
+            ExpectError("release is incomplete");
+            DrainNextTick();
+            Assert.AreEqual(0, _equipHandlers.TrackedSessionCount, "The store was cleared before the throwing step.");
+            Assert.AreEqual(0, _unregisteredEntities.Count, "The steps after the throw do not run.");
+
+            // Act
+            _equipHandlers.HandleEquipRequest(context, body);
+
+            // Assert
+            Assert.AreEqual(2, _equipment.Calls.FindAll(call => call == "Unequip").Count, "The service ran again: not a retransmit.");
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void Test_Release_OldRequestIdAfterSessionEnd_IsProcessedNotAnsweredFromStore()
+        {
+            // Arrange: request 5 processed in the first session.
+            const uint REQUEST_ID = 5u;
+            var context = new InboundRequestContext(ACCOUNT, new EntityID(1u), CHAR_A, EquipRequest.MessageTypeId, 0u, 0u, false);
+            var body = new byte[EquipRequest.BodySize];
+            EquipRequestCodec.WriteBody(body, REQUEST_ID, (byte)GearSlot.Weapon, EquipRequest.UnequipItemId, EquipRequest.UnusedInventorySlot);
+            _equipHandlers.HandleEquipRequest(context, body);
+            Assert.AreEqual(1, _equipHandlers.TrackedSessionCount);
+            SeedAndLoad();
+            ConnectAccount();
+            BeginLogout();
+            WaitUntil(() => _persist.LastTask.IsCompleted, "the logout save to complete");
+            DrainNextTick();
+
+            // Act: the next session's counter starts again at the same id.
+            _equipHandlers.HandleEquipRequest(context, body);
+
+            // Assert
+            Assert.AreEqual(2, _equipment.Calls.FindAll(call => call == "Unequip").Count, "The service ran again: not a retransmit.");
+            Assert.AreEqual(2, _equipOutbox.Messages.Count);
         }
 
         [Test]
@@ -1295,6 +1406,8 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
                 null,
                 _sm,
                 _rig.Inventory,
+                _equipment,
+                characterId => { },
                 entity => { },
                 characterId => { },
                 (characterId, type) => { }));

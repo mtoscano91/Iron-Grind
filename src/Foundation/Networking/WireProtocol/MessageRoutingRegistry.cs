@@ -209,6 +209,12 @@ namespace IronGrind.Networking
             AddPriority(InventoryFullSync.MessageTypeId, nameof(InventoryFullSync), DesignPillar.EarnedPower,
                 MessageDirection.ServerToOwningClient, "Whole-bag replacement once per zone entry; must arrive before any InventorySlotUpdate of the session.");
 
+            // Equipment Story 008: equip / unequip request and its owner result, R-OD priority path (not cap-exempt).
+            AddPriority(EquipRequest.MessageTypeId, nameof(EquipRequest), DesignPillar.EarnedPower,
+                MessageDirection.ClientToServer, "Persistent gear change (CR-EQS-13); itemId 0 unequips. Held during an irreversible write (ADR-014).");
+            AddPriority(EquipResultMessage.MessageTypeId, nameof(EquipResultMessage), DesignPillar.EarnedPower,
+                MessageDirection.ServerToOwningClient, "Wire name EquipResult. Authoritative slot state after the request; a lost result leaves the client's equipment panel waiting or wrong.");
+
             // Zone Instancing Story 006: zone join / session / snapshot messages, R-OD priority path.
             // MessageTypeIds 0xE130-0xE135 and 0xF000 are provisional (TD-011).
             AddPriority(ZoneFullResponse.MessageTypeId, nameof(ZoneFullResponse), DesignPillar.Infrastructure,

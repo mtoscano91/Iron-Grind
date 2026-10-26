@@ -9,6 +9,7 @@ using IronGrind.LootTableSystem;
 using IronGrind.Networking;
 using IronGrind.ServerLogic.ZoneInstancing;
 using IronGrind.Tests.EditMode.CharacterPersistence;
+using IronGrind.Tests.EditMode.EquipmentSystem;
 using NUnit.Framework;
 using PendingPurchaseRecord = IronGrind.CharacterPersistence.PendingPurchaseRecord;
 
@@ -274,7 +275,7 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             _endTick = 0u;
             _releaseResults.Clear();
             _ends = new SessionEndCoordinator(_endPersistence, _endPersistence, _endQueue, new CharacterMutationGate(), _sm,
-                new RecordingInventory(), entity => { }, characterId => { },
+                new RecordingInventory(), new RecordingEquipmentService(), characterId => { }, entity => { }, characterId => { },
                 (characterId, type) => _releaseResults.Add(_exit.ReleasePlayer(characterId, type)));
         }
 

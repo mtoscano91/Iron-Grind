@@ -14,6 +14,7 @@ using IronGrind.LevelingSystem;
 using IronGrind.Networking;
 using IronGrind.Tests.EditMode.CharacterPersistence;
 using IronGrind.Tests.EditMode.CharacterStats;
+using IronGrind.Tests.EditMode.EquipmentSystem;
 using IronGrind.Tests.EditMode.InventorySystem;
 using IronGrind.Tests.EditMode.ItemDatabase;
 using IronGrind.Tests.EditMode.Randomness;
@@ -841,6 +842,8 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
                 _gate,
                 _connection,
                 _inventory,
+                new RecordingEquipmentService(),
+                characterId => { },
                 entity => _order.Add("release"),
                 characterId => { },
                 (characterId, type) => { });

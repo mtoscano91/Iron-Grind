@@ -1,6 +1,8 @@
 using System;
 using IronGrind.CharacterPersistence;
 using IronGrind.CharacterStats;
+using IronGrind.EquipmentSystem;
+using IronGrind.ItemDatabase;
 using IronGrind.InventorySystem;
 using IronGrind.Networking;
 using UnityEngine;
@@ -286,6 +288,71 @@ namespace IronGrind.ServerLogic.ZoneServer
 
         /// <inheritdoc/>
         public bool ImportSnapshot(CharacterID charId, InventorySnapshot? snapshot) => throw new NotSupportedException();
+    }
+
+    /// <summary>
+    /// Stand-in for <see cref="IEquipmentService"/> in the zone composition (Equipment Story 008). The session end
+    /// coordinator only calls <see cref="UnregisterCharacter"/>; it logs "[ZoneServer] equipment service not implemented"
+    /// once and does nothing. Every other member throws <see cref="NotSupportedException"/>. The real
+    /// <c>EquipmentService</c> needs Character Stats, the item database and the real inventory (server bootstrap).
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// new StandInZoneEquipmentService().UnregisterCharacter(characterId); // logs once
+    /// </code>
+    /// </example>
+    public sealed class StandInZoneEquipmentService : IEquipmentService
+    {
+        private readonly StandInLogOnce _log = new StandInLogOnce("equipment service");
+
+        /// <inheritdoc/>
+        public event Action<EquipmentAppearanceChangedEventArgs> OnAppearanceChanged
+        {
+            add { }
+            remove { }
+        }
+
+        /// <inheritdoc/>
+        public void UnregisterCharacter(CharacterID charId)
+        {
+            _log.Log();
+        }
+
+        /// <inheritdoc/>
+        public byte GetAppearanceFlags(CharacterID charId) => throw new NotSupportedException();
+
+        /// <inheritdoc/>
+        public void RegisterCharacter(CharacterID charId, EntityID entityId) => throw new NotSupportedException();
+
+        /// <inheritdoc/>
+        public EquipmentSlotState GetEquipmentSlotState(CharacterID charId, GearSlot slot) => throw new NotSupportedException();
+
+        /// <inheritdoc/>
+        public byte GetSlotEnhancementLevel(CharacterID charId, GearSlot slot) => throw new NotSupportedException();
+
+        /// <inheritdoc/>
+        public bool IsSlotTransitioning(CharacterID charId, GearSlot slot) => throw new NotSupportedException();
+
+        /// <inheritdoc/>
+        public ItemID GetEquippedWeaponItemID(CharacterID charId) => throw new NotSupportedException();
+
+        /// <inheritdoc/>
+        public byte GetEquippedWeaponEnhancementLevel(CharacterID charId) => throw new NotSupportedException();
+
+        /// <inheritdoc/>
+        public EquipResult Equip(CharacterID charId, GearSlot slot, ItemID itemId, int inventorySlotIndex) => throw new NotSupportedException();
+
+        /// <inheritdoc/>
+        public EquipResult Unequip(CharacterID charId, GearSlot slot) => throw new NotSupportedException();
+
+        /// <inheritdoc/>
+        public MergeResult RequestMerge(CharacterID charId, int slotIdx1, int slotIdx2, int slotIdx3) => throw new NotSupportedException();
+
+        /// <inheritdoc/>
+        public GearRestoreResult RestoreSlots(CharacterID charId, ReadOnlySpan<SavedGearSlot> slots) => throw new NotSupportedException();
+
+        /// <inheritdoc/>
+        public SavedGearSlot[] ExportSlots(CharacterID charId) => throw new NotSupportedException();
     }
 
     /// <summary>

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using IronGrind.CharacterStats;
 using IronGrind.Currency;
+using IronGrind.EquipmentSystem;
 using IronGrind.InventorySystem;
 using IronGrind.Networking;
 using UnityEngine;
@@ -21,7 +22,8 @@ namespace IronGrind.CharacterPersistence
     /// <see cref="ConnectionStateMachine.CompleteSessionActiveTTLExpiry"/> are called only from the completion callback and with a
     /// no-op persist delegate, because the save has already happened (Networking Core is not changed).</para>
     /// <para><b>Release</b> (each step exactly once, in this order): the persistence session-table entry
-    /// (<see cref="ICharacterSessionRelease.ReleaseSession"/>), <see cref="IInventoryService.UnregisterCharacter"/>, the Leveling
+    /// (<see cref="ICharacterSessionRelease.ReleaseSession"/>), <see cref="IInventoryService.UnregisterCharacter"/>,
+    /// the <c>EquipRequest</c> retransmit-store clear and <see cref="IEquipmentService.UnregisterCharacter"/> (Equipment Story 008), the Leveling
     /// player-entity unregistration (skipped when the persistence entry did not exist, as the entity id is then unknown), then the
     /// state machine's method, which removes the entity from the zone, broadcasts <c>PlayerLeftZone</c> and removes the session.
     /// Character Stats and Currency have no per-character release (TD-066). A step that throws stops the release there with
@@ -57,7 +59,7 @@ namespace IronGrind.CharacterPersistence
     /// <example>
     /// <code>
     /// var ends = new SessionEndCoordinator(persistence, persistence, queue, gate, stateMachine, inventory,
-    ///     leveling.UnregisterPlayerEntity, zone.RemoveEntity, zone.BroadcastPlayerLeftZone);
+    ///     equipment, equipHandlers.ClearSession, leveling.UnregisterPlayerEntity, zone.RemoveEntity, zone.BroadcastPlayerLeftZone);
     /// ends.BeginCleanLogout(accountId, result =&gt; { if (result != CharacterSaveResult.Success) NotifyClientToRetry(); });
     /// // each tick, for each Disconnected_SessionActive account:
     /// ends.EvaluateSessionTTL(accountId, tickLoop.ServerTickNumber, sessionExpiryTick);
@@ -74,6 +76,8 @@ namespace IronGrind.CharacterPersistence
         private readonly ITickCompletionQueue _queue;
         private readonly ConnectionStateMachine _stateMachine;
         private readonly IInventoryService _inventory;
+        private readonly IEquipmentService _equipment;
+        private readonly Action<CharacterID> _clearEquipRequestStore;
         private readonly Action<EntityID> _unregisterPlayerEntity;
         private readonly Action<uint> _removeEntityFromZone;
         private readonly Action<uint, DisconnectType> _broadcastPlayerLeftZone;
@@ -101,6 +105,11 @@ namespace IronGrind.CharacterPersistence
         /// <param name="gate">The per-character mutation gate; a session-end save waits while the character's gate is held.</param>
         /// <param name="stateMachine">The connection state machine that owns the account sessions.</param>
         /// <param name="inventory">The Inventory service (<c>UnregisterCharacter</c>).</param>
+        /// <param name="equipment">The Equipment System (<c>UnregisterCharacter</c>, Equipment Story 008).</param>
+        /// <param name="clearEquipRequestStore">
+        /// Forgets the character's stored <c>EquipRequest</c> result (<c>EquipmentClientRequestHandlers.ClearSession</c>),
+        /// so the next session's <c>requestId</c> counter is not taken for a retransmit.
+        /// </param>
         /// <param name="unregisterPlayerEntity">Leveling's <c>UnregisterPlayerEntity</c> (not on <c>ILevelingService</c>, so a seam).</param>
         /// <param name="removeEntityFromZone">Passed to the state machine; removes the character's entity from its zone.</param>
         /// <param name="broadcastPlayerLeftZone">Passed to the state machine; broadcasts <c>PlayerLeftZone</c>.</param>
@@ -112,6 +121,8 @@ namespace IronGrind.CharacterPersistence
             ICharacterMutationGate gate,
             ConnectionStateMachine stateMachine,
             IInventoryService inventory,
+            IEquipmentService equipment,
+            Action<CharacterID> clearEquipRequestStore,
             Action<EntityID> unregisterPlayerEntity,
             Action<uint> removeEntityFromZone,
             Action<uint, DisconnectType> broadcastPlayerLeftZone)
@@ -122,6 +133,8 @@ namespace IronGrind.CharacterPersistence
             _gate = gate ?? throw new ArgumentNullException(nameof(gate));
             _stateMachine = stateMachine ?? throw new ArgumentNullException(nameof(stateMachine));
             _inventory = inventory ?? throw new ArgumentNullException(nameof(inventory));
+            _equipment = equipment ?? throw new ArgumentNullException(nameof(equipment));
+            _clearEquipRequestStore = clearEquipRequestStore ?? throw new ArgumentNullException(nameof(clearEquipRequestStore));
             _unregisterPlayerEntity = unregisterPlayerEntity ?? throw new ArgumentNullException(nameof(unregisterPlayerEntity));
             _removeEntityFromZone = removeEntityFromZone ?? throw new ArgumentNullException(nameof(removeEntityFromZone));
             _broadcastPlayerLeftZone = broadcastPlayerLeftZone ?? throw new ArgumentNullException(nameof(broadcastPlayerLeftZone));
@@ -416,6 +429,8 @@ namespace IronGrind.CharacterPersistence
             {
                 bool hadEntry = _sessionRelease.ReleaseSession(charId, out EntityID entityId);
                 _inventory.UnregisterCharacter(charId);
+                _clearEquipRequestStore(charId); // in-memory only; first, so a throwing unregister cannot leave a stale entry
+                _equipment.UnregisterCharacter(charId);
                 if (hadEntry)
                 {
                     _unregisterPlayerEntity(entityId);

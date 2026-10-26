@@ -1,7 +1,7 @@
 # Story 008: `EquipRequest` / `EquipResult` — Codecs, Request Handler, Owner Delivery
 
 > **Epic**: Equipment System
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-26
@@ -30,16 +30,16 @@
 
 *From the GDDs above, scoped to this story:*
 
-- [ ] `EquipRequest` codec: `{uint requestId, byte gearSlot, uint itemId, byte inventorySlot}` — 10-byte body, round-trips; a short or long body is rejected
-- [ ] `EquipResult` codec: `{uint requestId, bool success, byte failReason, byte affectedSlot, uint slotItemId, byte slotEnhancementLevel}` — 12-byte body, round-trips
-- [ ] `EquipFailReason : byte` wire enum in `IronGrind.Foundation`: `None = 0`, `StatRequirementNotMet = 1`, `InventoryFull = 2`, `SlotMismatch = 3`, `ItemLocked = 4`, `ItemNotInInventory = 5`, `InventoryError = 6`, `CriticalFailure = 255`
-- [ ] Routing: `itemId = 0` → `Unequip(charId, gearSlot)` (`inventorySlot` ignored); otherwise `Equip(charId, gearSlot, itemId, inventorySlot)`; a `gearSlot` outside `[0, 6]` reaches the service's own guard (Story 003) — the handler does not pre-validate
-- [ ] Every `EquipResult` (system) value maps exactly as the GDD table states: `Success` / `NoChange` → `success = true, failReason = None`; each failure → `success = false` and the same-named `EquipFailReason`; `CriticalFailure` → 255. 1:1, no handler-side derivation (OQ-EQS-9 option a)
-- [ ] Slot fields always echo the slot **after** the operation: success → new contents; unequip success → `slotItemId = 0`, level 0; `NoChange` and every failure → the unchanged slot (old item and level)
-- [ ] The result goes to the requesting connection only
-- [ ] Duplicate `requestId` from the same sender (retransmit) → the stored `EquipResult` of the original processing is re-sent; `Equip` / `Unequip` is not called again (wire protocol `EquipRequest` note)
-- [ ] `EquipRequest` is registered in `MessageRoutingRegistry` and with the dispatcher as a **held** request (ADR-014 table), so an equip that arrives during an irreversible write waits and runs in arrival order when the gate opens
-- [ ] Session end unregisters the character from the Equipment System: `SessionEndCoordinator.Release` calls `IEquipmentService.UnregisterCharacter(charId)` right after `_inventory.UnregisterCharacter(charId)` (new constructor dependency; update the callers in `ZoneInstancingWiring` and the three test fixtures that construct it); the handler's dedup entry for that sender is also cleared at session end, so a new session's `requestId` counter is not taken for a duplicate (the hook is chosen at `/dev-story` and tested). (Registration on load belongs to Character Persistence Story 005 — readiness decision 2026-10-26.)
+- [x] `EquipRequest` codec: `{uint requestId, byte gearSlot, uint itemId, byte inventorySlot}` — 10-byte body, round-trips; a short or long body is rejected
+- [x] `EquipResult` codec: `{uint requestId, bool success, byte failReason, byte affectedSlot, uint slotItemId, byte slotEnhancementLevel}` — 12-byte body, round-trips
+- [x] `EquipFailReason : byte` wire enum in `IronGrind.Foundation`: `None = 0`, `StatRequirementNotMet = 1`, `InventoryFull = 2`, `SlotMismatch = 3`, `ItemLocked = 4`, `ItemNotInInventory = 5`, `InventoryError = 6`, `CriticalFailure = 255`
+- [x] Routing: `itemId = 0` → `Unequip(charId, gearSlot)` (`inventorySlot` ignored); otherwise `Equip(charId, gearSlot, itemId, inventorySlot)`; a `gearSlot` outside `[0, 6]` reaches the service's own guard (Story 003) — the handler does not pre-validate
+- [x] Every `EquipResult` (system) value maps exactly as the GDD table states: `Success` / `NoChange` → `success = true, failReason = None`; each failure → `success = false` and the same-named `EquipFailReason`; `CriticalFailure` → 255. 1:1, no handler-side derivation (OQ-EQS-9 option a)
+- [x] Slot fields always echo the slot **after** the operation: success → new contents; unequip success → `slotItemId = 0`, level 0; `NoChange` and every failure → the unchanged slot (old item and level)
+- [x] The result goes to the requesting connection only
+- [x] Duplicate `requestId` from the same sender (retransmit) → the stored `EquipResult` of the original processing is re-sent; `Equip` / `Unequip` is not called again (wire protocol `EquipRequest` note)
+- [x] `EquipRequest` is registered in `MessageRoutingRegistry` and with the dispatcher as a **held** request (ADR-014 table), so an equip that arrives during an irreversible write waits and runs in arrival order when the gate opens
+- [x] Session end unregisters the character from the Equipment System: `SessionEndCoordinator.Release` calls `IEquipmentService.UnregisterCharacter(charId)` right after `_inventory.UnregisterCharacter(charId)` (new constructor dependency; update the callers in `ZoneInstancingWiring` and the three test fixtures that construct it); the handler's dedup entry for that sender is also cleared at session end, so a new session's `requestId` counter is not taken for a duplicate (the hook is chosen at `/dev-story` and tested). (Registration on load belongs to Character Persistence Story 005 — readiness decision 2026-10-26.)
 
 ---
 
@@ -48,7 +48,7 @@
 *Derived from ADR-004, ADR-014, ADR-012 and the existing Enhancement wire code:*
 
 - **Foundation** (`src/Foundation/Networking/WireProtocol/`): `EquipRequest.cs`, `EquipRequestCodec.cs`, `EquipResultMessage.cs` (name it so it does not clash with the server `EquipResult` enum — the precedent is `EnhancementAttemptResultMessage`), `EquipResultMessageCodec.cs`, `EquipFailReason.cs`. Use `WireIdCodec` / `WireEnumCodec` like the existing codecs.
-- **Message type ids (readiness decision 2026-10-26):** `EquipRequest.MessageTypeId = 0xE140`, `EquipResultMessage.MessageTypeId = 0xE141` — a new equipment block after Inventory sync (`0xE120`) and zone (`0xE130`). Both R-OD on Path 1 (priority, not cap-exempt), registered in `MessageRoutingRegistry` with `AddPriority` (`EquipRequest` `ClientToServer`, `EquipResultMessage` `ServerToClient`). The wire protocol's Path 1 list names both (GDD note 2026-10-26).
+- **Message type ids (readiness decision 2026-10-26):** `EquipRequest.MessageTypeId = 0xE140`, `EquipResultMessage.MessageTypeId = 0xE141` — a new equipment block after Inventory sync (`0xE120`) and zone (`0xE130`). Both R-OD on Path 1 (priority, not cap-exempt), registered in `MessageRoutingRegistry` with `AddPriority` (`EquipRequest` `ClientToServer`, `EquipResultMessage` `ServerToOwningClient`). The wire protocol's Path 1 list names both (GDD note 2026-10-26).
 - **Rpc type tag:** add `RpcTypeTag.EquipRequest = 8` with no rate limit (ADR-014 table: "—"); the descriptor is `heldDuringIrreversibleWrite: true, maxBodyBytes: 10`.
 - **ServerLogic** (`src/ServerLogic/EquipmentSystem/`): `EquipmentClientRequestHandlers.cs` and `EquipmentInboundRegistration.cs`, mirroring `EnhancementClientRequestHandlers` / `EnhancementInboundRegistration`. Sender `EntityID` → `CharacterID` through the session lookup the Enhancement handlers use.
 - **Mapping** is one `static EquipFailReason ToWire(EquipResult)` with an exhaustive switch, unit-tested across all 9 values.
@@ -92,7 +92,7 @@
 **Story Type**: Integration
 **Required evidence**: both test files above — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — `EquipMessages_Codec_tests.cs` 34 cases, `EquipmentSystem_RequestHandler_tests.cs` 26 cases, SessionEnd fixture 48 cases (4 new for this story); all passing (EditMode 4407 / 0 failed, 2026-10-26)
 
 ---
 
@@ -100,3 +100,33 @@
 
 - Depends on: Stories 003, 004 (every `EquipResult` value must be producible)
 - Unlocks: Inventory UI equipment panel (Presentation, not yet in an epic)
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-10-26
+**Criteria**: 10/10 passing, all covered by automated tests (none deferred)
+**Deviations** (advisory, user accepted 2026-10-26, no tech debt):
+1. **Retransmit rule.** Only a `requestId` equal to the stored one is answered from the store. The Implementation Notes said to drop an older id; `/code-review` changed this to process it, because the wire protocol does not say whether the client counter survives a reconnect. A replayed old request is answered by the service's own guards (a stale bag slot gives `ItemNotInInventory`).
+2. **Release order.** The release runs inventory unregister → `EquipRequest` store clear → equipment unregister → leveling. The criterion says the equipment unregister comes "right after" the inventory one; the store clear (in memory only) runs first so that a throwing unregister cannot leave a stale entry.
+   - **Hook:** two new `SessionEndCoordinator` constructor arguments, `IEquipmentService equipment` and `Action<CharacterID> clearEquipRequestStore` (→ `EquipmentClientRequestHandlers.ClearSession`).
+3. **Store key.** The retransmit store is keyed by `CharacterID`; the wire protocol says `requestId` + `SenderEntityID`. These are equivalent: one entity per character, and the dispatcher resolves both.
+4. **Cases the GDD does not cover:**
+   - A `gearSlot` ≥ `EquipmentService.GEAR_SLOT_COUNT` reaches the service (`SlotMismatch`) and is echoed as empty, without a slot read.
+   - An unknown `failReason` byte on decode becomes `CriticalFailure`, with one warning.
+   - A non-zero `success` byte reads as true.
+   - Both codecs reject any body length other than the exact one; the Enhancement codecs ignore extra bytes.
+5. **Wording fixed.** The Implementation Notes said "ServerToClient"; the registry's direction is `ServerToOwningClient`.
+6. **Zone composition.** `ZoneInstancingWiringOptions.Equipment` defaults to the new `StandInZoneEquipmentService` (logs once), and `ClearEquipRequestStore` defaults to a no-op. Real wiring, `EquipmentInboundRegistration.Register` and `throwOnInvalidItem` stay with the server bootstrap.
+
+**Extra files touched (needed):**
+- `CrossCuttingRpcGuardChain.cs` (no-rate-limit case for `RpcTypeTag.EquipRequest`)
+- `ZoneServerStandIns.cs`, `ZoneInstancingWiring.cs`
+- `tests/EditMode/Architecture/AssemblyBoundaryLists.cs` (5 Foundation types on the ADR-012 allow-list)
+- `EquipmentSystem_TestDoubles.cs` (`RecordingEquipmentService`)
+- The Enhancement CommitOrchestration and ZoneInstancing PlayerExit fixtures (new constructor arguments)
+
+**Test Evidence**: Integration — `tests/EditMode/Networking/EquipMessages_Codec_tests.cs`, `tests/EditMode/EquipmentSystem/EquipmentSystem_RequestHandler_tests.cs`, and the Story 008 tests in `tests/EditMode/CharacterPersistence/CharacterPersistence_SessionEnd_tests.cs`. EditMode 4407 passed / 0 failed / 111 skipped.
+
+**Code Review**: Complete — `/code-review` 2026-10-26, APPROVED WITH SUGGESTIONS, all applied. QL-TEST-COVERAGE and LP-CODE-REVIEW were skipped (lean).
