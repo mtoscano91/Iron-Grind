@@ -69,6 +69,8 @@
 
 **File**: `tests/EditMode/EquipmentSystem/EquipmentSystem_EquipUnequip_tests.cs` (new). Real `CharacterStats` and `InventoryService`; a stub `IEnhancementBonusProvider` where the AC says so, otherwise the real `EnhancementBonusProvider`; an Inventory decorator to inject `MoveItemIn` / `MoveItemOut` failures.
 
+- **Read surface, occupied (carried over from Story 001 `/code-review` 2026-10-26)** — after a successful equip of item X at level N in a slot, every read reports it: `GetEquipmentSlotState` = `(X, Occupied)`, `GetSlotEnhancementLevel` = N, `IsSlotTransitioning` false; for the Weapon slot also `GetEquippedWeaponItemID` = X, `GetEquippedWeaponEnhancementLevel(charId)` = N, and through `IEquippedWeaponQuery` with the registered `EntityID`: `GetEquippedWeaponID` = X, `GetEquippedWeaponEnhancementLevel` = N. Story 001 could not reach these paths (nothing could fill a slot).
+
 - **AC-EQS-1** — Given STR 50 / DEF 30 and Item X `[{STR,10},{DEF,8}]` at level 0 in slot 0; When `Equip(Weapon, X, 0)`; Then `Success`, STR 60, DEF 38, state `(X, Occupied)`, bag slot 0 empty.
 - **AC-EQS-3** — Given Item Y (+12 MaxHP) equipped in Helmet, MaxHP 512; When `Unequip(Helmet)`; Then MaxHP 500, Y in the bag, state `(Invalid, Empty)`.
 - **AC-EQS-7** — Given an equipped item and a full bag; When `Unequip`; Then `InventoryFull`, effective stats unchanged, slot unchanged, zero `RemoveEquipmentModifier` (stat-change subscriber sees no event).

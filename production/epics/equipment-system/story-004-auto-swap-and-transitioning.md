@@ -69,6 +69,8 @@
 
 **File**: `tests/EditMode/EquipmentSystem/EquipmentSystem_AutoSwap_tests.cs` (new). Inventory decorator to fail `MoveItemIn` or a chosen `MoveItemOut` and to count `ForceInsert`.
 
+- **Read surface, Transitioning (carried over from Story 001 `/code-review` 2026-10-26)** — while a slot's `IsTransitioning` is true (observed from inside a decorated collaborator call mid-swap), `GetEquipmentSlotState` = `(old item, Transitioning)` and `IsSlotTransitioning` = true; the two reads always agree (`GetEquipmentSlotState` checks the flag before emptiness).
+
 - **AC-EQS-2** — Given base STR 60, ItemA (+25) equipped, ItemB (+35, min 55) in S; When `Equip(Weapon, B, S)`; Then `Success`, STR delta +10, ItemA in the bag at level 0, Weapon `(ItemB, Occupied)`, S empty.
 - **AC-EQS-10** — spy on `OnStatChanged`: on the add-phase callback `IsSlotTransitioning(Weapon)` = true; after return false; result `Success`, Weapon `(ItemB, Occupied)`.
 - **AC-EQS-16** — ItemA level 3 equipped, ItemB in S, `MoveItemIn` fails: `InventoryError`, Weapon `(ItemA, Occupied)` level 3, effective stats equal the recorded pre-call values, flag false, S holds ItemB, `ForceInsert` count 0, `LogAssert.Expect` an error containing ItemA's id and the entity id.

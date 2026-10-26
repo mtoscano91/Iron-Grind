@@ -49,7 +49,7 @@ The Equipment System manages the seven gear slots of a player character (Weapon,
 
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
-| 001 | [Slot Registry, Core Types and Read Surface](story-001-slot-registry-and-read-surface.md) | Logic | Ready | ADR-010 |
+| 001 | [Slot Registry, Core Types and Read Surface](story-001-slot-registry-and-read-surface.md) | Logic | Complete (2026-10-26) | ADR-010 |
 | 002 | [Equip Into an Empty Slot, Unequip, Enhanced Modifiers](story-002-equip-unequip-enhanced-modifiers.md) | Logic | Ready | ADR-010 |
 | 003 | [Validation Guards — Input, Slot Type, Stat Gate, Same Item](story-003-validation-guards.md) | Logic | Ready | ADR-010 |
 | 004 | [Auto-Swap, Rollback and the Transitioning Guard](story-004-auto-swap-and-transitioning.md) | Logic | Ready | ADR-010 |
@@ -78,4 +78,4 @@ This epic is complete when:
 
 ## Next Step
 
-Run `/story-readiness production/epics/equipment-system/story-001-slot-registry-and-read-surface.md`, then `/dev-story`.
+Story 001 Complete 2026-10-26. Run `/story-readiness production/epics/equipment-system/story-002-equip-unequip-enhanced-modifiers.md`, then `/dev-story`.

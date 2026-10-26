@@ -1,7 +1,7 @@
 # Story 001: Slot Registry, Core Types and Read Surface
 
 > **Epic**: Equipment System
-> **Status**: Ready
+> **Status**: Complete (2026-10-26)
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-26
@@ -30,15 +30,15 @@
 
 *From GDD `design/gdd/equipment-system.md`, scoped to this story:*
 
-- [ ] `EquipmentSlotEntry` is a `readonly struct { ItemID ItemId; bool IsTransitioning; byte EnhancementLevel }`; an empty slot is `ItemID.Invalid` with level 0 (CR-EQS-1)
-- [ ] Each registered character holds a fixed array of 7 entries indexed by `(int)GearSlot` (Weapon = 0 … Necklace = 6); no `Dictionary` keyed by `GearSlot` (CR-EQS-1)
-- [ ] `EquipResult` enum exists with `Success`, `NoChange`, `StatRequirementNotMet`, `InventoryFull`, `SlotMismatch`, `ItemLocked`, `ItemNotInInventory`, `InventoryError`, `CriticalFailure` (Interactions mapping table); `MergeResult` enum exists with `Success`, `RejectedEquipped`, `RejectedMaxLevel`, `RejectedInventoryFull`, `RejectedMergeError`, `CriticalRollbackFailed` (UI Requirements); `SlotState` enum `Empty`, `Occupied`, `Transitioning`
-- [ ] `RegisterCharacter(CharacterID, EntityID)` creates 7 empty slots. A second register of an already-registered `CharacterID`, or an `EntityID` already mapped to another character, throws `InvalidOperationException` with no state change — a caller bug; a reload calls `UnregisterCharacter` first. (Unlike Inventory's reset-on-register: resetting an occupied slot would orphan its modifiers in Character Stats. User decision 2026-10-26.)
-- [ ] `UnregisterCharacter(CharacterID)` drops the slots and both map entries; it does not remove modifiers from Character Stats (the entity is discarded with the session). An unknown `CharacterID` is a silent no-op — no log, no exception (as Inventory).
-- [ ] Every read method called for an unregistered character logs a server error (`Debug.LogError`, fixed prefix) and returns the empty value — `(ItemID.Invalid, SlotState.Empty)`, level 0, `false`, `ItemID.Invalid` — never throws (as `IInventoryService.GetSlot`)
-- [ ] Read surface (TR-equip-008): `GetEquipmentSlotState(charId, slot)` → `(ItemID, SlotState)`; `GetSlotEnhancementLevel(charId, slot)` → `byte` (0 when empty); `IsSlotTransitioning(charId, slot)` → `bool`; `GetEquippedWeaponItemID(charId)` → `ItemID.Invalid` when no weapon (AC-EQS-12); `GetEquippedWeaponEnhancementLevel(charId)` = `GetSlotEnhancementLevel(charId, GearSlot.Weapon)`
-- [ ] `EquipmentService` implements the existing `IEquippedWeaponQuery` (`GetEquippedWeaponID(EntityID)`, `GetEquippedWeaponEnhancementLevel(EntityID)`) through the EntityID → CharacterID map kept by `RegisterCharacter`; an unknown entity returns `ItemID.Invalid` / 0 (EC-EQS-9)
-- [ ] Every read method given a `GearSlot` value outside `[0, 6]` checks it before indexing the array, logs a server error and returns the empty value (as above) — never throws, no `IndexOutOfRangeException` (CR-EQS-13 bullet 2 applies to reads too; same handling as `IInventoryService.GetSlot` for a bad index)
+- [x] `EquipmentSlotEntry` is a `readonly struct { ItemID ItemId; bool IsTransitioning; byte EnhancementLevel }`; an empty slot is `ItemID.Invalid` with level 0 (CR-EQS-1)
+- [x] Each registered character holds a fixed array of 7 entries indexed by `(int)GearSlot` (Weapon = 0 … Necklace = 6); no `Dictionary` keyed by `GearSlot` (CR-EQS-1)
+- [x] `EquipResult` enum exists with `Success`, `NoChange`, `StatRequirementNotMet`, `InventoryFull`, `SlotMismatch`, `ItemLocked`, `ItemNotInInventory`, `InventoryError`, `CriticalFailure` (Interactions mapping table); `MergeResult` enum exists with `Success`, `RejectedEquipped`, `RejectedMaxLevel`, `RejectedInventoryFull`, `RejectedMergeError`, `CriticalRollbackFailed` (UI Requirements); `SlotState` enum `Empty`, `Occupied`, `Transitioning`
+- [x] `RegisterCharacter(CharacterID, EntityID)` creates 7 empty slots. A second register of an already-registered `CharacterID`, or an `EntityID` already mapped to another character, throws `InvalidOperationException` with no state change — a caller bug; a reload calls `UnregisterCharacter` first. (Unlike Inventory's reset-on-register: resetting an occupied slot would orphan its modifiers in Character Stats. User decision 2026-10-26.) `CharacterID.Invalid` or `EntityID.Invalid` throws `ArgumentException`, no state change (`/code-review` 2026-10-26, user "fix all").
+- [x] `UnregisterCharacter(CharacterID)` drops the slots and both map entries; it does not remove modifiers from Character Stats (the entity is discarded with the session). An unknown `CharacterID` is a silent no-op — no log, no exception (as Inventory).
+- [x] Every read method called for an unregistered character logs a server error (`Debug.LogError`, fixed prefix) and returns the empty value — `(ItemID.Invalid, SlotState.Empty)`, level 0, `false`, `ItemID.Invalid` — never throws (as `IInventoryService.GetSlot`)
+- [x] Read surface (TR-equip-008): `GetEquipmentSlotState(charId, slot)` → `(ItemID, SlotState)`; `GetSlotEnhancementLevel(charId, slot)` → `byte` (0 when empty); `IsSlotTransitioning(charId, slot)` → `bool`; `GetEquippedWeaponItemID(charId)` → `ItemID.Invalid` when no weapon (AC-EQS-12); `GetEquippedWeaponEnhancementLevel(charId)` = `GetSlotEnhancementLevel(charId, GearSlot.Weapon)`
+- [x] `EquipmentService` implements the existing `IEquippedWeaponQuery` (`GetEquippedWeaponID(EntityID)`, `GetEquippedWeaponEnhancementLevel(EntityID)`) through the EntityID → CharacterID map kept by `RegisterCharacter`; an unknown entity returns `ItemID.Invalid` / 0 (EC-EQS-9)
+- [x] Every read method given a `GearSlot` value outside `[0, 6]` checks it before indexing the array, logs a server error and returns the empty value (as above) — never throws, no `IndexOutOfRangeException` (CR-EQS-13 bullet 2 applies to reads too; same handling as `IInventoryService.GetSlot` for a bad index)
 
 ---
 
@@ -84,7 +84,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/EquipmentSystem/EquipmentSystem_SlotRegistry_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — 27 cases, EditMode 4149 passed / 0 failed (2026-10-26)
 
 ---
 
@@ -92,3 +92,12 @@
 
 - Depends on: None (Item Database, Inventory, Character Stats and Enhancement provider are all Complete)
 - Unlocks: Stories 002, 005, 007
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-26
+**Criteria**: 9/9 passing (all automated)
+**Deviations** (advisory): implemented in the main session, not a programmer subagent; `EquipResult` values 0–8 are not the wire values (Story 008 handler maps them); Invalid `CharacterID` / `EntityID` registration throws `ArgumentException` (added at `/code-review`, user-approved); occupied / Transitioning read paths unreachable here — assertions carried into Story 002 and Story 004 QA Test Cases; test methods use `test_*` naming (Inventory siblings use PascalCase).
+**Test Evidence**: Logic — `tests/EditMode/EquipmentSystem/EquipmentSystem_SlotRegistry_tests.cs`
+**Code Review**: Complete — APPROVED WITH SUGGESTIONS, all applied
