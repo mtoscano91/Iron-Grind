@@ -695,7 +695,7 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
                 stats,
                 leveling,
                 inventory,
-                currency,
+                currency, new FakeEquipmentService(),
                 zones,
                 new CharacterWriteQueue(),
                 () => SERVICE_TIME,

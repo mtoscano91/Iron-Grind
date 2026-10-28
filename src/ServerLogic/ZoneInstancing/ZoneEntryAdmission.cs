@@ -363,7 +363,12 @@ namespace IronGrind.ServerLogic.ZoneInstancing
                 return;
             }
 
-            if (applied != CharacterLoadCode.Success)
+            if (applied == CharacterLoadCode.ItemDatabaseMiss)
+            {
+                // Success with a warning (Character Persistence Story 005): a gear slot was left empty; the player is admitted.
+                Debug.LogWarning($"{LOG_PREFIX} ApplyLoadedRecord returned ItemDatabaseMiss for client {clientId}; admitted with an empty gear slot.");
+            }
+            else if (applied != CharacterLoadCode.Success)
             {
                 Debug.LogWarning($"{LOG_PREFIX} ApplyLoadedRecord returned {applied} for client {clientId}; slot released.");
                 _pool.ReleasePlayer(entityId);

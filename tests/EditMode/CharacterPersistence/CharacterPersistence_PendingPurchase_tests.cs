@@ -852,7 +852,7 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
                 Inventory = new RecordingInventory { ExportResult = InventorySnapshot.Empty },
             };
             rig.Service = new CharacterPersistenceService(
-                store, stats, leveling, rig.Inventory, rig.Currency, new FakeZoneLocator(), new CharacterWriteQueue(), () => T1, writeTimeout);
+                store, stats, leveling, rig.Inventory, rig.Currency, new FakeEquipmentService(), new FakeZoneLocator(), new CharacterWriteQueue(), () => T1, writeTimeout);
             return rig;
         }
 

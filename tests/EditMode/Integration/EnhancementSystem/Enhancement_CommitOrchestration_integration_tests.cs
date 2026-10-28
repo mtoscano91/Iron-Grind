@@ -269,7 +269,7 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
                 _stats,
                 _leveling,
                 _inventory,
-                new CurrencySystem(),
+                new CurrencySystem(), new FakeEquipmentService(),
                 new FakeZoneLocator(),
                 new CharacterWriteQueue(),
                 () => T2,

@@ -752,6 +752,24 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
         }
 
         [Test]
+        public void test_apply_item_database_miss_is_admitted_with_warning_and_slot_kept()
+        {
+            _applier.Result = CharacterLoadCode.ItemDatabaseMiss;
+            var request = Request(CLIENT_A);
+            _svc.BeginEntry(in request);
+            _persistence.Loads[0].SetResult(Loaded());
+            LogAssert.Expect(LogType.Warning, Rx("ItemDatabaseMiss"));
+
+            Drain();
+
+            Assert.AreEqual(1, _applier.Calls);
+            Assert.AreEqual(1, _pool.OccupiedPlayerCount);
+            Assert.AreEqual(1, _continuation.Admitted.Count);
+            Assert.IsTrue(_pool.TryGetPlayer(_applier.LastEntity, out _));
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
         public void test_apply_throws_releases_slot_logs_error_and_replies_load_character_failed()
         {
             _applier.ThrowOnApply = true;

@@ -96,6 +96,7 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
                 rig.Leveling,
                 rig.Inventory,
                 currencyOverride ?? rig.CurrencySystem,
+                new FakeEquipmentService(),
                 rig.Zones,
                 rig.Queue,
                 () => _serviceTime,
@@ -985,16 +986,16 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             TimeSpan timeout = TimeSpan.FromSeconds(5);
             var queue = new CharacterWriteQueue();
 
-            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(null, r.Stats, r.Leveling, r.Inventory, r.CurrencySystem, r.Zones, queue, clock, timeout));
-            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(_counting, null, r.Leveling, r.Inventory, r.CurrencySystem, r.Zones, queue, clock, timeout));
-            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(_counting, r.Stats, null, r.Inventory, r.CurrencySystem, r.Zones, queue, clock, timeout));
-            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(_counting, r.Stats, r.Leveling, null, r.CurrencySystem, r.Zones, queue, clock, timeout));
-            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(_counting, r.Stats, r.Leveling, r.Inventory, null, r.Zones, queue, clock, timeout));
-            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(_counting, r.Stats, r.Leveling, r.Inventory, r.CurrencySystem, null, queue, clock, timeout));
-            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(_counting, r.Stats, r.Leveling, r.Inventory, r.CurrencySystem, r.Zones, null, clock, timeout));
-            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(_counting, r.Stats, r.Leveling, r.Inventory, r.CurrencySystem, r.Zones, queue, null, timeout));
-            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(_counting, r.Stats, r.Leveling, r.Inventory, r.CurrencySystem, null, clock));
-            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(_counting, r.Stats, r.Leveling, r.Inventory, r.CurrencySystem, r.Zones, (Func<DateTime>)null));
+            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(null, r.Stats, r.Leveling, r.Inventory, r.CurrencySystem, new FakeEquipmentService(), r.Zones, queue, clock, timeout));
+            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(_counting, null, r.Leveling, r.Inventory, r.CurrencySystem, new FakeEquipmentService(), r.Zones, queue, clock, timeout));
+            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(_counting, r.Stats, null, r.Inventory, r.CurrencySystem, new FakeEquipmentService(), r.Zones, queue, clock, timeout));
+            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(_counting, r.Stats, r.Leveling, null, r.CurrencySystem, new FakeEquipmentService(), r.Zones, queue, clock, timeout));
+            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(_counting, r.Stats, r.Leveling, r.Inventory, null, new FakeEquipmentService(), r.Zones, queue, clock, timeout));
+            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(_counting, r.Stats, r.Leveling, r.Inventory, r.CurrencySystem, new FakeEquipmentService(), null, queue, clock, timeout));
+            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(_counting, r.Stats, r.Leveling, r.Inventory, r.CurrencySystem, new FakeEquipmentService(), r.Zones, null, clock, timeout));
+            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(_counting, r.Stats, r.Leveling, r.Inventory, r.CurrencySystem, new FakeEquipmentService(), r.Zones, queue, null, timeout));
+            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(_counting, r.Stats, r.Leveling, r.Inventory, r.CurrencySystem, new FakeEquipmentService(), null, clock));
+            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(_counting, r.Stats, r.Leveling, r.Inventory, r.CurrencySystem, new FakeEquipmentService(), r.Zones, (Func<DateTime>)null));
         }
 
         [TestCase(0)]
@@ -1004,14 +1005,14 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             Rig r = _rig;
 
             Assert.Throws<ArgumentOutOfRangeException>(() => new CharacterPersistenceService(
-                _counting, r.Stats, r.Leveling, r.Inventory, r.CurrencySystem, r.Zones, new CharacterWriteQueue(), () => T1, TimeSpan.FromMilliseconds(milliseconds)));
+                _counting, r.Stats, r.Leveling, r.Inventory, r.CurrencySystem, new FakeEquipmentService(), r.Zones, new CharacterWriteQueue(), () => T1, TimeSpan.FromMilliseconds(milliseconds)));
         }
 
         [Test]
         public void Constructor_ConvenienceOverload_BuildsAServiceThatSaves()
         {
             Rig r = _rig;
-            var service = new CharacterPersistenceService(_counting, r.Stats, r.Leveling, r.Inventory, r.CurrencySystem, r.Zones, () => _serviceTime);
+            var service = new CharacterPersistenceService(_counting, r.Stats, r.Leveling, r.Inventory, r.CurrencySystem, new FakeEquipmentService(), r.Zones, () => _serviceTime);
             _storeTime = T1;
             Assert.IsTrue(Complete(_store.InsertAsync(MakeSeed(), CancellationToken.None)));
             CharacterLoadResult loaded = Complete(service.LoadCharacter(CHAR_A, ACCOUNT_A, CancellationToken.None));
@@ -1024,7 +1025,7 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
         public void SaveSession_ServiceBuiltWithoutZoneLocatorAndQueue_ThrowsInvalidOperationExceptionSynchronously()
         {
             Rig r = _rig;
-            var service = new CharacterPersistenceService(_counting, r.Stats, r.Leveling, r.Inventory, r.CurrencySystem);
+            var service = new CharacterPersistenceService(_counting, r.Stats, r.Leveling, r.Inventory, r.CurrencySystem, new FakeEquipmentService());
 
             Assert.Throws<InvalidOperationException>(() => service.SaveSession(CHAR_A, SessionEndReason.CleanLogout, CancellationToken.None));
             Assert.Throws<InvalidOperationException>(() => service.SaveSession(CHAR_A, SessionEndReason.CleanLogout, 0f, CancellationToken.None));

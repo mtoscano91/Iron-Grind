@@ -3,7 +3,7 @@
 > **Layer**: Core
 > **GDD**: design/gdd/character-persistence.md
 > **Architecture Module**: Character Persistence — `CharacterPersistenceService : ICharacterPersistence` (async), PostgreSQL via Npgsql and Dapper
-> **Status**: In Progress (created 2026-10-12; 16 stories written 2026-10-12 — 13 Complete (001–004, 006–010, 012–014, 017 — 017 added and Complete 2026-10-16 for TD-070 / TD-060; 012–014 Complete 2026-10-19); 011 Complete 2026-10-26 → 14 Complete; 015 Complete 2026-10-26 → 15 Complete, 2 Blocked (005 on the Equipment System, 016 on 005))
+> **Status**: In Progress (created 2026-10-12; 16 stories written 2026-10-12 — 13 Complete (001–004, 006–010, 012–014, 017 — 017 added and Complete 2026-10-16 for TD-070 / TD-060; 012–014 Complete 2026-10-19); 011 Complete 2026-10-26 → 14 Complete; 015 Complete 2026-10-26 → 15 Complete; 005 Complete 2026-10-28 → 16 Complete, 016 left (no longer blocked))
 > **Stories**: 16 stories created 2026-10-12 (001–016); Story 017 added 2026-10-16
 > **Manifest Version**: 2026-10-09
 
@@ -80,7 +80,7 @@ This epic is complete when:
 | 002 | [Record Store Seam, In-Memory Store, `CreateStub`](story-002-record-store-and-create-stub.md) | Logic | Complete (2026-10-12; 67 test cases, EditMode 2590 / 2590; COMPLETE WITH NOTES) | ADR-006, ADR-011 |
 | 003 | [`LoadCharacter` — Validation, Account Check, Base Stats, Timeout](story-003-load-validation-and-base-stats.md) | Integration | Complete (2026-10-15; 82 test cases, EditMode 2671 / 2671; COMPLETE WITH NOTES) | ADR-006, ADR-011 |
 | 004 | [`LoadCharacter` — Inventory, Gold, At-Cap, HP/MP Clamp](story-004-load-inventory-gold-clamp-events.md) | Integration | Complete (2026-10-15; 20 test cases, EditMode 2701 / 2701; COMPLETE WITH NOTES) | ADR-011, ADR-010 |
-| 005 | [`LoadCharacter` — Equipment Re-registration](story-005-load-equipment-reregistration.md) | Integration | Ready (readiness 2026-10-28: NEEDS WORK → fixed; also moves save step 3 to `ExportSlots` and admits on `ItemDatabaseMiss`) | ADR-011, ADR-010 |
+| 005 | [`LoadCharacter` — Equipment Re-registration](story-005-load-equipment-reregistration.md) | Integration | Complete (2026-10-28, with notes; also moved save step 3 to `ExportSlots` and admits on `ItemDatabaseMiss`) | ADR-011, ADR-010 |
 | 006 | [Per-Character Save Queue](story-006-per-character-save-queue.md) | Logic | Complete (2026-10-15; 28 test cases, EditMode 2729 / 2729; COMPLETE WITH NOTES) | ADR-006, ADR-011 |
 | 007 | [`SaveSession` — the Step Sequence](story-007-save-session.md) | Integration | Complete (2026-10-15; 47 test cases, EditMode 2774 / 2774; COMPLETE WITH NOTES) | ADR-011, ADR-006 |
 | 008 | [`SaveIrreversibleOutcome`](story-008-save-irreversible-outcome.md) | Integration | Complete (2026-10-15; 42 test cases, EditMode 2815 / 2815; COMPLETE WITH NOTES) | ADR-006, ADR-011 |
@@ -91,7 +91,7 @@ This epic is complete when:
 | 013 | [SQL Migrations for `character_records` and `pending_purchases`](story-013-sql-migrations.md) | Config/Data | Complete (2026-10-19) | ADR-006 |
 | 014 | [The Npgsql Character Record Store](story-014-npgsql-character-record-store.md) | Integration | Complete (2026-10-19; COMPLETE WITH NOTES; DB run 159/159; TD-075) | ADR-006, ADR-011 |
 | 015 | [The Npgsql Pending-Purchase Store](story-015-npgsql-pending-purchase-store.md) | Integration | Complete (2026-10-26, COMPLETE WITH NOTES) | ADR-006, ADR-001 |
-| 016 | [The Real-Database Verification Run](story-016-real-database-verification-run.md) | Integration | Blocked (012–015 Complete; waits for 005) | ADR-006 |
+| 016 | [The Real-Database Verification Run](story-016-real-database-verification-run.md) | Integration | Not blocked — every dependency Complete (005 on 2026-10-28); run `/story-readiness` | ADR-006 |
 | 017 | [Session-End Saves Wait for the Mutation Gate](story-017-session-end-waits-for-the-mutation-gate.md) | Integration | Complete (2026-10-16; 16 new test cases, EditMode 2932 / 2932; COMPLETE WITH NOTES; closes TD-070 and TD-060, adds TD-071) | ADR-011 |
 
 **Acceptance criteria owned outside this epic**: AC-CP-27 (enhancement commit before broadcast) — Enhancement Story 011. AC-CP-28 (respec failure with its compensating `AddGold`) and AC-CP-29 (item consumption) — the Respec and Consumable Use systems, which have no code.
@@ -116,4 +116,4 @@ Each is an open decision in the story named; several need a line in the GDD.
 
 ## Next Step
 
-Run `/story-readiness production/epics/character-persistence/story-001-persistence-contract.md`. Work through the stories in order — each story's `Depends on:` line says what must be done first.
+16 of 17 stories Complete (005 on 2026-10-28). Next: `/story-readiness production/epics/character-persistence/story-016-real-database-verification-run.md` — its header still says Blocked; every dependency is now Complete. Carry-over from 005: the real `IEquipmentService` is not wired into `ZoneServerComposition` (server bootstrap, shared with the Equipment 008/009 carry-over).

@@ -83,7 +83,7 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             Func<(float Hp, float Mp)> resources = () => (_stats.GetCurrentHP(_entity), _stats.GetCurrentMP(_entity));
             _inventory = new RecordingInventory(_log, resources);
             _currency = new RecordingCurrencyRestore(_currencySystem, _log, resources);
-            _service = new CharacterPersistenceService(_store, _stats, _leveling, _inventory, _currency);
+            _service = new CharacterPersistenceService(_store, _stats, _leveling, _inventory, _currency, new FakeEquipmentService());
         }
 
         private static IClassRegistry CreateClassRegistry()
@@ -361,11 +361,12 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
         [Test]
         public void Constructor_FiveArgNullDependency_ThrowsArgumentNullException()
         {
-            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(null, _stats, _leveling, _inventory, _currency));
-            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(_store, null, _leveling, _inventory, _currency));
-            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(_store, _stats, null, _inventory, _currency));
-            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(_store, _stats, _leveling, null, _currency));
-            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(_store, _stats, _leveling, _inventory, null));
+            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(null, _stats, _leveling, _inventory, _currency, new FakeEquipmentService()));
+            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(_store, null, _leveling, _inventory, _currency, new FakeEquipmentService()));
+            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(_store, _stats, null, _inventory, _currency, new FakeEquipmentService()));
+            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(_store, _stats, _leveling, null, _currency, new FakeEquipmentService()));
+            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(_store, _stats, _leveling, _inventory, null, new FakeEquipmentService()));
+            Assert.Throws<ArgumentNullException>(() => new CharacterPersistenceService(_store, _stats, _leveling, _inventory, _currency, null));
         }
 
         [Test]

@@ -4,6 +4,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using IronGrind.CharacterStats;
 using IronGrind.Currency;
+using IronGrind.EquipmentSystem;
+using IronGrind.EnhancementSystem;
 using IronGrind.InventorySystem;
 using IronGrind.LevelingSystem;
 
@@ -33,6 +35,7 @@ namespace IronGrind.CharacterPersistence
         private readonly LevelingService _leveling;
         private readonly IInventoryService _inventory;
         private readonly ICurrencyStateRestore _currency;
+        private readonly IEquipmentService _equipment;
         private readonly ICharacterZoneLocator _zones;
         private readonly CharacterWriteQueue _queue;
         // Always injected: Character Persistence never reads the system clock (Story 002 rule).
@@ -51,7 +54,6 @@ namespace IronGrind.CharacterPersistence
             public byte ClassType;
             public DateTime CreatedAtUtc;
             public ZoneID LastZoneId;
-            public GearSlotRecord[] GearSlots;
             public uint SaveVersion;
 
             // CR-CP-6: set after a DatabaseError whose store update had started (the write may or may not have committed);
@@ -86,16 +88,19 @@ namespace IronGrind.CharacterPersistence
         /// <param name="leveling">The Leveling service.</param>
         /// <param name="inventory">The Inventory service that receives the bag through <c>ImportSnapshot</c>.</param>
         /// <param name="currency">The Currency restore seam that receives the gold balance and version.</param>
+        /// <param name="equipment">The Equipment System: re-registers the character and restores the gear at load step 4, exports it at save step 3 (Story 005).</param>
         public CharacterPersistenceService(
             ICharacterRecordStore store,
             IronGrind.CharacterStats.CharacterStats stats,
             LevelingService leveling,
             IInventoryService inventory,
-            ICurrencyStateRestore currency)
+            ICurrencyStateRestore currency,
+            IEquipmentService equipment)
             : this(store, stats, leveling)
         {
             _inventory = inventory ?? throw new ArgumentNullException(nameof(inventory));
             _currency = currency ?? throw new ArgumentNullException(nameof(currency));
+            _equipment = equipment ?? throw new ArgumentNullException(nameof(equipment));
         }
 
         /// <summary>
@@ -112,6 +117,7 @@ namespace IronGrind.CharacterPersistence
         /// <param name="leveling">The Leveling service.</param>
         /// <param name="inventory">The Inventory service (import on load, export on save).</param>
         /// <param name="currency">The Currency persistence seam (restore on load, read on save).</param>
+        /// <param name="equipment">The Equipment System (restore on load, export on save).</param>
         /// <param name="zones">Tells the save which zone the character is in.</param>
         /// <param name="queue">The per-character write queue (Story 006).</param>
         /// <param name="utcNow">The UTC clock used to measure write latency.</param>
@@ -124,11 +130,12 @@ namespace IronGrind.CharacterPersistence
             LevelingService leveling,
             IInventoryService inventory,
             ICurrencyStateRestore currency,
+            IEquipmentService equipment,
             ICharacterZoneLocator zones,
             CharacterWriteQueue queue,
             Func<DateTime> utcNow,
             TimeSpan writeTimeout)
-            : this(store, stats, leveling, inventory, currency)
+            : this(store, stats, leveling, inventory, currency, equipment)
         {
             _zones = zones ?? throw new ArgumentNullException(nameof(zones));
             _queue = queue ?? throw new ArgumentNullException(nameof(queue));
@@ -151,6 +158,7 @@ namespace IronGrind.CharacterPersistence
         /// <param name="leveling">The Leveling service.</param>
         /// <param name="inventory">The Inventory service.</param>
         /// <param name="currency">The Currency persistence seam.</param>
+        /// <param name="equipment">The Equipment System.</param>
         /// <param name="zones">Tells the save which zone the character is in.</param>
         /// <param name="utcNow">The UTC clock used to measure write latency.</param>
         public CharacterPersistenceService(
@@ -159,6 +167,7 @@ namespace IronGrind.CharacterPersistence
             LevelingService leveling,
             IInventoryService inventory,
             ICurrencyStateRestore currency,
+            IEquipmentService equipment,
             ICharacterZoneLocator zones,
             Func<DateTime> utcNow)
             : this(
@@ -167,6 +176,7 @@ namespace IronGrind.CharacterPersistence
                 leveling,
                 inventory,
                 currency,
+                equipment,
                 zones,
                 new CharacterWriteQueue(),
                 utcNow,
@@ -206,7 +216,11 @@ namespace IronGrind.CharacterPersistence
         /// validation, all on the fetched record, which is not live state. A fetched record whose
         /// <c>CharacterID</c> is not the requested one, a float stat that is infinite, a <c>GoldBalance</c> above
         /// <see cref="CurrencySystem.GOLD_CAP"/>, and a <c>CurrentHP</c> or <c>CurrentMP</c> that is NaN are also
-        /// <see cref="CharacterLoadCode.CorruptRecord"/> (all beyond the GDD's step 3 list). It never touches Character Stats or
+        /// <see cref="CharacterLoadCode.CorruptRecord"/> (all beyond the GDD's step 3 list).
+        /// Step 4's gear checks also run here (Story 005): an occupied gear slot above
+        /// <see cref="EnhancementConstants.MAX_ENHANCEMENT_LEVEL"/>, or an empty one with a non-zero level, is
+        /// <see cref="CharacterLoadCode.CorruptRecord"/> — the inputs <c>IEquipmentService.RestoreSlots</c> would throw on.
+        /// An item the Item Database does not know is found later, by <see cref="ApplyLoadedRecord"/>. It never touches Character Stats or
         /// Leveling; <see cref="ApplyLoadedRecord"/> does the writes. The task never faults and is never
         /// cancelled: a store that throws <see cref="CharacterRecordCorruptException"/> gives
         /// <see cref="CharacterLoadCode.CorruptRecord"/>; every other store fault, or <paramref name="ct"/> firing while the fetch is pending (CR-CP-8, the
@@ -309,7 +323,32 @@ namespace IronGrind.CharacterPersistence
                 // (dead-on-load and the clamp handle those), but NaN slips past both comparisons.
                 && r.GoldBalance <= CurrencySystem.GOLD_CAP
                 && !float.IsNaN(r.CurrentHP)
-                && !float.IsNaN(r.CurrentMP);
+                && !float.IsNaN(r.CurrentMP)
+                && AreGearSlotsValid(r);
+        }
+
+        // CR-CP-3 step 4 (Story 005): an occupied slot above the enhancement maximum, or an empty slot with a non-zero level
+        // (RestoreSlots would throw on it), is corrupt. Reads the fetched record only.
+        // Checks the constant; RestoreSlots checks EnhancementConfig's maximum. They are equal in the default config — a
+        // config with a lower maximum would let a record pass here and make ApplyLoadedRecord throw.
+        private static bool AreGearSlotsValid(CharacterRecord r)
+        {
+            foreach (GearSlotRecord slot in r.GearSlots)
+            {
+                if (slot.ItemId == ItemID.Invalid)
+                {
+                    if (slot.EnhancementLevel != 0)
+                    {
+                        return false;
+                    }
+                }
+                else if (slot.EnhancementLevel > EnhancementConstants.MAX_ENHANCEMENT_LEVEL)
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         // CR-CP-3 says "> 0"; an infinite stat is also corrupt (NaN already fails "> 0").
@@ -329,18 +368,19 @@ namespace IronGrind.CharacterPersistence
         }
 
         /// <summary>
-        /// Writes a validated record into the live game state (CR-CP-3 steps 3 and 5 to 8): base stats and leveling
-        /// state, the inventory, the gold, then current HP and MP.
+        /// Writes a validated record into the live game state (CR-CP-3 steps 3 to 8): base stats and leveling
+        /// state, the equipment, the inventory, the gold, then current HP and MP.
         /// Synchronous; the caller runs it on the tick thread from its <c>ITickCompletionQueue.Track</c> callback,
         /// with the record from <see cref="CharacterLoadResult.Record"/>. It does not re-validate.
         /// </summary>
         /// <remarks>
         /// Order: class type registered with Leveling, the 11 int stats, the 5 float stats, the held free
-        /// points through <c>RestoreLevelingState</c> (Story 003); then the inventory import (step 5), the gold
+        /// points through <c>RestoreLevelingState</c> (Story 003); then the equipment (step 4, Story 005: <c>UnregisterCharacter</c>,
+        /// <c>RegisterCharacter</c>, <c>RestoreSlots</c>, which registers the gear's stat modifiers after all step 3 writes); then the inventory import (step 5), the gold
         /// restore (step 6) and current HP / MP (step 8) (Story 004). Step 7 (at-cap) has no call: Leveling keeps no
-        /// at-cap flag and derives it from Level == 60, which is already written. Story 005 inserts step 4 (equipment)
-        /// between the stat writes and the inventory import and returns <see cref="CharacterLoadCode.ItemDatabaseMiss"/>
-        /// through this return value. Any existing session entry for <c>record.CharacterID</c> is removed first (after
+        /// at-cap flag and derives it from Level == 60, which is already written. A gear slot that
+        /// <c>RestoreSlots</c> leaves empty (unknown item or slot mismatch) makes the result <see cref="CharacterLoadCode.ItemDatabaseMiss"/>;
+        /// the later steps still run and Equipment has already logged the error. Any existing session entry for <c>record.CharacterID</c> is removed first (after
         /// the argument and wiring checks, before any write), so a reload that returns early or throws leaves no stale
         /// entry: <c>SaveSession</c> then returns <see cref="CharacterSaveResult.CharacterNotFound"/> until a load succeeds.
         /// Held free points above the class maximum, or a class type Leveling does not
@@ -348,20 +388,33 @@ namespace IronGrind.CharacterPersistence
         /// <para>Current HP / MP are written last, after the gold, because the setters clamp to the effective maximum
         /// (F-CP-4, no code of its own here); a saved HP of 0 or less (dead on load, EC-DR-2) loads as the effective
         /// MaxHP. A negative saved MP is clamped to 0 by <c>SetCurrentMP</c>.</para>
-        /// <para>On a code other than <see cref="CharacterLoadCode.Success"/> (and, from Story 005,
-        /// <see cref="CharacterLoadCode.ItemDatabaseMiss"/>) the caller discards the entity: the earlier stat writes
+        /// <para>On a code other than <see cref="CharacterLoadCode.Success"/> or
+        /// <see cref="CharacterLoadCode.ItemDatabaseMiss"/> (success with a warning: admit the player) the caller discards the entity: the earlier stat writes
         /// and the Leveling registration (class type, held free points) have already happened and are not rolled
         /// back. The same holds if this method throws part-way — for one, <c>ImportSnapshot</c> throws
-        /// <see cref="InvalidOperationException"/> when called from inside an <c>OnInventoryChanged</c> subscriber.</para>
+        /// <see cref="InvalidOperationException"/> when called from inside an <c>OnInventoryChanged</c> subscriber.
+        /// Equipment is not rolled back either: a throw from <c>RegisterCharacter</c> leaves the character unregistered,
+        /// one from <c>RestoreSlots</c> leaves it registered with the slots before the failure restored and their
+        /// modifiers on the entity. The session entry is already removed, so no save can write that partial gear; the
+        /// next load's <c>UnregisterCharacter</c>, or session end, clears the registration.</para>
+        /// <para>Pass a fresh entity: Equipment's <c>UnregisterCharacter</c> does not remove modifiers from Character
+        /// Stats, so reloading into an entity that already holds this character's gear would register it twice.
+        /// Zone admission allocates a new entity per load.</para>
         /// </remarks>
-        /// <param name="entityId">The entity to restore, allocated by the caller.</param>
+        /// <param name="entityId">The entity to restore, allocated by the caller; must not already hold gear modifiers.</param>
         /// <param name="record">The validated record.</param>
         /// <returns>
-        /// <see cref="CharacterLoadCode.Success"/> when everything was applied; <see cref="CharacterLoadCode.InventoryNotRestored"/>
-        /// when <c>ImportSnapshot</c> refused the bag, in which case no gold, HP or MP is written.
+        /// <see cref="CharacterLoadCode.Success"/> when everything was applied; <see cref="CharacterLoadCode.ItemDatabaseMiss"/>
+        /// when everything was applied but at least one gear slot was left empty (success with a warning, the caller admits the player);
+        /// <see cref="CharacterLoadCode.InventoryNotRestored"/> when <c>ImportSnapshot</c> refused the bag, in which case no gold, HP or MP is written.
         /// </returns>
         /// <exception cref="ArgumentNullException"><paramref name="record"/> is null.</exception>
-        /// <exception cref="InvalidOperationException">The service was not built with the five-argument constructor (Character Stats, Leveling, Inventory and Currency); or, from <c>ImportSnapshot</c>, the call was made from inside an <c>OnInventoryChanged</c> subscriber.</exception>
+        /// <exception cref="InvalidOperationException">The service was not built with the six-argument constructor (Character Stats, Leveling, Inventory, Currency and Equipment); or, from <c>ImportSnapshot</c>, the call was made from inside an <c>OnInventoryChanged</c> subscriber; or, from
+        /// <c>RegisterCharacter</c>, <paramref name="entityId"/> is already mapped to another character; or, from <c>RestoreSlots</c>, the
+        /// character already has occupied slots.</exception>
+        /// <exception cref="ArgumentException">From <c>RegisterCharacter</c>: the character or entity id is invalid. From <c>RestoreSlots</c>:
+        /// a slot input it rejects (not reachable for a record <see cref="LoadCharacter"/> validated), or an exception from Character Stats while
+        /// slots are applied. See the remarks for the state left behind.</exception>
         public CharacterLoadCode ApplyLoadedRecord(EntityID entityId, CharacterRecord record)
         {
             if (record == null)
@@ -369,9 +422,9 @@ namespace IronGrind.CharacterPersistence
                 throw new ArgumentNullException(nameof(record));
             }
 
-            if (_stats == null || _leveling == null || _inventory == null || _currency == null)
+            if (_stats == null || _leveling == null || _inventory == null || _currency == null || _equipment == null)
             {
-                throw new InvalidOperationException("ApplyLoadedRecord needs the service to be built with Character Stats, Leveling, Inventory and Currency.");
+                throw new InvalidOperationException("ApplyLoadedRecord needs the service to be built with Character Stats, Leveling, Inventory, Currency and Equipment.");
             }
 
             // Story 007 review: a reload that fails part-way must not leave the previous session's entry behind.
@@ -402,6 +455,19 @@ namespace IronGrind.CharacterPersistence
 
             _leveling.RestoreLevelingState(entityId, new LevelingStateSnapshot(record.HeldFreePoints));
 
+            // Step 4: equipment. A reload unregisters first (RegisterCharacter throws on a known character); RestoreSlots registers
+            // the gear's modifiers, so it must come after every step 3 write (AC-CP-11). It logs each dropped slot itself.
+            _equipment.UnregisterCharacter(record.CharacterID);
+            _equipment.RegisterCharacter(record.CharacterID, entityId);
+            var savedGear = new SavedGearSlot[record.GearSlots.Length];
+            for (int i = 0; i < savedGear.Length; i++)
+            {
+                savedGear[i] = new SavedGearSlot(record.GearSlots[i].ItemId, record.GearSlots[i].EnhancementLevel);
+            }
+
+            GearRestoreResult restored = _equipment.RestoreSlots(record.CharacterID, savedGear);
+            CharacterLoadCode result = restored.DroppedCount > 0 ? CharacterLoadCode.ItemDatabaseMiss : CharacterLoadCode.Success;
+
             // Step 5: dense 20-slot arrays to a sparse snapshot. A refused import is never an empty inventory.
             InventorySnapshot snapshot = BuildInventorySnapshot(record);
             if (!_inventory.ImportSnapshot(record.CharacterID, snapshot))
@@ -428,7 +494,6 @@ namespace IronGrind.CharacterPersistence
                 ClassType = record.ClassType,
                 CreatedAtUtc = record.CreatedAtUtc,
                 LastZoneId = record.LastZoneID,
-                GearSlots = (GearSlotRecord[])record.GearSlots.Clone(),
                 SaveVersion = record.SaveVersion,
             };
             lock (_sessionLock)
@@ -436,7 +501,7 @@ namespace IronGrind.CharacterPersistence
                 _sessions[record.CharacterID] = entry;
             }
 
-            return CharacterLoadCode.Success;
+            return result;
         }
 
         /// <inheritdoc/>
@@ -540,7 +605,7 @@ namespace IronGrind.CharacterPersistence
         /// prefix, before the queue is entered; the queued write touches only that copy, the store, the session table,
         /// the clock and the log (ADR-011 Decision 3). The expected <c>SaveVersion</c> is taken from the session entry
         /// at call time, so a second call queued behind the first carries the same version and ends with
-        /// <see cref="CharacterSaveResult.ConcurrencyConflict"/> (EC-CP-4, AC-CP-20). Gear is written as loaded.
+        /// <see cref="CharacterSaveResult.ConcurrencyConflict"/> (EC-CP-4, AC-CP-20). Gear is read from the Equipment System at save time (<c>ExportSlots</c>).
         /// <c>IsTransitioning</c> is neither read nor written (EC-CP-3).
         /// <para>The returned task never faults and is never cancelled: a store fault, a timeout, a cancelled token or
         /// a failure while taking the snapshot gives <see cref="CharacterSaveResult.DatabaseError"/> (one error log
@@ -609,9 +674,9 @@ namespace IronGrind.CharacterPersistence
         // Synchronous prefix: not async, so every live read happens on the caller's thread before the queue is entered.
         private Task<CharacterSaveResult> SaveCore(CharacterID id, WriteKind kind, float? hpOverride, CancellationToken ct)
         {
-            if (_stats == null || _leveling == null || _inventory == null || _currency == null || _zones == null || _queue == null || _utcNow == null)
+            if (_stats == null || _leveling == null || _inventory == null || _currency == null || _equipment == null || _zones == null || _queue == null || _utcNow == null)
             {
-                throw new InvalidOperationException(kind.Name + " needs the service to be built with Character Stats, Leveling, Inventory, Currency, a zone locator and a write queue.");
+                throw new InvalidOperationException(kind.Name + " needs the service to be built with Character Stats, Leveling, Inventory, Currency, Equipment, a zone locator and a write queue.");
             }
 
             CharacterRecord snapshot;
@@ -716,8 +781,18 @@ namespace IronGrind.CharacterPersistence
             record.CurrentMP = _stats.GetCurrentMP(e);
             record.HeldFreePoints = _leveling.GetLevelingState(e).HeldFreePoints;
 
-            // Step 3: gear is written as loaded (no Equipment System yet).
-            Array.Copy(entry.GearSlots, record.GearSlots, record.GearSlots.Length);
+            // Step 3: gear from the Equipment System (still registered: the save runs before session release). A throw is a
+            // wiring bug; SaveCore turns it into DatabaseError. A short export would save the missing slots empty — refuse it.
+            SavedGearSlot[] gear = _equipment.ExportSlots(id);
+            if (gear == null || gear.Length != record.GearSlots.Length)
+            {
+                throw new InvalidOperationException("ExportSlots returned " + (gear == null ? "null" : gear.Length + " slots") + " for " + id + "; expected " + record.GearSlots.Length + ".");
+            }
+
+            for (int i = 0; i < gear.Length; i++)
+            {
+                record.GearSlots[i] = new GearSlotRecord(gear[i].ItemId, gear[i].EnhancementLevel);
+            }
 
             // Step 4: sparse snapshot to the dense 20-slot layout. Absent slots stay ItemID.Invalid / 0 / 0.
             InventorySnapshot inventory = _inventory.ExportSnapshot(id);

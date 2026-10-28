@@ -15,7 +15,11 @@ namespace IronGrind.CharacterPersistence
         /// <summary>The stored record failed validation.</summary>
         CorruptRecord = 3,
 
-        /// <summary>A stored item id is not in the Item Database.</summary>
+        /// <summary>
+        /// Success with a warning: a stored gear item is not in the Item Database (or belongs to another gear slot) and its slot was left
+        /// empty. Returned by <c>ApplyLoadedRecord</c> after everything else was applied; the caller must admit the player. The next save
+        /// writes the slot empty (EC-CP-1).
+        /// </summary>
         ItemDatabaseMiss = 4,
 
         /// <summary>

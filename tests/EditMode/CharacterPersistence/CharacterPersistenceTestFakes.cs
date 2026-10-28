@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using IronGrind.CharacterPersistence;
 using IronGrind.CharacterStats;
 using IronGrind.Currency;
+using IronGrind.EquipmentSystem;
 using IronGrind.InventorySystem;
+using IronGrind.ItemDatabase;
 
 namespace IronGrind.Tests.EditMode.CharacterPersistence
 {
@@ -163,5 +165,132 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
         public List<CharacterID> UnregisterCalls { get; } = new List<CharacterID>();
 
         public void UnregisterCharacter(CharacterID charId) => UnregisterCalls.Add(charId);
+    }
+
+    /// <summary>
+    /// An <see cref="IEquipmentService"/> for the Character Persistence tests (Story 005): records the load-time calls in
+    /// order into an optional shared log, stores the slots <c>RestoreSlots</c> receives and returns them from <c>ExportSlots</c>
+    /// (7 empty slots before any restore). Each of Register, Restore and Export can be made to throw, after the call is
+    /// recorded; <see cref="ExportOverride"/> replaces the export result as is. Everything else is minimal.
+    /// </summary>
+    internal sealed class FakeEquipmentService : IEquipmentService
+    {
+        public const string CALL_UNREGISTER = "equipment.unregister";
+        public const string CALL_REGISTER = "equipment.register";
+        public const string CALL_RESTORE = "equipment.restore";
+
+        private readonly List<string> _log;
+        private SavedGearSlot[] _slots;
+
+        public FakeEquipmentService(List<string> log = null)
+        {
+            _log = log ?? new List<string>();
+        }
+
+        /// <summary>Calls in order, as <c>CALL_*</c> strings.</summary>
+        public List<string> Calls => _log;
+
+        public List<(CharacterID CharId, EntityID EntityId)> RegisterCalls { get; } = new List<(CharacterID, EntityID)>();
+
+        public List<CharacterID> UnregisterCalls { get; } = new List<CharacterID>();
+
+        public List<SavedGearSlot[]> RestoreCalls { get; } = new List<SavedGearSlot[]>();
+
+        /// <summary>Bit mask <c>RestoreSlots</c> reports as dropped.</summary>
+        public byte DroppedMask { get; set; }
+
+        /// <summary>Invoked inside <c>RestoreSlots</c>, so a test can observe live state at that moment.</summary>
+        public Action OnRestore { get; set; }
+
+        /// <summary>Thrown by <c>RegisterCharacter</c> after the call is recorded; null means no throw.</summary>
+        public Exception ThrowOnRegister { get; set; }
+
+        /// <summary>Thrown by <c>RestoreSlots</c> after the call is recorded; null means no throw.</summary>
+        public Exception ThrowOnRestore { get; set; }
+
+        /// <summary>Thrown by <c>ExportSlots</c> after the call is counted; null means no throw.</summary>
+        public Exception ThrowOnExport { get; set; }
+
+        /// <summary>When set, <c>ExportSlots</c> returns this array as is (for example one of the wrong length).</summary>
+        public SavedGearSlot[] ExportOverride { get; set; }
+
+        public int ExportCallCount { get; private set; }
+
+        public event Action<EquipmentAppearanceChangedEventArgs> OnAppearanceChanged { add { } remove { } }
+
+        public void RegisterCharacter(CharacterID charId, EntityID entityId)
+        {
+            _log.Add(CALL_REGISTER);
+            RegisterCalls.Add((charId, entityId));
+            if (ThrowOnRegister != null)
+            {
+                throw ThrowOnRegister;
+            }
+        }
+
+        public void UnregisterCharacter(CharacterID charId)
+        {
+            _log.Add(CALL_UNREGISTER);
+            UnregisterCalls.Add(charId);
+        }
+
+        public GearRestoreResult RestoreSlots(CharacterID charId, ReadOnlySpan<SavedGearSlot> slots)
+        {
+            _log.Add(CALL_RESTORE);
+            _slots = slots.ToArray();
+            RestoreCalls.Add(_slots);
+            if (ThrowOnRestore != null)
+            {
+                throw ThrowOnRestore;
+            }
+
+            OnRestore?.Invoke();
+            return new GearRestoreResult(DroppedMask);
+        }
+
+        public SavedGearSlot[] ExportSlots(CharacterID charId)
+        {
+            ExportCallCount++;
+            if (ThrowOnExport != null)
+            {
+                throw ThrowOnExport;
+            }
+
+            if (ExportOverride != null)
+            {
+                return ExportOverride;
+            }
+
+            if (_slots != null)
+            {
+                return (SavedGearSlot[])_slots.Clone();
+            }
+
+            var empty = new SavedGearSlot[EquipmentService.GEAR_SLOT_COUNT];
+            for (int i = 0; i < empty.Length; i++)
+            {
+                empty[i] = SavedGearSlot.Empty;
+            }
+
+            return empty;
+        }
+
+        public byte GetAppearanceFlags(CharacterID charId) => throw new NotSupportedException();
+
+        public EquipmentSlotState GetEquipmentSlotState(CharacterID charId, GearSlot slot) => throw new NotSupportedException();
+
+        public byte GetSlotEnhancementLevel(CharacterID charId, GearSlot slot) => throw new NotSupportedException();
+
+        public bool IsSlotTransitioning(CharacterID charId, GearSlot slot) => throw new NotSupportedException();
+
+        public ItemID GetEquippedWeaponItemID(CharacterID charId) => throw new NotSupportedException();
+
+        public byte GetEquippedWeaponEnhancementLevel(CharacterID charId) => throw new NotSupportedException();
+
+        public EquipResult Equip(CharacterID charId, GearSlot slot, ItemID itemId, int inventorySlotIndex) => throw new NotSupportedException();
+
+        public EquipResult Unequip(CharacterID charId, GearSlot slot) => throw new NotSupportedException();
+
+        public MergeResult RequestMerge(CharacterID charId, int slotIdx1, int slotIdx2, int slotIdx3) => throw new NotSupportedException();
     }
 }

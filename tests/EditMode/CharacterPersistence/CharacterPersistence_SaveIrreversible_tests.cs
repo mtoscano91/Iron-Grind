@@ -229,6 +229,7 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
                 rig.Leveling,
                 rig.Inventory,
                 rig.CurrencySystem,
+                new FakeEquipmentService(),
                 rig.Zones,
                 rig.Queue,
                 () => _serviceTime,
@@ -1084,7 +1085,7 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
         public void Test_ServiceBuiltWithoutZoneLocatorAndQueue_ThrowsInvalidOperationExceptionSynchronously()
         {
             Rig r = _rig;
-            var service = new CharacterPersistenceService(_counting, r.Stats, r.Leveling, r.Inventory, r.CurrencySystem);
+            var service = new CharacterPersistenceService(_counting, r.Stats, r.Leveling, r.Inventory, r.CurrencySystem, new FakeEquipmentService());
 
             Assert.Throws<InvalidOperationException>(() => service.SaveIrreversibleOutcome(CHAR_A, IrreversibleOutcomeTrigger.LevelUp, CancellationToken.None));
             Assert.AreEqual(0, _counting.UpdateCount);

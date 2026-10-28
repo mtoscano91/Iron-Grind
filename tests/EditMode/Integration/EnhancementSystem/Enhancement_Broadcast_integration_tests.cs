@@ -263,7 +263,7 @@ namespace IronGrind.Tests.EditMode.Integration.EnhancementSystem
             _leveling.AttachCharacterStats(_stats);
             _entity = CharacterStatsFixture.PlayerEntityId;
             _persistenceService = new CharacterPersistenceService(
-                _store, _stats, _leveling, _inventory, new CurrencySystem(), new FakeZoneLocator(),
+                _store, _stats, _leveling, _inventory, new CurrencySystem(), new FakeEquipmentService(), new FakeZoneLocator(),
                 new CharacterWriteQueue(), () => T2, TimeSpan.FromSeconds(5));
 
             _tick = 0u;

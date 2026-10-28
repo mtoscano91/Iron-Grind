@@ -248,7 +248,7 @@ namespace IronGrind.Tests.EditMode.LevelingSystem
                 rig.Stats,
                 rig.Leveling,
                 rig.Inventory,
-                rig.CurrencySystem,
+                rig.CurrencySystem, new FakeEquipmentService(),
                 rig.Zones,
                 rig.Queue,
                 () => T2,

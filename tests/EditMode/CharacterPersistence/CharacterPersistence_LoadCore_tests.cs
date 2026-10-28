@@ -112,7 +112,7 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             _leveling.AttachCharacterStats(_stats);
             // Story 004: ApplyLoadedRecord also needs Inventory and Currency; a permissive fake and a real CurrencySystem.
             _service = new CharacterPersistenceService(
-                _counting, _stats, _leveling, new RecordingInventory(), new CurrencySystem());
+                _counting, _stats, _leveling, new RecordingInventory(), new CurrencySystem(), new FakeEquipmentService());
             _entity = CharacterStatsFixture.PlayerEntityId;
             _statEvents = 0;
         }
