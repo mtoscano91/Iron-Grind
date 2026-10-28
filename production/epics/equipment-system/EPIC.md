@@ -3,7 +3,7 @@
 > **Layer**: Core
 > **GDD**: design/gdd/equipment-system.md
 > **Architecture Module**: Equipment (core gameplay/data — by-design no ADR, `architecture.md` Engine Knowledge Gap Summary: 🟢 LOW)
-> **Status**: Ready — design gate OQ-EQS-9 resolved 2026-10-26 (option a); `/create-stories` unblocked
+> **Status**: Complete — all 9 stories closed 2026-10-28 (design gate OQ-EQS-9 resolved 2026-10-26, option a)
 > **Stories**: 9 created 2026-10-26 (`/create-stories`, lean) — see Stories
 
 ## Overview
@@ -57,7 +57,7 @@ The Equipment System manages the seven gear slots of a player character (Weapon,
 | 006 | [Accessory Merge](story-006-accessory-merge.md) | Logic | Complete (2026-10-26) | ADR-010 |
 | 007 | [Restore and Export Gear Slots — the Load and Save Seam](story-007-restore-and-export-gear-slots.md) | Integration | Complete (2026-10-26) | ADR-006, ADR-010 |
 | 008 | [`EquipRequest` / `EquipResult` — Codecs, Request Handler, Owner Delivery](story-008-equip-request-and-result-delivery.md) | Integration | Complete (2026-10-26) | ADR-004, ADR-014, ADR-012 |
-| 009 | [`AppearanceChangedEvent` Zone Delivery](story-009-appearance-changed-event-delivery.md) | Integration | Ready | ADR-004, ADR-015 |
+| 009 | [`AppearanceChangedEvent` Zone Delivery](story-009-appearance-changed-event-delivery.md) | Integration | Complete (2026-10-28) | ADR-004, ADR-015 |
 
 Order: 001 → 002 → 003 → 004 → 005 → 007 → 008 → 009; 006 needs only 002. All of AC-EQS-1 to AC-EQS-33 are assigned.
 
@@ -78,4 +78,4 @@ This epic is complete when:
 
 ## Next Step
 
-Stories 001-008 Complete 2026-10-26. Run `/story-readiness production/epics/equipment-system/story-009-appearance-changed-event-delivery.md`, then `/dev-story`. Carry-over from 008: `EquipmentInboundRegistration.Register` and the real `IEquipmentService` / `ClearEquipRequestStore` (`ZoneInstancingWiringOptions`) are not wired in `ZoneServerComposition` yet (server bootstrap); the `EquipRequest` counter's reconnect behaviour is unspecified in the wire protocol — the handler treats only an equal id as a retransmit (candidate GDD note). Carry-over from 005: the appearance byte is cached per character and recomputed at the end of every `Equip` / `Unequip`; Story 007 (restore) must call the same recompute (`RefreshAppearance`) after writing restored slots, and Story 009 reads `GetAppearanceFlags` / subscribes to `OnAppearanceChanged`. Carry-over from 004: CR-EQS-6 has no rule for a failed step-7 reclaim; the code leaves the slot Empty with the old item in the bag (user decision, option A) — candidate GDD note. Carry-over from 003: the server composition root must pass `throwOnInvalidItem` explicitly (the server bootstrap — not done in Story 008).
+All 9 stories Complete (001-008 on 2026-10-26, 009 on 2026-10-28). Next: Character Persistence Story 005 (load equipment re-registration) is no longer blocked on this epic — re-run `/story-readiness` on it. Carry-over from 009: `AppearanceChangedSender` is not constructed in `ZoneServerComposition` (stand-in equipment service; server bootstrap, with the 008 carry-over below); the real snapshot player-state source must read `GetAppearanceFlags` (OQ-EQS-6); if a second `OnAppearanceChanged` subscriber appears, `EquipmentService.Raise` should catch per handler. Carry-over from 008: `EquipmentInboundRegistration.Register` and the real `IEquipmentService` / `ClearEquipRequestStore` (`ZoneInstancingWiringOptions`) are not wired in `ZoneServerComposition` yet (server bootstrap); the `EquipRequest` counter's reconnect behaviour is unspecified in the wire protocol — the handler treats only an equal id as a retransmit (candidate GDD note). Carry-over from 005: the appearance byte is cached per character and recomputed at the end of every `Equip` / `Unequip`; Story 007 (restore) must call the same recompute (`RefreshAppearance`) after writing restored slots, and Story 009 reads `GetAppearanceFlags` / subscribes to `OnAppearanceChanged`. Carry-over from 004: CR-EQS-6 has no rule for a failed step-7 reclaim; the code leaves the slot Empty with the old item in the bag (user decision, option A) — candidate GDD note. Carry-over from 003: the server composition root must pass `throwOnInvalidItem` explicitly (the server bootstrap — not done in Story 008).

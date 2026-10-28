@@ -114,6 +114,7 @@ namespace IronGrind.Tests.EditMode.Architecture
             "IronGrind.Networking.EquipRequest",                    // consumer (planned): Inventory UI equipment panel, equip/unequip sender (wire schema; Equipment Story 008)
             "IronGrind.Networking.EquipResultMessage",              // consumer (planned): Inventory UI equipment panel, result handler (wire schema; wire name EquipResult)
             "IronGrind.Networking.EquipFailReason",                 // consumer (planned): Inventory UI equipment panel (wire enum of EquipResult)
+            "IronGrind.Networking.AppearanceChangedEvent",          // consumer (planned): character appearance renderer / VFX (wire schema; Equipment Story 009)
             // Networking: codecs
             "IronGrind.Networking.MessageEnvelopeCodec",        // consumer (planned): client message read and write path (codec)
             "IronGrind.Networking.BatchHeaderCodec",            // consumer (planned): client message read and write path (codec)
@@ -146,6 +147,7 @@ namespace IronGrind.Tests.EditMode.Architecture
             "IronGrind.Networking.ZoneStateSnapshotFragmentCodec",       // consumer (planned): client zone snapshot reassembly, fragment reader (codec)
             "IronGrind.Networking.EquipRequestCodec",                    // consumer (planned): Inventory UI equipment panel, request writer (codec)
             "IronGrind.Networking.EquipResultMessageCodec",              // consumer (planned): Inventory UI equipment panel, result reader (codec)
+            "IronGrind.Networking.AppearanceChangedEventCodec",          // consumer (planned): character appearance renderer / VFX (codec; Equipment Story 009)
             "IronGrind.Networking.WireStringCodec",                      // consumer (planned): client message read path, length-prefixed UTF-8 names (codec helper)
             "IronGrind.Networking.WireEnumCodec",               // consumer (planned): client message read and write path (codec)
             "IronGrind.Networking.WireFixedPointCodec",         // consumer (planned): client message read and write path (codec)

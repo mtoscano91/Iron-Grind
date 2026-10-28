@@ -1,7 +1,7 @@
 # Story 009: `AppearanceChangedEvent` Zone Delivery
 
 > **Epic**: Equipment System
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-26
@@ -30,13 +30,13 @@
 
 *From the GDDs above, scoped to this story:*
 
-- [ ] `AppearanceChangedEvent` codec: `{uint entityId, byte equipmentAppearanceFlags}` — 5-byte body, round-trips; wrong length rejected
-- [ ] An `AppearanceChangedSender` subscribes to `EquipmentService.OnAppearanceChanged` (Story 005) and enqueues one `AppearanceChangedEvent` to all clients of the zone, including the equipping player, with the new flags byte and the player's `EntityID`
-- [ ] Sent only when the byte changed — never for `NoChange`, a failure, or an equip that leaves the byte the same (driven by Story 005's raise rule)
-- [ ] The sink is called with `isCapExempt: false` (readiness decision 2026-10-28): CR-NET-7.7 reserves the cap exemption for `EnhancementRequestReceived`, `EnhancementAttemptResult` and bulk-transfer fragments — "No other message class receives this exemption"; the channel contract's R-OD P1 does not make a message exempt. ADR-015 Decision 1 and `Enhancement9BroadcastSender` pass `false` for zone-wide sends. Asserted by a test
-- [ ] A restore on login (Story 007) sends nothing; the joining player's byte reaches others through `EntityState.equipmentAppearanceFlags` in the zone snapshot
-- [ ] `Dispose()` unsubscribes; a send after dispose does not happen
-- [ ] An exception from the sink is contained (one error logged per caught exception) and does not change the equip result
+- [x] `AppearanceChangedEvent` codec: `{uint entityId, byte equipmentAppearanceFlags}` — 5-byte body, round-trips; wrong length rejected
+- [x] An `AppearanceChangedSender` subscribes to `EquipmentService.OnAppearanceChanged` (Story 005) and enqueues one `AppearanceChangedEvent` to all clients of the zone, including the equipping player, with the new flags byte and the player's `EntityID`
+- [x] Sent only when the byte changed — never for `NoChange`, a failure, or an equip that leaves the byte the same (driven by Story 005's raise rule)
+- [x] The sink is called with `isCapExempt: false` (readiness decision 2026-10-28): CR-NET-7.7 reserves the cap exemption for `EnhancementRequestReceived`, `EnhancementAttemptResult` and bulk-transfer fragments — "No other message class receives this exemption"; the channel contract's R-OD P1 does not make a message exempt. ADR-015 Decision 1 and `Enhancement9BroadcastSender` pass `false` for zone-wide sends. Asserted by a test
+- [x] A restore on login (Story 007) sends nothing; the joining player's byte reaches others through `EntityState.equipmentAppearanceFlags` in the zone snapshot
+- [x] `Dispose()` unsubscribes; a send after dispose does not happen
+- [x] An exception from the sink is contained (one error logged per caught exception) and does not change the equip result
 
 ---
 
@@ -79,7 +79,7 @@
 **Story Type**: Integration
 **Required evidence**: both test files above — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — `AppearanceChangedEvent_Codec_tests.cs` 10 cases, `EquipmentSystem_AppearanceChangedSender_tests.cs` 17 tests; all passing (EditMode 4434 / 0 failed, 2026-10-28)
 
 ---
 
@@ -87,3 +87,17 @@
 
 - Depends on: Story 005 (the event), Story 008 (message type id allocation and composition-root wiring)
 - Unlocks: None
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-10-28
+**Criteria**: 7/7 passing, all covered by automated tests (none deferred)
+**Deviations** (advisory, user accepted 2026-10-28, no tech debt):
+1. **Not wired into the zone composition root.** The Implementation Notes say the sender is constructed after the `EquipmentService`; `ZoneServerComposition` still uses `StandInZoneEquipmentService`, so `AppearanceChangedSender` is built only by tests (the `Enhancement9BroadcastSender` precedent). Joins the server-bootstrap carry-over from Story 008.
+2. **Exception containment lives in the service.** The sender does not catch; `EquipmentService.Raise` catches and logs once through `Debug.LogException`, and the equip result stands. `Raise` invokes the multicast delegate in one try/catch, so a throwing subscriber stops later ones — the sender is the only `src` subscriber today; if a second appears, `Raise` should catch per handler.
+3. **Snapshot byte still a forward dependency** (as written in the Implementation Notes): the real `IZoneEntityStateSource` must read `IEquipmentService.GetAppearanceFlags`; OQ-EQS-6 stays open.
+**Scope**: also touched `tests/EditMode/Architecture/AssemblyBoundaryLists.cs` (the two new public Foundation types).
+**Test Evidence**: Integration — `tests/EditMode/Networking/AppearanceChangedEvent_Codec_tests.cs`, `tests/EditMode/EquipmentSystem/EquipmentSystem_AppearanceChangedSender_tests.cs`
+**Code Review**: Complete (2026-10-28, APPROVED WITH SUGGESTIONS → all applied: `WriteBody` exception doc, reused-buffer remark, 5 tests)

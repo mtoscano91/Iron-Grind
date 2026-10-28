@@ -215,6 +215,11 @@ namespace IronGrind.Networking
             AddPriority(EquipResultMessage.MessageTypeId, nameof(EquipResultMessage), DesignPillar.EarnedPower,
                 MessageDirection.ServerToOwningClient, "Wire name EquipResult. Authoritative slot state after the request; a lost result leaves the client's equipment panel waiting or wrong.");
 
+            // Equipment Story 009: zone-wide appearance update, R-OD priority path (not cap-exempt).
+            AddPriority(AppearanceChangedEvent.MessageTypeId, nameof(AppearanceChangedEvent), DesignPillar.SocialSignals,
+                MessageDirection.ServerToAllZoneClients, "Zone-wide appearance update; absolute flags byte; R-OD - a lost update leaves other players seeing stale gear. " +
+                "Audience is this zone's clients only (CCR-3).");
+
             // Zone Instancing Story 006: zone join / session / snapshot messages, R-OD priority path.
             // MessageTypeIds 0xE130-0xE135 and 0xF000 are provisional (TD-011).
             AddPriority(ZoneFullResponse.MessageTypeId, nameof(ZoneFullResponse), DesignPillar.Infrastructure,
