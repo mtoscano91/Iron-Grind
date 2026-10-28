@@ -2,7 +2,7 @@
 
 > **Status**: Approved (lean re-review, 2026-05-20 — per `systems-index.md`; header corrected 2026-10-28)
 > **Author**: Manuel Toscano + Claude Code agents
-> **Last Updated**: 2026-05-20 (lean re-review fixes)
+> **Last Updated**: 2026-10-28 (CR-SE-2 distinct-stat rule, EC-SE-11 — Story 003 readiness)
 > **Implements Pillar**: Social Gravity (primary), Earned Power (secondary)
 
 ## Overview
@@ -39,6 +39,8 @@ The system tracks each live application as an `ActiveEffect` value struct: `Buff
 **CR-SE-2: Permitted and prohibited stat targets**
 
 Any `StatID` except `Level`, `Experience`, `CurrentHP`, and `CurrentMP` may be targeted by a modifier. `MaxHP` and `MaxMP` are permitted (expiry clamping applies — see CR-SE-8). `CurrentHP` and `CurrentMP` are prohibited because resource restoration is delivered via `ApplyRegen()` / `ApplyManaRegen()` (CR-SE-6), not via the modifier layer.
+
+Each modifier in one `BuffDefinition` must target a distinct `StatID`. A definition that repeats a `StatID` is rejected with `ApplyResult.InvalidStat` and makes no changes (see EC-SE-11). To combine a flat and a percentage bonus on one stat, author a single `StatModifier` carrying both values.
 
 **CR-SE-3: Public entry points**
 
@@ -292,6 +294,10 @@ Entity dies in tick N (effects marked `PendingRemoval`). Before tick N+1 cleanup
 
 An entity is at `CurrentHP = MaxHP` when a regen buff is active. On each tick, `ApplyRegen(entityId, hpRegenPerTick)` is still called. `CharacterStats` clamps to MaxHP and fires no event (no state change). This is correct and intentional — Status Effects does not check HP state before calling `ApplyRegen()` (see F-SE-5). The no-op branch stays in `CharacterStats` where it belongs.
 
+**EC-SE-11: One definition targets the same StatID twice**
+
+`CharacterStats` keys buff entries by `BuffID` within each stat, so a second `AddBuffModifier()` for the same `(entity, StatID, BuffID)` overwrites the first instead of adding a second entry. A definition with two modifiers on one stat would silently lose the first modifier's values. `ApplyEffect()` therefore rejects such a definition with `ApplyResult.InvalidStat` during definition validation (CR-SE-2), before any target, row, or capacity check and before any `AddBuffModifier()` call.
+
 ## Dependencies
 
 | System | Direction | Interface | Notes |
@@ -373,7 +379,7 @@ Call `ApplyEffect()` with a `BuffDefinition` where `modifierCount == 0`, `hpRege
 Call `ApplyEffect()` with `durationTicks = 0` (from `DurationSeconds < 0.05`). Assert return value is `ApplyResult.InvalidDuration`. Call with `durationTicks = 1`. Assert `ApplyResult.Success`.
 
 **AC-SE-08 — Prohibited stat targets rejected** (Logic)
-Attempt `ApplyEffect()` with a `StatModifier` targeting `Level`, then `Experience`, then `CurrentHP`, then `CurrentMP` (four separate calls). Assert all four return `ApplyResult.InvalidStat`. Assert no `AddBuffModifier()` call is made in any case.
+Attempt `ApplyEffect()` with a `StatModifier` targeting `Level`, then `Experience`, then `CurrentHP`, then `CurrentMP` (four separate calls). Assert all four return `ApplyResult.InvalidStat`. Assert no `AddBuffModifier()` call is made in any case. Then apply a definition with two modifiers both targeting `AttackPower` (EC-SE-11); assert `ApplyResult.InvalidStat`, no `AddBuffModifier()` call, and no row created.
 
 **AC-SE-09 — MaxHP and MaxMP are permitted buff targets** (Logic)
 Apply a `BuffDefinition` with a `StatModifier` targeting `MaxHP` (flat=+100). Assert `ApplyResult.Success` and `GetEffectiveStat(MaxHP)` returns base + 100.

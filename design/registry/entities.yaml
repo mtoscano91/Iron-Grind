@@ -829,9 +829,9 @@ constants:
     type: "int constant (tuning knob)"
     value: 8
     unit: "StatModifier entries per BuffDefinition (max)"
-    note: "Maximum number of distinct stat modifiers a single BuffDefinition may contain. Hard upper bound: CharacterStats modifier capacity (32 entries). Must satisfy: MAX_ACTIVE_BUFFS_PER_ENTITY ≥ floor(32 / MAX_STATS_PER_BUFF). Reducing this value requires re-deriving the MAX_ACTIVE_BUFFS_PER_ENTITY safe range and the AC-SE-26 CI guard. Safe range: [1, 32]."
+    note: "Maximum number of distinct stat modifiers a single BuffDefinition may contain; a definition that repeats a StatID is rejected with InvalidStat (CR-SE-2, EC-SE-11). Hard upper bound: CharacterStats modifier capacity (32 entries). Must satisfy: MAX_ACTIVE_BUFFS_PER_ENTITY ≥ floor(32 / MAX_STATS_PER_BUFF). Reducing this value requires re-deriving the MAX_ACTIVE_BUFFS_PER_ENTITY safe range and the AC-SE-26 CI guard. Safe range: [1, 32]."
     added: "2026-05-20"
-    revised: ""
+    revised: "2026-10-28"
 
   - name: MAX_ACTIVE_BUFFS_PER_ENTITY
     status: active

@@ -1,7 +1,7 @@
 # Story 003: Application, Atomic Rollback and Caster Attribution
 
 > **Epic**: Status Effects / Buffs
-> **Status**: Ready — written 2026-10-28 (`/create-stories`, lean)
+> **Status**: Ready — written 2026-10-28 (`/create-stories`, lean); `/story-readiness` 2026-10-28 NEEDS WORK (1 gap) → fixed
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-26
@@ -9,7 +9,7 @@
 
 ## Context
 
-**GDD**: `design/gdd/status-effects.md` — CR-SE-3 (atomic application), CR-SE-13 (caster attribution), Interactions (Character Stats row); AC-SE-01, 05, 09, 31
+**GDD**: `design/gdd/status-effects.md` — CR-SE-2 (distinct stats per definition), CR-SE-3 (atomic application), CR-SE-13 (caster attribution), EC-SE-11, Interactions (Character Stats row); AC-SE-01, 05, 08 (repeated-stat clause), 09, 31
 **Requirement**: `TR-se-003` (placeholder — registry empty)
 
 **ADR Governing Implementation**: ADR-012 (assembly placement); ADR-010 (Character Stats' `OnStatChanged` is the notification path — this story adds no event)
@@ -28,9 +28,10 @@
 
 - [ ] **Seam**: `IBuffModifierLayer` (interface defined in Story 002; this story adds the production adapter) with `bool TryAddBuffModifier(EntityID, StatID, BuffModifierEntry)`, `void RemoveBuffModifier(EntityID, StatID, BuffID)`. The production adapter over `CharacterStats` returns false when `AddBuffModifier` did not add the entry (write-locked stat, or the 32-per-stat capacity hit — today it logs and returns), detected by comparing the stat's buff count before and after or by an equivalent check; it never swallows a successful add.
 - [ ] **AC-SE-01**: one modifier (AttackPower, flat +10, pct 0), `DurationTicks 40` → `Success`; exactly one add with `(entity, AttackPower, flat 10, pct 0, duration 40, buffId)`; with the real `CharacterStats`, `GetEffectiveStat(AttackPower)` = base + 10; the entity has one row with `TicksRemaining 40`.
-- [ ] **AC-SE-05 — atomic rollback**: a fake layer fails the 2nd add of a 3-modifier buff → (1) the 1st modifier was added then removed; (2) the 3rd was never added; (3) effective values unchanged for all 3 stats; (4) no row; occupancy unchanged; result is a failure (`CapacityExceeded` — the only failure Character Stats can produce on add for a permitted stat; document the mapping).
+- [ ] **AC-SE-05 — atomic rollback**: a fake layer fails the 2nd add of a 3-modifier buff → (1) the 1st modifier was added then removed; (2) the 3rd was never added; (3) effective values unchanged for all 3 stats; (4) no row; occupancy unchanged; result is a failure (`CapacityExceeded`; document the mapping). After validation passes, Character Stats can reject an add for two reasons: the 32-per-stat capacity is full, or `AddBuffModifier` is called while Character Stats is firing `OnStatChanged` (`IsFiringAndAssert` — e.g. from inside an `OnStatChanged` subscriber). Both map to `CapacityExceeded`; the second also logs an assertion from Character Stats.
 - [ ] **AC-SE-09**: MaxHP flat +100 → `Success`, `GetEffectiveStat(MaxHP)` = base + 100. MaxMP flat +50 → `Success`, base + 50.
 - [ ] **AC-SE-31**: `ApplyEffect(target, caster 42, def)` → the row's `CasterEntityId` = 42; readable through a read-only accessor (e.g. `TryGetActiveEffect(EntityID, BuffID, out ActiveEffect)` and an allocation-free per-entity enumeration) without calling Character Stats.
+- [ ] **Repeated stat rejected (CR-SE-2, EC-SE-11)**: a definition with two modifiers on `AttackPower` → `InvalidStat`; zero layer calls; no row; occupancy unchanged. The check goes in `StatusEffectsService.ValidateDefinition`, after the prohibited-stat check, so the adapter never sees the same `(entity, stat, BuffID)` twice in one apply.
 - [ ] **Regen-only definition**: `ModifierCount 0`, `HpRegenPerTick 5` → `Success`, a row exists, zero adds.
 - [ ] **Snapshot**: the row stores the definition's modifier values; changing nothing else, a later read returns the same values (the snapshot is what expiry removes — Story 005).
 
@@ -55,6 +56,7 @@
 - **AC-SE-01** — Given a real `CharacterStats` entity with AttackPower base 20, When the +10 buff is applied, Then one add with the exact arguments, effective 30, row `TicksRemaining` 40.
 - **AC-SE-05** — Given a fake layer failing call 2, When a 3-modifier buff is applied, Then calls are add(1), add(2 → false), remove(1), no add(3); no row; effective values unchanged. Edge: failing call 1 → no removes; failing call 3 → removes 2 then 1.
 - **AC-SE-09** — MaxHP +100 and MaxMP +50 succeed and show in effective stats.
+- **Repeated stat** — Given a definition with AttackPower flat +10 and AttackPower pct +5%, When applied, Then `InvalidStat`, no layer calls, no row. Edge: AttackPower + MaxHP + AttackPower (repeat not adjacent) → `InvalidStat`; CurrentHP twice → `InvalidStat`.
 - **AC-SE-31** — caster 42 stored; accessor reads it; accessor makes no layer call.
 - **Adapter** — real `CharacterStats`: adding to a write-locked stat via the adapter returns false (and the error log is expected); a normal add returns true.
 
