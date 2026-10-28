@@ -1,6 +1,6 @@
 # Status Effects / Buffs
 
-> **Status**: In Design — Revised (post-review)
+> **Status**: Approved (lean re-review, 2026-05-20 — per `systems-index.md`; header corrected 2026-10-28)
 > **Author**: Manuel Toscano + Claude Code agents
 > **Last Updated**: 2026-05-20 (lean re-review fixes)
 > **Implements Pillar**: Social Gravity (primary), Earned Power (secondary)

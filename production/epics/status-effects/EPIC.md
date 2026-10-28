@@ -4,7 +4,7 @@
 > **GDD**: design/gdd/status-effects.md
 > **Architecture Module**: Status Effects
 > **Status**: Ready
-> **Stories**: Not yet created — run `/create-stories status-effects`
+> **Stories**: 9 stories created 2026-10-28 (001–009), all Ready
 
 ## Overview
 
@@ -38,6 +38,24 @@ This epic is complete when:
 - Logic stories have passing test files in `tests/EditMode/StatusEffects/`
 - Client-facing buff-icon/duration display is explicitly deferred (TR-se-006) rather than silently dropped, pending the future wire-schema addition
 
+## Stories
+
+*Written 2026-10-28 (`/create-stories`, lean). Code findings at creation: OQ-SE-1 HP side holds in code (`ApplyDamage(0f)` clamps without an event); MP side needs `CharacterStats.ClampCurrentMPToMax` (Story 006). OQ-SE-2 is resolved by a direct cleanup call on Zone Instancing's slot-release paths (Story 008, hook point decided at its readiness). `CharacterStats.AddBuffModifier` returns `void`, so application goes through an `IBuffModifierLayer` seam (Story 003). Character Stats caps 32 buff entries per stat; the GDD's guard (32 per entity) is stricter and stays. No Auto-Attack Combat code exists yet — AC-SE-24 uses a stand-in (Story 009). Recommended order: 001 → 002 → 003 → 005 → 004 → 006 → 007 → 008 → 009.*
+
+| # | Story | Type | Status | ADR |
+|---|-------|------|--------|-----|
+| 001 | [Data Model, Constants and Duration Conversion](story-001-data-model-and-constants.md) | Logic | Ready | ADR-012, ADR-010 |
+| 002 | [ApplyEffect Validation](story-002-apply-effect-validation.md) | Logic | Ready | ADR-012 |
+| 003 | [Application, Atomic Rollback and Caster Attribution](story-003-application-and-rollback.md) | Logic | Ready | ADR-012, ADR-010 |
+| 004 | [Refresh on Reapply](story-004-refresh-on-reapply.md) | Logic | Ready | ADR-012 |
+| 005 | [Per-Tick Processing and Expiry](story-005-tick-processing-and-expiry.md) | Logic | Ready | ADR-010, ADR-014 |
+| 006 | [Expiry Clamp and Batched Stat Events](story-006-expiry-clamp-and-batched-events.md) | Logic | Ready | ADR-010 |
+| 007 | [Death Cleanup and Instant Heal](story-007-death-cleanup-and-instant-heal.md) | Logic | Ready | ADR-010 |
+| 008 | [Zone Departure and Slot Cleanup](story-008-zone-departure-and-slot-cleanup.md) | Integration | Ready (hook point open) | ADR-010, ADR-012 |
+| 009 | [Tick Pipeline Wiring, Mob Targets and Allocation Budget](story-009-tick-pipeline-wiring-and-allocation.md) | Integration | Ready | ADR-014, ADR-012 |
+
+TR-se-006 (client buff display) has no story: it waits on a Networking Core wire-schema addition, as the Definition of Done says.
+
 ## Next Step
 
-Run `/create-stories status-effects` to break this epic into implementable stories.
+Run `/story-readiness production/epics/status-effects/story-001-data-model-and-constants.md`, then `/dev-story`.
