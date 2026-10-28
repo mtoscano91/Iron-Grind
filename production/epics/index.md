@@ -18,7 +18,7 @@ Control Manifest Version: 2026-06-28
 | [Status Effects / Buffs](status-effects/EPIC.md) | Core | Status Effects | design/gdd/status-effects.md | Not yet created | Ready |
 | [Equipment System](equipment-system/EPIC.md) | Core | Equipment System | design/gdd/equipment-system.md | 9 stories (001-009 written 2026-10-26): 9 Complete (001-008 on 2026-10-26, 009 on 2026-10-28) | Complete — unblocks Character Persistence Story 005 |
 | [Zone Instancing](zone-instancing/EPIC.md) | Core | Zone Instancing (zone-process side) | design/gdd/zone-instancing.md | 14 stories (001-014, written 2026-10-22); 001-010 Complete, rest Ready | Ready — routing, `ZoneID` allocation and gateway registration (TR-zi-001 allocator, 005, 018) **Blocked** until a gateway ADR + epic exist |
-| [Character Persistence](character-persistence/EPIC.md) | Core | Character Persistence | design/gdd/character-persistence.md | 17 stories (001-016 written 2026-10-12, 017 added 2026-10-16): 15 Complete (001-004, 006-015, 017; last 015 on 2026-10-26), 2 Blocked (005 on the Equipment System — that epic Complete 2026-10-28, re-run `/story-readiness` on 005; 016 on 005) | In Progress |
+| [Character Persistence](character-persistence/EPIC.md) | Core | Character Persistence | design/gdd/character-persistence.md | 17 stories (001-016 written 2026-10-12, 017 added 2026-10-16): 15 Complete (001-004, 006-015, 017; last 015 on 2026-10-26), 005 Ready (readiness 2026-10-28), 016 Blocked on 005 | In Progress |
 | [Enhancement System](enhancement-system/EPIC.md) | Feature | Enhancement System | design/gdd/enhancement-system.md | 15 stories (001-010 and 012-014 Complete; 011 Blocked on Character Persistence; 015 Blocked on 011) | In Progress |
 
 ## Notes

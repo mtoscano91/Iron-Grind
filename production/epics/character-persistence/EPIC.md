@@ -80,7 +80,7 @@ This epic is complete when:
 | 002 | [Record Store Seam, In-Memory Store, `CreateStub`](story-002-record-store-and-create-stub.md) | Logic | Complete (2026-10-12; 67 test cases, EditMode 2590 / 2590; COMPLETE WITH NOTES) | ADR-006, ADR-011 |
 | 003 | [`LoadCharacter` — Validation, Account Check, Base Stats, Timeout](story-003-load-validation-and-base-stats.md) | Integration | Complete (2026-10-15; 82 test cases, EditMode 2671 / 2671; COMPLETE WITH NOTES) | ADR-006, ADR-011 |
 | 004 | [`LoadCharacter` — Inventory, Gold, At-Cap, HP/MP Clamp](story-004-load-inventory-gold-clamp-events.md) | Integration | Complete (2026-10-15; 20 test cases, EditMode 2701 / 2701; COMPLETE WITH NOTES) | ADR-011, ADR-010 |
-| 005 | [`LoadCharacter` — Equipment Re-registration](story-005-load-equipment-reregistration.md) | Integration | Blocked (the Equipment System has no code; 3 open decisions) | ADR-011, ADR-010 |
+| 005 | [`LoadCharacter` — Equipment Re-registration](story-005-load-equipment-reregistration.md) | Integration | Ready (readiness 2026-10-28: NEEDS WORK → fixed; also moves save step 3 to `ExportSlots` and admits on `ItemDatabaseMiss`) | ADR-011, ADR-010 |
 | 006 | [Per-Character Save Queue](story-006-per-character-save-queue.md) | Logic | Complete (2026-10-15; 28 test cases, EditMode 2729 / 2729; COMPLETE WITH NOTES) | ADR-006, ADR-011 |
 | 007 | [`SaveSession` — the Step Sequence](story-007-save-session.md) | Integration | Complete (2026-10-15; 47 test cases, EditMode 2774 / 2774; COMPLETE WITH NOTES) | ADR-011, ADR-006 |
 | 008 | [`SaveIrreversibleOutcome`](story-008-save-irreversible-outcome.md) | Integration | Complete (2026-10-15; 42 test cases, EditMode 2815 / 2815; COMPLETE WITH NOTES) | ADR-006, ADR-011 |
