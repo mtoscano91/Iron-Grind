@@ -3,7 +3,7 @@
 > **Layer**: Core
 > **GDD**: design/gdd/character-persistence.md
 > **Architecture Module**: Character Persistence — `CharacterPersistenceService : ICharacterPersistence` (async), PostgreSQL via Npgsql and Dapper
-> **Status**: In Progress (created 2026-10-12; 16 stories written 2026-10-12 — 13 Complete (001–004, 006–010, 012–014, 017 — 017 added and Complete 2026-10-16 for TD-070 / TD-060; 012–014 Complete 2026-10-19); 011 Complete 2026-10-26 → 14 Complete; 015 Complete 2026-10-26 → 15 Complete; 005 Complete 2026-10-28 → 16 Complete, 016 left (no longer blocked))
+> **Status**: In Progress (created 2026-10-12; 16 stories written 2026-10-12 — 13 Complete (001–004, 006–010, 012–014, 017 — 017 added and Complete 2026-10-16 for TD-070 / TD-060; 012–014 Complete 2026-10-19); 011 Complete 2026-10-26 → 14 Complete; 015 Complete 2026-10-26 → 15 Complete; 005 Complete 2026-10-28 → 16 Complete, 016 left (Ready 2026-10-28))
 > **Stories**: 16 stories created 2026-10-12 (001–016); Story 017 added 2026-10-16
 > **Manifest Version**: 2026-10-09
 
@@ -91,7 +91,7 @@ This epic is complete when:
 | 013 | [SQL Migrations for `character_records` and `pending_purchases`](story-013-sql-migrations.md) | Config/Data | Complete (2026-10-19) | ADR-006 |
 | 014 | [The Npgsql Character Record Store](story-014-npgsql-character-record-store.md) | Integration | Complete (2026-10-19; COMPLETE WITH NOTES; DB run 159/159; TD-075) | ADR-006, ADR-011 |
 | 015 | [The Npgsql Pending-Purchase Store](story-015-npgsql-pending-purchase-store.md) | Integration | Complete (2026-10-26, COMPLETE WITH NOTES) | ADR-006, ADR-001 |
-| 016 | [The Real-Database Verification Run](story-016-real-database-verification-run.md) | Integration | Not blocked — every dependency Complete (005 on 2026-10-28); run `/story-readiness` | ADR-006 |
+| 016 | [The Real-Database Verification Run](story-016-real-database-verification-run.md) | Integration | Ready (`/story-readiness` 2026-10-28; 10 h; dev machine only, curated Database fixture) | ADR-006 |
 | 017 | [Session-End Saves Wait for the Mutation Gate](story-017-session-end-waits-for-the-mutation-gate.md) | Integration | Complete (2026-10-16; 16 new test cases, EditMode 2932 / 2932; COMPLETE WITH NOTES; closes TD-070 and TD-060, adds TD-071) | ADR-011 |
 
 **Acceptance criteria owned outside this epic**: AC-CP-27 (enhancement commit before broadcast) — Enhancement Story 011. AC-CP-28 (respec failure with its compensating `AddGold`) and AC-CP-29 (item consumption) — the Respec and Consumable Use systems, which have no code.
@@ -116,4 +116,4 @@ Each is an open decision in the story named; several need a line in the GDD.
 
 ## Next Step
 
-16 of 17 stories Complete (005 on 2026-10-28). Next: `/story-readiness production/epics/character-persistence/story-016-real-database-verification-run.md` — its header still says Blocked; every dependency is now Complete. Carry-over from 005: the real `IEquipmentService` is not wired into `ZoneServerComposition` (server bootstrap, shared with the Equipment 008/009 carry-over).
+16 of 17 stories Complete (005 on 2026-10-28). Next: `/dev-story production/epics/character-persistence/story-016-real-database-verification-run.md` — Ready 2026-10-28 (dev machine only; curated Database fixture, Part A suites unchanged; ADR-006 note 2026-10-28 defers the CI gates). Carry-over from 005: the real `IEquipmentService` is not wired into `ZoneServerComposition` (server bootstrap, shared with the Equipment 008/009 carry-over).

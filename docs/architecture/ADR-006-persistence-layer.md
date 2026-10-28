@@ -308,6 +308,8 @@ Migrations are applied manually before server deployment for MVP. Automated migr
 - **Concurrency CI gate**: AC-CP-21 confirms zero parallel writes for the same CharacterID across 50 concurrent Task invocations
 - **Rows-affected check**: AC-CP-19 / AC-CP-20 confirm `ConcurrencyConflict` is returned when a concurrent writer increments `save_version` between the read and the UPDATE
 
+> **Note 2026-10-28 (Character Persistence Story 016 readiness):** the two "CI gates" run on the developer's machine for now — `[Explicit]` `[Category("Database")]` tests against the portable local PostgreSQL 16.15, results recorded in `production/qa/evidence/character-persistence-016-database-verification.md`. CI has no PostgreSQL service yet; when one is added, both gates move into CI unchanged. The 50 ms P95 figure is measured on the developer's machine, not the production host. The criteria themselves are unchanged.
+
 ## Amendments
 
 ### Amendment 1 (2026-10-01) — `inventory_slots` entries carry `enhancement_level`
