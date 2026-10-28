@@ -1,7 +1,7 @@
 # Story 001: Data Model, Constants and Duration Conversion
 
 > **Epic**: Status Effects / Buffs
-> **Status**: Ready — written 2026-10-28 (`/create-stories`, lean)
+> **Status**: Ready — written 2026-10-28 (`/create-stories`, lean); `/story-readiness` 2026-10-28: NEEDS WORK (3 gaps) → fixed → Ready
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-26
@@ -10,13 +10,15 @@
 ## Context
 
 **GDD**: `design/gdd/status-effects.md` — CR-SE-1 (data model), CR-SE-2 (stat targets, as a static check), CR-SE-15 (table layout), F-SE-1 (duration conversion), Tuning Knobs, AC-SE-26
-**Requirement**: `TR-se-001` (placeholder — `docs/architecture/tr-registry.yaml` has no Status Effects entries yet)
+**Requirement**: `TR-se-001`
 
 **ADR Governing Implementation**: ADR-012 (Server/Client Assembly Boundary); ADR-010 (Event/Messaging) for the value-type rule
 **ADR Decision Summary**: server-authoritative core logic lives in `IronGrind.ServerLogic`; event and message argument types are `readonly struct`s with no per-use allocation.
 
 **Engine**: Unity 6.3 LTS | **Risk**: LOW
 **Engine Notes**: plain C#; no Unity API. The value types must be unmanaged so IL2CPP stores them without boxing.
+
+**Performance**: no runtime cost in this story (types and constants only). Allocation-free storage is checked by the `IsReferenceOrContainsReferences` test. Tick cost is budgeted in Story 005.
 
 **Control Manifest Rules (this layer)**:
 - Required: server-authoritative core logic is `IronGrind.ServerLogic` (`src/ServerLogic/`) — ADR-012
@@ -29,10 +31,10 @@
 
 *From GDD `design/gdd/status-effects.md`, scoped to this story:*
 
-- [ ] **Types (CR-SE-1)**: `StatModifier` (`StatID StatId`, `float FlatBonus`, `float PctBonus`), `BuffDefinition` (`BuffID BuffId`, `byte ModifierCount`, `StatModifier Modifier0`…`Modifier7`, `uint DurationTicks`, `float HpRegenPerTick`, `float MpRegenPerTick`) and `ActiveEffect` (`BuffID`, `EntityID EntityId`, `EntityID CasterEntityId`, `uint TicksRemaining`, `byte ModifierCount`, 8 inline `StatModifier`s, the two regen rates) are `readonly struct`s (or `struct` for `ActiveEffect` if the table updates it in place) whose fields are all value types; a reflection test asserts no field of any of the three is a reference type, and `RuntimeHelpers.IsReferenceOrContainsReferences<T>()` is false for each.
-- [ ] **Indexed access**: `BuffDefinition.GetModifier(int index)` returns `Modifier0`…`Modifier7` for 0–7 and throws `ArgumentOutOfRangeException` outside; entries at index ≥ `ModifierCount` are `default`.
+- [ ] **Types (CR-SE-1)**: `StatModifier` (`StatID StatId`, `float FlatBonus`, `float PctBonus`), `BuffDefinition` (`BuffID BuffId`, `byte ModifierCount`, `StatModifier Modifier0`…`Modifier7`, `uint DurationTicks`, `float HpRegenPerTick`, `float MpRegenPerTick`) are `readonly struct`s; `ActiveEffect` (`BuffID BuffId`, `EntityID EntityId`, `EntityID CasterEntityId`, `uint TicksRemaining`, `byte ModifierCount`, `Modifier0`…`Modifier7`, `float HpRegenPerTick`, `float MpRegenPerTick`) is a mutable `struct` (not `readonly`), because Story 005 decrements `TicksRemaining` in place. All fields of the three are value types; a reflection test asserts no field of any of the three is a reference type, and `RuntimeHelpers.IsReferenceOrContainsReferences<T>()` is false for each.
+- [ ] **Indexed access**: `BuffDefinition.GetModifier(int index)` returns `Modifier0`…`Modifier7` for 0–7 and throws `ArgumentOutOfRangeException` outside; entries at index ≥ `ModifierCount` are `default`. `ActiveEffect.GetModifier(int index)` has the same contract.
 - [ ] **`ApplyResult`** enum: `Success`, `CapacityExceeded`, `EffectSlotsFull`, `InvalidDuration`, `InvalidStat`, `InvalidTarget`, `InvalidAmount`, `NoOpDefinition`.
-- [ ] **Constants** in `StatusEffectsConstants`: `MAX_STATS_PER_BUFF = 8`, `MAX_ACTIVE_BUFFS_PER_ENTITY = 8`, `MODIFIER_CAPACITY_PER_ENTITY = 32` (F-SE-2), `MAX_DURATION_TICKS = 6000` (300 s × 20 Hz), `MAX_ENTITY_SLOTS = MAX_PLAYERS_PER_ZONE + MAX_MOBS_PER_ZONE` (read from the existing zone constants, = 200).
+- [ ] **Constants** in `StatusEffectsConstants`: `MAX_STATS_PER_BUFF = 8`, `MAX_ACTIVE_BUFFS_PER_ENTITY = 8`, `MODIFIER_CAPACITY_PER_ENTITY = 32` (F-SE-2), `MAX_DURATION_TICKS = 6000` (300 s × 20 Hz), `MAX_ENTITY_SLOTS = ZoneSlotPool.MAX_PLAYERS_PER_ZONE + ZoneSlotPool.MAX_MOBS_PER_ZONE` (= 200; an EditMode test asserts 200).
 - [ ] **AC-SE-26 — constant constraint guard**: `MAX_ACTIVE_BUFFS_PER_ENTITY ≥ floor(MODIFIER_CAPACITY_PER_ENTITY / MAX_STATS_PER_BUFF)` and `MAX_STATS_PER_BUFF ≤ MODIFIER_CAPACITY_PER_ENTITY` are enforced at compile time (a `const` expression that fails to compile, e.g. a negative array size or `static_assert` pattern) **and** by an EditMode test whose failure message names both constants.
 - [ ] **F-SE-1 duration conversion**: `StatusEffectsMath.SecondsToTicks(float seconds)` = `floor(seconds × TICK_RATE_HZ)` with `TICK_RATE_HZ` from `ServerTickLoop`; the table holds: 0.5 s → 10, 3.0 s → 60, 300.0 s → 6000, 0.0 s → 0. `IsWithinAuthoringCeiling(ticks)` is true for 1–6000 and false for 0 and 72 000 (3600 s).
 - [ ] **Namespace**: types in `IronGrind.StatusEffects`, folder `src/ServerLogic/StatusEffects/`; `IronGrind.StatusEffects` added to `ServerOnlyNamespaces`; the assembly boundary test passes.
@@ -45,7 +47,7 @@
 - Eight inline fields instead of an array is deliberate (CR-SE-1: no heap reference). Write `GetModifier` as a `switch`.
 - `BuffDefinition` gets a constructor that takes up to eight modifiers (e.g. a `ReadOnlySpan<StatModifier>`) and throws `ArgumentException` above `MAX_STATS_PER_BUFF`; it does not validate stats or duration — that is `ApplyEffect`'s job (Story 002), so tests can build invalid definitions.
 - The compile-time guard: e.g. `private const int GUARD = 1 / (MAX_ACTIVE_BUFFS_PER_ENTITY >= MODIFIER_CAPACITY_PER_ENTITY / MAX_STATS_PER_BUFF ? 1 : 0);` gives a compile error (division by constant zero) when violated; keep a comment naming the rule.
-- Register `MAX_STATS_PER_BUFF` and `MAX_ACTIVE_BUFFS_PER_ENTITY` in `design/registry/entities.yaml` if missing (GDD registry cascade note).
+- `MAX_STATS_PER_BUFF` and `MAX_ACTIVE_BUFFS_PER_ENTITY` are already registered in `design/registry/entities.yaml`; no registry change.
 - Fix the GDD header status to match `systems-index.md` (Approved, lean re-review 2026-05-20) — done at story creation.
 
 ---
