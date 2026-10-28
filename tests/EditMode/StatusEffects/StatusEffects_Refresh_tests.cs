@@ -69,7 +69,7 @@ namespace IronGrind.Tests.EditMode.StatusEffects
             _slots.Add(A, A_SLOT);
             _slots.Add(B, B_SLOT);
             _recorder = new RecordingBuffModifierLayer();
-            _service = new StatusEffectsService(_recorder, _recorder, _slots);
+            _service = new StatusEffectsService(_recorder, _recorder, _slots, new FakeEntityDeathSource());
         }
 
         // ---- Helpers ----
@@ -139,7 +139,7 @@ namespace IronGrind.Tests.EditMode.StatusEffects
             _stats.SetBaseStat(A, StatID.Defense, BASE_DEFENSE);
             _recorder = new RecordingBuffModifierLayer(
                 new CharacterStatsBuffModifierLayer(_stats), new CharacterStatsResourceSink(_stats));
-            _service = new StatusEffectsService(_recorder, _recorder, _slots);
+            _service = new StatusEffectsService(_recorder, _recorder, _slots, new FakeEntityDeathSource());
         }
 
         private int Effective(EntityID entity, StatID stat)

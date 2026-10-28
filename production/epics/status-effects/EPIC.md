@@ -50,7 +50,7 @@ This epic is complete when:
 | 004 | [Refresh on Reapply](story-004-refresh-on-reapply.md) | Logic | Complete | ADR-012 |
 | 005 | [Per-Tick Processing and Expiry](story-005-tick-processing-and-expiry.md) | Logic | Complete (2026-10-28) | ADR-010, ADR-014 |
 | 006 | [Expiry Clamp and Batched Stat Events](story-006-expiry-clamp-and-batched-events.md) | Logic | Complete | ADR-010 |
-| 007 | [Death Cleanup and Instant Heal](story-007-death-cleanup-and-instant-heal.md) | Logic | Ready | ADR-010 |
+| 007 | [Death Cleanup and Instant Heal](story-007-death-cleanup-and-instant-heal.md) | Logic | Complete | ADR-010 |
 | 008 | [Zone Departure and Slot Cleanup](story-008-zone-departure-and-slot-cleanup.md) | Integration | Ready (hook point open) | ADR-010, ADR-012 |
 | 009 | [Tick Pipeline Wiring, Mob Targets and Allocation Budget](story-009-tick-pipeline-wiring-and-allocation.md) | Integration | Ready | ADR-014, ADR-012 |
 
@@ -58,4 +58,4 @@ TR-se-006 (client buff display) has no story: it waits on a Networking Core wire
 
 ## Next Step
 
-Stories 001–006 Complete 2026-10-28 (TD-085 resolved by 006). Run `/story-readiness production/epics/status-effects/story-007-death-cleanup-and-instant-heal.md`, then `/dev-story` (recommended order: 007 → 008 → 009). Story 007 reuses the expiry procedure (remove → free row → clamp) and must call it inside a stat batch; Story 009 wires the tick (3-arg ctor; Begin throws if another transaction is open).
+Stories 001–007 Complete 2026-10-28 (TD-085 resolved by 006; TD-086 logged by 007). Run `/story-readiness production/epics/status-effects/story-008-zone-departure-and-slot-cleanup.md`, then `/dev-story` (recommended order: 008 → 009). Story 008 clears the dead flag on slot release and can reuse `ExpireRow` for departure cleanup; Story 009 wires the tick and the service (4-arg ctor since Story 007: layer, sink, slot index, `CharacterStatsDeathSource`; the service is `IDisposable` and must be disposed at zone teardown per ADR-010; Begin throws if another transaction is open).

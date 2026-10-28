@@ -50,7 +50,7 @@ namespace IronGrind.Tests.EditMode.StatusEffects
             _slots = new DictionaryEntitySlotIndex();
             _slots.Add(Target, TARGET_SLOT);
             _slots.Add(Other, OTHER_SLOT);
-            _service = new StatusEffectsService(_layer, _layer, _slots);
+            _service = new StatusEffectsService(_layer, _layer, _slots, new FakeEntityDeathSource());
         }
 
         // ---- Helpers ----
@@ -151,19 +151,25 @@ namespace IronGrind.Tests.EditMode.StatusEffects
         [Test]
         public void StatusEffects_Validation_Constructor_NullModifierLayerThrows()
         {
-            Assert.Throws<ArgumentNullException>(() => new StatusEffectsService(null, _layer, _slots));
+            Assert.Throws<ArgumentNullException>(() => new StatusEffectsService(null, _layer, _slots, new FakeEntityDeathSource()));
         }
 
         [Test]
         public void StatusEffects_Validation_Constructor_NullResourceSinkThrows()
         {
-            Assert.Throws<ArgumentNullException>(() => new StatusEffectsService(_layer, null, _slots));
+            Assert.Throws<ArgumentNullException>(() => new StatusEffectsService(_layer, null, _slots, new FakeEntityDeathSource()));
         }
 
         [Test]
         public void StatusEffects_Validation_Constructor_NullSlotIndexThrows()
         {
-            Assert.Throws<ArgumentNullException>(() => new StatusEffectsService(_layer, _layer, null));
+            Assert.Throws<ArgumentNullException>(() => new StatusEffectsService(_layer, _layer, null, new FakeEntityDeathSource()));
+        }
+
+        [Test]
+        public void StatusEffects_Validation_Constructor_NullDeathSourceThrows()
+        {
+            Assert.Throws<ArgumentNullException>(() => new StatusEffectsService(_layer, _layer, _slots, null));
         }
 
         // ---- Check order (EC-SE-6) ----

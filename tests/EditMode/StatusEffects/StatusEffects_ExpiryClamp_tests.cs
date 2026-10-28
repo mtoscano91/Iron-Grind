@@ -98,7 +98,7 @@ namespace IronGrind.Tests.EditMode.StatusEffects
             {
                 LogBatchCalls = true
             };
-            _service = new StatusEffectsService(_recorder, _recorder, _slots);
+            _service = new StatusEffectsService(_recorder, _recorder, _slots, new FakeEntityDeathSource());
             _events = new List<(EntityID Entity, StatID Stat)>();
             _stats.Subscribe((entity, stat) => _events.Add((entity, stat)));
         }

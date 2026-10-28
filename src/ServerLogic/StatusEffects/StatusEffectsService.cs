@@ -11,10 +11,14 @@ namespace IronGrind.StatusEffects
     /// Story 005 adds per-tick processing and expiry (<see cref="OnServerTick"/>).
     /// Story 004 adds refresh on reapply and in-place replacement (CR-SE-4). Story 006 adds the expiry and
     /// replacement MaxHP / MaxMP clamp (CR-SE-8 steps 2-3) and brackets the tick pass, and a replacement made
-    /// outside the tick, in a Character Stats stat batch (CR-SE-17). Death wiring comes in later stories.
+    /// outside the tick, in a Character Stats stat batch (CR-SE-17). Story 007 adds death cleanup (CR-SE-10,
+    /// EC-SE-2, EC-SE-3): the service subscribes to entity deaths through <see cref="IEntityDeathSource"/>, marks
+    /// the slot dead in the handler (no Character Stats call) and cleans the dead entity's rows on the next
+    /// <see cref="OnServerTick"/>; it also adds <see cref="ApplyInstantHeal"/> (CR-SE-3, TR-se-005) and
+    /// <see cref="OnEntityRespawned"/>. Zone departure cleanup comes in Story 008.
     /// Not thread-safe: every call runs on the server tick thread.
     /// </summary>
-    public sealed class StatusEffectsService
+    public sealed class StatusEffectsService : IDisposable
     {
         private const int ROWS_PER_ENTITY = StatusEffectsConstants.MAX_ACTIVE_BUFFS_PER_ENTITY;
         private const int MAX_SLOTS = StatusEffectsConstants.MAX_ENTITY_SLOTS;
@@ -29,6 +33,10 @@ namespace IronGrind.StatusEffects
         private readonly int[] _tickStartRowCounts;
         private readonly int[] _occupiedSlots;
         private readonly bool[] _dead;
+        private readonly bool[] _tickStartDead;
+        private readonly IEntityDeathSource _deathSource;
+        private readonly CharacterStats.CharacterStats.EntityDiedHandler _deathHandler;
+        private bool _disposed;
 
         // Test-only injection (see InjectApplyEffectDuringTick). Plain fields: no delegate on the tick path.
         private bool _injectionPending;
@@ -64,12 +72,15 @@ namespace IronGrind.StatusEffects
         /// <param name="modifierLayer">Character Stats buff-modifier seam.</param>
         /// <param name="resourceSink">Character Stats HP/MP seam (regen).</param>
         /// <param name="slotIndex">Entity to slot-index resolver.</param>
+        /// <param name="deathSource">Entity-death subscription seam; the constructor subscribes once (ADR-010).</param>
         /// <exception cref="ArgumentNullException">A dependency is null.</exception>
-        public StatusEffectsService(IBuffModifierLayer modifierLayer, IStatResourceSink resourceSink, IEntitySlotIndex slotIndex)
+        public StatusEffectsService(IBuffModifierLayer modifierLayer, IStatResourceSink resourceSink,
+            IEntitySlotIndex slotIndex, IEntityDeathSource deathSource)
         {
             if (modifierLayer == null) throw new ArgumentNullException(nameof(modifierLayer));
             if (resourceSink == null) throw new ArgumentNullException(nameof(resourceSink));
             if (slotIndex == null) throw new ArgumentNullException(nameof(slotIndex));
+            if (deathSource == null) throw new ArgumentNullException(nameof(deathSource));
 
             _modifierLayer = modifierLayer;
             _resourceSink = resourceSink;
@@ -79,6 +90,35 @@ namespace IronGrind.StatusEffects
             _tickStartRowCounts = new int[MAX_SLOTS];
             _occupiedSlots = new int[MAX_SLOTS];
             _dead = new bool[MAX_SLOTS];
+            _tickStartDead = new bool[MAX_SLOTS];
+
+            // One delegate instance, kept so Unsubscribe matches by reference.
+            _deathSource = deathSource;
+            _deathHandler = OnEntityDied;
+            _deathSource.Subscribe(_deathHandler);
+        }
+
+        /// <summary>
+        /// Unsubscribes from the death source (ADR-010). Idempotent: once it has completed, a second call does
+        /// nothing. After this a death changes nothing; rows already marked dead are still cleaned by
+        /// <see cref="OnServerTick"/>. Do not call it from inside a Character Stats event handler: there
+        /// <c>Unsubscribe</c> throws (Editor / development builds; the service stays subscribed and a later call
+        /// retries) or silently does nothing (release builds; the handler stays registered but ignores deaths).
+        /// </summary>
+        public void Dispose()
+        {
+            if (_disposed)
+                return;
+
+            _deathSource.Unsubscribe(_deathHandler);
+            _disposed = true;
+        }
+
+        /// <summary>The death-source handler: ignores deaths after <see cref="Dispose"/>, else marks the entity dead.</summary>
+        private void OnEntityDied(EntityID entity)
+        {
+            if (!_disposed)
+                MarkEntityDead(entity);
         }
 
         /// <summary>
@@ -86,10 +126,13 @@ namespace IronGrind.StatusEffects
         /// Per row, in order: decrement <see cref="ActiveEffect.TicksRemaining"/>; HP regen; MP regen; on reaching 0,
         /// remove each populated modifier through the layer (index order), reduce occupancy, free the row (later rows
         /// shift down, so buff-bar order is kept) and only then clamp HP / MP. Rows created during the tick are never
-        /// processed by it (EC-SE-8): the row counts are snapshotted first. Slots marked dead are skipped entirely
-        /// until Story 007. Called from <c>ZoneTickPipeline</c> phase 3 (wiring: Story 009). Story 006: the pass is
-        /// wrapped in a stat batch (always), so <c>OnStatChanged</c> fires once per (entity, stat) after the pass, and
-        /// an expired MaxHP / MaxMP buff clamps current HP / MP right after its row is freed. Allocation-free.
+        /// processed by it (EC-SE-8): the row counts are snapshotted first. Story 006: the pass is wrapped in a stat
+        /// batch (always), so <c>OnStatChanged</c> fires once per (entity, stat) after the pass, and an expired
+        /// MaxHP / MaxMP buff clamps current HP / MP right after its row is freed. Story 007 (CR-SE-10, AC-SE-16):
+        /// the dead flags are snapshotted too; a slot dead at pass start has every row cleaned (modifiers removed,
+        /// occupancy released, row freed, clamps; no decrement, no regen). A slot whose death fires during the pass
+        /// is skipped from then on (its remaining rows get no decrement and no regen) and is cleaned by the next
+        /// tick. Called from <c>ZoneTickPipeline</c> phase 3 (wiring: Story 009). Allocation-free.
         /// </summary>
         /// <remarks>
         /// Every row is processed exactly once even when a death subscriber (fired by the HP clamp) or an
@@ -111,6 +154,7 @@ namespace IronGrind.StatusEffects
             try
             {
                 Array.Copy(_rowCounts, _tickStartRowCounts, MAX_SLOTS);
+                Array.Copy(_dead, _tickStartDead, MAX_SLOTS);
                 ProcessAllSlots();
             }
             catch (Exception ex)
@@ -151,6 +195,15 @@ namespace IronGrind.StatusEffects
             {
                 for (int slot = 0; slot < MAX_SLOTS; slot++)
                 {
+                    if (_tickStartDead[slot])
+                    {
+                        // Dead at pass start: clean every row (Story 007). No decrement, no regen.
+                        if (_rowCounts[slot] > 0)
+                            CleanUpDeadSlot(slot);
+                        continue;
+                    }
+
+                    // Died earlier in this pass (before the loop reached it): skipped, cleaned next tick.
                     int end = _tickStartRowCounts[slot];
                     if (end == 0 || _dead[slot])
                         continue;
@@ -169,6 +222,11 @@ namespace IronGrind.StatusEffects
                             _tickIndex++;
 
                         RunPendingInjection(slot);
+
+                        // The entity died while its row was processed (the HP clamp fired the death event): the
+                        // remaining rows get no decrement and no regen this pass; the next tick cleans them.
+                        if (_dead[slot])
+                            break;
                     }
                 }
             }
@@ -176,6 +234,20 @@ namespace IronGrind.StatusEffects
             {
                 _tickSlot = NO_SLOT;
             }
+        }
+
+        /// <summary>
+        /// Death cleanup of one slot (CR-SE-10, AC-SE-16): runs the expiry procedure on every row, always index 0
+        /// so buff-bar order is kept. The loop state is set like a normal slot's so <see cref="FreeRowTickAware"/>
+        /// stays correct. Inside the tick's stat batch.
+        /// </summary>
+        private void CleanUpDeadSlot(int slot)
+        {
+            _tickSlot = slot;
+            _tickIndex = 0;
+            _tickEnd = _rowCounts[slot];
+            while (_rowCounts[slot] > 0)
+                ExpireRow(slot, 0);
         }
 
         /// <summary>
@@ -199,8 +271,18 @@ namespace IronGrind.StatusEffects
             if (e.TicksRemaining != 0u)
                 return false;
 
-            // Expiry procedure (CR-SE-8 steps 1-3); Stories 007/008 reuse it. Capture what the clamps need,
-            // remove and release, free the row, then clamp: a clamp exception is captured, never propagated.
+            ExpireRow(slot, rowIndex);
+            return true;
+        }
+
+        /// <summary>
+        /// Expiry procedure (CR-SE-8 steps 1-3), shared by normal expiry and death cleanup (Story 007; Story 008
+        /// reuses it). Captures what the clamps need, removes the modifiers and releases occupancy, frees the row,
+        /// lowers <c>_tickEnd</c>, then clamps: a clamp exception is captured, never propagated.
+        /// </summary>
+        private void ExpireRow(int slot, int rowIndex)
+        {
+            ref ActiveEffect e = ref _rows[slot * ROWS_PER_ENTITY + rowIndex];
             EntityID entity = e.EntityId;
             bool maxHp = RowHasStat(e, StatID.MaxHP);
             bool maxMp = RowHasStat(e, StatID.MaxMP);
@@ -208,7 +290,6 @@ namespace IronGrind.StatusEffects
             RemoveRow(slot, rowIndex);
             _tickEnd--;
             ClampAfterMaxChange(entity, maxHp, maxMp);
-            return true;
         }
 
         /// <summary>
@@ -630,14 +711,57 @@ namespace IronGrind.StatusEffects
         }
 
         /// <summary>
-        /// Records that the entity is dead so later applications are rejected (EC-SE-2). Story 007 calls this
-        /// from the <c>OnEntityDied</c> handler. Unknown entities are ignored.
+        /// Records that the entity is dead so later applications are rejected (EC-SE-2). The flag is the
+        /// PendingRemoval marker for all of the entity's rows (CR-SE-10). Called by the death-source handler
+        /// (<see cref="OnEntityDied"/>): it only sets the flag and never calls Character Stats (no stat write inside
+        /// its event handlers). Unknown entities are ignored.
         /// </summary>
         /// <param name="entity">The entity that died.</param>
         internal void MarkEntityDead(EntityID entity)
         {
             if (TryResolveSlot(entity, out int slot))
                 _dead[slot] = true;
+        }
+
+        /// <summary>True when the entity's dead (PendingRemoval) flag is set; false for an unknown entity.</summary>
+        /// <param name="entity">The entity.</param>
+        internal bool IsEntityDead(EntityID entity)
+        {
+            return TryResolveSlot(entity, out int slot) && _dead[slot];
+        }
+
+        /// <summary>
+        /// Clears the entity's dead flag so it can receive effects and heals again (CR-SE-10). Death &amp; Respawn
+        /// calls this at T-3 (CR-DR-11a); Story 008 also clears the flag on slot release. On an alive or unknown
+        /// entity this does nothing and never throws. Cleanup is keyed on the flag at the start of a tick, so a respawn
+        /// before the first tick after the death would leave the old rows in place; Death &amp; Respawn's T-3 comes many
+        /// ticks after T-1, so this does not arise.
+        /// </summary>
+        /// <param name="entity">The respawned entity.</param>
+        public void OnEntityRespawned(EntityID entity)
+        {
+            if (TryResolveSlot(entity, out int slot))
+                _dead[slot] = false;
+        }
+
+        /// <summary>
+        /// Delivers a one-shot HP restoration through <see cref="IStatResourceSink.ApplyRegen"/> (CR-SE-3,
+        /// TR-se-005). A path distinct from duration-tracked buffs: no row is created and occupancy is unchanged.
+        /// Checks in order: amount (<c>!(amount &gt; 0)</c>, which also rejects NaN) then target (unknown or dead).
+        /// </summary>
+        /// <param name="entity">The entity to heal.</param>
+        /// <param name="amount">HP to restore; must be greater than 0.</param>
+        /// <returns><see cref="ApplyResult.Success"/>, <see cref="ApplyResult.InvalidAmount"/> or <see cref="ApplyResult.InvalidTarget"/>.</returns>
+        public ApplyResult ApplyInstantHeal(EntityID entity, float amount)
+        {
+            if (!(amount > 0f))
+                return ApplyResult.InvalidAmount;
+
+            if (!TryResolveSlot(entity, out int slot) || _dead[slot])
+                return ApplyResult.InvalidTarget;
+
+            _resourceSink.ApplyRegen(entity, amount);
+            return ApplyResult.Success;
         }
 
         /// <summary>Returns the entity's occupied modifier slots (F-SE-3: sum of row ModifierCount); 0 if unknown.</summary>

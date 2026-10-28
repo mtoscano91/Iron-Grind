@@ -58,7 +58,7 @@ namespace IronGrind.Tests.EditMode.StatusEffects
             _layer = new RecordingBuffModifierLayer();
             _slots = new DictionaryEntitySlotIndex();
             _slots.Add(Target, TARGET_SLOT);
-            _service = new StatusEffectsService(_layer, _layer, _slots);
+            _service = new StatusEffectsService(_layer, _layer, _slots, new FakeEntityDeathSource());
         }
 
         // ---- Helpers ----
@@ -90,7 +90,7 @@ namespace IronGrind.Tests.EditMode.StatusEffects
             stats.SetBaseStat(Target, StatID.MaxMP, BASE_MAX_MP);
             stats.SetBaseStat(Target, StatID.Defense, BASE_PRIMARY);
             return new StatusEffectsService(
-                new CharacterStatsBuffModifierLayer(stats), new CharacterStatsResourceSink(stats), _slots);
+                new CharacterStatsBuffModifierLayer(stats), new CharacterStatsResourceSink(stats), _slots, new FakeEntityDeathSource());
         }
 
         private static BuffDefinition DefFor(BuffID id, params StatModifier[] modifiers)

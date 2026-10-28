@@ -5171,3 +5171,25 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: None new (TD-085 resolved)
 - Uncommitted changeset: src CharacterStats.cs, StatusEffects (StatusEffectsService.cs, IBuffModifierLayer.cs, CharacterStatsBuffModifierLayer.cs, IStatResourceSink.cs, CharacterStatsResourceSink.cs); tests CharacterStats_Transaction_tests.cs, CharacterStats_ResourcePool_tests.cs, StatusEffectsTestFakes.cs, new StatusEffects_ExpiryClamp_tests.cs + .meta; GDD status-effects.md, character-stats.md; story 006, EPIC.md, index.md, tech-debt-register.md, this file. Not ProjectSettings/* or bash.exe.stackdump.
 - Next recommended: commit; then /story-readiness production/epics/status-effects/story-007-death-cleanup-and-instant-heal.md. PAT rotation still unconfirmed.
+
+## Session Extract — /dev-story 2026-10-28 (Story 007, not committed)
+- Story: production/epics/status-effects/story-007-death-cleanup-and-instant-heal.md — Death Cleanup and Instant Heal
+- Files changed: src StatusEffectsService.cs (IDisposable, 4th ctor param IEntityDeathSource, _tickStartDead snapshot, CleanUpDeadSlot, ExpireRow shared with ProcessRow, IsEntityDead, OnEntityRespawned, ApplyInstantHeal); new IEntityDeathSource.cs, CharacterStatsDeathSource.cs (+ .meta); tests StatusEffectsTestFakes.cs (FakeEntityDeathSource, recorder ClampHpHook), 11 ctor call sites in Application/ExpiryClamp/Refresh/Tick/Validation (+ null death-source test), new StatusEffects_DeathAndInstantHeal_tests.cs (+ .meta)
+- Test written: tests/EditMode/StatusEffects/StatusEffects_DeathAndInstantHeal_tests.cs — 24 cases; full EditMode batch run 4837 / 4708 passed / 0 failed / 129 skipped (pre-existing)
+- Deviations: 2 Story 005 tests in StatusEffects_Tick_tests.cs updated (asserted old "dead slots skipped until Story 007" behaviour): DeadEntity test renamed ..._NoRegenNoDecrementRowsCleanedOnce; DeadEntityBeforeLiveOne asserts row gone. Mid-pass death tests use recorder ClampHpHook (real CharacterStats clamp cannot reach HP 0).
+- Blockers: None
+- Next: /code-review StatusEffectsService.cs IEntityDeathSource.cs CharacterStatsDeathSource.cs StatusEffects_DeathAndInstantHeal_tests.cs then /story-done story-007. PAT rotation still unconfirmed.
+
+## Session Extract — /code-review 2026-10-28 (Story 007, fixes applied, not committed)
+- Verdict: APPROVED WITH SUGGESTIONS (unity-specialist + qa-tester); user said "fix all" → all applied.
+- Fixes: StatusEffectsService.Dispose unsubscribes before setting _disposed (a throwing Unsubscribe can be retried); handler is now private OnEntityDied wrapper that ignores deaths after Dispose; OnEntityRespawned doc notes respawn-before-cleanup-tick leaves rows (ruled out by D&R timing, GDD line 199); OnServerTick summary reflowed; MarkEntityDead doc updated. Tests: FakeEntityDeathSource gained ThrowOnNextUnsubscribe / IgnoreUnsubscribe; new tests DeathBeforeDispose_StillCleaned, UnsubscribeIgnored_LaterDeathIgnored, UnsubscribeThrows_SecondDisposeRetries, RespawnBeforeCleanupTick_RowsKept; batch test now asserts Begin → removes → End order; LaterSlot test asserts A occupancy 0 and MaxHP back to base; duplicate negative-amount test + HEAL_NEGATIVE removed. DeathAndInstantHeal now 27 cases.
+- Tests: full EditMode batch 4840 / 4711 passed / 0 failed / 129 skipped.
+- Next: /story-done production/epics/status-effects/story-007-death-cleanup-and-instant-heal.md
+
+## Session Extract — /story-done 2026-10-28 (Story 007, not committed)
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/status-effects/story-007-death-cleanup-and-instant-heal.md — Death Cleanup and Instant Heal (7/7 criteria; DeathAndInstantHeal 27 cases; full EditMode 4840 / 4711 / 0 failed / 129 skipped)
+- Written: story 007 (Status Complete, checkboxes, Test Evidence, Completion Notes with 5 advisory deviations), EPIC.md (row 007 Complete, Next Step → 008, notes 4-arg ctor + Dispose for Story 009), production/epics/index.md (7 Complete, 2 Ready), docs/tech-debt-register.md (TD-086 new: CharacterStats 16-subscriber silent overflow). QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean).
+- Tech debt logged: 1 (TD-086)
+- Uncommitted changeset: src StatusEffectsService.cs, new IEntityDeathSource.cs + .meta, CharacterStatsDeathSource.cs + .meta; tests StatusEffectsTestFakes.cs, Application/ExpiryClamp/Refresh/Tick/Validation tests, new StatusEffects_DeathAndInstantHeal_tests.cs + .meta; story 007, EPIC.md, index.md, tech-debt-register.md, this file. Not ProjectSettings/* or bash.exe.stackdump.
+- Next recommended: commit; then /story-readiness production/epics/status-effects/story-008-zone-departure-and-slot-cleanup.md (open decision: slot-release hook point). PAT rotation still unconfirmed.

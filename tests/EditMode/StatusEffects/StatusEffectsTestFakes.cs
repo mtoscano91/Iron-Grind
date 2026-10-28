@@ -180,7 +180,14 @@ namespace IronGrind.Tests.EditMode.StatusEffects
             if (ThrowOnClampHpNumber != 0 && ClampHpCalls == ThrowOnClampHpNumber)
                 throw new InvalidOperationException("RecordingBuffModifierLayer: injected clamp failure");
             _innerSink?.ClampHPToMax(entityId);
+            ClampHpHook?.Invoke(entityId);
         }
+
+        /// <summary>
+        /// Optional callback run at the end of each ClampHPToMax call (stands in for a clamp that drives HP to 0 and
+        /// fires the death event, which real Character Stats cannot do from a clamp).
+        /// </summary>
+        public Action<EntityID> ClampHpHook { get; set; }
 
         /// <inheritdoc/>
         public void ClampMPToMax(EntityID entityId)
@@ -204,6 +211,59 @@ namespace IronGrind.Tests.EditMode.StatusEffects
             ManaRegenCalls++;
             Calls.Add(new LayerCall(LayerCallKind.ManaRegen, entityId, default, default, default, amount));
             _innerSink?.ApplyManaRegen(entityId, amount);
+        }
+    }
+
+    /// <summary>
+    /// Fake <see cref="IEntityDeathSource"/>: counts subscribe / unsubscribe calls and raises a death on demand
+    /// to every currently subscribed handler.
+    /// </summary>
+    internal sealed class FakeEntityDeathSource : IEntityDeathSource
+    {
+        private readonly List<IronGrind.CharacterStats.CharacterStats.EntityDiedHandler> _handlers =
+            new List<IronGrind.CharacterStats.CharacterStats.EntityDiedHandler>();
+
+        /// <summary>Number of Subscribe calls.</summary>
+        public int SubscribeCalls { get; private set; }
+
+        /// <summary>Number of Unsubscribe calls.</summary>
+        public int UnsubscribeCalls { get; private set; }
+
+        /// <summary>Number of handlers currently subscribed.</summary>
+        public int HandlerCount => _handlers.Count;
+
+        /// <summary>When true, the next Unsubscribe throws (Character Stats re-entrance, Editor / dev builds) and clears this flag.</summary>
+        public bool ThrowOnNextUnsubscribe { get; set; }
+
+        /// <summary>When true, Unsubscribe silently keeps the handler (Character Stats re-entrance, release builds).</summary>
+        public bool IgnoreUnsubscribe { get; set; }
+
+        /// <inheritdoc/>
+        public void Subscribe(IronGrind.CharacterStats.CharacterStats.EntityDiedHandler handler)
+        {
+            SubscribeCalls++;
+            _handlers.Add(handler);
+        }
+
+        /// <inheritdoc/>
+        public void Unsubscribe(IronGrind.CharacterStats.CharacterStats.EntityDiedHandler handler)
+        {
+            UnsubscribeCalls++;
+            if (ThrowOnNextUnsubscribe)
+            {
+                ThrowOnNextUnsubscribe = false;
+                throw new InvalidOperationException("FakeEntityDeathSource: injected unsubscribe failure");
+            }
+
+            if (!IgnoreUnsubscribe)
+                _handlers.Remove(handler);
+        }
+
+        /// <summary>Invokes every subscribed handler with the entity.</summary>
+        public void RaiseDeath(EntityID entity)
+        {
+            for (int i = 0; i < _handlers.Count; i++)
+                _handlers[i](entity);
         }
     }
 

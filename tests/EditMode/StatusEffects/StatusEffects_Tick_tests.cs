@@ -74,7 +74,7 @@ namespace IronGrind.Tests.EditMode.StatusEffects
             _slots.Add(B, B_SLOT);
             _slots.Add(Empty, EMPTY_SLOT);
             _recorder = new RecordingBuffModifierLayer();
-            _service = new StatusEffectsService(_recorder, _recorder, _slots);
+            _service = new StatusEffectsService(_recorder, _recorder, _slots, new FakeEntityDeathSource());
         }
 
         // ---- Helpers ----
@@ -115,7 +115,7 @@ namespace IronGrind.Tests.EditMode.StatusEffects
             _stats.SetBaseStat(A, StatID.MaxMP, BASE_MAX_MP);
             _recorder = new RecordingBuffModifierLayer(
                 new CharacterStatsBuffModifierLayer(_stats), new CharacterStatsResourceSink(_stats));
-            _service = new StatusEffectsService(_recorder, _recorder, _slots);
+            _service = new StatusEffectsService(_recorder, _recorder, _slots, new FakeEntityDeathSource());
         }
 
         private int Effective(EntityID entity, StatID stat)
@@ -479,7 +479,7 @@ namespace IronGrind.Tests.EditMode.StatusEffects
         // ---- Dead slot ----
 
         [Test]
-        public void StatusEffects_Tick_DeadEntity_NoRegenNoDecrementNoRemoval() // Dead entities
+        public void StatusEffects_Tick_DeadEntity_NoRegenNoDecrementRowsCleanedOnce() // Dead entities; Story 007 cleanup
         {
             Apply(A, Def(BuffOne, DURATION, REGEN_HP, 0f, Mod(StatID.AttackPower, FLAT_AP_SMALL)));
             _service.MarkEntityDead(A);
@@ -487,8 +487,8 @@ namespace IronGrind.Tests.EditMode.StatusEffects
             Tick(2);
 
             Assert.AreEqual(0, _recorder.RegenCalls);
-            Assert.AreEqual(0, _recorder.RemoveCalls);
-            Assert.AreEqual(DURATION, Row(A, BuffOne).TicksRemaining);
+            Assert.AreEqual(1, _recorder.RemoveCalls, "cleaned on the first tick after death, once");
+            Assert.AreEqual(0, _service.GetActiveEffectCount(A));
         }
 
         [Test]
@@ -502,7 +502,7 @@ namespace IronGrind.Tests.EditMode.StatusEffects
 
             Assert.AreEqual(1, _recorder.RegenCalls);
             Assert.AreEqual(B, _recorder.Calls[0].Entity);
-            Assert.AreEqual(DURATION, Row(A, BuffOne).TicksRemaining);
+            Assert.IsFalse(_service.TryGetActiveEffect(A, BuffOne, out _), "dead entity's row cleaned (Story 007)");
             Assert.AreEqual(DURATION - 1u, Row(B, BuffTwo).TicksRemaining);
         }
 
