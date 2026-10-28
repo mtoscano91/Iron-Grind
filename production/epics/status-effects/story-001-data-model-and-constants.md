@@ -1,7 +1,7 @@
 # Story 001: Data Model, Constants and Duration Conversion
 
 > **Epic**: Status Effects / Buffs
-> **Status**: Ready — written 2026-10-28 (`/create-stories`, lean); `/story-readiness` 2026-10-28: NEEDS WORK (3 gaps) → fixed → Ready
+> **Status**: Complete — 2026-10-28 (`/story-done`: COMPLETE WITH NOTES); written 2026-10-28 (`/create-stories`, lean); `/story-readiness` 2026-10-28: NEEDS WORK (3 gaps) → fixed → Ready
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-26
@@ -31,13 +31,13 @@
 
 *From GDD `design/gdd/status-effects.md`, scoped to this story:*
 
-- [ ] **Types (CR-SE-1)**: `StatModifier` (`StatID StatId`, `float FlatBonus`, `float PctBonus`), `BuffDefinition` (`BuffID BuffId`, `byte ModifierCount`, `StatModifier Modifier0`…`Modifier7`, `uint DurationTicks`, `float HpRegenPerTick`, `float MpRegenPerTick`) are `readonly struct`s; `ActiveEffect` (`BuffID BuffId`, `EntityID EntityId`, `EntityID CasterEntityId`, `uint TicksRemaining`, `byte ModifierCount`, `Modifier0`…`Modifier7`, `float HpRegenPerTick`, `float MpRegenPerTick`) is a mutable `struct` (not `readonly`), because Story 005 decrements `TicksRemaining` in place. All fields of the three are value types; a reflection test asserts no field of any of the three is a reference type, and `RuntimeHelpers.IsReferenceOrContainsReferences<T>()` is false for each.
-- [ ] **Indexed access**: `BuffDefinition.GetModifier(int index)` returns `Modifier0`…`Modifier7` for 0–7 and throws `ArgumentOutOfRangeException` outside; entries at index ≥ `ModifierCount` are `default`. `ActiveEffect.GetModifier(int index)` has the same contract.
-- [ ] **`ApplyResult`** enum: `Success`, `CapacityExceeded`, `EffectSlotsFull`, `InvalidDuration`, `InvalidStat`, `InvalidTarget`, `InvalidAmount`, `NoOpDefinition`.
-- [ ] **Constants** in `StatusEffectsConstants`: `MAX_STATS_PER_BUFF = 8`, `MAX_ACTIVE_BUFFS_PER_ENTITY = 8`, `MODIFIER_CAPACITY_PER_ENTITY = 32` (F-SE-2), `MAX_DURATION_TICKS = 6000` (300 s × 20 Hz), `MAX_ENTITY_SLOTS = ZoneSlotPool.MAX_PLAYERS_PER_ZONE + ZoneSlotPool.MAX_MOBS_PER_ZONE` (= 200; an EditMode test asserts 200).
-- [ ] **AC-SE-26 — constant constraint guard**: `MAX_ACTIVE_BUFFS_PER_ENTITY ≥ floor(MODIFIER_CAPACITY_PER_ENTITY / MAX_STATS_PER_BUFF)` and `MAX_STATS_PER_BUFF ≤ MODIFIER_CAPACITY_PER_ENTITY` are enforced at compile time (a `const` expression that fails to compile, e.g. a negative array size or `static_assert` pattern) **and** by an EditMode test whose failure message names both constants.
-- [ ] **F-SE-1 duration conversion**: `StatusEffectsMath.SecondsToTicks(float seconds)` = `floor(seconds × TICK_RATE_HZ)` with `TICK_RATE_HZ` from `ServerTickLoop`; the table holds: 0.5 s → 10, 3.0 s → 60, 300.0 s → 6000, 0.0 s → 0. `IsWithinAuthoringCeiling(ticks)` is true for 1–6000 and false for 0 and 72 000 (3600 s).
-- [ ] **Namespace**: types in `IronGrind.StatusEffects`, folder `src/ServerLogic/StatusEffects/`; `IronGrind.StatusEffects` added to `ServerOnlyNamespaces`; the assembly boundary test passes.
+- [x] **Types (CR-SE-1)**: `StatModifier` (`StatID StatId`, `float FlatBonus`, `float PctBonus`), `BuffDefinition` (`BuffID BuffId`, `byte ModifierCount`, `StatModifier Modifier0`…`Modifier7`, `uint DurationTicks`, `float HpRegenPerTick`, `float MpRegenPerTick`) are `readonly struct`s; `ActiveEffect` (`BuffID BuffId`, `EntityID EntityId`, `EntityID CasterEntityId`, `uint TicksRemaining`, `byte ModifierCount`, `Modifier0`…`Modifier7`, `float HpRegenPerTick`, `float MpRegenPerTick`) is a mutable `struct` (not `readonly`), because Story 005 decrements `TicksRemaining` in place. All fields of the three are value types; a reflection test asserts no field of any of the three is a reference type, and `RuntimeHelpers.IsReferenceOrContainsReferences<T>()` is false for each.
+- [x] **Indexed access**: `BuffDefinition.GetModifier(int index)` returns `Modifier0`…`Modifier7` for 0–7 and throws `ArgumentOutOfRangeException` outside; entries at index ≥ `ModifierCount` are `default`. `ActiveEffect.GetModifier(int index)` has the same contract.
+- [x] **`ApplyResult`** enum: `Success`, `CapacityExceeded`, `EffectSlotsFull`, `InvalidDuration`, `InvalidStat`, `InvalidTarget`, `InvalidAmount`, `NoOpDefinition`.
+- [x] **Constants** in `StatusEffectsConstants`: `MAX_STATS_PER_BUFF = 8`, `MAX_ACTIVE_BUFFS_PER_ENTITY = 8`, `MODIFIER_CAPACITY_PER_ENTITY = 32` (F-SE-2), `MAX_DURATION_TICKS = 6000` (300 s × 20 Hz), `MAX_ENTITY_SLOTS = ZoneSlotPool.MAX_PLAYERS_PER_ZONE + ZoneSlotPool.MAX_MOBS_PER_ZONE` (= 200; an EditMode test asserts 200).
+- [x] **AC-SE-26 — constant constraint guard**: `MAX_ACTIVE_BUFFS_PER_ENTITY ≥ floor(MODIFIER_CAPACITY_PER_ENTITY / MAX_STATS_PER_BUFF)` and `MAX_STATS_PER_BUFF ≤ MODIFIER_CAPACITY_PER_ENTITY` are enforced at compile time (a `const` expression that fails to compile, e.g. a negative array size or `static_assert` pattern) **and** by an EditMode test whose failure message names both constants.
+- [x] **F-SE-1 duration conversion**: `StatusEffectsMath.SecondsToTicks(float seconds)` = `floor(seconds × TICK_RATE_HZ)` with `TICK_RATE_HZ` from `ServerTickLoop`; the table holds: 0.5 s → 10, 3.0 s → 60, 300.0 s → 6000, 0.0 s → 0. `IsWithinAuthoringCeiling(ticks)` is true for 1–6000 and false for 0 and 72 000 (3600 s).
+- [x] **Namespace**: types in `IronGrind.StatusEffects`, folder `src/ServerLogic/StatusEffects/`; `IronGrind.StatusEffects` added to `ServerOnlyNamespaces`; the assembly boundary test passes.
 
 ---
 
@@ -74,7 +74,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/StatusEffects/StatusEffects_DataModel_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — 16 test methods, 31 cases (fixture 31/31; full EditMode 4619 / 4490 passed / 0 failed / 129 skipped, 2026-10-28)
 
 ---
 
@@ -82,3 +82,19 @@
 
 - Depends on: None (Character Stats epic Complete)
 - Unlocks: Stories 002–009
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-10-28
+**Criteria**: 7/7 passing, all covered by `tests/EditMode/StatusEffects/StatusEffects_DataModel_tests.cs` (namespace/boundary by the existing `AssemblyBoundary_Tests`, 12/12)
+**Deviations** (advisory, functionally equivalent):
+1. `SecondsToTicks` returns 0 for negative/NaN input and saturates at `uint.MaxValue` (computed in `double`); the story did not specify these inputs. Story 002's ceiling check rejects a saturated value.
+2. `MAX_DURATION_TICKS` is `uint` (compares directly with tick values).
+3. Constructor signatures (left open by the story): `BuffDefinition(BuffID, ReadOnlySpan<StatModifier>, uint durationTicks, float hpRegenPerTick, float mpRegenPerTick)`; `ActiveEffect(in BuffDefinition, EntityID, EntityID)`.
+4. Tuning knobs are `const`s, not external config — the AC-SE-26 compile-time guard needs them at compile time (same as sibling systems).
+**Files**: `src/ServerLogic/StatusEffects/` (`StatModifier`, `BuffDefinition`, `ActiveEffect`, `ApplyResult`, `StatusEffectsConstants`, `StatusEffectsMath`); `tests/EditMode/Architecture/AssemblyBoundaryLists.cs` (`IronGrind.StatusEffects` server-only); Story 005 Implementation Notes (mutate `ActiveEffect` rows by array element / `ref`, from code review).
+**Test Evidence**: Logic — `tests/EditMode/StatusEffects/StatusEffects_DataModel_tests.cs`
+**Code Review**: Complete — `/code-review` 2026-10-28 APPROVED WITH SUGGESTIONS, all 6 applied. QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean).
+**Tech debt**: None.

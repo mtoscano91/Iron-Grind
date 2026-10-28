@@ -42,6 +42,7 @@
 
 - `IStatResourceSink` (or extend `IBuffModifierLayer`) wraps `CharacterStats.ApplyRegen` / `ApplyManaRegen`; Story 007's instant heal uses the same seam.
 - Keep the row loop allocation-free: index arithmetic over the 1D array, no `foreach` over collections, no closures.
+- `ActiveEffect` is a mutable struct (Story 001): change rows through the array element (`table[i].TicksRemaining--` or `ref var e = ref table[i]`), never through `foreach` or a `var e = table[i]` local — those decrement a copy (Story 001 code review 2026-10-28).
 - Rows are compacted or holes are allowed — either is fine, but the "skip new rows" rule must hold for both; document which.
 
 ---
