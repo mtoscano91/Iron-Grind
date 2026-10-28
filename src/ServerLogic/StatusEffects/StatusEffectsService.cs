@@ -7,36 +7,174 @@ namespace IronGrind.StatusEffects
     /// Owns the per-entity effect table and validates new effects (status-effects.md CR-SE-2,
     /// CR-SE-3, CR-SE-13, F-SE-1, F-SE-2, F-SE-3, EC-SE-2, EC-SE-6, EC-SE-11). Stories 002-003: validation, atomic
     /// application through <see cref="IBuffModifierLayer"/> with rollback, row storage and read-only accessors.
-    /// Refresh, ticking, expiry and death wiring come in later stories.
+    /// Story 005 adds per-tick processing and expiry (<see cref="OnServerTick"/>).
+    /// Refresh and death wiring come in later stories.
     /// Not thread-safe: every call runs on the server tick thread.
     /// </summary>
     public sealed class StatusEffectsService
     {
         private const int ROWS_PER_ENTITY = StatusEffectsConstants.MAX_ACTIVE_BUFFS_PER_ENTITY;
+        private const int MAX_SLOTS = StatusEffectsConstants.MAX_ENTITY_SLOTS;
         private const int NO_ROW = -1;
+        private const int NO_SLOT = -1;
 
         private readonly IBuffModifierLayer _modifierLayer;
+        private readonly IStatResourceSink _resourceSink;
         private readonly IEntitySlotIndex _slotIndex;
         private readonly ActiveEffect[] _rows;
         private readonly int[] _rowCounts;
+        private readonly int[] _tickStartRowCounts;
         private readonly int[] _occupiedSlots;
         private readonly bool[] _dead;
 
+        // Test-only injection (see InjectApplyEffectDuringTick). Plain fields: no delegate on the tick path.
+        private bool _injectionPending;
+        private EntityID _injectionTarget;
+        private BuffDefinition _injectionDefinition;
+        private int _injectionTurnSlot = NO_SLOT;
+
+        /// <summary>
+        /// Test-only: result of the last injected <see cref="ApplyEffect"/> call made by <see cref="OnServerTick"/>;
+        /// null until an injection fires, and reset to null by each new <see cref="InjectApplyEffectDuringTick(EntityID, in BuffDefinition, EntityID)"/>.
+        /// </summary>
+        internal ApplyResult? LastInjectedResult;
+
         /// <summary>Creates the service and allocates every table once (CR-SE-15).</summary>
-        /// <param name="modifierLayer">Character Stats seam.</param>
+        /// <param name="modifierLayer">Character Stats buff-modifier seam.</param>
+        /// <param name="resourceSink">Character Stats HP/MP seam (regen).</param>
         /// <param name="slotIndex">Entity to slot-index resolver.</param>
         /// <exception cref="ArgumentNullException">A dependency is null.</exception>
-        public StatusEffectsService(IBuffModifierLayer modifierLayer, IEntitySlotIndex slotIndex)
+        public StatusEffectsService(IBuffModifierLayer modifierLayer, IStatResourceSink resourceSink, IEntitySlotIndex slotIndex)
         {
             if (modifierLayer == null) throw new ArgumentNullException(nameof(modifierLayer));
+            if (resourceSink == null) throw new ArgumentNullException(nameof(resourceSink));
             if (slotIndex == null) throw new ArgumentNullException(nameof(slotIndex));
 
             _modifierLayer = modifierLayer;
+            _resourceSink = resourceSink;
             _slotIndex = slotIndex;
-            _rows = new ActiveEffect[StatusEffectsConstants.MAX_ENTITY_SLOTS * ROWS_PER_ENTITY];
-            _rowCounts = new int[StatusEffectsConstants.MAX_ENTITY_SLOTS];
-            _occupiedSlots = new int[StatusEffectsConstants.MAX_ENTITY_SLOTS];
-            _dead = new bool[StatusEffectsConstants.MAX_ENTITY_SLOTS];
+            _rows = new ActiveEffect[MAX_SLOTS * ROWS_PER_ENTITY];
+            _rowCounts = new int[MAX_SLOTS];
+            _tickStartRowCounts = new int[MAX_SLOTS];
+            _occupiedSlots = new int[MAX_SLOTS];
+            _dead = new bool[MAX_SLOTS];
+        }
+
+        /// <summary>
+        /// Advances every active effect by one server tick (status-effects.md CR-SE-6, CR-SE-7, CR-SE-8 steps 1 and 4).
+        /// Per row, in order: decrement <see cref="ActiveEffect.TicksRemaining"/>; HP regen; MP regen; on reaching 0,
+        /// remove each populated modifier through the layer (index order), free the row (later rows shift down, so
+        /// buff-bar order is kept) and reduce occupancy. Rows created during the tick are never processed by it
+        /// (EC-SE-8): the row counts are snapshotted first. Slots marked dead are skipped entirely until Story 007.
+        /// Called from <c>ZoneTickPipeline</c> phase 3 (wiring: Story 009); <c>OnStatChanged</c> is not batched until Story 006.
+        /// Allocation-free.
+        /// </summary>
+        public void OnServerTick()
+        {
+            Array.Copy(_rowCounts, _tickStartRowCounts, MAX_SLOTS);
+
+            for (int slot = 0; slot < MAX_SLOTS; slot++)
+            {
+                int end = _tickStartRowCounts[slot];
+                if (end == 0 || _dead[slot])
+                    continue;
+
+                int i = 0;
+                while (i < end)
+                {
+                    if (ProcessRow(slot, i))
+                    {
+                        RemoveRow(slot, i);
+                        end--;
+                        // Stay on index i: the shifted-in row has not been processed yet.
+                    }
+                    else
+                    {
+                        i++;
+                    }
+
+                    RunPendingInjection(slot);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Runs one row's tick (CR-SE-6): decrement, HP regen, MP regen, and on reaching 0 the modifier removals
+        /// and occupancy release (CR-SE-8 step 1). Returns true when the row expired; the caller frees it.
+        /// </summary>
+        private bool ProcessRow(int slot, int rowIndex)
+        {
+            ref ActiveEffect e = ref _rows[slot * ROWS_PER_ENTITY + rowIndex];
+            // Validation rejects a 0 duration, so a row only starts a tick at 0 if a subscriber threw during its
+            // expiry on the previous tick; the guard keeps it from wrapping and the removals below are retried.
+            if (e.TicksRemaining > 0u)
+                e.TicksRemaining--;
+
+            if (e.HpRegenPerTick > 0f)
+                _resourceSink.ApplyRegen(e.EntityId, e.HpRegenPerTick);
+            if (e.MpRegenPerTick > 0f)
+                _resourceSink.ApplyManaRegen(e.EntityId, e.MpRegenPerTick);
+
+            if (e.TicksRemaining != 0u)
+                return false;
+
+            int modifierCount = e.ModifierCount;
+            for (int m = 0; m < modifierCount; m++)
+                _modifierLayer.RemoveBuffModifier(e.EntityId, e.GetModifier(m).StatId, e.BuffId);
+            _occupiedSlots[slot] -= modifierCount;
+            return true;
+        }
+
+        /// <summary>
+        /// Frees row <paramref name="rowIndex"/> of the slot (CR-SE-8 step 4): later rows shift down one index, so
+        /// buff-bar order is kept, and the vacated last row is cleared. Uses the current row count, which includes
+        /// rows appended during this tick.
+        /// </summary>
+        private void RemoveRow(int slot, int rowIndex)
+        {
+            int rowBase = slot * ROWS_PER_ENTITY;
+            int count = _rowCounts[slot];
+            Array.Copy(_rows, rowBase + rowIndex + 1, _rows, rowBase + rowIndex, count - 1 - rowIndex);
+            _rows[rowBase + count - 1] = default;
+            _rowCounts[slot] = count - 1;
+        }
+
+        /// <summary>
+        /// Test-only seam (the GDD's TestingOnly): during the next <see cref="OnServerTick"/>, after the first row of
+        /// <paramref name="target"/>'s own slot has been processed, calls <see cref="ApplyEffect"/> once on
+        /// <paramref name="target"/> (caster = target). The result is stored in <see cref="LastInjectedResult"/>.
+        /// </summary>
+        /// <param name="target">Entity that receives the effect.</param>
+        /// <param name="definition">The buff to apply.</param>
+        internal void InjectApplyEffectDuringTick(EntityID target, in BuffDefinition definition)
+        {
+            InjectApplyEffectDuringTick(target, definition, target);
+        }
+
+        /// <summary>
+        /// Test-only seam: as the two-argument overload, but the call is made after the first row of
+        /// <paramref name="duringTurnOf"/>'s slot is processed. If that slot has no rows at the start of a tick, the
+        /// injection does not fire and stays pending for a later tick.
+        /// </summary>
+        /// <param name="target">Entity that receives the effect.</param>
+        /// <param name="definition">The buff to apply.</param>
+        /// <param name="duringTurnOf">Entity whose first processed row triggers the call.</param>
+        internal void InjectApplyEffectDuringTick(EntityID target, in BuffDefinition definition, EntityID duringTurnOf)
+        {
+            _injectionTarget = target;
+            _injectionDefinition = definition;
+            _injectionTurnSlot = TryResolveSlot(duringTurnOf, out int turnSlot) ? turnSlot : NO_SLOT;
+            _injectionPending = true;
+            LastInjectedResult = null;
+        }
+
+        private void RunPendingInjection(int slot)
+        {
+            if (!_injectionPending || slot != _injectionTurnSlot)
+                return;
+
+            _injectionPending = false;
+            LastInjectedResult = ApplyEffect(_injectionTarget, _injectionTarget, _injectionDefinition);
         }
 
         /// <summary>
@@ -170,7 +308,7 @@ namespace IronGrind.StatusEffects
         /// <summary>
         /// Read-only view of the entity's active rows (status-effects.md CR-SE-13, AC-SE-31). Allocation-free and
         /// makes no Character Stats call. The span is invalidated by the next mutation of the table, including
-        /// in-place row changes from refresh and expiry (Stories 004, 005); do not hold it across calls.
+        /// in-place row changes from refresh (Story 004) and from <see cref="OnServerTick"/> (decrement, expiry shift); do not hold it across calls.
         /// </summary>
         /// <param name="entity">The entity.</param>
         /// <returns>The entity's rows; empty for an unknown entity.</returns>

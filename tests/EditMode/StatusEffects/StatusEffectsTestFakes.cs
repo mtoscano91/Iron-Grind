@@ -8,7 +8,9 @@ namespace IronGrind.Tests.EditMode.StatusEffects
     internal enum LayerCallKind
     {
         Add,
-        Remove
+        Remove,
+        Regen,
+        ManaRegen
     }
 
     /// <summary>One recorded layer call; <see cref="Entry"/> is meaningful for adds only.</summary>
@@ -19,9 +21,12 @@ namespace IronGrind.Tests.EditMode.StatusEffects
         public readonly StatID Stat;
         public readonly BuffID Buff;
         public readonly BuffModifierEntry Entry;
+        /// <summary>Regen amount; meaningful for Regen and ManaRegen calls only.</summary>
+        public readonly float Amount;
 
-        public LayerCall(LayerCallKind kind, EntityID entity, StatID stat, BuffID buff, BuffModifierEntry entry)
+        public LayerCall(LayerCallKind kind, EntityID entity, StatID stat, BuffID buff, BuffModifierEntry entry, float amount = 0f)
         {
+            Amount = amount;
             Kind = kind;
             Entity = entity;
             Stat = stat;
@@ -33,8 +38,29 @@ namespace IronGrind.Tests.EditMode.StatusEffects
     /// <summary>
     /// Fake <see cref="IBuffModifierLayer"/> that records an ordered call log and can fail the Nth add.
     /// </summary>
-    internal sealed class RecordingBuffModifierLayer : IBuffModifierLayer
+    internal sealed class RecordingBuffModifierLayer : IBuffModifierLayer, IStatResourceSink
     {
+        private readonly IBuffModifierLayer _innerLayer;
+        private readonly IStatResourceSink _innerSink;
+
+        /// <summary>Pure fake: records only.</summary>
+        public RecordingBuffModifierLayer()
+        {
+        }
+
+        /// <summary>Decorator: records, then forwards to the inner layer and sink (real stats change).</summary>
+        public RecordingBuffModifierLayer(IBuffModifierLayer innerLayer, IStatResourceSink innerSink)
+        {
+            _innerLayer = innerLayer;
+            _innerSink = innerSink;
+        }
+
+        /// <summary>Number of ApplyRegen calls.</summary>
+        public int RegenCalls { get; private set; }
+
+        /// <summary>Number of ApplyManaRegen calls.</summary>
+        public int ManaRegenCalls { get; private set; }
+
         /// <summary>Ordered log of every call.</summary>
         public List<LayerCall> Calls { get; } = new List<LayerCall>();
 
@@ -55,6 +81,8 @@ namespace IronGrind.Tests.EditMode.StatusEffects
         {
             AddCalls++;
             Calls.Add(new LayerCall(LayerCallKind.Add, entityId, statId, entry.Id, entry));
+            if (_innerLayer != null)
+                return _innerLayer.TryAddBuffModifier(entityId, statId, entry);
             return AddCalls != FailOnAddNumber;
         }
 
@@ -63,6 +91,23 @@ namespace IronGrind.Tests.EditMode.StatusEffects
         {
             RemoveCalls++;
             Calls.Add(new LayerCall(LayerCallKind.Remove, entityId, statId, buffId, default));
+            _innerLayer?.RemoveBuffModifier(entityId, statId, buffId);
+        }
+
+        /// <inheritdoc/>
+        public void ApplyRegen(EntityID entityId, float amount)
+        {
+            RegenCalls++;
+            Calls.Add(new LayerCall(LayerCallKind.Regen, entityId, default, default, default, amount));
+            _innerSink?.ApplyRegen(entityId, amount);
+        }
+
+        /// <inheritdoc/>
+        public void ApplyManaRegen(EntityID entityId, float amount)
+        {
+            ManaRegenCalls++;
+            Calls.Add(new LayerCall(LayerCallKind.ManaRegen, entityId, default, default, default, amount));
+            _innerSink?.ApplyManaRegen(entityId, amount);
         }
     }
 

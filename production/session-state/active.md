@@ -5092,3 +5092,26 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Story: production/epics/equipment-system/story-009-appearance-changed-event-delivery.md — `AppearanceChangedEvent` Zone Delivery
 - Tech debt logged: None
 - Next recommended: Character Persistence Story 005 — production/epics/character-persistence/story-005-load-equipment-reregistration.md (re-run /story-readiness; Equipment blocker cleared)
+
+## Session Extract — /dev-story 2026-10-28
+- Story: production/epics/status-effects/story-005-tick-processing-and-expiry.md — Per-Tick Processing and Expiry
+- Files changed: src StatusEffectsService.cs (3-arg ctor with IStatResourceSink, OnServerTick, _tickStartRowCounts snapshot, shift-down compaction, dead-slot skip, internal InjectApplyEffectDuringTick ×2 + LastInjectedResult), new IStatResourceSink.cs + .meta, new CharacterStatsResourceSink.cs + .meta; tests StatusEffectsTestFakes.cs (Regen/ManaRegen call kinds, Amount, optional inner layer/sink decorator), Application + Validation construction sites (+1 null-sink test), new StatusEffects_Tick_tests.cs + .meta (20 [Test])
+- Runs: full EditMode 4713 / 4584 passed / 0 failed / 129 skipped (+21 = 20 Tick + 1 Validation); Tick 20/20, Application 28/28, Validation 46/46, DataModel 31/31; no error CS
+- Decisions: injection fires after the first processed row of the duringTurnOf slot, stays pending if that slot has no rows; decrement guarded against uint underflow; Story 009 must use the 3-arg ctor
+- Blockers: None
+- Next: /code-review the 3 src + 4 test files, then /story-done production/epics/status-effects/story-005-tick-processing-and-expiry.md. PAT rotation still unconfirmed.
+
+## Session Extract — /code-review 2026-10-28 (Story 005)
+- Verdict: APPROVED WITH SUGGESTIONS. unity-specialist ISSUES FOUND (0 blocking, 2 warnings, 4 advisory); qa-tester GAPS (0 blocking, 13 advisory). ADR-010/014 compliant.
+- "fix all" applied (main session): OnServerTick split into ProcessRow + RemoveRow (Array.Copy shift), underflow-guard comment; LastInjectedResult → ApplyResult? (null until fired, reset per inject); Tick tests +8 (inject before later expiry in same slot, full slot expiry+inject, full slot → EffectSlotsFull and tick completes, injection during turn of entity without rows doesn't fire, two consecutive expiries, expiry frees capacity, dead entity before live one, MP-only regen, slot/row order replaces EntityWithoutEffects), Tick null-sink test removed (Validation keeps it), FLAT_THREE → FLAT_MODIFIER. Tick now 27 [Test].
+- Deferred to Story 006 (record in Story 005 completion notes): an OnStatChanged subscriber throwing during expiry removes aborts the rest of the tick and leaves the row at 0 ticks with occupancy not reduced; next tick self-heals (idempotent removal) but regen fires twice. Fix shape: complete removals/compaction then rethrow after the tick.
+- Runs after fixes: full EditMode 4720 / 4591 passed / 0 failed / 129 skipped; Tick 27/27, Application 28/28, Validation 46/46, DataModel 31/31; no error CS.
+- Next: /story-done production/epics/status-effects/story-005-tick-processing-and-expiry.md. PAT rotation still unconfirmed.
+
+## Session Extract — /story-done 2026-10-28
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/status-effects/story-005-tick-processing-and-expiry.md — Per-Tick Processing and Expiry (12/12 criteria + TR-se-004, 27 Tick tests; full EditMode 4720 / 4591 / 0 failed / 129 skipped)
+- Written: story 005 (Status Complete, checkboxes, Test Evidence, Completion Notes with 5 advisory deviations), EPIC.md (row 005 Complete, Next Step → 004), production/epics/index.md (4 Complete, 5 Ready), docs/tech-debt-register.md (TD-085 → Story 006). QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean).
+- Tech debt logged: 1 item (TD-085, expiry throw-safety, Story 006)
+- Uncommitted changeset: src StatusEffectsService.cs, new IStatResourceSink.cs + .meta, new CharacterStatsResourceSink.cs + .meta; tests StatusEffectsTestFakes.cs, StatusEffects_Application_tests.cs, StatusEffects_Validation_tests.cs, new StatusEffects_Tick_tests.cs + .meta; story 005, EPIC.md, index.md, tech-debt-register.md, this file. Not ProjectSettings/* or bash.exe.stackdump.
+- Next recommended: commit; then /story-readiness production/epics/status-effects/story-004-refresh-on-reapply.md. PAT rotation still unconfirmed.
