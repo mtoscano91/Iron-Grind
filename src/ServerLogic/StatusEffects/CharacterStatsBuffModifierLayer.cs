@@ -46,6 +46,18 @@ namespace IronGrind.StatusEffects
             _stats.RemoveBuffModifier(entityId, statId, buffId);
         }
 
+        /// <inheritdoc/>
+        public void BeginStatBatch()
+        {
+            _stats.BeginStatTransaction();
+        }
+
+        /// <inheritdoc/>
+        public void EndStatBatch()
+        {
+            _stats.EndStatTransaction();
+        }
+
         private int ReadBuffCount(EntityID entityId, StatID statId)
         {
             return _stats.EntityBuffCount.TryGetValue(entityId, out int[] counts) ? counts[(int)statId] : 0;

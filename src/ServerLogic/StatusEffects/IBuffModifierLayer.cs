@@ -21,5 +21,15 @@ namespace IronGrind.StatusEffects
         /// <param name="statId">The stat changed.</param>
         /// <param name="buffId">The buff that owns the modifier.</param>
         void RemoveBuffModifier(EntityID entityId, StatID statId, BuffID buffId);
+
+        /// <summary>
+        /// Opens a stat batch (Story 006, CR-SE-17): <c>OnStatChanged</c> for the adds and removes that follow is
+        /// deferred and deduplicated per (entity, stat) until <see cref="EndStatBatch"/>. Not nestable; throws when
+        /// a batch (or another stat transaction) is already open.
+        /// </summary>
+        void BeginStatBatch();
+
+        /// <summary>Closes the stat batch and fires the deferred events (one per unique entity and stat).</summary>
+        void EndStatBatch();
     }
 }

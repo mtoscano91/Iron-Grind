@@ -386,5 +386,152 @@ namespace IronGrind.Tests.EditMode.CharacterStats
             Assert.AreEqual(200f, _stats.GetCurrentMP(_player), 0.0f,
                 "CurrentMP must be clamped at MaxMP=200f — not 205f, no exception.");
         }
+
+        // -------------------------------------------------------------------
+        // Status Effects Story 006 - OQ-SE-1: ClampCurrentMPToMax and the
+        // ApplyDamage(0f) HP clamp pin.
+        // -------------------------------------------------------------------
+
+        private const int   ClampBaseMaxMp   = 500;
+        private const float ClampBuffMpBonus = 100f;
+        private const float ClampBuffedMaxMp = 600f;
+        private const int   ClampBaseMaxHp   = 400;
+        private const float ClampBuffHpBonus = 180f;
+        private const float ClampBuffedHp    = 580f;
+
+        private int _clampStatChangedMpCount;
+        private int _clampStatChangedHpCount;
+        private int _clampDiedCount;
+
+        private void SubscribeClampCounters()
+        {
+            _clampStatChangedMpCount = 0;
+            _clampStatChangedHpCount = 0;
+            _clampDiedCount = 0;
+            _stats.Subscribe((IronGrind.CharacterStats.CharacterStats.StatChangedHandler)((id, stat) =>
+            {
+                if (stat == StatID.CurrentMP) _clampStatChangedMpCount++;
+                if (stat == StatID.CurrentHP) _clampStatChangedHpCount++;
+            }));
+            _stats.Subscribe((IronGrind.CharacterStats.CharacterStats.EntityDiedHandler)(_ => _clampDiedCount++));
+        }
+
+        private void ArrangeBuffedMaxMpFullPool()
+        {
+            _stats.SetBaseStat(_player, StatID.MaxMP, ClampBaseMaxMp);
+            _stats.AddBuffModifier(_player, StatID.MaxMP,
+                new BuffModifierEntry(ClampBuffMpBonus, 0f, 10, TestBuff01));
+            _stats.SetCurrentMP(_player, ClampBuffedMaxMp);
+        }
+
+        [Test]
+        public void CharacterStats_ClampCurrentMPToMax_AboveMax_ClampsAndFiresOneCurrentMpEvent()
+        {
+            // Arrange
+            ArrangeBuffedMaxMpFullPool();
+            _stats.RemoveBuffModifier(_player, StatID.MaxMP, TestBuff01);
+            SubscribeClampCounters();
+
+            // Act
+            _stats.ClampCurrentMPToMax(_player);
+
+            // Assert
+            Assert.AreEqual((float)ClampBaseMaxMp, _stats.GetCurrentMP(_player), 0.0f,
+                "CurrentMP must be clamped to the effective MaxMP.");
+            Assert.AreEqual(1, _clampStatChangedMpCount,
+                "Exactly one OnStatChanged(CurrentMP) must fire when the clamp changes the value.");
+        }
+
+        [Test]
+        public void CharacterStats_ClampCurrentMPToMax_AtMax_NoChangeNoEvent()
+        {
+            // Arrange
+            _stats.SetBaseStat(_player, StatID.MaxMP, ClampBaseMaxMp);
+            _stats.SetCurrentMP(_player, ClampBaseMaxMp);
+            SubscribeClampCounters();
+
+            // Act
+            _stats.ClampCurrentMPToMax(_player);
+
+            // Assert
+            Assert.AreEqual((float)ClampBaseMaxMp, _stats.GetCurrentMP(_player), 0.0f);
+            Assert.AreEqual(0, _clampStatChangedMpCount, "No event when CurrentMP already equals MaxMP.");
+        }
+
+        [Test]
+        public void CharacterStats_ClampCurrentMPToMax_BelowMax_NoChangeNoEvent()
+        {
+            // Arrange
+            const float BelowMax = 120f;
+            _stats.SetBaseStat(_player, StatID.MaxMP, ClampBaseMaxMp);
+            _stats.SetCurrentMP(_player, BelowMax);
+            SubscribeClampCounters();
+
+            // Act
+            _stats.ClampCurrentMPToMax(_player);
+
+            // Assert
+            Assert.AreEqual(BelowMax, _stats.GetCurrentMP(_player), 0.0f);
+            Assert.AreEqual(0, _clampStatChangedMpCount, "No event when CurrentMP is below MaxMP.");
+        }
+
+        [Test]
+        public void CharacterStats_ClampCurrentMPToMax_InsideTransaction_EventDeferredToEnd()
+        {
+            // Arrange
+            ArrangeBuffedMaxMpFullPool();
+            SubscribeClampCounters();
+            _clampStatChangedMpCount = 0;
+
+            // Act
+            _stats.BeginStatTransaction();
+            _stats.RemoveBuffModifier(_player, StatID.MaxMP, TestBuff01);
+            _stats.ClampCurrentMPToMax(_player);
+
+            // Assert - clamped immediately, event deferred
+            Assert.AreEqual((float)ClampBaseMaxMp, _stats.GetCurrentMP(_player), 0.0f);
+            Assert.AreEqual(0, _clampStatChangedMpCount, "CurrentMP event must be deferred inside a transaction.");
+            _stats.EndStatTransaction();
+            Assert.AreEqual(1, _clampStatChangedMpCount, "Exactly one CurrentMP event at EndStatTransaction.");
+        }
+
+        [Test]
+        public void CharacterStats_ApplyDamageZero_HpAboveLoweredMaxHp_ClampsWithoutDeathOrEvent()
+        {
+            // Arrange - HP 580 under a +180 buffed MaxHP, then the buff is removed (MaxHP 400)
+            _stats.SetBaseStat(_player, StatID.MaxHP, ClampBaseMaxHp);
+            _stats.AddBuffModifier(_player, StatID.MaxHP,
+                new BuffModifierEntry(ClampBuffHpBonus, 0f, 10, TestBuff01));
+            _stats.SetCurrentHP(_player, ClampBuffedHp);
+            _stats.RemoveBuffModifier(_player, StatID.MaxHP, TestBuff01);
+            SubscribeClampCounters();
+
+            // Act
+            _stats.ApplyDamage(_player, 0f);
+
+            // Assert
+            Assert.AreEqual((float)ClampBaseMaxHp, _stats.GetCurrentHP(_player), 0.0f,
+                "ApplyDamage(0f) must clamp CurrentHP to the lowered effective MaxHP.");
+            Assert.AreEqual(0, _clampDiedCount, "Clamping must not fire OnEntityDied.");
+            Assert.AreEqual(0, _clampStatChangedHpCount, "ApplyDamage fires no OnStatChanged(CurrentHP).");
+        }
+
+        [Test]
+        public void CharacterStats_ApplyDamageZero_HpBelowMaxHp_Unchanged()
+        {
+            // Arrange
+            const float BelowMaxHp = 300f;
+            _stats.SetBaseStat(_player, StatID.MaxHP, ClampBaseMaxHp);
+            _stats.SetCurrentHP(_player, BelowMaxHp);
+            SubscribeClampCounters();
+
+            // Act
+            _stats.ApplyDamage(_player, 0f);
+
+            // Assert
+            Assert.AreEqual(BelowMaxHp, _stats.GetCurrentHP(_player), 0.0f);
+            Assert.AreEqual(0, _clampDiedCount);
+            Assert.AreEqual(0, _clampStatChangedHpCount);
+        }
     }
 }

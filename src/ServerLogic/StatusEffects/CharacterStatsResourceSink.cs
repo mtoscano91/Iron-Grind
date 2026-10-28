@@ -30,5 +30,18 @@ namespace IronGrind.StatusEffects
         {
             _stats.ApplyManaRegen(entityId, amount);
         }
+
+        /// <inheritdoc/>
+        public void ClampHPToMax(EntityID entityId)
+        {
+            // OQ-SE-1: ApplyDamage(0) clamps CurrentHP to the effective MaxHP and fires nothing unless HP reaches 0.
+            _stats.ApplyDamage(entityId, 0f);
+        }
+
+        /// <inheritdoc/>
+        public void ClampMPToMax(EntityID entityId)
+        {
+            _stats.ClampCurrentMPToMax(entityId);
+        }
     }
 }

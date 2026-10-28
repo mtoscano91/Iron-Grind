@@ -1,6 +1,7 @@
 using System;
 using IronGrind.CharacterStats;
 using NUnit.Framework;
+using UnityEngine.TestTools;
 using IronGrind.Tests.EditMode.CharacterStats;
 
 namespace IronGrind.Tests.EditMode.CharacterStats
@@ -295,6 +296,330 @@ namespace IronGrind.Tests.EditMode.CharacterStats
             // Assert
             Assert.AreEqual(54, midValue,
                 "Writes during a transaction are immediate — GetBaseStat must return 54 mid-transaction.");
+        }
+
+        // -----------------------------------------------------------------------
+        // Status Effects Story 006: buff modifier events are deferred inside a transaction.
+        // Buff modifier writes are NOT snapshotted - Rollback discards events, keeps modifiers.
+        // -----------------------------------------------------------------------
+
+        private static readonly BuffID DeferralBuff = (BuffID)601u;
+        private const float DeferralFlatBonus    = 25f;
+        private const int   DeferralBuffDuration = 10;
+
+        private static BuffModifierEntry MakeDeferralEntry(float flat) =>
+            new BuffModifierEntry(flat, 0f, DeferralBuffDuration, DeferralBuff);
+
+        [Test]
+        public void CharacterStats_Transaction_AddThenRemoveBuffSameStat_NoEventsUntilEndThenOne()
+        {
+            // Arrange
+            EntityID entity = CharacterStatsFixture.PlayerEntityId;
+            _recorder.Subscribe(_stats);
+
+            // Act
+            _stats.BeginStatTransaction();
+            _stats.AddBuffModifier(entity, StatID.Strength, MakeDeferralEntry(DeferralFlatBonus));
+            _stats.RemoveBuffModifier(entity, StatID.Strength, DeferralBuff);
+
+            // Assert
+            Assert.IsFalse(_recorder.FiredCount.ContainsKey(StatID.Strength),
+                "No buff modifier event may fire inside a transaction.");
+            _stats.EndStatTransaction();
+            Assert.AreEqual(1, _recorder.FiredCount[StatID.Strength],
+                "Add + Remove on the same (entity, stat) dedupe to exactly one event at End.");
+        }
+
+        [Test]
+        public void CharacterStats_Transaction_BuffsOnTwoStats_OneEventEachAtEnd()
+        {
+            // Arrange
+            EntityID entity = CharacterStatsFixture.PlayerEntityId;
+            _recorder.Subscribe(_stats);
+
+            // Act
+            _stats.BeginStatTransaction();
+            _stats.AddBuffModifier(entity, StatID.Strength, MakeDeferralEntry(DeferralFlatBonus));
+            _stats.AddBuffModifier(entity, StatID.MaxHP, MakeDeferralEntry(DeferralFlatBonus));
+            Assert.AreEqual(0, _recorder.FiredCount.Count, "Both events must be deferred.");
+            _stats.EndStatTransaction();
+
+            // Assert
+            Assert.AreEqual(1, _recorder.FiredCount[StatID.Strength]);
+            Assert.AreEqual(1, _recorder.FiredCount[StatID.MaxHP]);
+        }
+
+        [Test]
+        public void CharacterStats_Transaction_SameBuffIdOverwrite_EventDeferred()
+        {
+            // Arrange
+            const float RefreshedBonus = 40f;
+            EntityID entity = CharacterStatsFixture.PlayerEntityId;
+            _stats.AddBuffModifier(entity, StatID.Strength, MakeDeferralEntry(DeferralFlatBonus));
+            _recorder.Subscribe(_stats);
+            _recorder.Reset();
+
+            // Act
+            _stats.BeginStatTransaction();
+            _stats.AddBuffModifier(entity, StatID.Strength, MakeDeferralEntry(RefreshedBonus));
+            Assert.IsFalse(_recorder.FiredCount.ContainsKey(StatID.Strength),
+                "Overwrite event must be deferred inside a transaction.");
+            _stats.EndStatTransaction();
+
+            // Assert
+            Assert.AreEqual(1, _recorder.FiredCount[StatID.Strength]);
+        }
+
+        [Test]
+        public void CharacterStats_RollbackStatTransaction_BuffModifierWrite_DiscardsEventKeepsModifier()
+        {
+            // Arrange
+            EntityID entity = CharacterStatsFixture.PlayerEntityId;
+            int before = _stats.GetEffectiveStat(entity, StatID.Strength);
+            _recorder.Subscribe(_stats);
+
+            // Act
+            _stats.BeginStatTransaction();
+            _stats.AddBuffModifier(entity, StatID.Strength, MakeDeferralEntry(DeferralFlatBonus));
+            _stats.RollbackStatTransaction();
+
+            // Assert
+            Assert.IsFalse(_recorder.FiredCount.ContainsKey(StatID.Strength),
+                "Rollback must discard the deferred buff modifier event.");
+            Assert.AreEqual(before + (int)DeferralFlatBonus, _stats.GetEffectiveStat(entity, StatID.Strength),
+                "Buff modifier writes are not snapshotted - the modifier stays after Rollback.");
+        }
+
+        [Test]
+        public void CharacterStats_BuffModifier_OutsideTransaction_AddAndRemoveEachFireOneEvent()
+        {
+            // Arrange
+            EntityID entity = CharacterStatsFixture.PlayerEntityId;
+            _recorder.Subscribe(_stats);
+
+            // Act / Assert
+            _stats.AddBuffModifier(entity, StatID.Strength, MakeDeferralEntry(DeferralFlatBonus));
+            Assert.AreEqual(1, _recorder.FiredCount[StatID.Strength], "Add fires immediately outside a transaction.");
+            _stats.RemoveBuffModifier(entity, StatID.Strength, DeferralBuff);
+            Assert.AreEqual(2, _recorder.FiredCount[StatID.Strength], "Remove fires immediately outside a transaction.");
+        }
+
+        // -----------------------------------------------------------------------
+        // Code-review fixes (Status Effects Story 006): B1 capacity, W2 throwing subscriber,
+        // QA gaps. The deferred queue and rollback snapshot grow by doubling (no 18-pair cap).
+        // -----------------------------------------------------------------------
+
+        private const int   LargeEntityCount     = 200;
+        private const int   StatsPerEntity       = 8;
+        private const uint  LargeEntityBase      = 5000u;
+        private const int   RollbackEntityCount  = 50;
+        private const int   RollbackBaseVit      = 10;
+        private const int   RollbackBaseMaxHp    = 100;
+        private const int   RollbackWrittenVit   = 77;
+        private const int   RollbackWrittenMaxHp = 999;
+        private static readonly BuffID LargeBuff = (BuffID)602u;
+
+        private static BuffModifierEntry MakeLargeEntry() =>
+            new BuffModifierEntry(DeferralFlatBonus, 0f, DeferralBuffDuration, LargeBuff);
+
+        [Test]
+        public void CharacterStats_Transaction_200EntitiesBy8Stats_FiresExactly1600EventsAtEnd()
+        {
+            // Arrange
+            int fired = 0;
+            var seen = new System.Collections.Generic.HashSet<(uint, StatID)>();
+            _stats.Subscribe((IronGrind.CharacterStats.CharacterStats.StatChangedHandler)((id, stat) =>
+            {
+                fired++;
+                seen.Add((id.RawValue, stat));
+            }));
+
+            // Act
+            _stats.BeginStatTransaction();
+            for (int e = 0; e < LargeEntityCount; e++)
+            {
+                EntityID id = new EntityID(LargeEntityBase + (uint)e);
+                _stats.AddBuffModifier(id, StatID.Strength,     MakeLargeEntry());
+                _stats.AddBuffModifier(id, StatID.Dexterity,    MakeLargeEntry());
+                _stats.AddBuffModifier(id, StatID.Vitality,     MakeLargeEntry());
+                _stats.AddBuffModifier(id, StatID.Intelligence, MakeLargeEntry());
+                _stats.RemoveBuffModifier(id, StatID.Intelligence, LargeBuff); // same pair again
+                _stats.SetBaseStat(id, StatID.MaxHP, 1);
+                _stats.SetBaseStat(id, StatID.MaxMP, 1);
+                _stats.SetBaseStat(id, StatID.Level, 1);
+                _stats.SetBaseStat(id, StatID.Experience, 1);
+                _stats.SetBaseStat(id, StatID.Experience, 2); // duplicate write, still one event
+            }
+            Assert.AreEqual(0, fired, "No event may fire before EndStatTransaction.");
+            _stats.EndStatTransaction();
+
+            // Assert
+            Assert.AreEqual(LargeEntityCount * StatsPerEntity, fired,
+                "Exactly one event per unique (entity, stat) pair.");
+            Assert.AreEqual(LargeEntityCount * StatsPerEntity, seen.Count,
+                "Every delivered event must be a distinct pair.");
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void CharacterStats_Transaction_EventsFireInFirstWriteOrder()
+        {
+            // Arrange
+            var order = new System.Collections.Generic.List<StatID>();
+            EntityID entity = CharacterStatsFixture.PlayerEntityId;
+            _stats.Subscribe((IronGrind.CharacterStats.CharacterStats.StatChangedHandler)((id, stat) => order.Add(stat)));
+
+            // Act
+            _stats.BeginStatTransaction();
+            _stats.SetBaseStat(entity, StatID.Vitality, 1);
+            _stats.SetBaseStat(entity, StatID.MaxHP, 1);
+            _stats.SetBaseStat(entity, StatID.Vitality, 2);
+            _stats.SetBaseStat(entity, StatID.Strength, 1);
+            _stats.EndStatTransaction();
+
+            // Assert
+            CollectionAssert.AreEqual(new[] { StatID.Vitality, StatID.MaxHP, StatID.Strength }, order);
+        }
+
+        [Test]
+        public void CharacterStats_RollbackStatTransaction_ManyEntitiesBeyondOldCapacity_RestoresAll()
+        {
+            // Arrange
+            for (int e = 0; e < RollbackEntityCount; e++)
+            {
+                EntityID id = new EntityID(LargeEntityBase + (uint)e);
+                _stats.SetBaseStat(id, StatID.Vitality, RollbackBaseVit);
+                _stats.SetBaseStat(id, StatID.MaxHP, RollbackBaseMaxHp);
+            }
+            _recorder.Subscribe(_stats);
+            _recorder.Reset();
+
+            // Act
+            _stats.BeginStatTransaction();
+            for (int e = 0; e < RollbackEntityCount; e++)
+            {
+                EntityID id = new EntityID(LargeEntityBase + (uint)e);
+                _stats.SetBaseStat(id, StatID.Vitality, RollbackWrittenVit);
+                _stats.SetBaseStat(id, StatID.MaxHP, RollbackWrittenMaxHp);
+            }
+            _stats.RollbackStatTransaction();
+
+            // Assert
+            for (int e = 0; e < RollbackEntityCount; e++)
+            {
+                EntityID id = new EntityID(LargeEntityBase + (uint)e);
+                Assert.AreEqual(RollbackBaseVit, _stats.GetBaseStat(id, StatID.Vitality), "Vitality entity " + e);
+                Assert.AreEqual(RollbackBaseMaxHp, _stats.GetBaseStat(id, StatID.MaxHP), "MaxHP entity " + e);
+            }
+            Assert.AreEqual(0, _recorder.FiredCount.Count, "Rollback must discard every deferred event.");
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void CharacterStats_Transaction_ReusedAfterEnd_DoesNotLeakDedupState()
+        {
+            // Arrange
+            EntityID entity = CharacterStatsFixture.PlayerEntityId;
+            _stats.BeginStatTransaction();
+            _stats.SetBaseStat(entity, StatID.Vitality, 5);
+            _stats.EndStatTransaction();
+            _recorder.Subscribe(_stats);
+
+            // Act - the same pair in a second transaction must fire again
+            _stats.BeginStatTransaction();
+            _stats.SetBaseStat(entity, StatID.Vitality, 6);
+            _stats.EndStatTransaction();
+
+            // Assert
+            Assert.AreEqual(1, _recorder.FiredCount[StatID.Vitality]);
+        }
+
+        [Test]
+        public void CharacterStats_EndStatTransaction_SubscriberThrowsOnFirstEvent_DeliversRestRethrowsAndCloses()
+        {
+            // Arrange
+            EntityID entity = CharacterStatsFixture.PlayerEntityId;
+            var delivered = new System.Collections.Generic.List<StatID>();
+            _stats.Subscribe((IronGrind.CharacterStats.CharacterStats.StatChangedHandler)((id, stat) =>
+            {
+                delivered.Add(stat);
+                if (stat == StatID.Strength)
+                    throw new InvalidOperationException("subscriber failure");
+            }));
+            _stats.BeginStatTransaction();
+            _stats.SetBaseStat(entity, StatID.Strength, 1);
+            _stats.SetBaseStat(entity, StatID.Dexterity, 1);
+            _stats.SetBaseStat(entity, StatID.Vitality, 1);
+
+            // Act / Assert
+            var ex = Assert.Throws<InvalidOperationException>(() => _stats.EndStatTransaction());
+            Assert.AreEqual("subscriber failure", ex.Message);
+            CollectionAssert.AreEqual(new[] { StatID.Strength, StatID.Dexterity, StatID.Vitality }, delivered,
+                "Every deferred pair must still be delivered after the first subscriber exception.");
+            Assert.DoesNotThrow(() => _stats.BeginStatTransaction(), "Transaction must be closed after End.");
+            _stats.RollbackStatTransaction();
+        }
+
+        [Test]
+        public void CharacterStats_RollbackStatTransaction_BuffRemoveInsideTransaction_ModifierStaysRemovedEventDiscarded()
+        {
+            // Arrange
+            EntityID entity = CharacterStatsFixture.PlayerEntityId;
+            _stats.AddBuffModifier(entity, StatID.Strength, MakeDeferralEntry(DeferralFlatBonus));
+            int withBuff = _stats.GetEffectiveStat(entity, StatID.Strength);
+            _recorder.Subscribe(_stats);
+            _recorder.Reset();
+
+            // Act
+            _stats.BeginStatTransaction();
+            _stats.RemoveBuffModifier(entity, StatID.Strength, DeferralBuff);
+            _stats.RollbackStatTransaction();
+
+            // Assert
+            Assert.AreEqual(withBuff - (int)DeferralFlatBonus, _stats.GetEffectiveStat(entity, StatID.Strength),
+                "Buff removal is not snapshotted - the modifier stays removed after Rollback.");
+            Assert.IsFalse(_recorder.FiredCount.ContainsKey(StatID.Strength), "Deferred event must be discarded.");
+        }
+
+        [Test]
+        public void CharacterStats_RollbackStatTransaction_AfterClampCurrentMPToMax_RestoresPreTransactionMp()
+        {
+            // Arrange
+            const int   BaseMaxMp    = 500;
+            const float MaxMpBuff    = 100f;
+            const float FullBuffedMp = 600f;
+            EntityID entity = CharacterStatsFixture.PlayerEntityId;
+            _stats.SetBaseStat(entity, StatID.MaxMP, BaseMaxMp);
+            _stats.AddBuffModifier(entity, StatID.MaxMP, new BuffModifierEntry(MaxMpBuff, 0f, DeferralBuffDuration, DeferralBuff));
+            _stats.SetCurrentMP(entity, FullBuffedMp);
+            _stats.RemoveBuffModifier(entity, StatID.MaxMP, DeferralBuff);
+            _recorder.Subscribe(_stats);
+            _recorder.Reset();
+
+            // Act
+            _stats.BeginStatTransaction();
+            _stats.ClampCurrentMPToMax(entity);
+            Assert.AreEqual((float)BaseMaxMp, _stats.GetCurrentMP(entity), 0.0f,
+                "Clamp applies immediately inside the transaction.");
+            _stats.RollbackStatTransaction();
+
+            // Assert
+            Assert.AreEqual(FullBuffedMp, _stats.GetCurrentMP(entity), 0.0f,
+                "Rollback must restore CurrentMP to its pre-transaction value.");
+            Assert.IsFalse(_recorder.FiredCount.ContainsKey(StatID.CurrentMP), "Deferred event must be discarded.");
+        }
+
+        [Test]
+        public void CharacterStats_ClampCurrentMPToMax_UnknownEntity_IsNoOp()
+        {
+            // Arrange
+            EntityID unknown = new EntityID(987654u);
+            _recorder.Subscribe(_stats);
+
+            // Act / Assert
+            Assert.DoesNotThrow(() => _stats.ClampCurrentMPToMax(unknown));
+            Assert.AreEqual(0f, _stats.GetCurrentMP(unknown), 0.0f);
+            Assert.AreEqual(0, _recorder.FiredCount.Count, "No event for an unregistered entity.");
         }
     }
 }

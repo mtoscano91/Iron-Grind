@@ -79,8 +79,8 @@ An effect expires when `TicksRemaining` decrements to 0. Expiry is processed in 
 
 When an effect expires:
 1. For each `StatModifier` in the expired `BuffDefinition`: call `CharacterStats.RemoveBuffModifier(entityId, statId, buffId)`.
-2. If `MaxHP` was among the buffed stats: after removing the `MaxHP` modifier, call `CharacterStats.ApplyDamage(entityId, 0.0f)` to trigger the HP clamp-on-write invariant, ensuring `CurrentHP` is clamped to the reduced `MaxHP`. *Open question: confirm `ApplyDamage(0.0f)` triggers the clamp without producing a damage event visible to other systems — see OQ-SE-1.*
-3. If `MaxMP` was among the buffed stats: equivalent MP clamp procedure pending OQ-SE-1 resolution.
+2. If `MaxHP` was among the buffed stats: after removing the `MaxHP` modifier, call `CharacterStats.ApplyDamage(entityId, 0.0f)` to trigger the HP clamp-on-write invariant, ensuring `CurrentHP` is clamped to the reduced `MaxHP`. `ApplyDamage(0.0f)` clamps without any event unless `CurrentHP` reaches 0 (OQ-SE-1, resolved 2026-10-28).
+3. If `MaxMP` was among the buffed stats: call `CharacterStats.ClampCurrentMPToMax(entityId)` (added for this purpose; no event when `CurrentMP` is unchanged). `ApplyManaRegen(0.0f)` returns early and cannot be used (OQ-SE-1, resolved 2026-10-28).
 4. Remove the `ActiveEffect` entry from the internal table and release the slot.
 
 **CR-SE-9: Debuff handling**
@@ -274,7 +274,7 @@ If `CurrentHP ≤ new MaxHP` at expiry time (entity had taken damage since the b
 
 **EC-SE-5: MaxMP buff expiry (same pattern as EC-SE-4)**
 
-Identical to EC-SE-4 with `MaxMP` and `CurrentMP`. The MP clamp procedure is pending OQ-SE-1 resolution — if `CharacterStats` does not expose a zero-amount `ApplyManaRegen()` path that triggers the clamp, a `ClampCurrentMPToMax(entityId)` method must be added (OQ-SE-1 scope).
+Identical to EC-SE-4 with `MaxMP` and `CurrentMP`. The MP clamp is `CharacterStats.ClampCurrentMPToMax(entityId)` (OQ-SE-1, resolved 2026-10-28: `ApplyManaRegen(0.0f)` returns early, so a dedicated method was added).
 
 **EC-SE-6: Active effect row limit hit (separate from modifier slot limit)**
 
@@ -454,7 +454,7 @@ Call `ApplyEffect(target, caster, def)` where caster EntityID = 42. Assert the `
 
 ## Open Questions
 
-**OQ-SE-1 — MaxHP/MaxMP expiry clamp mechanism** (Blocking before implementation)
+**OQ-SE-1 — MaxHP/MaxMP expiry clamp mechanism** — **Resolved 2026-10-28 (Status Effects Story 006)**: (a) yes, `ApplyDamage(0.0f)` clamps `CurrentHP` to the effective `MaxHP`; (b) it fires no event unless HP reaches 0 (then only `OnEntityDied`), so no `ClampCurrentHPToMax` is added. MP: `ApplyManaRegen(0.0f)` returns early, so `CharacterStats.ClampCurrentMPToMax(entityId)` was added. Both pinned by Character Stats tests. Original question kept below for history.
 CR-SE-8 calls `ApplyDamage(entityId, 0.0f)` to trigger the `CurrentHP` clamp-on-write after a MaxHP modifier is removed. This requires confirmation from the CharacterStats GDD: (a) Does `ApplyDamage(0.0f)` trigger the HP ≤ MaxHP clamp internally? (b) Does a zero-damage call fire `OnEntityDied` or any damage event visible to combat systems? If the answer to (b) is yes, a dedicated `ClampCurrentHPToMax(entityId)` method must be added to CharacterStats. The MP equivalent (`ApplyManaRegen(0.0f)` or `ClampCurrentMPToMax`) must be addressed simultaneously.
 *Owner: CharacterStats author. Resolution required before Status Effects implementation begins.*
 

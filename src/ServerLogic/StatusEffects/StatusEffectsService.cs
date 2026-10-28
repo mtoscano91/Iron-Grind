@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.ExceptionServices;
 using IronGrind.CharacterStats;
 
 namespace IronGrind.StatusEffects
@@ -8,7 +9,9 @@ namespace IronGrind.StatusEffects
     /// CR-SE-3, CR-SE-13, F-SE-1, F-SE-2, F-SE-3, EC-SE-2, EC-SE-6, EC-SE-11). Stories 002-003: validation, atomic
     /// application through <see cref="IBuffModifierLayer"/> with rollback, row storage and read-only accessors.
     /// Story 005 adds per-tick processing and expiry (<see cref="OnServerTick"/>).
-    /// Story 004 adds refresh on reapply and in-place replacement (CR-SE-4). Death wiring comes in later stories.
+    /// Story 004 adds refresh on reapply and in-place replacement (CR-SE-4). Story 006 adds the expiry and
+    /// replacement MaxHP / MaxMP clamp (CR-SE-8 steps 2-3) and brackets the tick pass, and a replacement made
+    /// outside the tick, in a Character Stats stat batch (CR-SE-17). Death wiring comes in later stories.
     /// Not thread-safe: every call runs on the server tick thread.
     /// </summary>
     public sealed class StatusEffectsService
@@ -40,6 +43,13 @@ namespace IronGrind.StatusEffects
         private int _tickSlot = NO_SLOT;
         private int _tickIndex;
         private int _tickEnd;
+
+        // True while Status Effects owns an open stat batch (the tick, or a replacement outside the tick).
+        private bool _batchOpen;
+
+        // First exception thrown by a clamp (a death subscriber can throw from ClampHPToMax); kept while the pass
+        // continues and surfaced after the batch ends. A single field: no list, no allocation.
+        private Exception _clampException;
 
         /// <summary>
         /// Test-only: result of the last injected <see cref="ApplyEffect"/> call made by <see cref="OnServerTick"/>;
@@ -74,16 +84,69 @@ namespace IronGrind.StatusEffects
         /// <summary>
         /// Advances every active effect by one server tick (status-effects.md CR-SE-6, CR-SE-7, CR-SE-8 steps 1 and 4).
         /// Per row, in order: decrement <see cref="ActiveEffect.TicksRemaining"/>; HP regen; MP regen; on reaching 0,
-        /// remove each populated modifier through the layer (index order), free the row (later rows shift down, so
-        /// buff-bar order is kept) and reduce occupancy. Rows created during the tick are never processed by it
-        /// (EC-SE-8): the row counts are snapshotted first. Slots marked dead are skipped entirely until Story 007.
-        /// Called from <c>ZoneTickPipeline</c> phase 3 (wiring: Story 009); <c>OnStatChanged</c> is not batched until Story 006.
-        /// Allocation-free.
+        /// remove each populated modifier through the layer (index order), reduce occupancy, free the row (later rows
+        /// shift down, so buff-bar order is kept) and only then clamp HP / MP. Rows created during the tick are never
+        /// processed by it (EC-SE-8): the row counts are snapshotted first. Slots marked dead are skipped entirely
+        /// until Story 007. Called from <c>ZoneTickPipeline</c> phase 3 (wiring: Story 009). Story 006: the pass is
+        /// wrapped in a stat batch (always), so <c>OnStatChanged</c> fires once per (entity, stat) after the pass, and
+        /// an expired MaxHP / MaxMP buff clamps current HP / MP right after its row is freed. Allocation-free.
         /// </summary>
+        /// <remarks>
+        /// Every row is processed exactly once even when a death subscriber (fired by the HP clamp) or an
+        /// <c>OnStatChanged</c> subscriber throws: a clamp exception is captured, the pass continues, and the first
+        /// one is rethrown after the batch ends. Precedence when several fail: an exception from the pass itself
+        /// (for example a layer remove) over a captured clamp exception over an exception from
+        /// <c>EndStatBatch</c>; the others are dropped so the original is never masked. Throws
+        /// <see cref="InvalidOperationException"/> before processing anything if a stat transaction is already open.
+        /// </remarks>
         public void OnServerTick()
         {
-            Array.Copy(_rowCounts, _tickStartRowCounts, MAX_SLOTS);
+            // CR-SE-17: the whole pass is one stat batch, always. If Begin throws (a transaction is already open)
+            // nothing is processed. End always runs and Rollback is never used: the modifier writes are not
+            // reverted, so discarding their events would hide real changes (TD-085).
+            _modifierLayer.BeginStatBatch();
+            _batchOpen = true;
+            _clampException = null;
+            Exception passException = null;
+            try
+            {
+                Array.Copy(_rowCounts, _tickStartRowCounts, MAX_SLOTS);
+                ProcessAllSlots();
+            }
+            catch (Exception ex)
+            {
+                passException = ex;
+            }
 
+            EndBatchAndSurface(passException);
+        }
+
+        /// <summary>
+        /// Ends the Status Effects stat batch and rethrows the winning exception: pass exception, else the captured
+        /// clamp exception, else End's own. Resets the batch state first so a throw never leaves it open.
+        /// </summary>
+        private void EndBatchAndSurface(Exception passException)
+        {
+            _batchOpen = false;
+            Exception endException = null;
+            try
+            {
+                _modifierLayer.EndStatBatch();
+            }
+            catch (Exception ex)
+            {
+                endException = ex;
+            }
+
+            Exception first = passException ?? _clampException ?? endException;
+            _clampException = null;
+            if (first != null)
+                ExceptionDispatchInfo.Capture(first).Throw();
+        }
+
+        /// <summary>The slot loop of <see cref="OnServerTick"/>; resets the tick-slot state even when it throws.</summary>
+        private void ProcessAllSlots()
+        {
             try
             {
                 for (int slot = 0; slot < MAX_SLOTS; slot++)
@@ -100,16 +163,10 @@ namespace IronGrind.StatusEffects
                     _tickEnd = end;
                     while (_tickIndex < _tickEnd)
                     {
-                        if (ProcessRow(slot, _tickIndex))
-                        {
-                            RemoveRow(slot, _tickIndex);
-                            _tickEnd--;
-                            // Stay on the index: the shifted-in row has not been processed yet.
-                        }
-                        else
-                        {
+                        // An expired row is freed inside ProcessRow (the shifted-in row sits on the same index
+                        // and has not been processed yet, so the index stays); otherwise move to the next row.
+                        if (!ProcessRow(slot, _tickIndex))
                             _tickIndex++;
-                        }
 
                         RunPendingInjection(slot);
                     }
@@ -123,13 +180,14 @@ namespace IronGrind.StatusEffects
 
         /// <summary>
         /// Runs one row's tick (CR-SE-6): decrement, HP regen, MP regen, and on reaching 0 the modifier removals
-        /// and occupancy release (CR-SE-8 step 1). Returns true when the row expired; the caller frees it.
+        /// and occupancy release (CR-SE-8 step 1). Returns true when the row expired; it is already freed and
+        /// <c>_tickEnd</c> already lowered, so the caller keeps the index. The row is freed before the clamps so a
+        /// throwing death subscriber cannot leave it behind (see <see cref="ClampAfterMaxChange"/>).
         /// </summary>
         private bool ProcessRow(int slot, int rowIndex)
         {
             ref ActiveEffect e = ref _rows[slot * ROWS_PER_ENTITY + rowIndex];
-            // Validation rejects a 0 duration, so a row only starts a tick at 0 if a subscriber threw during its
-            // expiry on the previous tick; the guard keeps it from wrapping and the removals below are retried.
+            // Validation rejects a 0 duration; the guard only keeps the counter from wrapping.
             if (e.TicksRemaining > 0u)
                 e.TicksRemaining--;
 
@@ -141,16 +199,25 @@ namespace IronGrind.StatusEffects
             if (e.TicksRemaining != 0u)
                 return false;
 
+            // Expiry procedure (CR-SE-8 steps 1-3); Stories 007/008 reuse it. Capture what the clamps need,
+            // remove and release, free the row, then clamp: a clamp exception is captured, never propagated.
+            EntityID entity = e.EntityId;
+            bool maxHp = RowHasStat(e, StatID.MaxHP);
+            bool maxMp = RowHasStat(e, StatID.MaxMP);
             RemoveModifiers(slot, rowIndex);
+            RemoveRow(slot, rowIndex);
+            _tickEnd--;
+            ClampAfterMaxChange(entity, maxHp, maxMp);
             return true;
         }
 
         /// <summary>
         /// Removes every populated modifier of the row through the layer (index order) and releases its occupancy
-        /// (CR-SE-8 steps 1-3). Shared by expiry and remove-then-reapply. Does not free the row.
-        /// Story 006 adds the MaxHP/MaxMP clamp (and TD-085 throw-safety) here, in one place. Until then a subscriber
-        /// that throws mid-loop leaves some modifiers removed while the row and occupancy still list them; on the
-        /// replacement path a later same-values re-apply is a plain refresh and does not repair it (TD-085).
+        /// (CR-SE-8 step 1). Shared by expiry and remove-then-reapply. Does not free the row and does not clamp: the
+        /// caller calls <see cref="ClampAfterMaxChange"/> (expiry right after; replacement once after the new adds).
+        /// Inside the stat batch the removals' events are deferred, so a subscriber cannot throw mid-loop (TD-085).
+        /// If a layer remove itself throws, occupancy is not released and the row stays (the exception ends the
+        /// pass); an expired row is then retried by the next tick.
         /// </summary>
         private void RemoveModifiers(int slot, int rowIndex)
         {
@@ -159,6 +226,61 @@ namespace IronGrind.StatusEffects
             for (int m = 0; m < modifierCount; m++)
                 _modifierLayer.RemoveBuffModifier(e.EntityId, e.GetModifier(m).StatId, e.BuffId);
             _occupiedSlots[slot] -= modifierCount;
+        }
+
+        /// <summary>
+        /// CR-SE-8 steps 2-3 (AC-SE-15, EC-SE-4, EC-SE-5): HP first, then MP. Each clamp is called whenever the stat
+        /// was involved, even when no clamp is needed (the sink does nothing then). Always called after the row
+        /// and occupancy are consistent. The HP clamp can fire <c>OnEntityDied</c> immediately, and a throwing
+        /// subscriber must not skip the MP clamp or abort the pass, so each clamp's exception is captured (first one
+        /// kept in <c>_clampException</c>) and surfaced by <see cref="EndBatchAndSurface"/>.
+        /// </summary>
+        private void ClampAfterMaxChange(EntityID entity, bool maxHpInvolved, bool maxMpInvolved)
+        {
+            if (maxHpInvolved)
+                ClampCapturing(entity, true);
+            if (maxMpInvolved)
+                ClampCapturing(entity, false);
+        }
+
+        private void ClampCapturing(EntityID entity, bool hp)
+        {
+            try
+            {
+                if (hp)
+                    _resourceSink.ClampHPToMax(entity);
+                else
+                    _resourceSink.ClampMPToMax(entity);
+            }
+            catch (Exception ex)
+            {
+                if (_clampException == null)
+                    _clampException = ex;
+            }
+        }
+
+        private static bool RowHasStat(in ActiveEffect row, StatID stat)
+        {
+            int count = row.ModifierCount;
+            for (int i = 0; i < count; i++)
+            {
+                if (row.GetModifier(i).StatId == stat)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static bool DefinitionHasStat(in BuffDefinition definition, StatID stat)
+        {
+            int count = definition.ModifierCount;
+            for (int i = 0; i < count; i++)
+            {
+                if (definition.GetModifier(i).StatId == stat)
+                    return true;
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -281,11 +403,20 @@ namespace IronGrind.StatusEffects
         /// capacity is pre-checked with the old slots excluded, and only a layer add failure after the removal
         /// loses the old effect (row freed, <see cref="ApplyResult.CapacityExceeded"/>). A refresh skips the row
         /// limit. A plain refresh does not update the duration stored in the Character Stats modifier entries
-        /// (audit only). Every add and every rollback removal fires Character Stats' <c>OnStatChanged</c>, so
-        /// subscribers can see a change that a failed apply then reverts (batching is Story 006). If a subscriber
-        /// throws during an add, the modifiers added so far (including the one whose event threw) are removed and
-        /// the exception is rethrown; during a replacement the old effect is then also lost (row freed) and the
-        /// caller sees the exception instead of <see cref="ApplyResult.CapacityExceeded"/>.
+        /// (audit only). A new-buff apply and a plain refresh from outside the tick are not bracketed: every add and
+        /// every rollback removal fires Character Stats' <c>OnStatChanged</c> at once, so subscribers can see a change
+        /// that a failed apply then reverts. A replacement (Story 006, CR-SE-17) is different: outside the tick it is
+        /// wrapped in its own stat batch, so subscribers get one event per affected stat after the row is consistent
+        /// and a subscriber throw surfaces from the batch end (the replacement itself is complete); inside the tick it
+        /// uses the tick's batch. After a replacement, current HP / MP are clamped once against the final maximum
+        /// when MaxHP / MaxMP was among the old or new modifiers. If a layer add throws during a replacement,
+        /// the modifiers added so far are removed, the old effect is lost (row freed), the clamp runs and the
+        /// exception is rethrown; the caller sees it instead of <see cref="ApplyResult.CapacityExceeded"/>. For a new
+        /// buff, a throwing add removes the modifiers added so far and rethrows. A clamp exception (a death
+        /// subscriber) during a replacement is captured after the row and occupancy are consistent and rethrown when
+        /// the batch ends; precedence is the replacement's own exception, then the clamp exception, then
+        /// <c>EndStatBatch</c>'s. A replacement made outside the tick throws <see cref="InvalidOperationException"/>
+        /// (nothing changed) if the caller already has a Character Stats transaction open.
         /// </remarks>
         /// <param name="target">The entity that receives the effect.</param>
         /// <param name="caster">The entity that applied it (stored for buff-bar attribution).</param>
@@ -360,11 +491,47 @@ namespace IronGrind.StatusEffects
 
         /// <summary>
         /// Remove-then-reapply in place (CR-SE-4 exception, CR-SE-8 steps 1-3, CR-SE-3): removes the old modifiers,
-        /// adds the new ones and overwrites the same row. On a layer rejection or a subscriber throw the old effect
+        /// adds the new ones and overwrites the same row. On a layer rejection or a throw the old effect
         /// is lost and the row is freed tick-aware. Capacity was pre-checked by the caller.
+        /// Story 006: outside the tick the whole replacement is its own stat batch (Begin / End in a finally), so
+        /// subscribers never see the transient lower value; inside the tick it uses the tick's batch (no nested Begin).
+        /// If Begin throws, nothing has changed. If both the replacement and End throw, the replacement's exception wins.
         /// </summary>
         private ApplyResult ReplaceInPlace(int slot, int rowIndex, EntityID target, EntityID caster, in BuffDefinition definition)
         {
+            if (_batchOpen)
+                return ReplaceCore(slot, rowIndex, target, caster, definition);
+
+            _modifierLayer.BeginStatBatch();
+            _batchOpen = true;
+            _clampException = null;
+            ApplyResult result = ApplyResult.Success;
+            Exception passException = null;
+            try
+            {
+                result = ReplaceCore(slot, rowIndex, target, caster, definition);
+            }
+            catch (Exception ex)
+            {
+                passException = ex;
+            }
+
+            EndBatchAndSurface(passException);
+            return result;
+        }
+
+        /// <summary>
+        /// The remove, add, write and clamp steps of a replacement. The clamp runs once at the end against the final
+        /// maximum (CR-SE-4 exception), if MaxHP / MaxMP was among the old or the new modifiers; on the add-failure
+        /// and throw paths it runs after the rollback (and on a throw, before the rethrow).
+        /// </summary>
+        private ApplyResult ReplaceCore(int slot, int rowIndex, EntityID target, EntityID caster, in BuffDefinition definition)
+        {
+            // Capture the old row's flags before the row is overwritten.
+            ref ActiveEffect old = ref _rows[slot * ROWS_PER_ENTITY + rowIndex];
+            bool maxHp = RowHasStat(old, StatID.MaxHP) || DefinitionHasStat(definition, StatID.MaxHP);
+            bool maxMp = RowHasStat(old, StatID.MaxMP) || DefinitionHasStat(definition, StatID.MaxMP);
+
             RemoveModifiers(slot, rowIndex); // also releases the old occupancy
 
             bool added;
@@ -377,6 +544,7 @@ namespace IronGrind.StatusEffects
                 // TryAddModifiers rolled back its own adds; the old modifiers are already gone, so the row
                 // must not stay behind describing modifiers that are not applied.
                 FreeRowTickAware(slot, rowIndex);
+                ClampAfterMaxChange(target, maxHp, maxMp);
                 throw;
             }
 
@@ -385,11 +553,13 @@ namespace IronGrind.StatusEffects
                 // The layer rejected an add after the old modifiers were removed. TryAddModifiers rolled back the
                 // new adds, so the old effect is lost: free its row (later rows shift down) and report it.
                 FreeRowTickAware(slot, rowIndex);
+                ClampAfterMaxChange(target, maxHp, maxMp);
                 return ApplyResult.CapacityExceeded;
             }
 
             _rows[slot * ROWS_PER_ENTITY + rowIndex] = new ActiveEffect(definition, target, caster);
             _occupiedSlots[slot] += definition.ModifierCount;
+            ClampAfterMaxChange(target, maxHp, maxMp);
             return ApplyResult.Success;
         }
 

@@ -11,7 +11,11 @@ namespace IronGrind.Tests.EditMode.StatusEffects
         Add,
         Remove,
         Regen,
-        ManaRegen
+        ManaRegen,
+        BeginBatch,
+        EndBatch,
+        ClampHp,
+        ClampMp
     }
 
     /// <summary>One recorded layer call; <see cref="Entry"/> is meaningful for adds only.</summary>
@@ -78,6 +82,43 @@ namespace IronGrind.Tests.EditMode.StatusEffects
         /// </summary>
         public int ThrowOnAddNumber { get; set; }
 
+        /// <summary>
+        /// 1-based index (cumulative) of the RemoveBuffModifier call that throws <see cref="InvalidOperationException"/>;
+        /// 0 means never. The throwing remove is recorded but not forwarded.
+        /// </summary>
+        public int ThrowOnRemoveNumber { get; set; }
+
+        /// <summary>
+        /// 1-based index (cumulative) of the EndStatBatch call that throws <see cref="InvalidOperationException"/>;
+        /// 0 means never. The inner layer's End is still forwarded first, so a real transaction is closed.
+        /// </summary>
+        public int ThrowOnEndNumber { get; set; }
+
+        /// <summary>
+        /// 1-based index (cumulative) of the ClampHPToMax call that throws <see cref="InvalidOperationException"/>
+        /// (stands in for a death subscriber that throws); 0 means never. The throwing clamp is recorded, not forwarded.
+        /// </summary>
+        public int ThrowOnClampHpNumber { get; set; }
+
+        /// <summary>
+        /// When true, BeginStatBatch / EndStatBatch are also appended to <see cref="Calls"/>. Off by default so
+        /// tests written before Story 006 that assert exact call sequences or counts keep their meaning; the
+        /// counters below always count.
+        /// </summary>
+        public bool LogBatchCalls { get; set; }
+
+        /// <summary>Number of BeginStatBatch calls.</summary>
+        public int BeginCalls { get; private set; }
+
+        /// <summary>Number of EndStatBatch calls.</summary>
+        public int EndCalls { get; private set; }
+
+        /// <summary>Number of ClampHPToMax calls.</summary>
+        public int ClampHpCalls { get; private set; }
+
+        /// <summary>Number of ClampMPToMax calls.</summary>
+        public int ClampMpCalls { get; private set; }
+
         /// <summary>Number of TryAddBuffModifier calls.</summary>
         public int AddCalls { get; private set; }
 
@@ -106,7 +147,47 @@ namespace IronGrind.Tests.EditMode.StatusEffects
         {
             RemoveCalls++;
             Calls.Add(new LayerCall(LayerCallKind.Remove, entityId, statId, buffId, default));
+            if (ThrowOnRemoveNumber != 0 && RemoveCalls == ThrowOnRemoveNumber)
+                throw new InvalidOperationException("RecordingBuffModifierLayer: injected remove failure");
             _innerLayer?.RemoveBuffModifier(entityId, statId, buffId);
+        }
+
+        /// <inheritdoc/>
+        public void BeginStatBatch()
+        {
+            BeginCalls++;
+            if (LogBatchCalls)
+                Calls.Add(new LayerCall(LayerCallKind.BeginBatch, default, default, default, default));
+            _innerLayer?.BeginStatBatch();
+        }
+
+        /// <inheritdoc/>
+        public void EndStatBatch()
+        {
+            EndCalls++;
+            if (LogBatchCalls)
+                Calls.Add(new LayerCall(LayerCallKind.EndBatch, default, default, default, default));
+            _innerLayer?.EndStatBatch();
+            if (ThrowOnEndNumber != 0 && EndCalls == ThrowOnEndNumber)
+                throw new InvalidOperationException("RecordingBuffModifierLayer: injected end failure");
+        }
+
+        /// <inheritdoc/>
+        public void ClampHPToMax(EntityID entityId)
+        {
+            ClampHpCalls++;
+            Calls.Add(new LayerCall(LayerCallKind.ClampHp, entityId, default, default, default));
+            if (ThrowOnClampHpNumber != 0 && ClampHpCalls == ThrowOnClampHpNumber)
+                throw new InvalidOperationException("RecordingBuffModifierLayer: injected clamp failure");
+            _innerSink?.ClampHPToMax(entityId);
+        }
+
+        /// <inheritdoc/>
+        public void ClampMPToMax(EntityID entityId)
+        {
+            ClampMpCalls++;
+            Calls.Add(new LayerCall(LayerCallKind.ClampMp, entityId, default, default, default));
+            _innerSink?.ClampMPToMax(entityId);
         }
 
         /// <inheritdoc/>

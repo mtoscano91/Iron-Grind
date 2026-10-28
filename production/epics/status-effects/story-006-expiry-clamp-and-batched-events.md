@@ -1,7 +1,7 @@
 # Story 006: Expiry Clamp and Batched Stat Events
 
 > **Epic**: Status Effects / Buffs
-> **Status**: Ready — written 2026-10-28 (`/create-stories`, lean); `/story-readiness` 2026-10-28 NEEDS WORK (4 gaps) → fixed
+> **Status**: Complete — 2026-10-28 (`/story-done`: COMPLETE WITH NOTES); written 2026-10-28 (`/create-stories`, lean); `/story-readiness` 2026-10-28 NEEDS WORK (4 gaps) → fixed
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-26
@@ -25,18 +25,18 @@
 
 ## Acceptance Criteria
 
-- [ ] **OQ-SE-1 resolved (HP)**: `CharacterStats.ApplyDamage(entity, 0f)` clamps `CurrentHP` to the effective `MaxHP` and fires no event unless HP reaches 0 (verified in code 2026-10-28: `ApplyDamage` returns early at HP 0 and fires only `OnEntityDied` on reaching 0). A Character Stats test pins this: HP 580, MaxHP lowered to 400 by removing a buff modifier, `ApplyDamage(0f)` → HP 400, no `OnEntityDied`, no `OnStatChanged` for `CurrentHP`.
-- [ ] **OQ-SE-1 resolved (MP) — new Character Stats API**: `CharacterStats.ClampCurrentMPToMax(EntityID)` sets `CurrentMP = min(CurrentMP, effective MaxMP)`; no event when unchanged; documented as the Status Effects expiry clamp. (`ApplyManaRegen(0f)` returns early and cannot be used.) Also `ClampCurrentHPToMax(EntityID)` is **not** added — `ApplyDamage(0f)` is used as the GDD specifies. Record the resolution in the GDD (OQ-SE-1 → Resolved) and in `character-stats.md` Interactions.
-- [ ] **AC-SE-15**: +200 MaxHP buff, `CurrentHP` = MaxHP (600) → at expiry (1) `RemoveBuffModifier(entity, MaxHP, buffId)`; (2) `ApplyDamage(entity, 0f)` immediately after (recorded order); (3) `CurrentHP` = 400.
-- [ ] **EC-SE-4 no-op**: `CurrentHP` 300 ≤ new MaxHP 400 → `ApplyDamage(0f)` still called; HP stays 300; no event.
-- [ ] **EC-SE-5**: +100 MaxMP buff, `CurrentMP` = MaxMP → at expiry `RemoveBuffModifier(MaxMP)` then `ClampCurrentMPToMax`; `CurrentMP` = reduced MaxMP.
-- [ ] **Character Stats — modifier events deferred in a transaction (CR-SE-17 prerequisite)**: today `AddBuffModifier` (both the new-entry and the same-BuffID overwrite branch) and `RemoveBuffModifier` call `FireOnStatChanged` directly, so a transaction batches nothing. When `_transactionOpen`, they call `AddToDeferredDedup(entityId, statId)` instead, as `SetBaseStat` does. `RollbackStatTransaction` discards those deferred events but does **not** revert buff modifiers (no snapshot) — documented on both methods and on `RollbackStatTransaction`. Character Stats tests: inside a transaction an add and a remove on the same stat fire nothing until `EndStatTransaction`, which fires once; outside a transaction behaviour is unchanged (one event per call).
-- [ ] **CR-SE-17 — transaction bracket**: every `OnServerTick()` call is wrapped in `BeginStatTransaction()` / `EndStatTransaction()`, always (no "skip when nothing changed" branch). `EndStatTransaction()` runs in a `finally`, so the deferred events for changes that really happened fire even when an exception escapes the pass — Status Effects never calls `RollbackStatTransaction()` (its modifier writes are not reverted, so discarding their events would hide real changes). If `BeginStatTransaction()` throws (a transaction already open — non-nestable), the exception propagates and no row is processed. Record in `character-stats.md` Transaction constraints: Status Effects closes with `EndStatTransaction()` in a `finally`, not `RollbackStatTransaction()`.
-- [ ] **TD-085 closed (tick path)**: with the bracket, an `OnStatChanged` subscriber can only throw at `EndStatTransaction()`, after every row of the tick is processed, freed and compacted. Test: a subscriber that throws on the first event of the expiry tick → `OnServerTick` throws; every row was processed exactly once (regen counts), the expired rows are gone, occupancy reduced, no transaction left open; the next tick runs normally and no row's regen fires twice.
-- [ ] **Replacement clamp (CR-SE-4 exception)**: a replacement (Story 004 `ReplaceInPlace`) clamps once **after** the new adds, against the final effective MaxHP / MaxMP — only if MaxHP / MaxMP was among the old or the new modifiers. Upgrading a +200 MaxHP buff to +300 at full HP (600/600) leaves HP 600 of 700, not 400. On the add-failure path (old effect lost) the clamp runs after the rollback. `RemoveModifiers` itself does not clamp; expiry calls the clamp right after `RemoveModifiers` (AC-SE-15 order). Record in `status-effects.md` CR-SE-4.
-- [ ] **Replacement bracketed outside the tick (TD-085 replacement path)**: a replacement made outside `OnServerTick` (no Status Effects transaction open) is wrapped in its own `BeginStatTransaction()` / `EndStatTransaction()` (`finally`); inside the tick it uses the tick's bracket (no nested Begin). Subscribers see one `OnStatChanged` per affected stat and never the transient lower value between the remove and the add; a subscriber throw surfaces at `EndStatTransaction()` after the row, occupancy and clamp are consistent. Test: AttackPower +10 → +20 replacement outside a tick → exactly one AttackPower event, and the handler reads base + 20; a throwing subscriber → `ApplyEffect` throws, row holds the new values, occupancy correct, no transaction left open.
-- [ ] **AC-SE-29**: a 3-modifier buff (AttackPower, MaxHP, Defense) expires → a counter on `OnStatChanged` sees exactly 3 events on the expiry tick (one per stat). Two effects sharing AttackPower expire on the same tick → AttackPower fires exactly once that tick.
-- [ ] New-buff applications and plain refreshes from outside the tick (Skill System calls between ticks) are **not** bracketed by Status Effects — `OnStatChanged` fires per add as today; documented. Only replacements are bracketed (criterion above).
+- [x] **OQ-SE-1 resolved (HP)**: `CharacterStats.ApplyDamage(entity, 0f)` clamps `CurrentHP` to the effective `MaxHP` and fires no event unless HP reaches 0 (verified in code 2026-10-28: `ApplyDamage` returns early at HP 0 and fires only `OnEntityDied` on reaching 0). A Character Stats test pins this: HP 580, MaxHP lowered to 400 by removing a buff modifier, `ApplyDamage(0f)` → HP 400, no `OnEntityDied`, no `OnStatChanged` for `CurrentHP`.
+- [x] **OQ-SE-1 resolved (MP) — new Character Stats API**: `CharacterStats.ClampCurrentMPToMax(EntityID)` sets `CurrentMP = min(CurrentMP, effective MaxMP)`; no event when unchanged; documented as the Status Effects expiry clamp. (`ApplyManaRegen(0f)` returns early and cannot be used.) Also `ClampCurrentHPToMax(EntityID)` is **not** added — `ApplyDamage(0f)` is used as the GDD specifies. Record the resolution in the GDD (OQ-SE-1 → Resolved) and in `character-stats.md` Interactions.
+- [x] **AC-SE-15**: +200 MaxHP buff, `CurrentHP` = MaxHP (600) → at expiry (1) `RemoveBuffModifier(entity, MaxHP, buffId)`; (2) `ApplyDamage(entity, 0f)` immediately after (recorded order); (3) `CurrentHP` = 400.
+- [x] **EC-SE-4 no-op**: `CurrentHP` 300 ≤ new MaxHP 400 → `ApplyDamage(0f)` still called; HP stays 300; no event.
+- [x] **EC-SE-5**: +100 MaxMP buff, `CurrentMP` = MaxMP → at expiry `RemoveBuffModifier(MaxMP)` then `ClampCurrentMPToMax`; `CurrentMP` = reduced MaxMP.
+- [x] **Character Stats — modifier events deferred in a transaction (CR-SE-17 prerequisite)**: today `AddBuffModifier` (both the new-entry and the same-BuffID overwrite branch) and `RemoveBuffModifier` call `FireOnStatChanged` directly, so a transaction batches nothing. When `_transactionOpen`, they call `AddToDeferredDedup(entityId, statId)` instead, as `SetBaseStat` does. `RollbackStatTransaction` discards those deferred events but does **not** revert buff modifiers (no snapshot) — documented on both methods and on `RollbackStatTransaction`. Character Stats tests: inside a transaction an add and a remove on the same stat fire nothing until `EndStatTransaction`, which fires once; outside a transaction behaviour is unchanged (one event per call).
+- [x] **CR-SE-17 — transaction bracket**: every `OnServerTick()` call is wrapped in `BeginStatTransaction()` / `EndStatTransaction()`, always (no "skip when nothing changed" branch). `EndStatTransaction()` runs in a `finally`, so the deferred events for changes that really happened fire even when an exception escapes the pass — Status Effects never calls `RollbackStatTransaction()` (its modifier writes are not reverted, so discarding their events would hide real changes). If `BeginStatTransaction()` throws (a transaction already open — non-nestable), the exception propagates and no row is processed. Record in `character-stats.md` Transaction constraints: Status Effects closes with `EndStatTransaction()` in a `finally`, not `RollbackStatTransaction()`.
+- [x] **TD-085 closed (tick path)**: with the bracket, an `OnStatChanged` subscriber can only throw at `EndStatTransaction()`, after every row of the tick is processed, freed and compacted. Test: a subscriber that throws on the first event of the expiry tick → `OnServerTick` throws; every row was processed exactly once (regen counts), the expired rows are gone, occupancy reduced, no transaction left open; the next tick runs normally and no row's regen fires twice.
+- [x] **Replacement clamp (CR-SE-4 exception)**: a replacement (Story 004 `ReplaceInPlace`) clamps once **after** the new adds, against the final effective MaxHP / MaxMP — only if MaxHP / MaxMP was among the old or the new modifiers. Upgrading a +200 MaxHP buff to +300 at full HP (600/600) leaves HP 600 of 700, not 400. On the add-failure path (old effect lost) the clamp runs after the rollback. `RemoveModifiers` itself does not clamp; expiry calls the clamp right after `RemoveModifiers` (AC-SE-15 order). Record in `status-effects.md` CR-SE-4.
+- [x] **Replacement bracketed outside the tick (TD-085 replacement path)**: a replacement made outside `OnServerTick` (no Status Effects transaction open) is wrapped in its own `BeginStatTransaction()` / `EndStatTransaction()` (`finally`); inside the tick it uses the tick's bracket (no nested Begin). Subscribers see one `OnStatChanged` per affected stat and never the transient lower value between the remove and the add; a subscriber throw surfaces at `EndStatTransaction()` after the row, occupancy and clamp are consistent. Test: AttackPower +10 → +20 replacement outside a tick → exactly one AttackPower event, and the handler reads base + 20; a throwing subscriber → `ApplyEffect` throws, row holds the new values, occupancy correct, no transaction left open.
+- [x] **AC-SE-29**: a 3-modifier buff (AttackPower, MaxHP, Defense) expires → a counter on `OnStatChanged` sees exactly 3 events on the expiry tick (one per stat). Two effects sharing AttackPower expire on the same tick → AttackPower fires exactly once that tick.
+- [x] New-buff applications and plain refreshes from outside the tick (Skill System calls between ticks) are **not** bracketed by Status Effects — `OnStatChanged` fires per add as today; documented. Only replacements are bracketed (criterion above).
 
 ---
 
@@ -77,7 +77,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/StatusEffects/StatusEffects_ExpiryClamp_tests.cs` — must exist and pass; Character Stats tests for `ClampCurrentMPToMax` and the `ApplyDamage(0f)` clamp in the existing Character Stats test folder
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — ExpiryClamp 37/37; Character Stats +19 (Transaction +13, ResourcePool +6); full EditMode 4812 / 4683 / 0 failed / 129 skipped, 2026-10-28
 
 ---
 
@@ -85,3 +85,22 @@
 
 - Depends on: Story 005
 - Unlocks: Stories 007, 008
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-10-28
+**Criteria**: 12/12 passing, all covered by `tests/EditMode/StatusEffects/StatusEffects_ExpiryClamp_tests.cs` (37 tests) and the Character Stats additions in `CharacterStats_Transaction_tests.cs` / `CharacterStats_ResourcePool_tests.cs`
+**Deviations** (advisory):
+1. Character Stats' deferred-event queue and rollback snapshot now grow (doubling, from 32) and dedup with per-entity stat bitmasks (`Dictionary<EntityID, uint>`) — code-review B1: the old 18-pair server-wide limit would silently drop events once the tick bracket spans a zone (up to 1,600 pairs, CR-SE-17). `character-stats.md` Transaction constraints revised.
+2. `EndStatTransaction` delivers every deferred event even if a subscriber throws, then rethrows the first exception (code-review W2) — a Character Stats behaviour change.
+3. Expiry order is remove modifiers → free the row → clamp HP then MP; a clamp exception is captured, the pass finishes, and it surfaces after `EndStatBatch` (code-review W1). The recorded call order Remove → Clamp (AC-SE-15) still holds.
+4. Exception precedence after a tick or replacement: pass exception > captured clamp exception > `EndStatBatch` exception (code-review W3).
+5. Test fake: Begin/End appear in `Calls` only when `LogBatchCalls` is set (counts always kept), so pre-006 exact-sequence tests are unchanged. New fake knobs: `ThrowOnRemoveNumber`, `ThrowOnEndNumber`, `ThrowOnClampHpNumber`.
+6. The HP clamp cannot kill with real Character Stats (`StatSchema` floors effective MaxHP at 1, MaxMP at 0); the W1 path is tested through the fake sink.
+7. Equipment modifier add/remove still fire `OnStatChanged` immediately inside a transaction (out of scope; Equipment opens no transaction per its GDD).
+8. Estimate 4 → 6 h (set at `/story-readiness`).
+**Tech debt**: TD-085 resolved by this story.
+**Test Evidence**: Logic — `tests/EditMode/StatusEffects/StatusEffects_ExpiryClamp_tests.cs`; Character Stats tests in `tests/EditMode/CharacterStats/`
+**Code Review**: Complete — 2026-10-28 CHANGES REQUIRED (1 blocking) → fixes applied (user decisions: grow + bitmask dedup; free first, finish, rethrow); QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean)

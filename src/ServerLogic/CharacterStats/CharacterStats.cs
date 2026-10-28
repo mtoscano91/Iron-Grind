@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.ExceptionServices;
 using UnityEngine;
 
 namespace IronGrind.CharacterStats
@@ -138,25 +139,36 @@ namespace IronGrind.CharacterStats
         // -----------------------------------------------------------------------
         // Story 007: Transaction API
         // -----------------------------------------------------------------------
-        private const int TransactionDedupCapacity = 18;
-        private readonly StatID[]   _deferredStatIds   = new StatID[TransactionDedupCapacity];
-        private readonly EntityID[] _deferredEntityIds = new EntityID[TransactionDedupCapacity];
+        // Capacity grows by doubling (Status Effects brackets a whole zone tick: ~200 entities x
+        // 8 stats = 1,600 pairs). Dedup is O(1) via a per-entity StatID bitmask (bit = (int)StatID;
+        // all StatIDs fit in a uint). EntityID implements IEquatable<EntityID>, so the default
+        // Dictionary comparer does not box. Dictionaries/arrays are reused across transactions
+        // (Clear() keeps their buckets) so there is no per-call allocation after warm-up.
+        private const int TransactionInitialCapacity = 32;
+        private StatID[]   _deferredStatIds   = new StatID[TransactionInitialCapacity];
+        private EntityID[] _deferredEntityIds = new EntityID[TransactionInitialCapacity];
         private int  _deferredCount;
+        private readonly Dictionary<EntityID, uint> _deferredMasks = new Dictionary<EntityID, uint>();
+        // Scratch buffers End swaps with the deferred arrays so pairs can be fired after the queue
+        // state has been cleared.
+        private StatID[]   _fireScratchStatIds   = new StatID[TransactionInitialCapacity];
+        private EntityID[] _fireScratchEntityIds = new EntityID[TransactionInitialCapacity];
         private bool _transactionOpen;
 
         // Revised by Leveling System Story 007 (root-cause fix, coordinated across the
-        // Leveling System and Class System GDDs — see RollbackStatTransaction's doc comment):
+        // Leveling System and Class System GDDs - see RollbackStatTransaction's doc comment):
         // snapshot of each (EntityID, StatID) pair's value immediately BEFORE its first write
         // within the currently open transaction. A single float[] holds old values for all
         // three backing stores (int-schema _statValues, float-schema FloatStatValues, and the
-        // CurrentHP/CurrentMP resource-pool dictionaries) — int values fit exactly in float at
+        // CurrentHP/CurrentMP resource-pool dictionaries) - int values fit exactly in float at
         // this scale. Classified by StatID at restore time to know which store and whether to
-        // cast back to int. Same capacity/dedup-by-linear-scan shape as the deferred-event
-        // arrays above; only the FIRST write per pair is snapshotted so a stat written twice in
+        // cast back to int. Same grow-by-doubling / bitmask-dedup shape as the deferred-event
+        // queue above; only the FIRST write per pair is snapshotted so a stat written twice in
         // one transaction still rolls back to its true pre-transaction value.
-        private readonly StatID[]   _snapshotStatIds   = new StatID[TransactionDedupCapacity];
-        private readonly EntityID[] _snapshotEntityIds = new EntityID[TransactionDedupCapacity];
-        private readonly float[]    _snapshotOldValues = new float[TransactionDedupCapacity];
+        private StatID[]   _snapshotStatIds   = new StatID[TransactionInitialCapacity];
+        private EntityID[] _snapshotEntityIds = new EntityID[TransactionInitialCapacity];
+        private float[]    _snapshotOldValues = new float[TransactionInitialCapacity];
+        private readonly Dictionary<EntityID, uint> _snapshotMasks = new Dictionary<EntityID, uint>();
         private int _snapshotCount;
 
         /// <summary>
@@ -212,10 +224,7 @@ namespace IronGrind.CharacterStats
 
             // TODO: OQ-1 — enforce caller identity for Level write
             statArray[(int)statId] = value;
-            if (_transactionOpen)
-                AddToDeferredDedup(entityId, statId);
-            else
-                FireOnStatChanged(entityId, statId);
+            NotifyStatChanged(entityId, statId);
         }
 
         // -----------------------------------------------------------------------
@@ -259,10 +268,7 @@ namespace IronGrind.CharacterStats
                 CaptureSnapshotBeforeWrite(entityId, statId, arr[floatIndex]);
 
             arr[floatIndex] = value;
-            if (_transactionOpen)
-                AddToDeferredDedup(entityId, statId);
-            else
-                FireOnStatChanged(entityId, statId);
+            NotifyStatChanged(entityId, statId);
         }
 
         // -----------------------------------------------------------------------
@@ -448,6 +454,11 @@ namespace IronGrind.CharacterStats
         /// <remarks>
         /// Capacity is 32 entries per entity-stat pair. On overflow, logs an error and
         /// returns without adding — no exception is thrown.
+        /// Inside an open stat transaction the <see cref="OnStatChanged"/> event is deferred and
+        /// deduped (like <see cref="SetBaseStat"/>), but the modifier write is NOT snapshotted:
+        /// <see cref="RollbackStatTransaction"/> discards the event and leaves the modifier in place
+        /// (Status Effects closes with EndStatTransaction in a finally; character-stats.md
+        /// Transaction constraints).
         /// </remarks>
         public void AddBuffModifier(EntityID entityId, StatID statId, BuffModifierEntry entry)
         {
@@ -484,7 +495,7 @@ namespace IronGrind.CharacterStats
                 if (arr[i].Id == entry.Id)
                 {
                     arr[i] = entry;
-                    FireOnStatChanged(entityId, statId);
+                    NotifyStatChanged(entityId, statId);
                     return;
                 }
             }
@@ -497,7 +508,7 @@ namespace IronGrind.CharacterStats
 
             arr[count] = entry;
             buffCounts[statIndex] = count + 1;
-            FireOnStatChanged(entityId, statId);
+            NotifyStatChanged(entityId, statId);
         }
 
         /// <summary>
@@ -513,6 +524,9 @@ namespace IronGrind.CharacterStats
         /// active entry and the count is decremented. Array order is not preserved.
         /// <see cref="GetEffectiveStat"/> recomputes F-1 from scratch on every call —
         /// no undo-delta is stored.
+        /// Inside an open stat transaction the event is deferred and deduped, and the removal is
+        /// NOT snapshotted — <see cref="RollbackStatTransaction"/> discards the event and leaves
+        /// the modifier removed (see <see cref="AddBuffModifier"/>).
         /// </remarks>
         public void RemoveBuffModifier(EntityID entityId, StatID statId, BuffID buffId)
         {
@@ -535,7 +549,7 @@ namespace IronGrind.CharacterStats
                     arr[i]         = arr[count - 1];
                     arr[count - 1] = default;
                     buffCounts[statIndex] = count - 1;
-                    FireOnStatChanged(entityId, statId);
+                    NotifyStatChanged(entityId, statId);
                     return;
                 }
             }
@@ -798,10 +812,7 @@ namespace IronGrind.CharacterStats
                 CaptureSnapshotBeforeWrite(entityId, StatID.CurrentHP, GetCurrentHP(entityId));
 
             _currentHp[entityId] = value;
-            if (_transactionOpen)
-                AddToDeferredDedup(entityId, StatID.CurrentHP);
-            else
-                FireOnStatChanged(entityId, StatID.CurrentHP);
+            NotifyStatChanged(entityId, StatID.CurrentHP);
         }
 
         /// <summary>
@@ -823,10 +834,24 @@ namespace IronGrind.CharacterStats
                 CaptureSnapshotBeforeWrite(entityId, StatID.CurrentMP, GetCurrentMP(entityId));
 
             _currentMp[entityId] = value;
-            if (_transactionOpen)
-                AddToDeferredDedup(entityId, StatID.CurrentMP);
-            else
-                FireOnStatChanged(entityId, StatID.CurrentMP);
+            NotifyStatChanged(entityId, StatID.CurrentMP);
+        }
+
+        /// <summary>
+        /// Status Effects expiry clamp (CR-SE-8 step 3, OQ-SE-1 resolution);
+        /// ApplyManaRegen(0f) returns early and cannot be used.
+        /// Sets CurrentMP = min(CurrentMP, effective MaxMP). Fires NO event (and defers nothing)
+        /// when the value is unchanged; otherwise notifies exactly like <see cref="SetCurrentMP"/>
+        /// (snapshot + deferred/deduped OnStatChanged inside a transaction, immediate otherwise).
+        /// </summary>
+        public void ClampCurrentMPToMax(EntityID entityId)
+        {
+            if (IsFiringAndAssert("ClampCurrentMPToMax")) return;
+
+            float maxMp = GetEffectiveStat(entityId, StatID.MaxMP);
+            if (GetCurrentMP(entityId) <= maxMp) return;
+
+            SetCurrentMP(entityId, maxMp);
         }
 
         // -----------------------------------------------------------------------
@@ -1032,9 +1057,14 @@ namespace IronGrind.CharacterStats
 
         /// <summary>
         /// Closes the open stat transaction. Fires <see cref="StatChangedHandler"/> once per
-        /// unique (EntityID, StatID) pair written during the transaction, then clears the
-        /// deferred queue.
+        /// unique (EntityID, StatID) pair written during the transaction, in first-write order,
+        /// then clears the deferred queue.
         /// </summary>
+        /// <remarks>
+        /// The transaction is closed and all queue state cleared before any event fires. If a
+        /// subscriber throws, the remaining pairs are STILL delivered; the first exception is
+        /// rethrown (original stack preserved) after every pair has fired.
+        /// </remarks>
         /// <exception cref="InvalidOperationException">Thrown when no transaction is open.</exception>
         public void EndStatTransaction()
         {
@@ -1042,15 +1072,40 @@ namespace IronGrind.CharacterStats
             if (!_transactionOpen)
                 throw new InvalidOperationException(
                     "[CharacterStats] EndStatTransaction: no transaction is open.");
-            // Close first — if a handler throws, the transaction is not left stuck open.
+            // Close first and clear all queue state BEFORE firing, so a throwing subscriber
+            // can neither leave the transaction stuck open nor corrupt the next transaction.
             _transactionOpen = false;
-            // Clear the rollback snapshot too — a committed transaction has nothing to revert,
-            // and leftover entries here would corrupt the dedup scan for the NEXT transaction.
+            // Clear the rollback snapshot too - a committed transaction has nothing to revert.
             _snapshotCount = 0;
+            _snapshotMasks.Clear();
+            _deferredMasks.Clear();
+
+            // Swap the pending pairs into the scratch buffers (no copy, no allocation after warm-up).
             int count = _deferredCount;
             _deferredCount = 0;
+            StatID[]   firingStats    = _deferredStatIds;
+            EntityID[] firingEntities = _deferredEntityIds;
+            _deferredStatIds      = _fireScratchStatIds;
+            _deferredEntityIds    = _fireScratchEntityIds;
+            _fireScratchStatIds   = firingStats;
+            _fireScratchEntityIds = firingEntities;
+
+            // Fire EVERY pair even if a subscriber throws; remember the first exception and
+            // rethrow it (stack preserved) after the loop.
+            ExceptionDispatchInfo firstError = null;
             for (int i = 0; i < count; i++)
-                FireOnStatChanged(_deferredEntityIds[i], _deferredStatIds[i]);
+            {
+                try
+                {
+                    FireOnStatChanged(firingEntities[i], firingStats[i]);
+                }
+                catch (Exception e)
+                {
+                    if (firstError == null)
+                        firstError = ExceptionDispatchInfo.Capture(e);
+                }
+            }
+            firstError?.Throw();
         }
 
         /// <summary>
@@ -1076,6 +1131,9 @@ namespace IronGrind.CharacterStats
         /// is snapshotted — later writes to the same pair update the pending value but do not
         /// disturb the stored snapshot, so a stat written multiple times in one transaction
         /// still reverts to its true pre-transaction value, not an intermediate one.</para>
+        /// <para>Buff modifier writes (<see cref="AddBuffModifier"/>/<see cref="RemoveBuffModifier"/>)
+        /// are deferred inside a transaction but NOT snapshotted: Rollback discards their events
+        /// and leaves the modifiers in place.</para>
         /// </remarks>
         public void RollbackStatTransaction()
         {
@@ -1120,67 +1178,72 @@ namespace IronGrind.CharacterStats
 
             _snapshotCount  = 0;
             _deferredCount  = 0;
+            _snapshotMasks.Clear();
+            _deferredMasks.Clear();
             _transactionOpen = false;
+        }
+
+        /// <summary>
+        /// Single entry point for "this stat changed": defers + dedupes while a transaction is
+        /// open, fires immediately otherwise.
+        /// </summary>
+        private void NotifyStatChanged(EntityID entityId, StatID statId)
+        {
+            if (_transactionOpen)
+                AddToDeferredDedup(entityId, statId);
+            else
+                FireOnStatChanged(entityId, statId);
+        }
+
+        // Returns true if the pair was newly added to the mask (first occurrence).
+        private static bool TryMarkPair(Dictionary<EntityID, uint> masks, EntityID entityId, StatID statId)
+        {
+            uint bit = 1u << (int)statId;
+            masks.TryGetValue(entityId, out uint mask);
+            if ((mask & bit) != 0u)
+                return false;
+            masks[entityId] = mask | bit;
+            return true;
         }
 
         private void AddToDeferredDedup(EntityID entityId, StatID statId)
         {
-            for (int i = 0; i < _deferredCount; i++)
+            if (!TryMarkPair(_deferredMasks, entityId, statId))
+                return;
+            if (_deferredCount == _deferredStatIds.Length)
             {
-                if (_deferredEntityIds[i] == entityId && _deferredStatIds[i] == statId)
-                    return;
+                int newSize = _deferredCount * 2;
+                Array.Resize(ref _deferredStatIds, newSize);
+                Array.Resize(ref _deferredEntityIds, newSize);
             }
-            // Overflow is silent in release — capacity of 18 covers all 17 StatIDs + 1 buffer.
-            if (_deferredCount < TransactionDedupCapacity)
-            {
-                _deferredEntityIds[_deferredCount] = entityId;
-                _deferredStatIds[_deferredCount]   = statId;
-                _deferredCount++;
-            }
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-            else
-            {
-                UnityEngine.Debug.LogError(
-                    $"[CharacterStats] AddToDeferredDedup: capacity ({TransactionDedupCapacity}) exceeded " +
-                    $"for entity {entityId} stat {statId} — OnStatChanged will not fire for this pair when " +
-                    "the transaction ends. Overflow is silently dropped in release builds (no release-build cost).");
-            }
-#endif
+            _deferredEntityIds[_deferredCount] = entityId;
+            _deferredStatIds[_deferredCount]   = statId;
+            _deferredCount++;
         }
 
         /// <summary>
         /// Captures <paramref name="oldValue"/> for (<paramref name="entityId"/>,
         /// <paramref name="statId"/>) the FIRST time it is written within the currently open
         /// transaction — a no-op on any subsequent write to the same pair within the same
-        /// transaction (linear-scan dedup, mirroring <see cref="AddToDeferredDedup"/>'s shape).
+        /// transaction (O(1) bitmask dedup, mirroring <see cref="AddToDeferredDedup"/>; arrays grow by doubling).
         /// Called only when <c>_transactionOpen</c> is true; callers pass the value read
         /// directly from the correct backing store immediately before overwriting it.
         /// </summary>
         private void CaptureSnapshotBeforeWrite(EntityID entityId, StatID statId, float oldValue)
         {
-            for (int i = 0; i < _snapshotCount; i++)
+            if (!TryMarkPair(_snapshotMasks, entityId, statId))
+                return;
+            if (_snapshotCount == _snapshotStatIds.Length)
             {
-                if (_snapshotEntityIds[i] == entityId && _snapshotStatIds[i] == statId)
-                    return;
+                int newSize = _snapshotCount * 2;
+                Array.Resize(ref _snapshotStatIds, newSize);
+                Array.Resize(ref _snapshotEntityIds, newSize);
+                Array.Resize(ref _snapshotOldValues, newSize);
             }
-            // Overflow is silent in release — same capacity/shape as the deferred-event dedup array.
-            if (_snapshotCount < TransactionDedupCapacity)
-            {
-                _snapshotEntityIds[_snapshotCount] = entityId;
-                _snapshotStatIds[_snapshotCount]   = statId;
-                _snapshotOldValues[_snapshotCount] = oldValue;
-                _snapshotCount++;
-            }
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-            else
-            {
-                UnityEngine.Debug.LogError(
-                    $"[CharacterStats] CaptureSnapshotBeforeWrite: capacity ({TransactionDedupCapacity}) " +
-                    $"exceeded for entity {entityId} stat {statId} — this write will NOT be reverted by " +
-                    "RollbackStatTransaction if the transaction is later rolled back. Overflow is silently " +
-                    "dropped in release builds (no release-build cost); this is a correctness risk in dev builds.");
-            }
-#endif
+            _snapshotEntityIds[_snapshotCount] = entityId;
+            _snapshotStatIds[_snapshotCount]   = statId;
+            _snapshotOldValues[_snapshotCount] = oldValue;
+            _snapshotCount++;
         }
     }
 }
