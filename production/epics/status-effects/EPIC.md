@@ -46,7 +46,7 @@ This epic is complete when:
 |---|-------|------|--------|-----|
 | 001 | [Data Model, Constants and Duration Conversion](story-001-data-model-and-constants.md) | Logic | Complete (2026-10-28) | ADR-012, ADR-010 |
 | 002 | [ApplyEffect Validation](story-002-apply-effect-validation.md) | Logic | Complete (2026-10-28) | ADR-012 |
-| 003 | [Application, Atomic Rollback and Caster Attribution](story-003-application-and-rollback.md) | Logic | Ready | ADR-012, ADR-010 |
+| 003 | [Application, Atomic Rollback and Caster Attribution](story-003-application-and-rollback.md) | Logic | Complete | ADR-012, ADR-010 |
 | 004 | [Refresh on Reapply](story-004-refresh-on-reapply.md) | Logic | Ready | ADR-012 |
 | 005 | [Per-Tick Processing and Expiry](story-005-tick-processing-and-expiry.md) | Logic | Ready | ADR-010, ADR-014 |
 | 006 | [Expiry Clamp and Batched Stat Events](story-006-expiry-clamp-and-batched-events.md) | Logic | Ready | ADR-010 |
@@ -58,4 +58,4 @@ TR-se-006 (client buff display) has no story: it waits on a Networking Core wire
 
 ## Next Step
 
-Stories 001–002 Complete 2026-10-28. Run `/story-readiness production/epics/status-effects/story-003-application-and-rollback.md`, then `/dev-story`.
+Stories 001–003 Complete 2026-10-28. Run `/story-readiness production/epics/status-effects/story-005-tick-processing-and-expiry.md`, then `/dev-story` (recommended order: 005 before 004).

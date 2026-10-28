@@ -5,8 +5,9 @@ namespace IronGrind.StatusEffects
 {
     /// <summary>
     /// Owns the per-entity effect table and validates new effects (status-effects.md CR-SE-2,
-    /// CR-SE-3, F-SE-1, F-SE-2, F-SE-3, EC-SE-2, EC-SE-6). Story 002: validation and row storage only.
-    /// Calling Character Stats, rollback, refresh, ticking and death wiring come in later stories.
+    /// CR-SE-3, CR-SE-13, F-SE-1, F-SE-2, F-SE-3, EC-SE-2, EC-SE-6, EC-SE-11). Stories 002-003: validation, atomic
+    /// application through <see cref="IBuffModifierLayer"/> with rollback, row storage and read-only accessors.
+    /// Refresh, ticking, expiry and death wiring come in later stories.
     /// Not thread-safe: every call runs on the server tick thread.
     /// </summary>
     public sealed class StatusEffectsService
@@ -22,7 +23,7 @@ namespace IronGrind.StatusEffects
         private readonly bool[] _dead;
 
         /// <summary>Creates the service and allocates every table once (CR-SE-15).</summary>
-        /// <param name="modifierLayer">Character Stats seam (not called in Story 002).</param>
+        /// <param name="modifierLayer">Character Stats seam.</param>
         /// <param name="slotIndex">Entity to slot-index resolver.</param>
         /// <exception cref="ArgumentNullException">A dependency is null.</exception>
         public StatusEffectsService(IBuffModifierLayer modifierLayer, IEntitySlotIndex slotIndex)
@@ -41,8 +42,17 @@ namespace IronGrind.StatusEffects
         /// <summary>
         /// Validates and records a new effect on <paramref name="target"/>. Checks run in this order and the
         /// first failure returns with no change: definition shape (NoOp, duration, stat), target (unknown or
-        /// dead), row availability, modifier capacity.
+        /// dead), row availability, modifier capacity. Then every modifier is added through the layer; if one is
+        /// rejected the ones already added are removed in reverse order and <see cref="ApplyResult.CapacityExceeded"/>
+        /// is returned with no row written (CR-SE-3).
         /// </summary>
+        /// <remarks>
+        /// Re-applying a <see cref="BuffDefinition.BuffId"/> already active on the target returns
+        /// <see cref="ApplyResult.Success"/> with no change (refresh is Story 004). Every add and every rollback
+        /// removal fires Character Stats' <c>OnStatChanged</c>, so subscribers can see a change that a failed apply
+        /// then reverts (batching is Story 006). If a subscriber throws during an add, the modifiers added so far
+        /// (including the one whose event threw) are removed and the exception is rethrown.
+        /// </remarks>
         /// <param name="target">The entity that receives the effect.</param>
         /// <param name="caster">The entity that applied it (stored for buff-bar attribution).</param>
         /// <param name="definition">The authored buff.</param>
@@ -76,12 +86,60 @@ namespace IronGrind.StatusEffects
             if (_occupiedSlots[slot] + modifierCount > StatusEffectsConstants.MODIFIER_CAPACITY_PER_ENTITY)
                 return ApplyResult.CapacityExceeded;
 
-            // Story 003 adds the IBuffModifierLayer.TryAddBuffModifier calls and rollback here, before the row
-            // is written. Story 002 never calls _modifierLayer.
+            // (5) Character Stats (CR-SE-3, atomic): add every modifier or none. Both failures that can occur
+            // after validation (32-per-stat capacity full, or a call made while Character Stats is firing
+            // OnStatChanged) map to CapacityExceeded. The re-entrant case only returns in release builds; in the
+            // Editor and development builds Character Stats throws InvalidOperationException, which propagates. The row and occupancy are written only after all adds succeed.
+            if (!TryAddModifiers(target, definition))
+                return ApplyResult.CapacityExceeded;
+
             _rows[slot * ROWS_PER_ENTITY + rowCount] = new ActiveEffect(definition, target, caster);
             _rowCounts[slot] = rowCount + 1;
             _occupiedSlots[slot] += modifierCount;
             return ApplyResult.Success;
+        }
+
+        /// <summary>
+        /// Adds every modifier of <paramref name="definition"/> through the layer. On the first rejection, removes
+        /// (in reverse order) each modifier this attempt added and returns false.
+        /// </summary>
+        private bool TryAddModifiers(EntityID target, in BuffDefinition definition)
+        {
+            int modifierCount = definition.ModifierCount;
+            int added = 0;
+            try
+            {
+                for (; added < modifierCount; added++)
+                {
+                    StatModifier modifier = definition.GetModifier(added);
+                    // DurationTicks is at most MAX_DURATION_TICKS (6000) after validation, so the int cast is safe.
+                    // Character Stats keeps the duration for audit only; Status Effects owns expiry.
+                    var entry = new BuffModifierEntry(
+                        modifier.FlatBonus, modifier.PctBonus, (int)definition.DurationTicks, definition.BuffId);
+
+                    if (!_modifierLayer.TryAddBuffModifier(target, modifier.StatId, entry))
+                    {
+                        RemoveAdded(target, definition, added);
+                        return false;
+                    }
+                }
+            }
+            catch
+            {
+                // An OnStatChanged subscriber threw. Character Stats stores the entry before firing, so the
+                // modifier being added may be in place too; removal is idempotent, so include it.
+                RemoveAdded(target, definition, added + 1);
+                throw;
+            }
+
+            return true;
+        }
+
+        /// <summary>Removes, in reverse order, the first <paramref name="count"/> modifiers of the definition.</summary>
+        private void RemoveAdded(EntityID target, in BuffDefinition definition, int count)
+        {
+            for (int i = count - 1; i >= 0; i--)
+                _modifierLayer.RemoveBuffModifier(target, definition.GetModifier(i).StatId, definition.BuffId);
         }
 
         /// <summary>
@@ -109,12 +167,26 @@ namespace IronGrind.StatusEffects
             return TryResolveSlot(entity, out int slot) ? _rowCounts[slot] : 0;
         }
 
-        /// <summary>Finds the entity's row for <paramref name="buffId"/>.</summary>
+        /// <summary>
+        /// Read-only view of the entity's active rows (status-effects.md CR-SE-13, AC-SE-31). Allocation-free and
+        /// makes no Character Stats call. The span is invalidated by the next mutation of the table, including
+        /// in-place row changes from refresh and expiry (Stories 004, 005); do not hold it across calls.
+        /// </summary>
+        /// <param name="entity">The entity.</param>
+        /// <returns>The entity's rows; empty for an unknown entity.</returns>
+        public ReadOnlySpan<ActiveEffect> GetActiveEffects(EntityID entity)
+        {
+            if (!TryResolveSlot(entity, out int slot))
+                return ReadOnlySpan<ActiveEffect>.Empty;
+            return new ReadOnlySpan<ActiveEffect>(_rows, slot * ROWS_PER_ENTITY, _rowCounts[slot]);
+        }
+
+        /// <summary>Finds the entity's row for <paramref name="buffId"/>; makes no Character Stats call.</summary>
         /// <param name="entity">The entity.</param>
         /// <param name="buffId">The buff to find.</param>
         /// <param name="effect">A copy of the row when found.</param>
         /// <returns>True when the row exists.</returns>
-        internal bool TryGetActiveEffect(EntityID entity, BuffID buffId, out ActiveEffect effect)
+        public bool TryGetActiveEffect(EntityID entity, BuffID buffId, out ActiveEffect effect)
         {
             if (TryResolveSlot(entity, out int slot))
             {
@@ -130,7 +202,7 @@ namespace IronGrind.StatusEffects
             return false;
         }
 
-        /// <summary>Check (1): NoOp, then duration, then prohibited stats; Success when the shape is valid.</summary>
+        /// <summary>Check (1): NoOp, then duration, then prohibited or undefined stats, then repeated stats; Success when the shape is valid.</summary>
         private static ApplyResult ValidateDefinition(in BuffDefinition definition)
         {
             int modifierCount = definition.ModifierCount;
@@ -144,6 +216,17 @@ namespace IronGrind.StatusEffects
             {
                 if (IsProhibitedStat(definition.GetModifier(i).StatId))
                     return ApplyResult.InvalidStat;
+            }
+
+            // CR-SE-2 / EC-SE-11: one modifier per stat. At most 8 slots, so the nested scan allocates nothing.
+            for (int i = 0; i < modifierCount; i++)
+            {
+                StatID stat = definition.GetModifier(i).StatId;
+                for (int j = i + 1; j < modifierCount; j++)
+                {
+                    if (definition.GetModifier(j).StatId == stat)
+                        return ApplyResult.InvalidStat;
+                }
             }
 
             return ApplyResult.Success;
@@ -170,9 +253,15 @@ namespace IronGrind.StatusEffects
             return NO_ROW;
         }
 
+        /// <summary>
+        /// True for the stats buffs may not change (CR-SE-2) and for any value outside the defined
+        /// <see cref="StatID"/> range: Character Stats indexes its arrays by stat, so an undefined value would
+        /// throw mid-application and skip the rollback.
+        /// </summary>
         private static bool IsProhibitedStat(StatID stat)
         {
-            return stat == StatID.Level
+            return (int)stat >= CharacterStats.CharacterStats.StatSlotCount
+                || stat == StatID.Level
                 || stat == StatID.Experience
                 || stat == StatID.CurrentHP
                 || stat == StatID.CurrentMP;

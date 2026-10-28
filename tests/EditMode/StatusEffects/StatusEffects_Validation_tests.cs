@@ -33,6 +33,12 @@ namespace IronGrind.Tests.EditMode.StatusEffects
         private static readonly EntityID Caster = new EntityID(CASTER_RAW_ID);
         private static readonly BuffID NewBuff = (BuffID)NEW_BUFF_RAW_ID;
 
+        private static readonly StatID[] DistinctStatPool =
+        {
+            StatID.Strength, StatID.Dexterity, StatID.Vitality, StatID.Intelligence, StatID.AttackPower,
+            StatID.Defense, StatID.MagicDefense, StatID.MaxHP, StatID.MaxMP
+        };
+
         private RecordingBuffModifierLayer _layer;
         private DictionaryEntitySlotIndex _slots;
         private StatusEffectsService _service;
@@ -47,20 +53,26 @@ namespace IronGrind.Tests.EditMode.StatusEffects
             _service = new StatusEffectsService(_layer, _slots);
         }
 
-        [TearDown]
-        public void TearDown()
-        {
-            Assert.AreEqual(0, _layer.TotalCalls, "Story 002 must never call IBuffModifierLayer");
-        }
-
         // ---- Helpers ----
 
         private static BuffDefinition Def(BuffID id, int modifierCount, uint duration = VALID_DURATION,
             float hpRegen = 0f, float mpRegen = 0f, StatID stat = StatID.Strength)
         {
+            // Story 003 (CR-SE-2) rejects repeated stats, so slot 0 uses `stat` and the rest take distinct
+            // permitted stats from the pool (skipping `stat`).
+            Assert.LessOrEqual(modifierCount, DistinctStatPool.Length, "Def helper needs a larger DistinctStatPool");
             var mods = new StatModifier[modifierCount];
+            int pool = 0;
             for (int i = 0; i < modifierCount; i++)
-                mods[i] = new StatModifier(stat, FLAT, PCT);
+            {
+                StatID slotStat = stat;
+                if (i > 0)
+                {
+                    if (DistinctStatPool[pool] == stat) pool++;
+                    slotStat = DistinctStatPool[pool++];
+                }
+                mods[i] = new StatModifier(slotStat, FLAT, PCT);
+            }
             return new BuffDefinition(id, mods, duration, hpRegen, mpRegen);
         }
 
@@ -95,6 +107,7 @@ namespace IronGrind.Tests.EditMode.StatusEffects
             int rowsBefore = _service.GetActiveEffectCount(Target);
             int occupiedBefore = _service.GetOccupiedSlots(Target);
             ActiveEffect[] filledBefore = SnapshotFilledRows(Target);
+            int layerCallsBefore = _layer.TotalCalls;
             bool newBuffBefore = _service.TryGetActiveEffect(Target, NewBuff, out ActiveEffect newBuffRowBefore);
 
             ApplyResult actual = _service.ApplyEffect(Target, Caster, def);
@@ -102,7 +115,7 @@ namespace IronGrind.Tests.EditMode.StatusEffects
             Assert.AreEqual(expected, actual);
             Assert.AreEqual(rowsBefore, _service.GetActiveEffectCount(Target), "row count changed");
             Assert.AreEqual(occupiedBefore, _service.GetOccupiedSlots(Target), "OccupiedSlots changed");
-            Assert.AreEqual(0, _layer.TotalCalls, "layer was called");
+            Assert.AreEqual(layerCallsBefore, _layer.TotalCalls, "layer was called by a rejected apply");
             AssertSameRows(filledBefore, SnapshotFilledRows(Target));
             Assert.AreEqual(newBuffBefore, _service.TryGetActiveEffect(Target, NewBuff, out ActiveEffect newBuffRowAfter),
                 "NewBuff row presence changed");
@@ -482,9 +495,13 @@ namespace IronGrind.Tests.EditMode.StatusEffects
         [Test]
         public void StatusEffects_Validation_Success_StoresEffectWithCasterDurationAndModifierCount()
         {
-            ApplyResult result = _service.ApplyEffect(Target, Caster, Def(NewBuff, 2));
+            const int MODIFIER_COUNT = 2;
+            int addsBefore = _layer.AddCalls;
+
+            ApplyResult result = _service.ApplyEffect(Target, Caster, Def(NewBuff, MODIFIER_COUNT));
 
             Assert.AreEqual(ApplyResult.Success, result);
+            Assert.AreEqual(MODIFIER_COUNT, _layer.AddCalls - addsBefore, "one layer add per modifier");
             Assert.IsTrue(_service.TryGetActiveEffect(Target, NewBuff, out ActiveEffect effect));
             Assert.AreEqual(Target, effect.EntityId);
             Assert.AreEqual(Caster, effect.CasterEntityId);

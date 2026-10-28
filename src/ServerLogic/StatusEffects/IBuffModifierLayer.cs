@@ -4,8 +4,8 @@ namespace IronGrind.StatusEffects
 {
     /// <summary>
     /// Seam between Status Effects and the Character Stats buff-modifier stack.
-    /// The production adapter over CharacterStats (including rollback on partial failure) is
-    /// Story 003; Story 002 only defines the seam and never calls it.
+    /// The production adapter over CharacterStats is <see cref="CharacterStatsBuffModifierLayer"/>;
+    /// <see cref="StatusEffectsService"/> calls it and rolls back on partial failure (Story 003).
     /// </summary>
     public interface IBuffModifierLayer
     {
