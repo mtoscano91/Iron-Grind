@@ -2,7 +2,7 @@
 
 > **Status**: Approved (lean re-review #2, 2026-05-29)
 > **Author**: Manuel Toscano + Claude Code agents
-> **Last Updated**: 2026-05-29 (lean re-review #2: OQ-DR-1/OQ-DR-2/OQ-DR-6 marked resolved; EC-DR-1 reconnect-while-DEAD behavior defined from zone-instancing.md CR-ZI-8 step 6; stale provisional notes removed; AC-DR-13 gate cleared)
+> **Last Updated**: 2026-10-28 (CR-DR-4 / AC-DR-5 aligned with Status Effects CR-SE-10 deferred cleanup — no `ClearAll` call; new CR-DR-11a `OnEntityRespawned` — Status Effects Story 007 readiness); 2026-05-29 (lean re-review #2: OQ-DR-1/OQ-DR-2/OQ-DR-6 marked resolved; EC-DR-1 reconnect-while-DEAD behavior defined from zone-instancing.md CR-ZI-8 step 6; stale provisional notes removed; AC-DR-13 gate cleared)
 > **Implements Pillar**: Earned Power (secondary), Social Gravity (secondary)
 
 ## Overview
@@ -27,13 +27,13 @@ In that pause, the social machinery kicks in. A zone that killed you solo become
 
 **CR-DR-1** — Death is triggered by one path only: `OnEntityDied(EntityID)` from Character Stats. Any system that needs to kill an entity routes through Character Stats (reduce CurrentHP to 0.0). No other death entry point exists.
 
-**CR-DR-Ghost** — Ghost death bifurcation: the **first** check in the `OnEntityDied` handler is `EntityState.isGhost`. If `isGhost == true`: record `GhostDeath=3` for the reconnect flow (no wire message is sent at this point — the client transport is already closed), release zone slot, and return. Do NOT enter `DEAD` state; do NOT start respawn timer; do NOT call SetCombatProhibited or ClearAll. Ghost deaths are session terminations, not respawns. `ZoneSessionEnded(DisconnectReason.GhostDeath=3)` is delivered to the client on reconnect via networking-ghost-session.md CR-GH-6, not as a live wire message at death time.
+**CR-DR-Ghost** — Ghost death bifurcation: the **first** check in the `OnEntityDied` handler is `EntityState.isGhost`. If `isGhost == true`: record `GhostDeath=3` for the reconnect flow (no wire message is sent at this point — the client transport is already closed), release zone slot, and return. Do NOT enter `DEAD` state; do NOT start respawn timer; do NOT call SetCombatProhibited. (Status Effects cleans up through its own `OnEntityDied` subscription and the slot release — CR-SE-10/11.) Ghost deaths are session terminations, not respawns. `ZoneSessionEnded(DisconnectReason.GhostDeath=3)` is delivered to the client on reconnect via networking-ghost-session.md CR-GH-6, not as a live wire message at death time.
 
 **CR-DR-2** — Duplicate suppression: if `entityId` is already in `DEAD` or `Respawning` state when `OnEntityDied` fires, the event is dropped silently to prevent race conditions when multiple damage sources reduce HP to 0.0 in the same tick. `Respawning` is treated identically to `Dead` for all deduplication and targeting purposes.
 
 **CR-DR-3** — `SetCombatProhibited(entityId, true)` is called. Dead characters can neither auto-attack nor be validly targeted by new combat actions. (The attacker's auto-attack transitions to `IDLE` via `DamageResult.IsKill` — this call prohibits the dead entity itself from continuing to act.)
 
-**CR-DR-4** — `StatusEffects.ClearAll(entityId)` is called after CR-DR-3. All active buffs and debuffs are stripped. `RemoveBuffModifier()` fires for each stat modifier so Character Stats emits `OnStatChanged` to all subscribers.
+**CR-DR-4** — Death & Respawn makes no Status Effects call on death. Status Effects subscribes to `OnEntityDied` itself (status-effects.md CR-SE-10): it marks the entity's effects `PendingRemoval` in the handler and strips them on the next server tick, calling `RemoveBuffModifier()` for each stat modifier so Character Stats emits `OnStatChanged` to all subscribers. All buffs are gone long before the respawn countdown ends.
 
 **CR-DR-5** — If the dead entity belongs to a party (`IsSoloParty == false`), the Party System is notified via `SetMemberStatus(partyId, entityId, MemberStatus.Dead)`. The party slot is **retained** — not released. `PartyStateUpdate` is broadcast to all party members. Dead members are skipped in XP distribution (F-PS-1) and loot round-robin (`rrNextIndex` advances past them). *(Provisional gap: Party System GDD must add `Dead` to the `MemberStatus` enum and to the CR-PS-5 ineligibility list.)*
 
@@ -52,6 +52,8 @@ In that pause, the social machinery kicks in. A zone that killed you solo become
 **CR-DR-10** — Entity's authoritative position is set to the resolved respawn point. Server broadcasts the position correction to all zone clients (delivered via `EntityRespawned` — CR-DR-13; no separate position broadcast is sent).
 
 **CR-DR-11** — `SetCombatProhibited(entityId, false)`. Character can now attack and be validly targeted.
+
+**CR-DR-11a** — `StatusEffects.OnEntityRespawned(entityId)`. Clears the Status Effects dead flag so the character can receive buffs and instant heals again (status-effects.md CR-SE-10).
 
 **CR-DR-12** — If the entity was in a party, Party System is notified: `SetMemberStatus(partyId, entityId, MemberStatus.Online)`. Slot index is unchanged — player returns to their original slot. XP eligibility (CR-PS-5) is restored.
 
@@ -95,9 +97,9 @@ In that pause, the social machinery kicks in. A zone that killed you solo become
 
 | # | From | To | Trigger | Side Effects |
 |---|------|----|---------|-------------|
-| T-1 | Alive | Dead | `OnEntityDied` received; `isGhost == false` | CR-DR-3: combat prohibited; CR-DR-4: buffs cleared; CR-DR-5: party notified Dead; CR-DR-6: timer started; CR-DR-7: zone broadcast |
+| T-1 | Alive | Dead | `OnEntityDied` received; `isGhost == false` | CR-DR-3: combat prohibited; CR-DR-4: buffs cleared by Status Effects on the next tick (own subscription); CR-DR-5: party notified Dead; CR-DR-6: timer started; CR-DR-7: zone broadcast |
 | T-2 | Dead | Respawning | `currentTick >= respawnTick` | Internal only — no client message |
-| T-3 | Respawning | Alive | Side effects complete | CR-DR-9: HP/MP restored; CR-DR-10: repositioned; CR-DR-11: combat re-enabled; CR-DR-12: party restored Online; CR-DR-13: zone broadcast |
+| T-3 | Respawning | Alive | Side effects complete | CR-DR-9: HP/MP restored; CR-DR-10: repositioned; CR-DR-11: combat re-enabled; CR-DR-11a: Status Effects dead flag cleared; CR-DR-12: party restored Online; CR-DR-13: zone broadcast |
 | T-4 | Alive | [Session terminated] | `OnEntityDied` received; `isGhost == true` | Ghost death recorded; zone slot released; `ZoneSessionEnded(DisconnectReason.GhostDeath=3)` delivered to client on reconnect (not at death time — per networking-ghost-session.md CR-GH-6); no Dead state entered |
 
 **'Single-Tick' `Respawning` State Semantics:** The T-2 → T-3 transition is initiated in tick N. All side-effect field writes (HP/MP restore, position update, combat flag) complete within tick N's processing step. All outbound network messages (`EntityRespawned`, `RespawnConfirmed`) are enqueued and flushed at the end of tick N's network step — they are not sent inline mid-tick. No external game-logic interactions (targeting queries, incoming `OnEntityDied` events) are processed against an entity in `Respawning` state; CR-DR-2 treats `Respawning` identically to `Dead` for deduplication. The timer evaluation guard is: `CurrentState == Dead && (long)currentTick >= RespawnTick`.
@@ -121,7 +123,7 @@ struct DeathState
 |--------|-----------|---------|
 | **Character Stats** | Upstream | Subscribes to `OnEntityDied(EntityID)`. On respawn: calls `SetBaseStat(CurrentHP, MaxHP)` and `SetBaseStat(CurrentMP, MaxMP)`. |
 | **Auto-Attack Combat** | DR → | `SetCombatProhibited(true)` on death. `SetCombatProhibited(false)` on respawn. Targeting validation must reject entities in `DEAD` state — this GDD provides that contract to Hit Detection and Auto-Attack Combat. |
-| **Status Effects / Buffs** | DR → | `ClearAll(entityId)` on death. No interaction on respawn — player re-acquires buffs naturally. |
+| **Status Effects / Buffs** | DR → | No call on death — Status Effects cleans up through its own `OnEntityDied` subscription (CR-SE-10). `OnEntityRespawned(entityId)` at T-3 (CR-DR-11a); the player re-acquires buffs naturally. |
 | **Party System** | DR → | `SetMemberStatus(Dead)` on death; `SetMemberStatus(Online)` on respawn. Dead members ineligible for F-PS-1 XP and loot round-robin. *(Provisional gap: Party System must add `Dead` to `MemberStatus` enum and CR-PS-5 ineligibility list.)* |
 | **Zone Instancing** | DR → (provisional) | `GetTownRespawnPoint(ZoneID) : Vector3` — static per-zone dictionary lookup, synchronous, same-tick. Not yet authored; fallback is per-zone hardcoded position in `assets/data/zones/[zone-id]-respawn.json`. |
 | **Networking Core** | ↔ DR | `EntityDied` broadcast to zone (relevance-filtered — RFR-7, `networking-relevance-filter.md`). `EntityRespawned` broadcast to zone. `DeathStateEntered` sent to dead player's client. `RespawnConfirmed` sent to respawning client. `ZoneSessionEnded(GhostDeath=3)` sent on reconnect after ghost death (per networking-ghost-session.md CR-GH-6, not at death time). **COMPLETED 2026-05-29** — `EntityDied`, `DeathStateEntered`, `EntityRespawned`, `RespawnConfirmed` registered in `networking-wire-protocol.md`; `RFR-7` added to `networking-relevance-filter.md`. `EntityState` in `ZoneStateSnapshotFragment` — `isInDeadState`/`respawnTicksRemaining` specified in zone-instancing.md CR-ZI-8 step 6 (OQ-DR-6 resolved at design level; wire struct amendment OQ-ZI-2 in zone-instancing.md). |
@@ -194,7 +196,7 @@ No additional formulas are required. HP/MP restoration on respawn uses `MaxHP`/`
 |--------|----------------|-----------|-------|
 | **Character Stats** | Hard | `OnEntityDied(EntityID)` delegate; `SetBaseStat(StatID.CurrentHP/MP, value)` on respawn; `GetEffectiveStat(StatID.MaxHP/MP)` on respawn | Entry point for this system. CR-CP-2 (character-stats.md) defines `OnEntityDied` as `public delegate void EntityDiedHandler(EntityID entityId)`. |
 | **Auto-Attack Combat** | Hard | `SetCombatProhibited(entityId, bool)` — called true on death, false on respawn | Auto-Attack Combat must also accept `DEAD` state as a valid reason for the Targeting System to reject this entity as a target. |
-| **Status Effects / Buffs** | Hard | `StatusEffects.ClearAll(entityId)` on death | All active buff/debuff entries for the entity are stripped before the respawn countdown begins. |
+| **Status Effects / Buffs** | Hard | `StatusEffects.OnEntityRespawned(entityId)` at T-3 (CR-DR-11a) | All active buff/debuff entries are stripped by Status Effects on the server tick after death (its own `OnEntityDied` subscription, CR-SE-10), before the respawn countdown ends. |
 | **Character Persistence** | Upstream context | `LoadCharacter` is **NOT** called on respawn — character is already in server memory. `SaveSession` is called on TTL expiry with `CurrentHP = 0`; EC-DR-2 HP clamp (`if savedCurrentHP <= 0 → MaxHP`) required in CR-CP-3 step 8. | **PATCHED** — CR-CP-3 step 8 updated in `character-persistence.md` (OQ-DR-3 resolved 2026-05-28). |
 | **Networking Core** | Infrastructure | Tick counter for `DeathTick` / `RespawnTick` (long); broadcast delivery for `EntityDied`, `EntityRespawned`, `DeathStateEntered`, `RespawnConfirmed`, `ZoneSessionEnded`. `DisconnectReason.GhostDeath = 3` consumed by this system. | **COMPLETED 2026-05-29** — all 4 wire schemas registered in `networking-wire-protocol.md`; `RFR-7` added to `networking-relevance-filter.md`. Remaining: `EntityState` in `ZoneStateSnapshotFragment` needs `isInDeadState`/`respawnTicksRemaining` for reconnect-while-DEAD (OQ-DR-6). |
 | **Zone Instancing** | Hard | `GetTownRespawnPoint(ZoneID) : Vector3` — static per-zone dictionary lookup, synchronous, same-tick. | Defined in zone-instancing.md CR-ZI-11. OQ-DR-2 resolved. |
@@ -302,7 +304,7 @@ All logic criteria are BLOCKING gates — no story is Done without a passing aut
 | AC-DR-2 | Entity is already in `DEAD` state | `OnEntityDied(EntityID)` fires again | Event dropped silently; `DeathState` unchanged; no duplicate timer restart |
 | AC-DR-3 | Entity enters DEAD state | `OnEntityDied` handler completes | Subsequent `IsCombatProhibited(entityId)` returns `true` |
 | AC-DR-4 | Entity is in DEAD state | Any targeting query (e.g., `GetValidTargets()`) runs in that zone | Dead entity's ID is excluded from all valid target lists |
-| AC-DR-5 | Entity has 2 active buffs when `OnEntityDied` fires | Death resolution executes | `StatusEffects.GetActiveCount(entityId) == 0` immediately after CR-DR-4 |
+| AC-DR-5 | Entity has 2 active buffs when `OnEntityDied` fires | Death resolution executes, then one server tick runs | Status Effects reports 0 active effects for the entity after that tick (deferred cleanup, status-effects.md CR-SE-10 / AC-SE-16); after T-3 `ApplyEffect` on the entity succeeds |
 | AC-DR-6 | Entity dies at `deathTick = T`; `RESPAWN_DELAY_TICKS = 140` | Server ticks advance | Respawn sequence begins at tick `T + 140` (exact — no tolerance; timer is a deterministic integer comparison with no floating-point accumulation) |
 | AC-DR-7 | Entity respawns | T-3 completes | `GetEffectiveStat(CurrentHP) == GetEffectiveStat(MaxHP)` and `GetEffectiveStat(CurrentMP) == GetEffectiveStat(MaxMP)` |
 | AC-DR-8 | Entity respawns | T-3 completes | Entity's authoritative position is within 0.1 world units of the zone's designated town respawn point (tolerance covers floating-point serialization only; position is a direct assignment, not a physics correction) |
