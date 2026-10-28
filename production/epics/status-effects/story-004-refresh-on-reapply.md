@@ -1,16 +1,16 @@
 # Story 004: Refresh on Reapply
 
 > **Epic**: Status Effects / Buffs
-> **Status**: Ready — written 2026-10-28 (`/create-stories`, lean)
+> **Status**: Ready — written 2026-10-28 (`/create-stories`, lean); `/story-readiness` 2026-10-28 NEEDS WORK (2 gaps) → fixed
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-26
-> **Estimate**: 3 hours
+> **Estimate**: 4 hours (was 3; +1 for in-place replacement and tick-aware free, `/story-readiness` 2026-10-28)
 
 ## Context
 
 **GDD**: `design/gdd/status-effects.md` — CR-SE-4 (refresh and its exception), F-SE-4 (hard reset), States (Refreshed), EC-SE-3; AC-SE-11, 12, 27
-**Requirement**: `TR-se-003` (placeholder — registry empty)
+**Requirement**: `TR-se-003` (active)
 
 **ADR Governing Implementation**: ADR-012 (assembly placement)
 **ADR Decision Summary**: server-only service.
@@ -29,7 +29,9 @@
 - [ ] **AC-SE-12**: `DurationTicks 40`, 35 ticks advanced (`TicksRemaining 5`), reapplied → `TicksRemaining 40`, not 45.
 - [ ] **AC-SE-27**: `BuffID X` AttackPower +10 applied; `X` reapplied with +20 → (1) `RemoveBuffModifier(entity, AttackPower, X)` exactly once; (2) one add with flat 20 and the new duration; (3) effective = base + 20; (4) `TicksRemaining` = the new `DurationTicks`; the row's caster is the new caster.
 - [ ] **"Same values"** means: same `ModifierCount`, and for each index the same `StatId`, `FlatBonus`, `PctBonus` (exact float equality), and the same regen rates. A difference only in `DurationTicks` or caster is a plain refresh (TicksRemaining = new duration, caster updated), not a remove-then-reapply.
-- [ ] **Remove-then-reapply capacity**: the new application is checked against capacity *after* the old effect's slots are freed (an entity at 32 slots can replace its own 4-modifier buff with another 4-modifier version). If the new application then fails (layer add failure), the old effect is gone and the result is the failure — documented in a comment.
+- [ ] **Remove-then-reapply capacity**: before any layer call, check `OccupiedSlots − old ModifierCount + new ModifierCount > 32` → `CapacityExceeded`, old effect untouched (zero layer calls, row and occupancy unchanged). An entity at 32 slots can replace its own 4-modifier buff with another 4-modifier version. Only a layer add failure after the old modifiers were removed loses the old effect: the new adds are rolled back (Story 003 `TryAddModifiers`), the row is freed, occupancy drops by the old count, and the result is `CapacityExceeded` — documented in a comment.
+- [ ] **Replace in place**: a successful remove-then-reapply overwrites the same row index (buff-bar position kept, other rows unmoved): new modifiers, regen, `TicksRemaining` = new `DurationTicks`, new caster; occupancy adjusted by `new − old`. Removals use the old row's modifiers in index order, then the new adds in index order.
+- [ ] **During a tick (EC-SE-8, via `InjectApplyEffectDuringTick`)**: a refreshed or replaced row the tick has already processed keeps the new `TicksRemaining` (= `DurationTicks`) after the tick; one the tick has not reached yet is decremented by this tick like any existing row (`DurationTicks − 1`, and it gets this tick's regen). A row freed after a failed replacement during a tick is freed through a tick-aware helper: if it is in the slot being processed, the tick's loop index and end are adjusted so no remaining row is skipped and no row created this tick is processed (AC-SE-19 still holds).
 - [ ] **EC-SE-3**: reapplying a `BuffID` on an entity marked dead → `InvalidTarget`, no refresh.
 - [ ] A refresh skips the row-limit and capacity checks (Story 002) — an entity with 8 rows can refresh one of them.
 
@@ -37,9 +39,11 @@
 
 ## Implementation Notes
 
-- From Story 002 code review (2026-10-28): a re-apply of an active `BuffID` skips the row and capacity checks. When the new definition has a different `ModifierCount`, adjust `_occupiedSlots` by the difference and decide whether the 32-per-entity capacity is re-checked (it can otherwise exceed 32). `StatusEffectsService.FindRow(slot, buffId)` returns the row index to refresh in place.
+- A re-apply of an active `BuffID` skips the row-limit check (Story 002 step 3). A plain refresh has the same `ModifierCount`, so occupancy is unchanged; a replacement re-checks capacity with the old slots excluded (criterion above). `StatusEffectsService.FindRow(slot, buffId)` returns the row index to refresh or replace in place.
 - A refresh only writes the row (`TicksRemaining`, caster) — never Character Stats (CR-SE-4).
-- The remove half of the exception uses the expiry procedure of Story 005/006 (remove each modifier, clamp if MaxHP/MaxMP, free the row). If this story lands before 005/006, implement the remove through a shared private method that 005/006 then extend; note any ordering in the completion notes.
+- The remove half of the exception is CR-SE-8 steps 1–3. Story 005 put the modifier removals inside `ProcessRow`; extract them into a shared private helper (e.g. `RemoveModifiers(slot, rowIndex)`) used by both the tick and the replacement, so Story 006 adds the MaxHP/MaxMP clamp (and TD-085 throw-safety) in one place. Step 4 (free the row) is not used on success — the row is overwritten in place.
+- Tick-aware free: `OnServerTick` keeps its loop index and end in locals today; move them to fields (e.g. `_tickSlot`, `_tickIndex`, `_tickEnd`, `NO_SLOT` outside a tick) so the failure path can adjust them: freed index < current index → index−1 and end−1; freed index in [index, end) → end−1; freed index ≥ end (created this tick) → no change. Allocation-free.
+- `PctBonus`/`FlatBonus` use exact float equality, so a NaN amount never matches and always takes the replacement path (NaN amounts are an open GDD question from Story 002).
 
 ---
 
@@ -54,6 +58,8 @@
 - **AC-SE-11 / 12 / 27** — as listed, counting layer calls with a recording fake over the real `CharacterStats`.
 - **Plain refresh variants** — same values, different duration → TicksRemaining = new duration, no layer calls; different caster → caster updated, no layer calls.
 - **Edges** — refresh at `TicksRemaining 1`; refresh with 8 rows full; replacement at exactly 32 occupied slots; reapply on a dead entity.
+- **Replacement** — row index and other rows' order unchanged (3 buffs, replace the middle one); 2→3 and 3→2 modifier counts adjust occupancy; capacity pre-check failure (30 occupied, 2-modifier buff replaced by a 5-modifier one) → `CapacityExceeded`, zero layer calls, old row intact; layer add failure (recording fake `FailOnAddNumber`) → old row gone, later rows shifted down, occupancy −old, `CapacityExceeded`; regen-only change triggers replacement.
+- **During a tick** — refresh injected for a row already processed → `DurationTicks` after the tick; for a later row → `DurationTicks − 1`; replacement of a later row → new values, decremented once; failed replacement of an earlier and of a later row in the processing slot → every remaining row processed exactly once, none twice.
 
 ---
 
