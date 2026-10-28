@@ -468,7 +468,7 @@ namespace IronGrind.Tests.EditMode.StatusEffects
             AssertRejected(Def(NewBuff, 0, hpRegen: REGEN), ApplyResult.EffectSlotsFull);
         }
 
-        // ---- Same BuffID (refresh is Story 004) ----
+        // ---- Same BuffID with identical values: plain refresh (full refresh and replacement coverage: StatusEffects_Refresh_Tests) ----
 
         [Test]
         public void StatusEffects_Validation_SameBuff_AppliedTwice_SucceedsWithOneRowAndUnchangedOccupancy()

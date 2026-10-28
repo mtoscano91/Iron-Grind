@@ -1,7 +1,7 @@
 # Story 004: Refresh on Reapply
 
 > **Epic**: Status Effects / Buffs
-> **Status**: Ready — written 2026-10-28 (`/create-stories`, lean); `/story-readiness` 2026-10-28 NEEDS WORK (2 gaps) → fixed
+> **Status**: Complete — 2026-10-28 (`/story-done`: COMPLETE WITH NOTES); written 2026-10-28 (`/create-stories`, lean); `/story-readiness` 2026-10-28 NEEDS WORK (2 gaps) → fixed
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-26
@@ -25,15 +25,15 @@
 
 ## Acceptance Criteria
 
-- [ ] **AC-SE-11**: `DurationTicks 60`, 30 ticks advanced (`TicksRemaining 30`), same `BuffID` reapplied with the same values → `Success`; `TicksRemaining 60`; zero `RemoveBuffModifier` and zero add calls; effective stat equal to right after the first application.
-- [ ] **AC-SE-12**: `DurationTicks 40`, 35 ticks advanced (`TicksRemaining 5`), reapplied → `TicksRemaining 40`, not 45.
-- [ ] **AC-SE-27**: `BuffID X` AttackPower +10 applied; `X` reapplied with +20 → (1) `RemoveBuffModifier(entity, AttackPower, X)` exactly once; (2) one add with flat 20 and the new duration; (3) effective = base + 20; (4) `TicksRemaining` = the new `DurationTicks`; the row's caster is the new caster.
-- [ ] **"Same values"** means: same `ModifierCount`, and for each index the same `StatId`, `FlatBonus`, `PctBonus` (exact float equality), and the same regen rates. A difference only in `DurationTicks` or caster is a plain refresh (TicksRemaining = new duration, caster updated), not a remove-then-reapply.
-- [ ] **Remove-then-reapply capacity**: before any layer call, check `OccupiedSlots − old ModifierCount + new ModifierCount > 32` → `CapacityExceeded`, old effect untouched (zero layer calls, row and occupancy unchanged). An entity at 32 slots can replace its own 4-modifier buff with another 4-modifier version. Only a layer add failure after the old modifiers were removed loses the old effect: the new adds are rolled back (Story 003 `TryAddModifiers`), the row is freed, occupancy drops by the old count, and the result is `CapacityExceeded` — documented in a comment.
-- [ ] **Replace in place**: a successful remove-then-reapply overwrites the same row index (buff-bar position kept, other rows unmoved): new modifiers, regen, `TicksRemaining` = new `DurationTicks`, new caster; occupancy adjusted by `new − old`. Removals use the old row's modifiers in index order, then the new adds in index order.
-- [ ] **During a tick (EC-SE-8, via `InjectApplyEffectDuringTick`)**: a refreshed or replaced row the tick has already processed keeps the new `TicksRemaining` (= `DurationTicks`) after the tick; one the tick has not reached yet is decremented by this tick like any existing row (`DurationTicks − 1`, and it gets this tick's regen). A row freed after a failed replacement during a tick is freed through a tick-aware helper: if it is in the slot being processed, the tick's loop index and end are adjusted so no remaining row is skipped and no row created this tick is processed (AC-SE-19 still holds).
-- [ ] **EC-SE-3**: reapplying a `BuffID` on an entity marked dead → `InvalidTarget`, no refresh.
-- [ ] A refresh skips the row-limit and capacity checks (Story 002) — an entity with 8 rows can refresh one of them.
+- [x] **AC-SE-11**: `DurationTicks 60`, 30 ticks advanced (`TicksRemaining 30`), same `BuffID` reapplied with the same values → `Success`; `TicksRemaining 60`; zero `RemoveBuffModifier` and zero add calls; effective stat equal to right after the first application.
+- [x] **AC-SE-12**: `DurationTicks 40`, 35 ticks advanced (`TicksRemaining 5`), reapplied → `TicksRemaining 40`, not 45.
+- [x] **AC-SE-27**: `BuffID X` AttackPower +10 applied; `X` reapplied with +20 → (1) `RemoveBuffModifier(entity, AttackPower, X)` exactly once; (2) one add with flat 20 and the new duration; (3) effective = base + 20; (4) `TicksRemaining` = the new `DurationTicks`; the row's caster is the new caster.
+- [x] **"Same values"** means: same `ModifierCount`, and for each index the same `StatId`, `FlatBonus`, `PctBonus` (exact float equality), and the same regen rates. A difference only in `DurationTicks` or caster is a plain refresh (TicksRemaining = new duration, caster updated), not a remove-then-reapply.
+- [x] **Remove-then-reapply capacity**: before any layer call, check `OccupiedSlots − old ModifierCount + new ModifierCount > 32` → `CapacityExceeded`, old effect untouched (zero layer calls, row and occupancy unchanged). An entity at 32 slots can replace its own 4-modifier buff with another 4-modifier version. Only a layer add failure after the old modifiers were removed loses the old effect: the new adds are rolled back (Story 003 `TryAddModifiers`), the row is freed, occupancy drops by the old count, and the result is `CapacityExceeded` — documented in a comment.
+- [x] **Replace in place**: a successful remove-then-reapply overwrites the same row index (buff-bar position kept, other rows unmoved): new modifiers, regen, `TicksRemaining` = new `DurationTicks`, new caster; occupancy adjusted by `new − old`. Removals use the old row's modifiers in index order, then the new adds in index order.
+- [x] **During a tick (EC-SE-8, via `InjectApplyEffectDuringTick`)**: a refreshed or replaced row the tick has already processed keeps the new `TicksRemaining` (= `DurationTicks`) after the tick; one the tick has not reached yet is decremented by this tick like any existing row (`DurationTicks − 1`, and it gets this tick's regen). A row freed after a failed replacement during a tick is freed through a tick-aware helper: if it is in the slot being processed, the tick's loop index and end are adjusted so no remaining row is skipped and no row created this tick is processed (AC-SE-19 still holds).
+- [x] **EC-SE-3**: reapplying a `BuffID` on an entity marked dead → `InvalidTarget`, no refresh.
+- [x] A refresh skips the row-limit and capacity checks (Story 002) — an entity with 8 rows can refresh one of them.
 
 ---
 
@@ -68,7 +68,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/StatusEffects/StatusEffects_Refresh_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — 36 tests, 36/36 (full EditMode 4756 / 4627 / 0 failed / 129 skipped, 2026-10-28)
 
 ---
 
@@ -76,3 +76,19 @@
 
 - Depends on: Story 003; Story 005 for advancing ticks (recommended order 001 → 002 → 003 → 005 → 004)
 - Unlocks: None
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-10-28
+**Criteria**: 9/9 passing, all covered by `tests/EditMode/StatusEffects/StatusEffects_Refresh_tests.cs` (36 tests)
+**Deviations** (advisory):
+1. A subscriber throw during a replacement add frees the row (tick-aware) and rethrows; the old effect is lost and the caller sees the exception instead of `CapacityExceeded` (documented in the `ApplyEffect` remarks).
+2. A regen-only buff (0 modifiers) whose rate changes takes the replacement path with zero layer calls — effectively an overwrite of the row.
+3. `FreeRowTickAware` also lowers the tick-start snapshot of a slot other than the one being processed (code-review B1: otherwise a failed replacement in a later slot made the tick process a cleared row and `RemoveRow` threw). The story named only the processing slot.
+4. Test support: second internal seam `InjectSecondApplyEffectDuringTick` + `LastSecondInjectedResult` (fires right after the first injection); test fake `FailOnAddNumber` now also applies with an inner layer, new `ThrowOnAddNumber`.
+5. TD-085 widened from expiry to expiry + replacement (`RemoveModifiers` is the shared seam for Story 006).
+6. Estimate 3 → 4 h (set at `/story-readiness`). `RefreshOrReplace` split into `RefreshOrReplace` + `ReplaceInPlace` at code review.
+**Test Evidence**: Logic — `tests/EditMode/StatusEffects/StatusEffects_Refresh_tests.cs`
+**Code Review**: Complete — 2026-10-28 CHANGES REQUIRED (1 blocking) → "fix all" applied; QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean)

@@ -8,7 +8,7 @@ namespace IronGrind.StatusEffects
     /// CR-SE-3, CR-SE-13, F-SE-1, F-SE-2, F-SE-3, EC-SE-2, EC-SE-6, EC-SE-11). Stories 002-003: validation, atomic
     /// application through <see cref="IBuffModifierLayer"/> with rollback, row storage and read-only accessors.
     /// Story 005 adds per-tick processing and expiry (<see cref="OnServerTick"/>).
-    /// Refresh and death wiring come in later stories.
+    /// Story 004 adds refresh on reapply and in-place replacement (CR-SE-4). Death wiring comes in later stories.
     /// Not thread-safe: every call runs on the server tick thread.
     /// </summary>
     public sealed class StatusEffectsService
@@ -32,12 +32,23 @@ namespace IronGrind.StatusEffects
         private EntityID _injectionTarget;
         private BuffDefinition _injectionDefinition;
         private int _injectionTurnSlot = NO_SLOT;
+        private bool _secondInjectionPending;
+        private EntityID _secondInjectionTarget;
+        private BuffDefinition _secondInjectionDefinition;
+
+        // Tick loop state (see OnServerTick, FreeRowTickAware). _tickSlot is NO_SLOT outside a tick.
+        private int _tickSlot = NO_SLOT;
+        private int _tickIndex;
+        private int _tickEnd;
 
         /// <summary>
         /// Test-only: result of the last injected <see cref="ApplyEffect"/> call made by <see cref="OnServerTick"/>;
         /// null until an injection fires, and reset to null by each new <see cref="InjectApplyEffectDuringTick(EntityID, in BuffDefinition, EntityID)"/>.
         /// </summary>
         internal ApplyResult? LastInjectedResult;
+
+        /// <summary>Test-only: result of the second injected call (see <see cref="InjectSecondApplyEffectDuringTick"/>); null until it fires.</summary>
+        internal ApplyResult? LastSecondInjectedResult;
 
         /// <summary>Creates the service and allocates every table once (CR-SE-15).</summary>
         /// <param name="modifierLayer">Character Stats buff-modifier seam.</param>
@@ -73,28 +84,40 @@ namespace IronGrind.StatusEffects
         {
             Array.Copy(_rowCounts, _tickStartRowCounts, MAX_SLOTS);
 
-            for (int slot = 0; slot < MAX_SLOTS; slot++)
+            try
             {
-                int end = _tickStartRowCounts[slot];
-                if (end == 0 || _dead[slot])
-                    continue;
-
-                int i = 0;
-                while (i < end)
+                for (int slot = 0; slot < MAX_SLOTS; slot++)
                 {
-                    if (ProcessRow(slot, i))
-                    {
-                        RemoveRow(slot, i);
-                        end--;
-                        // Stay on index i: the shifted-in row has not been processed yet.
-                    }
-                    else
-                    {
-                        i++;
-                    }
+                    int end = _tickStartRowCounts[slot];
+                    if (end == 0 || _dead[slot])
+                        continue;
 
-                    RunPendingInjection(slot);
+                    // Loop state lives in fields so a failed replacement during the tick can free a row through
+                    // FreeRowTickAware without skipping or double-processing any row (Story 004, EC-SE-8).
+                    // _tickIndex is always the next row to process: every row below it has been processed.
+                    _tickSlot = slot;
+                    _tickIndex = 0;
+                    _tickEnd = end;
+                    while (_tickIndex < _tickEnd)
+                    {
+                        if (ProcessRow(slot, _tickIndex))
+                        {
+                            RemoveRow(slot, _tickIndex);
+                            _tickEnd--;
+                            // Stay on the index: the shifted-in row has not been processed yet.
+                        }
+                        else
+                        {
+                            _tickIndex++;
+                        }
+
+                        RunPendingInjection(slot);
+                    }
                 }
+            }
+            finally
+            {
+                _tickSlot = NO_SLOT;
             }
         }
 
@@ -118,11 +141,53 @@ namespace IronGrind.StatusEffects
             if (e.TicksRemaining != 0u)
                 return false;
 
+            RemoveModifiers(slot, rowIndex);
+            return true;
+        }
+
+        /// <summary>
+        /// Removes every populated modifier of the row through the layer (index order) and releases its occupancy
+        /// (CR-SE-8 steps 1-3). Shared by expiry and remove-then-reapply. Does not free the row.
+        /// Story 006 adds the MaxHP/MaxMP clamp (and TD-085 throw-safety) here, in one place. Until then a subscriber
+        /// that throws mid-loop leaves some modifiers removed while the row and occupancy still list them; on the
+        /// replacement path a later same-values re-apply is a plain refresh and does not repair it (TD-085).
+        /// </summary>
+        private void RemoveModifiers(int slot, int rowIndex)
+        {
+            ref ActiveEffect e = ref _rows[slot * ROWS_PER_ENTITY + rowIndex];
             int modifierCount = e.ModifierCount;
             for (int m = 0; m < modifierCount; m++)
                 _modifierLayer.RemoveBuffModifier(e.EntityId, e.GetModifier(m).StatId, e.BuffId);
             _occupiedSlots[slot] -= modifierCount;
-            return true;
+        }
+
+        /// <summary>
+        /// Frees a row outside the tick loop's own expiry path and, when the row is in the slot being processed,
+        /// adjusts the loop so no remaining row is skipped and no row created this tick is processed:
+        /// freed index below the next-to-process index moves both index and end down; inside the range moves the
+        /// end down; at or past the end (created this tick) changes nothing. In any other slot, a freed row below
+        /// that slot's tick-start snapshot lowers the snapshot, so a slot the tick has not reached yet does not
+        /// process past its last row (harmless for slots already processed, and outside a tick).
+        /// </summary>
+        private void FreeRowTickAware(int slot, int rowIndex)
+        {
+            RemoveRow(slot, rowIndex);
+            if (slot != _tickSlot)
+            {
+                if (rowIndex < _tickStartRowCounts[slot])
+                    _tickStartRowCounts[slot]--;
+                return;
+            }
+
+            if (rowIndex < _tickIndex)
+            {
+                _tickIndex--;
+                _tickEnd--;
+            }
+            else if (rowIndex < _tickEnd)
+            {
+                _tickEnd--;
+            }
         }
 
         /// <summary>
@@ -165,7 +230,25 @@ namespace IronGrind.StatusEffects
             _injectionDefinition = definition;
             _injectionTurnSlot = TryResolveSlot(duringTurnOf, out int turnSlot) ? turnSlot : NO_SLOT;
             _injectionPending = true;
+            _secondInjectionPending = false;
             LastInjectedResult = null;
+            LastSecondInjectedResult = null;
+        }
+
+        /// <summary>
+        /// Test-only seam: queues a second <see cref="ApplyEffect"/> (caster = target) that runs immediately after the
+        /// first injection fires, in the same tick and turn. Call it after the three-argument
+        /// <see cref="InjectApplyEffectDuringTick(EntityID, in BuffDefinition, EntityID)"/>; a new first injection
+        /// cancels it. The result is stored in <see cref="LastSecondInjectedResult"/>.
+        /// </summary>
+        /// <param name="target">Entity that receives the effect.</param>
+        /// <param name="definition">The buff to apply.</param>
+        internal void InjectSecondApplyEffectDuringTick(EntityID target, in BuffDefinition definition)
+        {
+            _secondInjectionTarget = target;
+            _secondInjectionDefinition = definition;
+            _secondInjectionPending = true;
+            LastSecondInjectedResult = null;
         }
 
         private void RunPendingInjection(int slot)
@@ -175,6 +258,12 @@ namespace IronGrind.StatusEffects
 
             _injectionPending = false;
             LastInjectedResult = ApplyEffect(_injectionTarget, _injectionTarget, _injectionDefinition);
+
+            if (_secondInjectionPending)
+            {
+                _secondInjectionPending = false;
+                LastSecondInjectedResult = ApplyEffect(_secondInjectionTarget, _secondInjectionTarget, _secondInjectionDefinition);
+            }
         }
 
         /// <summary>
@@ -185,11 +274,18 @@ namespace IronGrind.StatusEffects
         /// is returned with no row written (CR-SE-3).
         /// </summary>
         /// <remarks>
-        /// Re-applying a <see cref="BuffDefinition.BuffId"/> already active on the target returns
-        /// <see cref="ApplyResult.Success"/> with no change (refresh is Story 004). Every add and every rollback
-        /// removal fires Character Stats' <c>OnStatChanged</c>, so subscribers can see a change that a failed apply
-        /// then reverts (batching is Story 006). If a subscriber throws during an add, the modifiers added so far
-        /// (including the one whose event threw) are removed and the exception is rethrown.
+        /// Re-applying a <see cref="BuffDefinition.BuffId"/> already active on the target (Story 004, CR-SE-4,
+        /// F-SE-4) resets <see cref="ActiveEffect.TicksRemaining"/> to the new duration and stores the new caster,
+        /// with no Character Stats call, when the modifier values and regen rates are the same. If they differ, the
+        /// old modifiers are removed and the new ones added, overwriting the same row (buff-bar position kept);
+        /// capacity is pre-checked with the old slots excluded, and only a layer add failure after the removal
+        /// loses the old effect (row freed, <see cref="ApplyResult.CapacityExceeded"/>). A refresh skips the row
+        /// limit. A plain refresh does not update the duration stored in the Character Stats modifier entries
+        /// (audit only). Every add and every rollback removal fires Character Stats' <c>OnStatChanged</c>, so
+        /// subscribers can see a change that a failed apply then reverts (batching is Story 006). If a subscriber
+        /// throws during an add, the modifiers added so far (including the one whose event threw) are removed and
+        /// the exception is rethrown; during a replacement the old effect is then also lost (row freed) and the
+        /// caller sees the exception instead of <see cref="ApplyResult.CapacityExceeded"/>.
         /// </remarks>
         /// <param name="target">The entity that receives the effect.</param>
         /// <param name="caster">The entity that applied it (stored for buff-bar attribution).</param>
@@ -207,11 +303,11 @@ namespace IronGrind.StatusEffects
                 return ApplyResult.InvalidTarget;
 
             // (3) Rows.
-            if (FindRow(slot, definition.BuffId) != NO_ROW)
+            int existingRow = FindRow(slot, definition.BuffId);
+            if (existingRow != NO_ROW)
             {
-                // Same BuffID already active: refresh semantics (reset ticks, replace on changed
-                // modifier values) are Story 004. Until then this is a Success with no change.
-                return ApplyResult.Success;
+                // Same BuffID already active: refresh (CR-SE-4). Skips the row limit and the normal capacity check.
+                return RefreshOrReplace(slot, existingRow - slot * ROWS_PER_ENTITY, target, caster, definition);
             }
 
             int rowCount = _rowCounts[slot];
@@ -235,6 +331,89 @@ namespace IronGrind.StatusEffects
             _rowCounts[slot] = rowCount + 1;
             _occupiedSlots[slot] += modifierCount;
             return ApplyResult.Success;
+        }
+
+        /// <summary>
+        /// Refresh of an active BuffID (CR-SE-4, F-SE-4). Same values: hard reset of ticks and caster, no layer
+        /// call. Different values: remove-then-reapply in place.
+        /// </summary>
+        private ApplyResult RefreshOrReplace(int slot, int rowIndex, EntityID target, EntityID caster, in BuffDefinition definition)
+        {
+            int rowAbs = slot * ROWS_PER_ENTITY + rowIndex;
+            ref ActiveEffect existing = ref _rows[rowAbs];
+
+            if (HasSameValues(existing, definition))
+            {
+                existing.TicksRemaining = definition.DurationTicks;
+                existing.CasterEntityId = caster;
+                return ApplyResult.Success;
+            }
+
+            // Capacity pre-check with the old slots excluded, before any layer call (nothing changes on failure).
+            int oldCount = existing.ModifierCount;
+            int newCount = definition.ModifierCount;
+            if (_occupiedSlots[slot] - oldCount + newCount > StatusEffectsConstants.MODIFIER_CAPACITY_PER_ENTITY)
+                return ApplyResult.CapacityExceeded;
+
+            return ReplaceInPlace(slot, rowIndex, target, caster, definition);
+        }
+
+        /// <summary>
+        /// Remove-then-reapply in place (CR-SE-4 exception, CR-SE-8 steps 1-3, CR-SE-3): removes the old modifiers,
+        /// adds the new ones and overwrites the same row. On a layer rejection or a subscriber throw the old effect
+        /// is lost and the row is freed tick-aware. Capacity was pre-checked by the caller.
+        /// </summary>
+        private ApplyResult ReplaceInPlace(int slot, int rowIndex, EntityID target, EntityID caster, in BuffDefinition definition)
+        {
+            RemoveModifiers(slot, rowIndex); // also releases the old occupancy
+
+            bool added;
+            try
+            {
+                added = TryAddModifiers(target, definition);
+            }
+            catch
+            {
+                // TryAddModifiers rolled back its own adds; the old modifiers are already gone, so the row
+                // must not stay behind describing modifiers that are not applied.
+                FreeRowTickAware(slot, rowIndex);
+                throw;
+            }
+
+            if (!added)
+            {
+                // The layer rejected an add after the old modifiers were removed. TryAddModifiers rolled back the
+                // new adds, so the old effect is lost: free its row (later rows shift down) and report it.
+                FreeRowTickAware(slot, rowIndex);
+                return ApplyResult.CapacityExceeded;
+            }
+
+            _rows[slot * ROWS_PER_ENTITY + rowIndex] = new ActiveEffect(definition, target, caster);
+            _occupiedSlots[slot] += definition.ModifierCount;
+            return ApplyResult.Success;
+        }
+
+        /// <summary>
+        /// "Same values" (F-SE-4): same modifier count, and per index the same stat, flat and percentage bonus
+        /// (exact float equality, so NaN never matches), and the same regen rates. Duration and caster are ignored.
+        /// </summary>
+        private static bool HasSameValues(in ActiveEffect row, in BuffDefinition definition)
+        {
+            int count = definition.ModifierCount;
+            if (row.ModifierCount != count
+                || row.HpRegenPerTick != definition.HpRegenPerTick
+                || row.MpRegenPerTick != definition.MpRegenPerTick)
+                return false;
+
+            for (int i = 0; i < count; i++)
+            {
+                StatModifier a = row.GetModifier(i);
+                StatModifier b = definition.GetModifier(i);
+                if (a.StatId != b.StatId || a.FlatBonus != b.FlatBonus || a.PctBonus != b.PctBonus)
+                    return false;
+            }
+
+            return true;
         }
 
         /// <summary>

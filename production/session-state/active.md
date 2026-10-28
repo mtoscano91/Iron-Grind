@@ -5117,3 +5117,28 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: 1 item (TD-085, expiry throw-safety, Story 006)
 - Uncommitted changeset: src StatusEffectsService.cs, new IStatResourceSink.cs + .meta, new CharacterStatsResourceSink.cs + .meta; tests StatusEffectsTestFakes.cs, StatusEffects_Application_tests.cs, StatusEffects_Validation_tests.cs, new StatusEffects_Tick_tests.cs + .meta; story 005, EPIC.md, index.md, tech-debt-register.md, this file. Not ProjectSettings/* or bash.exe.stackdump.
 - Next recommended: commit; then /story-readiness production/epics/status-effects/story-004-refresh-on-reapply.md. PAT rotation still unconfirmed.
+
+## Session Extract — /dev-story 2026-10-28 (Story 004)
+- Story: production/epics/status-effects/story-004-refresh-on-reapply.md — Refresh on Reapply
+- Files changed: src StatusEffectsService.cs (RefreshOrReplace, HasSameValues, RemoveModifiers extracted from ProcessRow, FreeRowTickAware, tick loop state in fields _tickSlot/_tickIndex/_tickEnd reset in finally, ApplyEffect remarks, class summary); tests new StatusEffects_Refresh_tests.cs + .meta (27 [Test]), Validation section comment only
+- Test written: tests/EditMode/StatusEffects/StatusEffects_Refresh_tests.cs (27/27)
+- Runs: first run 4 Refresh failures — test bug (fake's AddCalls/RemoveCalls are cumulative, Calls.Clear() does not reset them) → CallsSinceClear(kind) helper over the call log; rerun full EditMode 4747 / 4618 passed / 0 failed / 129 skipped (+27); no error CS
+- Decisions beyond the story: a subscriber throw inside TryAddModifiers during a replacement frees the row tick-aware and rethrows (minimal guard; TD-085/Story 006 generalises); a regen-only buff with a changed rate takes the replacement path with zero layer calls; RemoveModifiers also releases occupancy
+- Blockers: None
+- Next: /code-review src/ServerLogic/StatusEffects/StatusEffectsService.cs tests/EditMode/StatusEffects/StatusEffects_Refresh_tests.cs, then /story-done production/epics/status-effects/story-004-refresh-on-reapply.md. PAT rotation still unconfirmed.
+
+## Session Extract — /code-review 2026-10-28 (Story 004)
+- Verdict: CHANGES REQUIRED (1 blocking) → "fix all" applied. unity-specialist ISSUES FOUND (1 blocking, 2 warnings, 3 advisory); qa-tester GAPS (0 blocking, 11 advisory). ADR-012 compliant.
+- B1 (fixed, main session): a failed replacement during a tick in a slot other than the one being processed left that slot's `_tickStartRowCounts` stale → the tick processed a cleared row and `RemoveRow` threw (Array.Copy length −1). `FreeRowTickAware` now lowers the other slot's snapshot when the freed index is below it.
+- Also applied (main session, src): `RefreshOrReplace` split → new `ReplaceInPlace` (A1); `RemoveModifiers` doc notes a mid-removal throw (W1); `ApplyEffect` remarks: throw during replacement loses the old effect and surfaces the exception, plain refresh leaves the Character Stats entry duration (audit only), reflow (W2, A2, A3). TD-085 widened to expiry + replacement (docs/tech-debt-register.md).
+- Applied (gameplay-programmer, tests): fake `FailOnAddNumber` now also applies with an inner layer (not forwarded), new `ThrowOnAddNumber`; internal seam `InjectSecondApplyEffectDuringTick` + `LastSecondInjectedResult` (fires right after the first injection); Refresh tests +9 (real-stats add failure with exact 5-call sequence + follow-up apply, in-tick successful replacement of a processed row, B1 regression, 3 tests for rows created earlier in the same tick, throw during in-tick replacement, throw outside a tick, 4-modifier exactly-32) and polish asserts (occupancy on dead entity / 8 rows full, row order, cumulative-counter comment). Refresh now 36 [Test].
+- Runs: full EditMode 4756 / 4627 passed / 0 failed / 129 skipped; Refresh 36/36, Tick 27/27, Application 28/28, Validation 46/46, DataModel 31/31; no error CS.
+- Next: /story-done production/epics/status-effects/story-004-refresh-on-reapply.md. PAT rotation still unconfirmed.
+
+## Session Extract — /story-done 2026-10-28 (Story 004)
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/status-effects/story-004-refresh-on-reapply.md — Refresh on Reapply (9/9 criteria, 36 Refresh tests; full EditMode 4756 / 4627 / 0 failed / 129 skipped)
+- Written: story 004 (Status Complete, checkboxes, Test Evidence, Completion Notes with 6 advisory deviations), EPIC.md (row 004 Complete, Next Step → 006), production/epics/index.md (5 Complete, 4 Ready). QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean).
+- Tech debt logged: None new (TD-085 widened at code review)
+- Uncommitted changeset: src StatusEffectsService.cs; tests StatusEffectsTestFakes.cs, StatusEffects_Validation_tests.cs, new StatusEffects_Refresh_tests.cs + .meta; story 004, EPIC.md, index.md, docs/tech-debt-register.md, this file. Not ProjectSettings/* or bash.exe.stackdump.
+- Next recommended: commit; then /story-readiness production/epics/status-effects/story-006-expiry-clamp-and-batched-events.md. PAT rotation still unconfirmed.

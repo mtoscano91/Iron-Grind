@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using IronGrind.CharacterStats;
 using IronGrind.StatusEffects;
@@ -64,8 +65,18 @@ namespace IronGrind.Tests.EditMode.StatusEffects
         /// <summary>Ordered log of every call.</summary>
         public List<LayerCall> Calls { get; } = new List<LayerCall>();
 
-        /// <summary>1-based index of the add call that returns false; 0 means never fail.</summary>
+        /// <summary>
+        /// 1-based index (cumulative across the fake's lifetime, not reset by <c>Calls.Clear()</c>) of the add call
+        /// that returns false; 0 means never fail. Applies with or without an inner layer; the failing add is
+        /// recorded but not forwarded to the inner layer.
+        /// </summary>
         public int FailOnAddNumber { get; set; }
+
+        /// <summary>
+        /// 1-based index (cumulative, like <see cref="FailOnAddNumber"/>) of the add call that throws
+        /// <see cref="InvalidOperationException"/>; 0 means never throw. The throwing add is recorded but not forwarded.
+        /// </summary>
+        public int ThrowOnAddNumber { get; set; }
 
         /// <summary>Number of TryAddBuffModifier calls.</summary>
         public int AddCalls { get; private set; }
@@ -81,9 +92,13 @@ namespace IronGrind.Tests.EditMode.StatusEffects
         {
             AddCalls++;
             Calls.Add(new LayerCall(LayerCallKind.Add, entityId, statId, entry.Id, entry));
+            if (ThrowOnAddNumber != 0 && AddCalls == ThrowOnAddNumber)
+                throw new InvalidOperationException("RecordingBuffModifierLayer: injected add failure");
+            if (FailOnAddNumber != 0 && AddCalls == FailOnAddNumber)
+                return false;
             if (_innerLayer != null)
                 return _innerLayer.TryAddBuffModifier(entityId, statId, entry);
-            return AddCalls != FailOnAddNumber;
+            return true;
         }
 
         /// <inheritdoc/>
