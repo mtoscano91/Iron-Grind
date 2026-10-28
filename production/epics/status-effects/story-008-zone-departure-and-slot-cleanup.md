@@ -1,22 +1,22 @@
 # Story 008: Zone Departure and Slot Cleanup
 
 > **Epic**: Status Effects / Buffs
-> **Status**: Ready — written 2026-10-28 (`/create-stories`, lean). **Open decision for `/story-readiness`**: the exact hook point (below).
+> **Status**: Ready — written 2026-10-28 (`/create-stories`, lean); `/story-readiness` 2026-10-28: NEEDS WORK (7 gaps) → fixed (user decisions: pool hook with set-once registration; batch-open failure → log and clean unbatched)
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-26
-> **Estimate**: 4 hours
+> **Estimate**: 5 hours
 
 ## Context
 
-**GDD**: `design/gdd/status-effects.md` — CR-SE-11 (with its sequence contract), CR-SE-13, EC-SE-9, OQ-SE-2; AC-SE-21, 22, 23. `design/gdd/zone-instancing.md` — CR-ZI-14 exit, CR-ZI-17
-**Requirement**: `TR-se-004` (placeholder — registry empty)
+**GDD**: `design/gdd/status-effects.md` — CR-SE-11 (sequence contract, notification, `ClearEntity` rules), CR-SE-13, EC-SE-9, OQ-SE-2 (resolved 2026-10-28); AC-SE-21, 22, 23. `design/gdd/zone-instancing.md` — CR-ZI-4 (before-release hook), CR-ZI-12 steps 6–7 (teardown), CR-ZI-17 (entry-stall reclamation).
+**Requirement**: `TR-se-004` (active) — the expiry procedure this cleanup reuses. CR-SE-11 has no dedicated TR entry.
 
-**ADR Governing Implementation**: ADR-010 (direct call on an injected interface when there is one consumer and order matters); ADR-012 (assembly placement)
-**ADR Decision Summary**: cleanup is a synchronous call made by the zone's leave path before the slot is freed — not an event, because the order (cleanup before slot release) is the contract.
+**ADR Governing Implementation**: ADR-010 (direct call on an injected interface when there is one consumer and order matters); ADR-012 (assembly placement: everything here is in `IronGrind.ServerLogic`)
+**ADR Decision Summary**: cleanup is a synchronous call made by the slot pool before the slot changes — not an event, because the order (cleanup before slot release) is the contract.
 
 **Engine**: Unity 6.3 LTS | **Risk**: LOW
-**Engine Notes**: plain C#; main thread.
+**Engine Notes**: plain C#; main thread. Logging uses `UnityEngine.Debug.LogError`, as Zone Instancing does.
 
 **Control Manifest Rules (this layer)**:
 - Required: if invocation order matters, use an explicit direct call (Tier 1), not an event — ADR-010
@@ -26,43 +26,48 @@
 
 ## Acceptance Criteria
 
-- [ ] **OQ-SE-2 resolved**: the departure notification is a direct call `IStatusEffectsSlotCleanup.ClearEntity(EntityID)` made by Zone Instancing on every path that frees a player slot (`ZoneEntryReclamation.LeaveZone`, reached through `ZonePlayerExit.ReleasePlayer` and the stale-slot reclamation path) and by `ZoneSlotPool.ReleaseMob`'s caller for mobs, **before** the slot is released. Record the resolution in the GDD (OQ-SE-2 → Resolved) and in `zone-instancing.md` Interactions.
-- [ ] **`ClearEntity`** runs the expiry procedure (Story 005/006, inside a stat transaction) for every row of the entity, Active or PendingRemoval, frees the rows, zeroes occupancy and clears the dead flag; an entity with no rows is a no-op; it never throws (catch, log, and still clear the rows).
-- [ ] **AC-SE-22**: 3 active buffs → departure → 3 `RemoveBuffModifier` calls, 3 rows freed, effective values back to base.
-- [ ] **AC-SE-23 / EC-SE-9**: a buff, `OnEntityDied`, then departure before the next tick → `RemoveBuffModifier` exactly once per stat (not twice); rows freed; the next tick's cleanup pass finds nothing for the entity.
-- [ ] **AC-SE-21 / CR-SE-13**: caster A buffs target B; A departs (its own `ClearEntity`) → B's row unchanged (caster field still A) and `TicksRemaining` keeps decrementing.
-- [ ] **Sequence contract**: an integration test with the real `ZoneSlotPool` + leave path proves `ClearEntity` runs before the slot index is released (e.g. the cleanup fake asserts `TryGetPlayerSlot` still succeeds when called), and a new entity allocated into the freed slot starts with zero rows.
-- [ ] **Mob slot**: mob slot release clears the mob's rows the same way.
+- [ ] **Release hook (OQ-SE-2, CR-ZI-4)**: new `IZoneSlotReleaseListener { void BeforeRelease(EntityID id); }` in `src/ServerLogic/ZoneInstancing/`. `ZoneSlotPool.SetReleaseListener(IZoneSlotReleaseListener)` registers it once (null → `ArgumentNullException`; a second call → `InvalidOperationException`); with no listener the pool behaves exactly as today (existing Zone Instancing tests unchanged). `ReleasePlayer` and `ReleaseMob` call `BeforeRelease(id)` after confirming the id is held and **before** any slot field, index or free-list changes, so `TryGetPlayerSlot` / the mob lookup still succeed during the call. Unknown or already-released ids → no call. The pool catches and logs a listener exception and completes the release anyway. This one hook covers all six release sites (`ZoneEntryReclamation`, `ZoneCloseSteps` steps 6 and 7, both `ZoneEntryAdmission` rollbacks, `ZoneMobRoster.RemoveMob`); no caller changes.
+- [ ] **`ClearEntity`**: new public `StatusEffectsService.ClearEntity(EntityID)`; the service implements `IZoneSlotReleaseListener` and `BeforeRelease` calls `ClearEntity`. For every row of the entity, Active or PendingRemoval, it runs the expiry procedure (remove modifiers, release occupancy, free the row, clamps — the Story 005/006 steps). Rows are freed with `FreeRowTickAware` so a call during the tick pass neither skips nor double-processes rows. Afterwards rows 0, occupancy 0, dead flag cleared. An unknown entity or one with no rows → no layer call; a second call → no-op.
+- [ ] **Stat batch**: the removals run inside a stat batch — the tick's if one is open (`_batchOpen`), otherwise its own (Begin / End, as an out-of-tick replacement). If its own `BeginStatBatch` throws (another Character Stats transaction is open): log an error and run the removals without a batch (events fire immediately); the rows are still cleared.
+- [ ] **Never throws**: any exception from the layer, a clamp, or `EndStatBatch` is caught and logged; rows, occupancy and the dead flag are still reset for the entity, and `ClearEntity` returns normally so the slot release proceeds.
+- [ ] **AC-SE-22**: 3 active buffs (one stat each) → `ClearEntity` → 3 `RemoveBuffModifier` calls, 3 rows freed, effective values back to base.
+- [ ] **AC-SE-23 / EC-SE-9**: a buff, `OnEntityDied`, then `ClearEntity` before the next tick → `RemoveBuffModifier` exactly once per stat (not twice); rows freed; dead flag cleared; the next `OnServerTick` makes no call for the entity.
+- [ ] **AC-SE-21 / CR-SE-13**: caster A buffs target B; `ClearEntity(A)` → B's row unchanged (caster field still A) and `TicksRemaining` keeps decrementing on later ticks.
+- [ ] **Sequence contract (integration)**: real `ZoneSlotPool` with the real service registered as release listener, plus a test-local `IEntitySlotIndex` over the pool (players: player slot; mobs: `MAX_PLAYERS_PER_ZONE` + mob slot, the OWL index — the production resolver is Story 009). (1) `ReleasePlayer` of a buffed player → its rows are cleared and a recording wrapper proves `BeforeRelease` ran while `TryGetPlayerSlot` still succeeded; (2) a new player allocated into the freed slot starts with zero rows and is not dead; (3) the same for `ReleaseMob`.
 
 ---
 
 ## Implementation Notes
 
-- From Story 002 code review (2026-10-28): slot cleanup needs a `ClearSlot(slot)` that resets the slot's rows, `_rowCounts`, `_occupiedSlots` and the `_dead` flag.
-- **Open decision for `/story-readiness`** — where the call lives: (a) a new optional constructor parameter on `ZoneEntryReclamation` (and the mob release caller) — explicit, matches ADR-010 Tier 1; or (b) a new `IZoneSlotPoolListener`-style "before release" callback on `ZoneSlotPool` — one hook for players and mobs, but the pool currently notifies only *after* changes. Recommendation: (b) as a separate `IZoneSlotReleaseListener.BeforeRelease(EntityID)` so every release path is covered without touching each caller.
-- The zone composition wiring happens in Story 009; this story tests with the real zone classes constructed directly.
+- From Story 002 code review (2026-10-28): slot cleanup resets the slot's rows, `_rowCounts`, `_occupiedSlots` and `_dead` flag. Reuse `ExpireRow`'s steps per row (Story 007) but free through `FreeRowTickAware`; resolve the slot once at the start (the entity is still allocated during `BeforeRelease`).
+- `ClearEntity` must leave the tables consistent even when a layer call throws part-way: on a caught exception, reset the slot directly (clear the remaining rows, `_rowCounts[slot] = 0`, `_occupiedSlots[slot] = 0`, `_dead[slot] = false`) after logging. Modifiers whose removal threw may remain in Character Stats — logged, accepted (the entity is leaving).
+- Construction order (why set-once, not a constructor parameter): the service needs a slot index built over the pool, and the pool would need the service at construction. Story 009 builds the pool, then the service, then calls `SetReleaseListener(service)`.
+- The pool's `BeforeRelease` call is a new step inside `ReleasePlayer` / `ReleaseMob` only; `IZoneSlotPoolListener` is unchanged.
+- **Performance**: allocation-free. Zone teardown calls it up to 200 times (each a small batch); nothing is added to the tick path.
 
 ---
 
 ## Out of Scope
 
 - Persisting buffs across zones (CR-SE-11: not at MVP); wire replication of buff state (TR-se-006).
+- Production wiring — the pool-backed `IEntitySlotIndex`, `SetReleaseListener(service)` in the zone composition, and service disposal at teardown (Story 009).
 
 ---
 
 ## QA Test Cases
 
 - **AC-SE-22 / 23 / 21** — as listed, real `CharacterStats` and a recording decorator.
-- **Sequence** — real `ZoneSlotPool` + leave path; the cleanup fake checks the slot is still allocated when called; after release, a newly allocated entity in that slot has no rows.
-- **Robustness** — the layer throws during `ClearEntity` → rows still freed, error logged, slot release proceeds.
-- **Edges** — departure of an entity with no rows; departure twice (second is a no-op).
+- **Sequence** — real `ZoneSlotPool` + service as listener; the recording wrapper checks the slot is still allocated during `BeforeRelease`; after release a newly allocated entity in that slot has no rows; player and mob.
+- **Pool hook** — no listener → release unchanged; unknown / already-released id → no `BeforeRelease`; a throwing listener → error logged (`LogAssert.Expect`), release completes; `SetReleaseListener` twice → `InvalidOperationException`; null → `ArgumentNullException`.
+- **Robustness** — the layer throws during `ClearEntity` → rows, occupancy and dead flag reset, error logged, no exception out of `ClearEntity`; `BeginStatBatch` throws (transaction already open) → error logged, removals still made, rows cleared.
+- **Edges** — `ClearEntity` on an entity with no rows and on an unknown entity (no calls); twice (second is a no-op); a MaxHP buff cleared → HP clamp runs.
 
 ---
 
 ## Test Evidence
 
 **Story Type**: Integration
-**Required evidence**: `tests/EditMode/StatusEffects/StatusEffects_ZoneDeparture_tests.cs` — must exist and pass
+**Required evidence**: `tests/EditMode/StatusEffects/StatusEffects_ZoneDeparture_tests.cs` — must exist and pass (pool-hook unit tests may go in the Zone Instancing test folder next to the existing `ZoneSlotPool` tests)
 
 **Status**: [ ] Not yet created
 
@@ -70,5 +75,5 @@
 
 ## Dependencies
 
-- Depends on: Stories 006, 007; Zone Instancing Stories 011, 013 (Complete)
+- Depends on: Stories 006, 007 (Complete); Zone Instancing Stories 011, 013 (Complete)
 - Unlocks: Story 009

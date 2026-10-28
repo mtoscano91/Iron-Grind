@@ -2,7 +2,7 @@
 
 > **Status**: Approved (lean re-review, 2026-05-20 — per `systems-index.md`; header corrected 2026-10-28)
 > **Author**: Manuel Toscano + Claude Code agents
-> **Last Updated**: 2026-10-28 (CR-SE-2 distinct-stat rule, EC-SE-11 — Story 003 readiness; CR-SE-4 replacement clamp timing and bracket — Story 006 readiness; CR-SE-10 mid-pass death and `OnEntityRespawned` — Story 007 readiness)
+> **Last Updated**: 2026-10-28 (CR-SE-2 distinct-stat rule, EC-SE-11 — Story 003 readiness; CR-SE-4 replacement clamp timing and bracket — Story 006 readiness; CR-SE-10 mid-pass death and `OnEntityRespawned` — Story 007 readiness; CR-SE-11 notification and `ClearEntity` rules, OQ-SE-2 resolved — Story 008 readiness)
 > **Implements Pillar**: Social Gravity (primary), Earned Power (secondary)
 
 ## Overview
@@ -103,9 +103,11 @@ When a player leaves a zone or disconnects, all active buffs on that entity are 
 
 **Sequence contract:** Status Effects cleanup (and OWL compensation cleanup, if applicable) must complete before the entity slot is released to the slot pool for reassignment. The zone/session departure handler must invoke Status Effects cleanup as a synchronous step prior to entity slot reclamation. If this order is violated, a `RemoveBuffModifier()` call may target a slot index that has been reassigned to a new entity.
 
-Status Effects subscribes to the zone session event that fires on player departure. The exact notification interface is not yet defined in any authored GDD (see OQ-SE-2).
+*Notification (OQ-SE-2, resolved 2026-10-28):* the zone slot pool calls `IZoneSlotReleaseListener.BeforeRelease(EntityID)` at the start of every player and mob slot release, before the slot changes (`zone-instancing.md` CR-ZI-4 before-release hook). This is a direct synchronous call, not an event, because the order is the contract (ADR-010). It covers every release path: voluntary logout, session expiry, teardown (CR-ZI-12 steps 6–7), entry-stall reclamation (CR-ZI-17), admission rollback and mob removal. Status Effects implements it with `ClearEntity(EntityID)`.
 
-When a mob's entity slot is freed (on mob death and slot reclamation), any remaining active effects on that slot are cleared as part of slot cleanup, using the same sequence contract above.
+*`ClearEntity` rules:* runs the expiry procedure (CR-SE-8) for every row of the entity, Active or PendingRemoval, frees the rows, zeroes occupancy and clears the dead flag. An entity with no rows is a no-op; a second call is a no-op. The removals run inside a stat batch (CR-SE-17): the tick's batch if one is open, otherwise its own. If its own batch cannot open because another Character Stats transaction is already open, it logs an error and removes without a batch (events fire immediately). It never throws: any exception is caught and logged, and the rows, occupancy and dead flag are still reset, so the slot release always proceeds.
+
+When a mob's entity slot is freed (on mob death and slot reclamation), any remaining active effects on that slot are cleared as part of slot cleanup, using the same hook and sequence contract above.
 
 **CR-SE-12: Mob buff layer**
 
@@ -169,7 +171,7 @@ No effect ever skips from Active directly to Empty without passing through Expir
 | **Skill System** | Skill → SE | `ApplyEffect(EntityID target, EntityID caster, BuffDefinition def)` — Skill System is the sole external caller of `ApplyEffect()`. Provides target EntityID, caster EntityID (for buff-bar attribution), and fully-formed `BuffDefinition`. All targeting logic (party filter, AoE, self-cast) is resolved before the call. `ApplyInstantHeal(EntityID target, float amount)` — also available to Skill System for reactive one-shot heals. |
 | **Auto-Attack Combat** | Ordering | Status Effects `OnServerTick()` completes before Auto-Attack Combat `OnServerTick()` in every game tick. No data is exchanged at runtime; ordering is an execution-order contract. |
 | **Networking** | SE → Net (indirect) | Status Effects fires no wire messages directly. `CharacterStats.OnStatChanged` (batched per CR-SE-17) carries stat changes to the networking layer. **Wire protocol data contract (to be encoded by the Networking GDD):** the client-side buff bar requires the following fields per active effect: `BuffID` (identifies the buff icon), `TicksRemaining` (drives the duration drain animation), `CasterEntityID` (enables "cast by [name]" attribution display per CR-SE-13). Replication triggers: on application, on refresh, on expiry. Wire encoding format and message schema are deferred to the Networking GDD. |
-| **Zone / Session System** | Zone → SE | Player-departure and disconnect events trigger buff cleanup (CR-SE-11). Notification interface not yet defined in any authored GDD — see OQ-SE-2. |
+| **Zone Instancing** | Zone → SE | `IZoneSlotReleaseListener.BeforeRelease(EntityID)` before every player and mob slot release (`zone-instancing.md` CR-ZI-4) → `ClearEntity(EntityID)` (CR-SE-11). Resolves OQ-SE-2. |
 
 ## Formulas
 
@@ -315,7 +317,7 @@ An entity is at `CurrentHP = MaxHP` when a regen buff is active. On each tick, `
 | **Skill System** | Skill → SE | `ApplyEffect(EntityID target, EntityID caster, BuffDefinition def)` `ApplyInstantHeal(EntityID target, float amount)` | Downstream of SE. Skill System is the sole external caller of both entry points. All targeting logic (party filter, AoE, range) is the Skill System's responsibility before the call. Skill System GDD must list Status Effects as a dependency. |
 | **Auto-Attack Combat** | Order only | None | Status Effects `OnServerTick()` runs before Auto-Attack Combat each tick (CR-SE-5). No data exchange at runtime. Both systems subscribe to the same server tick; execution order is an engine-level scheduling contract. |
 | **Networking** | SE → Net (indirect) | Wire data contract: `BuffID`, `TicksRemaining`, `CasterEntityID` per active effect | `CharacterStats.OnStatChanged` (batched per CR-SE-17) carries stat changes to the networking layer. Status Effects fires no wire messages directly. **Client-side data contract:** the networking layer must replicate per-entity active effect state including `BuffID`, `TicksRemaining`, and `CasterEntityID` on application, refresh, and expiry events. Wire encoding format and schema are deferred to the Networking GDD. |
-| **Zone / Session System** | Zone → SE | Player-departure and disconnect notification (interface TBD) | Required for CR-SE-11 buff cleanup on zone exit. Notification interface is not yet defined in any authored GDD — see OQ-SE-2. Status Effects must subscribe once this interface is defined. |
+| **Zone Instancing** | Zone → SE | `IZoneSlotReleaseListener.BeforeRelease(EntityID)` (`zone-instancing.md` CR-ZI-4) | Required for CR-SE-11 buff cleanup on every slot release, before the slot changes. Resolved OQ-SE-2 (2026-10-28). |
 
 ## Tuning Knobs
 
@@ -464,6 +466,5 @@ Call `ApplyEffect(target, caster, def)` where caster EntityID = 42. Assert the `
 CR-SE-8 calls `ApplyDamage(entityId, 0.0f)` to trigger the `CurrentHP` clamp-on-write after a MaxHP modifier is removed. This requires confirmation from the CharacterStats GDD: (a) Does `ApplyDamage(0.0f)` trigger the HP ≤ MaxHP clamp internally? (b) Does a zero-damage call fire `OnEntityDied` or any damage event visible to combat systems? If the answer to (b) is yes, a dedicated `ClampCurrentHPToMax(entityId)` method must be added to CharacterStats. The MP equivalent (`ApplyManaRegen(0.0f)` or `ClampCurrentMPToMax`) must be addressed simultaneously.
 *Owner: CharacterStats author. Resolution required before Status Effects implementation begins.*
 
-**OQ-SE-2 — Zone departure notification interface** (Blocking before implementation)
-CR-SE-11 requires Status Effects to subscribe to a zone/session event that fires when a player leaves a zone or disconnects. No authored GDD currently defines this event interface. The Zone System and/or Session System GDDs must be authored and must include this notification contract before Status Effects can implement CR-SE-11.
-*Owner: Zone System / Session System GDD author. Resolution required before Status Effects implementation begins.*
+**OQ-SE-2 — Zone departure notification interface** — **Resolved 2026-10-28** (Status Effects Story 008 readiness)
+Resolved as a direct call, not an event: the zone slot pool calls `IZoneSlotReleaseListener.BeforeRelease(EntityID)` before every player and mob slot release (`zone-instancing.md` CR-ZI-4), and Status Effects implements it with `ClearEntity` (CR-SE-11). One hook in the pool covers all six release sites, including teardown and admission rollback.
