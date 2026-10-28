@@ -38,6 +38,7 @@
 
 ## Implementation Notes
 
+- From Story 002 code review (2026-10-28): slot cleanup needs a `ClearSlot(slot)` that resets the slot's rows, `_rowCounts`, `_occupiedSlots` and the `_dead` flag.
 - **Open decision for `/story-readiness`** — where the call lives: (a) a new optional constructor parameter on `ZoneEntryReclamation` (and the mob release caller) — explicit, matches ADR-010 Tier 1; or (b) a new `IZoneSlotPoolListener`-style "before release" callback on `ZoneSlotPool` — one hook for players and mobs, but the pool currently notifies only *after* changes. Recommendation: (b) as a separate `IZoneSlotReleaseListener.BeforeRelease(EntityID)` so every release path is covered without touching each caller.
 - The zone composition wiring happens in Story 009; this story tests with the real zone classes constructed directly.
 

@@ -37,6 +37,7 @@
 
 ## Implementation Notes
 
+- From Story 002 code review (2026-10-28): a re-apply of an active `BuffID` skips the row and capacity checks. When the new definition has a different `ModifierCount`, adjust `_occupiedSlots` by the difference and decide whether the 32-per-entity capacity is re-checked (it can otherwise exceed 32). `StatusEffectsService.FindRow(slot, buffId)` returns the row index to refresh in place.
 - A refresh only writes the row (`TicksRemaining`, caster) — never Character Stats (CR-SE-4).
 - The remove half of the exception uses the expiry procedure of Story 005/006 (remove each modifier, clamp if MaxHP/MaxMP, free the row). If this story lands before 005/006, implement the remove through a shared private method that 005/006 then extend; note any ordering in the completion notes.
 

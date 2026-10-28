@@ -4,7 +4,7 @@
 > **GDD**: design/gdd/status-effects.md
 > **Architecture Module**: Status Effects
 > **Status**: In Progress
-> **Stories**: 9 stories created 2026-10-28 (001–009); 1 Complete (001), 8 Ready
+> **Stories**: 9 stories created 2026-10-28 (001–009); 2 Complete (001–002), 7 Ready
 
 ## Overview
 
@@ -45,7 +45,7 @@ This epic is complete when:
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
 | 001 | [Data Model, Constants and Duration Conversion](story-001-data-model-and-constants.md) | Logic | Complete (2026-10-28) | ADR-012, ADR-010 |
-| 002 | [ApplyEffect Validation](story-002-apply-effect-validation.md) | Logic | Ready | ADR-012 |
+| 002 | [ApplyEffect Validation](story-002-apply-effect-validation.md) | Logic | Complete (2026-10-28) | ADR-012 |
 | 003 | [Application, Atomic Rollback and Caster Attribution](story-003-application-and-rollback.md) | Logic | Ready | ADR-012, ADR-010 |
 | 004 | [Refresh on Reapply](story-004-refresh-on-reapply.md) | Logic | Ready | ADR-012 |
 | 005 | [Per-Tick Processing and Expiry](story-005-tick-processing-and-expiry.md) | Logic | Ready | ADR-010, ADR-014 |
@@ -58,4 +58,4 @@ TR-se-006 (client buff display) has no story: it waits on a Networking Core wire
 
 ## Next Step
 
-Story 001 Complete 2026-10-28. Run `/story-readiness production/epics/status-effects/story-002-apply-effect-validation.md`, then `/dev-story`.
+Stories 001–002 Complete 2026-10-28. Run `/story-readiness production/epics/status-effects/story-003-application-and-rollback.md`, then `/dev-story`.

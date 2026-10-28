@@ -1,7 +1,7 @@
 # Story 002: ApplyEffect Validation
 
 > **Epic**: Status Effects / Buffs
-> **Status**: Ready — written 2026-10-28 (`/create-stories`, lean); `/story-readiness` 2026-10-28: NEEDS WORK (2 gaps) → fixed → Ready
+> **Status**: Complete — 2026-10-28 (`/story-done`: COMPLETE WITH NOTES); written 2026-10-28 (`/create-stories`, lean); `/story-readiness` 2026-10-28: NEEDS WORK (2 gaps) → fixed → Ready
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-26
@@ -30,15 +30,15 @@
 
 *From GDD `design/gdd/status-effects.md`, scoped to this story. "No change" means: no `IBuffModifierLayer` call (Story 003's seam; a recording fake here), no row created, occupancy unchanged.*
 
-- [ ] **Check order (EC-SE-6, extended)**: `ApplyEffect(target, caster, def)` checks, in this order, returning the first failure with no change: (1) definition shape — `NoOpDefinition` (F-SE-2: `ModifierCount == 0` and both regen rates `== 0`), `InvalidDuration` (`DurationTicks == 0` or `> MAX_DURATION_TICKS`), `InvalidStat` (any populated modifier on `Level`, `Experience`, `CurrentHP` or `CurrentMP`); (2) dead target — `InvalidTarget` while the entity's effects are `PendingRemoval` (EC-SE-2, EC-SE-3); (3) row availability — `EffectSlotsFull` when all `MAX_ACTIVE_BUFFS_PER_ENTITY` rows are taken by other `BuffID`s; (4) modifier capacity — `CapacityExceeded` when `OccupiedSlots + def.ModifierCount > 32`. A refresh of an existing `BuffID` skips (3) and (4) (Story 004 handles it).
-- [ ] **AC-SE-06**: `ModifierCount 0`, both regen `0` → `NoOpDefinition`, no change.
-- [ ] **AC-SE-07**: `DurationTicks 0` → `InvalidDuration`; `DurationTicks 1` → `Success`. Also `6001` → `InvalidDuration` (authoring ceiling, F-SE-1).
-- [ ] **AC-SE-08**: four calls, one modifier each on `Level`, `Experience`, `CurrentHP`, `CurrentMP` → `InvalidStat` each, no change. A prohibited stat at index 2 of a 3-modifier definition also → `InvalidStat` with no modifier applied.
-- [ ] **AC-SE-10**: 8 distinct `BuffID`s applied → 9th distinct `BuffID` → `EffectSlotsFull` even though `OccupiedSlots + ModifierCount ≤ 32`.
-- [ ] **AC-SE-03**: 30 single-modifier effects — rejected by the row limit first, so the GDD's set-up cannot be built literally; the test instead fills 30 occupied slots with rows that fit the 8-row limit (e.g. 4 × 7 + 1 × 2 = 30 on 5 rows), then a 3-modifier buff → `CapacityExceeded`, no change, existing effects unchanged. *(GDD AC-SE-03's "30 single-stat active effects" conflicts with EC-SE-6's 8-row limit; the intent — 30 slots + 3 > 32 — is tested.)*
-- [ ] **AC-SE-04**: 4 effects × 7 modifiers (`OccupiedSlots` 28) → 5-modifier buff → `CapacityExceeded`; 4-modifier buff → `Success` (28 + 4 = 32). `OccupiedSlots` is the per-entity sum of `ModifierCount` (F-SE-3), kept in the occupancy array, not a row count.
-- [ ] **AC-SE-17**: after the entity's death has been recorded (Story 007 wires the event; here the test calls the internal `MarkEntityDead(entity)` seam), `ApplyEffect` → `InvalidTarget`, no change.
-- [ ] **Unknown entity**: a target whose `EntityID` has no slot index (resolver returns false) → `InvalidTarget`, no change.
+- [x] **Check order (EC-SE-6, extended)**: `ApplyEffect(target, caster, def)` checks, in this order, returning the first failure with no change: (1) definition shape — `NoOpDefinition` (F-SE-2: `ModifierCount == 0` and both regen rates `== 0`), `InvalidDuration` (`DurationTicks == 0` or `> MAX_DURATION_TICKS`), `InvalidStat` (any populated modifier on `Level`, `Experience`, `CurrentHP` or `CurrentMP`); (2) dead target — `InvalidTarget` while the entity's effects are `PendingRemoval` (EC-SE-2, EC-SE-3); (3) row availability — `EffectSlotsFull` when all `MAX_ACTIVE_BUFFS_PER_ENTITY` rows are taken by other `BuffID`s; (4) modifier capacity — `CapacityExceeded` when `OccupiedSlots + def.ModifierCount > 32`. A refresh of an existing `BuffID` skips (3) and (4) (Story 004 handles it).
+- [x] **AC-SE-06**: `ModifierCount 0`, both regen `0` → `NoOpDefinition`, no change.
+- [x] **AC-SE-07**: `DurationTicks 0` → `InvalidDuration`; `DurationTicks 1` → `Success`. Also `6001` → `InvalidDuration` (authoring ceiling, F-SE-1).
+- [x] **AC-SE-08**: four calls, one modifier each on `Level`, `Experience`, `CurrentHP`, `CurrentMP` → `InvalidStat` each, no change. A prohibited stat at index 2 of a 3-modifier definition also → `InvalidStat` with no modifier applied.
+- [x] **AC-SE-10**: 8 distinct `BuffID`s applied → 9th distinct `BuffID` → `EffectSlotsFull` even though `OccupiedSlots + ModifierCount ≤ 32`.
+- [x] **AC-SE-03**: 30 single-modifier effects — rejected by the row limit first, so the GDD's set-up cannot be built literally; the test instead fills 30 occupied slots with rows that fit the 8-row limit (e.g. 4 × 7 + 1 × 2 = 30 on 5 rows), then a 3-modifier buff → `CapacityExceeded`, no change, existing effects unchanged. *(GDD AC-SE-03's "30 single-stat active effects" conflicts with EC-SE-6's 8-row limit; the intent — 30 slots + 3 > 32 — is tested.)*
+- [x] **AC-SE-04**: 4 effects × 7 modifiers (`OccupiedSlots` 28) → 5-modifier buff → `CapacityExceeded`; 4-modifier buff → `Success` (28 + 4 = 32). `OccupiedSlots` is the per-entity sum of `ModifierCount` (F-SE-3), kept in the occupancy array, not a row count.
+- [x] **AC-SE-17**: after the entity's death has been recorded (Story 007 wires the event; here the test calls the internal `MarkEntityDead(entity)` seam), `ApplyEffect` → `InvalidTarget`, no change.
+- [x] **Unknown entity**: a target whose `EntityID` has no slot index (resolver returns false) → `InvalidTarget`, no change.
 
 ---
 
@@ -71,7 +71,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/StatusEffects/StatusEffects_Validation_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — 36 test methods, 45 cases (fixture 45/45; full EditMode 4664 / 4535 passed / 0 failed / 129 skipped, 2026-10-28)
 
 ---
 
@@ -79,3 +79,20 @@
 
 - Depends on: Story 001
 - Unlocks: Stories 003, 004
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-10-28
+**Criteria**: 9/9 passing, all covered by `tests/EditMode/StatusEffects/StatusEffects_Validation_tests.cs`
+**Deviations** (advisory, decisions the story left open):
+1. A successful apply stores the row and updates row count and `OccupiedSlots` but does not call Character Stats; Story 003 adds the `IBuffModifierLayer` calls and rollback.
+2. Re-applying an active `BuffID` returns `Success` with no change (refresh is Story 004); the row and capacity checks are skipped, the target check is not.
+3. A resolver slot index outside `[0, MAX_ENTITY_SLOTS)` is treated as `InvalidTarget`, not an exception.
+4. A regen-only definition is stored as a 0-slot row that still counts toward the 8-row limit.
+**Files**: `src/ServerLogic/StatusEffects/` (`IBuffModifierLayer`, `IEntitySlotIndex`, `StatusEffectsService`); tests `StatusEffectsTestFakes.cs`, `StatusEffects_Validation_tests.cs`; code-review notes added to Stories 004, 005, 008.
+**Open GDD question**: NaN/infinite regen and modifier amounts pass `ApplyEffect` validation; the GDD defines no amount validation for buffs (`InvalidAmount` is used only by Story 007's instant heal).
+**Test Evidence**: Logic — `tests/EditMode/StatusEffects/StatusEffects_Validation_tests.cs`
+**Code Review**: Complete — `/code-review` 2026-10-28 APPROVED WITH SUGGESTIONS, items 1–8 applied, 9 logged as the open question. QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean).
+**Tech debt**: None.
