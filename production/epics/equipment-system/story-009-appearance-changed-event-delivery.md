@@ -33,10 +33,10 @@
 - [ ] `AppearanceChangedEvent` codec: `{uint entityId, byte equipmentAppearanceFlags}` — 5-byte body, round-trips; wrong length rejected
 - [ ] An `AppearanceChangedSender` subscribes to `EquipmentService.OnAppearanceChanged` (Story 005) and enqueues one `AppearanceChangedEvent` to all clients of the zone, including the equipping player, with the new flags byte and the player's `EntityID`
 - [ ] Sent only when the byte changed — never for `NoChange`, a failure, or an equip that leaves the byte the same (driven by Story 005's raise rule)
-- [ ] The `isCapExempt` value passed to the sink is decided at `/story-readiness` (the channel contract lists the event as R-OD P1), recorded here with its reason, and asserted by a test
+- [ ] The sink is called with `isCapExempt: false` (readiness decision 2026-10-28): CR-NET-7.7 reserves the cap exemption for `EnhancementRequestReceived`, `EnhancementAttemptResult` and bulk-transfer fragments — "No other message class receives this exemption"; the channel contract's R-OD P1 does not make a message exempt. ADR-015 Decision 1 and `Enhancement9BroadcastSender` pass `false` for zone-wide sends. Asserted by a test
 - [ ] A restore on login (Story 007) sends nothing; the joining player's byte reaches others through `EntityState.equipmentAppearanceFlags` in the zone snapshot
 - [ ] `Dispose()` unsubscribes; a send after dispose does not happen
-- [ ] An exception from the sink is contained (logged once) and does not change the equip result
+- [ ] An exception from the sink is contained (one error logged per caught exception) and does not change the equip result
 
 ---
 
@@ -44,7 +44,9 @@
 
 *Derived from ADR-004 / ADR-015 and the `Enhancement9BroadcastSender` precedent:*
 
-- Foundation: `AppearanceChangedEvent.cs`, `AppearanceChangedEventCodec.cs`, a `MessageRoutingRegistry` entry (server → client, R-OD). Assign the message type id with Story 008's ids and record it here.
+- Foundation: `AppearanceChangedEvent.cs`, `AppearanceChangedEventCodec.cs`, a `MessageRoutingRegistry` entry (server → client, R-OD).
+- **Message type id (readiness decision 2026-10-28):** `AppearanceChangedEvent.MessageTypeId = 0xE142` — next in the equipment block after `EquipRequest 0xE140` / `EquipResultMessage 0xE141` (Story 008). R-OD on Path 1 (priority, not cap-exempt), registered with `AddPriority` and `MessageDirection.ServerToAllZoneClients`. The wire protocol's Path 1 list names it (GDD note 2026-10-28).
+- **Recipients (verified at readiness 2026-10-28):** `ClientMessageOutbox.EnqueueToAllClients` walks only the outbox's own client set, which is this zone's clients (ADR-015 Decision 1); it does not publish to the relay. That set includes a client still loading, before `SessionReady` (accepted, ADR-015 Decision 1), so a loading client can receive this event for an entity it does not know yet — the client-side unknown-EntityID buffering rule (`PlayerJoinedZone` row, networking-channel-contract.md) covers it; nothing to do server-side.
 - ServerLogic: `src/ServerLogic/EquipmentSystem/AppearanceChangedSender.cs` — `IDisposable`, one per zone, constructed in the zone composition root after the `EquipmentService`.
 - **Forward dependency — not in this story:** the snapshot's player-state source. `IZoneEntityStateSource.TryGetPlayerState` is implemented only by `LoggingZoneEntityStateSource` (placeholder), so the zone snapshot does not yet carry the Equipment System's byte. When the real source is built it must read `IEquipmentService.GetAppearanceFlags`. OQ-EQS-6 (full snapshots always carry the byte) stays open with Networking Core.
 - The wire protocol's "future: emit after an Enhancement outcome that changes PrestigeBand" cannot happen — equipped items cannot be enhanced (CR-EQS-1). No hook needed.
@@ -63,7 +65,7 @@
 **Files**: `tests/EditMode/Networking/AppearanceChangedEvent_Codec_tests.cs` (new) and `tests/EditMode/EquipmentSystem/EquipmentSystem_AppearanceChangedSender_tests.cs` (new), with a fake `IZoneClientBroadcastSink` recording calls.
 
 - **Codec** — round trip for `entityId = uint.MaxValue, flags = 0xFF` and `0, 0x00`; 4- and 6-byte bodies rejected.
-- **Equip sends** — equipping a Dark Steel Fire sword → exactly one `EnqueueToAllClients` with the event's type id and body `{entityId, 0xC8}` (no armor).
+- **Equip sends** — equipping a Dark Steel Fire sword → exactly one `EnqueueToAllClients` with type id `0xE142`, body `{entityId, 0xC8}` (no armor) and `isCapExempt == false`.
 - **No send on no change** — `NoChange`, `StatRequirementNotMet`, and a Bronze Helmet equip that leaves the byte unchanged → zero sink calls.
 - **Swap and unequip** — +0 → +7 Iron Sword swap sends `0x44`; unequip sends `0x00` (AC-EQS-30 (c)–(d) seen on the wire).
 - **Restore** — `RestoreSlots` → zero sink calls.
