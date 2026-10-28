@@ -2,7 +2,7 @@
 
 > **Status**: Approved (pass 5 — 2026-04-23)
 > **Author**: Manuel Toscano + Claude Code agents
-> **Last Updated**: 2026-04-23
+> **Last Updated**: 2026-10-28 (Transaction constraints: buff-modifier events deferred inside a transaction; Status Effects closes with `EndStatTransaction()` in a `finally` — Status Effects Story 006 readiness)
 > **Implements Pillar**: Earned Power (primary), Rhythm Mastery (secondary)
 
 ## Overview
@@ -446,6 +446,8 @@ Starting stats (all classes, level 1): STR=10, DEX=10, VIT=10, INT=10. Level cap
 The `BeginStatTransaction()` / `EndStatTransaction()` API is defined on Character Stats. Permitted callers: the Class System (character initialization at L1 — see Class System SA-2), the Leveling System (respec), and the Status Effects system (tick-path buff flush — see CR-SE-17 in status-effects.md). No other system may open a transaction. Steps 2–4 are atomic with respect to `OnStatChanged`; subscribers see one notification per stat after the full respec completes, not intermediate states.
 
 **Transaction constraints**: `BeginStatTransaction()` throws `InvalidOperationException` if called while a transaction is already open — transactions are not nestable. During a transaction, deferred events are deduplicated by `StatID`: if the same stat is written multiple times within one transaction, `OnStatChanged` fires once per affected stat at `EndStatTransaction()`, not once per write. The dedup set is implemented as a fixed-size `StatID[]` array with linear scan (not `HashSet<StatID>`) — linear scan is faster for n≤18 stats and avoids IL2CPP boxing risks from `HashSet` without an explicit comparer. `EndStatTransaction()` throws `InvalidOperationException` if called without a prior `BeginStatTransaction()`. If an exception occurs mid-transaction (between Begin and End), the caller must call `RollbackStatTransaction()` to discard the deferred queue and reset transaction state — leaving a transaction open permanently will block all future `OnStatChanged` events for that entity. `RollbackStatTransaction()` is safe to call when no transaction is open — it is a no-op in that case, allowing correct `try/catch` patterns where the `catch` block unconditionally calls Rollback without first checking transaction state.
+
+*Buff modifiers inside a transaction (2026-10-28, Status Effects Story 006 readiness):* `AddBuffModifier()` (new entry or same-BuffID overwrite) and `RemoveBuffModifier()` defer their `OnStatChanged` into the same per-(EntityID, StatID) dedup queue while a transaction is open, as base stat writes do. Buff modifier writes are **not** snapshotted: `RollbackStatTransaction()` discards their deferred events but leaves the modifiers in place. For that reason the Status Effects tick bracket (CR-SE-17) and its replacement bracket close with `EndStatTransaction()` in a `finally` — never `RollbackStatTransaction()` — so subscribers are still notified of modifier changes that really happened when an exception escapes the pass. The Rollback-on-exception rule above applies to callers whose writes are base stats (Leveling, Class System).
 
 **Level 60 stat snapshots (representative builds — free points directed to one stat):**
 

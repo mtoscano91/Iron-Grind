@@ -2,7 +2,7 @@
 
 > **Status**: Approved (lean re-review, 2026-05-20 — per `systems-index.md`; header corrected 2026-10-28)
 > **Author**: Manuel Toscano + Claude Code agents
-> **Last Updated**: 2026-10-28 (CR-SE-2 distinct-stat rule, EC-SE-11 — Story 003 readiness)
+> **Last Updated**: 2026-10-28 (CR-SE-2 distinct-stat rule, EC-SE-11 — Story 003 readiness; CR-SE-4 replacement clamp timing and bracket — Story 006 readiness)
 > **Implements Pillar**: Social Gravity (primary), Earned Power (secondary)
 
 ## Overview
@@ -55,6 +55,8 @@ Two public entry points exist. No external caller may invoke `CharacterStats.Add
 If the target entity already has an `ActiveEffect` with the same `BuffID`, reset its `TicksRemaining` to `def.durationTicks`. Do NOT call `RemoveBuffModifier()` or `AddBuffModifier()` — the modifier values remain active on `CharacterStats` unchanged. Only one instance of each `BuffID` per entity is ever active.
 
 Exception: if the new application carries different modifier values (e.g. an upgraded skill cast at higher rank), treat it as a new application: remove the old effect (CR-SE-8 expiry procedure), then apply the new one via CR-SE-3.
+
+*Replacement detail (2026-10-28, Story 006 readiness):* the replacement overwrites the old entry in place (same buff-bar position). The CR-SE-8 MaxHP / MaxMP clamp (steps 2–3) runs once **after** the new modifiers are added, against the final effective maximum — not between the removal and the add — so upgrading a +200 MaxHP buff to +300 at full HP (600/600) leaves the entity at 600/700, not 400/700. If the new application fails after the old modifiers were removed, the clamp runs after the rollback. A replacement made outside the tick is wrapped in its own `BeginStatTransaction()` / `EndStatTransaction()` (inside the tick it shares the tick's bracket, CR-SE-17), so subscribers see one `OnStatChanged` per affected stat and never the transient lower value between remove and add.
 
 **CR-SE-5: Execution order**
 
