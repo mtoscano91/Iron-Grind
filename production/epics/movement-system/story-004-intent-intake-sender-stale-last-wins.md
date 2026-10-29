@@ -35,6 +35,7 @@
 - [ ] A tick with no accepted message → the buffer reports "no intent" (= zero input, CR-MOV-10).
 - [ ] The buffered `FacingAngle` is passed through `MovementIntentMessageCodec.NormalizeFacing` (Story 002) before storing — a received value outside 0–3599 is wrapped, never a reason to drop the message.
 - [ ] The intent buffer is preallocated (one slot per player slot, `MAX_PLAYERS_PER_ZONE`) and cleared after the tick reads it (Story 005 consumes it).
+- [ ] The buffer implements Story 005's `IMovementIntentSource.TryTakeIntent(int playerSlot, out MovementIntentMessage intent)`: true + the last accepted message for that slot this tick, then that slot is cleared; false when none (added at Story 005 readiness, 2026-10-29).
 - [ ] Each test names which drop it exercises: the ADR-014 intake `SequenceNumber` drop (Networking Core, not re-implemented here) or the F-MOV-7 `TickNumber` drop (this story).
 
 ---
