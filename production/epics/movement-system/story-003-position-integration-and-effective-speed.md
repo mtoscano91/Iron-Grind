@@ -1,7 +1,7 @@
 # Story 003: Position Integration and Effective Speed
 
 > **Epic**: Movement System
-> **Status**: Ready — written 2026-10-29 (`/create-stories`, lean); `/story-readiness` 2026-10-29: NEEDS WORK (4 gaps) → fixed → Ready
+> **Status**: Complete — 2026-10-29 (`/story-done`: COMPLETE WITH NOTES); written 2026-10-29 (`/create-stories`, lean); `/story-readiness` 2026-10-29: NEEDS WORK (4 gaps) → fixed → Ready
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-26
@@ -39,7 +39,7 @@
 - [ ] **AC-MOV-9**: a debuff stack that computes below 0.5 → Character Stats returns 0.5 → delta 0.025.
 - [ ] **AC-MOV-10**: a buff stack above 20.0 → 20.0 → delta 1.0.
 - [ ] **AC-MOV-7**: a tick with no input after a moving tick → delta 0.0 on X and Z.
-- [ ] F-MOV-2 examples hold through the real `CharacterStats`: +3 flat +20% → 9.6 (0.48/tick); −50% → 2.5 (0.125/tick); two +20% buffs multiply (×1.44).
+- [ ] F-MOV-2 examples hold through the real `CharacterStats`: +3 flat +20% → 9.6 (0.48/tick); −50% → 2.5 (0.125/tick); percents add within a layer, layers multiply (Character Stats F-1): two +20% buffs → ×1.40; +20% equipment × +20% buff → ×1.44.
 
 ---
 
@@ -63,7 +63,7 @@
 
 - **AC-MOV-8**: Given (10, 0, 5), dir (0, 0, 1), vEff 5.0, dt 0.05 — Then (10, 0, 5.25); with a non-unit dir (0, 0, 3) — same result (normalized).
 - **Zero guard**: dir (0, 0, 0) → oldPos exactly; dir (1e-9, 0, 0) passes the exact-zero guard but `Vector3.normalized` returns zero below its 1e-5 magnitude epsilon → no movement; assert that and document it (the wire never carries such a vector: shorts ×32,767 make the smallest non-zero component ≈ 3e-5).
-- **AC-MOV-9/10**: real `CharacterStats` entity, base 5.0, ΣPct −1.20 → `GetEffectiveStat` 0.5 → delta 0.025; ΣFlat +30 → 20.0 → delta 1.0.
+- **AC-MOV-9/10**: real `CharacterStats` entity, base 5.0, ΣPct −1.20 → `GetEffectiveStatFloat` 0.5 → delta 0.025; ΣFlat +30 → 20.0 → delta 1.0.
 - **AC-MOV-7**: tick N moving, tick N+1 zero input → position N+1 == position N.
 - **EC-MOV-19**: fake source fails on tick 3 after valid 5.0 on ticks 1–2 → `TryResolve` returns true, `vEff` 5.0, one `LogType.Error` logged (`LogAssert.Expect`); NaN, +Inf, 25.0, 0.4, and a source that throws behave the same; `lastValidSpeed` stays 5.0 after the failure.
 - **First-tick failure**: `lastValidSpeed = 0f`, source fails → returns false, one error logged; the caller's position is unchanged (no `BASE_MOVE_SPEED` fallback).
@@ -79,7 +79,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/MovementSystem/MovementSystem_Integration_tests.cs` *(F-MOV-1 integration, not an Integration-type story)* — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — `tests/EditMode/MovementSystem/MovementSystem_Integration_tests.cs`, 34 methods / 44 cases, all passing (EditMode 5061 / 4932 passed / 0 failed / 129 skipped, 2026-10-29)
 
 ---
 
@@ -87,3 +87,19 @@
 
 - Depends on: Story 001 (tuning read model)
 - Unlocks: Story 005
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-10-29
+**Criteria**: 11/11 passing (all automated; none deferred)
+**Deviations** (advisory):
+1. `movement-system.md` F-MOV-2 compounding note was wrong ("two +20% buffs → ×1.44"); corrected to Character Stats F-1 (percents add within a layer, layers multiply: two buffs ×1.40, equip × buff ×1.44). This story's AC wording updated to match. User-approved.
+2. `MovementIntegrator.Integrate` also returns `oldPos` for a non-finite direction X/Z (code-review fix: an infinite component normalizes to NaN).
+3. Story 005 Implementation Notes gained a note: rate-limit / transition-only logging for the resolver's per-call error, and keep the stored last valid speed inside [0.5, 20.0].
+4. TR-mov-001 is a placeholder, not yet in `docs/architecture/tr-registry.yaml` (same as the other epics).
+**Scope**: `design/gdd/movement-system.md` (stacking note + Last Updated) and story 005 (note) — documentation only, both user-approved.
+**Files**: `src/ServerLogic/MovementSystem/MovementIntegrator.cs`, `IMovementSpeedSource.cs`, `CharacterStatsMovementSpeedSource.cs`, `MovementSpeedResolver.cs`; test file above; `.meta` files.
+**Test Evidence**: Logic — `tests/EditMode/MovementSystem/MovementSystem_Integration_tests.cs`
+**Code Review**: Complete — `/code-review` 2026-10-29: APPROVED WITH SUGGESTIONS (non-finite direction guard, full exception in log, +tests: two failures log twice, null source, corrupt lastValidSpeed, zero speed, NaN/Inf direction), "fix all" applied. QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean).

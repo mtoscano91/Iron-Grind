@@ -40,6 +40,7 @@
 ## Implementation Notes
 
 - Files: `src/ServerLogic/MovementSystem/MovementService.cs`, `INavMeshSampler.cs`, `UnityNavMeshSampler.cs`.
+- *(From Story 003 code review, 2026-10-29)* `MovementSpeedResolver.TryResolve` logs one `Debug.LogError` per failing call, so a persistently failing entity would log at 20 Hz. When wiring the per-slot "last valid speed" here, log only on the valid → invalid transition (or rate-limit per slot) and keep the stored last valid speed inside [0.5, 20.0]. Decide at this story's readiness.
 - Slot → EntityID through the existing `IEntitySlotIndex` / `ZoneSlotPoolEntityIndex` pattern (Status Effects 009) or `ZoneSlotPool` directly — reuse, do not add a third mapping.
 - Entity registration (initial position, facing) comes in Story 008; for this story tests register through an `internal` seeding method.
 - Mob positions are not moved here (Navigation epic, ADR-002 phase 4 via `GetCurrentVelocity`).

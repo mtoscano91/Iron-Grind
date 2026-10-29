@@ -5294,3 +5294,18 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Code review: CHANGES REQUIRED → fixed (IsFinite guard + clamp-before-round in EncodeDirection/EncodeFacing; full-message TryRead length tests; tolerance boundary, over-unit, routing rationale/context, alloc on envelope path). EditMode 5017 / 4888 / 0 / 129.
 - Tech debt logged: None
 - Next recommended: /story-readiness production/epics/movement-system/story-003-position-integration-and-effective-speed.md
+
+## Session Extract — /dev-story 2026-10-29
+- Story: production/epics/movement-system/story-003-position-integration-and-effective-speed.md — Position Integration and Effective Speed
+- Files changed: src/ServerLogic/MovementSystem/{MovementIntegrator,IMovementSpeedSource,CharacterStatsMovementSpeedSource,MovementSpeedResolver}.cs (+ .meta)
+- Test written: tests/EditMode/MovementSystem/MovementSystem_Integration_tests.cs (28 methods / 34 cases, all pass; suite 5051 / 4922 passed / 0 failed / 129 skipped)
+- Blockers: None. Open: movement-system.md line 233 says two +20% buffs → ×1.44, but character-stats.md F-1 sums percents per layer (two buffs → ×1.40; equip +20% × buff +20% → ×1.44). Test uses equip+buff. GDD/story wording fix pending user decision.
+- Next: /code-review [files] then /story-done production/epics/movement-system/story-003-position-integration-and-effective-speed.md
+- Stacking fix (user: yes): `movement-system.md` F-MOV-2 compounding note corrected to Character Stats F-1 (two +20% buffs → ×1.40; equip × buff → ×1.44) + Last Updated; story 003 AC wording; +1 test `MovementSpeed_CharacterStats_TwoPercentBuffsSameLayer_Add`. entities.yaml / systems-index unchanged (no values or status changed). Next: /code-review.
+
+## Session Extract — /story-done 2026-10-29
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/movement-system/story-003-position-integration-and-effective-speed.md — Position Integration and Effective Speed
+- Code review: APPROVED WITH SUGGESTIONS → "fix all" applied (non-finite direction guard, full exception log, +10 test cases, story 005 note). EditMode 5061 / 4932 passed / 0 failed / 129 skipped.
+- Tech debt logged: None
+- Next recommended: /story-readiness production/epics/movement-system/story-005-tick-step-and-navmesh-validation.md (recommended order 003 → 005 → 004). PAT rotation still unconfirmed.

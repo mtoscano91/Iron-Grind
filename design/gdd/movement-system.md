@@ -2,7 +2,7 @@
 
 > **Status**: Approved (Pass 2 lean, 2026-05-26 — header aligned with systems-index 2026-10-29)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-10-29 (base MovementSpeed 6.0 → 5.0 to match Character Stats, Character Persistence and the code — user decision at Movement `/create-stories`)
+> **Last Updated**: 2026-10-29 (F-MOV-2 compounding note corrected to Character Stats F-1: percents add within a layer, layers multiply — found at Movement Story 003 `/dev-story`; earlier same day: base MovementSpeed 6.0 → 5.0 to match Character Stats, Character Persistence and the code — user decision at Movement `/create-stories`)
 > **Implements Pillar**: Pillar 2 — Rhythm Mastery; Pillar 3 — Social Gravity
 
 ## Overview
@@ -230,7 +230,7 @@ v_eff = clamp(
 
 **Output range:** [0.5, 20.0] u/s, enforced by Character Stats clamp.
 
-**Compounding intent:** Flat modifiers (ΣFlatEquip + ΣFlatBuff) are summed first, then the total is multiplied by each percent multiplier independently. Two ×20% percent buffs yield ×1.44 (not ×1.40). This is by design — percent stacking is multiplicative, not additive.
+**Compounding intent:** Flat modifiers (ΣFlatEquip + ΣFlatBuff) are summed first, then the total is multiplied by each percent multiplier independently. Per Character Stats F-1 (`character-stats.md`), percents **add within a layer** and the two layers **multiply**: two +20% buffs → ΣPctBuff = 0.40 → ×1.40; +20% equipment × +20% buff → (1.20 × 1.20) = ×1.44.
 
 **Examples:**
 - Base only: `v_eff = clamp(5.0 × 1.0 × 1.0, 0.5, 20.0) = 5.0 u/s` → 0.25 u/tick
