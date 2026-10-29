@@ -66,6 +66,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         private readonly ZoneID _zone;
         private readonly IServerTickSource _ticks;
         private readonly IZoneSlotPoolListener _listener;
+        private IZoneSlotReleaseListener _releaseListener;
         private readonly int _maxPlayers;
         private readonly int _maxMobs;
 
@@ -213,8 +214,54 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         }
 
         /// <summary>
+        /// Registers the before-release listener (CR-ZI-4; Status Effects CR-SE-11). Set once, because the
+        /// listener usually needs a slot index built over this pool, so it cannot be a constructor argument.
+        /// Without a listener the pool behaves as before.
+        /// </summary>
+        /// <param name="listener">Receiver of <see cref="IZoneSlotReleaseListener.BeforeRelease"/>.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="listener"/> is null.</exception>
+        /// <exception cref="InvalidOperationException">A listener is already registered.</exception>
+        public void SetReleaseListener(IZoneSlotReleaseListener listener)
+        {
+            if (listener == null)
+            {
+                throw new ArgumentNullException(nameof(listener));
+            }
+
+            if (_releaseListener != null)
+            {
+                throw new InvalidOperationException($"{LOG_PREFIX} a release listener is already registered.");
+            }
+
+            _releaseListener = listener;
+        }
+
+        /// <summary>
+        /// Calls the release listener, if any, before the slot changes. An exception is caught and logged; the
+        /// release then completes anyway.
+        /// </summary>
+        private void NotifyBeforeRelease(EntityID id)
+        {
+            if (_releaseListener == null)
+            {
+                return;
+            }
+
+            try
+            {
+                _releaseListener.BeforeRelease(id);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"{LOG_PREFIX} release listener threw for {id}; releasing the slot anyway: {ex}");
+            }
+        }
+
+        /// <summary>
         /// Zeroes the player's slot and returns it to the free-list. An unknown or already-released
-        /// EntityID returns false and changes nothing. On success the listener is notified.
+        /// EntityID returns false and changes nothing and calls no listener. Otherwise the release listener
+        /// (see <see cref="SetReleaseListener"/>) is called first, while the slot is still held, then the slot
+        /// is zeroed and the pool listener is notified.
         /// </summary>
         /// <param name="id">The EntityID issued by <see cref="TryAllocatePlayer"/>.</param>
         /// <returns>True when a slot was released.</returns>
@@ -225,6 +272,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
                 return false;
             }
 
+            NotifyBeforeRelease(id);
             _playerIndex.Remove(id);
             _playerEntity[index] = EntityID.Invalid;
             _playerCharacter[index] = CharacterID.Invalid;
@@ -334,7 +382,10 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             return true;
         }
 
-        /// <summary>Releases a mob slot. Unknown or already-released ids return false.</summary>
+        /// <summary>
+        /// Releases a mob slot. Unknown or already-released ids return false and call no listener. Otherwise the
+        /// release listener is called before the slot changes, as in <see cref="ReleasePlayer"/>.
+        /// </summary>
         /// <param name="id">The mob's EntityID.</param>
         /// <returns>True when a slot was released.</returns>
         public bool ReleaseMob(EntityID id)
@@ -344,6 +395,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
                 return false;
             }
 
+            NotifyBeforeRelease(id);
             _mobIndex.Remove(id);
             _mobEntity[index] = EntityID.Invalid;
             _mobFree[_mobFreeCount++] = index;

@@ -4,7 +4,7 @@
 > **GDD**: design/gdd/status-effects.md
 > **Architecture Module**: Status Effects
 > **Status**: In Progress
-> **Stories**: 9 stories created 2026-10-28 (001–009); 2 Complete (001–002), 7 Ready
+> **Stories**: 9 stories created 2026-10-28 (001–009); 8 Complete (001–008), 1 Ready
 
 ## Overview
 
@@ -51,11 +51,11 @@ This epic is complete when:
 | 005 | [Per-Tick Processing and Expiry](story-005-tick-processing-and-expiry.md) | Logic | Complete (2026-10-28) | ADR-010, ADR-014 |
 | 006 | [Expiry Clamp and Batched Stat Events](story-006-expiry-clamp-and-batched-events.md) | Logic | Complete | ADR-010 |
 | 007 | [Death Cleanup and Instant Heal](story-007-death-cleanup-and-instant-heal.md) | Logic | Complete | ADR-010 |
-| 008 | [Zone Departure and Slot Cleanup](story-008-zone-departure-and-slot-cleanup.md) | Integration | Ready | ADR-010, ADR-012 |
+| 008 | [Zone Departure and Slot Cleanup](story-008-zone-departure-and-slot-cleanup.md) | Integration | Complete (2026-10-29) | ADR-010, ADR-012 |
 | 009 | [Tick Pipeline Wiring, Mob Targets and Allocation Budget](story-009-tick-pipeline-wiring-and-allocation.md) | Integration | Ready | ADR-014, ADR-012 |
 
 TR-se-006 (client buff display) has no story: it waits on a Networking Core wire-schema addition, as the Definition of Done says.
 
 ## Next Step
 
-Stories 001–007 Complete 2026-10-28 (TD-085 resolved by 006; TD-086 logged by 007). Story 008 is Ready: run `/dev-story production/epics/status-effects/story-008-zone-departure-and-slot-cleanup.md` (recommended order: 008 → 009). Story 008 (readiness 2026-10-28: OQ-SE-2 resolved — `IZoneSlotReleaseListener.BeforeRelease` on `ZoneSlotPool`, set-once `SetReleaseListener`; service `ClearEntity`) clears every row and the dead flag before a slot is released; Story 009 wires the tick and the service (4-arg ctor since Story 007: layer, sink, slot index, `CharacterStatsDeathSource`; the service is `IDisposable` and must be disposed at zone teardown per ADR-010; Begin throws if another transaction is open; after building the service, call `pool.SetReleaseListener(service)`).
+Stories 001–007 Complete 2026-10-28 (TD-085 resolved by 006; TD-086 logged by 007); Story 008 Complete 2026-10-29 (`IZoneSlotReleaseListener.BeforeRelease` on `ZoneSlotPool`, set-once `SetReleaseListener`; service `ClearEntity` clears every row and the dead flag before a slot is released). Next: `/story-readiness production/epics/status-effects/story-009-tick-pipeline-wiring-and-allocation.md`. Story 009 wires the tick and the service (4-arg ctor since Story 007: layer, sink, slot index, `CharacterStatsDeathSource`; the service is `IDisposable` and must be disposed at zone teardown per ADR-010; Begin throws if another transaction is open; after building the service, call `pool.SetReleaseListener(service)`). `ZoneSlotPool` has no public mob-slot lookup: the production `IEntitySlotIndex` must record each mob's slot at `TryAllocateMob` (mapped through `GetOwlIndexForMobSlot`, as the Story 008 test resolver does) or the pool needs a new lookup — decide at readiness.

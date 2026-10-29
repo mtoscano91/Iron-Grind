@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.ExceptionServices;
 using IronGrind.CharacterStats;
+using IronGrind.ServerLogic.ZoneInstancing;
 
 namespace IronGrind.StatusEffects
 {
@@ -15,11 +16,14 @@ namespace IronGrind.StatusEffects
     /// EC-SE-2, EC-SE-3): the service subscribes to entity deaths through <see cref="IEntityDeathSource"/>, marks
     /// the slot dead in the handler (no Character Stats call) and cleans the dead entity's rows on the next
     /// <see cref="OnServerTick"/>; it also adds <see cref="ApplyInstantHeal"/> (CR-SE-3, TR-se-005) and
-    /// <see cref="OnEntityRespawned"/>. Zone departure cleanup comes in Story 008.
+    /// <see cref="OnEntityRespawned"/>. Story 008 adds zone departure cleanup (CR-SE-11, EC-SE-9):
+    /// <see cref="ClearEntity"/>, called by the slot pool through <see cref="IZoneSlotReleaseListener"/> before
+    /// the entity's slot is released.
     /// Not thread-safe: every call runs on the server tick thread.
     /// </summary>
-    public sealed class StatusEffectsService : IDisposable
+    public sealed class StatusEffectsService : IDisposable, IZoneSlotReleaseListener
     {
+        private const string LOG_PREFIX = "[StatusEffects]";
         private const int ROWS_PER_ENTITY = StatusEffectsConstants.MAX_ACTIVE_BUFFS_PER_ENTITY;
         private const int MAX_SLOTS = StatusEffectsConstants.MAX_ENTITY_SLOTS;
         private const int NO_ROW = -1;
@@ -46,6 +50,11 @@ namespace IronGrind.StatusEffects
         private bool _secondInjectionPending;
         private EntityID _secondInjectionTarget;
         private BuffDefinition _secondInjectionDefinition;
+
+        // Test-only ClearEntity injection (see InjectClearEntityDuringTick).
+        private bool _clearInjectionPending;
+        private EntityID _clearInjectionEntity;
+        private int _clearInjectionTurnSlot = NO_SLOT;
 
         // Tick loop state (see OnServerTick, FreeRowTickAware). _tickSlot is NO_SLOT outside a tick.
         private int _tickSlot = NO_SLOT;
@@ -454,8 +463,29 @@ namespace IronGrind.StatusEffects
             LastSecondInjectedResult = null;
         }
 
+        /// <summary>
+        /// Test-only seam (Story 008): during the next <see cref="OnServerTick"/>, after the first row of
+        /// <paramref name="duringTurnOf"/>'s slot has been processed, calls <see cref="ClearEntity"/> once on
+        /// <paramref name="entity"/>, as a slot release triggered mid-pass would. If that slot has no rows at the start
+        /// of a tick, the injection stays pending for a later tick.
+        /// </summary>
+        /// <param name="entity">Entity to clear.</param>
+        /// <param name="duringTurnOf">Entity whose first processed row triggers the call.</param>
+        internal void InjectClearEntityDuringTick(EntityID entity, EntityID duringTurnOf)
+        {
+            _clearInjectionEntity = entity;
+            _clearInjectionTurnSlot = TryResolveSlot(duringTurnOf, out int turnSlot) ? turnSlot : NO_SLOT;
+            _clearInjectionPending = true;
+        }
+
         private void RunPendingInjection(int slot)
         {
+            if (_clearInjectionPending && slot == _clearInjectionTurnSlot)
+            {
+                _clearInjectionPending = false;
+                ClearEntity(_clearInjectionEntity);
+            }
+
             if (!_injectionPending || slot != _injectionTurnSlot)
                 return;
 
@@ -723,6 +753,131 @@ namespace IronGrind.StatusEffects
                 _dead[slot] = true;
         }
 
+        /// <summary>
+        /// Zone departure cleanup (status-effects.md CR-SE-11, EC-SE-9; AC-SE-21, AC-SE-22, AC-SE-23): runs the
+        /// expiry procedure on every row of the entity, Active or PendingRemoval (remove modifiers, release
+        /// occupancy, free the row, clamps), then leaves rows 0, occupancy 0 and the dead flag cleared. Rows of
+        /// other entities that name this one as caster are untouched (CR-SE-13). Unknown entity or no rows: no layer
+        /// call (the dead flag is still cleared); a second call does nothing.
+        /// </summary>
+        /// <remarks>
+        /// Rows are freed with <see cref="FreeRowTickAware"/>, so a call during the tick pass neither skips nor
+        /// double-processes rows. The removals run inside the tick's stat batch when one is open, else inside their
+        /// own batch; if that Begin throws (another Character Stats transaction is open) the error is logged and
+        /// the removals run unbatched. Never throws: any exception from the layer, a clamp or End is caught and
+        /// logged, and the entity's rows, occupancy and dead flag are reset anyway (modifiers whose removal threw
+        /// may stay in Character Stats; the entity is leaving). Inside the tick a clamp exception is left for
+        /// <see cref="OnServerTick"/> to rethrow after its batch ends, like any other clamp in the pass.
+        /// Allocation-free except on the error path.
+        /// </remarks>
+        /// <param name="entity">The entity leaving the zone.</param>
+        public void ClearEntity(EntityID entity)
+        {
+            if (!TryResolveSlot(entity, out int slot))
+                return;
+
+            if (_rowCounts[slot] == 0)
+            {
+                _dead[slot] = false;
+                return;
+            }
+
+            bool insideBatch = _batchOpen;
+            bool ownsBatch = !insideBatch && TryBeginOwnBatch();
+
+            try
+            {
+                while (_rowCounts[slot] > 0)
+                {
+                    ref ActiveEffect e = ref _rows[slot * ROWS_PER_ENTITY];
+                    EntityID rowEntity = e.EntityId;
+                    bool maxHp = RowHasStat(e, StatID.MaxHP);
+                    bool maxMp = RowHasStat(e, StatID.MaxMP);
+                    RemoveModifiers(slot, 0);
+                    FreeRowTickAware(slot, 0);
+                    ClampAfterMaxChange(rowEntity, maxHp, maxMp);
+                }
+            }
+            catch (Exception ex)
+            {
+                UnityEngine.Debug.LogError(LOG_PREFIX + " ClearEntity: a layer call threw; resetting the slot: " + ex);
+                HardResetSlot(slot);
+            }
+
+            if (ownsBatch)
+                EndOwnBatch();
+
+            if (!insideBatch && _clampException != null)
+            {
+                UnityEngine.Debug.LogError(LOG_PREFIX + " ClearEntity: a clamp threw: " + _clampException);
+                _clampException = null;
+            }
+
+            _dead[slot] = false;
+        }
+
+        /// <summary>
+        /// Opens <see cref="ClearEntity"/>'s own stat batch (outside the tick). Returns false after logging when
+        /// Begin throws (another Character Stats transaction is open); the removals then run unbatched.
+        /// </summary>
+        private bool TryBeginOwnBatch()
+        {
+            _clampException = null;
+            try
+            {
+                _modifierLayer.BeginStatBatch();
+                _batchOpen = true;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                UnityEngine.Debug.LogError(LOG_PREFIX + " ClearEntity: BeginStatBatch failed; removing modifiers unbatched: " + ex);
+                return false;
+            }
+        }
+
+        /// <summary>Closes the batch opened by <see cref="TryBeginOwnBatch"/>; an End exception is logged, not thrown.</summary>
+        private void EndOwnBatch()
+        {
+            _batchOpen = false;
+            try
+            {
+                _modifierLayer.EndStatBatch();
+            }
+            catch (Exception ex)
+            {
+                UnityEngine.Debug.LogError(LOG_PREFIX + " ClearEntity: EndStatBatch failed: " + ex);
+            }
+        }
+
+        /// <summary>
+        /// <see cref="IZoneSlotReleaseListener"/>: called by the slot pool before the entity's slot is released
+        /// (CR-SE-11, OQ-SE-2). Calls <see cref="ClearEntity"/>, which never throws.
+        /// </summary>
+        /// <param name="id">The entity whose slot is about to be released.</param>
+        void IZoneSlotReleaseListener.BeforeRelease(EntityID id)
+        {
+            ClearEntity(id);
+        }
+
+        /// <summary>
+        /// Error-path reset of one slot: clears the remaining rows, occupancy, and keeps a running tick pass
+        /// consistent (the slot being processed ends its loop; a slot not yet reached processes no rows). Does not
+        /// touch the dead flag: <see cref="ClearEntity"/> clears it afterwards.
+        /// </summary>
+        private void HardResetSlot(int slot)
+        {
+            Array.Clear(_rows, slot * ROWS_PER_ENTITY, ROWS_PER_ENTITY);
+            _rowCounts[slot] = 0;
+            _occupiedSlots[slot] = 0;
+            _tickStartRowCounts[slot] = 0;
+            if (slot == _tickSlot)
+            {
+                _tickIndex = 0;
+                _tickEnd = 0;
+            }
+        }
+
         /// <summary>True when the entity's dead (PendingRemoval) flag is set; false for an unknown entity.</summary>
         /// <param name="entity">The entity.</param>
         internal bool IsEntityDead(EntityID entity)
@@ -732,7 +887,7 @@ namespace IronGrind.StatusEffects
 
         /// <summary>
         /// Clears the entity's dead flag so it can receive effects and heals again (CR-SE-10). Death &amp; Respawn
-        /// calls this at T-3 (CR-DR-11a); Story 008 also clears the flag on slot release. On an alive or unknown
+        /// calls this at T-3 (CR-DR-11a); <see cref="ClearEntity"/> also clears the flag on slot release. On an alive or unknown
         /// entity this does nothing and never throws. Cleanup is keyed on the flag at the start of a tick, so a respawn
         /// before the first tick after the death would leave the old rows in place; Death &amp; Respawn's T-3 comes many
         /// ticks after T-1, so this does not arise.

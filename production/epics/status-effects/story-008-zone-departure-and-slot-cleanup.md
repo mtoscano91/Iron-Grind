@@ -1,7 +1,7 @@
 # Story 008: Zone Departure and Slot Cleanup
 
 > **Epic**: Status Effects / Buffs
-> **Status**: Ready — written 2026-10-28 (`/create-stories`, lean); `/story-readiness` 2026-10-28: NEEDS WORK (7 gaps) → fixed (user decisions: pool hook with set-once registration; batch-open failure → log and clean unbatched)
+> **Status**: Complete (2026-10-29) — written 2026-10-28 (`/create-stories`, lean); `/story-readiness` 2026-10-28: NEEDS WORK (7 gaps) → fixed (user decisions: pool hook with set-once registration; batch-open failure → log and clean unbatched)
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-26
@@ -26,14 +26,14 @@
 
 ## Acceptance Criteria
 
-- [ ] **Release hook (OQ-SE-2, CR-ZI-4)**: new `IZoneSlotReleaseListener { void BeforeRelease(EntityID id); }` in `src/ServerLogic/ZoneInstancing/`. `ZoneSlotPool.SetReleaseListener(IZoneSlotReleaseListener)` registers it once (null → `ArgumentNullException`; a second call → `InvalidOperationException`); with no listener the pool behaves exactly as today (existing Zone Instancing tests unchanged). `ReleasePlayer` and `ReleaseMob` call `BeforeRelease(id)` after confirming the id is held and **before** any slot field, index or free-list changes, so `TryGetPlayerSlot` / the mob lookup still succeed during the call. Unknown or already-released ids → no call. The pool catches and logs a listener exception and completes the release anyway. This one hook covers all six release sites (`ZoneEntryReclamation`, `ZoneCloseSteps` steps 6 and 7, both `ZoneEntryAdmission` rollbacks, `ZoneMobRoster.RemoveMob`); no caller changes.
-- [ ] **`ClearEntity`**: new public `StatusEffectsService.ClearEntity(EntityID)`; the service implements `IZoneSlotReleaseListener` and `BeforeRelease` calls `ClearEntity`. For every row of the entity, Active or PendingRemoval, it runs the expiry procedure (remove modifiers, release occupancy, free the row, clamps — the Story 005/006 steps). Rows are freed with `FreeRowTickAware` so a call during the tick pass neither skips nor double-processes rows. Afterwards rows 0, occupancy 0, dead flag cleared. An unknown entity or one with no rows → no layer call; a second call → no-op.
-- [ ] **Stat batch**: the removals run inside a stat batch — the tick's if one is open (`_batchOpen`), otherwise its own (Begin / End, as an out-of-tick replacement). If its own `BeginStatBatch` throws (another Character Stats transaction is open): log an error and run the removals without a batch (events fire immediately); the rows are still cleared.
-- [ ] **Never throws**: any exception from the layer, a clamp, or `EndStatBatch` is caught and logged; rows, occupancy and the dead flag are still reset for the entity, and `ClearEntity` returns normally so the slot release proceeds.
-- [ ] **AC-SE-22**: 3 active buffs (one stat each) → `ClearEntity` → 3 `RemoveBuffModifier` calls, 3 rows freed, effective values back to base.
-- [ ] **AC-SE-23 / EC-SE-9**: a buff, `OnEntityDied`, then `ClearEntity` before the next tick → `RemoveBuffModifier` exactly once per stat (not twice); rows freed; dead flag cleared; the next `OnServerTick` makes no call for the entity.
-- [ ] **AC-SE-21 / CR-SE-13**: caster A buffs target B; `ClearEntity(A)` → B's row unchanged (caster field still A) and `TicksRemaining` keeps decrementing on later ticks.
-- [ ] **Sequence contract (integration)**: real `ZoneSlotPool` with the real service registered as release listener, plus a test-local `IEntitySlotIndex` over the pool (players: player slot; mobs: `MAX_PLAYERS_PER_ZONE` + mob slot, the OWL index — the production resolver is Story 009). (1) `ReleasePlayer` of a buffed player → its rows are cleared and a recording wrapper proves `BeforeRelease` ran while `TryGetPlayerSlot` still succeeded; (2) a new player allocated into the freed slot starts with zero rows and is not dead; (3) the same for `ReleaseMob`.
+- [x] **Release hook (OQ-SE-2, CR-ZI-4)**: new `IZoneSlotReleaseListener { void BeforeRelease(EntityID id); }` in `src/ServerLogic/ZoneInstancing/`. `ZoneSlotPool.SetReleaseListener(IZoneSlotReleaseListener)` registers it once (null → `ArgumentNullException`; a second call → `InvalidOperationException`); with no listener the pool behaves exactly as today (existing Zone Instancing tests unchanged). `ReleasePlayer` and `ReleaseMob` call `BeforeRelease(id)` after confirming the id is held and **before** any slot field, index or free-list changes, so `TryGetPlayerSlot` / the mob lookup still succeed during the call. Unknown or already-released ids → no call. The pool catches and logs a listener exception and completes the release anyway. This one hook covers all six release sites (`ZoneEntryReclamation`, `ZoneCloseSteps` steps 6 and 7, both `ZoneEntryAdmission` rollbacks, `ZoneMobRoster.RemoveMob`); no caller changes.
+- [x] **`ClearEntity`**: new public `StatusEffectsService.ClearEntity(EntityID)`; the service implements `IZoneSlotReleaseListener` and `BeforeRelease` calls `ClearEntity`. For every row of the entity, Active or PendingRemoval, it runs the expiry procedure (remove modifiers, release occupancy, free the row, clamps — the Story 005/006 steps). Rows are freed with `FreeRowTickAware` so a call during the tick pass neither skips nor double-processes rows. Afterwards rows 0, occupancy 0, dead flag cleared. An unknown entity or one with no rows → no layer call; a second call → no-op.
+- [x] **Stat batch**: the removals run inside a stat batch — the tick's if one is open (`_batchOpen`), otherwise its own (Begin / End, as an out-of-tick replacement). If its own `BeginStatBatch` throws (another Character Stats transaction is open): log an error and run the removals without a batch (events fire immediately); the rows are still cleared.
+- [x] **Never throws**: any exception from the layer, a clamp, or `EndStatBatch` is caught and logged; rows, occupancy and the dead flag are still reset for the entity, and `ClearEntity` returns normally so the slot release proceeds.
+- [x] **AC-SE-22**: 3 active buffs (one stat each) → `ClearEntity` → 3 `RemoveBuffModifier` calls, 3 rows freed, effective values back to base.
+- [x] **AC-SE-23 / EC-SE-9**: a buff, `OnEntityDied`, then `ClearEntity` before the next tick → `RemoveBuffModifier` exactly once per stat (not twice); rows freed; dead flag cleared; the next `OnServerTick` makes no call for the entity.
+- [x] **AC-SE-21 / CR-SE-13**: caster A buffs target B; `ClearEntity(A)` → B's row unchanged (caster field still A) and `TicksRemaining` keeps decrementing on later ticks.
+- [x] **Sequence contract (integration)**: real `ZoneSlotPool` with the real service registered as release listener, plus a test-local `IEntitySlotIndex` over the pool (players: player slot; mobs: `MAX_PLAYERS_PER_ZONE` + mob slot, the OWL index — the production resolver is Story 009). (1) `ReleasePlayer` of a buffed player → its rows are cleared and a recording wrapper proves `BeforeRelease` ran while `TryGetPlayerSlot` still succeeded; (2) a new player allocated into the freed slot starts with zero rows and is not dead; (3) the same for `ReleaseMob`.
 
 ---
 
@@ -69,7 +69,7 @@
 **Story Type**: Integration
 **Required evidence**: `tests/EditMode/StatusEffects/StatusEffects_ZoneDeparture_tests.cs` — must exist and pass (pool-hook unit tests may go in the Zone Instancing test folder next to the existing `ZoneSlotPool` tests)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — `tests/EditMode/StatusEffects/StatusEffects_ZoneDeparture_tests.cs` (23 tests: 18 `ClearEntity`, including 3 during a tick, and 5 pool sequence) and `tests/EditMode/ZoneInstancing/ZoneInstancing_SlotReleaseListener_tests.cs` (9 tests). Full EditMode suite 2026-10-29: 4872 / 4743 passed / 0 failed / 129 skipped.
 
 ---
 
@@ -77,3 +77,16 @@
 
 - Depends on: Stories 006, 007 (Complete); Zone Instancing Stories 011, 013 (Complete)
 - Unlocks: Story 009
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-29
+**Criteria**: 8/8 passing (all covered by automated tests; none deferred)
+**Deviations** (advisory, accepted):
+- Outside the tick, a clamp exception inside `ClearEntity` is logged and cleared, not rethrown ("never throws"); inside the tick it is left for `OnServerTick` to rethrow, like any clamp in the pass.
+- When its own `BeginStatBatch` fails, no `EndStatBatch` is called (asserted by a test).
+- New internal test seam `InjectClearEntityDuringTick` (same pattern as `InjectApplyEffectDuringTick`) for the in-tick tests.
+- `ZoneSlotPool` has no public mob-slot lookup: the test slot index records each mob's slot at allocation and maps it through `GetOwlIndexForMobSlot`. Story 009's production resolver needs the same, or a new pool lookup (carried in EPIC.md Next Step).
+**Test Evidence**: Integration — `tests/EditMode/StatusEffects/StatusEffects_ZoneDeparture_tests.cs`, `tests/EditMode/ZoneInstancing/ZoneInstancing_SlotReleaseListener_tests.cs`
+**Code Review**: Complete 2026-10-29 (CHANGES REQUIRED: in-tick `ClearEntity` untested → fixed with 3 tests; `ClearEntity` split under 40 lines; dead-flag asserts; doc lines). QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean).
