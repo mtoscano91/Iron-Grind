@@ -1,7 +1,7 @@
 # Story 008: Zone Entry, Exit and Slot Release
 
 > **Epic**: Movement System
-> **Status**: Ready — written 2026-10-29 (`/create-stories`, lean); `/story-readiness` 2026-10-29: NEEDS WORK (5 gaps) → fixed → Ready
+> **Status**: Complete — 2026-10-29 (`/story-done`: COMPLETE WITH NOTES); written 2026-10-29 (`/create-stories`, lean); `/story-readiness` 2026-10-29: NEEDS WORK (5 gaps) → fixed → Ready
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-26
@@ -75,7 +75,7 @@
 **Story Type**: Integration
 **Required evidence**: `tests/EditMode/MovementSystem/MovementSystem_ZoneEntryExit_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — `tests/EditMode/MovementSystem/MovementSystem_ZoneEntryExit_tests.cs`, 39 methods, all passing (EditMode 5250 / 5121 passed / 0 failed / 129 skipped, 2026-10-29)
 
 ---
 
@@ -83,3 +83,21 @@
 
 - Depends on: Stories 004, 005, 006 (Complete); Story 007 (Complete — stall flags reset on release/entry)
 - Unlocks: Story 009
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-10-29
+**Criteria**: 8/8 passing (all automated; EC-MOV-15 verified through the re-entry and snapshot tests only — the ghost-resume path is a stand-in)
+**Deviations** (advisory):
+1. `MovementService.BeforeRelease` unregisters the slot first and discards the buffered intent last, so a throwing intent source cannot leave the slot occupied (code-review round; the story listed discard first).
+2. The snapshot decorator clamps each position axis to ±`WireFixedPointCodec.MaxPositionMeters` before ×100 (silent, as `EncodePosition`): `MovementPositionGuard.IsEncodable` checks only X and Z, and an unencodable respawn point is registered anyway.
+3. Tests use a fake `IMovementIntentSource` instead of the real `MovementIntentBuffer` (which needs an `InboundRequestContext`); pool, slot index, snapshot builder and entry completion are real.
+4. Not covered by a dedicated test: allocation-free decorator / release / entry paths; the facing-2700 rotation test asserts opposite signs of RotY/RotW, not RotY negative.
+5. Nothing is wired yet: Story 009 must call `AttachMovement`, `ZoneEntryCompletion.SetEntryListener` and `Pool.SetReleaseListener(new CompositeZoneSlotReleaseListener(statusEffects, movement))` before the first admission, and add a wiring test (real entry → snapshot at the respawn point).
+6. TR-mov-007 is a placeholder, not yet in `docs/architecture/tr-registry.yaml` (same as the other epics).
+**Scope**: within the story (files listed at readiness).
+**Files**: `src/ServerLogic/ZoneInstancing/IZonePlayerEntryListener.cs` (new); `src/ServerLogic/ZoneInstancing/ZoneEntryCompletion.cs` (`SetEntryListener`, called before `SendSnapshot`); `src/ServerLogic/ZoneInstancing/CompositeZoneSlotReleaseListener.cs` (new); `src/ServerLogic/MovementSystem/MovementService.cs` (8-arg ctor, `OnPlayerEntering`, `BeforeRelease`, `ResetSlot`); `src/ServerLogic/MovementSystem/MovementZoneEntityStateSource.cs` (new); test file above; `.meta` files.
+**Test Evidence**: Integration — `tests/EditMode/MovementSystem/MovementSystem_ZoneEntryExit_tests.cs`
+**Code Review**: Complete — `/code-review` 2026-10-29: CHANGES REQUIRED (snapshot position clamp; tests for different-id overwrite, flag resets across exit/re-entry, rotation at 270°/45° + unit norm, throwing intent source, same-slot asserts, end-to-end composite) + suggestions (ctor check order, `checkZone` comment, composite `LOG_PREFIX`), all applied. QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean).

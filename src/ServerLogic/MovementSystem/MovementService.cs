@@ -1,4 +1,5 @@
 using System;
+using IronGrind.CharacterPersistence;
 using IronGrind.CharacterStats;
 using IronGrind.Networking;
 using IronGrind.ServerLogic.ZoneInstancing;
@@ -31,7 +32,8 @@ namespace IronGrind.MovementSystem
     /// service.Run(tick, ServerTickLoop.FIXED_DELTA_TIME);
     /// </code>
     /// </example>
-    public sealed class MovementService : IZoneSimulationStep, IMovementSystem
+    public sealed class MovementService : IZoneSimulationStep, IMovementSystem, IZonePlayerEntryListener,
+        IZoneSlotReleaseListener
     {
         /// <summary>NavMesh sample radius in meters (movement-system.md CR-MOV-7; a GDD value, not a tuning knob).</summary>
         public const float NAVMESH_SAMPLE_RADIUS = 0.5f;
@@ -65,6 +67,9 @@ namespace IronGrind.MovementSystem
         private readonly bool[] _stuckReported = new bool[SLOT_COUNT];
         private readonly bool[] _overflowWarned = new bool[SLOT_COUNT];
 
+        private readonly ZoneID _ownZone;
+        private readonly ITownRespawnPointProvider _respawn;
+
         private bool _navMeshAvailable = true;
         private bool _unavailableLogged;
 
@@ -92,7 +97,40 @@ namespace IronGrind.MovementSystem
         /// <exception cref="ArgumentOutOfRangeException"><paramref name="tuning"/> has a stall threshold below 1 (for example <c>default</c>).</exception>
         public MovementService(IMovementIntentSource intents, IMovementSpeedSource speeds, INavMeshSampler sampler,
             IEntitySlotIndex slotIndex, MovementTuningValues tuning, IMovementGeometryErrorSink geometryErrors)
+            : this(intents, speeds, sampler, slotIndex, tuning, geometryErrors, ZoneID.Invalid, null, false)
         {
+        }
+
+        /// <summary>
+        /// Creates the service with zone entry support (Story 008): players register at the town respawn point of
+        /// <paramref name="ownZone"/>. All arguments are required.
+        /// </summary>
+        /// <param name="intents">Per-slot intent source (Story 004 buffer).</param>
+        /// <param name="speeds">Effective-speed source (F-MOV-2).</param>
+        /// <param name="sampler">NavMesh validation seam.</param>
+        /// <param name="slotIndex">EntityID to slot mapping.</param>
+        /// <param name="tuning">Tuning values.</param>
+        /// <param name="geometryErrors">Receives the unrecoverable-stall report.</param>
+        /// <param name="ownZone">The zone this process hosts; not <see cref="ZoneID.Invalid"/>.</param>
+        /// <param name="respawn">Answers the entry position.</param>
+        /// <exception cref="ArgumentNullException">Any reference argument is null.</exception>
+        /// <exception cref="ArgumentException"><paramref name="ownZone"/> is invalid.</exception>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="tuning"/> has a stall threshold below 1.</exception>
+        public MovementService(IMovementIntentSource intents, IMovementSpeedSource speeds, INavMeshSampler sampler,
+            IEntitySlotIndex slotIndex, MovementTuningValues tuning, IMovementGeometryErrorSink geometryErrors,
+            ZoneID ownZone, ITownRespawnPointProvider respawn)
+            : this(intents, speeds, sampler, slotIndex, tuning, geometryErrors, ownZone,
+                respawn ?? throw new ArgumentNullException(nameof(respawn)), true)
+        {
+        }
+
+        private MovementService(IMovementIntentSource intents, IMovementSpeedSource speeds, INavMeshSampler sampler,
+            IEntitySlotIndex slotIndex, MovementTuningValues tuning, IMovementGeometryErrorSink geometryErrors,
+            ZoneID ownZone, ITownRespawnPointProvider respawn, bool checkZone) // checkZone false = 4/6-arg path, no entry support
+        {
+            _ownZone = ownZone;
+            _respawn = respawn;
+
             _intents = intents ?? throw new ArgumentNullException(nameof(intents));
             _speeds = speeds ?? throw new ArgumentNullException(nameof(speeds));
             _sampler = sampler ?? throw new ArgumentNullException(nameof(sampler));
@@ -104,6 +142,9 @@ namespace IronGrind.MovementSystem
                 throw new ArgumentOutOfRangeException(nameof(tuning),
                     "NavMeshStallRecoveryTicks must be at least 1; build tuning with MovementTuningValues.Defaults or Create");
             _stallRecoveryTicks = tuning.NavMeshStallRecoveryTicks;
+
+            if (checkZone && ownZone == ZoneID.Invalid)
+                throw new ArgumentException($"{LOG_PREFIX} ownZone must not be ZoneID.Invalid.", nameof(ownZone));
         }
 
         /// <summary>Runs one movement tick for every occupied player slot.</summary>
@@ -165,16 +206,23 @@ namespace IronGrind.MovementSystem
         }
 
         /// <summary>
-        /// Registers a player in a slot. Story 008 replaces this with real entry handling. Resets the last valid
-        /// speed to 0f (none) and resets all per-slot state: the speed-failing flag, Prohibited, the pending override
-        /// and the Story 007 stall counter, reported flag and overflow-warned flag.
+        /// Test seam (stays after Story 008): registers a player at an arbitrary position and facing, bypassing the
+        /// entry path (production entry is <see cref="OnPlayerEntering"/>). Resets all per-slot state like a
+        /// registration; it does not touch the intent source.
         /// </summary>
         internal void SeedForTesting(int slot, EntityID id, Vector3 position, short facing)
         {
+            ResetSlot(slot);
             _occupied[slot] = true;
             _ids[slot] = id;
             _positions[slot] = position;
             _facing[slot] = facing;
+        }
+
+        // Shared reset: last valid speed none, speed-failing, Prohibited, override, stall counter, reported and
+        // overflow-warned flags. Does not touch occupancy, id, position or facing.
+        private void ResetSlot(int slot)
+        {
             _lastValidSpeed[slot] = 0f;
             _speedFailing[slot] = false;
             _prohibited[slot] = false;
@@ -183,6 +231,65 @@ namespace IronGrind.MovementSystem
             _stallCounter[slot] = 0;
             _stuckReported[slot] = false;
             _overflowWarned[slot] = false;
+        }
+
+        /// <summary>
+        /// Registers a player at the zone's town respawn point, facing 0 (Story 008; EC-MOV-13, EC-MOV-18).
+        /// Discards any buffered intent. Bad input is logged, not thrown.
+        /// </summary>
+        /// <param name="slot">The player slot, in [0, MAX_PLAYERS_PER_ZONE).</param>
+        /// <param name="id">The player's EntityID.</param>
+        public void OnPlayerEntering(byte slot, EntityID id)
+        {
+            if (_respawn == null)
+            {
+                Debug.LogError($"{LOG_PREFIX} OnPlayerEntering for entity {id.RawValue}: no respawn point provider; nothing registered");
+                return;
+            }
+
+            if (slot >= SLOT_COUNT)
+            {
+                Debug.LogError($"{LOG_PREFIX} OnPlayerEntering for entity {id.RawValue}: slot {slot} is outside [0, {SLOT_COUNT}); nothing registered");
+                return;
+            }
+
+            if (_occupied[slot])
+                Debug.LogWarning($"{LOG_PREFIX} slot {slot} is already occupied by entity {_ids[slot].RawValue}; overwriting with entity {id.RawValue}");
+
+            Vector3 point = _respawn.GetTownRespawnPoint(_ownZone);
+            if (!MovementPositionGuard.IsEncodable(point))
+                Debug.LogError($"{LOG_PREFIX} town respawn point {point} for entity {id.RawValue} is outside the encodable range; registered anyway");
+
+            ResetSlot(slot);
+            _intents.TryTakeIntent(slot, out _);
+            _occupied[slot] = true;
+            _ids[slot] = id;
+            _positions[slot] = point;
+            _facing[slot] = 0;
+        }
+
+        /// <summary>
+        /// Clears the slot's movement state on zone exit (Story 008; AC-MOV-27, EC-MOV-13, EC-MOV-14). Unknown ids,
+        /// mob slots and unregistered slots are a silent no-op. Never throws.
+        /// </summary>
+        /// <param name="id">The entity whose slot is about to be released.</param>
+        public void BeforeRelease(EntityID id)
+        {
+            try
+            {
+                if (!TryFindSlot(id, out int slot))
+                    return;
+
+                // Unregister first so a failing intent source cannot leave the slot occupied.
+                ResetSlot(slot);
+                _occupied[slot] = false;
+                _ids[slot] = EntityID.Invalid;
+                _intents.TryTakeIntent(slot, out _);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"{LOG_PREFIX} BeforeRelease failed for entity {id.RawValue}\n{ex}");
+            }
         }
 
         /// <inheritdoc/>

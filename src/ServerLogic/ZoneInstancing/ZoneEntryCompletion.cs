@@ -27,6 +27,11 @@ namespace IronGrind.ServerLogic.ZoneInstancing
     /// occupied; the exit path of Story 013 cleans up). The <c>PlayerJoinedZone</c> body is written into a buffer
     /// allocated once.
     /// </para>
+    /// <para>
+    /// An optional <see cref="IZonePlayerEntryListener"/> (set once with <see cref="SetEntryListener"/>) runs after the
+    /// directory mapping and before step 6, so state it registers is visible to the snapshot. Without one the
+    /// behavior is unchanged.
+    /// </para>
     /// </remarks>
     public sealed class ZoneEntryCompletion : IZoneEntryContinuation
     {
@@ -42,6 +47,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         private readonly IClientMessageOutbox _outbox;
         private readonly ZoneTickRoster _roster;
         private readonly byte[] _joinedBody = new byte[PlayerJoinedZone.MaxBodySize];
+        private IZonePlayerEntryListener _entryListener;
 
         /// <summary>Creates the continuation for one zone.</summary>
         /// <param name="zone">The zone this process hosts; not <see cref="ZoneID.Invalid"/>.</param>
@@ -75,6 +81,23 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             _roster = roster ?? throw new ArgumentNullException(nameof(roster));
         }
 
+        /// <summary>
+        /// Registers the entry listener (Movement Story 008), called after the directory mapping and before the
+        /// snapshot. Set once.
+        /// </summary>
+        /// <param name="listener">The listener.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="listener"/> is null.</exception>
+        /// <exception cref="InvalidOperationException">A listener is already set.</exception>
+        public void SetEntryListener(IZonePlayerEntryListener listener)
+        {
+            if (listener == null)
+                throw new ArgumentNullException(nameof(listener));
+            if (_entryListener != null)
+                throw new InvalidOperationException($"{LOG_PREFIX} the entry listener is already set.");
+
+            _entryListener = listener;
+        }
+
         /// <inheritdoc/>
         /// <remarks>Never throws: an exception is logged as an error and the remaining steps are skipped.</remarks>
         public void OnPlayerAdmitted(uint clientId, byte slot, EntityID entityId)
@@ -88,6 +111,8 @@ namespace IronGrind.ServerLogic.ZoneInstancing
                 }
 
                 _directory.Add(clientId, player.Character);
+
+                _entryListener?.OnPlayerEntering(slot, entityId);
 
                 _snapshot.SendSnapshot(clientId);
 
