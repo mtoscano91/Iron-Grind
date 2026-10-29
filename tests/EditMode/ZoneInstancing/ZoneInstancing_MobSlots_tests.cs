@@ -467,5 +467,52 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
             Assert.AreEqual(0, roster.GetMobCount(Foreign));
             LogAssert.NoUnexpectedReceived();
         }
+
+        // ----- TryGetMobSlot (Status Effects Story 009) -----------------------------------------
+
+        [Test]
+        public void test_try_get_mob_slot_allocated_mob_returns_its_slot()
+        {
+            ZoneSlotPool pool = CreatePool();
+            Assert.IsTrue(pool.TryAllocateMob(Zone, out ushort allocated, out EntityID id));
+
+            bool found = pool.TryGetMobSlot(id, out ushort slot);
+
+            Assert.IsTrue(found);
+            Assert.AreEqual(allocated, slot);
+        }
+
+        [Test]
+        public void test_try_get_mob_slot_unknown_id_returns_false_and_zero()
+        {
+            ZoneSlotPool pool = CreatePool();
+
+            bool found = pool.TryGetMobSlot(new EntityID(9999u), out ushort slot);
+
+            Assert.IsFalse(found);
+            Assert.AreEqual((ushort)0, slot);
+        }
+
+        [Test]
+        public void test_try_get_mob_slot_released_mob_returns_false_and_zero()
+        {
+            ZoneSlotPool pool = CreatePool();
+            Assert.IsTrue(pool.TryAllocateMob(Zone, out _, out EntityID id));
+            Assert.IsTrue(pool.ReleaseMob(id));
+
+            bool found = pool.TryGetMobSlot(id, out ushort slot);
+
+            Assert.IsFalse(found);
+            Assert.AreEqual((ushort)0, slot);
+        }
+
+        [Test]
+        public void test_try_get_mob_slot_player_id_returns_false()
+        {
+            ZoneSlotPool pool = CreatePool();
+            Assert.IsTrue(pool.TryAllocatePlayer(Zone, new CharacterID(1u), new AccountID(2u), 3u, out _, out EntityID player));
+
+            Assert.IsFalse(pool.TryGetMobSlot(player, out _));
+        }
     }
 }

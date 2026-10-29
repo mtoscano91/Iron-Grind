@@ -5,13 +5,17 @@ using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using IronGrind.CharacterPersistence;
+using IronGrind.LevelingSystem;
 using IronGrind.Networking;
 using IronGrind.Randomness;
 using IronGrind.ServerLogic.ZoneInstancing;
+using IronGrind.StatusEffects;
 using Npgsql;
 using UnityEngine;
 using UnityEngine.AI;
 using Debug = UnityEngine.Debug;
+// The simple name CharacterStats resolves to the IronGrind.CharacterStats namespace, so the class takes an alias.
+using ZoneStats = IronGrind.CharacterStats.CharacterStats;
 
 namespace IronGrind.ServerLogic.ZoneServer
 {
@@ -328,7 +332,13 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// </summary>
         internal bool HoldsConnectionString => (_backend as RealBackend)?.HasConnectionString ?? false;
 
-        /// <summary>The ordered phase-3 steps the composition lists (empty until the game-system stories add theirs).</summary>
+        /// <summary>The zone's one Character Stats, built at S5 (Status Effects Story 009); null before S5. Later systems take it here.</summary>
+        internal ZoneStats ZoneCharacterStats { get; private set; }
+
+        /// <summary>The zone's Status Effects service, built at S5 (Story 009); null before S5.</summary>
+        internal StatusEffectsService StatusEffects { get; private set; }
+
+        /// <summary>The ordered phase-3 steps the composition lists: Zone Instancing, then Status Effects (Story 009).</summary>
         internal IList<IZoneSimulationStep> SimulationSteps => _simulationSteps;
 
         /// <summary>Duration in seconds passed to the last <c>AdvanceTick</c> by the tick handler (0 before any).</summary>
@@ -1404,16 +1414,8 @@ namespace IronGrind.ServerLogic.ZoneServer
             {
                 var outbox = new ClientMessageOutbox(_owner._network.CreateSendSeam());
                 Observe(nameof(ClientMessageOutbox));
-
-                // Zone Instancing (Story 014): built after the outbox exists and before the dispatcher is sealed. Its tick
-                // step joins the phase 3 list; it is not registered with the tick loop (ADR-014).
-                var wiring = new ZoneInstancingWiring(_owner._zoneId, _tickLoop, _queue, dispatcher, outbox,
-                    _owner.PersistenceService, _owner.PersistenceService, _owner.PersistenceService, _gate,
-                    new StandInZoneInventoryService(), _disconnector, _owner.RequestTeardown,
-                    new ZoneInstancingWiringOptions { Directory = _directory, LogTransitions = _owner.LogTeardownSteps });
-                Observe(nameof(ZoneInstancingWiring));
-                _owner._simulationSteps.Add(wiring);
-                _owner.AttachZoneInstancing(wiring);
+                ZoneInstancingWiring wiring = BuildZoneInstancing(dispatcher, outbox);
+                BuildStatusEffects(wiring);
 
                 // Built for the game-system stories to take; this story registers no handler.
                 _owner._broadcaster = new ServerWideBroadcaster(outbox, _publisher, _allowlist);
@@ -1437,6 +1439,38 @@ namespace IronGrind.ServerLogic.ZoneServer
 
                 _owner.AttachOwnedObjects(_queue, outbox, null, transport, _owner._currentTickReader, null);
                 _owner.AttachTickLoop(_tickLoop);
+            }
+
+            // Zone Instancing (Story 014): built after the outbox exists and before the dispatcher is sealed. Its tick
+            // step joins the phase 3 list; it is not registered with the tick loop (ADR-014).
+            private ZoneInstancingWiring BuildZoneInstancing(InboundRequestDispatcher dispatcher, ClientMessageOutbox outbox)
+            {
+                var wiring = new ZoneInstancingWiring(_owner._zoneId, _tickLoop, _queue, dispatcher, outbox,
+                    _owner.PersistenceService, _owner.PersistenceService, _owner.PersistenceService, _gate,
+                    new StandInZoneInventoryService(), _disconnector, _owner.RequestTeardown,
+                    new ZoneInstancingWiringOptions { Directory = _directory, LogTransitions = _owner.LogTeardownSteps });
+                Observe(nameof(ZoneInstancingWiring));
+                _owner._simulationSteps.Add(wiring);
+                _owner.AttachZoneInstancing(wiring);
+                return wiring;
+            }
+
+            // Status Effects Story 009: one Character Stats per zone, then the Status Effects service over it. The
+            // service joins phase 3 after Zone Instancing, listens for slot releases and is disposed in the teardown
+            // Dispose pass (ADR-010).
+            private void BuildStatusEffects(ZoneInstancingWiring wiring)
+            {
+                var stats = new ZoneStats(new LevelingService(XpThresholdTable.Values));
+                _owner.ZoneCharacterStats = stats;
+                Observe("CharacterStats");
+                var statusEffects = new StatusEffectsService(new CharacterStatsBuffModifierLayer(stats),
+                    new CharacterStatsResourceSink(stats), new ZoneSlotPoolEntityIndex(wiring.Pool),
+                    new CharacterStatsDeathSource(stats));
+                Observe(nameof(StatusEffectsService));
+                wiring.Pool.SetReleaseListener(statusEffects);
+                _owner.RegisterDisposable(statusEffects);
+                _owner.StatusEffects = statusEffects;
+                _owner._simulationSteps.Add(statusEffects);
             }
 
             public bool StartListener()

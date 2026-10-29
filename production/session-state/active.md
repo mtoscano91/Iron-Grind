@@ -5226,3 +5226,24 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Gaps: (1) no CharacterStats in ZoneServerComposition -> user: build one per zone here (LevelingService over XpThresholdTable.Values), internal getter, stat population out of scope; (2) mob-slot lookup -> user: public ZoneSlotPool.TryGetMobSlot over _mobIndex + production ZoneSlotPoolEntityIndex; (3) ZoneSimulationStep had no per-entry catch (SE throw skipped later phase-3 entries) -> user: per-entry try/catch, EntryFailed log; (4) missing SetReleaseListener + Dispose-pass registration + phase-3 order ACs; (5) tick adapter -> service implements IZoneSimulationStep; (6) combat stand-in -> user: test-only via SimulationSteps; (7) stale TR note fixed (TR-se-004/003; CR-SE-15 has no TR). Estimate 4 -> 6 h.
 - Written: story 009 (rewritten), EPIC.md (row 009 + Next Step). GDD / entities.yaml / systems-index unchanged (no values or status changed; ADR-014 silent on phase-3 failures, no ADR change).
 - Next: commit; then /dev-story production/epics/status-effects/story-009-tick-pipeline-wiring-and-allocation.md. PAT rotation still unconfirmed.
+
+## Session Extract — /dev-story 2026-10-29 (Story 009, not committed)
+- Story: production/epics/status-effects/story-009-tick-pipeline-wiring-and-allocation.md — Tick Pipeline Wiring, Mob Targets and Allocation Budget
+- Files changed: ZoneSlotPool.cs (public TryGetMobSlot); ZoneSimulationStep.cs (per-entry try/catch, EntryFailed log); StatusEffectsService.cs (implements IZoneSimulationStep); IEntitySlotIndex.cs (doc); new StatusEffects/ZoneSlotPoolEntityIndex.cs (+ .meta); ZoneServerComposition.cs (zone CharacterStats + StatusEffectsService at S5, SetReleaseListener, RegisterDisposable, phase 3 = [ZoneInstancingWiring, StatusEffectsService]; internal ZoneCharacterStats / StatusEffects getters)
+- Tests: new tests/EditMode/StatusEffects/StatusEffects_PipelineWiring_tests.cs (19) (+ .meta); ZoneServer_CompositionWiring_tests.cs (+3, CONSTRUCTION_ORDER updated); ZoneInstancing_MobSlots_tests.cs (+4). Full EditMode 4898 / 4769 passed / 0 failed / 129 skipped.
+- Deviations: allocation measured with Unity's Is.Not.AllocatingGCMemory() (GC.Alloc recorder), not GC.GetAllocatedBytesForCurrentThread as the story said — the latter always reads 0 in the Editor's Mono (positive-control test caught it). AC-SE-25 warm-up is a full expiry cycle at the measured load: CharacterStats' deferred-event arrays (doubling) and _deferredMasks Dictionary grow once to the largest batch seen (first-use high-water, not per-tick). Dispose-pass test probes with a mob allocated after teardown (close steps release all slots).
+- Finding (out of scope): tests/EditMode/Integration/ZoneInstancing/ZoneInstancing_Wiring_tests.cs:1127 still measures with GC.GetAllocatedBytesForCurrentThread (vacuous under Mono).
+- Next: /code-review then /story-done story-009. PAT rotation still unconfirmed.
+
+## Session Extract — /code-review 2026-10-29 (Story 009)
+- Verdict: CHANGES REQUIRED (3 required + 4 suggestions) -> "fix all" applied.
+- Fixes: BuildOutboundAndPipeline split (BuildZoneInstancing + BuildStatusEffects, ZoneStats alias, usings for LevelingSystem/StatusEffects); test for an exception whose Message getter throws; story AC-SE-25 wording -> Is.Not.AllocatingGCMemory + full-cycle warm-up; adapters-use-the-instance asserts (+ sink heal test); 8-effect load assert before the measured tick; null-entry test + "list must not change during Run" doc; ZoneSlotPoolEntityIndex throws when pool slots > MAX_ENTITY_SLOTS (+ test).
+- Suite: 4902 / 4773 passed / 0 failed / 129 skipped; 0 compile errors.
+- Next: /story-done production/epics/status-effects/story-009-tick-pipeline-wiring-and-allocation.md
+
+## Session Extract — /story-done 2026-10-29 (Story 009)
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/status-effects/story-009-tick-pipeline-wiring-and-allocation.md — Tick Pipeline Wiring, Mob Targets and Allocation Budget
+- Tech debt logged: 1 (TD-087 — vacuous GC.GetAllocatedBytesForCurrentThread check in ZoneInstancing_Wiring_tests.cs)
+- Status Effects epic: all 9 stories Complete -> EPIC.md Status Complete (TR-se-006 deferred).
+- Next recommended: none in this epic; pick the next epic (no sprint plans — user works story-by-story). PAT rotation still unconfirmed.

@@ -12,6 +12,7 @@ using IronGrind.ServerLogic.ZoneServer;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
+using UnityEngine.TestTools.Constraints;
 
 namespace IronGrind.Tests.EditMode.Networking
 {
@@ -201,7 +202,7 @@ namespace IronGrind.Tests.EditMode.Networking
             "TickCompletionQueue", "ServerTickLoop", "NpgsqlCharacterRecordStore", "CharacterPersistenceService",
             "CrossZoneRelayAllowlist", "CrossZoneRelayOrigin", "CrossZoneRelayInbox", "CrossZoneRelayReceiver",
             "NpgsqlRelayPublisher", "CrossCuttingRpcGuardChain", "CharacterMutationGate", "InboundRequestDispatcher",
-            "ClientMessageOutbox", "ZoneInstancingWiring", "ServerWideBroadcaster", "ZoneClientRelayHandler", "ZoneSimulationStep",
+            "ClientMessageOutbox", "ZoneInstancingWiring", "CharacterStats", "StatusEffectsService", "ServerWideBroadcaster", "ZoneClientRelayHandler", "ZoneSimulationStep",
             "ZoneTickPipeline", "Seal", "RegisterTickDriven", "CreateInboundTransport"
         };
 
@@ -529,6 +530,95 @@ namespace IronGrind.Tests.EditMode.Networking
             Assert.DoesNotThrow(() => simulation.Run(1u, 0.05f));
             Assert.AreEqual(0, simulation.Count);
             Assert.Throws<ArgumentNullException>(() => new ZoneSimulationStep(null));
+        }
+
+        // ---------------------------------------------------------------- Status Effects Story 009: per-entry isolation
+
+        private sealed class WiThrowingStep : IZoneSimulationStep
+        {
+            public int Runs;
+            public void Run(uint currentTick, float deltaTime) { Runs++; throw new InvalidOperationException("boom"); }
+        }
+
+        private sealed class WiCountingStep : IZoneSimulationStep
+        {
+            public int Runs;
+            public uint LastTick;
+            public void Run(uint currentTick, float deltaTime) { Runs++; LastTick = currentTick; }
+        }
+
+        [Test]
+        public void test_zone_simulation_step_a_throwing_entry_logs_entry_failed_and_the_next_entry_still_runs()
+        {
+            var thrower = new WiThrowingStep();
+            var after = new WiCountingStep();
+            var simulation = new ZoneSimulationStep(new List<IZoneSimulationStep> { thrower, after });
+            LogAssert.Expect(LogType.Error,
+                "[ZoneSimulationStep] EntryFailed: index=0 type=WiThrowingStep tick=9 - InvalidOperationException: boom");
+
+            Assert.DoesNotThrow(() => simulation.Run(9u, 0.05f));
+
+            Assert.AreEqual(1, thrower.Runs);
+            Assert.AreEqual(1, after.Runs);
+            Assert.AreEqual(9u, after.LastTick);
+        }
+
+        // An exception whose Message getter throws: the EntryFailed log cannot be built.
+        private sealed class WiUnprintableException : Exception
+        {
+            public override string Message => throw new InvalidOperationException("Message getter failed");
+        }
+
+        private sealed class WiUnprintableThrowingStep : IZoneSimulationStep
+        {
+            public void Run(uint currentTick, float deltaTime) => throw new WiUnprintableException();
+        }
+
+        [Test]
+        public void test_zone_simulation_step_an_entry_whose_exception_message_throws_is_skipped_silently_and_the_next_entry_runs()
+        {
+            var after = new WiCountingStep();
+            var simulation = new ZoneSimulationStep(new List<IZoneSimulationStep> { new WiUnprintableThrowingStep(), after });
+
+            Assert.DoesNotThrow(() => simulation.Run(4u, 0.05f));
+
+            Assert.AreEqual(1, after.Runs, "the guarded log did not let the second exception escape Run");
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_zone_simulation_step_a_null_entry_logs_entry_failed_with_an_empty_type_and_the_next_entry_runs()
+        {
+            var after = new WiCountingStep();
+            var simulation = new ZoneSimulationStep(new List<IZoneSimulationStep> { null, after });
+            LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex(
+                @"^\[ZoneSimulationStep\] EntryFailed: index=0 type= tick=5 - NullReferenceException: "));
+
+            simulation.Run(5u, 0.05f);
+
+            Assert.AreEqual(1, after.Runs);
+        }
+
+        [Test]
+        public void test_zone_simulation_step_every_failing_entry_logs_its_own_line_with_its_index()
+        {
+            var simulation = new ZoneSimulationStep(new List<IZoneSimulationStep>
+                { new WiCountingStep(), new WiThrowingStep(), new WiThrowingStep() });
+            LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex(@"EntryFailed: index=1 type=WiThrowingStep tick=3 "));
+            LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex(@"EntryFailed: index=2 type=WiThrowingStep tick=3 "));
+
+            simulation.Run(3u, 0.05f);
+
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_zone_simulation_step_success_path_allocates_nothing()
+        {
+            var simulation = new ZoneSimulationStep(new List<IZoneSimulationStep> { new WiCountingStep(), new WiCountingStep() });
+            simulation.Run(1u, 0.05f); // warm-up
+
+            Assert.That(() => simulation.Run(2u, 0.05f), UnityEngine.TestTools.Constraints.Is.Not.AllocatingGCMemory());
         }
 
         // ---------------------------------------------------------------- AC-7

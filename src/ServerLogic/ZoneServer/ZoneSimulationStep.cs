@@ -1,14 +1,19 @@
 using System;
 using System.Collections.Generic;
 using IronGrind.Networking;
+using UnityEngine;
 
 namespace IronGrind.ServerLogic.ZoneServer
 {
     /// <summary>
     /// The ordered simulation step of the zone tick (phase 3 of <see cref="ZoneTickPipeline"/>): runs each step of
     /// an explicit list in list order. The composition root owns the list and appends game systems in the order it
-    /// lists them (manifest: phase 3 order is listed by the composition root); the list is empty until the game
-    /// system stories add theirs. Allocates nothing per tick. Main thread only.
+    /// lists them (manifest: phase 3 order is listed by the composition root). Each entry runs in its own
+    /// <c>try</c>/<c>catch</c> (Status Effects Story 009): a failed entry logs one error
+    /// (<c>[ZoneSimulationStep] EntryFailed: index=N type=TYPE tick=N - ExceptionType: message</c>) and the next
+    /// entry still runs the same tick (a null entry fails the same way, logged with an empty type). Allocates nothing
+    /// on the success path; the failure message is built only in the catch. Main thread only. The list must not
+    /// change while <see cref="Run"/> runs: the composition fills it at S5, before the first tick.
     /// </summary>
     /// <example>
     /// <code>
@@ -38,7 +43,29 @@ namespace IronGrind.ServerLogic.ZoneServer
         {
             for (int i = 0; i < _steps.Count; i++)
             {
-                _steps[i].Run(currentTick, deltaTime);
+                IZoneSimulationStep step = _steps[i];
+                try
+                {
+                    step.Run(currentTick, deltaTime);
+                }
+                catch (Exception ex)
+                {
+                    LogEntryFailed(i, step, currentTick, ex);
+                }
+            }
+        }
+
+        // Called only from a catch block, so the message is built only when an entry failed.
+        private static void LogEntryFailed(int index, IZoneSimulationStep step, uint tick, Exception ex)
+        {
+            try
+            {
+                Debug.LogError($"[ZoneSimulationStep] EntryFailed: index={index} type={step?.GetType().Name} tick={tick} - {ex.GetType().Name}: {ex.Message}");
+            }
+            catch (Exception)
+            {
+                // Logging must not break the tick: a throwing Message getter or log handler would otherwise
+                // escape Run and skip the later entries.
             }
         }
     }

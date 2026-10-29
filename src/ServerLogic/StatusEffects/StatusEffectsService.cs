@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.ExceptionServices;
 using IronGrind.CharacterStats;
+using IronGrind.Networking;
 using IronGrind.ServerLogic.ZoneInstancing;
 
 namespace IronGrind.StatusEffects
@@ -21,7 +22,7 @@ namespace IronGrind.StatusEffects
     /// the entity's slot is released.
     /// Not thread-safe: every call runs on the server tick thread.
     /// </summary>
-    public sealed class StatusEffectsService : IDisposable, IZoneSlotReleaseListener
+    public sealed class StatusEffectsService : IDisposable, IZoneSlotReleaseListener, IZoneSimulationStep
     {
         private const string LOG_PREFIX = "[StatusEffects]";
         private const int ROWS_PER_ENTITY = StatusEffectsConstants.MAX_ACTIVE_BUFFS_PER_ENTITY;
@@ -172,6 +173,17 @@ namespace IronGrind.StatusEffects
             }
 
             EndBatchAndSurface(passException);
+        }
+
+        /// <summary>
+        /// <see cref="IZoneSimulationStep"/>: the phase-3 entry of <c>ZoneTickPipeline</c> (Story 009, ADR-014).
+        /// Calls <see cref="OnServerTick"/>; both arguments are unused (effect durations count server ticks).
+        /// </summary>
+        /// <param name="currentTick">Unused.</param>
+        /// <param name="deltaTime">Unused.</param>
+        public void Run(uint currentTick, float deltaTime)
+        {
+            OnServerTick();
         }
 
         /// <summary>

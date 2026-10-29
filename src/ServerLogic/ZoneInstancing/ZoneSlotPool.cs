@@ -312,6 +312,29 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             return false;
         }
 
+        /// <summary>
+        /// Looks up the slot index of an occupied mob (Status Effects Story 009). Allocation-free.
+        /// </summary>
+        /// <param name="id">The mob's EntityID.</param>
+        /// <param name="mobSlot">The mob slot index, or 0 when unknown or released.</param>
+        /// <returns>True when <paramref name="id"/> holds a mob slot.</returns>
+        /// <example>
+        /// <code>
+        /// if (pool.TryGetMobSlot(id, out ushort mobSlot)) { int owl = pool.GetOwlIndexForMobSlot(mobSlot); }
+        /// </code>
+        /// </example>
+        public bool TryGetMobSlot(EntityID id, out ushort mobSlot)
+        {
+            if (_mobIndex.TryGetValue(id, out int index))
+            {
+                mobSlot = (ushort)index;
+                return true;
+            }
+
+            mobSlot = 0;
+            return false;
+        }
+
         /// <summary>Reads a copy of an occupied player slot.</summary>
         /// <param name="id">The player's EntityID.</param>
         /// <param name="player">The slot contents, or default when unknown.</param>

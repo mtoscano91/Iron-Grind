@@ -1,7 +1,7 @@
 # Story 009: Tick Pipeline Wiring, Mob Targets and Allocation Budget
 
 > **Epic**: Status Effects / Buffs
-> **Status**: Ready — written 2026-10-28 (`/create-stories`, lean); `/story-readiness` 2026-10-29: NEEDS WORK (7 gaps) → fixed → Ready. AC-SE-24 is tested against a test-only stand-in: no Auto-Attack Combat code exists yet.
+> **Status**: Complete (2026-10-29) — written 2026-10-28 (`/create-stories`, lean); `/story-readiness` 2026-10-29: NEEDS WORK (7 gaps) → fixed → Ready. AC-SE-24 is tested against a test-only stand-in: no Auto-Attack Combat code exists yet.
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-26
@@ -27,13 +27,13 @@
 
 ## Acceptance Criteria
 
-- [ ] **Character Stats construction (user decision, readiness 2026-10-29)**: `ZoneServerComposition` builds one `CharacterStats` per zone at S5 (`ConstructObjects`): `new CharacterStats(new LevelingService(XpThresholdTable.Values))`, held in an internal field (internal getter) for later systems to take. No production code populates player or mob base stats yet (out of scope); tests populate them with `SetBaseStat` / `SetCurrentHP`.
-- [ ] **Mob slot lookup (user decision)**: new public `ZoneSlotPool.TryGetMobSlot(EntityID id, out ushort mobSlot)` over the existing `_mobIndex`, mirroring `TryGetPlayerSlot` (false and 0 for an unknown or released id; no allocation). New production `ZoneSlotPoolEntityIndex : IEntitySlotIndex` (`src/ServerLogic/StatusEffects/`): player → its player slot; mob → `GetOwlIndexForMobSlot(mobSlot)` (range [50, 199] with default sizes); neither → false. Tests: a player, a mob, an unknown id, a released player and a released mob slot.
-- [ ] **Wiring**: after `ZoneInstancingWiring` is built, the composition builds `StatusEffectsService` from `CharacterStatsBuffModifierLayer`, `CharacterStatsResourceSink`, `ZoneSlotPoolEntityIndex(wiring.Pool)` and `CharacterStatsDeathSource` over the zone's `CharacterStats`; calls `wiring.Pool.SetReleaseListener(service)` (Story 008); registers the service with the Dispose pass (ADR-010 — `Dispose` unsubscribes the death handler). The service implements `IZoneSimulationStep` (`Run(currentTick, deltaTime)` calls `OnServerTick()`; both arguments unused) and is appended to the phase-3 list, which is exactly `[ZoneInstancingWiring, StatusEffectsService]`. Test via the internal `SimulationSteps` seam: order and types; after the Dispose pass a death event no longer reaches the service; a pool release calls `ClearEntity` (the listener is set). Story 014's composition tests still pass.
-- [ ] **AC-SE-24 — order before combat (user decision: test-only stand-in)**: no production placeholder. The test appends a recording `IZoneSimulationStep` after Status Effects through `SimulationSteps`. A +100 AttackPower buff expiring on tick N: the stand-in reads `GetEffectiveStat(AttackPower)` on tick N and sees the post-expiry value. The Auto-Attack Combat story appends its real entry after Status Effects and keeps this test.
-- [ ] **AC-SE-20 — mobs**: a mob allocated in `ZoneSlotPool` with Character Stats populated → `ApplyEffect(mob, …)` → `Success`; effective stat reflects the modifier; expiry removes it (CR-SE-12 — Character Stats already gives mobs a buff layer).
-- [ ] **AC-SE-25 — no allocation**: 200 entities × 8 effects (mixed modifier and regen effects, some expiring this tick, after a warm-up tick) → one `OnServerTick()` allocates 0 bytes, measured with `GC.GetAllocatedBytesForCurrentThread()` before/after (more reliable than `GC.GetTotalMemory`; the GDD's method is also asserted if stable). Character Stats calls inside the pass count — if `CharacterStats` itself allocates (e.g. `Dictionary` growth on first use), the warm-up tick absorbs it; any remaining allocation is reported, not hidden. A deliberate allocation added in a test double is detected (the measurement works).
-- [ ] **Exception isolation (user decision: per-entry)**: `ZoneSimulationStep.Run` wraps each entry in its own `try`/`catch`; a failed entry logs one error `[ZoneSimulationStep] EntryFailed: index=N type=TYPE tick=N - ExceptionType: message` (built only in the catch; the log call itself guarded like `ZoneTickPipeline.LogStepFailed`) and the next entry still runs. Tests: a throwing layer fake makes Status Effects throw → error logged, the stand-in after it still runs the same tick, the next tick processes normally (the Story 006 bracket closed: no transaction left open); the success path of `Run` still allocates nothing.
+- [x] **Character Stats construction (user decision, readiness 2026-10-29)**: `ZoneServerComposition` builds one `CharacterStats` per zone at S5 (`ConstructObjects`): `new CharacterStats(new LevelingService(XpThresholdTable.Values))`, held in an internal field (internal getter) for later systems to take. No production code populates player or mob base stats yet (out of scope); tests populate them with `SetBaseStat` / `SetCurrentHP`.
+- [x] **Mob slot lookup (user decision)**: new public `ZoneSlotPool.TryGetMobSlot(EntityID id, out ushort mobSlot)` over the existing `_mobIndex`, mirroring `TryGetPlayerSlot` (false and 0 for an unknown or released id; no allocation). New production `ZoneSlotPoolEntityIndex : IEntitySlotIndex` (`src/ServerLogic/StatusEffects/`): player → its player slot; mob → `GetOwlIndexForMobSlot(mobSlot)` (range [50, 199] with default sizes); neither → false. Tests: a player, a mob, an unknown id, a released player and a released mob slot.
+- [x] **Wiring**: after `ZoneInstancingWiring` is built, the composition builds `StatusEffectsService` from `CharacterStatsBuffModifierLayer`, `CharacterStatsResourceSink`, `ZoneSlotPoolEntityIndex(wiring.Pool)` and `CharacterStatsDeathSource` over the zone's `CharacterStats`; calls `wiring.Pool.SetReleaseListener(service)` (Story 008); registers the service with the Dispose pass (ADR-010 — `Dispose` unsubscribes the death handler). The service implements `IZoneSimulationStep` (`Run(currentTick, deltaTime)` calls `OnServerTick()`; both arguments unused) and is appended to the phase-3 list, which is exactly `[ZoneInstancingWiring, StatusEffectsService]`. Test via the internal `SimulationSteps` seam: order and types; after the Dispose pass a death event no longer reaches the service; a pool release calls `ClearEntity` (the listener is set). Story 014's composition tests still pass.
+- [x] **AC-SE-24 — order before combat (user decision: test-only stand-in)**: no production placeholder. The test appends a recording `IZoneSimulationStep` after Status Effects through `SimulationSteps`. A +100 AttackPower buff expiring on tick N: the stand-in reads `GetEffectiveStat(AttackPower)` on tick N and sees the post-expiry value. The Auto-Attack Combat story appends its real entry after Status Effects and keeps this test.
+- [x] **AC-SE-20 — mobs**: a mob allocated in `ZoneSlotPool` with Character Stats populated → `ApplyEffect(mob, …)` → `Success`; effective stat reflects the modifier; expiry removes it (CR-SE-12 — Character Stats already gives mobs a buff layer).
+- [x] **AC-SE-25 — no allocation**: 200 entities × 8 effects (mixed modifier and regen effects, some expiring this tick, after a warm-up) → one `OnServerTick()` allocates nothing, asserted with the Unity Test Framework's `Is.Not.AllocatingGCMemory()` constraint (GC.Alloc profiler recorder, as the Equipment and Outbox tests use). *Changed at `/dev-story` 2026-10-29:* `GC.GetAllocatedBytesForCurrentThread()` always reads 0 under the Editor's Mono (the positive-control test caught it), and the GDD's `GC.GetTotalMemory(false)` delta is not stable under that GC, so neither is asserted. Character Stats calls inside the pass count. The warm-up is one full cycle at the measured load (an expiry tick, then the short effects re-applied): Character Stats' deferred `OnStatChanged` buffers (doubling arrays + mask `Dictionary`) grow once to the largest batch seen, so a warm-up with no expiry would leave the first expiry tick allocating. Any remaining allocation is reported, not hidden. A deliberate allocation added in a test double is detected (the measurement works).
+- [x] **Exception isolation (user decision: per-entry)**: `ZoneSimulationStep.Run` wraps each entry in its own `try`/`catch`; a failed entry logs one error `[ZoneSimulationStep] EntryFailed: index=N type=TYPE tick=N - ExceptionType: message` (built only in the catch; the log call itself guarded like `ZoneTickPipeline.LogStepFailed`) and the next entry still runs. Tests: a throwing layer fake makes Status Effects throw → error logged, the stand-in after it still runs the same tick, the next tick processes normally (the Story 006 bracket closed: no transaction left open); the success path of `Run` still allocates nothing.
 
 ---
 
@@ -74,7 +74,7 @@
 **Story Type**: Integration
 **Required evidence**: `tests/EditMode/StatusEffects/StatusEffects_PipelineWiring_tests.cs` — must exist and pass (plus the `ZoneSimulationStep` isolation and `TryGetMobSlot` tests in their systems' test folders)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing (2026-10-29)
 
 ---
 
@@ -82,3 +82,16 @@
 
 - Depends on: Stories 005–008 (Complete); Zone Instancing Story 014 (Complete)
 - Unlocks: the Skill System epic (callers of `ApplyEffect` / `ApplyInstantHeal`); Auto-Attack Combat appends its phase-3 entry after Status Effects
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-29
+**Criteria**: 7/7 passing (all automated; full EditMode suite 4902 / 4773 passed / 0 failed / 129 skipped)
+**Deviations** (advisory, written into AC-SE-25):
+- Allocation asserted with `Is.Not.AllocatingGCMemory()` (GC.Alloc recorder), not `GC.GetAllocatedBytesForCurrentThread()` — the latter always reads 0 under the Editor's Mono (the positive-control test caught it); the GDD's `GC.GetTotalMemory` delta is not asserted (unstable under that GC).
+- AC-SE-25 warm-up is one full expiry cycle at the measured load. Finding: Character Stats' deferred `OnStatChanged` buffers (doubling arrays + `_deferredMasks` Dictionary) grow once to the largest batch seen, so a zone's first expiry wave of a new size allocates once; steady state is 0 bytes.
+- Code review additions: `ZoneSlotPoolEntityIndex` throws when the pool has more slots than `MAX_ENTITY_SLOTS`; `ZoneSimulationStep` documents that the list must not change during `Run` (null entries fail like any entry).
+**Test Evidence**: Integration — `tests/EditMode/StatusEffects/StatusEffects_PipelineWiring_tests.cs` (21 tests), plus 5 `ZoneSimulationStep` tests in `tests/EditMode/Networking/ZoneServer_CompositionWiring_tests.cs` and 4 `TryGetMobSlot` tests in `tests/EditMode/ZoneInstancing/ZoneInstancing_MobSlots_tests.cs`
+**Code Review**: Complete (2026-10-29: CHANGES REQUIRED, 3 required + 4 suggestions, all applied)
+**Tech debt**: TD-087 (vacuous allocation check in `ZoneInstancing_Wiring_tests.cs`, found here, out of scope)

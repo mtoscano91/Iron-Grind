@@ -3,7 +3,7 @@
 > **Layer**: Core
 > **GDD**: design/gdd/status-effects.md
 > **Architecture Module**: Status Effects
-> **Status**: In Progress
+> **Status**: Complete (2026-10-29) — TR-se-006 (client buff display) deferred per the Definition of Done
 > **Stories**: 9 stories created 2026-10-28 (001–009); 8 Complete (001–008), 1 Ready
 
 ## Overview
@@ -52,10 +52,10 @@ This epic is complete when:
 | 006 | [Expiry Clamp and Batched Stat Events](story-006-expiry-clamp-and-batched-events.md) | Logic | Complete | ADR-010 |
 | 007 | [Death Cleanup and Instant Heal](story-007-death-cleanup-and-instant-heal.md) | Logic | Complete | ADR-010 |
 | 008 | [Zone Departure and Slot Cleanup](story-008-zone-departure-and-slot-cleanup.md) | Integration | Complete (2026-10-29) | ADR-010, ADR-012 |
-| 009 | [Tick Pipeline Wiring, Mob Targets and Allocation Budget](story-009-tick-pipeline-wiring-and-allocation.md) | Integration | Ready (readiness 2026-10-29: 7 gaps fixed) | ADR-014, ADR-012 |
+| 009 | [Tick Pipeline Wiring, Mob Targets and Allocation Budget](story-009-tick-pipeline-wiring-and-allocation.md) | Integration | Complete (2026-10-29) | ADR-014, ADR-012 |
 
 TR-se-006 (client buff display) has no story: it waits on a Networking Core wire-schema addition, as the Definition of Done says.
 
 ## Next Step
 
-Stories 001–007 Complete 2026-10-28 (TD-085 resolved by 006; TD-086 logged by 007); Story 008 Complete 2026-10-29 (`IZoneSlotReleaseListener.BeforeRelease` on `ZoneSlotPool`, set-once `SetReleaseListener`; service `ClearEntity` clears every row and the dead flag before a slot is released). Story 009 readiness 2026-10-29: NEEDS WORK (7 gaps) → fixed → Ready. Decisions: the composition builds one zone `CharacterStats` (`LevelingService` over `XpThresholdTable.Values`); new public `ZoneSlotPool.TryGetMobSlot` + production `ZoneSlotPoolEntityIndex` (mob → OWL index); the service implements `IZoneSimulationStep`, phase 3 = `[ZoneInstancingWiring, StatusEffectsService]`, `pool.SetReleaseListener(service)`, service registered in the Dispose pass (ADR-010); `ZoneSimulationStep` gets per-entry try/catch (`EntryFailed`); the AC-SE-24 combat stand-in is test-only. Next: `/dev-story production/epics/status-effects/story-009-tick-pipeline-wiring-and-allocation.md`.
+Stories 001–007 Complete 2026-10-28 (TD-085 resolved by 006; TD-086 logged by 007); Story 008 Complete 2026-10-29 (`IZoneSlotReleaseListener.BeforeRelease` on `ZoneSlotPool`, set-once `SetReleaseListener`; service `ClearEntity` clears every row and the dead flag before a slot is released). Story 009 Complete 2026-10-29: the composition builds one zone `CharacterStats` (internal `ZoneCharacterStats`) and the service (internal `StatusEffects`); phase 3 = `[ZoneInstancingWiring, StatusEffectsService]`; `ZoneSlotPool.TryGetMobSlot` + `ZoneSlotPoolEntityIndex` (mob → OWL index); `ZoneSimulationStep` isolates each entry (`EntryFailed`); allocation asserted with `Is.Not.AllocatingGCMemory()` (TD-087 logged for an older vacuous check). **Epic complete.** For later epics: Auto-Attack Combat appends its phase-3 entry after Status Effects and keeps the AC-SE-24 test; the Skill System takes the service from the composition; filling in player/mob base stats (admission, spawn) and the Death & Respawn `OnEntityRespawned` caller are still open; TR-se-006 waits on the Networking Core wire schema.

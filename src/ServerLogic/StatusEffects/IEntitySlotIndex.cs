@@ -4,7 +4,7 @@ namespace IronGrind.StatusEffects
 {
     /// <summary>
     /// Maps an <see cref="EntityID"/> to its dense slot index in the effect table (CR-SE-15).
-    /// The production implementation over <c>ZoneSlotPool</c> is Story 009.
+    /// The production implementation is <see cref="ZoneSlotPoolEntityIndex"/> (Story 009).
     /// </summary>
     public interface IEntitySlotIndex
     {
