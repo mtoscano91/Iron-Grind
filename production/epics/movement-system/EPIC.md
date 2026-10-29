@@ -4,7 +4,7 @@
 > **GDD**: design/gdd/movement-system.md
 > **Architecture Module**: Movement — position integration, intent messages, movement state (`architecture.md` module table)
 > **Status**: Ready
-> **Stories**: Not yet created — run `/create-stories movement-system`
+> **Stories**: 13 stories created 2026-10-29 (001–013), all Ready — see Stories below
 > **Manifest Version**: 2026-10-26
 
 ## Overview
@@ -44,14 +44,14 @@ The Movement System governs player locomotion in a zone. On the client, touch in
 | TR-mov-009 | Client auto-run flag (never persisted; cancel on re-press, F-MOV-3 rear pull `dot < 0`, Prohibited entry) and send cadence of one intent per tick while input is active; a facing-only intent (dir 0) while Prohibited (CR-MOV-5, CR-MOV-10, AC-MOV-14) | ADR-004 ✅ (send path); AC-MOV-22 device budget — waits for an iOS build |
 | TR-mov-010 | Tuning knobs TK-MOV-1–6 exposed through a ScriptableObject, changeable without code changes | ❌ No ADR (design-only, LOW risk) |
 
-> **Open decision for `/create-stories` (user decision 2026-10-29: decide then): base MovementSpeed conflict.** `movement-system.md` TK-MOV-3 / F-MOV-2 and registry `BASE_MOVE_SPEED` say **6.0** u/s; `character-stats.md` (StatSchema table and examples), `character-persistence.md` (starting values), `CharacterStubDefaults.MOVEMENT_SPEED` and the ADR-006 `movement_speed` column default say **5.0**. AC-MOV-8 (0.3 u/tick) depends on the answer. Resolve it before the TR-mov-001 story is written.
+> **Base MovementSpeed conflict — resolved 2026-10-29 (`/create-stories`, user decision): 5.0 wins.** `movement-system.md` (TK-MOV-3, F-MOV-1/2 examples, F-MOV-6 note, animation note, AC-MOV-8 → 0.25 u/tick), registry `BASE_MOVE_SPEED` and the `client-side-prediction.md` example now say 5.0, matching `character-stats.md`, `character-persistence.md`, `CharacterStubDefaults.MOVEMENT_SPEED` and the ADR-006 column default. Story 001 asserts the parity.
 >
 > **Notes for `/create-stories`:**
 > - Nothing sets `Prohibited` yet (Status Effects has no stun or root); TR-mov-004 needs a seam that a later epic (Auto-Attack Combat, Skill System) fills in.
 > - ADR-014's intake already drops a stale `SequenceNumber` per connection; F-MOV-7's `TickNumber` tolerance is a second check in the Movement handler. Say which drop each test exercises.
 > - Movement's place inside phase 4, relative to mob position integration (Navigation), is not fixed yet; ADR-014 says the composition root lists the order.
 > - `IZoneNavigation` (`src/ServerLogic/ZoneServer/`) has `Initialize` / `Teardown` only, with a stand-in until the Navigation epic; `SamplePosition` needs its own seam so EditMode tests run without a baked NavMesh.
-> - GDD housekeeping (not done here): the header still says "Designed — Pending Review" (systems-index says Approved, Pass 2 lean, 2026-05-26); the Dependencies table and OQ-MOV-2/3 still call Zone Instancing and Status Effects "Not Started" (both epics are now Complete; ADR-009 covers NavMesh provision and bounds).
+> - GDD housekeeping: the header status was aligned with systems-index (Approved) on 2026-10-29; still open: the Dependencies table and OQ-MOV-2/3 still call Zone Instancing and Status Effects "Not Started" (both epics are now Complete; ADR-009 covers NavMesh provision and bounds).
 
 ## Definition of Done
 
@@ -61,6 +61,28 @@ This epic is complete when:
 - Logic and Integration stories have passing test files in `tests/EditMode/MovementSystem/` (and `tests/EditMode/Integration/` for the pipeline wiring)
 - Client input stories have EditMode tests for the extracted logic and a manual walkthrough doc in `production/qa/evidence/` for the touch and UI behaviour
 
+## Stories
+
+*Written 2026-10-29 (`/create-stories`, lean — QL-STORY-READY skipped; QA test cases written from the GDD ACs). Code findings at creation: no server-side player position exists (Zone Instancing reads it through the logging `IZoneEntityStateSource` stand-in) — Movement becomes its owner (005, 008); `PositionPacketWriter` (`TICK_BATCH_UU`) exists but nothing sends it, and `IClientMessageSendSeam` only sends envelope + body (009); the client has no zone connection, so the client stories end at an `IMovementIntentSink` seam (012); `MovementIntentMessage` has no MessageTypeID in the wire GDD (002, candidate 0x0211); `ZoneSlotPool.SetReleaseListener` is set-once and Status Effects holds it (008, composite listener recommended); no Prohibited setter or stun wire message exists (006, 011). Recommended order: 001 → 002 → 003 → 005 → 004 → 006 → 007 → 008 → 009, then 010 → 011 → 012 → 013.*
+
+| # | Story | Type | Status | ADR |
+|---|-------|------|--------|-----|
+| 001 | [Tuning Config and Position Encoding Guard](story-001-tuning-config-and-encoding-guard.md) | Logic | Ready | ADR-012 |
+| 002 | [MovementIntentMessage Wire Type and Codec](story-002-movement-intent-wire-type-and-codec.md) | Logic | Ready | ADR-014, ADR-004 |
+| 003 | [Position Integration and Effective Speed](story-003-position-integration-and-effective-speed.md) | Logic | Ready | ADR-002, ADR-012 |
+| 004 | [Intent Intake — Sender Check, Stale Discard, Last-Wins](story-004-intent-intake-sender-stale-last-wins.md) | Integration | Ready | ADR-014, ADR-004 |
+| 005 | [Movement Tick Step and NavMesh Validation](story-005-tick-step-and-navmesh-validation.md) | Logic | Ready | ADR-002, ADR-014 |
+| 006 | [Prohibited State and Auto-Face Override](story-006-prohibited-state-and-auto-face-override.md) | Logic | Ready | ADR-010 |
+| 007 | [NavMesh Stall Recovery and Unavailable NavMesh](story-007-navmesh-stall-recovery-and-unavailable-navmesh.md) | Logic | Ready | ADR-009, ADR-002 |
+| 008 | [Zone Entry, Exit and Slot Release](story-008-zone-entry-exit-and-slot-release.md) | Integration | Ready | ADR-009, ADR-010 |
+| 009 | [Composition Wiring and Per-Tick Position Broadcast](story-009-composition-wiring-and-position-broadcast.md) | Integration | Ready | ADR-014, ADR-002, ADR-004 |
+| 010 | [Touch Zones, Floating Joystick and Camera-Relative Direction](story-010-touch-zones-joystick-and-camera-relative-direction.md) | Logic | Ready | ADR-012, ADR-005 |
+| 011 | [Camera Drag, Facing and Auto-Run State](story-011-camera-drag-facing-and-auto-run.md) | Logic | Ready | ADR-012 |
+| 012 | [Client Intent Producer and Send Cadence](story-012-client-intent-producer-and-send-cadence.md) | Logic | Ready | ADR-004, ADR-012 |
+| 013 | [Joystick, Auto-Run Button and Camera Follow (UI)](story-013-joystick-auto-run-button-and-camera-follow-ui.md) | UI | Ready | ADR-005, ADR-012 |
+
+AC-MOV-22 (device frame budget) has no story: it waits for on-device profiling, as the Definition of Done says.
+
 ## Next Step
 
-Run `/create-stories movement-system` to break this epic into implementable stories. Resolve the base MovementSpeed conflict first.
+Run `/story-readiness production/epics/movement-system/story-001-tuning-config-and-encoding-guard.md`, then `/dev-story` it. Work in the recommended order; each story's Dependencies section lists what must be done first.

@@ -1,8 +1,8 @@
 # Movement System
 
-> **Status**: Designed — Pending Review
+> **Status**: Approved (Pass 2 lean, 2026-05-26 — header aligned with systems-index 2026-10-29)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-05-25
+> **Last Updated**: 2026-10-29 (base MovementSpeed 6.0 → 5.0 to match Character Stats, Character Persistence and the code — user decision at Movement `/create-stories`)
 > **Implements Pillar**: Pillar 2 — Rhythm Mastery; Pillar 3 — Social Gravity
 
 ## Overview
@@ -64,7 +64,7 @@ newPos = oldPos + normalize(inputDir) × GetEffectiveStat(MovementSpeed) × (1.0
 | `GetEffectiveStat(MovementSpeed)` | Queried each tick (not cached) — buff changes apply immediately |
 | `1.0 / TICK_RATE_HZ` | Fixed deltaTime = 0.050s (Networking Core CR-NET-2; never actual elapsed wall-clock time) |
 
-At base MovementSpeed = 6.0 u/s: character moves 0.30 units per tick. At cap = 20.0 u/s: 1.0 unit per tick.
+At base MovementSpeed = 5.0 u/s: character moves 0.25 units per tick. At cap = 20.0 u/s: 1.0 unit per tick.
 
 ---
 
@@ -202,7 +202,7 @@ newPos = oldPos + normalize(inputDir) × v_eff × dt
 
 **Output range:** Unbounded before NavMesh validation; clamped to walkable surface by CR-MOV-7.
 
-**Example:** `oldPos=(10.0, 0.0, 5.0)`, `inputDir=(0,0,1)`, `v_eff=6.0`, `dt=0.050` → `newPos=(10.0, 0.0, 5.30)`. Wire-encoded posZ: `RoundToInt(5.30×100)=530` → decoded as 5.30 (exact, no rounding loss).
+**Example:** `oldPos=(10.0, 0.0, 5.0)`, `inputDir=(0,0,1)`, `v_eff=5.0`, `dt=0.050` → `newPos=(10.0, 0.0, 5.25)`. Wire-encoded posZ: `RoundToInt(5.25×100)=525` → decoded as 5.25 (exact, no rounding loss).
 
 ---
 
@@ -220,7 +220,7 @@ v_eff = clamp(
 
 | Variable | Type | Range | Description |
 |----------|------|-------|-------------|
-| `v_base` | float | 6.0 u/s (at spawn) | Base speed from Character Stats |
+| `v_base` | float | 5.0 u/s (at spawn) | Base speed from Character Stats |
 | `ΣFlatBuff` | float | pre-clamp | Sum of flat buff/debuff modifier contributions to MovementSpeed |
 | `ΣPctBuff` | float | pre-clamp | Sum of percentage buff/debuff contributions |
 | `ΣFlatEquip`, `ΣPctEquip` | float | 0 (MVP) | No movement-speed gear defined at MVP |
@@ -233,9 +233,9 @@ v_eff = clamp(
 **Compounding intent:** Flat modifiers (ΣFlatEquip + ΣFlatBuff) are summed first, then the total is multiplied by each percent multiplier independently. Two ×20% percent buffs yield ×1.44 (not ×1.40). This is by design — percent stacking is multiplicative, not additive.
 
 **Examples:**
-- Base only: `v_eff = clamp(6.0 × 1.0 × 1.0, 0.5, 20.0) = 6.0 u/s` → 0.30 u/tick
-- Speed buff (+3 flat, +20% pct): `v_eff = clamp((6.0+3.0) × 1.20, 0.5, 20.0) = 10.8 u/s` → 0.54 u/tick
-- Slow debuff (−50% pct): `v_eff = clamp(6.0 × 0.50, 0.5, 20.0) = 3.0 u/s` → 0.15 u/tick
+- Base only: `v_eff = clamp(5.0 × 1.0 × 1.0, 0.5, 20.0) = 5.0 u/s` → 0.25 u/tick
+- Speed buff (+3 flat, +20% pct): `v_eff = clamp((5.0+3.0) × 1.20, 0.5, 20.0) = 9.6 u/s` → 0.48 u/tick
+- Slow debuff (−50% pct): `v_eff = clamp(5.0 × 0.50, 0.5, 20.0) = 2.5 u/s` → 0.125 u/tick
 - At cap: `v_eff = 20.0 u/s` → 1.0 u/tick
 
 ---
@@ -309,7 +309,7 @@ roundingError = |posWorld − posDecoded| ≤ 0.005 units  (½ LSB at ×100 enco
 | `posEncoded` | short (int16) | [−32767, +32767] | Wire-encoded position |
 | `roundingError` | float | [0.0, 0.005] | Maximum per-axis deviation between server truth and client display |
 
-**Output range:** Error bounded to ±0.005 units per axis. At base speed (0.30 u/tick), wire noise is 1.7% of one tick's displacement — imperceptible at 60fps. Maximum zone diameter: 655.34 units per axis. **Encoding cap constraint:** All zone walkable geometry must stay within ±327.67 units per axis from the zone origin. The server must validate `Mathf.Abs(candidatePos.x) ≤ 327.67f && Mathf.Abs(candidatePos.z) ≤ 327.67f` before encoding — floating-point accumulation must not push a position past the encoding boundary (overshoot risk: 327.67f + 0.005f rounding error wraps to a negative short). Zone geometry is constrained below this limit by NavMesh baking (EC-MOV-20). Cross-reference: `POINT_BLANK_EPSILON_SQ = 0.0005` (Hit Detection) is derived from 2 axes × (0.01 u)² = 0.0002 — the encoding floor establishes that value.
+**Output range:** Error bounded to ±0.005 units per axis. At base speed (0.25 u/tick), wire noise is 2.0% of one tick's displacement — imperceptible at 60fps. Maximum zone diameter: 655.34 units per axis. **Encoding cap constraint:** All zone walkable geometry must stay within ±327.67 units per axis from the zone origin. The server must validate `Mathf.Abs(candidatePos.x) ≤ 327.67f && Mathf.Abs(candidatePos.z) ≤ 327.67f` before encoding — floating-point accumulation must not push a position past the encoding boundary (overshoot risk: 327.67f + 0.005f rounding error wraps to a negative short). Zone geometry is constrained below this limit by NavMesh baking (EC-MOV-20). Cross-reference: `POINT_BLANK_EPSILON_SQ = 0.0005` (Hit Detection) is derived from 2 axes × (0.01 u)² = 0.0002 — the encoding floor establishes that value.
 
 ---
 
@@ -412,7 +412,7 @@ STALE_TICK_TOLERANCE = 3
 |----|------|---------|------------|-----------------|
 | **TK-MOV-1** | `JOYSTICK_RADIUS_PX` | 80 px | 60–120 px | Visual size of the joystick thumb area. Below 60px the control becomes unreachable for wide thumbs; above 120px it overlaps skill buttons in landscape. |
 | **TK-MOV-2** | `DEAD_ZONE_NORMALIZED` | 0.15 | 0.05–0.30 | Fraction of joystick radius before movement registers. Below 0.05 causes jitter from touch noise; above 0.30 the joystick feels unresponsive on short taps. Note: 0.15 may be at or below typical 3–5 mm touch imprecision on iOS — validate empirically on target devices before shipping. |
-| **TK-MOV-3** | `BASE_MOVE_SPEED` | 6.0 u/s | 4.0–10.0 u/s | Default v_base fed into F-MOV-2 before equipment and buff modifiers. Below 4.0 the world feels sluggish and grind loops slow down disproportionately; above 10.0 players outrun mob aggro ranges in tested zones. |
+| **TK-MOV-3** | `BASE_MOVE_SPEED` | 5.0 u/s | 4.0–10.0 u/s | Default v_base fed into F-MOV-2 before equipment and buff modifiers. Below 4.0 the world feels sluggish and grind loops slow down disproportionately; above 10.0 players outrun mob aggro ranges in tested zones. |
 | **TK-MOV-4** | `STALE_TICK_TOLERANCE` | 3 ticks | 2–5 ticks | How many ticks behind the server current tick a MovementIntentMessage can be before it is discarded (F-MOV-7). Default 3 covers 150ms OWL tolerance (3 ticks × 50ms), matching the 150ms RTT / 75ms OWL target — resolved OQ-CSP-1. Below 2: inputs on 100ms+ RTT connections begin being discarded; rubber-band visible on moderate-latency mobile. Above 5: server retains 250ms+ of stale-input state; security window widens. Coordinate with Networking Core before changing. |
 | **TK-MOV-5** | `CAMERA_DRAG_SENSITIVITY` | 0.25 °/px | 0.10–0.50 °/px | How far the camera rotates per pixel of horizontal drag. Below 0.10 requires large sweeps to reorient; above 0.50 the camera overcorrects on fast swipes and induces nausea complaints on QA. |
 | **TK-MOV-6** | `NAVMESH_STALL_RECOVERY_TICKS` | 10 ticks | 5–30 ticks | Consecutive ticks without a valid `NavMesh.SamplePosition` hit before the server escalates to a 5.0f-radius recovery teleport (EC-MOV-11). At default 10 ticks = 500ms. Below 5: triggers premature recovery from momentary geometry edges; above 30: player is visually stuck for >1.5s before recovery attempts. |
@@ -428,8 +428,8 @@ STALE_TICK_TOLERANCE = 3
 - Entry condition: `v_eff = 0` OR joystick released + auto-run inactive + Prohibited cleared.
 
 **Run (base)**
-- `char_[class]_run_lod0.fbx` — Full run cycle at `v_eff = 6.0 u/s`. Loops. Weighted, grounded footfalls; no bounce silhouette noise.
-- Animator float `NormalizedSpeed = v_eff / 20.0`. Idle pose at 0.0, full run at 0.30. Values above 0.30 drive animation playback-speed scale only — no additional blend tree node required at MVP.
+- `char_[class]_run_lod0.fbx` — Full run cycle at `v_eff = 5.0 u/s`. Loops. Weighted, grounded footfalls; no bounce silhouette noise.
+- Animator float `NormalizedSpeed = v_eff / 20.0`. Idle pose at 0.0, full run at 0.25. Values above 0.25 drive animation playback-speed scale only — no additional blend tree node required at MVP.
 - Auto-run active: same animation as manual run. No additional asset.
 
 **Prohibited (stun) — entry**
@@ -536,7 +536,7 @@ UI Programmer implements joystick input logic. UX Designer owns screen layout an
 
 **AC-MOV-7** — Immediate stop on input release. When a joystick touch is lifted, the character position delta in the immediately following tick is 0.0 units on both X and Z axes.
 
-**AC-MOV-8** — F-MOV-1 position delta correctness at base speed. With no equipment or buff modifiers and BASE_MOVE_SPEED = 6.0 u/s, a fully-deflected joystick input produces a server-side position delta of exactly 0.3 units per tick (6.0 × 1/20) along the movement axis, within NavMesh-validated bounds.
+**AC-MOV-8** — F-MOV-1 position delta correctness at base speed. With no equipment or buff modifiers and BASE_MOVE_SPEED = 5.0 u/s, a fully-deflected joystick input produces a server-side position delta of exactly 0.25 units per tick (5.0 × 1/20) along the movement axis, within NavMesh-validated bounds.
 
 **AC-MOV-9** — Speed formula clamp — minimum. When computed v_eff would fall below 0.5 u/s, the server clamps to 0.5 u/s and the per-tick delta is 0.025 units, not less.
 

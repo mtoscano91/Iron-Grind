@@ -1264,12 +1264,14 @@ constants:
     source: design/gdd/movement-system.md
     referenced_by:
       - design/gdd/movement-system.md
+      - design/gdd/character-stats.md
+      - design/gdd/character-persistence.md
     type: "float constant (tuning knob — TK-MOV-3)"
-    value: 6.0
+    value: 5.0
     unit: "Unity world units per second (v_base in F-MOV-2)"
     note: "Default movement speed before equipment and buff modifiers. Fed into F-MOV-2 as v_base: v_eff = clamp((v_base + ΣFlatEquip + ΣFlatBuff) × (1 + ΣPctEquip) × (1 + ΣPctBuff), 0.5, 20.0). v_eff floor (0.5) and ceiling (20.0) are enforced by F-MOV-2 and originate from Character Stats (MovementSpeed stat range). Safe range: [4.0, 10.0]. Below 4.0: world feels sluggish; above 10.0: players outrun mob aggro ranges in tested zones. Coordinate with level design before changing — zone geometry pacing is tuned to this baseline."
     added: "2026-05-25"
-    revised: ""
+    revised: "2026-10-29"  # 6.0 → 5.0 to match character-stats.md (MovementSpeed base), character-persistence.md starting values and CharacterStubDefaults.MOVEMENT_SPEED (user decision, Movement /create-stories)
 
   - name: SkillID
     status: active

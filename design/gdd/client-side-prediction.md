@@ -2,7 +2,7 @@
 
 > **Status**: Approved (lean re-review #2, 2026-06-15)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-06-15
+> **Last Updated**: 2026-10-29 (F-CSP example: base v_eff 6.0 → 5.0, following movement-system.md TK-MOV-3)
 > **Implements Pillar**: Pillar 2 — Rhythm Mastery (responsive input feel); Pillar 3 — Social Gravity (smooth entity movement)
 
 ## Overview
@@ -207,7 +207,7 @@ predicted_position(n) = predicted_position(n−1) + normalize(inputDir) × v_eff
 
 *This is an exact replication of Movement System F-MOV-1, applied per render frame with `dt_clamped` instead of the server's fixed 50ms dt.*
 
-**Example** (base speed, 60fps): v_eff = 6.0, inputDir = (1, 0), dt_clamped = 0.01667s → `predicted_position += 0.10 units/frame` → 6.0 u/s total ✓
+**Example** (base speed, 60fps): v_eff = 5.0, inputDir = (1, 0), dt_clamped = 0.01667s → `predicted_position += 0.0833 units/frame` → 5.0 u/s total ✓
 
 ---
 
