@@ -503,6 +503,97 @@ namespace IronGrind.Tests.EditMode.Networking
         // critical anomaly instead of silently truncating.
         // -----------------------------------------------------------------------
 
+        // PositionPacketWriter no-allocation overload (Movement Story 009).
+
+        private static EntityPositionUpdate[] SortedEntries(int n)
+        {
+            var entries = new EntityPositionUpdate[n];
+            for (int i = 0; i < n; i++)
+            {
+                entries[i] = new EntityPositionUpdate(Eid((uint)(i + 1)), (short)(i + 1), 0, (short)(-i));
+            }
+
+            return entries;
+        }
+
+        [Test]
+        public void PositionPacketWriter_Overload_ExcludedEntityIsSkipped()
+        {
+            EntityPositionUpdate[] entries = SortedEntries(5);
+            byte[] buffer = new byte[ClientBufferSet.BufferSize];
+
+            int bytes = PositionPacketWriter.Write(buffer, 7u, 9u, entries, 5, Eid(3), out int dropped);
+
+            Assert.AreEqual(0, dropped);
+            Assert.IsTrue(BatchHeaderCodec.TryRead(buffer, out ServerMessageEnvelope envelope, out ushort count));
+            Assert.AreEqual(PositionPacketWriter.TICK_BATCH_UU, envelope.MessageTypeId);
+            Assert.AreEqual(7u, envelope.SequenceNumber);
+            Assert.AreEqual(9u, envelope.ServerTickNumber);
+            Assert.AreEqual(4, count);
+            uint[] expected = { 1u, 2u, 4u, 5u };
+            int offset = BatchHeaderCodec.HeaderSize;
+            for (int i = 0; i < count; i++)
+            {
+                Assert.IsTrue(BatchSubMessageCodec.TryReadEntityPositionUpdate(buffer.AsSpan(offset), out EntityPositionUpdate decoded, out int read));
+                Assert.AreEqual(expected[i], decoded.EntityId.RawValue);
+                offset += read;
+            }
+
+            Assert.AreEqual(bytes, offset);
+        }
+
+        [Test]
+        public void PositionPacketWriter_Overload_37Eligible_WritesFirst35AndReportsTwoDropped()
+        {
+            EntityPositionUpdate[] entries = SortedEntries(37);
+            byte[] buffer = new byte[ClientBufferSet.BufferSize];
+
+            int bytes = PositionPacketWriter.Write(buffer, 1u, 1u, entries, 37, Eid(1000), out int dropped);
+
+            Assert.AreEqual(2, dropped);
+            Assert.IsTrue(BatchHeaderCodec.TryRead(buffer, out _, out ushort count));
+            Assert.AreEqual(35, count);
+            Assert.LessOrEqual(bytes, RUBatchWriter.MAX_MESSAGE_BODY_BYTES);
+            int offset = BatchHeaderCodec.HeaderSize;
+            for (int i = 0; i < count; i++)
+            {
+                Assert.IsTrue(BatchSubMessageCodec.TryReadEntityPositionUpdate(buffer.AsSpan(offset), out EntityPositionUpdate decoded, out int read));
+                Assert.AreEqual((uint)(i + 1), decoded.EntityId.RawValue);
+                offset += read;
+            }
+        }
+
+        [Test]
+        public void PositionPacketWriter_Overload_CountZero_WritesHeaderWithZeroEntries()
+        {
+            byte[] buffer = new byte[ClientBufferSet.BufferSize];
+
+            int bytes = PositionPacketWriter.Write(buffer, 1u, 1u, SortedEntries(3), 0, Eid(1), out int dropped);
+
+            Assert.AreEqual(BatchHeaderCodec.HeaderSize, bytes);
+            Assert.AreEqual(0, dropped);
+            Assert.IsTrue(BatchHeaderCodec.TryRead(buffer, out _, out ushort count));
+            Assert.AreEqual(0, count);
+        }
+
+        [Test]
+        public void PositionPacketWriter_Overload_NullArray_ThrowsArgumentNullException()
+        {
+            byte[] buffer = new byte[ClientBufferSet.BufferSize];
+
+            Assert.Throws<ArgumentNullException>(() =>
+                PositionPacketWriter.Write(buffer, 1u, 1u, (EntityPositionUpdate[])null, 0, Eid(1), out _));
+        }
+
+        [Test]
+        public void PositionPacketWriter_Overload_CountBeyondArrayLength_ThrowsArgumentOutOfRangeException()
+        {
+            byte[] buffer = new byte[ClientBufferSet.BufferSize];
+
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                PositionPacketWriter.Write(buffer, 1u, 1u, SortedEntries(3), 4, Eid(1), out _));
+        }
+
         [Test]
         public void CycleBroadcastPacketWriter_EntriesExceedBudget_ThrowsAndLogsCriticalAnomalyRatherThanTruncating()
         {

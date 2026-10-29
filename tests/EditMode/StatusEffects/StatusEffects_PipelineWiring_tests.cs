@@ -289,13 +289,14 @@ namespace IronGrind.Tests.EditMode.StatusEffects
         // ------------------------------------------------------------ Wiring
 
         [Test]
-        public void test_simulation_steps_are_exactly_zone_instancing_then_status_effects_after_start()
+        public void test_simulation_steps_are_exactly_zone_instancing_then_status_effects_then_movement_after_start()
         {
             WiRig rig = StartRig();
 
             IList<IZoneSimulationStep> steps = rig.Comp.SimulationSteps;
 
-            Assert.AreEqual(2, steps.Count);
+            Assert.AreEqual(3, steps.Count);
+            Assert.AreSame(rig.Comp.Movement, steps[2]);
             Assert.AreSame(rig.Comp.ZoneInstancing, steps[0]);
             Assert.IsInstanceOf<ZoneInstancingWiring>(steps[0]);
             Assert.AreSame(rig.Comp.StatusEffects, steps[1]);

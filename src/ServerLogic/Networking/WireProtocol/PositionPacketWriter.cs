@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using IronGrind.CharacterStats;
 using UnityEngine;
 
 namespace IronGrind.Networking
@@ -87,6 +88,71 @@ namespace IronGrind.Networking
             {
                 EntityPositionUpdate entry = sorted[i];
                 offset += BatchSubMessageCodec.WriteEntityPositionUpdate(destination.Slice(offset), in entry);
+            }
+
+            return offset;
+        }
+
+        /// <summary>
+        /// Allocation-free overload (Movement Story 009): serializes the Position packet from entries the caller already
+        /// sorted ascending by <c>EntityID</c>, skipping <paramref name="exclude"/> (the receiver's own entity) and writing
+        /// at most <see cref="MaxEntriesPerPacket"/> entries, the lowest ids first. Never allocates and never logs.
+        /// </summary>
+        /// <param name="destination">The destination buffer (a <see cref="ClientBufferSet.PositionBuffer"/>).</param>
+        /// <param name="sequenceNumber">The outbound envelope <c>SequenceNumber</c>.</param>
+        /// <param name="tickNumber">The server tick this packet was authored on.</param>
+        /// <param name="sortedEntries">Entries sorted ascending by EntityID; only the first <paramref name="count"/> are read.</param>
+        /// <param name="count">Number of valid entries in <paramref name="sortedEntries"/>.</param>
+        /// <param name="exclude">The EntityID to skip.</param>
+        /// <param name="droppedCount">Non-excluded entries that did not fit and were not written.</param>
+        /// <returns>The total number of bytes written to <paramref name="destination"/>.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="sortedEntries"/> is null.</exception>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="count"/> is outside [0, length].</exception>
+        /// <example>
+        /// <code>
+        /// int bytes = PositionPacketWriter.Write(buffer, 42u, 1000u, scratch, n, receiverId, out int dropped);
+        /// </code>
+        /// </example>
+        public static int Write(Span<byte> destination, uint sequenceNumber, uint tickNumber,
+            EntityPositionUpdate[] sortedEntries, int count, EntityID exclude, out int droppedCount)
+        {
+            if (sortedEntries == null)
+            {
+                throw new ArgumentNullException(nameof(sortedEntries));
+            }
+
+            if (count < 0 || count > sortedEntries.Length)
+            {
+                throw new ArgumentOutOfRangeException(nameof(count), count, "count must be in [0, sortedEntries.Length].");
+            }
+
+            int eligible = 0;
+            for (int i = 0; i < count; i++)
+            {
+                if (sortedEntries[i].EntityId != exclude)
+                {
+                    eligible++;
+                }
+            }
+
+            int included = eligible > MaxEntriesPerPacket ? MaxEntriesPerPacket : eligible;
+            droppedCount = eligible - included;
+
+            var envelope = new ServerMessageEnvelope(TICK_BATCH_UU, sequenceNumber, tickNumber);
+            BatchHeaderCodec.Write(destination, in envelope, (ushort)included);
+            int offset = BatchHeaderCodec.HeaderSize;
+
+            int written = 0;
+            for (int i = 0; i < count && written < included; i++)
+            {
+                if (sortedEntries[i].EntityId == exclude)
+                {
+                    continue;
+                }
+
+                EntityPositionUpdate entry = sortedEntries[i];
+                offset += BatchSubMessageCodec.WriteEntityPositionUpdate(destination.Slice(offset), in entry);
+                written++;
             }
 
             return offset;

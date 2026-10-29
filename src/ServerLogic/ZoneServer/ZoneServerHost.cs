@@ -61,7 +61,8 @@ namespace IronGrind.ServerLogic.ZoneServer
                     new StandInGatewayRegistration(),
                     new FileZoneConfigSource(),
                     new ProcessZoneEnvironment(),
-                    null);
+                    null,
+                    slot); // the composition builds the respawn provider over it at S5 (zone id known by then)
             }
             catch (Exception ex)
             {

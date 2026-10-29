@@ -5393,3 +5393,18 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Story: production/epics/movement-system/story-008-zone-entry-exit-and-slot-release.md — Zone Entry, Exit and Slot Release
 - Tech debt logged: None
 - Next recommended: /story-readiness production/epics/movement-system/story-009-composition-wiring-and-position-broadcast.md (carry the Story 008 wiring list: AttachMovement, SetEntryListener, composite release listener)
+
+## Session Extract — /dev-story 2026-10-29
+- Story: production/epics/movement-system/story-009-composition-wiring-and-position-broadcast.md — Composition Wiring and Per-Tick Position Broadcast
+- Files changed: src/ServerLogic/MovementSystem/PositionBroadcastStep.cs (new), src/ServerLogic/ZoneInstancing/ZoneDefinitionSlotRespawnPointProvider.cs (new), PositionPacketWriter.cs (no-alloc Write overload with exclude/droppedCount), ZoneSlotPool.cs (TryGetPlayerAtSlot), ZoneInstancingWiring.cs (internal EntryCompletion), ZoneServerComposition.cs (BuildMovement, shared send seam, OutboundThenPositions, S6 SetNavMeshAvailable, Movement/PositionBroadcast getters, RespawnProviderOverride, optional ZoneDefinitionSlot param), ZoneServerHost.cs (passes slot)
+- Test written: tests/EditMode/MovementSystem/MovementSystem_PipelineWiring_tests.cs — 20 tests; +5 writer-overload tests in WireProtocol_BatchFraming_tests.cs; CONSTRUCTION_ORDER + StatusEffects simulation-list test updated. EditMode 5275 / 5146 passed / 0 failed / 129 skipped
+- Deviations: host passes ZoneDefinitionSlot (zone id unknown in Awake), composition builds the provider at S5; with no provider (test compositions) Movement uses the 6-arg ctor; packets carry positions only (EntityPositionUpdate has no facing — story wording to fix at /story-done)
+- Not covered at composition level (EditMode has no NavMesh / no accessor): real intent end-to-end (covered at buffer+service+step level with a fake sampler), snapshot source in the composed zone (inner stand-in always false; Story 008 unit tests cover the decorator), release order (covered by Story 008 composite test), valid NavMesh → SetNavMeshAvailable(true)
+- Blockers: None
+- Next: /code-review then /story-done production/epics/movement-system/story-009-composition-wiring-and-position-broadcast.md
+
+## Session Extract — /story-done 2026-10-29
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/movement-system/story-009-composition-wiring-and-position-broadcast.md — Composition Wiring and Per-Tick Position Broadcast
+- Tech debt logged: None
+- Next recommended: /story-readiness production/epics/movement-system/story-010-touch-zones-joystick-and-camera-relative-direction.md (server half of the Movement epic complete; client stories 010–013 remain)

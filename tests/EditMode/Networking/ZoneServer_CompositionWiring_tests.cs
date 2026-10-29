@@ -29,7 +29,13 @@ namespace IronGrind.Tests.EditMode.Networking
 
     internal sealed class WiSendSeam : IClientMessageSendSeam
     {
-        public void Send(uint clientId, ReadOnlySpan<byte> message, NetworkChannel channel) { }
+        public readonly List<(uint client, byte[] data, NetworkChannel channel)> Sent =
+            new List<(uint client, byte[] data, NetworkChannel channel)>();
+
+        public void Send(uint clientId, ReadOnlySpan<byte> message, NetworkChannel channel)
+        {
+            Sent.Add((clientId, message.ToArray(), channel));
+        }
     }
 
     internal sealed class WiTransport : IZoneInboundTransport
@@ -45,6 +51,7 @@ namespace IronGrind.Tests.EditMode.Networking
         private readonly List<string> _log;
         public Action SubscribedHandler;
         public bool ThrowOnSendSeam;
+        public WiSendSeam Seam;
         public WiTransport Transport;
         public IInboundMessageIntake Intake;
         public IInboundRequestDispatcher Dispatcher;
@@ -69,7 +76,8 @@ namespace IronGrind.Tests.EditMode.Networking
                 throw new InvalidOperationException("Sup3r;Secret!");
             }
 
-            return new WiSendSeam();
+            Seam = new WiSendSeam();
+            return Seam;
         }
 
         public IZoneInboundTransport CreateInboundTransport(
@@ -202,7 +210,8 @@ namespace IronGrind.Tests.EditMode.Networking
             "TickCompletionQueue", "ServerTickLoop", "NpgsqlCharacterRecordStore", "CharacterPersistenceService",
             "CrossZoneRelayAllowlist", "CrossZoneRelayOrigin", "CrossZoneRelayInbox", "CrossZoneRelayReceiver",
             "NpgsqlRelayPublisher", "CrossCuttingRpcGuardChain", "CharacterMutationGate", "InboundRequestDispatcher",
-            "ClientMessageOutbox", "ZoneInstancingWiring", "CharacterStats", "StatusEffectsService", "ServerWideBroadcaster", "ZoneClientRelayHandler", "ZoneSimulationStep",
+            "ClientMessageOutbox", "ZoneInstancingWiring", "CharacterStats", "StatusEffectsService",
+            "MovementIntentBuffer", "MovementService", "PositionBroadcastStep", "ServerWideBroadcaster", "ZoneClientRelayHandler", "ZoneSimulationStep",
             "ZoneTickPipeline", "Seal", "RegisterTickDriven", "CreateInboundTransport"
         };
 

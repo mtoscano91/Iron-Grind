@@ -335,6 +335,27 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             return false;
         }
 
+        /// <summary>
+        /// Reads the EntityID and connection id held by one player slot index (Movement Story 009). Allocation-free.
+        /// </summary>
+        /// <param name="slot">A slot index in [0, <see cref="MaxPlayers"/>).</param>
+        /// <param name="id">The occupant's EntityID, or <see cref="EntityID.Invalid"/> when empty or out of range.</param>
+        /// <param name="clientId">The occupant's connection id, or 0.</param>
+        /// <returns>True when the slot is occupied.</returns>
+        public bool TryGetPlayerAtSlot(int slot, out EntityID id, out uint clientId)
+        {
+            if (slot >= 0 && slot < _maxPlayers && _playerEntity[slot] != EntityID.Invalid)
+            {
+                id = _playerEntity[slot];
+                clientId = _playerClient[slot];
+                return true;
+            }
+
+            id = EntityID.Invalid;
+            clientId = 0u;
+            return false;
+        }
+
         /// <summary>Reads a copy of an occupied player slot.</summary>
         /// <param name="id">The player's EntityID.</param>
         /// <param name="player">The slot contents, or default when unknown.</param>

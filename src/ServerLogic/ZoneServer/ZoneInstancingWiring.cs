@@ -300,6 +300,9 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// <summary>The slot pool.</summary>
         public ZoneSlotPool Pool => _pool;
 
+        /// <summary>The entry completion; the composition registers Movement as its entry listener (Movement Story 009).</summary>
+        internal ZoneEntryCompletion EntryCompletion => _completion;
+
         /// <summary>The connection-to-character directory (the dispatcher's, when the composition passed it in).</summary>
         public ZoneConnectionCharacterDirectory Directory => _directory;
 

@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using IronGrind.CharacterPersistence;
 using IronGrind.LevelingSystem;
+using IronGrind.MovementSystem;
 using IronGrind.Networking;
 using IronGrind.Randomness;
 using IronGrind.ServerLogic.ZoneInstancing;
@@ -144,6 +145,7 @@ namespace IronGrind.ServerLogic.ZoneServer
         private bool _quitSubscribed;
         private bool _tickFailureReported;
         private ZoneInstancingWiring _wiring;
+        private ZoneDefinitionSlot _definitionSlot;
         private uint _lastLoadingTick;
         private double _lastTickSeconds;
         private double _quitStallStartSeconds = double.NaN;
@@ -252,6 +254,10 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// <param name="configSource">Config file reader (S0).</param>
         /// <param name="environment">Environment variable seam (<c>IRONGRIND_PG_PASSWORD</c>).</param>
         /// <param name="clock">Seconds source for tick durations; null = a stopwatch started here.</param>
+        /// <param name="definitionSlot">
+        /// The host's zone definition holder; when set, S5 builds a <see cref="ZoneDefinitionSlotRespawnPointProvider"/>
+        /// over it for Movement (the definition is filled at S6). Null: Movement keeps its null-provider branch.
+        /// </param>
         /// <returns>The composition, ready for <see cref="Start"/>.</returns>
         /// <example>
         /// <code>
@@ -272,11 +278,13 @@ namespace IronGrind.ServerLogic.ZoneServer
             IGatewayRegistration gateway,
             IZoneConfigSource configSource,
             IZoneEnvironment environment,
-            Func<double> clock)
+            Func<double> clock,
+            ZoneDefinitionSlot definitionSlot = null)
         {
             var composition = new ZoneServerComposition(
                 application, network, navigation, closeSteps, scene, boundsValidator, staticDataLoader,
                 zoneStateOwner, gateway, configSource, null, clock);
+            composition._definitionSlot = definitionSlot;
             composition._backend = new RealBackend(composition, environment);
             return composition;
         }
@@ -334,6 +342,18 @@ namespace IronGrind.ServerLogic.ZoneServer
 
         /// <summary>The zone's one Character Stats, built at S5 (Status Effects Story 009); null before S5. Later systems take it here.</summary>
         internal ZoneStats ZoneCharacterStats { get; private set; }
+
+        /// <summary>
+        /// Test seam: when set, S5 gives Movement this respawn provider instead of one built over the definition slot.
+        /// Set before the run starts. Null in production.
+        /// </summary>
+        internal ITownRespawnPointProvider RespawnProviderOverride;
+
+        /// <summary>The zone's Movement service, built at S5 (Movement Story 009); null before S5.</summary>
+        internal MovementService Movement { get; private set; }
+
+        /// <summary>The zone's per-tick position broadcast step, built at S5 (Movement Story 009); null before S5.</summary>
+        internal PositionBroadcastStep PositionBroadcast { get; private set; }
 
         /// <summary>The zone's Status Effects service, built at S5 (Story 009); null before S5.</summary>
         internal StatusEffectsService StatusEffects { get; private set; }
@@ -936,6 +956,7 @@ namespace IronGrind.ServerLogic.ZoneServer
             }
 
             NavMeshDataInstance instance = _scene.AddNavMeshData();
+            Movement?.SetNavMeshAvailable(instance.valid);
             MarkNavigationInitialized();
             _navigation.Initialize(_zoneId, instance);
             if (!_boundsValidator.Validate(_zoneId))
@@ -1230,6 +1251,26 @@ namespace IronGrind.ServerLogic.ZoneServer
             }
         }
 
+        // The pipeline's outbound step (Movement Story 009): the outbox flush, then the position packets. Teardown step 4b
+        // flushes the outbox only.
+        private sealed class OutboundThenPositions : IZoneOutboundStep
+        {
+            private readonly IZoneOutboundStep _first;
+            private readonly IZoneOutboundStep _second;
+
+            public OutboundThenPositions(IZoneOutboundStep first, IZoneOutboundStep second)
+            {
+                _first = first;
+                _second = second;
+            }
+
+            public void Flush(uint currentTick)
+            {
+                _first.Flush(currentTick);
+                _second.Flush(currentTick);
+            }
+        }
+
         // The real S3, S4, S5, S7. A private nested class so the construction stays inside this file (AC-10).
         private sealed class RealBackend : IZoneBackendSteps
         {
@@ -1412,10 +1453,18 @@ namespace IronGrind.ServerLogic.ZoneServer
 
             private void BuildOutboundAndPipeline(InboundRequestDispatcher dispatcher)
             {
-                var outbox = new ClientMessageOutbox(_owner._network.CreateSendSeam());
+                IClientMessageSendSeam sendSeam = _owner._network.CreateSendSeam();
+                var outbox = new ClientMessageOutbox(sendSeam);
                 Observe(nameof(ClientMessageOutbox));
-                ZoneInstancingWiring wiring = BuildZoneInstancing(dispatcher, outbox);
-                BuildStatusEffects(wiring);
+                // Movement Story 009: the snapshot builder is built inside the wiring, before Movement exists.
+                var stateSource = new MovementZoneEntityStateSource(new LoggingZoneEntityStateSource());
+                ZoneInstancingWiring wiring = BuildZoneInstancing(dispatcher, outbox, stateSource);
+                StatusEffectsService statusEffects = BuildStatusEffects(wiring);
+                MovementService movement = BuildMovement(dispatcher, wiring, stateSource, statusEffects);
+                var positions = new PositionBroadcastStep(movement, wiring.Pool, sendSeam, outbox);
+                Observe(nameof(PositionBroadcastStep));
+                _owner.PositionBroadcast = positions;
+                var outboundStep = new OutboundThenPositions(outbox, positions);
 
                 // Built for the game-system stories to take; this story registers no handler.
                 _owner._broadcaster = new ServerWideBroadcaster(outbox, _publisher, _allowlist);
@@ -1424,7 +1473,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                 Observe(nameof(ZoneClientRelayHandler));
                 var simulation = new ZoneSimulationStep(_owner._simulationSteps);
                 Observe(nameof(ZoneSimulationStep));
-                var pipeline = new ZoneTickPipeline(_queue, _inbox, relayHandler, dispatcher, simulation, outbox, _tickLoop);
+                var pipeline = new ZoneTickPipeline(_queue, _inbox, relayHandler, dispatcher, simulation, outboundStep, _tickLoop);
                 Observe(nameof(ZoneTickPipeline));
 
                 dispatcher.Seal();
@@ -1443,12 +1492,18 @@ namespace IronGrind.ServerLogic.ZoneServer
 
             // Zone Instancing (Story 014): built after the outbox exists and before the dispatcher is sealed. Its tick
             // step joins the phase 3 list; it is not registered with the tick loop (ADR-014).
-            private ZoneInstancingWiring BuildZoneInstancing(InboundRequestDispatcher dispatcher, ClientMessageOutbox outbox)
+            private ZoneInstancingWiring BuildZoneInstancing(InboundRequestDispatcher dispatcher, ClientMessageOutbox outbox,
+                IZoneEntityStateSource entityState)
             {
                 var wiring = new ZoneInstancingWiring(_owner._zoneId, _tickLoop, _queue, dispatcher, outbox,
                     _owner.PersistenceService, _owner.PersistenceService, _owner.PersistenceService, _gate,
                     new StandInZoneInventoryService(), _disconnector, _owner.RequestTeardown,
-                    new ZoneInstancingWiringOptions { Directory = _directory, LogTransitions = _owner.LogTeardownSteps });
+                    new ZoneInstancingWiringOptions
+                    {
+                        Directory = _directory,
+                        LogTransitions = _owner.LogTeardownSteps,
+                        EntityState = entityState
+                    });
                 Observe(nameof(ZoneInstancingWiring));
                 _owner._simulationSteps.Add(wiring);
                 _owner.AttachZoneInstancing(wiring);
@@ -1458,7 +1513,7 @@ namespace IronGrind.ServerLogic.ZoneServer
             // Status Effects Story 009: one Character Stats per zone, then the Status Effects service over it. The
             // service joins phase 3 after Zone Instancing, listens for slot releases and is disposed in the teardown
             // Dispose pass (ADR-010).
-            private void BuildStatusEffects(ZoneInstancingWiring wiring)
+            private StatusEffectsService BuildStatusEffects(ZoneInstancingWiring wiring)
             {
                 var stats = new ZoneStats(new LevelingService(XpThresholdTable.Values));
                 _owner.ZoneCharacterStats = stats;
@@ -1467,10 +1522,51 @@ namespace IronGrind.ServerLogic.ZoneServer
                     new CharacterStatsResourceSink(stats), new ZoneSlotPoolEntityIndex(wiring.Pool),
                     new CharacterStatsDeathSource(stats));
                 Observe(nameof(StatusEffectsService));
-                wiring.Pool.SetReleaseListener(statusEffects);
+                // The pool's release listener is set in BuildMovement (composite: Status Effects, then Movement).
                 _owner.RegisterDisposable(statusEffects);
                 _owner.StatusEffects = statusEffects;
                 _owner._simulationSteps.Add(statusEffects);
+                return statusEffects;
+            }
+
+            // Movement Story 009: intent buffer and inbound registration (before Seal), the service after Status Effects
+            // in phase 3 (integration last, ADR-002), and the three Story 008 hooks (snapshot, entry, release).
+            private MovementService BuildMovement(InboundRequestDispatcher dispatcher, ZoneInstancingWiring wiring,
+                MovementZoneEntityStateSource stateSource, StatusEffectsService statusEffects)
+            {
+                var slotIndex = new ZoneSlotPoolEntityIndex(wiring.Pool);
+                var buffer = new MovementIntentBuffer(_tickLoop, slotIndex, MovementTuningValues.Defaults);
+                Observe(nameof(MovementIntentBuffer));
+                MovementInboundRegistration.Register(dispatcher, buffer);
+
+                ITownRespawnPointProvider respawn = _owner.RespawnProviderOverride;
+                if (respawn == null && _owner._definitionSlot != null)
+                {
+                    respawn = new ZoneDefinitionSlotRespawnPointProvider(_owner._zoneId, _owner._definitionSlot);
+                }
+
+                MovementService movement;
+                if (respawn != null)
+                {
+                    movement = new MovementService(buffer, new CharacterStatsMovementSpeedSource(_owner.ZoneCharacterStats),
+                        new UnityNavMeshSampler(), slotIndex, MovementTuningValues.Defaults,
+                        new LoggingMovementGeometryErrorSink(), _owner._zoneId, respawn);
+                }
+                else
+                {
+                    // No respawn provider (test compositions): Movement keeps its null-provider branch.
+                    movement = new MovementService(buffer, new CharacterStatsMovementSpeedSource(_owner.ZoneCharacterStats),
+                        new UnityNavMeshSampler(), slotIndex, MovementTuningValues.Defaults,
+                        new LoggingMovementGeometryErrorSink());
+                }
+
+                Observe(nameof(MovementService));
+                stateSource.AttachMovement(movement);
+                wiring.EntryCompletion.SetEntryListener(movement);
+                wiring.Pool.SetReleaseListener(new CompositeZoneSlotReleaseListener(statusEffects, movement));
+                _owner.Movement = movement;
+                _owner._simulationSteps.Add(movement);
+                return movement;
             }
 
             public bool StartListener()
