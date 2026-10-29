@@ -40,6 +40,7 @@
 
 - Spawn the `unity-ui-specialist` for the UXML/USS and the controller (technical preferences routing).
 - Keep all decisions in Stories 010–012's logic classes; this story only adapts input and draws.
+- Story 010 code-review carry-over (touch source → `TouchZoneRouter`): if EnhancedTouch is used, map `Stationary` to `Moved` (a zero delta is harmless; no new `TouchInputPhase` value), use `touch.touchId` for `TouchInput.Id` (not `finger.index`, which is reused), and call `TouchZoneRouter.Reset()` on application focus loss / pause or when the touch source re-initialises.
 - Memory note: the HUD harness buttons were once "missing" because the Game view Scale cropped them — check the Game view at 1× before filing a layout bug.
 
 ---

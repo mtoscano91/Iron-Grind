@@ -5415,3 +5415,21 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Story: production/epics/movement-system/story-010-touch-zones-joystick-and-camera-relative-direction.md — Touch Zones, Floating Joystick and Camera-Relative Direction
 - Verdict: NEEDS WORK (6 gaps) → fixed → Ready (router API/outputs, midpoint + inset rule, per-frame order with same-frame handover, IUiHitTest scope, angle wrap + fallback, no-alloc note)
 - Next recommended: /dev-story production/epics/movement-system/story-010-touch-zones-joystick-and-camera-relative-direction.md
+
+## Session Extract — /dev-story 2026-10-29
+- Story: production/epics/movement-system/story-010-touch-zones-joystick-and-camera-relative-direction.md — Touch Zones, Floating Joystick and Camera-Relative Direction
+- Files changed: src/Client/Movement/ (new): TouchInput.cs (+TouchInputPhase), IUiHitTest.cs, JoystickState.cs (FromDrag = F-MOV-5 + angle wrap), CameraRelativeDirection.cs (F-MOV-4 + fallback assert), TouchZoneRouter.cs (four passes, no per-frame allocation)
+- Test written: tests/EditMode/Client/Movement/ClientMovement_TouchInput_tests.cs — 42 methods / 47 cases. EditMode 5322 / 5193 passed / 0 failed / 129 skipped
+- Fix during run: 12.0 px boundary failed (Mono kept 12/80 at higher precision vs 0.15f) → explicit (float) cast in JoystickState.FromDrag
+- Deviations: none in scope; unity-specialist not spawned (LOW risk, pure logic); camera delta on the Began frame is zero; Unity fingerId reuse in one frame (Ended+Began same id) not handled — not possible with one entry per finger per frame
+- Blockers: None
+- Next: /code-review src/Client/Movement/*.cs tests/EditMode/Client/Movement/ClientMovement_TouchInput_tests.cs then /story-done production/epics/movement-system/story-010-touch-zones-joystick-and-camera-relative-direction.md
+
+## Session Extract — /code-review 2026-10-29
+- Story 010: APPROVED WITH SUGGESTIONS (unity-specialist CLEAN, qa-tester TESTABLE). Applied all 7: TouchZoneRouter.Reset(), +6 tests (ignored-touch Ended, id reuse, Reset, camera Began+Moved+Ended same frame, fallback threshold 0.0009/0.0011), 12 px test also asserts AngleDeg; Story 013 note (Stationary→Moved, touch.touchId, Reset on focus loss). EditMode 5328 / 5199 passed / 0 failed / 129 skipped
+
+## Session Extract — /story-done 2026-10-29
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/movement-system/story-010-touch-zones-joystick-and-camera-relative-direction.md — Touch Zones, Floating Joystick and Camera-Relative Direction
+- Tech debt logged: None
+- Next recommended: /story-readiness production/epics/movement-system/story-011-camera-drag-facing-and-auto-run.md (consumes TouchZoneRouter.CameraDragDeltaPx and JoystickState.IsDead)

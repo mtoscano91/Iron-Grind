@@ -1,7 +1,7 @@
 # Story 010: Touch Zones, Floating Joystick and Camera-Relative Direction
 
 > **Epic**: Movement System
-> **Status**: Ready — written 2026-10-29 (`/create-stories`, lean); `/story-readiness` 2026-10-29: NEEDS WORK (6 gaps) → fixed → Ready
+> **Status**: Complete — 2026-10-29 (`/story-done`: COMPLETE WITH NOTES); written 2026-10-29 (`/create-stories`, lean); `/story-readiness` 2026-10-29: NEEDS WORK (6 gaps) → fixed → Ready
 > **Layer**: Core (client)
 > **Type**: Logic
 > **Manifest Version**: 2026-10-26
@@ -78,7 +78,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/Client/Movement/ClientMovement_TouchInput_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — `tests/EditMode/Client/Movement/ClientMovement_TouchInput_tests.cs`, 48 methods / 53 cases, all passing (EditMode 5328 / 5199 passed / 0 failed / 129 skipped, 2026-10-29)
 
 ---
 
@@ -86,3 +86,17 @@
 
 - Depends on: Story 001 (client knobs)
 - Unlocks: Stories 011, 012, 013
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-29
+**Criteria**: 9/9 passing (all covered by EditMode tests; none deferred)
+**Deviations** (advisory):
+- `JoystickState.FromDrag` casts `|offset| / radius` to float before the dead-zone compare — Mono kept 12/80 at higher precision than `0.15f`, which made the AC-MOV-1 12 px boundary dead.
+- Added `TouchZoneRouter.Reset()` (code review): drops both owners when touches are lost without Canceled; Story 013 calls it on focus loss / pause.
+- Camera drag delta is zero on the Began frame; an Ended+Began with the same id in one frame is not handled (Unity gives one entry per finger per frame).
+- GDD AC-MOV-5 says "server-computed" direction; the direction is computed on the client (this story) and the server applies the received direction.
+- TR-mov-008 not in `tr-registry.yaml` (no TR-mov-* registered yet).
+**Test Evidence**: Logic — `tests/EditMode/Client/Movement/ClientMovement_TouchInput_tests.cs` (48 methods / 53 cases)
+**Code Review**: Complete — APPROVED WITH SUGGESTIONS (unity-specialist CLEAN, qa-tester TESTABLE); 7 suggestions applied (Reset(), 6 tests, Story 013 EnhancedTouch carry-over note)
