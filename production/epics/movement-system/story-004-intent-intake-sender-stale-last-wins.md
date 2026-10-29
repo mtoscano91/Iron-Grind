@@ -33,6 +33,7 @@
 - [ ] **AC-MOV-16 / EC-MOV-22**: when `serverCurrentTick ≤ STALE_TICK_TOLERANCE` (0–3 at default) every message is accepted — `TickNumber = 0` at tick 0, 1, 2, 3 is processed; at tick 4 a `TickNumber = 0` message is stale. No uint underflow.
 - [ ] **AC-MOV-28 / EC-MOV-17**: two accepted messages for the same entity in one tick → only the last received is kept (one buffered intent per entity per tick).
 - [ ] A tick with no accepted message → the buffer reports "no intent" (= zero input, CR-MOV-10).
+- [ ] The buffered `FacingAngle` is passed through `MovementIntentMessageCodec.NormalizeFacing` (Story 002) before storing — a received value outside 0–3599 is wrapped, never a reason to drop the message.
 - [ ] The intent buffer is preallocated (one slot per player slot, `MAX_PLAYERS_PER_ZONE`) and cleared after the tick reads it (Story 005 consumes it).
 - [ ] Each test names which drop it exercises: the ADR-014 intake `SequenceNumber` drop (Networking Core, not re-implemented here) or the F-MOV-7 `TickNumber` drop (this story).
 

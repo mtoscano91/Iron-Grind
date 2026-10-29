@@ -33,6 +33,7 @@
 - [ ] **CR-MOV-8**: while Prohibited, direction changes are not sent as movement; a facing change sends dir (0, 0) + the new `FacingAngle`.
 - [ ] **AC-MOV-1 (wire) / EC-MOV-21**: a dead-zone input → dirX = dirZ = 0. Any direction past the dead zone encodes to at least one non-zero short (a test sweeps angles at the dead-zone edge).
 - [ ] `TickNumber` = the `serverTick` argument (the caller supplies NGO's server tick estimate).
+- [ ] Direction is encoded with `MovementIntentMessageCodec.EncodeDirection(dir, out wasNonUnit)` (Story 002); when `wasNonUnit` is true the producer sends the substituted `(32767, 0)` and logs one non-unit-direction anomaly warning (wire GDD pre-encode guard).
 - [ ] **EC-MOV-15**: on reconnect the producer starts fresh (auto-run off, no last-sent facing).
 
 ---
