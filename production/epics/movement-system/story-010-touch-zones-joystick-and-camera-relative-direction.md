@@ -41,7 +41,7 @@
 ## Implementation Notes
 
 - Files: `src/Client/Movement/` (namespace `IronGrind.Client.Movement`): `TouchZoneRouter`, `JoystickState`, `CameraRelativeDirection`.
-- Tuning comes from Story 001's read model (radius, dead zone); if that model sits in ServerLogic, move the client knobs to Foundation in this story (the client cannot reference ServerLogic — ADR-012).
+- Tuning comes from Story 001's `MovementTuningValues` in `IronGrind.Foundation` (radius, dead zone; placed there at Story 001 readiness so the client can read it — ADR-012).
 - Add the new client types to the ADR-012 boundary lists if the architecture test requires.
 
 ---
