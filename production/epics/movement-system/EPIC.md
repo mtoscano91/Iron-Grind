@@ -72,7 +72,7 @@ This epic is complete when:
 | 003 | [Position Integration and Effective Speed](story-003-position-integration-and-effective-speed.md) | Logic | Complete | ADR-002, ADR-012 |
 | 004 | [Intent Intake — Sender Check, Stale Discard, Last-Wins](story-004-intent-intake-sender-stale-last-wins.md) | Integration | Complete | ADR-014, ADR-004 |
 | 005 | [Movement Tick Step and NavMesh Validation](story-005-tick-step-and-navmesh-validation.md) | Logic | Complete | ADR-002, ADR-014 |
-| 006 | [Prohibited State and Auto-Face Override](story-006-prohibited-state-and-auto-face-override.md) | Logic | Ready | ADR-010 |
+| 006 | [Prohibited State and Auto-Face Override](story-006-prohibited-state-and-auto-face-override.md) | Logic | Complete | ADR-010 |
 | 007 | [NavMesh Stall Recovery and Unavailable NavMesh](story-007-navmesh-stall-recovery-and-unavailable-navmesh.md) | Logic | Ready | ADR-009, ADR-002 |
 | 008 | [Zone Entry, Exit and Slot Release](story-008-zone-entry-exit-and-slot-release.md) | Integration | Ready | ADR-009, ADR-010 |
 | 009 | [Composition Wiring and Per-Tick Position Broadcast](story-009-composition-wiring-and-position-broadcast.md) | Integration | Ready | ADR-014, ADR-002, ADR-004 |
@@ -85,4 +85,4 @@ AC-MOV-22 (device frame budget) has no story: it waits for on-device profiling, 
 
 ## Next Step
 
-Stories 001–005 Complete 2026-10-29 (001: `MovementTuning` + `MovementTuningValues`, `MovementPositionGuard`; 002: `MovementIntentMessage` 0x0211 + codec, routing row; 003: `MovementIntegrator`, `IMovementSpeedSource` + Character Stats adapter, `MovementSpeedResolver`; 005: `MovementService` tick step, `IMovementIntentSource`, `INavMeshSampler` + `UnityNavMeshSampler`; 004: `MovementIntentBuffer` intake + `MovementInboundRegistration`, `RpcTypeTag.MovementIntent`). Next: `/story-readiness production/epics/movement-system/story-006-prohibited-state-and-auto-face-override.md`, then `/dev-story` it. Work in the recommended order; each story's Dependencies section lists what must be done first.
+Stories 001–006 Complete 2026-10-29 (001: `MovementTuning` + `MovementTuningValues`, `MovementPositionGuard`; 002: `MovementIntentMessage` 0x0211 + codec, routing row; 003: `MovementIntegrator`, `IMovementSpeedSource` + Character Stats adapter, `MovementSpeedResolver`; 005: `MovementService` tick step, `IMovementIntentSource`, `INavMeshSampler` + `UnityNavMeshSampler`; 004: `MovementIntentBuffer` intake + `MovementInboundRegistration`, `RpcTypeTag.MovementIntent`; 006: `IMovementSystem` (`SetProhibited`, `InjectFacingOverride`) on `MovementService`, no caller yet). Next: `/story-readiness production/epics/movement-system/story-007-navmesh-stall-recovery-and-unavailable-navmesh.md`, then `/dev-story` it. Work in the recommended order; each story's Dependencies section lists what must be done first.

@@ -8,11 +8,14 @@ using UnityEngine;
 namespace IronGrind.MovementSystem
 {
     /// <summary>
-    /// The server movement tick step (movement-system.md CR-MOV-6 steps 1 to 5, CR-MOV-7, CR-MOV-10, AC-MOV-21;
-    /// Movement Story 005). For each occupied player slot: take the intent, store the facing, run the Prohibited
-    /// hook (Story 006), integrate on moving ticks, validate against the NavMesh and commit.
+    /// The server movement tick step (movement-system.md CR-MOV-6 steps 1 to 5, CR-MOV-7, CR-MOV-8, CR-MOV-9,
+    /// CR-MOV-10, AC-MOV-21; Movement Stories 005 and 006). For each occupied player slot: take the intent, apply a
+    /// pending facing override, store the facing, skip movement while Prohibited, integrate on moving ticks,
+    /// validate against the NavMesh and commit. Also implements <see cref="IMovementSystem"/>.
     /// </summary>
     /// <remarks>
+    /// A facing override lasts exactly one tick and is consumed even while Prohibited; Prohibited still lets the
+    /// facing update (CR-MOV-8).
     /// Per-slot state lives in arrays preallocated at <see cref="ZoneSlotPool.MAX_PLAYERS_PER_ZONE"/>; a tick
     /// allocates nothing. A zero-direction tick reads no speed, integrates nothing and samples nothing. A speed
     /// read failure logs one error on the valid-to-failing transition only. A NavMesh miss keeps the previous
@@ -26,7 +29,7 @@ namespace IronGrind.MovementSystem
     /// service.Run(tick, ServerTickLoop.FIXED_DELTA_TIME);
     /// </code>
     /// </example>
-    public sealed class MovementService : IZoneSimulationStep
+    public sealed class MovementService : IZoneSimulationStep, IMovementSystem
     {
         /// <summary>NavMesh sample radius in meters (movement-system.md CR-MOV-7; a GDD value, not a tuning knob).</summary>
         public const float NAVMESH_SAMPLE_RADIUS = 0.5f;
@@ -45,6 +48,9 @@ namespace IronGrind.MovementSystem
         private readonly short[] _facing = new short[SLOT_COUNT];
         private readonly float[] _lastValidSpeed = new float[SLOT_COUNT];
         private readonly bool[] _speedFailing = new bool[SLOT_COUNT];
+        private readonly bool[] _prohibited = new bool[SLOT_COUNT];
+        private readonly bool[] _hasOverride = new bool[SLOT_COUNT];
+        private readonly Vector3[] _overrideDir = new Vector3[SLOT_COUNT];
 
         /// <summary>Creates the service. All arguments are required.</summary>
         /// <param name="intents">Per-slot intent source (Story 004 buffer).</param>
@@ -117,6 +123,32 @@ namespace IronGrind.MovementSystem
             _facing[slot] = facing;
             _lastValidSpeed[slot] = 0f;
             _speedFailing[slot] = false;
+            _prohibited[slot] = false;
+            _hasOverride[slot] = false;
+            _overrideDir[slot] = Vector3.zero;
+        }
+
+        /// <inheritdoc/>
+        public bool SetProhibited(EntityID id, bool prohibited)
+        {
+            if (!TryFindSlot(id, out int slot))
+                return false;
+
+            // CR-MOV-8: entry and exit leave the override state alone (no auto-face re-arm).
+            _prohibited[slot] = prohibited;
+            return true;
+        }
+
+        /// <inheritdoc/>
+        public bool InjectFacingOverride(EntityID id, Vector3 direction)
+        {
+            if (!TryFindSlot(id, out int slot))
+                return false;
+
+            // Raw direction stored; validated when consumed. A second call before the tick replaces the first.
+            _overrideDir[slot] = direction;
+            _hasOverride[slot] = true;
+            return true;
         }
 
         private bool TryFindSlot(EntityID id, out int slot)
@@ -132,39 +164,38 @@ namespace IronGrind.MovementSystem
 
         private void StepSlot(int slot, float dt)
         {
-            // (1) take the intent, or zero input.
+            // (1) take the intent, or zero input. Always taken so the buffer clears, even while Prohibited.
             Vector2 dir = Vector2.zero;
+            bool hasFacing = false;
+            short facing = 0;
             if (_intents.TryTakeIntent(slot, out MovementIntentMessage intent))
             {
                 // (2) facing is stored as received, even with a zero direction (CR-MOV-10).
-                _facing[slot] = intent.FacingAngle;
+                facing = intent.FacingAngle;
+                hasFacing = true;
                 dir = MovementIntentMessageCodec.DecodeDirection(intent.DirX, intent.DirZ);
             }
 
-            // (3) Prohibited hook (Story 006).
-            ApplyProhibitedHook(slot);
+            // (3) auto-face override (CR-MOV-9): consumed whatever the outcome, beats the client intent this tick.
+            // A zero-direction override moves nothing and applies no facing this tick.
+            if (_hasOverride[slot])
+            {
+                _hasOverride[slot] = false;
+                hasFacing = TryResolveOverride(_overrideDir[slot], out dir, out facing);
+            }
+
+            if (hasFacing)
+                _facing[slot] = facing;
+
+            // (3b) Prohibited (CR-MOV-8): facing above still applies; no speed read, no integrate, no sample.
+            if (_prohibited[slot])
+                return;
 
             // (4) zero direction: stop. No speed read, no integrate, no sample (F-MOV-1 guard).
             if (dir.x == 0f && dir.y == 0f)
                 return;
 
-            bool usable = MovementSpeedResolver.ResolveCore(_speeds, _ids[slot], ref _lastValidSpeed[slot],
-                out float vEff, out MovementSpeedResolver.FailureReason reason, out float badValue, out Exception failure);
-            if (reason != MovementSpeedResolver.FailureReason.None)
-            {
-                if (!_speedFailing[slot])
-                {
-                    _speedFailing[slot] = true;
-                    Debug.LogError(MovementSpeedResolver.DescribeFailure(_ids[slot], reason, badValue, failure,
-                        _lastValidSpeed[slot]));
-                }
-            }
-            else
-            {
-                _speedFailing[slot] = false;
-            }
-
-            if (!usable)
+            if (!TryResolveSpeed(slot, out float vEff))
                 return;
 
             Vector3 candidate = MovementIntegrator.Integrate(_positions[slot], new Vector3(dir.x, 0f, dir.y), vEff, dt);
@@ -178,9 +209,48 @@ namespace IronGrind.MovementSystem
                 _positions[slot] = hit;
         }
 
-        // Placeholder for Story 006 (Prohibited state and auto-face override). Intentionally no behavior yet.
-        private void ApplyProhibitedHook(int slot)
+        // F-MOV-2 read; logs one error on the valid-to-failing transition only. False = no movement this tick.
+        private bool TryResolveSpeed(int slot, out float vEff)
         {
+            bool usable = MovementSpeedResolver.ResolveCore(_speeds, _ids[slot], ref _lastValidSpeed[slot],
+                out vEff, out MovementSpeedResolver.FailureReason reason, out float badValue, out Exception failure);
+            if (reason == MovementSpeedResolver.FailureReason.None)
+            {
+                _speedFailing[slot] = false;
+            }
+            else if (!_speedFailing[slot])
+            {
+                _speedFailing[slot] = true;
+                Debug.LogError(MovementSpeedResolver.DescribeFailure(_ids[slot], reason, badValue, failure,
+                    _lastValidSpeed[slot]));
+            }
+
+            return usable;
+        }
+
+        // False (dir zero, no facing) for a zero XZ part or any non-finite component.
+        private static bool TryResolveOverride(Vector3 o, out Vector2 dir, out short facing)
+        {
+            dir = Vector2.zero;
+            facing = 0;
+            if (!float.IsFinite(o.x) || !float.IsFinite(o.y) || !float.IsFinite(o.z))
+                return false;
+
+            // Scaled by the largest XZ component first so a huge or tiny finite direction neither overflows
+            // nor underflows when squared.
+            float scale = Mathf.Max(Mathf.Abs(o.x), Mathf.Abs(o.z));
+            if (scale == 0f)
+                return false;
+
+            float x = o.x / scale;
+            float z = o.z / scale;
+            float length = Mathf.Sqrt(x * x + z * z);
+            dir = new Vector2(x / length, z / length);
+
+            // Unity yaw: 0 = +Z, clockwise positive, degrees x 10 (wire form).
+            facing = MovementIntentMessageCodec.NormalizeFacing(
+                (short)Mathf.RoundToInt(Mathf.Atan2(o.x, o.z) * 1800f / Mathf.PI));
+            return true;
         }
     }
 }

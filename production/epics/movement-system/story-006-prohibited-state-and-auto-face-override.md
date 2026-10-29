@@ -1,7 +1,7 @@
 # Story 006: Prohibited State and Auto-Face Override
 
 > **Epic**: Movement System
-> **Status**: Ready — written 2026-10-29 (`/create-stories`, lean)
+> **Status**: Complete — 2026-10-29 (`/story-done`: COMPLETE WITH NOTES); written 2026-10-29 (`/create-stories`, lean); `/story-readiness` 2026-10-29: NEEDS WORK (6 gaps) → fixed → Ready
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-26
@@ -80,7 +80,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/MovementSystem/MovementSystem_ProhibitedAndOverride_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — `tests/EditMode/MovementSystem/MovementSystem_ProhibitedAndOverride_tests.cs`, 28 methods / 41 cases, all passing (EditMode 5165 / 5036 passed / 0 failed / 129 skipped, 2026-10-29)
 
 ---
 
@@ -88,3 +88,19 @@
 
 - Depends on: Story 005
 - Unlocks: Story 008
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-10-29
+**Criteria**: 10/10 passing (all automated; none deferred)
+**Deviations** (advisory):
+1. A huge or tiny finite override (e.g. 1e30, 1e-30) is normalized (scaled by its largest XZ component first), not treated as zero; added at code review, the story only named zero and non-finite.
+2. `TryResolveSpeed` extracted from Story 005's `StepSlot` (method-length standard); behaviour unchanged, Story 005 tests pass.
+3. AC-MOV-23 "state Idle" has no state accessor; covered by behaviour (moves on the next intent).
+4. TR-mov-004 / TR-mov-005 are placeholders, not yet in `docs/architecture/tr-registry.yaml` (same as the other epics).
+**Scope**: within the story. No caller sets Prohibited or injects an override yet (EPIC.md note; a later epic wires Auto-Attack Combat / Status Effects).
+**Files**: `src/ServerLogic/MovementSystem/IMovementSystem.cs` (new); `src/ServerLogic/MovementSystem/MovementService.cs` (implements `IMovementSystem`, per-slot `_prohibited` / `_hasOverride` / `_overrideDir`, `TryResolveOverride`, `TryResolveSpeed`); test file above; `.meta` files.
+**Test Evidence**: Logic — `tests/EditMode/MovementSystem/MovementSystem_ProhibitedAndOverride_tests.cs`
+**Code Review**: Complete — `/code-review` 2026-10-29: APPROVED WITH SUGGESTIONS (split `StepSlot`, slot-held-by-another-entity test, overflow-safe override normalization, combination tests, facing assertions incl. diagonals / −0 / 3599, interface-shape test, sampler assert), "fix all" applied. QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean).

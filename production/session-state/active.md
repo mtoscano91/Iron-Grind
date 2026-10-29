@@ -5345,3 +5345,18 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Code review: APPROVED WITH SUGGESTIONS → "fix all" applied (unused using, +3 tests, NoUnexpectedReceived on 3 drop tests, slot constant). EditMode 5124 / 4995 passed / 0 failed / 129 skipped.
 - Tech debt logged: None
 - Next recommended: /story-readiness production/epics/movement-system/story-006-prohibited-state-and-auto-face-override.md (006 and 007 depend only on done stories; 008 needs 006). PAT rotation still unconfirmed.
+
+## Session Extract — /dev-story 2026-10-29
+- Story: production/epics/movement-system/story-006-prohibited-state-and-auto-face-override.md — Prohibited State and Auto-Face Override
+- Files changed: src/ServerLogic/MovementSystem/IMovementSystem.cs (new); src/ServerLogic/MovementSystem/MovementService.cs (implements IMovementSystem, _prohibited/_hasOverride/_overrideDir, placeholder hook removed)
+- Test written: tests/EditMode/MovementSystem/MovementSystem_ProhibitedAndOverride_tests.cs (21 methods / 28 cases, all pass; suite 5152 / 5023 passed / 0 failed / 129 skipped)
+- Notes: agent miscounted tests (reported 23/29); an override whose XZ length overflows to ∞ is also treated as zero-direction; allocation test injects overrides outside the measured lambda.
+- Blockers: None
+- Next: /code-review src/ServerLogic/MovementSystem/IMovementSystem.cs src/ServerLogic/MovementSystem/MovementService.cs tests/EditMode/MovementSystem/MovementSystem_ProhibitedAndOverride_tests.cs then /story-done production/epics/movement-system/story-006-prohibited-state-and-auto-face-override.md
+
+## Session Extract — /story-done 2026-10-29
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/movement-system/story-006-prohibited-state-and-auto-face-override.md — Prohibited State and Auto-Face Override
+- Code review: APPROVED WITH SUGGESTIONS → "fix all" applied (StepSlot split into TryResolveOverride / TryResolveSpeed, overflow-safe normalization, +7 methods / +13 cases). EditMode 5165 / 5036 passed / 0 failed / 129 skipped.
+- Tech debt logged: None
+- Next recommended: /story-readiness production/epics/movement-system/story-007-navmesh-stall-recovery-and-unavailable-navmesh.md (007 depends only on done stories; 008 now unblocked too). PAT rotation still unconfirmed.

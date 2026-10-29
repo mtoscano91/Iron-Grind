@@ -19,7 +19,7 @@ Control Manifest Version: 2026-10-26
 | [Equipment System](equipment-system/EPIC.md) | Core | Equipment System | design/gdd/equipment-system.md | 9 stories (001-009 written 2026-10-26): 9 Complete (001-008 on 2026-10-26, 009 on 2026-10-28) | Complete — unblocks Character Persistence Story 005 |
 | [Zone Instancing](zone-instancing/EPIC.md) | Core | Zone Instancing (zone-process side) | design/gdd/zone-instancing.md | 14 stories (001-014, written 2026-10-22), all Complete (2026-10-26) | Complete — routing ACs (AC-ZI-1, 2, 3, 16, 19, 20) move with the gateway work (needs a gateway ADR + epic) |
 | [Character Persistence](character-persistence/EPIC.md) | Core | Character Persistence | design/gdd/character-persistence.md | 17 stories (001-016 written 2026-10-12, 017 added 2026-10-16): 17 Complete (last 016 on 2026-10-28); DoD open: ADR-006 Verification 1–3, AC-CP-27/28/29 | In Progress |
-| [Movement System](movement-system/EPIC.md) | Core | Movement System | design/gdd/movement-system.md | 13 stories (001-013 written 2026-10-29; server 001-009, client 010-013): 5 Complete (001-005), 8 Ready | In Progress |
+| [Movement System](movement-system/EPIC.md) | Core | Movement System | design/gdd/movement-system.md | 13 stories (001-013 written 2026-10-29; server 001-009, client 010-013): 6 Complete (001-006), 7 Ready | In Progress |
 | [Enhancement System](enhancement-system/EPIC.md) | Feature | Enhancement System | design/gdd/enhancement-system.md | 16 stories (001-016 Complete); DoD open: AC-ENH-2 and the other deferred criteria | In Progress |
 
 ## Notes
