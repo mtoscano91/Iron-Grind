@@ -5435,3 +5435,20 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Story: production/epics/movement-system/story-010-touch-zones-joystick-and-camera-relative-direction.md — Touch Zones, Floating Joystick and Camera-Relative Direction
 - Tech debt logged: None
 - Next recommended: /story-readiness production/epics/movement-system/story-011-camera-drag-facing-and-auto-run.md (consumes TouchZoneRouter.CameraDragDeltaPx and JoystickState.IsDead)
+
+## Session Extract — /dev-story 2026-10-29
+- Story: production/epics/movement-system/story-011-camera-drag-facing-and-auto-run.md — Camera Drag, Facing and Auto-Run State
+- Files changed: src/Client/Movement/{CameraYaw,CharacterFacing,AutoRunState,ClientMovementSubState,IClientProhibitedSource}.cs (new); main session fixed the test's `Is` alias (compile error CS1061)
+- Test written: tests/EditMode/Client/Movement/ClientMovement_CameraAndAutoRun_tests.cs (44 [Test], 3 [TestCase]); EditMode 5375 total, 5246 passed, 0 failed, 129 skipped (batch mode)
+- Open: AC-MOV-6 — the readiness contract converts the held joystick with the current camera forward, so a camera drag while the joystick is held turns the facing; the GDD says it must not. Test `Facing_JoystickHeldWhileCameraRotates_DoesNotFollowCamera` asserts the contract, not the GDD. Awaiting user decision (recommended: latch the camera forward while the joystick is held).
+- AC-MOV-6 resolved (user: latch camera): `AutoRunState` latches the camera flat forward when the joystick leaves rest and uses it for the joystick world direction and F-MOV-3 until rest; `Reset()` clears it. Test `Facing_JoystickHeldWhileCameraRotates_DoesNotFollowCamera` now asserts facing stays east; 2 new tests (re-held after rotation uses the new camera; F-MOV-3 against the latched forward). Story file: contract line + decision 8. EditMode 5377 total, 5248 passed, 0 failed, 129 skipped.
+- Blockers: None
+- /code-review 2026-10-29: CHANGES REQUIRED (unity-specialist clean; qa-tester gaps) → "fix all" applied: `Tick` summary rewritten (step 0 latch, latched forward, CANCEL_DOT_EPSILON, latch kept through Prohibited); `CameraYaw.ApplyDrag` ignores a non-finite change; `CharacterFacing.Face` rejects NaN/infinite length; new tests: non-finite drag (3 cases), NaN and no-XZ camera at rest, latch through Prohibited, Reset clears latch, margin 90.1° cancels / 89.99° not, no-XZ camera fallback cancel (LogAssert), press between ticks while held, Prohibited during auto-run at rest; renamed `Cancel_Angle135WithCameraRight_Cancels`; int sweep loop; latch test comment corrected (the dot depends only on the camera-relative angle, so latch vs live cannot change a cancel — the "inverse latch cancel" test was dropped for that reason). Test file 55 [Test] + 6 [TestCase]. EditMode 5389 total, 5260 passed, 0 failed, 129 skipped.
+- Next: /story-done Story 011 (record the CANCEL_DOT_EPSILON deviation from "strict < 0" and decision 8), then commit incl. .meta files
+
+## Session Extract — /story-done 2026-10-29
+- Verdict: COMPLETE WITH NOTES (lean: QL-TEST-COVERAGE and LP-CODE-REVIEW skipped; `/code-review` done, "fix all" applied)
+- Story: production/epics/movement-system/story-011-camera-drag-facing-and-auto-run.md — Camera Drag, Facing and Auto-Run State (12/12 criteria; 57 methods / 61 cases; EditMode 5389 / 5260 passed / 0 failed / 129 skipped)
+- Also: EPIC.md rows 008–011 → Complete (008–010 were stale "Ready"), status lines 11 Complete, Next Step → Story 012
+- Tech debt logged: None (deviations recorded in the story's Completion Notes)
+- Next recommended: commit Story 011 (incl. 6 new .meta files); then /story-readiness production/epics/movement-system/story-012-client-intent-producer-and-send-cadence.md

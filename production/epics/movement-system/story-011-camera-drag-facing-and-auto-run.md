@@ -1,7 +1,7 @@
 # Story 011: Camera Drag, Facing and Auto-Run State
 
 > **Epic**: Movement System
-> **Status**: Ready — written 2026-10-29 (`/create-stories`, lean); `/story-readiness` 2026-10-29: NEEDS WORK (7 gaps) → fixed → Ready
+> **Status**: Complete — 2026-10-29 (`/story-done`: COMPLETE WITH NOTES); written 2026-10-29 (`/create-stories`, lean); `/story-readiness` 2026-10-29: NEEDS WORK (7 gaps) → fixed → Ready
 > **Layer**: Core (client)
 > **Type**: Logic
 > **Manifest Version**: 2026-10-26
@@ -38,7 +38,7 @@ Namespace `IronGrind.Client.Movement`, all in `src/Client/Movement/`:
   - `Tick(JoystickState joystick, Vector3 cameraFlatForward)`: reads the latest router joystick and the camera forward, updates the flag, the sub-state and the facing, and sets the outputs below.
   - `Reset()`: flag off, `SubState = Idle`, `MoveDirection = zero` (decision 6). The facing is kept.
   - Outputs: `bool IsActive` (the flag), `ClientMovementSubState SubState` (`Idle`, `MovingJoystick`, `MovingAutoRun`, `MovingCombined`, `Prohibited`), `Vector3 MoveDirection` (unit XZ or zero), `CharacterFacing Facing`.
-- Joystick world direction = `CameraRelativeDirection.WorldMoveDir(joystick.AngleDeg, cameraFlatForward)` (Story 010).
+- Joystick world direction = `CameraRelativeDirection.WorldMoveDir(joystick.AngleDeg, latchedForward)` (Story 010), where `latchedForward` is the `cameraFlatForward` passed on the tick the joystick left rest, kept until the joystick is back at rest (`/dev-story` decision 8, AC-MOV-6). The F-MOV-3 test in step 3 uses the same latched forward.
 - **At rest** = `!joystick.IsActive || joystick.IsDead` (F-MOV-5 output note).
 
 ### `Tick` order
@@ -57,18 +57,18 @@ Namespace `IronGrind.Client.Movement`, all in `src/Client/Movement/`:
 
 ## Acceptance Criteria
 
-- [ ] **AC-MOV-4**: horizontal camera-drag delta × `CAMERA_DRAG_SENSITIVITY` (0.25 °/px) → yaw change; 100 px → 25.0° ± 0.5°. Positive x raises the yaw (clockwise seen from above, the same sense as the joystick angle). Vertical drag does nothing (CR-MOV-3 is horizontal only). Yaw wraps to [0, 360) (decision 4).
-- [ ] **AC-MOV-6 / CR-MOV-3**: while the joystick is held (not dead), character facing does not follow the camera; when the joystick is at rest (dead zone or no touch) facing equals the camera's flat forward each tick. While the joystick is held, facing = the joystick world direction.
-- [ ] `AutoRunState` exposes the GDD's client sub-states as `ClientMovementSubState`: Idle, MovingJoystick, MovingAutoRun, MovingCombined, Prohibited — per the `Tick` order above.
-- [ ] **AC-MOV-12**: the auto-run button toggles the flag on; with the joystick at rest the movement direction is the current facing every tick; a second press clears the flag and the direction is zero on the next tick.
-- [ ] Combined: flag on + joystick not at rest + `dot(joystickDir, cameraFlatForward) ≥ 0` → joystick direction wins, flag stays on; joystick released → back to auto-run forward.
-- [ ] **AC-MOV-13 / F-MOV-3**: flag on + `dot(joystickDir, cameraFlatForward) < 0` (strict) → flag cleared the same tick, joystick direction takes over, `SubState = MovingJoystick`; `dot = 0` (exactly 90°) → not cancelled. The reference forward is the camera's flat forward (the auto-run forward), not last tick's character facing (decision 3) — so a slow sweep to the rear cancels once it crosses 90°.
-- [ ] **AC-MOV-19 / EC-MOV-7**: Prohibited entry clears the flag the same tick; no forward intent while Prohibited; Prohibited clear → Idle, the flag is not re-armed. The client learns Prohibited through `IClientProhibitedSource` (decision 2); a button press while Prohibited is ignored; the facing still updates while Prohibited (CR-MOV-8).
-- [ ] **EC-MOV-5**: skill taps never change the flag.
-- [ ] **AC-MOV-20 (client part) / EC-MOV-9**: the client keeps sending the auto-run forward intent through the server's one-tick override — the flag is unchanged (the client is not told about the override).
-- [ ] **EC-MOV-18**: a new `CharacterFacing` has forward `Vector3.forward` (yaw 0), never a zero vector.
-- [ ] CR-MOV-5 persistence: a new `AutoRunState`, and `Reset()` (called by Story 013 on zone entry and reconnect), starts with the flag off and `SubState = Idle`; `Reset()` keeps the facing and does not touch `CameraYaw`.
-- [ ] No allocation: `CameraYaw.ApplyDrag` and `AutoRunState.Tick` allocate nothing (Story 012's send path builds on them).
+- [x] **AC-MOV-4**: horizontal camera-drag delta × `CAMERA_DRAG_SENSITIVITY` (0.25 °/px) → yaw change; 100 px → 25.0° ± 0.5°. Positive x raises the yaw (clockwise seen from above, the same sense as the joystick angle). Vertical drag does nothing (CR-MOV-3 is horizontal only). Yaw wraps to [0, 360) (decision 4).
+- [x] **AC-MOV-6 / CR-MOV-3**: while the joystick is held (not dead), character facing does not follow the camera; when the joystick is at rest (dead zone or no touch) facing equals the camera's flat forward each tick. While the joystick is held, facing = the joystick world direction.
+- [x] `AutoRunState` exposes the GDD's client sub-states as `ClientMovementSubState`: Idle, MovingJoystick, MovingAutoRun, MovingCombined, Prohibited — per the `Tick` order above.
+- [x] **AC-MOV-12**: the auto-run button toggles the flag on; with the joystick at rest the movement direction is the current facing every tick; a second press clears the flag and the direction is zero on the next tick.
+- [x] Combined: flag on + joystick not at rest + `dot(joystickDir, cameraFlatForward) ≥ 0` → joystick direction wins, flag stays on; joystick released → back to auto-run forward.
+- [x] **AC-MOV-13 / F-MOV-3**: flag on + `dot(joystickDir, cameraFlatForward) < 0` (strict) → flag cleared the same tick, joystick direction takes over, `SubState = MovingJoystick`; `dot = 0` (exactly 90°) → not cancelled. The reference forward is the camera's flat forward (the auto-run forward), not last tick's character facing (decision 3) — so a slow sweep to the rear cancels once it crosses 90°.
+- [x] **AC-MOV-19 / EC-MOV-7**: Prohibited entry clears the flag the same tick; no forward intent while Prohibited; Prohibited clear → Idle, the flag is not re-armed. The client learns Prohibited through `IClientProhibitedSource` (decision 2); a button press while Prohibited is ignored; the facing still updates while Prohibited (CR-MOV-8).
+- [x] **EC-MOV-5**: skill taps never change the flag.
+- [x] **AC-MOV-20 (client part) / EC-MOV-9**: the client keeps sending the auto-run forward intent through the server's one-tick override — the flag is unchanged (the client is not told about the override).
+- [x] **EC-MOV-18**: a new `CharacterFacing` has forward `Vector3.forward` (yaw 0), never a zero vector.
+- [x] CR-MOV-5 persistence: a new `AutoRunState`, and `Reset()` (called by Story 013 on zone entry and reconnect), starts with the flag off and `SubState = Idle`; `Reset()` keeps the facing and does not touch `CameraYaw`.
+- [x] No allocation: `CameraYaw.ApplyDrag` and `AutoRunState.Tick` allocate nothing (Story 012's send path builds on them).
 
 ---
 
@@ -82,6 +82,7 @@ Namespace `IronGrind.Client.Movement`, all in `src/Client/Movement/`:
   4. Yaw: positive x drag raises the yaw (clockwise from above), wrap [0, 360), initial 0 → `Vector3.forward`.
   5. A rear-pull cancel goes to MovingJoystick (CR-MOV-5, AC-MOV-13), not Idle as the GDD state table's Moving row reads. Follow-up: reword that row. A dead-zone joystick counts as at rest (AutoRun, not Combined).
   6. `Reset()` is the zone-entry / reconnect entry point; the camera yaw is not reset (CR-MOV-5 covers auto-run only).
+  8. (`/dev-story`, user decision) The camera forward is latched while the joystick is held: converting the held joystick with the live camera made a mid-hold camera drag turn the character, which AC-MOV-6 forbids. `Reset()` clears the latch.
 - Tuning comes from `MovementTuningValues` (`CameraDragSensitivity`); tests use `MovementTuningValues.Defaults`.
 - Yaw and facing are floats wrapped once per call (`if < 0 += 360`, `if ≥ 360 -= 360`), the same as `JoystickState.FromDrag`.
 
@@ -123,7 +124,7 @@ Client only, inside the frame and tick loop: a few vector operations per call, n
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/Client/Movement/ClientMovement_CameraAndAutoRun_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — `tests/EditMode/Client/Movement/ClientMovement_CameraAndAutoRun_tests.cs`, 57 methods / 61 cases, all passing (EditMode 5389 / 5260 passed / 0 failed / 129 skipped, 2026-10-29)
 
 ---
 
@@ -131,3 +132,16 @@ Client only, inside the frame and tick loop: a few vector operations per call, n
 
 - Depends on: Story 010 (Complete)
 - Unlocks: Stories 012, 013
+
+## Completion Notes
+**Completed**: 2026-10-29
+**Criteria**: 12/12 passing (all covered by EditMode tests; none deferred)
+**Deviations** (advisory):
+- Decision 8 (`/dev-story`, user): the camera flat forward is latched when the joystick leaves rest and used for the joystick world direction and the F-MOV-3 test until rest — the readiness contract (live camera) made a mid-hold camera drag turn the character, which AC-MOV-6 forbids. The latch is kept through Prohibited while the joystick stays held; `Reset()` clears it.
+- F-MOV-3 is `dot < -CANCEL_DOT_EPSILON` (1e-4, about 90.006°) instead of a strict `< 0`: float rounding gives an exact 90° joystick a dot of about ±1e-7.
+- `CameraYaw.ApplyDrag` ignores a non-finite change; `CharacterFacing.Face` rejects a NaN or infinite length (code review).
+- `CharacterFacing.Face` is `internal` (only `AutoRunState` writes the facing).
+- TR-mov-008 / TR-mov-009 not in `tr-registry.yaml` (no TR-mov-* registered yet).
+- Follow-ups (not scheduled): GDD rewording of F-MOV-3 `characterForward_world` and the state table's "rear-pull → Idle"; a real `IClientProhibitedSource` (no stun/root wire message exists).
+**Test Evidence**: Logic — `tests/EditMode/Client/Movement/ClientMovement_CameraAndAutoRun_tests.cs` (57 methods / 61 cases)
+**Code Review**: Complete — CHANGES REQUIRED (unity-specialist CLEAN with suggestions, qa-tester gaps) → "fix all" applied (Tick doc, non-finite guards, 12 test cases, rename, int sweep loop)
