@@ -5199,3 +5199,30 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Gaps: (1) hook point open — 6 release sites in 4 classes (ZoneEntryReclamation, ZoneCloseSteps steps 6/7, 2 ZoneEntryAdmission rollbacks, ZoneMobRoster), story listed only 2 → user chose pool hook `IZoneSlotReleaseListener.BeforeRelease(EntityID)` in ZoneSlotPool.ReleasePlayer/ReleaseMob, before any mutation, set-once `SetReleaseListener` (avoids pool↔service construction cycle), pool catches+logs; (2) `IStatusEffectsSlotCleanup` dropped — service implements the pool listener, public `ClearEntity`; (3) batch semantics: tick batch if open, else own; Begin throws → user chose log + clean unbatched; FreeRowTickAware; (4) stale TR note (TR-se-004 = expiry procedure, CR-SE-11 has no TR); (5) wrong CR-ZI-14 ref → CR-ZI-4/12/17; (6) performance note; (7) test-local IEntitySlotIndex over the real pool (production resolver Story 009). Estimate 4 → 5 h.
 - Written: story 008 (rewritten); status-effects.md (CR-SE-11 notification + ClearEntity rules, OQ-SE-2 Resolved, both Zone dependency rows, Last Updated); zone-instancing.md (CR-ZI-4 before-release hook, Status Effects Interactions + Downstream Dependencies rows, Last Updated); EPIC.md (row 008 Ready, Next Step incl. SetReleaseListener for 009). entities.yaml / systems-index unchanged (no values or status changed). Propagation: no stale OQ-SE-2 / "interface TBD" for zone departure left (HUD's TBD is the buff-tray events, unrelated).
 - Next: commit; then /dev-story production/epics/status-effects/story-008-zone-departure-and-slot-cleanup.md. PAT rotation still unconfirmed.
+
+## Session Extract — /dev-story 2026-10-28 (Story 008, not committed)
+- Story: production/epics/status-effects/story-008-zone-departure-and-slot-cleanup.md — Zone Departure and Slot Cleanup
+- Files changed: new src/ServerLogic/ZoneInstancing/IZoneSlotReleaseListener.cs (+ .meta); ZoneSlotPool.cs (SetReleaseListener set-once, private NotifyBeforeRelease in ReleasePlayer/ReleaseMob before any mutation, catch+log); StatusEffectsService.cs (implements IZoneSlotReleaseListener explicitly, public ClearEntity, HardResetSlot, LOG_PREFIX)
+- Tests written: tests/EditMode/StatusEffects/StatusEffects_ZoneDeparture_tests.cs (20: 15 ClearEntity + 5 pool integration), tests/EditMode/ZoneInstancing/ZoneInstancing_SlotReleaseListener_tests.cs (9) (+ .meta); full EditMode 4869 / 4740 passed / 0 failed / 129 skipped
+- Deviations: no public mob-slot lookup on ZoneSlotPool → test resolver records mob slot at TryAllocateMob and maps via GetOwlIndexForMobSlot (Story 009's production resolver needs the same); mob "still held" checked via GetMobEntityIDsInZone + OccupiedMobCount; ClearEntity outside the tick logs+clears captured clamp exceptions (never rethrows); no test calls ClearEntity from inside a running tick pass (HardResetSlot tick-state branch unexercised).
+- Blockers: None
+- Next: /code-review then /story-done story-008. PAT rotation still unconfirmed.
+
+## Session Extract — /code-review 2026-10-29
+- Story 008 code review: CHANGES REQUIRED (1 required: no test for ClearEntity during a tick) + 4 suggestions -> "fix all" applied.
+- Fixes: internal InjectClearEntityDuringTick seam + 3 in-tick tests (slot not yet reached, slot being processed, layer throw); ClearEntity split with TryBeginOwnBatch/EndOwnBatch (<40 lines); dead-flag asserts on EndBatchThrows/ClampThrows; HardResetSlot + ClearEntity doc lines.
+- Carry to Story 009 readiness: ZoneSlotPool has no public mob-slot lookup; production slot index must record mob slot at allocation (or add a pool lookup).
+- Suite: 4872 / 4743 passed / 0 failed / 129 skipped; 0 compile errors.
+- Next: /story-done production/epics/status-effects/story-008-zone-departure-and-slot-cleanup.md
+
+## Session Extract — /story-done 2026-10-29
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/status-effects/story-008-zone-departure-and-slot-cleanup.md — Zone Departure and Slot Cleanup
+- Tech debt logged: None (mob-slot lookup note carried into EPIC.md Next Step for Story 009)
+- Next recommended: /story-readiness production/epics/status-effects/story-009-tick-pipeline-wiring-and-allocation.md
+
+## Session Extract — /story-readiness 2026-10-29 (Story 009, not committed)
+- Verdict: NEEDS WORK (7 gaps) -> fixed -> Ready. Lean, QL-STORY-READY skipped.
+- Gaps: (1) no CharacterStats in ZoneServerComposition -> user: build one per zone here (LevelingService over XpThresholdTable.Values), internal getter, stat population out of scope; (2) mob-slot lookup -> user: public ZoneSlotPool.TryGetMobSlot over _mobIndex + production ZoneSlotPoolEntityIndex; (3) ZoneSimulationStep had no per-entry catch (SE throw skipped later phase-3 entries) -> user: per-entry try/catch, EntryFailed log; (4) missing SetReleaseListener + Dispose-pass registration + phase-3 order ACs; (5) tick adapter -> service implements IZoneSimulationStep; (6) combat stand-in -> user: test-only via SimulationSteps; (7) stale TR note fixed (TR-se-004/003; CR-SE-15 has no TR). Estimate 4 -> 6 h.
+- Written: story 009 (rewritten), EPIC.md (row 009 + Next Step). GDD / entities.yaml / systems-index unchanged (no values or status changed; ADR-014 silent on phase-3 failures, no ADR change).
+- Next: commit; then /dev-story production/epics/status-effects/story-009-tick-pipeline-wiring-and-allocation.md. PAT rotation still unconfirmed.
