@@ -5362,3 +5362,16 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Code review: APPROVED WITH SUGGESTIONS → "fix all" applied (StepSlot split into TryResolveOverride / TryResolveSpeed, overflow-safe normalization, +7 methods / +13 cases). EditMode 5165 / 5036 passed / 0 failed / 129 skipped.
 - Tech debt logged: None
 - Next recommended: /story-readiness production/epics/movement-system/story-007-navmesh-stall-recovery-and-unavailable-navmesh.md (007 depends only on done stories; 008 now unblocked too). PAT rotation still unconfirmed.
+
+## Session Extract — /dev-story 2026-10-29
+- Story: production/epics/movement-system/story-007-navmesh-stall-recovery-and-unavailable-navmesh.md — NavMesh Stall Recovery and Unavailable NavMesh
+- Files changed: src/ServerLogic/MovementSystem/MovementService.cs, src/ServerLogic/MovementSystem/IMovementGeometryErrorSink.cs, src/ServerLogic/MovementSystem/LoggingMovementGeometryErrorSink.cs (+ .meta)
+- Test written: tests/EditMode/MovementSystem/MovementSystem_NavMeshFailure_tests.cs (30 methods); EditMode 5195 / 5066 passed / 0 failed / 129 skipped
+- Blockers: None. Review notes: stale class remark (line 22); a default(MovementTuningValues) gives threshold 0 → recovery on every stepped tick
+- Next: /code-review MovementService.cs IMovementGeometryErrorSink.cs LoggingMovementGeometryErrorSink.cs MovementSystem_NavMeshFailure_tests.cs, then /story-done story-007
+
+## Session Extract — /story-done 2026-10-29
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/movement-system/story-007-navmesh-stall-recovery-and-unavailable-navmesh.md — NavMesh Stall Recovery and Unavailable NavMesh
+- Tech debt logged: None (follow-up noted in story: Zone Instancing S6 should S-fail on a null BakedNavMesh)
+- Next recommended: /story-readiness production/epics/movement-system/story-008-zone-entry-exit-and-slot-release.md

@@ -3,8 +3,8 @@
 > **Layer**: Core
 > **GDD**: design/gdd/movement-system.md
 > **Architecture Module**: Movement — position integration, intent messages, movement state (`architecture.md` module table)
-> **Status**: In Progress (Stories 001–005 Complete 2026-10-29)
-> **Stories**: 13 stories created 2026-10-29 (001–013); 5 Complete (001–005), 8 Ready — see Stories below
+> **Status**: In Progress (Stories 001–007 Complete 2026-10-29)
+> **Stories**: 13 stories created 2026-10-29 (001–013); 7 Complete (001–007), 6 Ready — see Stories below
 > **Manifest Version**: 2026-10-26
 
 ## Overview
@@ -73,7 +73,7 @@ This epic is complete when:
 | 004 | [Intent Intake — Sender Check, Stale Discard, Last-Wins](story-004-intent-intake-sender-stale-last-wins.md) | Integration | Complete | ADR-014, ADR-004 |
 | 005 | [Movement Tick Step and NavMesh Validation](story-005-tick-step-and-navmesh-validation.md) | Logic | Complete | ADR-002, ADR-014 |
 | 006 | [Prohibited State and Auto-Face Override](story-006-prohibited-state-and-auto-face-override.md) | Logic | Complete | ADR-010 |
-| 007 | [NavMesh Stall Recovery and Unavailable NavMesh](story-007-navmesh-stall-recovery-and-unavailable-navmesh.md) | Logic | Ready | ADR-009, ADR-002 |
+| 007 | [NavMesh Stall Recovery and Unavailable NavMesh](story-007-navmesh-stall-recovery-and-unavailable-navmesh.md) | Logic | Complete | ADR-009, ADR-002 |
 | 008 | [Zone Entry, Exit and Slot Release](story-008-zone-entry-exit-and-slot-release.md) | Integration | Ready | ADR-009, ADR-010 |
 | 009 | [Composition Wiring and Per-Tick Position Broadcast](story-009-composition-wiring-and-position-broadcast.md) | Integration | Ready | ADR-014, ADR-002, ADR-004 |
 | 010 | [Touch Zones, Floating Joystick and Camera-Relative Direction](story-010-touch-zones-joystick-and-camera-relative-direction.md) | Logic | Ready | ADR-012, ADR-005 |
@@ -85,4 +85,4 @@ AC-MOV-22 (device frame budget) has no story: it waits for on-device profiling, 
 
 ## Next Step
 
-Stories 001–006 Complete 2026-10-29 (001: `MovementTuning` + `MovementTuningValues`, `MovementPositionGuard`; 002: `MovementIntentMessage` 0x0211 + codec, routing row; 003: `MovementIntegrator`, `IMovementSpeedSource` + Character Stats adapter, `MovementSpeedResolver`; 005: `MovementService` tick step, `IMovementIntentSource`, `INavMeshSampler` + `UnityNavMeshSampler`; 004: `MovementIntentBuffer` intake + `MovementInboundRegistration`, `RpcTypeTag.MovementIntent`; 006: `IMovementSystem` (`SetProhibited`, `InjectFacingOverride`) on `MovementService`, no caller yet). Next: `/story-readiness production/epics/movement-system/story-007-navmesh-stall-recovery-and-unavailable-navmesh.md`, then `/dev-story` it. Work in the recommended order; each story's Dependencies section lists what must be done first.
+Stories 001–007 Complete 2026-10-29 (001: `MovementTuning` + `MovementTuningValues`, `MovementPositionGuard`; 002: `MovementIntentMessage` 0x0211 + codec, routing row; 003: `MovementIntegrator`, `IMovementSpeedSource` + Character Stats adapter, `MovementSpeedResolver`; 005: `MovementService` tick step, `IMovementIntentSource`, `INavMeshSampler` + `UnityNavMeshSampler`; 004: `MovementIntentBuffer` intake + `MovementInboundRegistration`, `RpcTypeTag.MovementIntent`; 006: `IMovementSystem` (`SetProhibited`, `InjectFacingOverride`) on `MovementService`, no caller yet; 007: NavMesh stall recovery, `IMovementGeometryErrorSink` + logging stand-in, `SetNavMeshAvailable`, F-MOV-6 commit guard). Next: `/story-readiness production/epics/movement-system/story-008-zone-entry-exit-and-slot-release.md`, then `/dev-story` it. Work in the recommended order; each story's Dependencies section lists what must be done first.

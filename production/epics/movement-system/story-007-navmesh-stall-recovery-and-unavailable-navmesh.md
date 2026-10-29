@@ -1,7 +1,7 @@
 # Story 007: NavMesh Stall Recovery and Unavailable NavMesh
 
 > **Epic**: Movement System
-> **Status**: Ready — written 2026-10-29 (`/create-stories`, lean); `/story-readiness` 2026-10-29: NEEDS WORK (5 gaps) → fixed → Ready
+> **Status**: Complete — 2026-10-29 (`/story-done`: COMPLETE WITH NOTES); written 2026-10-29 (`/create-stories`, lean); `/story-readiness` 2026-10-29: NEEDS WORK (5 gaps) → fixed → Ready
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-26
@@ -74,7 +74,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/MovementSystem/MovementSystem_NavMeshFailure_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — `tests/EditMode/MovementSystem/MovementSystem_NavMeshFailure_tests.cs`, 46 methods, all passing (EditMode 5211 / 5082 passed / 0 failed / 129 skipped, 2026-10-29)
 
 ---
 
@@ -82,3 +82,20 @@
 
 - Depends on: Story 001 (guard, stall knob), Story 005
 - Unlocks: Story 009
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-10-29
+**Criteria**: 5/5 passing (all automated; none deferred)
+**Deviations** (advisory):
+1. AC-MOV-25 / EC-MOV-12: S6 still does not fail startup on a null `BakedNavMesh` (`UnitySceneLoader` stand-in); only the Movement-side `SetNavMeshAvailable` branch exists. Follow-up for Zone Instancing: S6 S-fail on a missing NavMesh. Nothing calls `SetNavMeshAvailable` yet (Story 009).
+2. The 6-arg constructor throws `ArgumentOutOfRangeException` for `NavMeshStallRecoveryTicks < 1` (only reachable via `default(MovementTuningValues)`; `Create` clamps to 5); added at code review.
+3. The "NavMesh unavailable" error once-flag is zone-wide, not per slot; the stall counter saturates at `int.MaxValue`.
+4. `StepSlot` split into `TakeInput` / `LogUnavailableOnce` / `TryMove` (method-length standard); behaviour unchanged, Story 005 / 006 tests pass unedited.
+5. TR-mov-006 is a placeholder, not yet in `docs/architecture/tr-registry.yaml` (same as the other epics).
+**Scope**: within the story. `IMovementGeometryErrorSink` has only the logging stand-in; Zone Instancing's reaction is a later decision.
+**Files**: `src/ServerLogic/MovementSystem/MovementService.cs` (stall counter / reported / overflow-warned arrays, `RecoverSlot`, `TryCommit`, `SetNavMeshAvailable`, 6-arg ctor, `StepSlot` split); `src/ServerLogic/MovementSystem/IMovementGeometryErrorSink.cs` (new); `src/ServerLogic/MovementSystem/LoggingMovementGeometryErrorSink.cs` (new); test file above; `.meta` files.
+**Test Evidence**: Logic — `tests/EditMode/MovementSystem/MovementSystem_NavMeshFailure_tests.cs`
+**Code Review**: Complete — `/code-review` 2026-10-29: CHANGES REQUIRED (threshold guard; tests for speed-fail / non-finite counter, recovery-hit reset, two independent slots) + suggestions (split `StepSlot`, doc fixes, sink must-not-throw doc, `[TearDown]` `NoUnexpectedReceived`, edge and allocation tests), "fix all" applied. QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean).
