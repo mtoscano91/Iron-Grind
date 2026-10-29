@@ -73,5 +73,8 @@ namespace IronGrind.Networking
 
         /// <summary><c>EquipRequest</c> (Equipment Story 008, ADR-014 Decision 1). No rate limit.</summary>
         EquipRequest = 8,
+
+        /// <summary><c>MovementIntentMessage</c> (Movement Story 004, ADR-014 Decision 1). No rate limit: two per tick are allowed (AC-MOV-28).</summary>
+        MovementIntent = 9,
     }
 }

@@ -5328,3 +5328,18 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Code review: CHANGES REQUIRED (reassigned-slot read) + suggestions → "fix all" applied; story 009 note (main-thread tick). EditMode 5093 / 4964 passed / 0 failed / 129 skipped.
 - Tech debt logged: None
 - Next recommended: /story-readiness production/epics/movement-system/story-004-intent-intake-sender-stale-last-wins.md (recommended order 005 → 004 → 006). PAT rotation still unconfirmed.
+
+## Session Extract — /dev-story 2026-10-29
+- Story: production/epics/movement-system/story-004-intent-intake-sender-stale-last-wins.md — Intent Intake: Sender Check, Stale Discard, Last-Wins
+- Files changed: src/ServerLogic/MovementSystem/{MovementIntentBuffer,MovementInboundRegistration}.cs (+ .meta, new); src/ServerLogic/Networking/RpcGuards/{RpcTypeTag,CrossCuttingRpcGuardChain}.cs (MovementIntent = 9, tick gap 0)
+- Test written: tests/EditMode/MovementSystem/MovementSystem_IntentIntake_tests.cs (28 methods, all pass; suite 5121 / 4992 passed / 0 failed / 129 skipped)
+- Notes: guard log prints `EntityID(n)` (struct ToString); allocation test pre-sizes the harness activity sink list; registration not wired (Story 009); `using IronGrind.CharacterStats` in the buffer possibly unused.
+- Blockers: None
+- Next: /code-review [files] then /story-done production/epics/movement-system/story-004-intent-intake-sender-stale-last-wins.md
+
+## Session Extract — /story-done 2026-10-29
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/movement-system/story-004-intent-intake-sender-stale-last-wins.md — Intent Intake: Sender Check, Stale Discard, Last-Wins
+- Code review: APPROVED WITH SUGGESTIONS → "fix all" applied (unused using, +3 tests, NoUnexpectedReceived on 3 drop tests, slot constant). EditMode 5124 / 4995 passed / 0 failed / 129 skipped.
+- Tech debt logged: None
+- Next recommended: /story-readiness production/epics/movement-system/story-006-prohibited-state-and-auto-face-override.md (006 and 007 depend only on done stories; 008 needs 006). PAT rotation still unconfirmed.
