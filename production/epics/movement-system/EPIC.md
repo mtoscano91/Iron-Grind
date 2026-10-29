@@ -3,8 +3,8 @@
 > **Layer**: Core
 > **GDD**: design/gdd/movement-system.md
 > **Architecture Module**: Movement — position integration, intent messages, movement state (`architecture.md` module table)
-> **Status**: In Progress (Story 001 Complete 2026-10-29)
-> **Stories**: 13 stories created 2026-10-29 (001–013); 1 Complete (001), 12 Ready — see Stories below
+> **Status**: In Progress (Stories 001–002 Complete 2026-10-29)
+> **Stories**: 13 stories created 2026-10-29 (001–013); 2 Complete (001–002), 11 Ready — see Stories below
 > **Manifest Version**: 2026-10-26
 
 ## Overview
@@ -68,7 +68,7 @@ This epic is complete when:
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
 | 001 | [Tuning Config and Position Encoding Guard](story-001-tuning-config-and-encoding-guard.md) | Logic | Complete (2026-10-29) | ADR-012 |
-| 002 | [MovementIntentMessage Wire Type and Codec](story-002-movement-intent-wire-type-and-codec.md) | Logic | Ready | ADR-014, ADR-004 |
+| 002 | [MovementIntentMessage Wire Type and Codec](story-002-movement-intent-wire-type-and-codec.md) | Logic | Complete | ADR-014, ADR-004 |
 | 003 | [Position Integration and Effective Speed](story-003-position-integration-and-effective-speed.md) | Logic | Ready | ADR-002, ADR-012 |
 | 004 | [Intent Intake — Sender Check, Stale Discard, Last-Wins](story-004-intent-intake-sender-stale-last-wins.md) | Integration | Ready | ADR-014, ADR-004 |
 | 005 | [Movement Tick Step and NavMesh Validation](story-005-tick-step-and-navmesh-validation.md) | Logic | Ready | ADR-002, ADR-014 |
@@ -85,4 +85,4 @@ AC-MOV-22 (device frame budget) has no story: it waits for on-device profiling, 
 
 ## Next Step
 
-Story 001 Complete 2026-10-29 (`MovementTuning` + `MovementTuningValues` in Foundation, clamp + warn; `MovementPositionGuard.IsEncodable` in ServerLogic). Next: `/story-readiness production/epics/movement-system/story-002-movement-intent-wire-type-and-codec.md`, then `/dev-story` it. Work in the recommended order; each story's Dependencies section lists what must be done first.
+Stories 001–002 Complete 2026-10-29 (001: `MovementTuning` + `MovementTuningValues`, `MovementPositionGuard`; 002: `MovementIntentMessage` 0x0211 + codec, routing row). Next: `/story-readiness production/epics/movement-system/story-003-position-integration-and-effective-speed.md`, then `/dev-story` it. Work in the recommended order; each story's Dependencies section lists what must be done first.

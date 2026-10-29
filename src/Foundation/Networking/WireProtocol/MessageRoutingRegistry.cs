@@ -15,7 +15,7 @@ namespace IronGrind.Networking
     /// per <c>MessageTypeID</c> that already exists as a concrete schema class in
     /// <c>src/Foundation/Networking/WireProtocol/</c> today — <see cref="HeartbeatMessage"/>,
     /// <see cref="DamageEvent"/>, <see cref="CycleTimerBroadcast"/>, <see cref="EntityPositionUpdate"/>,
-    /// and <see cref="GoldSyncEvent"/>. Every other message named in <c>networking-message-criticality.md</c>
+    /// <see cref="GoldSyncEvent"/>, and <see cref="MovementIntentMessage"/> (and the other rows below). Every other message named in <c>networking-message-criticality.md</c>
     /// / <c>networking-channel-contract.md</c> (e.g. <c>RttProbe</c>/<c>RttProbeEcho</c>,
     /// <c>SessionHandshake</c>, <c>KillEvent</c>, <c>LootBidUpdate</c>, ...) belongs to a system not yet
     /// implemented in this codebase — its owning story adds a row here when its schema class is
@@ -56,6 +56,16 @@ namespace IronGrind.Networking
                 deliveryContext: MessageDeliveryContext.Standalone,
                 isMcr3Exception: false,
                 rationale: "Keepalive; dropped heartbeat self-corrects on the next one (MCR-2, CR-NET-7.10)."));
+
+            Add(new MessageRoutingEntry(
+                messageTypeId: MovementIntentMessage.MessageTypeId,
+                messageName: nameof(MovementIntentMessage),
+                pillars: DesignPillar.Infrastructure,
+                channel: NetworkChannel.Unreliable,
+                direction: MessageDirection.ClientToServer,
+                deliveryContext: MessageDeliveryContext.Standalone,
+                isMcr3Exception: false,
+                rationale: "Per-tick movement intent; a dropped message self-corrects next tick (MCR-2, CR-MOV-10)."));
 
             Add(new MessageRoutingEntry(
                 messageTypeId: DamageEvent.MessageTypeId,

@@ -5277,3 +5277,18 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: None (user choice)
 - Epic: Movement EPIC.md Status In Progress, row 001 Complete; index row 1 Complete / 12 Ready.
 - Next recommended: /story-readiness production/epics/movement-system/story-002-movement-intent-wire-type-and-codec.md. PAT rotation still unconfirmed.
+
+## Session Extract — /dev-story 2026-10-29
+- Story: production/epics/movement-system/story-002-movement-intent-wire-type-and-codec.md — MovementIntentMessage Wire Type and Codec
+- Files changed: src/Foundation/Networking/WireProtocol/MovementIntentMessage.cs (new), MovementIntentMessageCodec.cs (new), MessageRoutingRegistry.cs (row 0x0211 U-U ClientToServer, Infrastructure), tests/EditMode/Architecture/AssemblyBoundaryLists.cs (+2), + .meta
+- Test written: tests/EditMode/Networking/MovementIntentMessage_Codec_tests.cs — 15 methods / 42 cases; EditMode 4997 / 4868 passed / 0 failed / 129 skipped
+- Decisions: full-message Write/TryRead added (SetTargetCodec parity); EncodeDirection returns (short x, short z) + out wasNonUnit; per-component clamp before the ±100 length check, so an over-unit axis input like (2, 0) clamps to unit and is not flagged
+- Blockers: None (not committed)
+- Next: /code-review the 3 src files + test, then /story-done production/epics/movement-system/story-002-movement-intent-wire-type-and-codec.md
+
+## Session Extract — /story-done 2026-10-29
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/movement-system/story-002-movement-intent-wire-type-and-codec.md — MovementIntentMessage Wire Type and Codec
+- Code review: CHANGES REQUIRED → fixed (IsFinite guard + clamp-before-round in EncodeDirection/EncodeFacing; full-message TryRead length tests; tolerance boundary, over-unit, routing rationale/context, alloc on envelope path). EditMode 5017 / 4888 / 0 / 129.
+- Tech debt logged: None
+- Next recommended: /story-readiness production/epics/movement-system/story-003-position-integration-and-effective-speed.md

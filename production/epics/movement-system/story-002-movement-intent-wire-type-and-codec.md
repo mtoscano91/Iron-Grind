@@ -1,7 +1,7 @@
 # Story 002: MovementIntentMessage Wire Type and Codec
 
 > **Epic**: Movement System
-> **Status**: Ready — written 2026-10-29 (`/create-stories`, lean); `/story-readiness` 2026-10-29: NEEDS WORK (3 gaps) → fixed → Ready
+> **Status**: Complete — 2026-10-29 (`/story-done`: COMPLETE WITH NOTES); written 2026-10-29 (`/create-stories`, lean); `/story-readiness` 2026-10-29: NEEDS WORK (3 gaps) → fixed → Ready
 > **Layer**: Core (codec in Foundation)
 > **Type**: Logic
 > **Manifest Version**: 2026-10-26
@@ -67,7 +67,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/Networking/MovementIntentMessage_Codec_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — `tests/EditMode/Networking/MovementIntentMessage_Codec_tests.cs`, 14 methods / 61 cases, all passing (EditMode 5017 / 4888 passed / 0 failed / 129 skipped, 2026-10-29)
 
 ---
 
@@ -75,3 +75,20 @@
 
 - Depends on: None
 - Unlocks: Stories 004, 012
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-10-29
+**Criteria**: 6/6 passing (all covered by automated tests; none deferred)
+**Deviations** (advisory, beyond the story, no tech debt):
+1. Full-message `Write` / `TryRead` (envelope + body) added next to `WriteBody` / `TryReadBody`, as in `SetTargetCodec`.
+2. `EncodeDirection`: a NaN or infinite component → `(32767, 0)`, `wasNonUnit = true` (code review: float-to-int of NaN/Inf differs between x64 and ARM64); scaled components are clamped before rounding.
+3. `EncodeFacing`: NaN or infinite → 0; finite input clamped to ±1e6° first.
+4. An over-unit single-axis input such as (2, 0) or (1e30, 0) clamps to a unit vector and is not flagged — consistent with the wire GDD (the length check runs on the encoded shorts); pinned by tests.
+5. TR-mov-003 is a placeholder, not yet in `docs/architecture/tr-registry.yaml` (same as the other epics).
+**Scope**: `MessageRoutingRegistry.cs` (row 0x0211: Unreliable, ClientToServer, Standalone, `Infrastructure`) and `tests/EditMode/Architecture/AssemblyBoundaryLists.cs` (+2 entries, ADR-012), both named by the story.
+**Files**: `src/Foundation/Networking/WireProtocol/MovementIntentMessage.cs`, `MovementIntentMessageCodec.cs`, `MessageRoutingRegistry.cs`; test file above; Unity-generated `.meta` files.
+**Test Evidence**: Logic — `tests/EditMode/Networking/MovementIntentMessage_Codec_tests.cs`
+**Code Review**: Complete — `/code-review` 2026-10-29: CHANGES REQUIRED (non-finite input guard; full-message `TryRead` length tests), "fix all" applied with all suggestions. QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean).
