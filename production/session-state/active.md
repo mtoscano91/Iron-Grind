@@ -5253,3 +5253,25 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: 1 (TD-087 — vacuous GC.GetAllocatedBytesForCurrentThread check in ZoneInstancing_Wiring_tests.cs)
 - Status Effects epic: all 9 stories Complete -> EPIC.md Status Complete (TR-se-006 deferred).
 - Next recommended: none in this epic; pick the next epic (no sprint plans — user works story-by-story). PAT rotation still unconfirmed.
+
+## Session Extract — /dev-story 2026-10-29 (Movement Story 001, not committed)
+- Story: production/epics/movement-system/story-001-tuning-config-and-encoding-guard.md — Tuning Config and Position Encoding Guard
+- Implemented in the main session (small story, context loaded; no subagent).
+- Files: new src/Foundation/MovementSystem/MovementTuning.cs (ScriptableObject, private [SerializeField] fields, internal SetForTesting, OnValidate → FromAsset warnings), MovementTuningValues.cs (readonly struct, Defaults, range constants, Create/FromAsset clamp + one warning per knob, NaN → default, invariant-culture log text); new src/ServerLogic/MovementSystem/MovementPositionGuard.cs (IsEncodable vs WireFixedPointCodec.MaxPositionMeters, NaN false, Y ignored); AssemblyBoundaryLists.cs (+2 Foundation entries, consumer planned Stories 010–012). Unity-generated .meta for the 3 new folders + files.
+- Test: tests/EditMode/MovementSystem/MovementSystem_Tuning_tests.cs (16 methods / 53 cases). Full EditMode 4955 / 4826 passed / 0 failed / 129 skipped, no `error CS`.
+- Deviations: none from scope. Round-trip bound checked as 0.005 + 1e-4 float-representation allowance (documented in the test).
+- Next: /code-review then /story-done story-001. PAT rotation still unconfirmed.
+
+## Session Extract — /code-review 2026-10-29 (Movement Story 001)
+- Verdict: APPROVED WITH SUGGESTIONS (unity-specialist: 0 blocking, 1 warning, 4 advisory; qa-tester: GAPS, none blocking) -> "fix all" applied (IEquatable left out: no comparison caller).
+- Fixes: allow-list Movement block moved after BuildConfiguration; type doc warns against default(MovementTuningValues); NaN warning -> "KNOB is NaN; using default N"; OnValidate under #if UNITY_EDITOR; tests: distinct per-axis round trip + maxError > 0 + known-sample rounding test; out-of-range regexes assert given and used values (+3 infinity cases); int.MaxValue/MinValue test; OnValidate valid asset logs nothing; asset non-mutation asserted on all six knobs (FromAsset and OnValidate); fresh-asset compares fields individually.
+- Suite: 4961 / 4832 passed / 0 failed / 129 skipped; no `error CS`. Movement fixture 59 cases passed.
+- Next: /story-done production/epics/movement-system/story-001-tuning-config-and-encoding-guard.md
+
+## Session Extract — /story-done 2026-10-29 (Movement Story 001)
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/movement-system/story-001-tuning-config-and-encoding-guard.md — Tuning Config and Position Encoding Guard
+- Deviations (advisory): round-trip bound 0.005 + 1e-4 float allowance; OnValidate under UNITY_EDITOR; TR-mov placeholders not in the registry.
+- Tech debt logged: None (user choice)
+- Epic: Movement EPIC.md Status In Progress, row 001 Complete; index row 1 Complete / 12 Ready.
+- Next recommended: /story-readiness production/epics/movement-system/story-002-movement-intent-wire-type-and-codec.md. PAT rotation still unconfirmed.

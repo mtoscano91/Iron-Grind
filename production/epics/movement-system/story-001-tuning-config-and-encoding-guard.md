@@ -1,7 +1,7 @@
 # Story 001: Tuning Config and Position Encoding Guard
 
 > **Epic**: Movement System
-> **Status**: Ready — written 2026-10-29 (`/create-stories`, lean); `/story-readiness` 2026-10-29: NEEDS WORK (4 gaps) → fixed → Ready
+> **Status**: Complete — 2026-10-29 (`/story-done`: COMPLETE WITH NOTES); written 2026-10-29 (`/create-stories`, lean); `/story-readiness` 2026-10-29: NEEDS WORK (4 gaps) → fixed → Ready
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-26
@@ -28,12 +28,12 @@
 
 ## Acceptance Criteria
 
-- [ ] A `MovementTuning` ScriptableObject holds the six knobs with the GDD defaults: `JOYSTICK_RADIUS_PX` 80, `DEAD_ZONE_NORMALIZED` 0.15, `BASE_MOVE_SPEED` 5.0 (registry, revised 2026-10-29), `STALE_TICK_TOLERANCE` 3, `CAMERA_DRAG_SENSITIVITY` 0.25 °/px, `NAVMESH_STALL_RECOVERY_TICKS` 10.
-- [ ] A plain C# read model (`MovementTuningValues` or similar, a readonly struct) is what the systems take in their constructors, so tests build it without an asset. `MovementTuningValues.Defaults` equals the six defaults above.
-- [ ] Each knob has its GDD safe range in code as named constants (60–120, 0.05–0.30, 4.0–10.0, 2–5, 0.10–0.50, 5–30). **Out of range (readiness decision 2026-10-29): clamp into the range** when `MovementTuningValues` is built from the asset, and log one warning per clamped knob naming the knob, the asset value and the clamped value. Values inside the range log nothing. In the Editor, `OnValidate` logs the same warning so the designer sees it on edit. The server keeps starting with a bad asset.
-- [ ] **`BASE_MOVE_SPEED` is a reference value only (readiness decision 2026-10-29).** The live base speed is the Character Stats starting value (`CharacterStubDefaults.MOVEMENT_SPEED`, owned by Character Persistence), which Story 003 reads through `GetEffectiveStat`. The field's doc comment says so: changing it in the asset does not change movement speed. A test asserts `Defaults.BaseMoveSpeed == CharacterStubDefaults.MOVEMENT_SPEED` (5.0), so the 5.0/6.0 drift cannot come back silently. Making starting stats read this asset is a later change, not this story.
-- [ ] **AC-MOV-11**: encoding then decoding 1,000 positions through the existing `WireFixedPointCodec.EncodePosition` / `DecodePosition` (Foundation, ×100 shorts) gives a round-trip error ≤ 0.005 on every axis. The positions are a deterministic sweep, `−327.0 + i × 0.654` for i = 0..999 on each axis, plus the edge values −327.0, 0, 327.0 and values ending in .005. No random generator, seeded or not (testing standards).
-- [ ] F-MOV-6 guard: a static `IsEncodable(Vector3 candidate)` returns true only when `|x| ≤ WireFixedPointCodec.MaxPositionMeters` and `|z| ≤ MaxPositionMeters` (327.67; reuse the constant, no second one). 327.67 → true, 327.68 → false, −327.67 → true, NaN → false. Y is not checked. Story 007 calls it before commit, so a candidate never reaches the codec's own clamp-and-log path.
+- [x] A `MovementTuning` ScriptableObject holds the six knobs with the GDD defaults: `JOYSTICK_RADIUS_PX` 80, `DEAD_ZONE_NORMALIZED` 0.15, `BASE_MOVE_SPEED` 5.0 (registry, revised 2026-10-29), `STALE_TICK_TOLERANCE` 3, `CAMERA_DRAG_SENSITIVITY` 0.25 °/px, `NAVMESH_STALL_RECOVERY_TICKS` 10.
+- [x] A plain C# read model (`MovementTuningValues` or similar, a readonly struct) is what the systems take in their constructors, so tests build it without an asset. `MovementTuningValues.Defaults` equals the six defaults above.
+- [x] Each knob has its GDD safe range in code as named constants (60–120, 0.05–0.30, 4.0–10.0, 2–5, 0.10–0.50, 5–30). **Out of range (readiness decision 2026-10-29): clamp into the range** when `MovementTuningValues` is built from the asset, and log one warning per clamped knob naming the knob, the asset value and the clamped value. Values inside the range log nothing. In the Editor, `OnValidate` logs the same warning so the designer sees it on edit. The server keeps starting with a bad asset.
+- [x] **`BASE_MOVE_SPEED` is a reference value only (readiness decision 2026-10-29).** The live base speed is the Character Stats starting value (`CharacterStubDefaults.MOVEMENT_SPEED`, owned by Character Persistence), which Story 003 reads through `GetEffectiveStat`. The field's doc comment says so: changing it in the asset does not change movement speed. A test asserts `Defaults.BaseMoveSpeed == CharacterStubDefaults.MOVEMENT_SPEED` (5.0), so the 5.0/6.0 drift cannot come back silently. Making starting stats read this asset is a later change, not this story.
+- [x] **AC-MOV-11**: encoding then decoding 1,000 positions through the existing `WireFixedPointCodec.EncodePosition` / `DecodePosition` (Foundation, ×100 shorts) gives a round-trip error ≤ 0.005 on every axis. The positions are a deterministic sweep, `−327.0 + i × 0.654` for i = 0..999 on each axis, plus the edge values −327.0, 0, 327.0 and values ending in .005. No random generator, seeded or not (testing standards).
+- [x] F-MOV-6 guard: a static `IsEncodable(Vector3 candidate)` returns true only when `|x| ≤ WireFixedPointCodec.MaxPositionMeters` and `|z| ≤ MaxPositionMeters` (327.67; reuse the constant, no second one). 327.67 → true, 327.68 → false, −327.67 → true, NaN → false. Y is not checked. Story 007 calls it before commit, so a candidate never reaches the codec's own clamp-and-log path.
 
 ---
 
@@ -69,7 +69,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/MovementSystem/MovementSystem_Tuning_tests.cs` — must exist and pass. The test asmdef already references Foundation, ServerLogic and Client.
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — `tests/EditMode/MovementSystem/MovementSystem_Tuning_tests.cs`, 17 methods / 59 cases, all passing (EditMode 4961 / 4832 passed / 0 failed / 129 skipped, 2026-10-29)
 
 ---
 
@@ -77,3 +77,18 @@
 
 - Depends on: None
 - Unlocks: Stories 003, 004, 007, 010, 011
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-10-29
+**Criteria**: 6/6 passing (all covered by automated tests; none deferred)
+**Deviations** (advisory, no tech debt — user decision):
+1. AC-MOV-11 is asserted as error ≤ 0.005 + 1e-4: a float sample such as 1.005f is stored a few ULPs off the decimal value. A truncating codec (error up to 0.01) still fails; the sweep also asserts error > 0 and a known-sample test checks rounding to the nearest centimetre.
+2. `MovementTuning.OnValidate` is compiled only under `UNITY_EDITOR` (Unity never calls it in a player build).
+3. TR-mov-001–010 are placeholders, not yet in `docs/architecture/tr-registry.yaml` (same as the other epics; the next `/architecture-review` registers them).
+**Scope**: `tests/EditMode/Architecture/AssemblyBoundaryLists.cs` gained the two Foundation entries the ADR-012 boundary test requires (consumer planned: Stories 010–012).
+**Files**: `src/Foundation/MovementSystem/MovementTuning.cs`, `MovementTuningValues.cs`; `src/ServerLogic/MovementSystem/MovementPositionGuard.cs`; test file above; Unity-generated `.meta` files.
+**Test Evidence**: Logic — `tests/EditMode/MovementSystem/MovementSystem_Tuning_tests.cs`
+**Code Review**: Complete — `/code-review` 2026-10-29: APPROVED WITH SUGGESTIONS, "fix all" applied (`IEquatable` left out — no comparison caller). QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean).

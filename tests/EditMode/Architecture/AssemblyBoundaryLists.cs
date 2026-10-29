@@ -169,6 +169,9 @@ namespace IronGrind.Tests.EditMode.Architecture
             "IronGrind.Networking.MessageRoutingResult",           // consumer (planned): client send and receive path (every call site consults the registry)
             "IronGrind.Networking.PendingSchemaDispatchException", // consumer (planned): client send and receive path (every call site consults the registry)
             "IronGrind.Networking.BuildConfiguration",             // consumer (planned): client send and receive path (every call site consults the registry)
+            // Movement System: one tuning asset for the zone server and the client (Movement Story 001)
+            "IronGrind.MovementSystem.MovementTuning",       // consumer (planned): client touch input (joystick radius, dead zone, camera sensitivity — Movement Stories 010-011)
+            "IronGrind.MovementSystem.MovementTuningValues", // consumer (planned): client touch input (Movement Stories 010-012)
             // Networking: rules both sides apply
             "IronGrind.Networking.ConnectionSequenceCounter", // consumer (planned): client send path (per-connection sequence numbers)
             "IronGrind.Networking.StaleDiscardComparer",      // consumer (planned): client receive path (stale-message discard)
