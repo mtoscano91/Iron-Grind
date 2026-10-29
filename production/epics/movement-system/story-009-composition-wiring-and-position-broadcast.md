@@ -41,6 +41,7 @@
 ## Implementation Notes
 
 - Mob positions are not broadcast here (no mob movement yet); when Navigation lands, mobs join the same packet.
+- *(From Story 005 code review, 2026-10-29)* `UnityNavMeshSampler` calls `NavMesh.SamplePosition`, which is main thread only (ADR-002 Decision 4). `ServerTickLoop` has no thread or `Update` code of its own — confirm at readiness that whatever drives it (and so `MovementService.Run`) runs on the Unity main thread.
 - The per-tick packet is U-U to all zone clients, not relevance-filtered (routing row `ServerToAllZoneClients`; the relevance filter governs HP updates only).
 - `SelfPositionUpdate` (R-U, owning client) belongs to Client-Side Prediction (CR-CSP-7) — not this story.
 

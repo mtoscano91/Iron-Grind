@@ -5311,3 +5311,18 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Code review: APPROVED WITH SUGGESTIONS → "fix all" applied (non-finite direction guard, full exception log, +10 test cases, story 005 note). EditMode 5061 / 4932 passed / 0 failed / 129 skipped.
 - Tech debt logged: None
 - Next recommended: /story-readiness production/epics/movement-system/story-005-tick-step-and-navmesh-validation.md (recommended order 003 → 005 → 004). PAT rotation still unconfirmed.
+
+## Session Extract — /dev-story 2026-10-29
+- Story: production/epics/movement-system/story-005-tick-step-and-navmesh-validation.md — Movement Tick Step and NavMesh Validation
+- Files changed: src/ServerLogic/MovementSystem/{MovementService,INavMeshSampler,UnityNavMeshSampler,IMovementIntentSource}.cs (+ .meta, new); MovementSpeedResolver.cs (non-logging overload via private core)
+- Test written: tests/EditMode/MovementSystem/MovementSystem_TickStep_tests.cs (24 methods, all pass; suite 5084 / 4955 passed / 0 failed / 129 skipped)
+- Notes: NAVMESH_SAMPLE_RADIUS = 0.5f constant on MovementService (no tuning knob exists in MovementTuning); transition log omits the failure reason (exception/value); UnityNavMeshSampler untested (no baked NavMesh, ADR-002 verification open).
+- Blockers: None
+- Next: /code-review [files] then /story-done production/epics/movement-system/story-005-tick-step-and-navmesh-validation.md
+
+## Session Extract — /story-done 2026-10-29
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/movement-system/story-005-tick-step-and-navmesh-validation.md — Movement Tick Step and NavMesh Validation
+- Code review: CHANGES REQUIRED (reassigned-slot read) + suggestions → "fix all" applied; story 009 note (main-thread tick). EditMode 5093 / 4964 passed / 0 failed / 129 skipped.
+- Tech debt logged: None
+- Next recommended: /story-readiness production/epics/movement-system/story-004-intent-intake-sender-stale-last-wins.md (recommended order 005 → 004 → 006). PAT rotation still unconfirmed.

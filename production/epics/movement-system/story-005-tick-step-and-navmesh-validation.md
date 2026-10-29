@@ -1,7 +1,7 @@
 # Story 005: Movement Tick Step and NavMesh Validation
 
 > **Epic**: Movement System
-> **Status**: Ready — written 2026-10-29 (`/create-stories`, lean); `/story-readiness` 2026-10-29: NEEDS WORK (6 gaps) → fixed → Ready
+> **Status**: Complete — 2026-10-29 (`/story-done`: COMPLETE WITH NOTES); written 2026-10-29 (`/create-stories`, lean); `/story-readiness` 2026-10-29: NEEDS WORK (6 gaps) → fixed → Ready
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-26
@@ -81,7 +81,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/MovementSystem/MovementSystem_TickStep_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — `tests/EditMode/MovementSystem/MovementSystem_TickStep_tests.cs`, 32 methods / 33 cases, all passing (EditMode 5093 / 4964 passed / 0 failed / 129 skipped, 2026-10-29)
 
 ---
 
@@ -89,3 +89,19 @@
 
 - Depends on: Story 003 (Complete); Story 004 not required first — this story defines `IMovementIntentSource` and tests with a fake; Story 004's buffer implements it
 - Unlocks: Stories 006, 007, 008, 009
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-10-29
+**Criteria**: 9/9 passing (all automated; none deferred)
+**Deviations** (advisory):
+1. `UnityNavMeshSampler` has no automated test (no baked NavMesh in the project); headless `NavMesh.SamplePosition` verification stays open under ADR-002 Verification Required. With no mesh loaded it returns false, so moving players hold position until Story 007's stall handling.
+2. Code-review additions beyond the ACs: a non-finite candidate holds position without sampling; the read API also requires the slot's seeded EntityID to match (guards a slot reassigned before re-seeding).
+3. `MovementSpeedResolver`: `ResolveCore` + `FailureReason` made `internal` and the failure text extracted to `internal DescribeFailure`, so the service's transition log names the cause with the same text as the logging overload.
+4. TR-mov-002 is a placeholder, not yet in `docs/architecture/tr-registry.yaml` (same as the other epics).
+**Scope**: story 009 Implementation Notes gained a note (confirm the tick runs on the Unity main thread) — documentation only, user-approved.
+**Files**: `src/ServerLogic/MovementSystem/MovementService.cs`, `IMovementIntentSource.cs`, `INavMeshSampler.cs`, `UnityNavMeshSampler.cs` (new); `MovementSpeedResolver.cs` (non-logging overload, internal core); test file above; `.meta` files.
+**Test Evidence**: Logic — `tests/EditMode/MovementSystem/MovementSystem_TickStep_tests.cs`
+**Code Review**: Complete — `/code-review` 2026-10-29: CHANGES REQUIRED (read API returned a reassigned slot's data) + suggestions (cause in transition log, non-finite candidate guard, code-form source greps with AllDirectories, commit-order / miss / take-clears tests), "fix all" applied. QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean).
