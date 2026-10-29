@@ -5454,3 +5454,20 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Also: EPIC.md rows 008–011 → Complete (008–010 were stale "Ready"), status lines 11 Complete, Next Step → Story 012
 - Tech debt logged: None (deviations recorded in the story's Completion Notes)
 - Next recommended: commit Story 011 (incl. 6 new .meta files); then /story-readiness production/epics/movement-system/story-012-client-intent-producer-and-send-cadence.md
+
+## Session Extract — /dev-story 2026-10-29 (Story 012)
+- Story: production/epics/movement-system/story-012-client-intent-producer-and-send-cadence.md — Client Intent Producer and Send Cadence
+- Files changed: src/Client/Movement/IMovementIntentSink.cs, src/Client/Movement/MovementIntentProducer.cs (new)
+- Test written: tests/EditMode/Client/Movement/ClientMovement_IntentProducer_tests.cs (20 [Test]); EditMode 5409 total, 5280 passed, 0 failed, 129 skipped (batch mode, first run)
+- Agent choices: moving = explicit x/z != 0 check; bools for "processed a tick" / "has sent" (tick 0 valid); EC-MOV-21 sweep at 12.01 px, not 12 px (float rounding of 12·sin/12·cos puts some angles just under the edge)
+- Blockers: None
+- Next: /code-review src/Client/Movement/{IMovementIntentSink,MovementIntentProducer}.cs + the test file, then /story-done Story 012
+- /code-review Story 012 2026-10-29: CHANGES REQUIRED (unity-specialist CLEAN; qa-tester gaps) → "fix all" applied: 7 new tests (Reset with non-zero facing; Reset then tick 0; repeated tick 0; Prohibited entered while moving with same facing → no send; auto-run with camera turning; sub-0.1° facing change → no send; idle-path no-allocation), release test asserts held messages; doc fixes in IMovementIntentSink ("at most one") and AutoRunState (driven by MovementIntentProducer). The auto-run Reset test already had the suggested name. Not done (judged not worth it): invariant-culture warning text, throwing-sink hardening. Test file 27 [Test]. EditMode 5416 total, 5287 passed, 0 failed, 129 skipped.
+- Next: /story-done Story 012 (record the 12.01 px sweep deviation), then commit incl. .meta files
+
+## Session Extract — /story-done 2026-10-29 (Story 012)
+- Verdict: COMPLETE WITH NOTES (lean: QL-TEST-COVERAGE and LP-CODE-REVIEW skipped; `/code-review` done, "fix all" applied)
+- Story: production/epics/movement-system/story-012-client-intent-producer-and-send-cadence.md — Client Intent Producer and Send Cadence (10/10 criteria; 27 tests; EditMode 5416 / 5287 passed / 0 failed / 129 skipped)
+- EPIC.md: row 012 Complete, status lines 12 Complete, Next Step → Story 013
+- Tech debt logged: None
+- Next recommended: /story-readiness production/epics/movement-system/story-013-joystick-auto-run-button-and-camera-follow-ui.md

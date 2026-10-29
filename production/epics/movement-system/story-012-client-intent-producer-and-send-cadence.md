@@ -1,7 +1,7 @@
 # Story 012: Client Intent Producer and Send Cadence
 
 > **Epic**: Movement System
-> **Status**: Ready — written 2026-10-29 (`/create-stories`, lean); `/story-readiness` 2026-10-29: NEEDS WORK (7 gaps) → fixed → Ready
+> **Status**: Complete — 2026-10-29 (`/story-done`: COMPLETE WITH NOTES); written 2026-10-29 (`/create-stories`, lean); `/story-readiness` 2026-10-29: NEEDS WORK (7 gaps) → fixed → Ready
 > **Layer**: Core (client)
 > **Type**: Logic
 > **Manifest Version**: 2026-10-26
@@ -45,16 +45,16 @@ Namespace `IronGrind.Client.Movement`, in `src/Client/Movement/`:
 
 ## Acceptance Criteria
 
-- [ ] `MovementIntentProducer.OnTick(serverTick, joystick, cameraFlatForward)` ticks `AutoRunState` once and hands at most one `MovementIntentMessage` per tick to `IMovementIntentSink`; a repeated or older `serverTick` does nothing.
-- [ ] **AC-MOV-14**: under continuous input, exactly one message per tick (20 Hz): over a simulated 5-second window (100 ticks) the count is 100 (the 95–105 band of the GDD covers device jitter; the deterministic test asserts 100).
-- [ ] Suppression (CR-MOV-10 "may suppress"): direction zero and encoded facing unchanged since the last send → no message that tick. The first tick after construction or `Reset()` always sends. No extra message on release.
-- [ ] Facing change with no movement (camera rotated, joystick at rest, auto-run off) → a message with dir (0, 0) and the new facing.
-- [ ] **CR-MOV-8**: while Prohibited, direction changes are not sent as movement; a facing change sends dir (0, 0) + the new `FacingAngle`.
-- [ ] **AC-MOV-1 (wire) / EC-MOV-21**: a dead-zone input → dirX = dirZ = 0. Any direction past the dead zone encodes to at least one non-zero short (a test sweeps angles at the dead-zone edge).
-- [ ] `TickNumber` = the `serverTick` argument (the caller supplies NGO's server tick estimate); `FacingAngle` = `EncodeFacing(Facing.YawDeg)`.
-- [ ] Direction is encoded with `MovementIntentMessageCodec.EncodeDirection(dir, out wasNonUnit)` (Story 002); when `wasNonUnit` is true the producer sends the substituted `(32767, 0)` and logs one non-unit-direction warning per substituted message (wire GDD pre-encode guard).
-- [ ] **EC-MOV-15**: `Reset()` starts fresh — auto-run off (`AutoRunState.Reset()`), no last sent facing, no last processed tick.
-- [ ] No allocation on `OnTick` with a non-allocating sink.
+- [x] `MovementIntentProducer.OnTick(serverTick, joystick, cameraFlatForward)` ticks `AutoRunState` once and hands at most one `MovementIntentMessage` per tick to `IMovementIntentSink`; a repeated or older `serverTick` does nothing.
+- [x] **AC-MOV-14**: under continuous input, exactly one message per tick (20 Hz): over a simulated 5-second window (100 ticks) the count is 100 (the 95–105 band of the GDD covers device jitter; the deterministic test asserts 100).
+- [x] Suppression (CR-MOV-10 "may suppress"): direction zero and encoded facing unchanged since the last send → no message that tick. The first tick after construction or `Reset()` always sends. No extra message on release.
+- [x] Facing change with no movement (camera rotated, joystick at rest, auto-run off) → a message with dir (0, 0) and the new facing.
+- [x] **CR-MOV-8**: while Prohibited, direction changes are not sent as movement; a facing change sends dir (0, 0) + the new `FacingAngle`.
+- [x] **AC-MOV-1 (wire) / EC-MOV-21**: a dead-zone input → dirX = dirZ = 0. Any direction past the dead zone encodes to at least one non-zero short (a test sweeps angles at the dead-zone edge).
+- [x] `TickNumber` = the `serverTick` argument (the caller supplies NGO's server tick estimate); `FacingAngle` = `EncodeFacing(Facing.YawDeg)`.
+- [x] Direction is encoded with `MovementIntentMessageCodec.EncodeDirection(dir, out wasNonUnit)` (Story 002); when `wasNonUnit` is true the producer sends the substituted `(32767, 0)` and logs one non-unit-direction warning per substituted message (wire GDD pre-encode guard).
+- [x] **EC-MOV-15**: `Reset()` starts fresh — auto-run off (`AutoRunState.Reset()`), no last sent facing, no last processed tick.
+- [x] No allocation on `OnTick` with a non-allocating sink.
 
 ---
 
@@ -96,7 +96,7 @@ Namespace `IronGrind.Client.Movement`, in `src/Client/Movement/`:
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/Client/Movement/ClientMovement_IntentProducer_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — `tests/EditMode/Client/Movement/ClientMovement_IntentProducer_tests.cs`, 27 tests, all passing (EditMode 5416 / 5287 passed / 0 failed / 129 skipped, 2026-10-29)
 
 ---
 
@@ -104,3 +104,15 @@ Namespace `IronGrind.Client.Movement`, in `src/Client/Movement/`:
 
 - Depends on: Stories 002, 010, 011 (all Complete)
 - Unlocks: Story 013
+
+## Completion Notes
+**Completed**: 2026-10-29
+**Criteria**: 10/10 passing (all covered by EditMode tests; none deferred)
+**Deviations** (advisory):
+- The EC-MOV-21 sweep uses 12.01 px, not 12 px: float rounding of 12·sin / 12·cos puts some angles just under the dead-zone edge. The exact 12 px boundary is pinned in Story 010; the 11 px dead side is tested here.
+- "Moving" is an explicit `x != 0 || z != 0` check rather than Vector3's approximate `!=` (equivalent: `AutoRunState` outputs exactly zero or a unit vector).
+- If the sink throws, the tick is already recorded as processed (the sink is a seam and must not throw; not hardened).
+- One doc line in `AutoRunState.cs` (Story 011) now says it is driven by `MovementIntentProducer` (code review).
+- TR-mov-009 not in `tr-registry.yaml` (no TR-mov-* registered yet).
+**Test Evidence**: Logic — `tests/EditMode/Client/Movement/ClientMovement_IntentProducer_tests.cs` (27 tests)
+**Code Review**: Complete — CHANGES REQUIRED (unity-specialist CLEAN, qa-tester gaps) → "fix all" applied (7 tests, release assert, 2 doc fixes)

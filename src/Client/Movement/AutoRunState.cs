@@ -6,7 +6,7 @@ namespace IronGrind.Client.Movement
     /// <summary>
     /// The client-only auto-run flag, the client movement sub-state, the movement direction and the character facing
     /// (movement-system.md CR-MOV-3, CR-MOV-5, CR-MOV-8, F-MOV-3, F-MOV-5; AC-MOV-6, 12, 13, 19, 20; EC-MOV-5, 7, 9,
-    /// 18; Movement Story 011). Called once per network tick by the client loop (Story 012); the server never sees
+    /// 18; Movement Story 011). Driven once per network tick by MovementIntentProducer (Story 012); the server never sees
     /// the flag (CR-MOV-5). Allocation-free.
     /// </summary>
     public sealed class AutoRunState
