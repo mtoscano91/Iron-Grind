@@ -4,7 +4,7 @@
 > **GDD**: design/gdd/status-effects.md
 > **Architecture Module**: Status Effects
 > **Status**: Complete (2026-10-29) — TR-se-006 (client buff display) deferred per the Definition of Done
-> **Stories**: 9 stories created 2026-10-28 (001–009); 8 Complete (001–008), 1 Ready
+> **Stories**: 9 stories created 2026-10-28 (001–009), all Complete
 
 ## Overview
 
