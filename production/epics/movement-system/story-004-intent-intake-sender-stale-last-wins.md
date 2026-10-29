@@ -1,7 +1,7 @@
 # Story 004: Intent Intake — Sender Check, Stale Discard, Last-Wins
 
 > **Epic**: Movement System
-> **Status**: Ready — written 2026-10-29 (`/create-stories`, lean)
+> **Status**: Ready — written 2026-10-29 (`/create-stories`, lean); `/story-readiness` 2026-10-29: NEEDS WORK (4 gaps) → fixed → Ready
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-26
@@ -27,8 +27,10 @@
 
 ## Acceptance Criteria
 
-- [ ] `MovementInboundRegistration` registers the Story 002 type with the dispatcher (U-U, not held, body 10) and hands each decoded message to the movement intent buffer.
-- [ ] **AC-MOV-17 / EC-MOV-16**: a message whose `SenderEntityID` differs from the connection's EntityID (from the connection character directory) → discarded, no buffer write, one security log line containing both the received and the authenticated EntityID. **Readiness checks** whether the dispatcher or guard chain already performs this check for C→S envelopes; if it does, this AC becomes a test that it covers this type, not new code.
+- [ ] `MovementInboundRegistration` registers the Story 002 type with the dispatcher (U-U, not held, body 10, new tag `RpcTypeTag.MovementIntent`) and hands each decoded message to the movement intent buffer.
+- [ ] `RpcTypeTag.MovementIntent` is added with no rate limit: `CrossCuttingRpcGuardChain.GetRequiredTickGap` returns 0 for it (as `SetTarget`), so two messages for the same entity in one tick both pass the guard chain (needed by AC-MOV-28).
+- [ ] **AC-MOV-17 / EC-MOV-16** (test of existing code, no new check): the guard chain already drops a spoofed sender in Pass B before the handler — Guard 1 (`RejectedUnknownEntity`, received EntityID unknown) and Guard 4 (`RejectedNotOwner`, received EntityID owned by another connection). Tests cover both cases for this type: handler not called, no buffered intent for either EntityID, one warning naming the received EntityID and the sending `clientId`. **Deviation (readiness 2026-10-29):** the GDD asks for "the session's authenticated entity ID"; the log names the authenticated connection (`clientId`) instead — extending the guard chain log was declined (it would change the log for every request type). The log is throttled once per (client, result) per tick (ADR-014 Decision 4a).
+- [ ] EntityID → player slot via `IEntitySlotIndex` (`ZoneSlotPoolEntityIndex`), using `InboundRequestContext.SenderEntityId` (already ownership-checked). No slot (entry/exit window) → message dropped silently: no buffer write, no log.
 - [ ] **AC-MOV-15 / F-MOV-7**: `TickNumber < serverCurrentTick − STALE_TICK_TOLERANCE` → discarded; the entity's buffered intent for the tick is unchanged.
 - [ ] **AC-MOV-16 / EC-MOV-22**: when `serverCurrentTick ≤ STALE_TICK_TOLERANCE` (0–3 at default) every message is accepted — `TickNumber = 0` at tick 0, 1, 2, 3 is processed; at tick 4 a `TickNumber = 0` message is stale. No uint underflow.
 - [ ] **AC-MOV-28 / EC-MOV-17**: two accepted messages for the same entity in one tick → only the last received is kept (one buffered intent per entity per tick).
@@ -36,6 +38,7 @@
 - [ ] The buffered `FacingAngle` is passed through `MovementIntentMessageCodec.NormalizeFacing` (Story 002) before storing — a received value outside 0–3599 is wrapped, never a reason to drop the message.
 - [ ] The intent buffer is preallocated (one slot per player slot, `MAX_PLAYERS_PER_ZONE`) and cleared after the tick reads it (Story 005 consumes it).
 - [ ] The buffer implements Story 005's `IMovementIntentSource.TryTakeIntent(int playerSlot, out MovementIntentMessage intent)`: true + the last accepted message for that slot this tick, then that slot is cleared; false when none (added at Story 005 readiness, 2026-10-29).
+- [ ] The buffer records the dispatch tick of each write; `TryTakeIntent` returns true only when that tick equals `IServerTickSource.ServerTickNumber` (requests dispatch before the simulation in the same tick, `ZoneTickPipeline`). An older entry (slot not taken that tick, e.g. not yet occupied by `MovementService`) → cleared, false. Constructor: `(IServerTickSource tickSource, IEntitySlotIndex slotIndex, MovementTuningValues tuning)`.
 - [ ] Each test names which drop it exercises: the ADR-014 intake `SequenceNumber` drop (Networking Core, not re-implemented here) or the F-MOV-7 `TickNumber` drop (this story).
 
 ---
@@ -43,7 +46,9 @@
 ## Implementation Notes
 
 - Pattern: `EquipmentInboundRegistration` + `SetTargetRequestHandler` (an existing U-U-ish request path, `src/ServerLogic/Networking/InboundDispatch/`).
-- The handler maps connection → EntityID through the existing `IConnectionCharacterDirectory` / `ZoneConnectionCharacterDirectory`; then EntityID → player slot index for the buffer.
+- The handler does **not** look up the connection's EntityID: by the time it runs, `context.SenderEntityId` has passed the guard chain's ownership check. It maps that EntityID → player slot through `IEntitySlotIndex` (readiness 2026-10-29; replaces the earlier `IConnectionCharacterDirectory` note).
+- New `RpcTypeTag.MovementIntent` in `src/ServerLogic/Networking/RpcGuards/RpcTypeTag.cs`; `GetRequiredTickGap` returns 0 for it.
+- Stale check without uint underflow: `currentTick > tolerance && messageTick < currentTick - (uint)tolerance` (the `MovementTuningValues` doc example omits the first clause).
 - `serverCurrentTick` is the tick the dispatcher passes to the handler (`InboundRequestContext`), not a fresh read.
 - Tests use the real `InboundRequestDispatcher` (Integration type), as `EquipmentSystem_RequestHandler_tests.cs` does.
 
@@ -59,7 +64,10 @@
 
 ## QA Test Cases
 
-- **AC-MOV-17**: Given connection A mapped to EntityID 5 — When a message with SenderEntityID 6 is dispatched — Then no buffered intent for 5 or 6, one log line matching `/5.*6|6.*5/` (`LogAssert.Expect`), nothing else logged.
+- **AC-MOV-17**: Given connection A (clientId 7) owning EntityID 5 — When a message with SenderEntityID 6 is dispatched, (a) 6 unknown, (b) 6 owned by clientId 8 — Then handler not called, no buffered intent for 5 or 6, one warning matching a regex containing `6` and `clientId=7` (`LogAssert.Expect`), nothing else logged.
+- **Same-tick pass-through**: two messages from the same entity in one tick both reach the handler (no rate limit on `MovementIntent`).
+- **No slot**: an owned EntityID with no slot in `IEntitySlotIndex` → no buffer write, no log.
+- **Leftover entry**: write at tick N, `TryTakeIntent` at tick N+1 → false, and the slot is cleared.
 - **AC-MOV-15**: tick 100, tolerance 3: TickNumber 97 → accepted; 96 → discarded and the previously buffered intent (if any) unchanged.
 - **AC-MOV-16**: ticks 0, 1, 2, 3 with TickNumber 0 → accepted; tick 4 with TickNumber 0 → discarded. Also TickNumber greater than the current tick (client ahead) → accepted (F-MOV-7 only discards old ones).
 - **AC-MOV-28**: two messages, same tick, dirs (1, 0) then (0, 1) → buffered dir (0, 1); reverse order → (1, 0).
