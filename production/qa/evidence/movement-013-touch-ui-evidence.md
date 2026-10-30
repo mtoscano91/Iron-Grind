@@ -11,7 +11,7 @@
 
 ## Setup
 
-Scene `Assets/Scenes/DevHarness/MovementHarness.unity`, built by hand and not committed. The steps are in the class doc comment of `src/DevHarness/Movement/MovementManualTestHarness.cs`.
+Scene `Assets/Scenes/DevHarness/MovementHarness.unity`, built by hand and committed in `5ce9ab8` (user decision). The steps are in the class doc comment of `src/DevHarness/Movement/MovementManualTestHarness.cs`.
 
 - **Scene contents:** URP Basic scene, ground plane, capsule stand-in with a "nose" cube, and an EventSystem with `InputSystemUIInputModule`.
 - **`MovementHUD` object:** a `UIDocument` (`HUD_PanelSettings` + `MovementHud.uxml`), plus `ClientMovementController` and `MovementManualTestHarness`.

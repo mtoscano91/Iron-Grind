@@ -14,7 +14,7 @@ namespace IronGrind.DevHarness.Movement
     /// <c>IronGrind.DevHarness</c> assembly (Editor only).
     /// </summary>
     /// <remarks>
-    /// Manual scene setup (the scene is not committed):
+    /// Manual scene setup (the result is committed as <c>Assets/Scenes/DevHarness/MovementHarness.unity</c>; rebuild it with these steps if needed):
     /// <list type="number">
     /// <item><description>A GameObject with a <c>UIDocument</c> (Panel Settings <c>HUD_PanelSettings</c>, Source Asset <c>MovementHud.uxml</c>) and a <see cref="ClientMovementController"/>. If other HUD documents share the panel settings, give this one the highest Sort Order so the hit test sees its button.</description></item>
     /// <item><description>A capsule as the stand-in and a plain grey ground plane (the 8% stun tint is subtle).</description></item>
