@@ -5,7 +5,8 @@
         "IronGrind.Foundation",
         "IronGrind.ServerLogic",
         "IronGrind.Client",
-        "Unity.Netcode.Runtime"
+        "Unity.Netcode.Runtime",
+        "Unity.InputSystem"
     ],
     "includePlatforms": [
         "Editor"

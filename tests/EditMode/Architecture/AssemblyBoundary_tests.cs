@@ -27,6 +27,8 @@ namespace IronGrind.Tests.EditMode.Architecture
         private const string DEV_HARNESS = "IronGrind.DevHarness";
         // ServerLogic declares NGO types (ADR-012 Decision 1; Networking Core Story 038).
         private const string NETCODE_RUNTIME = "Unity.Netcode.Runtime";
+        // Client and DevHarness read touches through EnhancedTouch (ADR-012 note 2026-10-29; Movement Story 013).
+        private const string INPUT_SYSTEM = "Unity.InputSystem";
         private const string SERVER_CONSTRAINT = "UNITY_SERVER || UNITY_EDITOR";
         private const string CLIENT_CONSTRAINT = "!UNITY_SERVER || UNITY_EDITOR";
         private const BindingFlags ALL_DECLARED = BindingFlags.Public | BindingFlags.NonPublic
@@ -92,7 +94,7 @@ namespace IronGrind.Tests.EditMode.Architecture
 
         /// <summary>
         /// Reference lists of the three asmdefs match ADR-012 Decision 1: ServerLogic references Foundation and
-        /// Unity.Netcode.Runtime; Client references Foundation alone.
+        /// Unity.Netcode.Runtime; Client references Foundation and Unity.InputSystem (ADR-012 note 2026-10-29).
         /// </summary>
         [Test]
         public void test_reference_lists_match_adr012()
@@ -107,7 +109,7 @@ namespace IronGrind.Tests.EditMode.Architecture
             CollectionAssert.AreEquivalent(ServerOnlyDlls, Safe(server.precompiledReferences), "ServerLogic precompiled references");
             Assert.IsFalse(foundation.overrideReferences, "Foundation overrideReferences");
             Assert.IsFalse(client.overrideReferences, "Client overrideReferences");
-            CollectionAssert.AreEqual(new[] { FOUNDATION }, Safe(client.references), "Client references");
+            CollectionAssert.AreEqual(new[] { FOUNDATION, INPUT_SYSTEM }, Safe(client.references), "Client references");
             CollectionAssert.DoesNotContain(Safe(foundation.references), SERVER_LOGIC);
             CollectionAssert.DoesNotContain(Safe(foundation.references), CLIENT);
         }
@@ -171,7 +173,7 @@ namespace IronGrind.Tests.EditMode.Architecture
             Assert.AreEqual(DEV_HARNESS, harness.name);
             CollectionAssert.AreEqual(new[] { "UNITY_EDITOR" }, Safe(harness.defineConstraints), "DevHarness constraint");
             Assert.IsFalse(harness.autoReferenced, "DevHarness autoReferenced");
-            CollectionAssert.AreEquivalent(new[] { FOUNDATION, SERVER_LOGIC, CLIENT }, Safe(harness.references), "DevHarness references");
+            CollectionAssert.AreEquivalent(new[] { FOUNDATION, SERVER_LOGIC, CLIENT, INPUT_SYSTEM }, Safe(harness.references), "DevHarness references");
             foreach (string name in new[] { FOUNDATION, SERVER_LOGIC, CLIENT })
             {
                 CollectionAssert.DoesNotContain(Safe(LoadAsmdef(name).references), DEV_HARNESS, name + " must not reference DevHarness");

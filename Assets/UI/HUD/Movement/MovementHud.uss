@@ -1,0 +1,94 @@
+/* Movement HUD (Movement Story 013). Placeholder art drawn with USS; colours from movement-system.md. */
+
+.movement-hud-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+}
+
+/* Stun overlay: a sibling of the root (no safe-area margins), so it covers the full screen.
+   Fade out 0.15 s; the visible class fades in over 0.10 s. */
+.stun-overlay {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(122, 143, 160, 0.08);
+    opacity: 0;
+    transition-property: opacity;
+    transition-duration: 0.15s;
+}
+
+.stun-overlay--visible {
+    opacity: 1;
+    transition-duration: 0.10s;
+}
+
+/* Size and position are written at runtime. */
+.joystick-ring {
+    position: absolute;
+    display: none;
+    background-color: rgba(0, 0, 0, 0);
+    border-width: 2px;
+    border-color: #3A3D44;
+    border-radius: 50%;
+}
+
+.joystick-nub {
+    position: absolute;
+    display: none;
+    background-color: #4A9EE0;
+    border-radius: 50%;
+    opacity: 0.8;
+}
+
+/* 44x44 tap target on the right edge, lower middle; the visible 44x28 plate sits inside it. */
+.autorun-button {
+    position: absolute;
+    right: 0;
+    bottom: 25%;
+    width: 44px;
+    height: 44px;
+    margin: 0;
+    padding: 0;
+    border-width: 0;
+    background-color: rgba(0, 0, 0, 0);
+    align-items: center;
+    justify-content: center;
+}
+
+/* Keep the default theme's hover / pressed look off the transparent tap target (hover can stick after a touch). */
+.autorun-button:hover,
+.autorun-button:active,
+.autorun-button:focus {
+    border-width: 0;
+    background-color: rgba(0, 0, 0, 0);
+}
+
+.autorun-visual {
+    width: 44px;
+    height: 28px;
+    align-items: center;
+    justify-content: center;
+    background-color: #1A1C1F;
+    border-width: 2px;
+    border-color: #3A3D44;
+    border-radius: 4px;
+}
+
+.autorun-label {
+    font-size: 11px;
+    color: #9A9DA6;
+    -unity-text-align: middle-center;
+}
+
+.autorun--active .autorun-visual {
+    background-color: rgba(74, 158, 224, 0.6);
+}
+
+.autorun--active .autorun-label {
+    color: #E8E6DF;
+}

@@ -1,0 +1,20 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <Style src="MovementHud.uss" />
+
+    <!--
+      Movement HUD (Movement Story 013). Safe-area margins on MovementHudRoot are applied at runtime by
+      HudSafeAreaApplier. Joystick ring/nub positions are written by ClientMovementController.
+      "touch-blocker" marks elements that must not start a camera drag or joystick (UiToolkitHitTest).
+      Picking-mode Ignore does not propagate to children, so every display-only element sets it itself.
+    -->
+    <ui:VisualElement name="StunOverlay" class="stun-overlay" picking-mode="Ignore" />
+    <ui:VisualElement name="MovementHudRoot" class="movement-hud-root" picking-mode="Ignore">
+        <ui:VisualElement name="JoystickRing" class="joystick-ring" picking-mode="Ignore" />
+        <ui:VisualElement name="JoystickNub" class="joystick-nub" picking-mode="Ignore" />
+        <ui:Button name="AutoRunButton" class="autorun-button touch-blocker">
+            <ui:VisualElement name="AutoRunVisual" class="autorun-visual" picking-mode="Ignore">
+                <ui:Label name="AutoRunLabel" text="AUTO" class="autorun-label" picking-mode="Ignore" />
+            </ui:VisualElement>
+        </ui:Button>
+    </ui:VisualElement>
+</ui:UXML>

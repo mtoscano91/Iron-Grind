@@ -2,7 +2,8 @@
     "name": "IronGrind.Client",
     "rootNamespace": "",
     "references": [
-        "IronGrind.Foundation"
+        "IronGrind.Foundation",
+        "Unity.InputSystem"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

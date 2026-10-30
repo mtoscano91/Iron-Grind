@@ -65,6 +65,8 @@ Four GDDs require the opposite. `damage-calculation.md` Core Rule 1: the resolve
 
 *Note 2026-10-19 (Character Persistence Story 012; the decision is unchanged):* the named list is now 11 DLLs — Npgsql 8.0.9, Dapper 2.1.66 and the nine dependencies they need under .NET Standard 2.1, listed in `docs/server-libraries.md` and in `IronGrind.ServerLogic`'s `precompiledReferences`. They are under `Assets/Plugins/Server/` and `Assets/link.xml` exists. The assembly-boundary tests assert that only `IronGrind.ServerLogic` lists any of them (every project asmdef is scanned) and that each DLL's import settings carry the `UNITY_SERVER || UNITY_EDITOR` define constraint.
 
+*Note 2026-10-29 (Movement Story 013; the decision is unchanged):* `IronGrind.Client` and `IronGrind.DevHarness` also reference `Unity.InputSystem` (`com.unity.inputsystem` 1.18.0). The project's input handler is Input System only (`activeInputHandler: 1`), so touch input is read through EnhancedTouch. Like `Unity.Netcode.Runtime` for `ServerLogic`, an approved Unity package is not a project assembly, and the boundary this ADR draws (no client code in the server build, no server code in the client build) is untouched. The assembly-boundary tests pin both reference lists with it.
+
 `IronGrind.Foundation` keeps its name and becomes the shared assembly. `IronGrind.ServerLogic` is the assembly the GDDs call `ServerLogic.asmdef`. Neither `ServerLogic` nor `Client` references the other; `Foundation` references neither. Namespaces do not change when a file moves (`IronGrind.DamageCalculation` stays `IronGrind.DamageCalculation`): a move is a folder and assembly change only.
 
 ### Decision 2 — Exclusion by define constraint
