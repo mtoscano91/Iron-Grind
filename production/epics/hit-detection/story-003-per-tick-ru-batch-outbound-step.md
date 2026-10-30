@@ -1,7 +1,7 @@
 # Story 003: Per-Tick R-U Batch Outbound Step
 
 > **Epic**: Hit Detection
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-26
@@ -29,13 +29,13 @@
 
 *Why this story exists: `RUBatchWriter` is implemented but has no production caller, so no R-U batch reaches a client today.*
 
-- [ ] A new `RUBatchOutboundStep : IRUBatchCollector, IZoneOutboundStep` in `src/ServerLogic/Networking/Outbound/` accepts pending R-U sub-messages during a tick through `Enqueue(clientId, category, messageTypeId, ReadOnlySpan<byte> body)`, which copies the body and never throws. A client unknown to the outbox is dropped silently (a ghost player is routine).
-- [ ] `Enqueue` refuses `RUBatchCategory.DamageEvent`, `RUBatchCategory.GoldSyncEvent` and a body over `RUBatchWriter.MaxSingleOpaqueSubMessagePayloadBytes` (496) with one logged error, so `RUBatchWriter.Write` never throws on the flush. A full arena or entry table drops the message with one warning per tick and no disconnect.
-- [ ] `Flush(uint currentTick)` sends each client's pending messages once per tick through `RUBatchWriter`, on `NetworkChannel.ReliableUnordered`, with that client's counter from `outbox.TryGetSequenceCounter`.
-- [ ] A client with nothing pending gets no packet and its sequence counter does not move.
-- [ ] All pending state is empty after each flush. A client gone from the outbox at flush time is discarded without a send or a throw; a `Write` or send exception is logged per client and does not stop other clients or the clearing.
-- [ ] `RUBatchWriter.Write` allocates nothing on a call with no overflow; its signature and behaviour are unchanged (the existing tests still pass).
-- [ ] The zone composition's outbound step runs outbox, then R-U, then positions; existing outbox and position broadcast behaviour is unchanged. Teardown step 4b stays outbox-only, and pending R-U messages are discarded at teardown.
+- [x] A new `RUBatchOutboundStep : IRUBatchCollector, IZoneOutboundStep` in `src/ServerLogic/Networking/Outbound/` accepts pending R-U sub-messages during a tick through `Enqueue(clientId, category, messageTypeId, ReadOnlySpan<byte> body)`, which copies the body and never throws. A client unknown to the outbox is dropped silently (a ghost player is routine).
+- [x] `Enqueue` refuses `RUBatchCategory.DamageEvent`, `RUBatchCategory.GoldSyncEvent` and a body over `RUBatchWriter.MaxSingleOpaqueSubMessagePayloadBytes` (496) with one logged error, so `RUBatchWriter.Write` never throws on the flush. A full arena or entry table drops the message with one warning per tick and no disconnect.
+- [x] `Flush(uint currentTick)` sends each client's pending messages once per tick through `RUBatchWriter`, on `NetworkChannel.ReliableUnordered`, with that client's counter from `outbox.TryGetSequenceCounter`.
+- [x] A client with nothing pending gets no packet and its sequence counter does not move.
+- [x] All pending state is empty after each flush. A client gone from the outbox at flush time is discarded without a send or a throw; a `Write` or send exception is logged per client and does not stop other clients or the clearing.
+- [x] `RUBatchWriter.Write` allocates nothing on a call with no overflow; its signature and behaviour are unchanged (the existing tests still pass).
+- [x] The zone composition's outbound step runs outbox, then R-U, then positions; existing outbox and position broadcast behaviour is unchanged. Teardown step 4b stays outbox-only, and pending R-U messages are discarded at teardown.
 
 ---
 
@@ -87,7 +87,7 @@
 **Story Type**: Integration
 **Required evidence**: `tests/EditMode/Networking/RUBatch_OutboundStep_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created; 33 cases, plus 2 composition tests in `tests/EditMode/MovementSystem/MovementSystem_PipelineWiring_tests.cs`; all pass
 
 ---
 
@@ -95,3 +95,12 @@
 
 - Depends on: Story 002
 - Unlocks: Story 004
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-30
+**Criteria**: 7/7 passing
+**Deviations**: Advisory only. `Enqueue` also refuses a category outside the enum and a call from inside the send seam (`EnqueueDuringFlush`). `ZoneOutboundSteps.Flush` has no try/catch between steps, unchanged from before this story. A flooded client logs `BatchOverflow` every tick, overflow path only. `MovementSystem_PipelineWiring_tests.cs` touched for the flush-order and teardown criteria.
+**Test Evidence**: Integration: `tests/EditMode/Networking/RUBatch_OutboundStep_tests.cs` (33 cases) and 2 composition tests; EditMode 5528 / 5399 passed / 0 failed / 129 skipped
+**Code Review**: Complete (CHANGES REQUIRED, all applied)

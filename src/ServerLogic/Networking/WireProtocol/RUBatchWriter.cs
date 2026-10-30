@@ -154,7 +154,9 @@ namespace IronGrind.Networking
 
         /// <summary>
         /// Serializes one client's R-U batch for a single tick into <paramref name="destination"/>
-        /// at offset 0. See class remarks for the full overflow-handling algorithm.
+        /// at offset 0. See class remarks for the full overflow-handling algorithm. A call with no
+        /// overflow allocates nothing (per-category data is on the stack); the overflow and error paths
+        /// build log strings and allocate.
         /// </summary>
         /// <param name="destination">
         /// The destination buffer. Assumed correctly sized (e.g. a <see cref="ClientBufferSet.RUBatchBuffer"/>
@@ -222,8 +224,12 @@ namespace IronGrind.Networking
                     $"droppedCount={droppedCount} — holding at most {DamageEventIntraclassCap} DamageEvent entries per CR-NET-7.6, oldest dropped first.");
             }
 
-            // Step 2 — bucket the eight opaque categories, preserving each category's relative input order.
-            var buckets = new List<PendingSubMessage>[CategoryCount];
+            // Step 2 — validate every opaque entry (before anything is written) and total them per category.
+            // Per-category data lives on the stack: a call with no overflow allocates nothing. The totals rely on
+            // stackalloc zero-initialising, so this file must not use SkipLocalsInit.
+            Span<int> categoryBytes = stackalloc int[CategoryCount];
+            Span<int> categoryCounts = stackalloc int[CategoryCount];
+            Span<bool> evicted = stackalloc bool[CategoryCount];
             for (int i = 0; i < otherSubMessages.Count; i++)
             {
                 PendingSubMessage msg = otherSubMessages[i];
@@ -234,7 +240,6 @@ namespace IronGrind.Networking
                         $"damageEvents/goldSyncEvents parameters, not otherSubMessages.", nameof(otherSubMessages));
                 }
 
-                int singleMessageBytes = BatchSubMessageFraming.SubMessageHeaderSize + msg.Payload.Length;
                 if (msg.Payload.Length > MaxSingleOpaqueSubMessagePayloadBytes)
                 {
                     Debug.LogWarning($"[RUBatchWriter] OversizedSubMessage: clientId={clientIdForLogging}, tick={tickNumber}, " +
@@ -246,33 +251,15 @@ namespace IronGrind.Networking
                 }
 
                 int idx = (int)msg.Category;
-                (buckets[idx] ??= new List<PendingSubMessage>()).Add(msg);
-                _ = singleMessageBytes; // computed for the guard above; not otherwise needed here.
+                categoryBytes[idx] += BatchSubMessageFraming.SubMessageHeaderSize + msg.Payload.Length;
+                categoryCounts[idx]++;
             }
 
-            // Step 3 — per-category byte totals, in write order.
-            var categoryBytes = new int[CategoryCount];
+            // Step 3 — the two typed categories join the per-category totals.
             categoryBytes[(int)RUBatchCategory.DamageEvent] = damageEventCount * DamageEvent.BatchSize;
+            categoryCounts[(int)RUBatchCategory.DamageEvent] = damageEventCount;
             categoryBytes[(int)RUBatchCategory.GoldSyncEvent] = goldSyncEvents.Count * GoldSyncEvent.BatchSize;
-            for (int c = 1; c < CategoryCount; c++)
-            {
-                if (c == (int)RUBatchCategory.GoldSyncEvent)
-                {
-                    continue;
-                }
-
-                List<PendingSubMessage> bucket = buckets[c];
-                int sum = 0;
-                if (bucket != null)
-                {
-                    for (int i = 0; i < bucket.Count; i++)
-                    {
-                        sum += BatchSubMessageFraming.SubMessageHeaderSize + bucket[i].Payload.Length;
-                    }
-                }
-
-                categoryBytes[c] = sum;
-            }
+            categoryCounts[(int)RUBatchCategory.GoldSyncEvent] = goldSyncEvents.Count;
 
             int totalBytes = BatchHeaderCodec.HeaderSize;
             for (int c = 0; c < CategoryCount; c++)
@@ -281,7 +268,6 @@ namespace IronGrind.Networking
             }
 
             // Step 4 — category-level eviction (atomic per category), lowest priority first, until it fits.
-            var evicted = new bool[CategoryCount];
             bool anyCategoryDropped = false;
             for (int d = 0; d < DropOrder.Length && totalBytes > MAX_MESSAGE_BODY_BYTES; d++)
             {
@@ -305,24 +291,12 @@ namespace IronGrind.Networking
 
             // Step 5 — sub-message count for the 12-byte header.
             int subMessageCount = 0;
-            if (!evicted[(int)RUBatchCategory.DamageEvent])
+            for (int c = 0; c < CategoryCount; c++)
             {
-                subMessageCount += damageEventCount;
-            }
-
-            if (!evicted[(int)RUBatchCategory.GoldSyncEvent])
-            {
-                subMessageCount += goldSyncEvents.Count;
-            }
-
-            for (int c = 1; c < CategoryCount; c++)
-            {
-                if (c == (int)RUBatchCategory.GoldSyncEvent || evicted[c] || buckets[c] == null)
+                if (!evicted[c])
                 {
-                    continue;
+                    subMessageCount += categoryCounts[c];
                 }
-
-                subMessageCount += buckets[c].Count;
             }
 
             // Step 6 — write the header, then each surviving category in canonical WRITE order.
@@ -360,15 +334,20 @@ namespace IronGrind.Networking
                 }
                 else
                 {
-                    List<PendingSubMessage> bucket = buckets[idx];
-                    if (bucket == null)
+                    if (categoryCounts[idx] == 0)
                     {
                         continue;
                     }
 
-                    for (int i = 0; i < bucket.Count; i++)
+                    // One pass per category keeps each category's relative input order.
+                    for (int i = 0; i < otherSubMessages.Count; i++)
                     {
-                        PendingSubMessage msg = bucket[i];
+                        PendingSubMessage msg = otherSubMessages[i];
+                        if (msg.Category != category)
+                        {
+                            continue;
+                        }
+
                         offset += BatchSubMessageFraming.WriteHeader(destination.Slice(offset), (ushort)msg.Payload.Length, msg.MessageTypeId);
                         msg.Payload.Span.CopyTo(destination.Slice(offset, msg.Payload.Length));
                         offset += msg.Payload.Length;

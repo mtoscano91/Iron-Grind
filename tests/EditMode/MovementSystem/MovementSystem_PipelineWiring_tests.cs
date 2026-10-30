@@ -360,6 +360,73 @@ namespace IronGrind.Tests.EditMode.MovementSystem
             Assert.AreEqual((short)0, facing, "an available Movement would have applied the override facing (900)");
         }
 
+        // The composition passes the outbox to the transport as its client listener.
+        private static ClientMessageOutbox OutboxOf(WiRig rig)
+        {
+            return (ClientMessageOutbox)rig.Net.ClientListener;
+        }
+
+        private static List<ushort> MessageTypesTo(WiRig rig, uint clientId)
+        {
+            var types = new List<ushort>();
+            foreach (var sent in rig.Net.Seam.Sent)
+            {
+                if (sent.client == clientId && MessageEnvelopeCodec.TryRead(sent.data, out ServerMessageEnvelope env))
+                    types.Add(env.MessageTypeId);
+            }
+
+            return types;
+        }
+
+        [Test]
+        public void test_composition_tick_flushes_outbox_then_ru_batch_then_positions()
+        {
+            WiRig rig = StartRig();
+            ZoneSlotPool pool = rig.Comp.ZoneInstancing.Pool;
+            EntityID p1 = AllocCompositionPlayer(pool, 1u, 11u, out byte slot1);
+            EntityID p2 = AllocCompositionPlayer(pool, 2u, 12u, out byte slot2);
+            rig.Comp.Movement.SeedForTesting(slot1, p1, Vector3.zero, 0);
+            rig.Comp.Movement.SeedForTesting(slot2, p2, Vector3.one, 0);
+            rig.Net.ClientListener.AddClient(11u);
+            rig.Net.ClientListener.AddClient(12u);
+            OutboxOf(rig).Enqueue(11u, SelfDamageEvent.MessageTypeId, new byte[4], isCapExempt: false);
+            rig.Comp.RUBatch.Enqueue(11u, RUBatchCategory.HitCheckResult, HitCheckResult.MessageTypeId, new byte[HitCheckResult.BodySize]);
+            LogAssert.Expect(LogType.Log, "[ZoneServer] ghost session TTL enumeration not implemented");
+            LogAssert.Expect(LogType.Error, new Regex(@"\[Movement\] NavMesh unavailable"));
+
+            rig.Net.FireTick();
+
+            List<ushort> types = MessageTypesTo(rig, 11u);
+            types.RemoveAll(t => t != SelfDamageEvent.MessageTypeId && t != RUBatchWriter.TICK_BATCH_RU
+                && t != PositionPacketWriter.TICK_BATCH_UU);
+            CollectionAssert.AreEqual(
+                new[] { SelfDamageEvent.MessageTypeId, RUBatchWriter.TICK_BATCH_RU, PositionPacketWriter.TICK_BATCH_UU }, types);
+        }
+
+        [Test]
+        public void test_composition_teardown_flushes_the_outbox_and_not_the_ru_batch()
+        {
+            WiRig rig = StartRig();
+            rig.Net.ClientListener.AddClient(11u);
+            OutboxOf(rig).Enqueue(11u, SelfDamageEvent.MessageTypeId, new byte[4], isCapExempt: false);
+            rig.Comp.RUBatch.Enqueue(11u, RUBatchCategory.HitCheckResult, HitCheckResult.MessageTypeId, new byte[HitCheckResult.BodySize]);
+
+            // Only what teardown sends is asserted, not what its steps log.
+            LogAssert.ignoreFailingMessages = true;
+            try
+            {
+                rig.Comp.RunStepsForTest(5); // through 4b
+            }
+            finally
+            {
+                LogAssert.ignoreFailingMessages = false;
+            }
+
+            List<ushort> types = MessageTypesTo(rig, 11u);
+            CollectionAssert.Contains(types, SelfDamageEvent.MessageTypeId, "step 4b ran");
+            CollectionAssert.DoesNotContain(types, RUBatchWriter.TICK_BATCH_RU);
+        }
+
         [Test]
         public void test_composition_tick_sends_each_client_the_other_players_position_packet()
         {

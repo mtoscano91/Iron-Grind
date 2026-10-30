@@ -355,6 +355,9 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// <summary>The zone's per-tick position broadcast step, built at S5 (Movement Story 009); null before S5.</summary>
         internal PositionBroadcastStep PositionBroadcast { get; private set; }
 
+        /// <summary>The zone's per-tick R-U batch step, built at S5 (Hit Detection Story 003); null before S5.</summary>
+        internal RUBatchOutboundStep RUBatch { get; private set; }
+
         /// <summary>The zone's Status Effects service, built at S5 (Story 009); null before S5.</summary>
         internal StatusEffectsService StatusEffects { get; private set; }
 
@@ -1251,23 +1254,26 @@ namespace IronGrind.ServerLogic.ZoneServer
             }
         }
 
-        // The pipeline's outbound step (Movement Story 009): the outbox flush, then the position packets. Teardown step 4b
-        // flushes the outbox only.
-        private sealed class OutboundThenPositions : IZoneOutboundStep
+        // The pipeline's outbound step (Movement Story 009, Hit Detection Story 003): the outbox flush, then the R-U
+        // batches, then the position packets. Teardown step 4b flushes the outbox only; pending R-U messages are discarded.
+        private sealed class ZoneOutboundSteps : IZoneOutboundStep
         {
             private readonly IZoneOutboundStep _first;
             private readonly IZoneOutboundStep _second;
+            private readonly IZoneOutboundStep _third;
 
-            public OutboundThenPositions(IZoneOutboundStep first, IZoneOutboundStep second)
+            public ZoneOutboundSteps(IZoneOutboundStep first, IZoneOutboundStep second, IZoneOutboundStep third)
             {
                 _first = first;
                 _second = second;
+                _third = third;
             }
 
             public void Flush(uint currentTick)
             {
                 _first.Flush(currentTick);
                 _second.Flush(currentTick);
+                _third.Flush(currentTick);
             }
         }
 
@@ -1461,10 +1467,13 @@ namespace IronGrind.ServerLogic.ZoneServer
                 ZoneInstancingWiring wiring = BuildZoneInstancing(dispatcher, outbox, stateSource);
                 StatusEffectsService statusEffects = BuildStatusEffects(wiring);
                 MovementService movement = BuildMovement(dispatcher, wiring, stateSource, statusEffects);
+                var ruBatch = new RUBatchOutboundStep(sendSeam, outbox, wiring.Pool.MaxPlayers);
+                Observe(nameof(RUBatchOutboundStep));
+                _owner.RUBatch = ruBatch;
                 var positions = new PositionBroadcastStep(movement, wiring.Pool, sendSeam, outbox);
                 Observe(nameof(PositionBroadcastStep));
                 _owner.PositionBroadcast = positions;
-                var outboundStep = new OutboundThenPositions(outbox, positions);
+                var outboundStep = new ZoneOutboundSteps(outbox, ruBatch, positions);
 
                 // Built for the game-system stories to take; this story registers no handler.
                 _owner._broadcaster = new ServerWideBroadcaster(outbox, _publisher, _allowlist);
