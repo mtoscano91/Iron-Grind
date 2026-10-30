@@ -3,8 +3,8 @@
 > **Layer**: Core
 > **GDD**: design/gdd/hit-detection.md
 > **Architecture Module**: Hit Detection — server-side hit validation, hit events (`architecture.md` module table)
-> **Status**: In Progress
-> **Stories**: 4 stories created 2026-10-30 (001–004); 3 Complete — see Stories below
+> **Status**: Complete
+> **Stories**: 4 stories created 2026-10-30 (001–004); 4 Complete — see Stories below
 > **Manifest Version**: 2026-10-26
 
 ## Overview
@@ -66,7 +66,7 @@ Applied to `hit-detection.md`, `enemy-ai.md`, `networking-wire-protocol.md`, `ne
 | 001 | [CheckHit and constants](story-001-checkhit-and-constants.md) | Logic | Complete | ADR-012 |
 | 002 | [HitCheckResult wire type and codec](story-002-hitcheckresult-wire-type-and-codec.md) | Logic | Complete | ADR-004 |
 | 003 | [Per-tick R-U batch outbound step](story-003-per-tick-ru-batch-outbound-step.md) | Integration | Complete | ADR-014, ADR-004 |
-| 004 | [Result emission and player routing](story-004-result-emission-and-player-routing.md) | Integration | Ready | ADR-010, ADR-014 |
+| 004 | [Result emission and player routing](story-004-result-emission-and-player-routing.md) | Integration | Complete | ADR-010, ADR-014 |
 
 ## Definition of Done
 
@@ -78,4 +78,4 @@ This epic is complete when:
 
 ## Next Step
 
-Run `/story-readiness production/epics/hit-detection/story-004-result-emission-and-player-routing.md`.
+None in this epic. When the Auto-Attack Combat and Enemy AI epics are created, record the criteria listed under Scope in them and have them call `IHitResultEmitter` (`ZoneServerComposition.HitResultEmitter`).

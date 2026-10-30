@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using IronGrind.CharacterPersistence;
 using IronGrind.CharacterStats;
 using IronGrind.Currency;
+using IronGrind.HitDetection;
 using IronGrind.MovementSystem;
 using IronGrind.Networking;
 using IronGrind.ServerLogic.ZoneInstancing;
@@ -401,6 +402,25 @@ namespace IronGrind.Tests.EditMode.MovementSystem
                 && t != PositionPacketWriter.TICK_BATCH_UU);
             CollectionAssert.AreEqual(
                 new[] { SelfDamageEvent.MessageTypeId, RUBatchWriter.TICK_BATCH_RU, PositionPacketWriter.TICK_BATCH_UU }, types);
+        }
+
+        [Test]
+        public void test_composition_hit_result_emitter_reaches_the_client_through_the_ru_batch_step()
+        {
+            WiRig rig = StartRig();
+            ZoneSlotPool pool = rig.Comp.ZoneInstancing.Pool;
+            EntityID player = AllocCompositionPlayer(pool, 1u, 11u, out byte slot);
+            rig.Comp.Movement.SeedForTesting(slot, player, Vector3.zero, 0);
+            Assert.IsTrue(pool.TryAllocateMob(pool.Zone, out _, out EntityID mob));
+            rig.Net.ClientListener.AddClient(11u);
+            Assert.IsNotNull(rig.Comp.HitResultEmitter);
+            rig.Comp.HitResultEmitter.Emit(player, mob, HitResult.Hit);
+            LogAssert.Expect(LogType.Log, "[ZoneServer] ghost session TTL enumeration not implemented");
+            LogAssert.Expect(LogType.Error, new Regex(@"\[Movement\] NavMesh unavailable"));
+
+            rig.Net.FireTick();
+
+            CollectionAssert.Contains(MessageTypesTo(rig, 11u), RUBatchWriter.TICK_BATCH_RU);
         }
 
         [Test]

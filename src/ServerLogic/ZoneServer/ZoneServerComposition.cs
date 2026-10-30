@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using IronGrind.CharacterPersistence;
+using IronGrind.HitDetection;
 using IronGrind.LevelingSystem;
 using IronGrind.MovementSystem;
 using IronGrind.Networking;
@@ -357,6 +358,9 @@ namespace IronGrind.ServerLogic.ZoneServer
 
         /// <summary>The zone's per-tick R-U batch step, built at S5 (Hit Detection Story 003); null before S5.</summary>
         internal RUBatchOutboundStep RUBatch { get; private set; }
+
+        /// <summary>The zone's hit result emitter, built at S5 right after the R-U batch step (Hit Detection Story 004); null before S5.</summary>
+        internal HitResultEmitter HitResultEmitter { get; private set; }
 
         /// <summary>The zone's Status Effects service, built at S5 (Story 009); null before S5.</summary>
         internal StatusEffectsService StatusEffects { get; private set; }
@@ -1470,6 +1474,8 @@ namespace IronGrind.ServerLogic.ZoneServer
                 var ruBatch = new RUBatchOutboundStep(sendSeam, outbox, wiring.Pool.MaxPlayers);
                 Observe(nameof(RUBatchOutboundStep));
                 _owner.RUBatch = ruBatch;
+                _owner.HitResultEmitter = new HitResultEmitter(wiring.Pool, ruBatch, _tickLoop);
+                Observe(nameof(HitResultEmitter));
                 var positions = new PositionBroadcastStep(movement, wiring.Pool, sendSeam, outbox);
                 Observe(nameof(PositionBroadcastStep));
                 _owner.PositionBroadcast = positions;
