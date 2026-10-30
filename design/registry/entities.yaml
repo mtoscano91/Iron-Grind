@@ -874,17 +874,31 @@ constants:
     added: "2026-05-25"
     revised: ""
 
+  - name: HitCheckResult
+    status: active
+    source: design/gdd/hit-detection.md
+    referenced_by:
+      - design/gdd/hit-detection.md
+      - design/gdd/networking-wire-protocol.md
+      - design/gdd/networking-channel-contract.md
+      - design/gdd/networking-message-criticality.md
+    type: "wire message (R-U batch)"
+    fields: "{attackerEntityId: EntityID, targetEntityId: EntityID, result: byte, serverTick: uint}"
+    note: "MessageTypeID 0x0306, 13-byte body, 17 bytes in batch. Sent after every CheckHit call to the player involved: attacker for player attacks, defender for monster attacks."
+    added: "2026-10-30"
+    revised: ""
+
   - name: ATTACK_FACING_TOLERANCE_DEG
     status: active
     source: design/gdd/hit-detection.md
     referenced_by:
       - design/gdd/hit-detection.md
     type: "float constant (tuning knob)"
-    value: 60.0
+    value: 45.0
     unit: "degrees — half-angle of the monster facing arc"
-    note: "Threshold for the facing check in CheckHit() F-HD-2: dot(capturedForward, toTarget) >= cos(ATTACK_FACING_TOLERANCE_DEG × π/180). Applies to monster attacks only — player auto-attacks re-face the target at swing time and always pass. Safe tuning range: [45°, 90°]. Below 45°: too strict for mobile, produces noise misses. Above 90°: facing check becomes a hemisphere (effectively omnidirectional). Do not use raw value for disabled check — use FACING_CHECK_DISABLED_DEG sentinel."
+    note: "Threshold for the facing check in CheckHit() F-HD-2: dot(capturedForward, toTarget) >= cos(ATTACK_FACING_TOLERANCE_DEG × π/180). Applies to monster attacks only — player auto-attacks re-face the target at swing time and always pass. Safe tuning range: [45°, 90°]. Default changed 60 → 45 on 2026-10-30 so MissFacing is reachable up to R ≈ 2.1 at AttackRange 3.0 (EC-HD-3). Below 45°: too strict for mobile, produces noise misses. Above 90°: facing check becomes a hemisphere (effectively omnidirectional). Do not use raw value for disabled check — use FACING_CHECK_DISABLED_DEG sentinel."
     added: "2026-05-25"
-    revised: ""
+    revised: "2026-10-30"
 
   - name: POINT_BLANK_EPSILON_SQ
     status: active
@@ -1188,16 +1202,16 @@ constants:
 
   - name: MIN_WIND_UP_TICKS
     status: active
-    source: design/gdd/hit-detection.md
+    source: design/gdd/enemy-ai.md
     referenced_by:
       - design/gdd/hit-detection.md
       - design/gdd/enemy-ai.md
     type: "int constant (structural — derived from TICK_RATE_HZ)"
     value: 12
     unit: "server ticks (= Mathf.CeilToInt(0.6f × TICK_RATE_HZ) at TICK_RATE_HZ=20)"
-    note: "600ms minimum wind-up duration enforced by Hit Detection — players must have at least one full Beat to sidestep (CR-HD design constraint). Enemy AI asserts this at startup (CR-AI-7): all MobDefinition.AttackWindUpTicks must be ≥ this value. Re-derive when TICK_RATE_HZ changes: MIN_WIND_UP_TICKS = Mathf.CeilToInt(0.6f × TICK_RATE_HZ). Animation team must produce wind-up animations ≥ (MIN_WIND_UP_TICKS × 50ms) = 600ms for every mob type."
+    note: "600ms minimum wind-up duration, required by the Hit Detection sidestep design and owned by Enemy AI — players must have at least one full Beat to sidestep. Enemy AI asserts this at startup (CR-AI-7): all MobDefinition.AttackWindUpTicks must be ≥ this value. Re-derive when TICK_RATE_HZ changes: MIN_WIND_UP_TICKS = Mathf.CeilToInt(0.6f × TICK_RATE_HZ). Animation team must produce wind-up animations ≥ (MIN_WIND_UP_TICKS × 50ms) = 600ms for every mob type."
     added: "2026-05-25"
-    revised: ""
+    revised: "2026-10-30"
 
   - name: ILootTableSystem
     status: active

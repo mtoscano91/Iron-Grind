@@ -2,7 +2,7 @@
 
 > **Status**: In Review
 > **Author**: Manuel Toscano + Claude Code agents
-> **Last Updated**: 2026-05-25
+> **Last Updated**: 2026-10-30 (Hit Detection `/create-stories`: facing convention aligned with Movement — 0° = +Z, clockwise, no conversion from `eulerAngles.y`; `FacingAngle` stored as `short` ×10; `CheckHit` call matches CR-HD-1; `MIN_WIND_UP_TICKS` owned here)
 > **Implements Pillar**: Rhythm Mastery (primary), Earned Power (secondary)
 
 ## Overview
@@ -33,10 +33,10 @@ Within each 50ms server tick, the order is: (1) Status Effects, (2) Enemy AI, (3
 A Dormant mob scans for players within its `AggroRange` once per `AGGRO_SCAN_INTERVAL_TICKS`. The first player within `AggroRange` (XZ-plane squared-distance) at scan time becomes `TargetEntityID`. If multiple players qualify, the first encountered in entity list order wins. Aggro does not transfer once assigned.
 
 **CR-AI-4: capturedForward locking**
-On `WindingUp` entry, the server reads the mob's `EntityState.FacingAngle`, converts to XZ-plane Vector3 (0° = +X / `Vector3.right`, counterclockwise; converts from Unity's clockwise-from-+Z `transform.eulerAngles.y`, which is available in the headless Unity server process — see Overview), and stores it as `capturedForward`. This field is not updated again until the mob next enters `WindingUp`. On `AttackExecution`, `capturedForward` is passed to `CheckHit` unmodified.
+On `WindingUp` entry, the server reads the mob's `EntityState.FacingAngle`, converts to XZ-plane Vector3 (0° = +Z / `Vector3.forward`, clockwise — the same yaw as Unity's `transform.eulerAngles.y`, see F-AI-3), and stores it as `capturedForward`. This field is not updated again until the mob next enters `WindingUp`. On `AttackExecution`, `capturedForward` is passed to `CheckHit` unmodified.
 
 **CR-AI-5: Facing update during pursuit**
-While in `Pursuing`, the server updates the mob's `EntityState.FacingAngle` every tick to face the current target position (XZ-plane). `FacingAngle` is stored as a `float` in degrees (0–359.9°, per CR-HD-6 in Hit Detection GDD); the network serialisation layer converts to wire encoding independently. The angle locked by CR-AI-4 is therefore the mob's honest bearing toward its target when it committed to the swing.
+While in `Pursuing`, the server updates the mob's `EntityState.FacingAngle` every tick to face the current target position (XZ-plane). `FacingAngle` is stored as a `short`, degrees × 10 (0–3599, per CR-HD-6 in Hit Detection GDD), the same value the wire carries. The angle locked by CR-AI-4 is therefore the mob's honest bearing toward its target when it committed to the swing.
 
 **CR-AI-6: Attack cadence and cooldown start**
 `AttackCooldownTicks` (per-mob field in `MobDefinition`) begins counting on the `AttackExecution` tick; the implementation sets `hasAttackedOnce = true` and records `lastAttackExecutionTick = currentTick`. In `Pursuing`, the transition to `WindingUp` requires both: target within `AttackRange` AND (`!hasAttackedOnce` OR `currentTick − lastAttackExecutionTick ≥ AttackCooldownTicks`). The `!hasAttackedOnce` guard replaces the `int.MinValue` sentinel, eliminating C# int32 overflow on servers with extended uptimes. **No-op case**: when `AttackRecoveryTicks ≥ AttackCooldownTicks`, the cooldown term in F-AI-1 equals 0 and `AttackCooldownTicks` does not affect effective attack rate; it remains a tuning knob for mob designs where Recovery is shorter. The effective minimum attack interval is `AttackWindUpTicks + AttackRecoveryTicks + max(0, AttackCooldownTicks − AttackRecoveryTicks)`.
@@ -99,7 +99,7 @@ At the start of each mob's AI tick, if HP ≤ 0 and the mob is not already in `D
 ### Interactions with Other Systems
 
 **Hit Detection**
-On `AttackExecution`: calls `CheckHit(attackerID: mob EntityID, defenderID: TargetEntityID, capturedForward, attackPower: mob's current AttackPower)`. Receives `HitCheckResult` with `HitResult`. If `HitResult.Hit`: writes damage to target's `EntityState.HP`. The mob entity has no client — `HitCheckResult` is routed to the defending player's client per CR-HD-10.
+On `AttackExecution`: calls `CheckHit(attackerPos: mob position, targetPos: target position, attackRange, capturedForward)` (CR-HD-1). Receives `HitResult`. If `HitResult.Hit`: writes damage to target's `EntityState.HP`. The mob entity has no client — `HitCheckResult` is routed to the defending player's client per CR-HD-10.
 
 **Entity State**
 Reads: `Position` (every tick in `Pursuing`, at scan in `Dormant`); `FacingAngle` (at `WindingUp` entry); target `HP` (for invalidation check). Writes: mob `FacingAngle` (every tick in `Pursuing`); target `HP` (on hit).
@@ -180,20 +180,19 @@ XZ-plane only; Y component ignored.
 
 ### F-AI-3: capturedForward Conversion
 
-Converts `EntityState.FacingAngle` (float, degrees 0–359.9°, per CR-HD-6) to XZ-plane Vector3 at `WindingUp` entry.
+Converts `EntityState.FacingAngle` (`short`, degrees × 10, 0–3599, per CR-HD-6) to XZ-plane Vector3 at `WindingUp` entry.
 
 ```
-angleRad        = FacingAngle × (Mathf.PI / 180f)
-capturedForward = new Vector3(Mathf.Cos(angleRad), 0f, Mathf.Sin(angleRad))
+angleRad        = (FacingAngle / 10f) × (Mathf.PI / 180f)
+capturedForward = new Vector3(Mathf.Sin(angleRad), 0f, Mathf.Cos(angleRad))
 ```
 
-Axis convention: 0° = +X (`Vector3.right`), 90° = +Z (`Vector3.forward`), counterclockwise in XZ-plane. Consistent with Hit Detection F-HD-2 and F-HD-3.
+Axis convention: 0° = +Z (`Vector3.forward`), 90° = +X (`Vector3.right`), clockwise seen from above. Consistent with Hit Detection F-HD-3 and with Movement.
 
-FacingAngle write during `Pursuing` each tick (converting from Unity's clockwise-from-+Z `transform.eulerAngles.y`):
+FacingAngle write during `Pursuing` each tick (`transform.eulerAngles.y` already uses this convention):
 
 ```
-ourAngleDeg = (90f − transform.eulerAngles.y + 360f) % 360f
-FacingAngle = ourAngleDeg   // stored as float, 0–359.9°, per CR-HD-6
+FacingAngle = NormalizeFacing(Mathf.RoundToInt(transform.eulerAngles.y × 10f))   // short, 0–3599, per CR-HD-6
 ```
 
 The network serialisation layer converts this float to the wire encoding (decidegrees short) when replicating `EntityState` to clients. Enemy AI does not perform that conversion — the serialisation layer owns it.
@@ -318,7 +317,7 @@ A mob whose `LeashRange` is within 2m of its `AggroRange` would leash-return imm
 
 | System | What Enemy AI Needs | Status |
 |---|---|---|
-| **Hit Detection** | `CheckHit(attackerID, defenderID, capturedForward, attackPower)` on `AttackExecution`; owns `MIN_WIND_UP_TICKS = 12` | Approved |
+| **Hit Detection** | `CheckHit(attackerPos, targetPos, attackRange, capturedForward)` on `AttackExecution`; `MIN_WIND_UP_TICKS = 12` is owned by Enemy AI (CR-AI-7) | Approved |
 | **Entity State** | Read: `Position`, `FacingAngle`, `HP` per entity. Write: mob `FacingAngle` each tick, target `HP` on hit | Approved (Networking Core) |
 | **Character Persistence** | `AwardXP(killerEntityID, xpAmount)` on mob death | Approved |
 | **Stat System** | `SetBaseStat(EntityID, StatType, value)` at spawn for Enraged variants. `StatType` is the Character Stats GDD's stat type enum — Enemy AI uses `StatType.MaxHP` and `StatType.AttackPower` | Approved |
@@ -458,7 +457,7 @@ Set `BaseMaxHP = 100`, `EnragedMaxHPMultiplier = 1.5`. Spawn Enraged mob (force 
 Spawn Enraged mob. Assert buff modifier list contains no entry for MaxHP or AttackPower. Assert only `SetBaseStat` was called (verify via test double on Stat System).
 
 **AC-AI-16: F-AI-3 capturedForward conversion accuracy**
-Test four cardinal inputs (FacingAngle is now float degrees per CR-HD-6): FacingAngle = 0.0° → assert `capturedForward ≈ (1, 0, 0)`. FacingAngle = 90.0° → assert `≈ (0, 0, 1)`. FacingAngle = 180.0° → assert `≈ (−1, 0, 0)`. FacingAngle = 270.0° → assert `≈ (0, 0, −1)`. Tolerance: each component within `0.001f`.
+Test four cardinal inputs (`FacingAngle` is `short` ×10 per CR-HD-6): FacingAngle = 0 (0°) → assert `capturedForward ≈ (0, 0, 1)`. FacingAngle = 900 (90°) → assert `≈ (1, 0, 0)`. FacingAngle = 1800 (180°) → assert `≈ (0, 0, −1)`. FacingAngle = 2700 (270°) → assert `≈ (−1, 0, 0)`. Tolerance: each component within `0.001f`.
 
 **AC-AI-17: SetDestination call rate in Pursuing (CR-AI-11)**
 In `Pursuing`, move target by `PURSUIT_REPOSITION_THRESHOLD − 0.01m`. Assert `INavigationProvider.SetDestination` is NOT called. Move target by `PURSUIT_REPOSITION_THRESHOLD + 0.01m` from last issued destination. Assert `SetDestination` IS called exactly once.

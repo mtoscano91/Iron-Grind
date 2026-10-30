@@ -2,7 +2,7 @@
 
 > **Status**: Approved (lean re-review Pass 2, 2026-05-17)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-10-23 (`ZoneEntryAck` added — new C→S zone-entry message; no existing schema, size or enum changed). Previous: 2026-10-09 (TD-046 amendment: MCR-2 rows for the Enhancement message set and the two inventory sync messages; the schema-pending Enhancement outcome row is replaced; no channel assignment of an existing message changed; lean re-review done 2026-10-09 — no MCR-2 row changed by the revision that followed; lean verify of networking-wire-protocol.md 2026-10-09: APPROVED). Previous: 2026-05-17
+> **Last Updated**: 2026-10-30 (`HitCheckResult` row added to MCR-2 — no existing row changed). Previous: 2026-10-23 (`ZoneEntryAck` added — new C→S zone-entry message; no existing schema, size or enum changed). Previous: 2026-10-09 (TD-046 amendment: MCR-2 rows for the Enhancement message set and the two inventory sync messages; the schema-pending Enhancement outcome row is replaced; no channel assignment of an existing message changed; lean re-review done 2026-10-09 — no MCR-2 row changed by the revision that followed; lean verify of networking-wire-protocol.md 2026-10-09: APPROVED). Previous: 2026-05-17
 > **Parent**: networking-wire-protocol.md
 
 ## Overview
@@ -36,6 +36,7 @@ None. This document is a pure infrastructure contract. Its correctness is felt i
 | `DamageEvent` | Pillar 2 | Best-effort | R-U | Cosmetic for non-attacker clients. High-frequency; missing one is unnoticeable. |
 | `EntityHealthUpdate` | Pillar 2 + Pillar 3 | Reliable per-tick | R-U | Tactical combat feedback (Pillar 2) + party-visible health bar data (Pillar 3 — continuous state, not a one-time event; R-U is appropriate). Self-corrects on next tick. Relevance-filtered per `networking-relevance-filter.md`. |
 | `AutoFaceEvent` | Pillar 2 | Best-effort | R-U | Entity orientation during combat. Visual only; stale value is tolerable for ≤ 2 ticks. Event-driven — missed event is not displayed (see MCR-5b). |
+| `HitCheckResult` | Pillar 2 | Best-effort | R-U | Hit/miss cue for the player involved. Low priority: a dropped result loses that swing's cue only; no game state depends on it. Event-driven (see MCR-5b). |
 | `SkillUsedNotification` | Pillar 2 | Best-effort | R-U | Audio/visual trigger. Missing one is acceptable — idempotent display. Event-driven (see MCR-5b). |
 | `ConnectionQualityUpdate` | Pillar 2 | Reliable | R-U | OWL compensation feedback for the local player only. Sent only to affected client on threshold crossings. Event-driven — missed crossing tolerable if next threshold crossing reflects current OWL state (see MCR-5b). |
 | `PartyMemberHealthUpdate` | Pillar 1 + Pillar 3 | Reliable per-tick | R-U | Party HP bars are fellowship-critical (Pillar 3). XP-eligibility sequencing and death-state ordering depend on party HP reaching 0 (Pillar 1). **Ordering note:** `GhostPromotionEvent` (R-OD) is the authoritative death signal — client must not apply ghost-state transition until `GhostPromotionEvent` arrives; HP=0 is a precursor indicator only. **MCR-3 exception:** HP data self-corrects on next tick; death-state outcome guaranteed by `GhostPromotionEvent` (R-OD). |

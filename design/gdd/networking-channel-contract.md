@@ -2,7 +2,7 @@
 
 > **Status**: In Review — Revision Pass 1 (2026-05-18; applying 14-blocker fixes)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-10-23 (`ZoneEntryAck` added — new C→S zone-entry message; no existing schema, size or enum changed). Previous: 2026-10-09 (TD-046 amendment: CCR-3 rows for the Enhancement message set and the two inventory sync messages; the schema-pending outcome broadcast row is replaced; lean re-review done 2026-10-09; four rows revised the same day — a duplicate `EnhancementAttemptRequest` is dropped, `EnhancementRequestReceived` is sent after the scroll is consumed, the enhancement hold covers `InventoryFullSync`; lean verify of networking-wire-protocol.md 2026-10-09: APPROVED — these rows verified with it). Previous: 2026-05-22 (Pass 1 continued: added EquipRequest, EquipResult, AppearanceChangedEvent CCR-3 rows — Equipment System upstream contract, 2026-05-22)
+> **Last Updated**: 2026-10-30 (`HitCheckResult` row added to CCR-3 — no existing row changed). Previous: 2026-10-23 (`ZoneEntryAck` added — new C→S zone-entry message; no existing schema, size or enum changed). Previous: 2026-10-09 (TD-046 amendment: CCR-3 rows for the Enhancement message set and the two inventory sync messages; the schema-pending outcome broadcast row is replaced; lean re-review done 2026-10-09; four rows revised the same day — a duplicate `EnhancementAttemptRequest` is dropped, `EnhancementRequestReceived` is sent after the scroll is consumed, the enhancement hold covers `InventoryFullSync`; lean verify of networking-wire-protocol.md 2026-10-09: APPROVED — these rows verified with it). Previous: 2026-05-22 (Pass 1 continued: added EquipRequest, EquipResult, AppearanceChangedEvent CCR-3 rows — Equipment System upstream contract, 2026-05-22)
 > **Parent**: networking-wire-protocol.md
 
 ## Overview
@@ -53,6 +53,7 @@ Two distinct session-establishment flows exist. Their naming must not be confuse
 | `ConnectionQualityUpdate` | S→C (affected only) | R-U | RU-B | Sent only to the affected client on OWL threshold crossings. Never zone-wide. |
 | `PartyMemberHealthUpdate` | S→C (per-client for party) | R-U | RU-B | Sent per-client about that client's party members. **Not in the Position packet (Path 2b-ii).** Reliable delivery required — party HP bars are fellowship-critical. |
 | `AutoFaceEvent` | S→ALL | R-U | RU-B | Zone-wide. Quaternion + direction vector guards from CR-NET-7.2 apply. |
+| `HitCheckResult` | S→C (player involved only) | R-U | RU-B | Sent to the attacker for player attacks and the defending player for monster attacks. Never zone-wide. See `hit-detection.md` CR-HD-10. |
 | `SkillUsedNotification` | S→ALL | R-U | RU-B | Zone-wide. Idempotent on client. |
 | `LootBidUpdate` | S→PARTY | R-U | RU-B | MCR-3 exception: bid data self-corrects on each new bid (every new bid supersedes the last); `AuctionResolved` guarantees the economic outcome (R-OD). Sent to all party members participating in the loot instance. |
 | `EntityPositionUpdate` | S→ALL (per-client tailored) | U-U | POS-B | Per-client: includes all zone entities except the receiver. Sorted ascending by EntityID. Highest EntityIDs dropped first under overflow. |

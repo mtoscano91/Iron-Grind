@@ -1,6 +1,6 @@
 # Epics Index
 
-Last Updated: 2026-10-29
+Last Updated: 2026-10-30
 Engine: Unity 6.3 LTS (6000.3)
 Control Manifest Version: 2026-10-26
 
@@ -20,6 +20,7 @@ Control Manifest Version: 2026-10-26
 | [Zone Instancing](zone-instancing/EPIC.md) | Core | Zone Instancing (zone-process side) | design/gdd/zone-instancing.md | 14 stories (001-014, written 2026-10-22), all Complete (2026-10-26) | Complete — routing ACs (AC-ZI-1, 2, 3, 16, 19, 20) move with the gateway work (needs a gateway ADR + epic) |
 | [Character Persistence](character-persistence/EPIC.md) | Core | Character Persistence | design/gdd/character-persistence.md | 17 stories (001-016 written 2026-10-12, 017 added 2026-10-16): 17 Complete (last 016 on 2026-10-28); DoD open: ADR-006 Verification 1–3, AC-CP-27/28/29 | In Progress |
 | [Movement System](movement-system/EPIC.md) | Core | Movement System | design/gdd/movement-system.md | 13 stories (001-013 written 2026-10-29; server 001-009, client 010-013): 13 Complete | Complete |
+| [Hit Detection](hit-detection/EPIC.md) | Core | Hit Detection | design/gdd/hit-detection.md | 4 stories (001-004 written 2026-10-30), all Ready | Ready |
 | [Enhancement System](enhancement-system/EPIC.md) | Feature | Enhancement System | design/gdd/enhancement-system.md | 16 stories (001-016 Complete); DoD open: AC-ENH-2 and the other deferred criteria | In Progress |
 
 ## Notes
@@ -36,6 +37,6 @@ Control Manifest Version: 2026-10-26
 | Layer | Epics Created | Remaining |
 |-------|--------------|-----------|
 | Foundation | 4 / 4 (all Complete) | — |
-| Core | 8 created (Equipment added 2026-10-07, Character Persistence 2026-10-12) | Hit Detection and Skill System have no epic yet (Movement added 2026-10-29); run `/create-stories [epic-slug]` per created epic |
+| Core | 11 created (Equipment added 2026-10-07, Character Persistence 2026-10-12, Movement 2026-10-29, Hit Detection 2026-10-30) | Skill System has no epic yet; run `/create-stories [epic-slug]` per created epic |
 | Feature | 1 (Enhancement, created 2026-10-07 ahead of its two gates) | Run `/create-epics layer: feature` for the rest after Core is nearly complete |
 | Presentation | 0 | Run `/create-epics layer: presentation` after Feature is nearly complete |

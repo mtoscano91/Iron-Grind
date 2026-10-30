@@ -1,8 +1,8 @@
 # Hit Detection
 
-> **Status**: In Review
+> **Status**: Approved (lean re-review, 2026-05-25)
 > **Author**: Manuel Toscano + Claude Code agents
-> **Last Updated**: 2026-05-25
+> **Last Updated**: 2026-10-30 (`/create-stories`: facing convention aligned with Movement — 0° = +Z, clockwise; `FacingAngle` stored as `short` ×10; `ATTACK_FACING_TOLERANCE_DEG` default 60° → 45°; `HitCheckResult` MessageTypeID `0x0306`, 17 bytes in batch)
 > **Implements Pillar**: Rhythm Mastery (primary), Earned Power (secondary)
 
 ## Overview
@@ -49,7 +49,7 @@ Implemented in `IronGrind.ServerLogic` only. No client equivalent. `IronGrind.Se
 - *Player attacks always pass the facing check* because tap-to-target UX guarantees the player is aimed at the enemy before swinging. The XZ direction to target is the only physically meaningful "facing" for a touch-input player.
 - *Monster attacks lock `capturedForward` at wind-up start* because the wind-up animation is the telegraphed commitment window. A player who reads the wind-up and moves laterally or backs out of range during the 600ms window can avoid the attack. This is the Rhythm Mastery sidestep mechanic.
 
-**CR-HD-6** — `EntityState.FacingAngle`: EntityState gains a `FacingAngle` field (server storage: `float`, degrees 0–359.9; wire encoding: `short`, value × 10, range 0–3599, yielding 0.1° precision). This is the canonical facing direction for all entities. It is managed separately from `capturedForward` — see CR-HD-7.
+**CR-HD-6** — `EntityState.FacingAngle`: EntityState gains a `FacingAngle` field (server storage and wire encoding: `short`, degrees × 10, range 0–3599, yielding 0.1° precision — the same value Movement stores). This is the canonical facing direction for all entities. It is managed separately from `capturedForward` — see CR-HD-7.
 
 **CR-HD-7** — Facing update events:
 
@@ -65,7 +65,7 @@ Implemented in `IronGrind.ServerLogic` only. No client equivalent. `IronGrind.Se
 
 **CR-HD-9** — `FacingAngle` wire placement: `FacingAngle` is NOT included in the per-tick `EntityPositionUpdate` (U-U batch). It is replicated via the existing `AutoFaceEvent` (R-U batch), which fires only when `FacingAngle` changes. Entities whose facing is not changing contribute zero bytes to the per-tick stream.
 
-**CR-HD-10** — `HitCheckResult` message: After every `CheckHit` call, the server emits a `HitCheckResult` to the **player's client** (R-U batch, low priority). The player is always the recipient — for monster attacks the player is the defending target; for player attacks the player is the attacker. Monsters have no client and never receive this message. Payload: `{AttackerEntityID: uint (4B), TargetEntityID: uint (4B), Result: byte (1B) [0=Hit, 1=MissOutOfRange, 2=MissFacing], ServerTick: uint (4B)}` — 13 bytes payload, ~18 bytes with batch overhead. Emitted on every call regardless of `HitResult`. This message is the only signal the client uses to determine hit/miss state; the client does not infer miss from absence of `DamageEvent`. EntityID fields use `uint` (4 bytes each) per CR-NET-7.3.
+**CR-HD-10** — `HitCheckResult` message: After every `CheckHit` call, the server emits a `HitCheckResult` to the **player's client** (R-U batch, low priority). The player is always the recipient — for monster attacks the player is the defending target; for player attacks the player is the attacker. Monsters have no client and never receive this message. Payload: `{AttackerEntityID: uint (4B), TargetEntityID: uint (4B), Result: byte (1B) [0=Hit, 1=MissOutOfRange, 2=MissFacing], ServerTick: uint (4B)}` — 13 bytes payload, 17 bytes in batch. MessageTypeID `0x0306`. Emitted on every call regardless of `HitResult`. This message is the only signal the client uses to determine hit/miss state; the client does not infer miss from absence of `DamageEvent`. EntityID fields use `uint` (4 bytes each) per CR-NET-7.3.
 
 **CR-HD-11** — On `MissOutOfRange` or `MissFacing`: no damage is applied, no `DamageEvent` is emitted. The swing animation on the client completes normally. The auto-attack loop continues its tick cycle. Miss visual/audio feedback is driven by `HitCheckResult`.
 
@@ -139,25 +139,25 @@ isFacing  = dot(capturedForward, toTarget) ≥ cos(ATTACK_FACING_TOLERANCE_DEG �
 |----------|------|-------------|
 | `capturedForward` | Vector3 (unit) | Attacker's forward direction at attack initiation (caller-provided) |
 | `toTarget` | Vector3 (unit) | Unit vector from attacker toward target |
-| `ATTACK_FACING_TOLERANCE_DEG` | float | Half-angle of the facing cone; default `60°` |
-| `cos(60°)` | float | `≈ 0.5` — precomputed threshold |
+| `ATTACK_FACING_TOLERANCE_DEG` | float | Half-angle of the facing cone; default `45°` |
+| `cos(45°)` | float | `≈ 0.707` — precomputed threshold |
 | `isFacing` | bool | True if attacker is facing within the tolerance arc |
 
 **Guard clause (CR-HD-3):** If `d_sq < POINT_BLANK_EPSILON_SQ`, skip F-HD-2 entirely and return `Hit`.
 
-**Example:** Attacker at `(0, 0, 0)` facing `(1, 0, 0)`, Target at `(0.8, 0, 0.6)`, `ATTACK_FACING_TOLERANCE_DEG = 60°`:
+**Example:** Attacker at `(0, 0, 0)` facing `(1, 0, 0)`, Target at `(0.8, 0, 0.6)`, `ATTACK_FACING_TOLERANCE_DEG = 45°`:
 - `toTarget = normalize((0.8, 0, 0.6)) = (0.8, 0, 0.6)` (already unit length)
 - `dot((1,0,0), (0.8,0,0.6)) = 0.8`
-- `cos(60°) = 0.5`
-- `0.8 ≥ 0.5` → facing check passes → `Hit`
+- `cos(45°) ≈ 0.707`
+- `0.8 ≥ 0.707` → facing check passes → `Hit`
 
 **Boundary values:**
 
 | `ATTACK_FACING_TOLERANCE_DEG` | `cos(θ)` threshold | Meaning |
 |-------------------------------|--------------------|---------|
 | `0°` | `1.0` | Must be exactly facing target — unusable in production |
-| `45°` | `≈ 0.707` | ±45° cone; strict |
-| `60°` | `0.5` | ±60° cone; **default MVP** |
+| `45°` | `≈ 0.707` | ±45° cone; **default MVP** |
+| `60°` | `0.5` | ±60° cone; permissive |
 | `90°` | `0.0` | Full hemisphere; permissive — use for AoE skills |
 | `180°` | `-1.0` | Any direction passes — use named `FACING_CHECK_DISABLED_DEG` constant |
 
@@ -173,10 +173,10 @@ facingAngleDeg = wire_value / 10f                   // decode: short → float
 Precision: 0.1° per unit. Range: `0–3599` (maps to `0.0°–359.9°`). `capturedForward` derived from `facingAngleDeg`:
 ```
 facingRad      = facingAngleDeg × π / 180
-capturedForward = Vector3(Mathf.Cos(facingRad), 0, Mathf.Sin(facingRad))
+capturedForward = Vector3(Mathf.Sin(facingRad), 0, Mathf.Cos(facingRad))
 ```
 
-**Axis convention**: `0°` maps to `+X` (`Vector3.right`); `90°` maps to `+Z` (`Vector3.forward`). This is standard mathematical convention (counterclockwise from +X in the XZ plane). Unity's `transform.eulerAngles.y` uses clockwise-from-+Z, which is a different convention. Enemy AI must convert when writing `EntityState.FacingAngle`.
+**Axis convention**: `0°` maps to `+Z` (`Vector3.forward`); `90°` maps to `+X` (`Vector3.right`), clockwise seen from above. This is Unity's yaw (`transform.eulerAngles.y`) and the convention Movement stores (`atan2(x, z)`), so no conversion is needed when writing `EntityState.FacingAngle`.
 
 ---
 
@@ -184,7 +184,7 @@ capturedForward = Vector3(Mathf.Cos(facingRad), 0, Mathf.Sin(facingRad))
 
 | Constant | Value | Type | Notes |
 |----------|-------|------|-------|
-| `ATTACK_FACING_TOLERANCE_DEG` | `60.0f` | float, degrees | Safe tuning range: `[45°, 90°]` |
+| `ATTACK_FACING_TOLERANCE_DEG` | `45.0f` | float, degrees | Safe tuning range: `[45°, 90°]` |
 | `POINT_BLANK_EPSILON_SQ` | `0.0005f` | float, units² | Must exceed worst-case wire encoding noise (2 axes × (0.01 units)² = 0.0002f). Set to 0.0005f (2.5× margin). Not a tunable gameplay value. |
 | `ATTACK_RANGE_MIN` | `0.5f` | float, units | Practical minimum; `AttackRange = 0` reserved/unused |
 | `FACING_CHECK_DISABLED_DEG` | `180.0f` | float, degrees | Named sentinel for omnidirectional skills; not a tuning value |
@@ -202,7 +202,7 @@ In the auto-attack loop, an attack is scheduled at the start of a Beat. The targ
 
 - **Back away (MissOutOfRange)**: Move beyond `AttackRange` in 600ms. At default `AttackRange = 3.0` and movement speed 4–6 units/s, the player travels 2.4–3.6 units in 600ms; starting near the range boundary, backing away is the reliable low-skill avoidance path.
 
-- **Sidestep (MissFacing)**: Move laterally until the angle between `capturedForward` and the current direction from monster to player exceeds `ATTACK_FACING_TOLERANCE_DEG`. Required lateral displacement at distance R from monster: `d > R × tan(ATTACK_FACING_TOLERANCE_DEG)`. At `60°` tolerance and `R = 3m`: `d > 5.2m` — not achievable at movement speed 4–6 units/s (max 3.6m in 600ms). At `45°` tolerance and `R = 3m`: `d > 3.0m` — achievable at ≥5 units/s. **To deliver the sidestep fantasy at the default 3m attack range, set `ATTACK_FACING_TOLERANCE_DEG` to `45°` during initial tuning.** The default `60°` cone supports lateral sidestep only at close quarters (R ≤ 2.1m); designers should lower tolerance to match intended engagement range.
+- **Sidestep (MissFacing)**: Move laterally until the angle between `capturedForward` and the current direction from monster to player exceeds `ATTACK_FACING_TOLERANCE_DEG`. Required lateral displacement at distance R from monster: `d > R × tan(ATTACK_FACING_TOLERANCE_DEG)`. At the default `45°`: `d > R`, which the player covers in the wind-up at R < 3m at 5 units/s (3.0m in 600ms). The result depends on R: the player stays in range only while `sqrt(R² + d²) ≤ AttackRange`, so at `AttackRange = 3.0` a sidestep resolves as `MissFacing` up to R ≈ 2.1m; beyond that the same lateral move leaves range first and resolves as `MissOutOfRange`. Either way the attack is avoided. At `60°` the required move is `d > 1.73R`, and `MissFacing` is reachable only up to R = 1.5m, which is why the default is `45°` (changed 2026-10-30).
 
 **EC-HD-4 — `AttackRange = 0` configured by mistake**
 `AttackRange = 0` means `AttackRange² = 0`. Positions reconstructed from `short (×100)` wire encoding can differ by up to ±0.01 units per axis at co-location, so `d_sq` at co-location may be up to `0.0002` — exceeding `0.0` and returning `MissOutOfRange`. The caller must validate `AttackRange >= ATTACK_RANGE_MIN` before invoking `CheckHit`. Hit Detection does not validate `AttackRange` internally.
@@ -231,21 +231,19 @@ Each `CheckHit` call is independent — there is no shared state between calls. 
 | System | GDD | Status | What they consume |
 |--------|-----|--------|-------------------|
 | Auto-Attack Combat | `auto-attack-combat.md` | Complete | `HitResult` enum; `CheckHit` API; `HitCheckResult` message. Propagation complete — Step 3 updated 2026-05-24; OQ-3 closed. |
-| Enemy AI | `enemy-ai.md` | Not Started | `CheckHit` API; `capturedForward` capture-at-initiation pattern; `FacingAngle` update at monster attack initiation |
-| Skill System | `skill-system.md` | Not Started | `CheckHit` API; `FACING_CHECK_DISABLED_DEG` sentinel for omnidirectional skills; per-attack-type tolerance parameter |
-| Networking Wire Protocol | `networking-wire-protocol.md` | Approved | `HitCheckResult` message definition (new — not yet added); `FacingAngle: short (×10)` field on `EntityState` (schema update — not yet added); wire size 69B → 71B |
+| Enemy AI | `enemy-ai.md` | Approved | `CheckHit` API; `capturedForward` capture-at-initiation pattern; `FacingAngle` update at monster attack initiation |
+| Skill System | `skill-system.md` | Approved | `CheckHit` API; `FACING_CHECK_DISABLED_DEG` sentinel for omnidirectional skills; per-attack-type tolerance parameter |
+| Networking Wire Protocol | `networking-wire-protocol.md` | Approved | `HitCheckResult` message definition (MessageTypeID `0x0306`, added 2026-10-30); `facingAngle: short (×10)` on `EntityState` (added 2026-05-26) |
 
 ### Required Propagation Before Implementation
 
-1. **`networking-wire-protocol.md`** — Add `HitCheckResult` message definition (payload: AttackerEntityID uint 4B, TargetEntityID uint 4B, Result byte 1B, ServerTick uint 4B = 13B). Add `FacingAngle: short (×10)` to `EntityState` schema. Update EntityState wire size 69B → 71B. Assign MessageTypeID in Networking ADR. Define recipient routing: player's client (defender for monster attacks, attacker for player attacks).
-
-*(Completed: `auto-attack-combat.md` — Step 3 updated, OQ-3 closed, 2026-05-24. `design/registry/entities.yaml` — FacingAngle, all constants, and HitResult registered, 2026-05-25.)*
+*(Completed: `networking-wire-protocol.md`, `networking-channel-contract.md` and `networking-message-criticality.md` — `HitCheckResult` definition, MessageTypeID, routing and overflow position, 2026-10-30. `EntityState.facingAngle` was added by the Movement amendment, 2026-05-26. `auto-attack-combat.md` — Step 3 updated, OQ-3 closed, 2026-05-24. `design/registry/entities.yaml` — FacingAngle, all constants, and HitResult registered, 2026-05-25.)*
 
 ## Tuning Knobs
 
 | Knob | Default | Safe Range | What it controls |
 |------|---------|------------|-----------------|
-| `ATTACK_FACING_TOLERANCE_DEG` | `60°` | `[45°, 90°]` | Half-angle of the monster facing arc. Lower = monster misses more on player sidestep; higher = more forgiving. At `45°` combat feels strict; at `90°` the check rarely fires. Pull down if monsters feel too easy to dodge; push to 75° if players report misses when standing still in front of a monster. Do not set below `30°` (too strict for mobile) or above `90°` (hemisphere, effectively omnidirectional). |
+| `ATTACK_FACING_TOLERANCE_DEG` | `45°` | `[45°, 90°]` | Half-angle of the monster facing arc. Lower = monster misses more on player sidestep; higher = harder for the player to dodge. The default sits at the bottom of the safe range; at `90°` the check rarely fires. Raise it if monsters feel too easy to dodge or if players report dodges they did not earn. Do not set below `30°` (too strict for mobile) or above `90°` (hemisphere, effectively omnidirectional). |
 | `AttackRange` (per attack / mob type) | `3.0` | `[0.5, 10.0]` | Horizontal strike radius in world units. Controls how close the attacker must be for the range check to pass. Each monster type or attack type may define its own value. Minimum value is `ATTACK_RANGE_MIN = 0.5` — validated by the caller before invoking `CheckHit`. |
 | `TICK_RATE_HZ` | `20` | `[10, 30]` | Server tick rate — not owned by Hit Detection, but determines how often `CheckHit` is called and the maximum positional staleness window (1 tick = 50ms at 20Hz). Owned by Networking Core; changes here have cascade effects on all server-side systems. |
 
@@ -301,13 +299,13 @@ All ACs are server-side unit tests unless otherwise noted. "Pass" means `CheckHi
 
 **Facing check (F-HD-2):**
 
-**AC-HD-5** — Given attacker at `(0,0,0)` with `capturedForward = (1,0,0)`, target at `(1,0,0)`, `AttackRange = 3.0`, `ATTACK_FACING_TOLERANCE_DEG = 60`: `CheckHit` returns `Hit`. (Directly facing target.)
+**AC-HD-5** — Given attacker at `(0,0,0)` with `capturedForward = (1,0,0)`, target at `(1,0,0)`, `AttackRange = 3.0`, `ATTACK_FACING_TOLERANCE_DEG = 45`: `CheckHit` returns `Hit`. (Directly facing target.)
 
-**AC-HD-6** — Given attacker at `(0,0,0)` with `capturedForward = (1,0,0)`, target at `(0,0,1)` (90° to the side), `AttackRange = 3.0`, `ATTACK_FACING_TOLERANCE_DEG = 60`: `CheckHit` returns `MissFacing`. (`dot = 0.0 < 0.5`)
+**AC-HD-6** — Given attacker at `(0,0,0)` with `capturedForward = (1,0,0)`, target at `(0,0,1)` (90° to the side), `AttackRange = 3.0`, `ATTACK_FACING_TOLERANCE_DEG = 45`: `CheckHit` returns `MissFacing`. (`dot = 0.0 < 0.707`)
 
-**AC-HD-7** — Given attacker at `(0,0,0)` with `capturedForward = (1,0,0)`, target at `(0.866,0,0.5)` (30° off-axis), `AttackRange = 3.0`, `ATTACK_FACING_TOLERANCE_DEG = 60`: `CheckHit` returns `Hit`. (`dot ≈ 0.866 ≥ 0.5`)
+**AC-HD-7** — Given attacker at `(0,0,0)` with `capturedForward = (1,0,0)`, target at `(0.866,0,0.5)` (30° off-axis), `AttackRange = 3.0`, `ATTACK_FACING_TOLERANCE_DEG = 45`: `CheckHit` returns `Hit`. (`dot ≈ 0.866 ≥ 0.707`)
 
-**AC-HD-8** — Given attacker at `(0,0,0)` with `capturedForward = (-1,0,0)` (facing directly away from target), target at `(1,0,0)`, `AttackRange = 3.0`: `CheckHit` returns `MissFacing`. (`dot = -1.0 < 0.5`)
+**AC-HD-8** — Given attacker at `(0,0,0)` with `capturedForward = (-1,0,0)` (facing directly away from target), target at `(1,0,0)`, `AttackRange = 3.0`: `CheckHit` returns `MissFacing`. (`dot = -1.0 < 0.707`)
 
 **Point-blank epsilon guard (CR-HD-3):**
 
