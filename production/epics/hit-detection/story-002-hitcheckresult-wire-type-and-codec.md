@@ -29,7 +29,7 @@
 
 *From the GDDs above, scoped to this story:*
 
-- [ ] `HitCheckResult` readonly struct in `src/Foundation/Networking/WireProtocol/`: `AttackerEntityId`, `TargetEntityId`, `Result` (byte), `ServerTick` (uint); `BodySize = 13`, `BatchSize = 17`.
+- [ ] `HitCheckResult` readonly struct in `src/Foundation/Networking/WireProtocol/`: `AttackerEntityId`, `TargetEntityId`, `Result` (`HitResult`, a byte on the wire; the enum is in `src/Foundation/Networking/HitResult.cs`, Story 001), `ServerTick` (uint); `BodySize = 13`, `BatchSize = 17`.
 - [ ] `MessageTypeId = 0x0306`.
 - [ ] Sub-message write and read in `BatchSubMessageCodec`: field order attacker, target, result, tick, little-endian.
 - [ ] `MessageRoutingRegistry` row: R-U, server to client, body 13, rationale from MCR-2; the architecture routing-table test passes.

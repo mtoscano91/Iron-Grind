@@ -1,7 +1,7 @@
 # Story 001: CheckHit and Constants
 
 > **Epic**: Hit Detection
-> **Status**: Ready
+> **Status**: Ready — `/story-readiness` 2026-10-30: NEEDS WORK (5 gaps) → fixed → Ready
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-26
@@ -29,8 +29,10 @@
 
 *From GDD `design/gdd/hit-detection.md`, scoped to this story:*
 
-- [ ] `HitResult : byte` with `Hit = 0`, `MissOutOfRange = 1`, `MissFacing = 2`.
-- [ ] `CheckHit(attackerPos, targetPos, attackRange, capturedForward)` follows the order range → point-blank guard → facing, Y ignored (AC-HD-1 to AC-HD-10).
+- [ ] `HitResult : byte` in `src/Foundation/Networking/HitResult.cs`, with `Hit = 0`, `MissOutOfRange = 1`, `MissFacing = 2`.
+- [ ] `HitDetector(HitDetectionConfig)` in `src/ServerLogic/HitDetection/` (namespace `IronGrind.HitDetection`, added to `ServerOnlyNamespaces`), with the tolerance cosine cached in the constructor.
+- [ ] Instance method `CheckHit(attackerPos, targetPos, attackRange, capturedForward)` follows the order range → point-blank guard → facing, Y ignored (AC-HD-1 to AC-HD-10).
+- [ ] `HitDetectionConfig` logs one warning when the tolerance is outside 45–90°, does not clamp it, and accepts exactly `FACING_CHECK_DISABLED_DEG` with no warning.
 - [ ] Any in-range target with `capturedForward` derived toward it and `d_sq ≥ POINT_BLANK_EPSILON_SQ` returns `Hit` (AC-HD-14).
 - [ ] `CheckHit` runs with no `EntityState`, ECS world or server service in scope (AC-HD-17).
 - [ ] Constants defined: `ATTACK_FACING_TOLERANCE_DEG` default 45, `POINT_BLANK_EPSILON_SQ` 0.0005, `ATTACK_RANGE_MIN` 0.5, `FACING_CHECK_DISABLED_DEG` 180.
@@ -39,11 +41,12 @@
 
 ## Implementation Notes
 
-- Place the code in `src/ServerLogic/HitDetection/` and add its namespace to `ServerOnlyNamespaces` if the boundary test asks for it.
-- `HitResult` must be reachable by the wire message in `IronGrind.Foundation` (Story 002), or the message carries a plain `byte`. Decide at `/story-readiness`.
-- `ATTACK_FACING_TOLERANCE_DEG` is a tuning knob, but CR-HD-1 fixes a four-argument `CheckHit`. Decide at `/story-readiness` how the tolerance reaches it and how OQ-HD-3 stays open (per-attack override).
+- Follow `DamageCalculator` + `DamageCalculationConfig` for the constructor-injected config. `CheckHit` keeps CR-HD-1's four arguments, and it stays stateless apart from the cached cosine.
+- `HitResult` lives in Foundation, like `DamageType`, because the Story 002 message in `IronGrind.Foundation` cannot reference `IronGrind.ServerLogic`. `CheckHit` itself stays in ServerLogic.
+- OQ-HD-3 (per-attack tolerance) stays open; this design leaves room for an overload later. Do not add one here.
 - `AttackRange` is not validated here (EC-HD-4); callers check `ATTACK_RANGE_MIN`.
-- Facing derives XZ only. Do not read Y from `capturedForward` or the positions when computing `toTarget`.
+- `capturedForward` being unit length with Y = 0 is a caller precondition. Do not normalize or validate it. A zero vector gives `dot = 0`, so `MissFacing` at any tolerance below 90°.
+- `toTarget` is computed from XZ only. Do not read Y from the positions.
 
 ---
 
@@ -69,10 +72,12 @@
 - **AC-HD-10**: target (0.001,0,0), forward (−1,0,0) → `Hit`.
 - **AC-HD-14**: for a fixed set of in-range XZ displacements, forward derived toward the target → `Hit`, never `MissFacing`.
 - **AC-HD-17**: the test calls `CheckHit` with plain vectors and creates no scene, service or `EntityState`.
-- **Facing boundary**: a target exactly 45° off-axis → `Hit`; just beyond it → `MissFacing` (tolerance inclusive, `>=`).
+- **Facing boundary**: tolerance 45, a target 44.9° off-axis → `Hit`; 45.1° off-axis → `MissFacing`.
 - **Epsilon boundary**: `d_sq` just below and just above `POINT_BLANK_EPSILON_SQ`, reversed forward → `Hit`, then `MissFacing`.
-- **Order**: co-located with range 0 returns the range or guard result the rule order gives (EC-HD-4).
-- **Disabled facing**: tolerance `FACING_CHECK_DISABLED_DEG`, forward reversed, in range → `Hit` (EC-HD-7).
+- **Order**: co-located with range 0 → `Hit` (`0 > 0` is false, then the guard fires; EC-HD-4).
+- **Disabled facing and inclusive `>=`**: tolerance `FACING_CHECK_DISABLED_DEG`, forward reversed, in range → `Hit` (`dot = -1`, threshold `-1`; EC-HD-7).
+- **Zero forward**: forward (0,0,0), in range, beyond the point-blank guard, tolerance 45 → `MissFacing`.
+- **Config warning**: tolerance 30 and 120 each log one warning and are kept unclamped; 45, 90 and 180 log none.
 - **No allocation**: `CheckHit` inside `Is.Not.AllocatingGCMemory()`.
 
 ---
