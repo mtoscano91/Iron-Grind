@@ -1,7 +1,7 @@
 # Story 001: CheckHit and Constants
 
 > **Epic**: Hit Detection
-> **Status**: Ready — `/story-readiness` 2026-10-30: NEEDS WORK (5 gaps) → fixed → Ready
+> **Status**: Complete — 2026-10-30 (`/story-done`: COMPLETE WITH NOTES); `/story-readiness` 2026-10-30: NEEDS WORK (5 gaps) → fixed → Ready
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-26
@@ -29,13 +29,13 @@
 
 *From GDD `design/gdd/hit-detection.md`, scoped to this story:*
 
-- [ ] `HitResult : byte` in `src/Foundation/Networking/HitResult.cs`, with `Hit = 0`, `MissOutOfRange = 1`, `MissFacing = 2`.
-- [ ] `HitDetector(HitDetectionConfig)` in `src/ServerLogic/HitDetection/` (namespace `IronGrind.HitDetection`, added to `ServerOnlyNamespaces`), with the tolerance cosine cached in the constructor.
-- [ ] Instance method `CheckHit(attackerPos, targetPos, attackRange, capturedForward)` follows the order range → point-blank guard → facing, Y ignored (AC-HD-1 to AC-HD-10).
-- [ ] `HitDetectionConfig` logs one warning when the tolerance is outside 45–90°, does not clamp it, and accepts exactly `FACING_CHECK_DISABLED_DEG` with no warning.
-- [ ] Any in-range target with `capturedForward` derived toward it and `d_sq ≥ POINT_BLANK_EPSILON_SQ` returns `Hit` (AC-HD-14).
-- [ ] `CheckHit` runs with no `EntityState`, ECS world or server service in scope (AC-HD-17).
-- [ ] Constants defined: `ATTACK_FACING_TOLERANCE_DEG` default 45, `POINT_BLANK_EPSILON_SQ` 0.0005, `ATTACK_RANGE_MIN` 0.5, `FACING_CHECK_DISABLED_DEG` 180.
+- [x] `HitResult : byte` in `src/Foundation/Networking/HitResult.cs`, with `Hit = 0`, `MissOutOfRange = 1`, `MissFacing = 2`.
+- [x] `HitDetector(HitDetectionConfig)` in `src/ServerLogic/HitDetection/` (namespace `IronGrind.HitDetection`, added to `ServerOnlyNamespaces`), with the tolerance cosine cached in the constructor.
+- [x] Instance method `CheckHit(attackerPos, targetPos, attackRange, capturedForward)` follows the order range → point-blank guard → facing, Y ignored (AC-HD-1 to AC-HD-10).
+- [x] `HitDetectionConfig` logs one warning when the tolerance is outside 45–90°, does not clamp it, and accepts exactly `FACING_CHECK_DISABLED_DEG` with no warning.
+- [x] Any in-range target with `capturedForward` derived toward it and `d_sq ≥ POINT_BLANK_EPSILON_SQ` returns `Hit` (AC-HD-14).
+- [x] `CheckHit` runs with no `EntityState`, ECS world or server service in scope (AC-HD-17).
+- [x] Constants defined: `ATTACK_FACING_TOLERANCE_DEG` default 45, `POINT_BLANK_EPSILON_SQ` 0.0005, `ATTACK_RANGE_MIN` 0.5, `FACING_CHECK_DISABLED_DEG` 180.
 
 ---
 
@@ -87,7 +87,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/HitDetection/HitDetection_CheckHit_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — `tests/EditMode/HitDetection/HitDetection_CheckHit_tests.cs`, 42 cases, all passing (EditMode 5473 / 5344 passed / 0 failed / 129 skipped, 2026-10-30)
 
 ---
 
@@ -95,3 +95,19 @@
 
 - Depends on: None
 - Unlocks: Story 004
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-10-30
+**Criteria**: 7/7 passing
+**Deviations** (advisory):
+1. `HitDetectionConfig` throws on NaN, infinity or a tolerance outside (0, 180], as `DamageCalculationConfig` does.
+2. The story's `ATTACK_FACING_TOLERANCE_DEG` is `ATTACK_FACING_TOLERANCE_DEG_DEFAULT`, with `_SAFE_MIN` and `_SAFE_MAX`.
+3. The 180° sentinel uses a `_facingDisabled` flag, because a reversed diagonal `dot` can round below −1 (code review).
+4. Tolerance comes from a constructor-injected config with defaults, not an external data file yet; no production code constructs `HitDetector` until Auto-Attack.
+5. `TR-hd-001` to `004` are not in the TR registry; checked against the GDD.
+**Test Evidence**: Logic: `tests/EditMode/HitDetection/HitDetection_CheckHit_tests.cs`
+**Code Review**: Complete (CHANGES REQUIRED → applied; lean, QL-TEST-COVERAGE and LP-CODE-REVIEW skipped)
+**Tech debt**: None logged

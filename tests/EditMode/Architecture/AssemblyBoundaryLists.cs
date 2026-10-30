@@ -159,6 +159,7 @@ namespace IronGrind.Tests.EditMode.Architecture
             "IronGrind.Networking.DisconnectReason",       // consumer (planned): client message handlers (wire enum)
             "IronGrind.Networking.DisconnectType",         // consumer (planned): client message handlers (wire enum)
             "IronGrind.Networking.EntityType",             // consumer (planned): client zone snapshot reader (wire enum)
+            "IronGrind.Networking.HitResult",              // consumer (planned): client message handlers (wire enum)
             "IronGrind.Networking.JoinRejectedReason",     // consumer (planned): client zone entry flow, rejection message (wire enum)
             "IronGrind.Networking.MessageDirection",       // consumer (planned): client message handlers (wire enum)
             "IronGrind.Networking.MessageDeliveryContext", // consumer (planned): client message handlers (wire enum)
@@ -200,6 +201,7 @@ namespace IronGrind.Tests.EditMode.Architecture
         internal static readonly string[] ServerOnlyNamespaces =
         {
             "IronGrind.DamageCalculation", // Damage Calculation Story 006
+            "IronGrind.HitDetection",      // Hit Detection Story 001
             "IronGrind.LootTableSystem",   // Loot Table Story 014
             "IronGrind.NpcInteraction",    // Enhancement Story 013
             "IronGrind.Randomness",        // Damage Calculation Story 003 (ADR-013)
