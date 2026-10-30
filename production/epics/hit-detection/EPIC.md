@@ -78,4 +78,4 @@ This epic is complete when:
 
 ## Next Step
 
-Run `/story-readiness production/epics/hit-detection/story-002-hitcheckresult-wire-type-and-codec.md`.
+Run `/dev-story production/epics/hit-detection/story-003-per-tick-ru-batch-outbound-step.md`.
