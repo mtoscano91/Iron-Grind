@@ -110,6 +110,17 @@ namespace IronGrind.Networking
                            "drops (MCR-4) — the R-U copy itself carries no unrecoverable economic authority."));
 
             Add(new MessageRoutingEntry(
+                messageTypeId: HitCheckResult.MessageTypeId,
+                messageName: nameof(HitCheckResult),
+                pillars: DesignPillar.RhythmMastery,
+                channel: NetworkChannel.ReliableUnordered,
+                direction: MessageDirection.ServerToOwningClient,
+                deliveryContext: MessageDeliveryContext.ReliableUnorderedBatch,
+                isMcr3Exception: false,
+                rationale: "Hit/miss cue for the player involved; low priority, a dropped result loses that swing's cue only " +
+                           "(MCR-2, CR-HD-10). For monster attacks the defender is the owner of their own entity."));
+
+            Add(new MessageRoutingEntry(
                 messageTypeId: EntityHealthUpdate.MessageTypeId,
                 messageName: nameof(EntityHealthUpdate),
                 pillars: DesignPillar.RhythmMastery | DesignPillar.SocialSignals,

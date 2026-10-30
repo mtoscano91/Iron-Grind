@@ -4,15 +4,16 @@ namespace IronGrind.Networking
 {
     /// <summary>
     /// An opaque, already-serialized R-U batch sub-message supplied by the caller for one of the
-    /// seven <see cref="RUBatchCategory"/> categories that have no concrete wire schema in this
-    /// codebase yet (<see cref="RUBatchCategory.EntityHealthUpdate"/>,
+    /// eight <see cref="RUBatchCategory"/> categories the writer treats as opaque
+    /// (<see cref="RUBatchCategory.EntityHealthUpdate"/>,
     /// <see cref="RUBatchCategory.PartyMemberHealthUpdate"/>, <see cref="RUBatchCategory.SelfPositionUpdate"/>,
     /// <see cref="RUBatchCategory.SkillCastResult"/>, <see cref="RUBatchCategory.SkillCooldownUpdate"/>,
-    /// <see cref="RUBatchCategory.LootBidUpdate"/>, <see cref="RUBatchCategory.ConnectionQualityUpdate"/>).
+    /// <see cref="RUBatchCategory.HitCheckResult"/>, <see cref="RUBatchCategory.LootBidUpdate"/>,
+    /// <see cref="RUBatchCategory.ConnectionQualityUpdate"/>).
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>Why opaque payloads:</b> the systems that own these seven categories (Skill System,
+    /// <b>Why opaque payloads:</b> most systems that own these categories (Skill System,
     /// Party System, Loot Table System, Client-Side Prediction, relevance filtering) do not exist
     /// in this codebase yet — the same scoping discipline <see cref="PriorityPathQueue{T}"/>
     /// applies to its opaque <c>T</c> payload. Rather than inventing speculative schemas for

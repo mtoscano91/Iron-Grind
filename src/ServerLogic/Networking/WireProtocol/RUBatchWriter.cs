@@ -34,7 +34,8 @@ namespace IronGrind.Networking
     /// <b>Category-level overflow eviction</b> (applied second, only if the batch — including the
     /// already-bounded DamageEvent set — still exceeds <see cref="MAX_MESSAGE_BODY_BYTES"/>):
     /// whole categories are evicted, lowest priority first, in this order until the batch fits:
-    /// <see cref="RUBatchCategory.LootBidUpdate"/> → <see cref="RUBatchCategory.SkillCooldownUpdate"/>
+    /// <see cref="RUBatchCategory.LootBidUpdate"/> → <see cref="RUBatchCategory.HitCheckResult"/>
+    /// → <see cref="RUBatchCategory.SkillCooldownUpdate"/>
     /// → <see cref="RUBatchCategory.GoldSyncEvent"/> → <see cref="RUBatchCategory.SkillCastResult"/>
     /// → <see cref="RUBatchCategory.SelfPositionUpdate"/> → <see cref="RUBatchCategory.EntityHealthUpdate"/>
     /// → <see cref="RUBatchCategory.PartyMemberHealthUpdate"/> → <see cref="RUBatchCategory.ConnectionQualityUpdate"/>.
@@ -63,7 +64,7 @@ namespace IronGrind.Networking
     /// dedicated typed list parameters — <i>not</i> via <paramref name="otherSubMessages"/> below.
     /// <see cref="Write"/> throws <see cref="ArgumentException"/> if a <see cref="PendingSubMessage"/>
     /// tagged with either of those two categories is found in <c>otherSubMessages</c>. The
-    /// remaining seven categories flow through <see cref="PendingSubMessage"/> as opaque,
+    /// remaining eight categories flow through <see cref="PendingSubMessage"/> as opaque,
     /// already-serialized payloads (see <see cref="PendingSubMessage"/> remarks) — no concrete
     /// schema is invented for systems not yet implemented in this codebase (Skill System, Party
     /// System, Loot Table System, Client-Side Prediction, relevance filtering).
@@ -121,6 +122,9 @@ namespace IronGrind.Networking
         /// </summary>
         public const int MaxSingleOpaqueSubMessagePayloadBytes = MAX_MESSAGE_BODY_BYTES - BatchHeaderCodec.HeaderSize - BatchSubMessageFraming.SubMessageHeaderSize;
 
+        /// <summary>Size of the per-category arrays: highest <see cref="RUBatchCategory"/> value (HitCheckResult = 9) plus one.</summary>
+        private const int CategoryCount = (int)RUBatchCategory.HitCheckResult + 1;
+
         private static readonly RUBatchCategory[] WriteOrder =
         {
             RUBatchCategory.DamageEvent,
@@ -130,6 +134,7 @@ namespace IronGrind.Networking
             RUBatchCategory.SkillCastResult,
             RUBatchCategory.GoldSyncEvent,
             RUBatchCategory.SkillCooldownUpdate,
+            RUBatchCategory.HitCheckResult,
             RUBatchCategory.LootBidUpdate,
             RUBatchCategory.ConnectionQualityUpdate,
         };
@@ -137,6 +142,7 @@ namespace IronGrind.Networking
         private static readonly RUBatchCategory[] DropOrder =
         {
             RUBatchCategory.LootBidUpdate,
+            RUBatchCategory.HitCheckResult,
             RUBatchCategory.SkillCooldownUpdate,
             RUBatchCategory.GoldSyncEvent,
             RUBatchCategory.SkillCastResult,
@@ -167,7 +173,7 @@ namespace IronGrind.Networking
         /// <see langword="null"/> (treated as empty).
         /// </param>
         /// <param name="otherSubMessages">
-        /// This tick's opaque sub-messages for the remaining seven categories (see class
+        /// This tick's opaque sub-messages for the remaining eight categories (see class
         /// remarks) — must not contain any entry tagged <see cref="RUBatchCategory.DamageEvent"/>
         /// or <see cref="RUBatchCategory.GoldSyncEvent"/>. May be <see langword="null"/> (treated
         /// as empty).
@@ -216,8 +222,8 @@ namespace IronGrind.Networking
                     $"droppedCount={droppedCount} — holding at most {DamageEventIntraclassCap} DamageEvent entries per CR-NET-7.6, oldest dropped first.");
             }
 
-            // Step 2 — bucket the seven opaque categories, preserving each category's relative input order.
-            var buckets = new List<PendingSubMessage>[9];
+            // Step 2 — bucket the eight opaque categories, preserving each category's relative input order.
+            var buckets = new List<PendingSubMessage>[CategoryCount];
             for (int i = 0; i < otherSubMessages.Count; i++)
             {
                 PendingSubMessage msg = otherSubMessages[i];
@@ -245,10 +251,10 @@ namespace IronGrind.Networking
             }
 
             // Step 3 — per-category byte totals, in write order.
-            var categoryBytes = new int[9];
+            var categoryBytes = new int[CategoryCount];
             categoryBytes[(int)RUBatchCategory.DamageEvent] = damageEventCount * DamageEvent.BatchSize;
             categoryBytes[(int)RUBatchCategory.GoldSyncEvent] = goldSyncEvents.Count * GoldSyncEvent.BatchSize;
-            for (int c = 1; c <= 8; c++)
+            for (int c = 1; c < CategoryCount; c++)
             {
                 if (c == (int)RUBatchCategory.GoldSyncEvent)
                 {
@@ -269,13 +275,13 @@ namespace IronGrind.Networking
             }
 
             int totalBytes = BatchHeaderCodec.HeaderSize;
-            for (int c = 0; c <= 8; c++)
+            for (int c = 0; c < CategoryCount; c++)
             {
                 totalBytes += categoryBytes[c];
             }
 
             // Step 4 — category-level eviction (atomic per category), lowest priority first, until it fits.
-            var evicted = new bool[9];
+            var evicted = new bool[CategoryCount];
             bool anyCategoryDropped = false;
             for (int d = 0; d < DropOrder.Length && totalBytes > MAX_MESSAGE_BODY_BYTES; d++)
             {
@@ -309,7 +315,7 @@ namespace IronGrind.Networking
                 subMessageCount += goldSyncEvents.Count;
             }
 
-            for (int c = 1; c <= 8; c++)
+            for (int c = 1; c < CategoryCount; c++)
             {
                 if (c == (int)RUBatchCategory.GoldSyncEvent || evicted[c] || buckets[c] == null)
                 {

@@ -16,7 +16,8 @@ namespace IronGrind.Networking
     /// </para>
     /// <para>
     /// <b>Substitute-and-continue</b> (<see cref="DecodeDamageType"/>, <see cref="DecodeDisconnectReason"/>,
-    /// <see cref="DecodeDisconnectType"/>, <see cref="DecodeGoldTransactionReason"/>): an
+    /// <see cref="DecodeDisconnectType"/>, <see cref="DecodeGoldTransactionReason"/>,
+    /// <see cref="DecodeHitResult"/>): an
     /// out-of-range byte does <i>not</i> drop the message. It logs an anomaly and returns a
     /// documented fallback value, and the caller proceeds with that value as if it were
     /// legitimately received (CR-NET-7.9). <see cref="DecodeGoldTransactionReason"/> is not one of
@@ -27,6 +28,11 @@ namespace IronGrind.Networking
     /// the event on an unrecognized reason." This method exists solely to give that
     /// already-documented receiver contract the same guarded, testable form as its CR-NET-7.9
     /// siblings.
+    /// </para>
+    /// <para>
+    /// <see cref="DecodeHitResult"/> likewise has no fallback listed in CR-NET-7.9; the value is
+    /// decided by Hit Detection Story 002: <see cref="HitResult.MissOutOfRange"/>, so a corrupt
+    /// byte can never show a false hit.
     /// </para>
     /// <para>
     /// <b>Reject</b> (<see cref="TryValidateStatID"/>): an out-of-range byte must cause the whole
@@ -87,6 +93,36 @@ namespace IronGrind.Networking
             }
 
             return (DamageType)rawByte;
+        }
+
+        // ---------------------------------------------------------------------------------------
+        // HitResult — contiguous range 0..2, substitute MissOutOfRange=1 (Hit Detection Story 002).
+        // ---------------------------------------------------------------------------------------
+
+        private const byte HitResultMaxValue = (byte)HitResult.MissFacing;
+
+        /// <summary>
+        /// Range-checks <paramref name="rawByte"/> against the declared <see cref="HitResult"/>
+        /// range (0-2) and casts. An out-of-range byte substitutes <see cref="HitResult.MissOutOfRange"/>
+        /// and logs an anomaly; the message is <i>not</i> dropped. A miss is substituted, never
+        /// <see cref="HitResult.Hit"/>, so a corrupt message cannot show a false hit.
+        /// </summary>
+        /// <example>
+        /// <code>
+        /// HitResult result = WireEnumCodec.DecodeHitResult(rawByte: 255, messageTypeId: 0x0306);
+        /// // result == HitResult.MissOutOfRange; anomaly logged.
+        /// </code>
+        /// </example>
+        public static HitResult DecodeHitResult(byte rawByte, ushort messageTypeId)
+        {
+            if (rawByte > HitResultMaxValue)
+            {
+                Debug.LogWarning($"[WireEnumCodec] DecodeHitResult: received out-of-range byte {rawByte} " +
+                    $"for messageTypeId={messageTypeId} — substituting MissOutOfRange (1) and continuing (CR-NET-7.9 style).");
+                return HitResult.MissOutOfRange;
+            }
+
+            return (HitResult)rawByte;
         }
 
         // ---------------------------------------------------------------------------------------

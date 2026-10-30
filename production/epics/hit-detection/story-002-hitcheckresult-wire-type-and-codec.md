@@ -1,7 +1,7 @@
 # Story 002: HitCheckResult Wire Type and Codec
 
 > **Epic**: Hit Detection
-> **Status**: Ready — `/story-readiness` 2026-10-30: NEEDS WORK (5 gaps) → fixed → Ready
+> **Status**: Complete — `/story-done` 2026-10-30: COMPLETE WITH NOTES
 > **Layer**: Core (codec in Foundation)
 > **Type**: Logic
 > **Manifest Version**: 2026-10-26
@@ -76,7 +76,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/Networking/HitCheckResult_Codec_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created, 20/20 passing (EditMode run 2026-10-30)
 
 ---
 
@@ -84,3 +84,12 @@
 
 - Depends on: None
 - Unlocks: Story 003, Story 004
+
+---
+
+## Completion Notes
+**Completed**: 2026-10-30
+**Criteria**: 7/7 passing
+**Deviations**: Advisory only: `TR-hd-005` is not in `tr-registry.yaml`, checked against the GDDs instead. `PendingSubMessage.cs` touched outside the listed scope (comment-only, category list).
+**Test Evidence**: Logic: `tests/EditMode/Networking/HitCheckResult_Codec_tests.cs`, 20/20; EditMode 5493 / 5364 passed / 0 failed / 129 skipped
+**Code Review**: Complete: APPROVED WITH SUGGESTIONS, all applied. QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean)

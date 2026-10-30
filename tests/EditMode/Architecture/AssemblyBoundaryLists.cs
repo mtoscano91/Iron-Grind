@@ -86,6 +86,7 @@ namespace IronGrind.Tests.EditMode.Architecture
             "IronGrind.Networking.EntityPositionUpdate",        // consumer (planned): client message handlers (wire schema)
             "IronGrind.Networking.EntityHealthUpdate",          // consumer (planned): client message handlers (wire schema)
             "IronGrind.Networking.PartyMemberHealthUpdate",     // consumer (planned): client message handlers (wire schema)
+            "IronGrind.Networking.HitCheckResult",              // consumer (planned): client message handlers (wire schema)
             "IronGrind.Networking.HeartbeatMessage",            // consumer (planned): client message handlers (wire schema)
             "IronGrind.Networking.SetTarget",                   // consumer (planned): client message handlers (wire schema)
             "IronGrind.Networking.MovementIntentMessage",       // consumer (planned): client MovementIntentProducer (Movement Story 012) / server intake (Story 004) (wire schema)

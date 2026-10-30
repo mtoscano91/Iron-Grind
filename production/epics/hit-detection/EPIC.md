@@ -64,7 +64,7 @@ Applied to `hit-detection.md`, `enemy-ai.md`, `networking-wire-protocol.md`, `ne
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
 | 001 | [CheckHit and constants](story-001-checkhit-and-constants.md) | Logic | Complete | ADR-012 |
-| 002 | [HitCheckResult wire type and codec](story-002-hitcheckresult-wire-type-and-codec.md) | Logic | Ready | ADR-004 |
+| 002 | [HitCheckResult wire type and codec](story-002-hitcheckresult-wire-type-and-codec.md) | Logic | Complete | ADR-004 |
 | 003 | [Per-tick R-U batch outbound step](story-003-per-tick-ru-batch-outbound-step.md) | Integration | Ready | ADR-014, ADR-004 |
 | 004 | [Result emission and player routing](story-004-result-emission-and-player-routing.md) | Integration | Ready | ADR-010, ADR-014 |
 

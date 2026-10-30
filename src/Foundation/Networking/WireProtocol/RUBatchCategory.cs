@@ -1,9 +1,12 @@
 namespace IronGrind.Networking
 {
     /// <summary>
-    /// The nine sub-message categories that make up the Path 2a Reliable-Unordered (R-U) batch
-    /// packet (CR-NET-7.7). Declared in <b>canonical write order</b> — the order
-    /// <c>RUBatchWriter</c> serializes categories into a fresh batch, highest priority
+    /// The ten sub-message categories that make up the Path 2a Reliable-Unordered (R-U) batch
+    /// packet (CR-NET-7.7). Values 0-8 are declared in <b>canonical write order</b>;
+    /// <c>HitCheckResult</c> (9) was appended later to keep existing values stable, so its
+    /// write position (between <see cref="SkillCooldownUpdate"/> and <see cref="LootBidUpdate"/>)
+    /// is set by <c>RUBatchWriter</c>'s write-order table, not by its numeric value. That table is
+    /// the order <c>RUBatchWriter</c> serializes categories into a fresh batch, highest priority
     /// first (CR-NET-7.7: "Writing highest-priority sub-messages first prevents buffer exhaustion
     /// from lower-priority messages blocking critical events").
     /// </summary>
@@ -23,11 +26,11 @@ namespace IronGrind.Networking
     /// by its own separate intra-class overflow policy instead (see
     /// <c>RUBatchWriter</c> remarks). Concrete typed schemas exist in this codebase only
     /// for <see cref="DamageEvent"/> and <see cref="GoldSyncEvent"/> (both owned by
-    /// <c>networking-wire-protocol.md</c> itself). The remaining seven categories belong to
-    /// systems not yet implemented in this codebase (Skill System, Party System, Loot Table
-    /// System, Client-Side Prediction) and are carried generically as opaque, already-serialized
-    /// payloads via <c>PendingSubMessage</c> until those systems' own stories define
-    /// concrete schemas.
+    /// <c>networking-wire-protocol.md</c> itself). The remaining eight categories are carried
+    /// generically as opaque, already-serialized payloads via <c>PendingSubMessage</c>. Most belong
+    /// to systems not yet implemented in this codebase (Skill System, Party System, Loot Table
+    /// System, Client-Side Prediction) until those systems' own stories define concrete schemas;
+    /// <see cref="IronGrind.Networking.HitCheckResult"/> has its schema and takes the same opaque path.
     /// </para>
     /// </remarks>
     /// <example>
@@ -63,5 +66,8 @@ namespace IronGrind.Networking
 
         /// <summary>OWL-threshold-crossing connection quality notice (B-NP-4 — not yet implemented). Carried via <c>PendingSubMessage</c>.</summary>
         ConnectionQualityUpdate = 8,
+
+        /// <summary>Hit/miss outcome of one <c>CheckHit</c> call, sent to the player involved (CR-HD-10). Appended after <see cref="ConnectionQualityUpdate"/> so existing values do not change; written between <see cref="SkillCooldownUpdate"/> and <see cref="LootBidUpdate"/>. Carried via <c>PendingSubMessage</c>; schema: <see cref="IronGrind.Networking.HitCheckResult"/>.</summary>
+        HitCheckResult = 9,
     }
 }

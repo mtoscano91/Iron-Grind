@@ -380,6 +380,73 @@ namespace IronGrind.Networking
         }
 
         // ---------------------------------------------------------------------------------------
+        // HitCheckResult (Hit Detection Story 002)
+        // ---------------------------------------------------------------------------------------
+
+        /// <summary>Writes a full <see cref="HitCheckResult"/> sub-message (header + body) to <paramref name="destination"/> at offset 0. Returns <see cref="HitCheckResult.BatchSize"/> (17).</summary>
+        /// <example>
+        /// <code>
+        /// int written = BatchSubMessageCodec.WriteHitCheckResult(buffer, in hitCheckResult);
+        /// </code>
+        /// </example>
+        public static int WriteHitCheckResult(Span<byte> destination, in HitCheckResult hitCheckResult)
+        {
+            int offset = BatchSubMessageFraming.WriteHeader(destination, HitCheckResult.BodySize, HitCheckResult.MessageTypeId);
+            offset += WriteHitCheckResultBody(destination.Slice(offset), in hitCheckResult);
+            return offset;
+        }
+
+        /// <summary>
+        /// Writes only the <see cref="HitCheckResult.BodySize"/>-byte (13) body — attacker, target,
+        /// result, server tick — excluding the 4-byte sub-message header. Used to fill a
+        /// <c>PendingSubMessage</c> payload, as <see cref="WriteEntityHealthUpdateBody"/> does.
+        /// </summary>
+        /// <returns><see cref="HitCheckResult.BodySize"/> (13), always.</returns>
+        public static int WriteHitCheckResultBody(Span<byte> destination, in HitCheckResult hitCheckResult)
+        {
+            WireIdCodec.SerializeEntityId(destination.Slice(0, 4), hitCheckResult.AttackerEntityId, HitCheckResult.MessageTypeId, "attackerEntityId");
+            WireIdCodec.SerializeEntityId(destination.Slice(4, 4), hitCheckResult.TargetEntityId, HitCheckResult.MessageTypeId, "targetEntityId");
+            destination[8] = (byte)hitCheckResult.Result;
+            BinaryPrimitives.WriteUInt32LittleEndian(destination.Slice(9, 4), hitCheckResult.ServerTick);
+            return HitCheckResult.BodySize;
+        }
+
+        /// <summary>
+        /// Attempts to decode a <see cref="HitCheckResult"/> sub-message from <paramref name="source"/>.
+        /// Returns <see langword="false"/> if <paramref name="source"/> is shorter than
+        /// <see cref="HitCheckResult.BatchSize"/>. <c>result</c> is decoded via
+        /// <see cref="WireEnumCodec.DecodeHitResult"/> (substitute-and-continue on a bad byte).
+        /// </summary>
+        /// <example>
+        /// <code>
+        /// bool ok = BatchSubMessageCodec.TryReadHitCheckResult(buffer, out HitCheckResult decoded, out int bytesRead);
+        /// </code>
+        /// </example>
+        public static bool TryReadHitCheckResult(ReadOnlySpan<byte> source, out HitCheckResult hitCheckResult, out int bytesRead)
+        {
+            if (source.Length < HitCheckResult.BatchSize || !BatchSubMessageFraming.TryReadHeader(source, out _, out ushort messageTypeId))
+            {
+                hitCheckResult = default;
+                bytesRead = 0;
+                return false;
+            }
+
+            int offset = BatchSubMessageFraming.SubMessageHeaderSize;
+            EntityID attacker = WireIdCodec.DeserializeEntityId(source.Slice(offset, 4));
+            offset += 4;
+            EntityID target = WireIdCodec.DeserializeEntityId(source.Slice(offset, 4));
+            offset += 4;
+            HitResult result = WireEnumCodec.DecodeHitResult(source[offset], messageTypeId);
+            offset += 1;
+            uint serverTick = BinaryPrimitives.ReadUInt32LittleEndian(source.Slice(offset, 4));
+            offset += 4;
+
+            hitCheckResult = new HitCheckResult(attacker, target, result, serverTick);
+            bytesRead = offset;
+            return true;
+        }
+
+        // ---------------------------------------------------------------------------------------
         // PartyMemberHealthUpdate (Story 028)
         // ---------------------------------------------------------------------------------------
 
