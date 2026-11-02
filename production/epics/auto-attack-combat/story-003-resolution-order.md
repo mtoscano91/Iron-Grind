@@ -10,7 +10,7 @@
 ## Context
 
 **GDD**: `design/gdd/auto-attack-combat.md` — Rule 10, Rule 11, F-2, F-3, AC-09 to AC-11, AC-20, EC-5 to EC-8, EC-10, EC-17, EC-19; `design/gdd/hit-detection.md` — CR-HD-10, AC-HD-11a, AC-HD-12, AC-HD-13
-**Requirement**: `TR-aa-003`, and the miss-streak part of `TR-aa-009` (placeholders)
+**Requirement**: `TR-aa-003`, and the miss-streak part of `TR-aa-009`
 
 **ADR Governing Implementation**: ADR-012; ADR-014; ADR-013: Server Random Provider
 **ADR Decision Summary**: state changes apply in the request step, before the fire check (EC-8); the crit roll stays inside `DamageCalculator.Calculate`, one draw per call.

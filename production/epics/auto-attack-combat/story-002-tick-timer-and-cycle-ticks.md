@@ -10,7 +10,7 @@
 ## Context
 
 **GDD**: `design/gdd/auto-attack-combat.md` — Rules 5–7, F-1, AC-01 to AC-03, EC-11 to EC-18
-**Requirement**: `TR-aa-002` (placeholder)
+**Requirement**: `TR-aa-002`
 
 **ADR Governing Implementation**: ADR-014: Inbound Request Dispatch and Tick Order
 **ADR Decision Summary**: game systems that tick run in step 3 of `ZoneTickPipeline`, phase 3, in an order the composition root lists.
@@ -44,6 +44,7 @@
 - Story 001 already implements `IZoneSimulationStep` and advances the timer by 1 per `Run`. This story adds `CycleTicks` and the ready check to `Run`. Composition wiring is Story 006.
 - `AttackSpeedMultiplier` is read through a small injected stat interface that `CharacterStats.GetEffectiveStatFloat` can back. Not cached between cycles.
 - EC-15 requires the value to be sampled when a cycle starts and held for that cycle. Sample on activation and on every timer reset.
+- Performance: runs inside the 50 ms server tick (ADR-014). `Run` is O(MaxPlayers): one array pass, one integer compare per active slot, and at most one stat read per player per cycle start. It allocates nothing (allocation test below). No separate frame budget.
 - The ready check only reports here. This story exposes a seam that a test can count; Story 003 replaces it with resolution and owns the reset after a fire.
 
 ---

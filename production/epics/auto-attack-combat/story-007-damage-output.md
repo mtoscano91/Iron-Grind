@@ -10,7 +10,7 @@
 ## Context
 
 **GDD**: `design/gdd/networking-channel-contract.md` — `DamageEvent`, `SelfDamageEvent`, AC-CCR-04; `design/gdd/networking-message-criticality.md` — AC-MCR-02
-**Requirement**: `TR-aa-009` (placeholder)
+**Requirement**: `TR-aa-009`
 
 **ADR Governing Implementation**: ADR-004: Networking — NGO Substrate
 **ADR Decision Summary**: project messages use the project envelope and channels. `DamageEvent` is R-U, written first in the batch; `SelfDamageEvent` is R-OD.

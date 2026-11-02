@@ -10,7 +10,7 @@
 ## Context
 
 **GDD**: `design/gdd/auto-attack-combat.md` — Rules 1–4, 23, States and Transitions, AC-12 to AC-15, EC-1 to EC-4, EC-9, EC-27 to EC-30
-**Requirement**: `TR-aa-001` (placeholder; `tr-registry.yaml` has no entries for this GDD)
+**Requirement**: `TR-aa-001`
 
 **ADR Governing Implementation**: ADR-012: Server/Client Assembly Boundary; ADR-014: Inbound Request Dispatch and Tick Order
 **ADR Decision Summary**: the system lives in `IronGrind.ServerLogic` from its first story; game logic runs on the tick, and request-driven state changes apply before the simulation step.

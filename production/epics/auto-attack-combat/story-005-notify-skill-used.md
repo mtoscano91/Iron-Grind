@@ -10,7 +10,7 @@
 ## Context
 
 **GDD**: `design/gdd/auto-attack-combat.md` — Rules 11–15, AC-04, AC-05, EC-21, EC-24
-**Requirement**: `TR-aa-005` (placeholder)
+**Requirement**: `TR-aa-005`
 
 **ADR Governing Implementation**: ADR-010: Event and Messaging Architecture
 **ADR Decision Summary**: Skill System calls Combat directly on an injected interface.

@@ -10,7 +10,7 @@
 ## Context
 
 **GDD**: `design/gdd/auto-attack-combat.md` — Rule 9; `design/gdd/networking-core.md`; `design/gdd/networking-channel-contract.md`; `design/gdd/networking-message-criticality.md`
-**Requirement**: `TR-aa-007` (placeholder)
+**Requirement**: `TR-aa-007`
 
 **ADR Governing Implementation**: ADR-004: Networking — NGO Substrate; ADR-014 Decision 6
 **ADR Decision Summary**: `CycleTimerBroadcast` is U-U in its own CycleBroadcast packet, never merged with position data, flushed in the outbound step.

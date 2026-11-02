@@ -10,7 +10,7 @@
 ## Context
 
 **GDD**: `design/gdd/auto-attack-combat.md` — Rule 10 Step 3; `design/gdd/leveling-system.md` — CR-1.1, OQ-LS-7
-**Requirement**: `TR-aa-004` (placeholder)
+**Requirement**: `TR-aa-004`
 
 **ADR Governing Implementation**: ADR-010: Event and Messaging Architecture
 **ADR Decision Summary**: damage and XP are direct calls (note 2026-10-30); `OnMobDied` is the Tier 2 event for loot, party kill credit and respawn. Subscribers use named methods, never lambdas.

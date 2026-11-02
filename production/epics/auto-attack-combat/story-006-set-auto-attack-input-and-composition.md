@@ -10,7 +10,7 @@
 ## Context
 
 **GDD**: `design/gdd/auto-attack-combat.md` — Rule 1, EC-8, AC-16; `design/gdd/networking-relevance-filter.md` — RFR-3a
-**Requirement**: `TR-aa-006` (placeholder)
+**Requirement**: `TR-aa-006`
 
 **ADR Governing Implementation**: ADR-014: Inbound Request Dispatch and Tick Order; ADR-004: Networking — NGO Substrate
 **ADR Decision Summary**: every client request goes through the dispatcher. The story that adds a client→server type adds its `MessageRoutingRegistry` row, its row in the table of ADR-014 Decision 1 and its registration together.

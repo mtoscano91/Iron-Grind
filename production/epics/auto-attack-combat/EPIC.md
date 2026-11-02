@@ -37,7 +37,7 @@ Inherited from Hit Detection: AC-HD-12, AC-HD-13 (no damage on a miss), AC-HD-18
 
 ## GDD Requirements
 
-TR-IDs below are placeholders; `docs/architecture/tr-registry.yaml` has no entries for this GDD. No requirement needs a new ADR.
+TR-IDs below are registered in `docs/architecture/tr-registry.yaml` (2026-11-02). No requirement needs a new ADR.
 
 | TR-ID | Requirement | ADR Coverage |
 |-------|-------------|--------------|

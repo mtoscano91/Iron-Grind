@@ -25,7 +25,7 @@
 # STATUS VALUES: active | deprecated | superseded-by: TR-[system]-NNN
 
 version: 2
-last_updated: "2026-10-15"  # 107 TR-IDs registered from the 13 EPIC.md tables (/architecture-review, docs/architecture/architecture-review-2026-10-15-tr-registry.md); 7 carry a revised date
+last_updated: "2026-11-02"  # 2026-11-02: TR-aa-001..009 added (Auto-Attack Combat EPIC.md table, by hand at user request). 2026-10-15: 107 TR-IDs registered from the 13 EPIC.md tables (/architecture-review, docs/architecture/architecture-review-2026-10-15-tr-registry.md); 7 carry a revised date
 
 requirements:
   # --- auth: design/gdd/authentication.md (production/epics/authentication/EPIC.md) ---
@@ -800,5 +800,69 @@ requirements:
     gdd: design/gdd/status-effects.md
     requirement: "The wire protocol does not yet define buff-state broadcast messages; client display of buff icons/durations is a provisional dependency on future networking additions, not resolved in this GDD"
     created: 2026-08-11
+    revised: ""
+    status: active
+  # --- aa: design/gdd/auto-attack-combat.md (production/epics/auto-attack-combat/EPIC.md) ---
+  - id: TR-aa-001
+    system: aa
+    gdd: design/gdd/auto-attack-combat.md
+    requirement: "Auto-attack is active only while a valid target is selected and the toggle is ON; activation resets the action timer to 0, and target loss, deselect or toggle OFF enters IDLE with the timer frozen (Rules 1-4, 23, States and Transitions, AC-12 to AC-15)"
+    created: 2026-11-02
+    revised: ""
+    status: active
+  - id: TR-aa-002
+    system: aa
+    gdd: design/gdd/auto-attack-combat.md
+    requirement: "`_actionTimer` counts whole server ticks, +1 per tick, never reads a clock; `CycleTicks = ceil((1.0 / max(AttackSpeedMultiplier, 0.5)) × TICK_RATE_HZ)`, and a multiplier change applies from the next cycle (Rules 5-7, F-1, AC-01 to AC-03, EC-11 to EC-18)"
+    created: 2026-11-02
+    revised: ""
+    status: active
+  - id: TR-aa-003
+    system: aa
+    gdd: design/gdd/auto-attack-combat.md
+    requirement: "When ready, resolution follows Rule 10's order (prohibition, range, hit check, damage) and at most one auto fires per player per tick; a ready auto that cannot fire retries every tick (Rule 10, F-3, AC-09 to AC-11, AC-16, AC-20, AC-HD-12, AC-HD-13)"
+    created: 2026-11-02
+    revised: ""
+    status: active
+  - id: TR-aa-004
+    system: aa
+    gdd: design/gdd/auto-attack-combat.md
+    requirement: "A killing auto runs the kill sequence by direct calls (XP award) and raises `OnMobDied` for loot, party credit and respawn (Rule 10 Step 3; ADR-010 note 2026-10-30)"
+    created: 2026-11-02
+    revised: ""
+    status: active
+  - id: TR-aa-005
+    system: aa
+    gdd: design/gdd/auto-attack-combat.md
+    requirement: "`NotifySkillUsed` resets the action timer to 0 (Rules 12-15, AC-04, AC-05)"
+    created: 2026-11-02
+    revised: ""
+    status: active
+  - id: TR-aa-006
+    system: aa
+    gdd: design/gdd/auto-attack-combat.md
+    requirement: "The client sets the toggle with a `SetAutoAttack` message applied in the inbound phase before the fire check; Combat owns the toggle and target validity (Rule 1, EC-8; ADR-014)"
+    created: 2026-11-02
+    revised: ""
+    status: active
+  - id: TR-aa-007
+    system: aa
+    gdd: design/gdd/auto-attack-combat.md
+    requirement: "The server broadcasts `CycleTimerBroadcast` to zone clients every tick, carrying `_actionTimer / CycleTicks × 10,000` (Rule 9)"
+    created: 2026-11-02
+    revised: ""
+    status: active
+  - id: TR-aa-008
+    system: aa
+    gdd: design/gdd/auto-attack-combat.md
+    requirement: "The attacker auto-faces the target on the first auto of an engagement (Rules 20-22, AC-18, AC-19, AC-HD-18, AC-HD-19)"
+    created: 2026-11-02
+    revised: ""
+    status: active
+  - id: TR-aa-009
+    system: aa
+    gdd: design/gdd/auto-attack-combat.md
+    requirement: "One `HitCheckResult` per miss streak, and damage is delivered as a typed `DamageEvent` (Rule 10 Step 2; CR-HD-10, AC-HD-11a)"
+    created: 2026-11-02
     revised: ""
     status: active

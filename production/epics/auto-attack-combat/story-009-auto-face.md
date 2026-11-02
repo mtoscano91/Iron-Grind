@@ -10,7 +10,7 @@
 ## Context
 
 **GDD**: `design/gdd/auto-attack-combat.md` — Rules 20–22, AC-18, AC-19; `design/gdd/hit-detection.md` — CR-HD-7, CR-HD-9, AC-HD-18, AC-HD-19; `design/gdd/networking-wire-protocol.md` — `AutoFaceEvent`
-**Requirement**: `TR-aa-008` (placeholder)
+**Requirement**: `TR-aa-008`
 
 **ADR Governing Implementation**: ADR-004: Networking — NGO Substrate
 **ADR Decision Summary**: `AutoFaceEvent` is an R-U batch message to the whole zone, with fixed-point quaternion and direction.
