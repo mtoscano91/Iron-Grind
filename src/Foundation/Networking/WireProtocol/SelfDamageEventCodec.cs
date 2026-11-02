@@ -66,8 +66,33 @@ namespace IronGrind.Networking
         {
             var envelope = new ServerMessageEnvelope(SelfDamageEvent.MessageTypeId, sequenceNumber, tickNumber);
             MessageEnvelopeCodec.Write(destination, in envelope);
-            int offset = ServerMessageEnvelope.WireSize;
+            int bodyBytes = WriteBody(
+                destination.Slice(ServerMessageEnvelope.WireSize), in selfDamageEvent
+#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
+                , observer
+#endif
+                );
+            return ServerMessageEnvelope.WireSize + bodyBytes;
+        }
 
+        /// <summary>
+        /// Writes only the 14-byte <see cref="DamageEvent"/> body of a <see cref="SelfDamageEvent"/> at offset 0 of
+        /// <paramref name="destination"/> (no envelope). For the outbox, which writes the envelope itself at flush;
+        /// <see cref="Write"/> calls this so the field layout has one source. Callers should route through
+        /// <c>SelfDamageEventDispatcher</c>.
+        /// </summary>
+        /// <param name="destination">The destination buffer; at least <see cref="DamageEvent.BodySize"/> bytes.</param>
+        /// <param name="selfDamageEvent">The attacker/target/damage/crit/type tuple.</param>
+        /// <returns><see cref="DamageEvent.BodySize"/> (14), always.</returns>
+        public static int WriteBody(
+            Span<byte> destination,
+            in DamageEvent selfDamageEvent
+#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
+            , INetworkTestObserver observer = null
+#endif
+            )
+        {
+            int offset = 0;
             WireIdCodec.SerializeEntityId(destination.Slice(offset, 4), selfDamageEvent.AttackerEntityId, SelfDamageEvent.MessageTypeId, "attackerEntityId");
             offset += 4;
             WireIdCodec.SerializeEntityId(destination.Slice(offset, 4), selfDamageEvent.TargetEntityId, SelfDamageEvent.MessageTypeId, "targetEntityId");

@@ -1019,6 +1019,17 @@ namespace IronGrind.Tests.EditMode.Networking
             Assert.AreEqual(AutoAttackState.Idle, rig.Comp.AutoAttackCombat.GetState(player));
         }
 
+        // A real hit cannot land in composition: the stand-in damage calculator rejects every hit, so the wiring is
+        // asserted by type here and the send behaviour is covered in AutoAttackCombat_DamageOutput_tests.cs.
+        [Test]
+        public void test_production_composition_damage_applier_is_the_damage_output_decorator()
+        {
+            var rig = new WiRig();
+            SuRig.Drive(rig.Comp.Start(SuRig.ARGS));
+
+            Assert.IsInstanceOf<DamageOutputApplier>(rig.Comp.AutoAttackDamageApplier);
+        }
+
         [Test]
         public void test_production_composition_set_target_on_another_player_is_stored_by_the_tracker_and_combat_stays_idle()
         {

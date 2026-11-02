@@ -75,7 +75,7 @@ namespace IronGrind.Networking
                 direction: MessageDirection.ServerToAllZoneClients,
                 deliveryContext: MessageDeliveryContext.ReliableUnorderedBatch,
                 isMcr3Exception: false,
-                rationale: "Cosmetic for non-attacker clients; best-effort, high-frequency (MCR-2). Distinct from SelfDamageEvent (R-OD, not yet implemented)."));
+                rationale: "Cosmetic for non-attacker clients; best-effort, high-frequency (MCR-2). Distinct from SelfDamageEvent (R-OD, sent by Auto-Attack Combat Story 007)."));
 
             Add(new MessageRoutingEntry(
                 messageTypeId: CycleTimerBroadcast.MessageTypeId,

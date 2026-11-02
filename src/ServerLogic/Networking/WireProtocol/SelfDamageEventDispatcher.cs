@@ -94,5 +94,29 @@ namespace IronGrind.Networking
 #endif
                 );
         }
+
+        /// <summary>
+        /// Writes only the body of a <see cref="SelfDamageEvent"/> for exactly one recipient,
+        /// <paramref name="attackerEntityId"/>; the outbox adds the envelope and sequence number at flush. Same
+        /// singleton-recipient guard as <see cref="SerializeForAttacker"/>.
+        /// </summary>
+        /// <param name="destination">The destination buffer; at least <see cref="DamageEvent.BodySize"/> bytes.</param>
+        /// <param name="attackerEntityId">The sole recipient; must equal <c>selfDamageEvent.AttackerEntityId</c>.</param>
+        /// <param name="selfDamageEvent">The attacker/target/damage/crit/type tuple.</param>
+        /// <returns><see cref="DamageEvent.BodySize"/> (14), always.</returns>
+        /// <exception cref="ArgumentException"><paramref name="attackerEntityId"/> does not match the payload's attacker.</exception>
+        public static int WriteBodyForAttacker(Span<byte> destination, EntityID attackerEntityId, in DamageEvent selfDamageEvent)
+        {
+            if (selfDamageEvent.AttackerEntityId != attackerEntityId)
+            {
+                throw new ArgumentException(
+                    $"SelfDamageEventDispatcher: recipient EntityID ({attackerEntityId}) does not match " +
+                    $"selfDamageEvent.AttackerEntityId ({selfDamageEvent.AttackerEntityId}) — the sole recipient " +
+                    "of a SelfDamageEvent must always be the attacker themselves (EC-CCR-2).",
+                    nameof(attackerEntityId));
+            }
+
+            return SelfDamageEventCodec.WriteBody(destination, in selfDamageEvent);
+        }
     }
 }

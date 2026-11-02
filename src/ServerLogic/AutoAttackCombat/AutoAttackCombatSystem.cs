@@ -40,7 +40,7 @@ namespace IronGrind.AutoAttackCombat
     /// Step 4 the timer resets, on any actual fire (even a rejected calculation). Any no-fire exit keeps the timer, so
     /// a ready auto retries every tick. A failed attacker or target position lookup is such a no-fire exit (like
     /// Step 5): nothing is emitted, the timer and state are kept, and it retries next tick; Story 006 wires validity
-    /// and positions from the same zone state. The damage output is Story 007's.
+    /// and positions from the same zone state. The damage output (Story 007) is sent by the applier decorator <see cref="DamageOutputApplier"/>.
     /// </para>
     /// <para>
     /// <b>Kill sequence (Story 004, Rule 10 Step 3, TR-aa-004).</b> A result with <see cref="DamageResult.IsKill"/> and

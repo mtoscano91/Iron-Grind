@@ -7,7 +7,7 @@ namespace IronGrind.Networking
     /// R-U batch sub-message reporting a single damage instance (CR-NET-7's Message Schemas
     /// section). Sent to all zone clients except the attacker — the attacker's own client
     /// receives the separate <c>SelfDamageEvent</c> via the R-OD priority path instead (a distinct
-    /// message not implemented by this story).
+    /// message; both are sent by Auto-Attack Combat Story 007).
     /// </summary>
     /// <remarks>
     /// <para>

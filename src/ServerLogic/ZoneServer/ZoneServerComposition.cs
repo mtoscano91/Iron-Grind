@@ -374,6 +374,12 @@ namespace IronGrind.ServerLogic.ZoneServer
         internal TargetSlotTracker TargetSlotTracker { get; private set; }
 
         /// <summary>
+        /// The damage applier handed to the Auto-Attack Combat system: a <see cref="DamageOutputApplier"/> over the
+        /// stand-in applier (Auto-Attack Combat Story 007); null until S5 has built it.
+        /// </summary>
+        internal IAutoAttackDamageApplier AutoAttackDamageApplier { get; private set; }
+
+        /// <summary>
         /// The zone's RPC guard chain; internal test seam so composition tests can register entity ownership and
         /// session-ready state (Auto-Attack Combat Story 006 code review).
         /// </summary>
@@ -1494,7 +1500,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                 _owner.RUBatch = ruBatch;
                 _owner.HitResultEmitter = new HitResultEmitter(wiring.Pool, ruBatch, _tickLoop);
                 Observe(nameof(HitResultEmitter));
-                BuildAutoAttackCombat(dispatcher, wiring, stateSource, statusEffects, movement);
+                BuildAutoAttackCombat(dispatcher, wiring, stateSource, statusEffects, movement, outbox, ruBatch);
                 var positions = new PositionBroadcastStep(movement, wiring.Pool, sendSeam, outbox);
                 Observe(nameof(PositionBroadcastStep));
                 _owner.PositionBroadcast = positions;
@@ -1607,10 +1613,15 @@ namespace IronGrind.ServerLogic.ZoneServer
             // positions); SetTarget and SetAutoAttack register before Seal and apply in the dispatch step (EC-8); the slot
             // release listener is set here, once, with Combat last so BeforeRelease still finds the player's slot.
             // Mob seams (validity, damage, XP, mob type) are stand-ins until Enemy AI, Leveling and the item database.
+            // Story 007: the damage applier is wrapped so each applied hit also sends SelfDamageEvent (R-OD, attacker) and
+            // DamageEvent (R-U, other zone clients); the stand-in still changes no health.
             private void BuildAutoAttackCombat(InboundRequestDispatcher dispatcher, ZoneInstancingWiring wiring,
-                MovementZoneEntityStateSource stateSource, StatusEffectsService statusEffects, MovementService movement)
+                MovementZoneEntityStateSource stateSource, StatusEffectsService statusEffects, MovementService movement,
+                ClientMessageOutbox outbox, RUBatchOutboundStep ruBatch)
             {
                 ZoneStats stats = _owner.ZoneCharacterStats;
+                var damageApplier = new DamageOutputApplier(new StandInAutoAttackDamageApplier(),
+                    new AutoAttackDamageOutputEmitter(wiring.Pool, _owner._zoneId, outbox, ruBatch));
                 var combat = new AutoAttackCombatSystem(
                     wiring.Pool,
                     new StandInAutoAttackTargetValidity(wiring.Pool),
@@ -1620,7 +1631,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                     _owner.HitResultEmitter,
                     new CharacterStatsAutoAttackStatSource(stats),
                     new StandInAutoAttackDamageCalculator(),
-                    new StandInAutoAttackDamageApplier(),
+                    damageApplier,
                     new StandInAutoAttackXpAward(),
                     new CharacterStatsExperienceSink(stats),
                     new StandInAutoAttackMobTypeSource(),
@@ -1634,6 +1645,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                     new ZoneEntityIdView(wiring.Pool.GetPlayerEntityIDsInZone(_owner._zoneId),
                         wiring.Pool.GetMobEntityIDsInZone(_owner._zoneId)), combat);
                 _owner.TargetSlotTracker = tracker;
+                _owner.AutoAttackDamageApplier = damageApplier;
                 NetworkingCoreInboundRegistration.RegisterCombatInput(dispatcher, setTarget, new SetAutoAttackRequestHandler(combat));
 
                 wiring.Pool.SetReleaseListener(new CompositeZoneSlotReleaseListener(statusEffects, movement, combat));

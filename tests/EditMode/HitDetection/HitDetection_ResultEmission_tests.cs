@@ -70,6 +70,8 @@ namespace IronGrind.Tests.EditMode.HitDetection
             {
                 Calls.Add(new Call(clientId, category, messageTypeId, body.ToArray()));
             }
+
+            public void EnqueueDamageEvent(uint clientId, in DamageEvent damageEvent) { }
         }
 
         // Records who the emitter addressed, then forwards to the real step.
@@ -82,6 +84,11 @@ namespace IronGrind.Tests.EditMode.HitDetection
             {
                 Clients.Add(clientId);
                 Inner.Enqueue(clientId, category, messageTypeId, body);
+            }
+
+            public void EnqueueDamageEvent(uint clientId, in DamageEvent damageEvent)
+            {
+                Inner.EnqueueDamageEvent(clientId, in damageEvent);
             }
         }
 

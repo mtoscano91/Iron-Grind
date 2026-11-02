@@ -7,12 +7,14 @@ namespace IronGrind.Networking
     /// systems (Hit Detection Story 004 and later) hold this interface, not <see cref="RUBatchOutboundStep"/>.
     /// </summary>
     /// <remarks>
-    /// Tick thread only. Only the eight opaque categories are accepted; <see cref="RUBatchCategory.DamageEvent"/>
-    /// and <see cref="RUBatchCategory.GoldSyncEvent"/> have typed intake elsewhere and are refused here.
+    /// Tick thread only. <see cref="Enqueue"/> accepts the eight opaque categories; <see cref="RUBatchCategory.DamageEvent"/>
+    /// has typed intake in <see cref="EnqueueDamageEvent"/> and <see cref="RUBatchCategory.GoldSyncEvent"/> has typed
+    /// intake elsewhere, so <see cref="Enqueue"/> refuses both.
     /// </remarks>
     /// <example>
     /// <code>
     /// collector.Enqueue(clientId, RUBatchCategory.HitCheckResult, HitCheckResult.MessageTypeId, bodyBytes);
+    /// collector.EnqueueDamageEvent(clientId, in damageEvent);
     /// </code>
     /// </example>
     public interface IRUBatchCollector
@@ -27,5 +29,13 @@ namespace IronGrind.Networking
         /// <param name="messageTypeId">The wire message type stamped on the sub-message header.</param>
         /// <param name="body">The encoded body, at most <see cref="RUBatchWriter.MaxSingleOpaqueSubMessagePayloadBytes"/> bytes; valid only during the call.</param>
         void Enqueue(uint clientId, RUBatchCategory category, ushort messageTypeId, ReadOnlySpan<byte> body);
+
+        /// <summary>
+        /// Queues one <see cref="DamageEvent"/> for a client's batch this tick; the batch writes damage events first.
+        /// Never throws: an unknown client is silently discarded, a full batch drops the event with a warning.
+        /// </summary>
+        /// <param name="clientId">The connection that receives the batch.</param>
+        /// <param name="damageEvent">The event; copied before this returns.</param>
+        void EnqueueDamageEvent(uint clientId, in DamageEvent damageEvent);
     }
 }

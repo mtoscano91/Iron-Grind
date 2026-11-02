@@ -274,7 +274,7 @@ The Networking Core is the transport and authority layer: it owns no game state 
 
 | Flow | Direction | Data | Reliability | Notes |
 |------|-----------|------|-------------|-------|
-| Damage event broadcast | Server → All clients in zone | `DamageEvent { EntityID attackerEntityId; EntityID targetEntityId; int finalDamage; bool isCrit; DamageType damageType; }` | R-U | Best-effort. Brief out-of-order delivery produces cosmetic damage number flicker only. |
+| Damage event broadcast | Server → All zone clients except the attacker (the attacker receives `SelfDamageEvent`, R-OD) | `DamageEvent { EntityID attackerEntityId; EntityID targetEntityId; int finalDamage; bool isCrit; DamageType damageType; }` | R-U | Best-effort. Brief out-of-order delivery produces cosmetic damage number flicker only. |
 | Kill event broadcast | Server → All clients in zone | `KillEvent { EntityID killerEntityId; EntityID targetEntityId; string targetName; int finalDamage; bool isCrit; DamageType damageType; }` | R-OD | Triggers mob despawn, loot resolution, XP grant. `finalDamage`, `isCrit`, `damageType` carry the killing-blow data — clients display the killing-blow damage number from `KillEvent` directly and discard any subsequent `DamageEvent` for the same `targetEntityId` received after the kill. |
 | Entity health broadcast | Server → All clients in zone | `EntityHealthUpdate { EntityID entityId; int currentHP; int maxHP; }` | R-U | Sent each tick for entities with changed HP via R-U batch. Best-effort; self-corrects next tick on drop. |
 

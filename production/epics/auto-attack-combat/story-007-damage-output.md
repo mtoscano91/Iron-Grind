@@ -1,7 +1,7 @@
 # Story 007: Damage Output
 
 > **Epic**: Auto-Attack Combat
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-10-26
@@ -82,7 +82,7 @@ Use the real `RUBatchOutboundStep`, outbox and three clients (attacker, bystande
 **Story Type**: Integration
 **Required evidence**: `tests/EditMode/AutoAttackCombat/AutoAttackCombat_DamageOutput_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing (25 [Test] + 2 [TestCase]; production wiring test in `tests/EditMode/Networking/ZoneServer_CompositionWiring_tests.cs`)
 
 ---
 
@@ -90,3 +90,17 @@ Use the real `RUBatchOutboundStep`, outbox and three clients (attacker, bystande
 
 - Depends on: Story 006; Hit Detection Story 003 (Complete)
 - Unlocks: Combat UI / HUD damage numbers
+
+---
+
+## Completion Notes
+**Completed**: 2026-11-02
+**Criteria**: 8/8 passing (all covered by automated tests; none deferred)
+**Deviations**:
+- Advisory: `SelfDamageEvent` is sent through `ClientMessageOutbox`, which writes the envelope, so the emitter uses the new body-only `SelfDamageEventDispatcher.WriteBodyForAttacker` (same recipient guard) instead of `SerializeForAttacker`. `isCapExempt` is false, like other per-hit messages.
+- Advisory: no hit reaches the wire in the composed server yet: the stand-in damage calculator rejects every hit until Enemy AI / the item database. The production test asserts the `DamageOutputApplier` wiring only.
+- Advisory: zone players still loading (pre-`SessionReady`) receive `DamageEvent`, as they already receive position broadcasts. TD-089.
+- Advisory: a fault inside one `Emit` aborts its remaining sends (logged once); documented.
+- `networking-core.md` row sits at line 277 (the story said 275).
+**Test Evidence**: Integration: `tests/EditMode/AutoAttackCombat/AutoAttackCombat_DamageOutput_tests.cs` (25 [Test] + 2 [TestCase]) + `test_production_composition_damage_applier_is_the_damage_output_decorator` in `tests/EditMode/Networking/ZoneServer_CompositionWiring_tests.cs`. EditMode 5796 / 5667 / 0 failed / 129 skipped.
+**Code Review**: Complete: `/code-review` CHANGES REQUIRED, "fix all", items 1-9 applied (item 10 not needed: `ZoneID` lives in `IronGrind.CharacterPersistence`). QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean mode).

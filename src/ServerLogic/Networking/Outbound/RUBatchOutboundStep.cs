@@ -19,8 +19,13 @@ namespace IronGrind.Networking
     /// (<see cref="RUBatchWriter.Write"/> allocates only when it logs an overflow).
     /// </para>
     /// <para>
-    /// <b>Never throws.</b> <see cref="Enqueue"/> refuses <see cref="RUBatchCategory.DamageEvent"/>,
-    /// <see cref="RUBatchCategory.GoldSyncEvent"/>, an out-of-range category and a body over
+    /// <b>Damage events.</b> <see cref="EnqueueDamageEvent"/> keeps up to <see cref="RU_MAX_PENDING_MESSAGES"/> events per
+    /// client in a pre-reserved list; <see cref="RUBatchWriter.Write"/> writes them first and applies its own intraclass
+    /// cap (oldest dropped, one warning). Beyond the list bound an event is dropped with the once-per-tick warning.
+    /// </para>
+    /// <para>
+    /// <b>Never throws.</b> <see cref="Enqueue"/> refuses <see cref="RUBatchCategory.DamageEvent"/> (use
+    /// <see cref="EnqueueDamageEvent"/>), <see cref="RUBatchCategory.GoldSyncEvent"/>, an out-of-range category and a body over
     /// <see cref="RUBatchWriter.MaxSingleOpaqueSubMessagePayloadBytes"/> with one error, so <see cref="RUBatchWriter.Write"/>
     /// cannot throw on the flush. A client unknown to the outbox is dropped silently (a ghost player is routine).
     /// An empty state pool, a full entry table or a full arena drops the message with at most one warning per tick
@@ -60,6 +65,7 @@ namespace IronGrind.Networking
         {
             public readonly byte[] Arena = new byte[RU_ARENA_BYTES];
             public readonly List<PendingSubMessage> Pending = new List<PendingSubMessage>(RU_MAX_PENDING_MESSAGES);
+            public readonly List<DamageEvent> DamageEvents = new List<DamageEvent>(RU_MAX_PENDING_MESSAGES);
             public readonly ClientBufferSet Buffers = new ClientBufferSet();
             public int Tail;
             public uint ClientId;
@@ -143,6 +149,7 @@ namespace IronGrind.Networking
                 {
                     State state = _active[i];
                     state.Pending.Clear();
+                    state.DamageEvents.Clear();
                     state.Tail = 0;
                     _free[_freeCount] = state;
                     _freeCount++;
@@ -165,7 +172,7 @@ namespace IronGrind.Networking
             {
                 uint sequence = counter.IssueNext();
                 byte[] buffer = state.Buffers.RUBatchBuffer;
-                int bytes = RUBatchWriter.Write(new Span<byte>(buffer), sequence, currentTick, null, null, state.Pending, state.ClientId);
+                int bytes = RUBatchWriter.Write(new Span<byte>(buffer), sequence, currentTick, state.DamageEvents, null, state.Pending, state.ClientId);
                 _seam.Send(state.ClientId, new ReadOnlySpan<byte>(buffer, 0, bytes), NetworkChannel.ReliableUnordered);
             }
             catch (Exception ex)
@@ -199,22 +206,10 @@ namespace IronGrind.Networking
                 return;
             }
 
-            if (!_byClient.TryGetValue(clientId, out State state))
+            State state = AcquireState(clientId, messageTypeId);
+            if (state == null)
             {
-                if (_freeCount == 0)
-                {
-                    WarnFull(clientId, messageTypeId, "no free client state");
-                    return;
-                }
-
-                _freeCount--;
-                state = _free[_freeCount];
-                _free[_freeCount] = null;
-                state.ClientId = clientId;
-                state.Tail = 0;
-                _byClient.Add(clientId, state);
-                _active[_activeCount] = state;
-                _activeCount++;
+                return;
             }
 
             if (state.Pending.Count >= RU_MAX_PENDING_MESSAGES)
@@ -233,6 +228,67 @@ namespace IronGrind.Networking
             body.CopyTo(new Span<byte>(state.Arena, offset, length));
             state.Tail = offset + length;
             state.Pending.Add(new PendingSubMessage(category, messageTypeId, new ReadOnlyMemory<byte>(state.Arena, offset, length)));
+        }
+
+        /// <inheritdoc />
+        public void EnqueueDamageEvent(uint clientId, in DamageEvent damageEvent)
+        {
+            try
+            {
+                if (_flushing)
+                {
+                    Debug.LogError($"{LOG_PREFIX} EnqueueDuringFlush: clientId={clientId} - DamageEvent not queued.");
+                    return;
+                }
+
+                if (!_outbox.TryGetSequenceCounter(clientId, out _))
+                {
+                    return;
+                }
+
+                State state = AcquireState(clientId, DamageEvent.MessageTypeId);
+                if (state == null)
+                {
+                    return;
+                }
+
+                if (state.DamageEvents.Count >= RU_MAX_PENDING_MESSAGES)
+                {
+                    WarnFull(clientId, DamageEvent.MessageTypeId, "damage event table full");
+                    return;
+                }
+
+                state.DamageEvents.Add(damageEvent);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"{LOG_PREFIX} EnqueueThrew: clientId={clientId} - {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        // The client's state for this tick, taking one from the free pool on the first message; null (after a warning) when none is free.
+        private State AcquireState(uint clientId, ushort messageTypeId)
+        {
+            if (_byClient.TryGetValue(clientId, out State state))
+            {
+                return state;
+            }
+
+            if (_freeCount == 0)
+            {
+                WarnFull(clientId, messageTypeId, "no free client state");
+                return null;
+            }
+
+            _freeCount--;
+            state = _free[_freeCount];
+            _free[_freeCount] = null;
+            state.ClientId = clientId;
+            state.Tail = 0;
+            _byClient.Add(clientId, state);
+            _active[_activeCount] = state;
+            _activeCount++;
+            return state;
         }
 
         // At most one warning per tick for the whole step.
