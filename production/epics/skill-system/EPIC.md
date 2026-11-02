@@ -4,7 +4,7 @@
 > **GDD**: design/gdd/skill-system.md
 > **Architecture Module**: Skill System (`architecture.md` layer map), `src/ServerLogic/`
 > **Status**: Ready
-> **Stories**: Not yet created — run `/create-stories skill-system`
+> **Stories**: 12 created 2026-11-02 — see Stories
 > **Manifest Version**: 2026-10-26
 
 ## Overview
@@ -64,13 +64,40 @@ Applied to `skill-system.md` and `entities.yaml`.
 4. **BuffIDs are assigned in the roster story.** It authors the BuffIDs and BuffDefinitions for the 10 buff and debuff skills and records them in `skill-system.md` and `entities.yaml` (OQ-SK-6).
 5. **Text drift fixed.** The auto-attack timer counts whole ticks (Auto-Attack Combat decision 4), not float seconds: CR-SK-3, EC-SK-1, AC-SK-30. The snapshot carries `cooldownExpiryTick`, not `ticksRemaining`: AC-SK-09, AC-SK-44. Header status is Approved. OQ-SK-5 is resolved by `leveling-system.md` CR-2.10.
 
+## Decisions (2026-11-02, `/create-stories`)
+
+6. **Silence is a seam (Decision A).** V-5b reads `ISkillSilenceSource`; the production stand-in never silences, because `status-effects.md` defines no silence effect. Story 005.
+7. **Skill damage reaches clients through `SkillCastResult` only (Decision B).** Skills apply damage through the inner damage applier, never the `DamageOutputApplier` wrapper, so no `DamageEvent` / `SelfDamageEvent` is sent for a skill. Story 007.
+8. **Targeted casts face the target (Decision C, OQ-HD-4).** An accepted `SingleHostile` or `SingleFriendly` cast on another entity turns the caster and sends `AutoFaceEvent` through `AutoFaceEmitter`; `Self` casts don't. Closes AC-HD-19 (b). Story 007; rule written into `hit-detection.md` OQ-HD-4.
+9. **Skill message ids reserved:** `0x0308` `SkillCastRequest`, `0x0309` `SkillCastResult`, `0x030A` `SkillCooldownUpdate`, `0x030B` `SkillCooldownSnapshot`, `0x030C` `SkillUnlockNotification`. Each story records its id in `networking-wire-protocol.md`.
+
+## Stories
+
+| # | Story | Type | Status | ADR |
+|---|-------|------|--------|-----|
+| 001 | [Skill data types and class skill lists](story-001-skill-data-types.md) | Logic | Ready | ADR-012 |
+| 002 | [Per-entity skill store, spawn and despawn](story-002-skill-store-spawn-despawn.md) | Logic | Ready | ADR-012 |
+| 003 | [Unlock on level-up and `SkillUnlockNotification`](story-003-unlock-on-level-up.md) | Logic | Ready | ADR-010, ADR-004 |
+| 004 | [Cast intake (`SkillCastRequest`, V-1, V-2)](story-004-cast-intake.md) | Logic | Ready | ADR-014 |
+| 005 | [Validation sequence (V-0, V-3 to V-8)](story-005-validation-sequence.md) | Logic | Ready | ADR-014 |
+| 006 | [Mana cost (V-9) and cooldown registration](story-006-mana-and-cooldowns.md) | Logic | Ready | ADR-014, ADR-012 |
+| 007 | [Cast execution (`NotifySkillUsed`, damage, kill, facing)](story-007-cast-execution.md) | Logic | Ready | ADR-010, ADR-013 |
+| 008 | [Effect application (buffs, debuffs, instant heal)](story-008-effect-application.md) | Logic | Ready | ADR-010 |
+| 009 | [Cast output (`SkillCastResult`, `SkillCooldownUpdate`)](story-009-cast-output.md) | Logic | Ready | ADR-004 |
+| 010 | [`SkillCooldownSnapshot` on zone join](story-010-cooldown-snapshot.md) | Integration | Ready | ADR-004 |
+| 011 | [Composition and tick-order wiring](story-011-composition.md) | Integration | Ready | ADR-014 |
+| 012 | [MVP skill roster and BuffIDs](story-012-mvp-roster-data.md) | Config/Data | Ready | ADR-012 |
+
+Order: 001 → 002 → 003; 001 → 004 → 005 → 006 → 007 → 008; 006 → 009 → 010; 011 last of the code stories; 012 after 001, buff data final after 008.
+
 ## Carried into stories
 
 - `ConsumeMana` takes a `float` in code (`CharacterStats.cs`); the GDD says `int`. The cast passes the integer effective cost.
 - AC-SK-15 needs a seam between V-9 and CR-SK-4 (flagged in the GDD).
 - AC-SK-28 (no direct `AddBuffModifier` call) is a text search, not a runtime test.
 - Character spawn path for `OnEntitySpawned`: find where Leveling / Character Stats register a character today.
-- OQ-HD-4 and AC-HD-19 (b): decide in `/create-stories` whether a skill cast changes facing.
+- OQ-HD-4 and AC-HD-19 (b): decided at `/create-stories` (Decision 8), implemented in Story 007.
+- Open for `/story-readiness`: who raises `OnMobDied` on a skill kill (Story 007, recommended a combat-owned kill reporter); the party query for V-7 friendliness and `SkillCastResult` relevance (Stories 005, 009); V-8 distance on XZ (Story 005); the missing buff numbers and skill ranges (Story 012).
 
 ## Definition of Done
 
@@ -82,4 +109,4 @@ This epic is complete when:
 
 ## Next Step
 
-Run `/create-stories skill-system` to break this epic into implementable stories.
+Run `/story-readiness production/epics/skill-system/story-001-skill-data-types.md`, then `/dev-story`.

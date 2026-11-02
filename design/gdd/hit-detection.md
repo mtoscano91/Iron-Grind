@@ -2,7 +2,7 @@
 
 > **Status**: Approved (lean re-review, 2026-05-25)
 > **Author**: Manuel Toscano + Claude Code agents
-> **Last Updated**: 2026-10-30 (Auto-Attack `/create-stories`: `FacingAngle` updates on the first auto after activation, not on toggle ON, matching `auto-attack-combat.md` Rule 20, CR-HD-7 and AC-HD-19; `/create-epics`: one `HitCheckResult` per miss streak for auto-attack retries, CR-HD-10 and AC-HD-11a; earlier `/create-stories`: facing convention aligned with Movement — 0° = +Z, clockwise; `FacingAngle` stored as `short` ×10; `ATTACK_FACING_TOLERANCE_DEG` default 60° → 45°; `HitCheckResult` MessageTypeID `0x0306`, 17 bytes in batch)
+> **Last Updated**: 2026-11-02 (Skill System `/create-stories`: OQ-HD-4 resolved — targeted skill casts face the target and send `AutoFaceEvent`, `Self` casts don't; CR-HD-7 table row updated). Previous: 2026-10-30 (Auto-Attack `/create-stories`: `FacingAngle` updates on the first auto after activation, not on toggle ON, matching `auto-attack-combat.md` Rule 20, CR-HD-7 and AC-HD-19; `/create-epics`: one `HitCheckResult` per miss streak for auto-attack retries, CR-HD-10 and AC-HD-11a; earlier `/create-stories`: facing convention aligned with Movement — 0° = +Z, clockwise; `FacingAngle` stored as `short` ×10; `ATTACK_FACING_TOLERANCE_DEG` default 60° → 45°; `HitCheckResult` MessageTypeID `0x0306`, 17 bytes in batch)
 > **Implements Pillar**: Rhythm Mastery (primary), Earned Power (secondary)
 
 ## Overview
@@ -56,7 +56,7 @@ Implemented in `IronGrind.ServerLogic` only. No client equivalent. `IronGrind.Se
 | Event | `EntityState.FacingAngle` updated? | `capturedForward` |
 |-------|-----------------------------------|-------------------|
 | First player auto-attack after activation (`auto-attack-combat.md` Rule 20) | Yes — set toward target | Derived on-the-fly as `normalize(targetPos − attackerPos)` by the Auto-Attack Combat loop |
-| Player casts a skill | Yes — set toward target | — |
+| Player casts a skill (accepted `SingleHostile` or `SingleFriendly` cast on another entity; not `Self` casts — OQ-HD-4, 2026-11-02) | Yes — set toward target; `AutoFaceEvent` sent | — |
 | Later player auto-attack swing executes | No — `FacingAngle` unchanged | Derived on-the-fly as `normalize(targetPos − attackerPos)` by the Auto-Attack Combat loop |
 | Monster attack initiates | Yes — set toward target player | Enemy AI derives `capturedForward` from this value immediately and holds it as a local variable |
 | Monster attack executes | No — `FacingAngle` unchanged during swing | Enemy AI provides the `capturedForward` frozen at initiation |
@@ -357,6 +357,6 @@ All ACs are server-side unit tests unless otherwise noted. "Pass" means `CheckHi
 
 **OQ-HD-3** — *Per-attack-type tolerance override* — When the Skill System GDD is authored, determine whether `CheckHit` should accept an optional `facingToleranceDeg` parameter (cleaner for AoE/ranged skills that need `FACING_CHECK_DISABLED_DEG`), or whether callers force-pass the facing check by passing `normalize(targetPos − attackerPos)` as `capturedForward`. *(Decision required when Skill System GDD is authored.)*
 
-**OQ-HD-4** — *`AutoFaceEvent` fire rule for mid-combat facing changes* — No rule currently exists for when `AutoFaceEvent` fires for non-first-beat facing changes (e.g., skill cast mid-combat updates `FacingAngle`). This rule belongs in the Networking Wire Protocol GDD. *(Action required before networking-wire-protocol.md review closes.)*
+**OQ-HD-4 — RESOLVED (2026-11-02, Skill System `/create-stories`, user decision).** An accepted `SingleHostile` or `SingleFriendly` skill cast whose target is another entity sets the caster's `FacingAngle` toward the target and sends `AutoFaceEvent` through the same emitter as the first auto (`auto-attack-combat.md` Rule 20); `Self` casts and rejected casts change nothing. Later auto swings still do not change facing. Implemented by Skill System Story 007; closes AC-HD-19 (b). Original text: *`AutoFaceEvent` fire rule for mid-combat facing changes* — No rule currently exists for when `AutoFaceEvent` fires for non-first-beat facing changes (e.g., skill cast mid-combat updates `FacingAngle`). This rule belongs in the Networking Wire Protocol GDD. *(Action required before networking-wire-protocol.md review closes.)*
 
 **OQ-HD-5** — *Player auto-attack facing-miss omission* — Confirmed acceptable at design time (2026-07-04): player auto-attacks bypass the facing check entirely (`capturedForward` always points at target) — the player can only miss via `MissOutOfRange`, never `MissFacing`, regardless of actual orientation. Validate during playtesting whether this reads as satisfying, or whether players expect/want a facing-based miss risk on their own attacks too (would require moving away from the CR-HD-5 "always pass" caller contract for player auto-attacks). *(Playtest validation — pre-Polish milestone.)*
