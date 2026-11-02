@@ -381,7 +381,7 @@ namespace IronGrind.Tests.EditMode.MovementSystem
         }
 
         [Test]
-        public void test_composition_tick_flushes_outbox_then_ru_batch_then_positions()
+        public void test_composition_tick_flushes_outbox_then_ru_batch_then_cycle_broadcast_then_positions()
         {
             WiRig rig = StartRig();
             ZoneSlotPool pool = rig.Comp.ZoneInstancing.Pool;
@@ -400,9 +400,29 @@ namespace IronGrind.Tests.EditMode.MovementSystem
 
             List<ushort> types = MessageTypesTo(rig, 11u);
             types.RemoveAll(t => t != SelfDamageEvent.MessageTypeId && t != RUBatchWriter.TICK_BATCH_RU
-                && t != PositionPacketWriter.TICK_BATCH_UU);
+                && t != CycleBroadcastPacketWriter.TICK_BATCH_UU_CYCLE && t != PositionPacketWriter.TICK_BATCH_UU);
             CollectionAssert.AreEqual(
-                new[] { SelfDamageEvent.MessageTypeId, RUBatchWriter.TICK_BATCH_RU, PositionPacketWriter.TICK_BATCH_UU }, types);
+                new[] { SelfDamageEvent.MessageTypeId, RUBatchWriter.TICK_BATCH_RU,
+                    CycleBroadcastPacketWriter.TICK_BATCH_UU_CYCLE, PositionPacketWriter.TICK_BATCH_UU }, types);
+
+            // CCR-1: the four packets share the client's one sequence counter, so they are strictly consecutive in send order.
+            var sequences = new List<uint>();
+            foreach (var sent in rig.Net.Seam.Sent)
+            {
+                if (sent.client == 11u && MessageEnvelopeCodec.TryRead(sent.data, out ServerMessageEnvelope env)
+                    && (env.MessageTypeId == SelfDamageEvent.MessageTypeId || env.MessageTypeId == RUBatchWriter.TICK_BATCH_RU
+                        || env.MessageTypeId == CycleBroadcastPacketWriter.TICK_BATCH_UU_CYCLE
+                        || env.MessageTypeId == PositionPacketWriter.TICK_BATCH_UU))
+                {
+                    sequences.Add(env.SequenceNumber);
+                }
+            }
+
+            Assert.AreEqual(types.Count, sequences.Count);
+            for (int i = 1; i < sequences.Count; i++)
+            {
+                Assert.AreEqual(sequences[i - 1] + 1u, sequences[i], "sequence step " + i);
+            }
         }
 
         [Test]

@@ -214,7 +214,7 @@ namespace IronGrind.Tests.EditMode.Networking
             "CrossZoneRelayAllowlist", "CrossZoneRelayOrigin", "CrossZoneRelayInbox", "CrossZoneRelayReceiver",
             "NpgsqlRelayPublisher", "CrossCuttingRpcGuardChain", "CharacterMutationGate", "InboundRequestDispatcher",
             "ClientMessageOutbox", "ZoneInstancingWiring", "CharacterStats", "StatusEffectsService",
-            "MovementIntentBuffer", "MovementService", "RUBatchOutboundStep", "HitResultEmitter", "AutoAttackCombatSystem", "PositionBroadcastStep", "ServerWideBroadcaster", "ZoneClientRelayHandler", "ZoneSimulationStep",
+            "MovementIntentBuffer", "MovementService", "RUBatchOutboundStep", "HitResultEmitter", "AutoAttackCombatSystem", "CycleTimerBroadcastStep", "PositionBroadcastStep", "ServerWideBroadcaster", "ZoneClientRelayHandler", "ZoneSimulationStep",
             "ZoneTickPipeline", "Seal", "RegisterTickDriven", "CreateInboundTransport"
         };
 

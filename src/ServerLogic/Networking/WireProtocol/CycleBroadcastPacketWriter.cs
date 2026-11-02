@@ -7,14 +7,13 @@ namespace IronGrind.Networking
     /// <summary>
     /// Serializes one client's per-tick Path 2b-i CycleBroadcast U-U packet (CR-NET-7.7,
     /// <c>TICK_BATCH_UU_CYCLE = 0x0103</c>): the 12-byte batch header followed by one
-    /// <see cref="CycleTimerBroadcast"/> sub-message per zone entity other than the receiving
-    /// client.
+    /// <see cref="CycleTimerBroadcast"/> sub-message per player in the zone (including the receiver, never mobs).
     /// </summary>
     /// <remarks>
     /// <b>Never dropped:</b> <see cref="CycleTimerBroadcast"/> drives the Rhythm Mastery core
     /// gameplay pillar and must never be truncated. At <see cref="ZoneBufferPool.MAX_PLAYERS_PER_ZONE"/>
-    /// = 50, this packet never overflows: header(12) + 49 × <see cref="CycleTimerBroadcast.BatchSize"/>(10)
-    /// = 502 bytes ≤ <see cref="RUBatchWriter.MAX_MESSAGE_BODY_BYTES"/> (512). If the caller
+    /// = 50, this packet never overflows: header(12) + 50 × <see cref="CycleTimerBroadcast.BatchSize"/>(10)
+    /// = 512 bytes, exactly the <see cref="RUBatchWriter.MAX_MESSAGE_BODY_BYTES"/> (512) cap. If the caller
     /// supplies enough entries to exceed the budget anyway (a <c>MAX_PLAYERS_PER_ZONE</c>
     /// misconfiguration per the GDD's own tuning-knob cross-check, not a runtime network
     /// condition), this method does <i>not</i> silently truncate — silently dropping any
@@ -42,7 +41,7 @@ namespace IronGrind.Networking
         /// <param name="destination">The destination buffer (e.g. a <see cref="ClientBufferSet.CycleBroadcastBuffer"/> slot).</param>
         /// <param name="sequenceNumber">The outbound envelope <c>SequenceNumber</c> for this packet.</param>
         /// <param name="tickNumber">The server tick this packet was authored on.</param>
-        /// <param name="entries">Every zone entity's cycle timer other than the receiving client. May be <see langword="null"/> (treated as empty).</param>
+        /// <param name="entries">Every player's cycle timer in the zone, including the receiver's own entry. May be <see langword="null"/> (treated as empty).</param>
         /// <param name="clientIdForLogging">The destination client's ID, included in the critical-anomaly log message for traceability.</param>
         /// <returns>The total number of bytes written to <paramref name="destination"/>.</returns>
         /// <exception cref="InvalidOperationException">

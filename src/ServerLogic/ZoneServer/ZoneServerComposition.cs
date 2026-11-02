@@ -357,6 +357,9 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// <summary>The zone's per-tick position broadcast step, built at S5 (Movement Story 009); null before S5.</summary>
         internal PositionBroadcastStep PositionBroadcast { get; private set; }
 
+        /// <summary>The zone's per-tick cycle-timer broadcast step, built at S5 (Auto-Attack Combat Story 008); null before S5.</summary>
+        internal CycleTimerBroadcastStep CycleTimerBroadcast { get; private set; }
+
         /// <summary>The zone's per-tick R-U batch step, built at S5 (Hit Detection Story 003); null before S5.</summary>
         internal RUBatchOutboundStep RUBatch { get; private set; }
 
@@ -1282,18 +1285,22 @@ namespace IronGrind.ServerLogic.ZoneServer
         }
 
         // The pipeline's outbound step (Movement Story 009, Hit Detection Story 003): the outbox flush, then the R-U
-        // batches, then the position packets. Teardown step 4b flushes the outbox only; pending R-U messages are discarded.
+        // batches, then the cycle-timer packets (Path 2b-i, Auto-Attack Combat Story 008), then the position packets
+        // (Path 2b-ii). Teardown step 4b flushes the outbox only; pending R-U messages are discarded.
         private sealed class ZoneOutboundSteps : IZoneOutboundStep
         {
             private readonly IZoneOutboundStep _first;
             private readonly IZoneOutboundStep _second;
             private readonly IZoneOutboundStep _third;
+            private readonly IZoneOutboundStep _fourth;
 
-            public ZoneOutboundSteps(IZoneOutboundStep first, IZoneOutboundStep second, IZoneOutboundStep third)
+            public ZoneOutboundSteps(IZoneOutboundStep first, IZoneOutboundStep second, IZoneOutboundStep third,
+                IZoneOutboundStep fourth)
             {
                 _first = first;
                 _second = second;
                 _third = third;
+                _fourth = fourth;
             }
 
             public void Flush(uint currentTick)
@@ -1301,6 +1308,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                 _first.Flush(currentTick);
                 _second.Flush(currentTick);
                 _third.Flush(currentTick);
+                _fourth.Flush(currentTick);
             }
         }
 
@@ -1501,10 +1509,13 @@ namespace IronGrind.ServerLogic.ZoneServer
                 _owner.HitResultEmitter = new HitResultEmitter(wiring.Pool, ruBatch, _tickLoop);
                 Observe(nameof(HitResultEmitter));
                 BuildAutoAttackCombat(dispatcher, wiring, stateSource, statusEffects, movement, outbox, ruBatch);
+                var cycleBroadcast = new CycleTimerBroadcastStep(_owner.AutoAttackCombat, wiring.Pool, sendSeam, outbox);
+                Observe(nameof(CycleTimerBroadcastStep));
+                _owner.CycleTimerBroadcast = cycleBroadcast;
                 var positions = new PositionBroadcastStep(movement, wiring.Pool, sendSeam, outbox);
                 Observe(nameof(PositionBroadcastStep));
                 _owner.PositionBroadcast = positions;
-                var outboundStep = new ZoneOutboundSteps(outbox, ruBatch, positions);
+                var outboundStep = new ZoneOutboundSteps(outbox, ruBatch, cycleBroadcast, positions);
 
                 // Built for the game-system stories to take; this story registers no handler.
                 _owner._broadcaster = new ServerWideBroadcaster(outbox, _publisher, _allowlist);

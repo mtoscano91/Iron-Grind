@@ -92,7 +92,7 @@ Applied to `auto-attack-combat.md`, `hit-detection.md`, `networking-core.md`, AD
 | 005 | [`NotifySkillUsed`](story-005-notify-skill-used.md) | Logic | Complete | ADR-010 |
 | 006 | [`SetAutoAttack`, input and composition](story-006-set-auto-attack-input-and-composition.md) | Integration | Complete | ADR-004, ADR-014 |
 | 007 | [Damage output](story-007-damage-output.md) | Integration | Complete | ADR-004 |
-| 008 | [`CycleTimerBroadcast` step](story-008-cycle-timer-broadcast-step.md) | Integration | Ready | ADR-004, ADR-014 |
+| 008 | [`CycleTimerBroadcast` step](story-008-cycle-timer-broadcast-step.md) | Integration | Complete | ADR-004, ADR-014 |
 | 009 | [Auto-face](story-009-auto-face.md) | Integration | Ready | ADR-004 |
 
 ## Definition of Done
@@ -105,4 +105,4 @@ This epic is complete when:
 
 ## Next Step
 
-Run `/story-readiness production/epics/auto-attack-combat/story-008-cycle-timer-broadcast-step.md` (or `story-009-auto-face.md`), then `/dev-story` (Stories 001-007 Complete; 008 and 009 are unlocked by 006).
+Run `/story-readiness production/epics/auto-attack-combat/story-009-auto-face.md`, then `/dev-story` (Stories 001-008 Complete; 009 is the last story of the epic).

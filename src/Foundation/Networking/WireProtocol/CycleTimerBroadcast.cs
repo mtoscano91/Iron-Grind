@@ -6,7 +6,7 @@ namespace IronGrind.Networking
     /// <summary>
     /// U-U CycleBroadcast-packet sub-message reporting one zone entity's auto-attack cycle
     /// position, normalized to a 0–10,000 fraction (CR-NET-7's Message Schemas section). One
-    /// instance is sent per zone entity other than the receiving client, every tick, via
+    /// instance is sent per player in the zone (including the receiver's own entry, never mobs), every tick, via
     /// <c>CycleBroadcastPacketWriter</c> (<c>TICK_BATCH_UU_CYCLE = 0x0103</c>).
     /// </summary>
     /// <remarks>

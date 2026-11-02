@@ -13,7 +13,7 @@ namespace IronGrind.Tests.EditMode.Networking
 {
     /// <summary>
     /// EditMode tests for Hit Detection Story 003: <see cref="RUBatchOutboundStep"/> (the per-tick R-U batch step)
-    /// and the allocation-free <see cref="RUBatchWriter.Write"/> path. The flush order outbox, R-U, positions and the
+    /// and the allocation-free <see cref="RUBatchWriter.Write"/> path. The flush order outbox, R-U, cycle broadcast, positions and the
     /// teardown behaviour are covered at composition level in <c>MovementSystem_PipelineWiring_tests.cs</c>.
     /// </summary>
     [TestFixture]

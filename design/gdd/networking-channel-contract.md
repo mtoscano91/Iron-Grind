@@ -45,7 +45,7 @@ Two distinct session-establishment flows exist. Their naming must not be confuse
 
 | Message | Direction | Channel | Context | Key Invariant |
 |---------|-----------|---------|---------|---------------|
-| `CycleTimerBroadcast` | S→ALL (per-client tailored) | U-U | CC-B | Must remain in its own CycleBroadcast packet (Path 2b-i). Never merged with Position packet. One entry per zone entity other than the receiver. |
+| `CycleTimerBroadcast` | S→ALL (per-client tailored) | U-U | CC-B | Must remain in its own CycleBroadcast packet (Path 2b-i). Never merged with Position packet. One entry per player in the zone, including the receiver (2026-11-02, AA Story 008); never mobs. |
 | `SelfDamageEvent` *(new)* | S→C (attacker only) | R-OD | P1 | Sent to the attacker's own client exclusively. Must never be broadcast to other zone clients. Same fields as `DamageEvent`. |
 | `DamageEvent` | S→ALL | R-U | RU-B | Best-effort. Written first in R-U batch serialization order. Never sent to the attacker's own client as a self-damage notification — that role belongs to `SelfDamageEvent`. |
 | `EntityHealthUpdate` | S→RELEVANT | R-U | RU-B | Sent only to clients for whom the entity is in their relevance set (party member or current target). See `networking-relevance-filter.md`. |

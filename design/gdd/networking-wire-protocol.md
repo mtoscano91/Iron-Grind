@@ -190,7 +190,7 @@ U-U messages are split across **two separate U-U packets** per tick to prevent `
 ...
 ```
 
-Contains: one `CycleTimerBroadcast` sub-message per zone entity other than the receiving client. This packet never overflows at `MAX_PLAYERS_PER_ZONE ≤ 50`: header(12) + 49 × CTB(10) = **502 bytes** (within 512-byte cap). At `MAX_PLAYERS_PER_ZONE = 100`, this packet reaches 1,002 bytes — require `MAX_MESSAGE_BODY_BYTES ≥ 1,000` or split further (see Tuning Knobs). CycleTimerBroadcast is never dropped — it drives Rhythm Mastery charge bar continuity (Pillar 2).
+Contains: one `CycleTimerBroadcast` sub-message per player in the zone, including the receiving client (its own charge bar; never mobs — 2026-11-02, Auto-Attack Combat Story 008). This packet never overflows at `MAX_PLAYERS_PER_ZONE ≤ 50`: header(12) + 50 × CTB(10) = **512 bytes** (exactly the 512-byte cap, zero headroom). At `MAX_PLAYERS_PER_ZONE = 100`, this packet reaches 1,012 bytes — require `MAX_MESSAGE_BODY_BYTES ≥ 1,012` or split further (see Tuning Knobs). CycleTimerBroadcast is never dropped — it drives Rhythm Mastery charge bar continuity (Pillar 2).
 
 **Path 2b-ii — Position packet (`TICK_BATCH_UU = 0x0102`):**
 
@@ -1628,24 +1628,24 @@ Two batch packets are sent per client per tick: one R-U and one U-U (CR-NET-7.7)
 
 **Scenario A — n=10 players (9 other entities), light combat (~2 damage events/tick):**
 - R-U batch: header(12) + 2 DamageEvents(36) + 2 EntityHealthUpdates, filtered(32) + 3 PartyMemberHealthUpdates(72) + 1 SelfPositionUpdate(14) = **166 bytes** (no overflow; GoldSyncEvent +17B and ConnectionQualityUpdate +5B when triggered)
-- CycleBroadcast packet: header(12) + 9 × CTB(10) = **102 bytes** (no overflow)
+- CycleBroadcast packet: header(12) + 10 × CTB(10) = **112 bytes** (no overflow; includes the receiver's own entry)
 - Position packet: header(12) + 9 Positions(126) = **138 bytes** (no overflow; all 9 positions delivered)
-- Per-client/tick: 166 + 102 + 138 = **406 bytes**
-- Bandwidth: 406 × 20 = **8,120 bytes/s ≈ 7.9 KB/s per client**
+- Per-client/tick: 166 + 112 + 138 = **416 bytes**
+- Bandwidth: 416 × 20 = **8,320 bytes/s ≈ 8.1 KB/s per client**
 
 **Scenario B — n=25 players (24 other entities), active combat (~5 damage events/tick):**
 - R-U batch: header(12) + 5 DamageEvents(90) + 2 EntityHealthUpdates, filtered(32) + 3 PartyMemberHealthUpdates(72) + 1 SelfPositionUpdate(14) = **220 bytes** (no overflow)
-- CycleBroadcast packet: header(12) + 24 × CTB(10) = **252 bytes** (no overflow)
+- CycleBroadcast packet: header(12) + 25 × CTB(10) = **262 bytes** (no overflow; includes the receiver's own entry)
 - Position packet: header(12) + 24 Positions(336) = **348 bytes** (no overflow; all 24 positions delivered)
-- Per-client/tick: 220 + 252 + 348 = **820 bytes**
-- Bandwidth: 820 × 20 = **16,400 bytes/s ≈ 16.0 KB/s per client**
+- Per-client/tick: 220 + 262 + 348 = **830 bytes**
+- Bandwidth: 830 × 20 = **16,600 bytes/s ≈ 16.2 KB/s per client**
 
 **Scenario C — n=50 players (49 other entities), dense combat (~10 damage events/tick):**
 - R-U batch: header(12) + 10 DamageEvents(180) + 2 EntityHealthUpdates, filtered(32) + 3 PartyMemberHealthUpdates(72) + 1 SelfPositionUpdate(14) + 1 GoldSyncEvent(17) + 1 ConnectionQualityUpdate(5) = **332 bytes** (**no overflow** — relevance filter + separation invariant eliminated all HP-update drops from Pass 1 Scenario C; SelfPositionUpdate adds 14B, R-U batch 180B below cap)
-- CycleBroadcast packet: header(12) + 49 × CTB(10) = **502 bytes** (no overflow; all 49 cycleTimers delivered)
+- CycleBroadcast packet: header(12) + 50 × CTB(10) = **512 bytes** (no overflow, zero headroom; all 50 cycleTimers delivered, including the receiver's own)
 - Position packet: header(12) + 35 × 14 = **502 bytes** (35 of 49 positions delivered, **14 dropped**; party HP now in R-U batch)
-- Per-client/tick: 332 + 502 + 502 = **1,336 bytes**
-- Bandwidth: 1,336 × 20 = **26,720 bytes/s ≈ 26.1 KB/s per client**
+- Per-client/tick: 332 + 512 + 502 = **1,346 bytes**
+- Bandwidth: 1,346 × 20 = **26,920 bytes/s ≈ 26.3 KB/s per client**
 
 *Note (n=50): R-U batch is 332 bytes — no overflow (180B headroom to 512B cap). Separation invariant (networking-relevance-filter.md) limits EHU to 2 per client (self-slot + 1 non-party target-slot); party HP delivered exclusively via 3 PartyMemberHealthUpdate sub-messages. Position delivery is 35/49 (71%), 14 dropped per tick — clients interpolate stale positions. CycleTimerBroadcast fully delivered. Party HP bars fully delivered (R-U reliable). EHU reduction: ~96% from zone-wide broadcast (2 vs. 49 per client per tick).*
 
@@ -1661,11 +1661,11 @@ BytesPerSecond_total = BytesPerSecond_client × PlayersInZone
 
 | Scenario | Per-client | Total (zone) | Mbit/s |
 |----------|-----------|--------------|--------|
-| n=10 (light combat) | ~7.9 KB/s | ~79 KB/s | ~0.63 Mbit/s |
-| n=25 (active combat) | ~16.0 KB/s | ~400 KB/s | ~3.2 Mbit/s |
-| n=50 (dense combat) | ~26.1 KB/s | ~1,305 KB/s | ~10.4 Mbit/s |
+| n=10 (light combat) | ~8.1 KB/s | ~81 KB/s | ~0.65 Mbit/s |
+| n=25 (active combat) | ~16.2 KB/s | ~405 KB/s | ~3.2 Mbit/s |
+| n=50 (dense combat) | ~26.3 KB/s | ~1,315 KB/s | ~10.5 Mbit/s |
 
-*Bandwidth increased ~0.3 KB/s vs. prior figures across all tiers due to `SelfPositionUpdate` addition (+14 bytes/client/tick in R-U batch). R-U batch headroom at Scenario C: 332 of 512 bytes — no overflow introduced. Still well within mobile budget. Prior figures (~7.7 / ~15.7 / ~25.8 KB/s, CSP amendment 2026-06-14) are superseded. The PA-P7-05 separate CycleBroadcast packet cost is preserved — required for Pillar 2 correctness.*
+*2026-11-02 (Auto-Attack Combat Story 008): +10 bytes/client/tick from the receiver's own `CycleTimerBroadcast` entry; prior figures (~7.9 / ~16.0 / ~26.1 KB/s) are superseded.* *Bandwidth increased ~0.3 KB/s vs. prior figures across all tiers due to `SelfPositionUpdate` addition (+14 bytes/client/tick in R-U batch). R-U batch headroom at Scenario C: 332 of 512 bytes — no overflow introduced. Still well within mobile budget. Prior figures (~7.7 / ~15.7 / ~25.8 KB/s, CSP amendment 2026-06-14) are superseded. The PA-P7-05 separate CycleBroadcast packet cost is preserved — required for Pillar 2 correctness.*
 
 Peak ~10.4 Mbit/s per zone for a single 50-player zone. **This figure is valid for one zone only** — a mid-tier cloud server can support approximately 50–80 concurrent zones before egress becomes a budget concern. Scale linearly; the Networking ADR infrastructure section must specify the target zone count before the "manageable" claim can be validated.
 
@@ -1700,12 +1700,12 @@ O(n²) serialization is the dominant scaling concern. **Two distinct counts must
 
 | Scenario | Pre-drop sub-messages (serialisation work) | Post-drop sub-messages (client delivery) |
 |----------|--------------------------------------------|------------------------------------------|
-| n=10, standard combat | ~116 (all 3 packets) × 10 clients = **1,160** total | ~1,160 (no overflow at n=10) |
-| n=25, standard combat | ~116 × 25 = **2,900** total | ~2,900 (no overflow at n=25) |
-| n=50, standard combat | ~116 × 50 = **5,800** total | ~5,100 (14 positions dropped/client; no R-U overflow with filter) |
-| n=50, peak combat (40 DamageEvents/tick) | ~146 × 50 = **7,300** total | ~5,600 (14 positions + 20 DamageEvents dropped/client; GoldSyncEvent/EHU/PMHU/SPU all fit — no additional drops) |
+| n=10, standard combat | ~117 (all 3 packets) × 10 clients = **1,170** total | ~1,170 (no overflow at n=10) |
+| n=25, standard combat | ~117 × 25 = **2,925** total | ~2,925 (no overflow at n=25) |
+| n=50, standard combat | ~117 × 50 = **5,850** total | ~5,150 (14 positions dropped/client; no R-U overflow with filter) |
+| n=50, peak combat (40 DamageEvents/tick) | ~147 × 50 = **7,350** total | ~5,650 (14 positions + 20 DamageEvents dropped/client; GoldSyncEvent/EHU/PMHU/SPU all fit — no additional drops) |
 
-*Per-client sub-message count at standard Scenario C density: 49 CTB + 49 positions + 10 damage + 2 filtered HP + 3 party HP + 1 SelfPositionUpdate + 1 gold + 1 CQU = 116. Previous Pass 1 figure of ~6,400 was incorrect (used 128/client instead of the correct 159/client for zone-wide HP; the relevance filter now legitimately reduces to 115). EntityHealthUpdate serialization is no longer O(n²): the relevance filter (networking-relevance-filter.md RFR-2) writes directly from bounded per-client sets. Position and cycle timer enumeration remain O(n²).*
+*Per-client sub-message count at standard Scenario C density: 50 CTB (receiver's own included, 2026-11-02) + 49 positions + 10 damage + 2 filtered HP + 3 party HP + 1 SelfPositionUpdate + 1 gold + 1 CQU = 117. Previous Pass 1 figure of ~6,400 was incorrect (used 128/client instead of the correct 159/client for zone-wide HP; the relevance filter now legitimately reduces to 115). EntityHealthUpdate serialization is no longer O(n²): the relevance filter (networking-relevance-filter.md RFR-2) writes directly from bounded per-client sets. Position and cycle timer enumeration remain O(n²).*
 
 *The drop policy caps packet size, not serialisation work. For position and cycle timer updates, the server enumerates all n−1 entities per client before the drop policy runs — O(n²) total. EntityHealthUpdate and PartyMemberHealthUpdate serialization is O(n × MAX_PARTY_SIZE) since the relevance filter writes directly from bounded per-client sets.*
 
@@ -1777,11 +1777,11 @@ At the theoretical maximum mutation rate (one gold event per tick = 20/sec), `Go
 
 | Knob | Default | Safe Range | Impact |
 |------|---------|------------|--------|
-| `MAX_MESSAGE_BODY_BYTES` | 512 | [**502**, 1,400] at default `MAX_PLAYERS_PER_ZONE = 50` | Hard ceiling on message body size per packet. **Lower bound formula (cross-knob dependency):** `min = max(160, 12 + (MAX_PLAYERS_PER_ZONE − 1) × 10)` — the CycleBroadcast packet at n=50 is 502 bytes; any value below 502 drops CTBs every tick, violating the Pillar 2 "CycleTimerBroadcast is never dropped" invariant. At `MAX_PLAYERS_PER_ZONE = 10`, minimum is 102 bytes; at 100 players, 1,002 bytes. Do not lower this knob without rechecking `CycleBroadcast_size = 12 + (MAX_PLAYERS_PER_ZONE − 1) × 10`. Must stay below ~1,200 bytes to avoid IP fragmentation on mobile. Raising above 800 bytes requires re-validating per-tick batch budgets in F-NET-1. |
+| `MAX_MESSAGE_BODY_BYTES` | 512 | [**512**, 1,400] at default `MAX_PLAYERS_PER_ZONE = 50` | Hard ceiling on message body size per packet. **Lower bound formula (cross-knob dependency):** `min = max(160, 12 + MAX_PLAYERS_PER_ZONE × 10)` — the CycleBroadcast packet at n=50 is 512 bytes (receiver's own entry included, 2026-11-02, Auto-Attack Combat Story 008); any value below 512 drops CTBs every tick, violating the Pillar 2 "CycleTimerBroadcast is never dropped" invariant. At `MAX_PLAYERS_PER_ZONE = 10`, minimum is 160 bytes (the formula floor; the packet itself is 112 bytes); at 100 players, 1,012 bytes. Do not lower this knob without rechecking `CycleBroadcast_size = 12 + MAX_PLAYERS_PER_ZONE × 10`. Must stay below ~1,200 bytes to avoid IP fragmentation on mobile. Raising above 800 bytes requires re-validating per-tick batch budgets in F-NET-1. |
 | `RTT_PROBE_INTERVAL_SECONDS` | 10 | [5, 60] | How often the server sends an `RttProbe` to each client to estimate OWL for grace-window compensation (CR-NET-8 in `networking-core.md`). At 10s, a player with suddenly-degraded mobile connection plays ≤10s with unexplained Rhythm Mastery failures before OWL updates. |
 | `HEARTBEAT_INTERVAL_SECONDS` | 3 | [1, 10] | Seconds between client heartbeat sends when no other packet was sent in the preceding interval. Lower values increase resilience against false-positive timeout detection at the cost of ~3.3 bytes/s additional inbound bandwidth per client (F-NET-7). Must be < `HEARTBEAT_TIMEOUT_SECONDS / 2` to ensure at least two heartbeats fit within the timeout window. |
 | `HEARTBEAT_TIMEOUT_SECONDS` | TBD — see `networking-session.md` | [8, 12] recommended | Server fires session timeout after this many seconds of total client silence. Authoritative definition lives in `networking-session.md`; cross-referenced here because it determines whether the F-NET-7 heartbeat contribution is steady-state or burst. Until the `networking-session.md` value is finalised, F-NET-7 inbound baseline uses 3.3 bytes/s (from default `HEARTBEAT_INTERVAL_SECONDS = 3`). |
-| `MAX_PLAYERS_PER_ZONE` | 50 | [10, 100] | Maximum simultaneous players per zone instance. **Primary scaling variable** for all F-NET-1 and F-NET-2 bandwidth calculations, the PA-P7-05 CycleBroadcast saturation threshold, and the zone buffer pool size (`MAX_PLAYERS_PER_ZONE × 3` buffer arrays). Authoritative definition in `networking-core.md`; cross-referenced here because changing it invalidates all F-NET scenarios. Raising to 100 requires `MAX_MESSAGE_BODY_BYTES ≥ 1,002` for the CycleBroadcast packet. |
+| `MAX_PLAYERS_PER_ZONE` | 50 | [10, 100] | Maximum simultaneous players per zone instance. **Primary scaling variable** for all F-NET-1 and F-NET-2 bandwidth calculations, the PA-P7-05 CycleBroadcast saturation threshold, and the zone buffer pool size (`MAX_PLAYERS_PER_ZONE × 3` buffer arrays). Authoritative definition in `networking-core.md`; cross-referenced here because changing it invalidates all F-NET scenarios. Raising to 100 requires `MAX_MESSAGE_BODY_BYTES ≥ 1,012` for the CycleBroadcast packet. |
 | `PRIORITY_PATH_CAP` | 8 | [4, 16] | Maximum non-exempt messages per client per tick on Path 1 (R-OD channel). Raising increases enhancement acknowledgment throughput under high-priority-message load at the cost of potential head-of-line blocking for lower-priority R-OD messages. Enhancement-path and bulk-transfer exemptions are not subject to this cap. See `networking-channel-contract.md` F-CCR-1. |
 | `GOLD_MAX_CONSECUTIVE_DROP` | 3 | [1, 5] | Maximum ticks `GoldSyncEvent` may be overflow-dropped before forced R-OD delivery. Authoritative definition in `networking-message-criticality.md` MCR-4; cross-referenced here because it affects the R-U batch overflow policy. At 1, gold is always delivered within 2 ticks (100ms); at 5, up to 300ms display lag in sustained overflow. |
 
