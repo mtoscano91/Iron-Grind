@@ -362,4 +362,23 @@ namespace IronGrind.Tests.EditMode.AutoAttackCombat
             return Known;
         }
     }
+
+    // Records each auto-face request; fixed arrays, no allocation per call.
+    internal sealed class FakeFaceOutput : IAutoAttackFaceOutput
+    {
+        public readonly EntityID[] Attackers = new EntityID[AutoAttackTestFakes.CAPACITY];
+        public readonly Vector3[] Directions = new Vector3[AutoAttackTestFakes.CAPACITY];
+        public int Count;
+
+        public void Face(EntityID attacker, Vector3 direction)
+        {
+            if (Count < Attackers.Length)
+            {
+                Attackers[Count] = attacker;
+                Directions[Count] = direction;
+            }
+
+            Count++;
+        }
+    }
 }

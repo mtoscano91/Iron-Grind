@@ -193,7 +193,7 @@ namespace IronGrind.Tests.EditMode.AutoAttackCombat
             var combat = new AutoAttackCombatSystem(
                 pool, new MobValidity(), new UnitAttackSpeed(), new FakeZoneState(), new HitDetector(HitDetectionConfig.Default),
                 new FakeHitEmitter(), new FakeStatSource(), new FakeDamageCalc(), applier, new FakeXpAward(),
-                new FakeExperienceSink(), new FakeMobTypeSource(), default(ZoneID));
+                new FakeExperienceSink(), new FakeMobTypeSource(), default(ZoneID), new FakeFaceOutput());
             pool.SetReleaseListener(new CompositeZoneSlotReleaseListener(combat));
 
             IAutoAttackInputSink sink = sinkOverride ?? combat;

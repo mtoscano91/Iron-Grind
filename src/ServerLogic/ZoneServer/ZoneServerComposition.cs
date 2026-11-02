@@ -381,6 +381,8 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// stand-in applier (Auto-Attack Combat Story 007); null until S5 has built it.
         /// </summary>
         internal IAutoAttackDamageApplier AutoAttackDamageApplier { get; private set; }
+        /// <summary>The auto-face output handed to Auto-Attack Combat (Story 009): an <see cref="AutoFaceEmitter"/>; null until S5 has built it.</summary>
+        internal IAutoAttackFaceOutput AutoAttackFaceOutput { get; private set; }
 
         /// <summary>
         /// The zone's RPC guard chain; internal test seam so composition tests can register entity ownership and
@@ -1633,6 +1635,8 @@ namespace IronGrind.ServerLogic.ZoneServer
                 ZoneStats stats = _owner.ZoneCharacterStats;
                 var damageApplier = new DamageOutputApplier(new StandInAutoAttackDamageApplier(),
                     new AutoAttackDamageOutputEmitter(wiring.Pool, _owner._zoneId, outbox, ruBatch));
+                var faceEmitter = new AutoFaceEmitter(wiring.Pool, _owner._zoneId, movement, ruBatch);
+                _owner.AutoAttackFaceOutput = faceEmitter;
                 var combat = new AutoAttackCombatSystem(
                     wiring.Pool,
                     new StandInAutoAttackTargetValidity(wiring.Pool),
@@ -1646,7 +1650,8 @@ namespace IronGrind.ServerLogic.ZoneServer
                     new StandInAutoAttackXpAward(),
                     new CharacterStatsExperienceSink(stats),
                     new StandInAutoAttackMobTypeSource(),
-                    _owner._zoneId);
+                    _owner._zoneId,
+                    faceEmitter);
                 Observe(nameof(AutoAttackCombatSystem));
 
                 // RFR-3a: any entity present in the zone (players and mobs) is a valid target-slot entry; combat

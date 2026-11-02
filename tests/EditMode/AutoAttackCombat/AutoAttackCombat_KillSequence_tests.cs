@@ -190,7 +190,7 @@ namespace IronGrind.Tests.EditMode.AutoAttackCombat
         {
             return new AutoAttackCombatSystem(
                 _pool, new AlwaysValid(), _attackSpeed, _state, new HitDetector(HitDetectionConfig.Default),
-                _emitter, _stats, calc, _applier, _xp, experience ?? _exp, _mobTypes, Zone);
+                _emitter, _stats, calc, _applier, _xp, experience ?? _exp, _mobTypes, Zone, new FakeFaceOutput());
         }
 
         private EntityID AddPlayer()
@@ -604,7 +604,7 @@ namespace IronGrind.Tests.EditMode.AutoAttackCombat
             var roster = new FakeRoster { KnownMob = MobA, KnownType = new MobTypeID(FakeMobTypeSource.MOB_TYPE_RAW) };
             var combat = new AutoAttackCombatSystem(
                 _pool, new AlwaysValid(), _attackSpeed, _state, new HitDetector(HitDetectionConfig.Default),
-                _emitter, _stats, _calc, _applier, _xp, _exp, new ZoneMobRosterMobTypeSource(roster), Zone);
+                _emitter, _stats, _calc, _applier, _xp, _exp, new ZoneMobRosterMobTypeSource(roster), Zone, new FakeFaceOutput());
             combat.OnMobDied += OnMobDiedRecord;
             Ready(combat, p, other);
             LogAssert.Expect(LogType.Error, new Regex(TYPE_LOOKUP_ERROR_PATTERN));

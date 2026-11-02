@@ -3,7 +3,7 @@
 > **Layer**: Core
 > **GDD**: design/gdd/auto-attack-combat.md
 > **Architecture Module**: Auto-Attack Combat (`architecture.md` Core layer), `src/ServerLogic/`
-> **Status**: In Progress
+> **Status**: Complete (2026-11-02)
 > **Stories**: 9 created 2026-10-30 — see Stories
 > **Manifest Version**: 2026-10-26
 
@@ -93,7 +93,7 @@ Applied to `auto-attack-combat.md`, `hit-detection.md`, `networking-core.md`, AD
 | 006 | [`SetAutoAttack`, input and composition](story-006-set-auto-attack-input-and-composition.md) | Integration | Complete | ADR-004, ADR-014 |
 | 007 | [Damage output](story-007-damage-output.md) | Integration | Complete | ADR-004 |
 | 008 | [`CycleTimerBroadcast` step](story-008-cycle-timer-broadcast-step.md) | Integration | Complete | ADR-004, ADR-014 |
-| 009 | [Auto-face](story-009-auto-face.md) | Integration | Ready | ADR-004 |
+| 009 | [Auto-face](story-009-auto-face.md) | Integration | Complete | ADR-004 |
 
 ## Definition of Done
 
@@ -105,4 +105,4 @@ This epic is complete when:
 
 ## Next Step
 
-Run `/story-readiness production/epics/auto-attack-combat/story-009-auto-face.md`, then `/dev-story` (Stories 001-008 Complete; 009 is the last story of the epic).
+All nine stories are Complete (2026-11-02); the epic is closed. Carried forward: real mob kills, AC-08 and AC-17 go to the Enemy AI, Combat UI and HUD epics; OQ-HD-4 (facing changes after the first beat) and AC-HD-19 (b) to the Skill System, (c) to Enemy AI; client 50 ms ease and AC-18 / AC-19 frame capture to Combat UI.

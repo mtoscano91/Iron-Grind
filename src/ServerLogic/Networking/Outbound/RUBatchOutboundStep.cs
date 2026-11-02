@@ -193,11 +193,11 @@ namespace IronGrind.Networking
             int length = body.Length;
             if (category == RUBatchCategory.DamageEvent
                 || category == RUBatchCategory.GoldSyncEvent
-                || (int)category > (int)RUBatchCategory.HitCheckResult
+                || (int)category > (int)RUBatchCategory.AutoFaceEvent
                 || length > RUBatchWriter.MaxSingleOpaqueSubMessagePayloadBytes)
             {
                 Debug.LogError($"{LOG_PREFIX} MessageRefused: clientId={clientId} - category {(int)category}, type 0x{messageTypeId:X4}, {length} bytes; "
-                    + $"only the eight opaque categories are accepted and a body is at most {RUBatchWriter.MaxSingleOpaqueSubMessagePayloadBytes} bytes; not queued.");
+                    + $"only the nine opaque categories are accepted and a body is at most {RUBatchWriter.MaxSingleOpaqueSubMessagePayloadBytes} bytes; not queued.");
                 return;
             }
 

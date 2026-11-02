@@ -418,7 +418,7 @@ AutoFaceEvent {
     short    dirZ;     // 2 bytes
 }
 ```
-*Batch size: 2 + 2 + 18 = 22 bytes. Encoding rules per CR-NET-7.2 (Quaternion + direction vector guards apply).*
+*Batch size: 2 + 2 + 18 = 22 bytes. Encoding rules per CR-NET-7.2 (Quaternion + direction vector guards apply). MessageTypeID: `0x0307` (assigned 2026-11-02, next to `HitCheckResult` 0x0306); R-U batch category `AutoFaceEvent` (10), written after `HitCheckResult`. Sent to every client in the zone, once per activation, on the first auto attempt that passes Rule 10 Step 1 (an out-of-range miss counts). See `auto-attack-combat.md` Rules 20–22, `hit-detection.md` CR-HD-7.*
 
 **SkillUsedNotification** (R-U batch, 4-byte body; **8 bytes in batch**):
 ```

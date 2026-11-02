@@ -1030,6 +1030,17 @@ namespace IronGrind.Tests.EditMode.Networking
             Assert.IsInstanceOf<DamageOutputApplier>(rig.Comp.AutoAttackDamageApplier);
         }
 
+        // A real snap cannot be driven in composition (no NavMesh in EditMode, no mob position), so the wiring is
+        // asserted by type; the emit behaviour is covered in AutoAttackCombat_AutoFace_tests.cs.
+        [Test]
+        public void test_production_composition_auto_face_output_is_the_auto_face_emitter()
+        {
+            var rig = new WiRig();
+            SuRig.Drive(rig.Comp.Start(SuRig.ARGS));
+
+            Assert.IsInstanceOf<AutoFaceEmitter>(rig.Comp.AutoAttackFaceOutput);
+        }
+
         [Test]
         public void test_production_composition_set_target_on_another_player_is_stored_by_the_tracker_and_combat_stays_idle()
         {

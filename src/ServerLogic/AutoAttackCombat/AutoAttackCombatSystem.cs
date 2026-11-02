@@ -139,7 +139,9 @@ namespace IronGrind.AutoAttackCombat
         private readonly IAutoAttackXpAward _xpAward;
         private readonly IAutoAttackExperienceSink _experience;
         private readonly IAutoAttackMobTypeSource _mobTypes;
+        private readonly IAutoAttackFaceOutput _face;
         private readonly ZoneID _zoneId;
+        private readonly bool[] _faceArmed;   // true from an activation until the first auto attempt that passes Step 1 (Rules 20-22)
         private readonly int[] _cycleTicks;
         private readonly EntityID[] _attacker;
         private readonly bool[] _prohibited;
@@ -161,6 +163,7 @@ namespace IronGrind.AutoAttackCombat
         /// <param name="experience">Receives the XP of a kill.</param>
         /// <param name="mobTypes">Resolves the killed mob's type for <see cref="OnMobDied"/>.</param>
         /// <param name="zoneId">The zone this process hosts (ADR-007); carried by <see cref="MobDeathContext"/>.</param>
+        /// <param name="faceOutput">Receives the auto-face snap of the first auto after an activation (Rules 20-22).</param>
         /// <exception cref="ArgumentNullException">Any reference argument is null.</exception>
         public AutoAttackCombatSystem(
             ZoneSlotPool pool,
@@ -175,7 +178,8 @@ namespace IronGrind.AutoAttackCombat
             IAutoAttackXpAward xpAward,
             IAutoAttackExperienceSink experience,
             IAutoAttackMobTypeSource mobTypes,
-            ZoneID zoneId)
+            ZoneID zoneId,
+            IAutoAttackFaceOutput faceOutput)
         {
             _pool = pool ?? throw new ArgumentNullException(nameof(pool));
             _validity = validity ?? throw new ArgumentNullException(nameof(validity));
@@ -189,8 +193,10 @@ namespace IronGrind.AutoAttackCombat
             _xpAward = xpAward ?? throw new ArgumentNullException(nameof(xpAward));
             _experience = experience ?? throw new ArgumentNullException(nameof(experience));
             _mobTypes = mobTypes ?? throw new ArgumentNullException(nameof(mobTypes));
+            _face = faceOutput ?? throw new ArgumentNullException(nameof(faceOutput));
             _zoneId = zoneId;
             int size = pool.MaxPlayers;
+            _faceArmed = new bool[size];
             _cycleTicks = new int[size];
             _attacker = new EntityID[size];
             _actionTimer = new int[size];
@@ -236,6 +242,7 @@ namespace IronGrind.AutoAttackCombat
             ResetTimer(slot);
             _outOfRange[slot] = false;
             _state[slot] = _toggle[slot] ? ActiveState(slot) : AutoAttackState.Idle;
+            _faceArmed[slot] = _toggle[slot];   // a new valid target is an activation (Rule 21)
         }
 
         /// <summary>
@@ -275,6 +282,7 @@ namespace IronGrind.AutoAttackCombat
 
             ResetTimer(slot);
             _outOfRange[slot] = false;
+            _faceArmed[slot] = true;   // OFF to ON with a valid target is an activation (Rule 21)
             _state[slot] = ActiveState(slot);
         }
 
@@ -348,6 +356,7 @@ namespace IronGrind.AutoAttackCombat
             _state[slot] = AutoAttackState.Idle;
             _lastMiss[slot] = NO_MISS;
             _outOfRange[slot] = false;
+            _faceArmed[slot] = false;
         }
 
         // Timer to 0 and a fresh cycle-length sample; the only place the attack speed is read. Ends the miss streak.
@@ -383,6 +392,7 @@ namespace IronGrind.AutoAttackCombat
             _target[slot] = EntityID.Invalid;
             _prohibited[slot] = false;
             _outOfRange[slot] = false;
+            _faceArmed[slot] = false;
             _lastMiss[slot] = NO_MISS;
             _lastRunTick[slot] = NEVER_RUN;
         }
@@ -482,6 +492,14 @@ namespace IronGrind.AutoAttackCombat
             }
 
             Vector3 attackerPos = ToWorld(attackerView.PosX, attackerView.PosY, attackerView.PosZ);
+
+            // Rules 20-22: the first auto attempt after an activation snaps the facing, at any angle, hit or miss. Both
+            // positions are known here, so a prohibited auto (skipped in Run) or a retried lookup keeps the snap.
+            if (_faceArmed[slot])
+            {
+                _faceArmed[slot] = false;
+                _face.Face(attacker, targetPos - attackerPos);
+            }
 
             // The forward is captured toward the target, so the facing check is a deliberate pass-through for player
             // autos. The miss-type-change branch of the streak (MissOutOfRange <-> MissFacing) is therefore unreachable

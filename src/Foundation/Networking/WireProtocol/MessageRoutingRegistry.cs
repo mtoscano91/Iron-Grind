@@ -121,6 +121,17 @@ namespace IronGrind.Networking
                            "(MCR-2, CR-HD-10). For monster attacks the defender is the owner of their own entity."));
 
             Add(new MessageRoutingEntry(
+                messageTypeId: AutoFaceEvent.MessageTypeId,
+                messageName: nameof(AutoFaceEvent),
+                pillars: DesignPillar.RhythmMastery,
+                channel: NetworkChannel.ReliableUnordered,
+                direction: MessageDirection.ServerToAllZoneClients,
+                deliveryContext: MessageDeliveryContext.ReliableUnorderedBatch,
+                isMcr3Exception: false,
+                rationale: "Facing snap cue for the whole zone (CR-HD-7, AC-HD-18); the authoritative facing lives in the " +
+                           "movement state, so a dropped event loses one visual snap only (MCR-2)."));
+
+            Add(new MessageRoutingEntry(
                 messageTypeId: EntityHealthUpdate.MessageTypeId,
                 messageName: nameof(EntityHealthUpdate),
                 pillars: DesignPillar.RhythmMastery | DesignPillar.SocialSignals,

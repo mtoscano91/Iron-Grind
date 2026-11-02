@@ -133,7 +133,7 @@ namespace IronGrind.Tests.EditMode.AutoAttackCombat
             _combat = new AutoAttackCombatSystem(
                 _pool, new FakeValidity(), new UnitAttackSpeed(), _positions, new HitDetector(HitDetectionConfig.Default),
                 new FakeHitEmitter(), new FakeStatSource(), new FakeDamageCalc(), _sink,
-                new FakeXpAward(), new FakeExperienceSink(), new FakeMobTypeSource(), default(ZoneID));
+                new FakeXpAward(), new FakeExperienceSink(), new FakeMobTypeSource(), default(ZoneID), new FakeFaceOutput());
             _seam = new FakeSeam();
             _outbox = new ClientMessageOutbox(_seam);
             _step = new CycleTimerBroadcastStep(_combat, _pool, _seam, _outbox);

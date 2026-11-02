@@ -4,11 +4,11 @@ namespace IronGrind.Networking
 {
     /// <summary>
     /// An opaque, already-serialized R-U batch sub-message supplied by the caller for one of the
-    /// eight <see cref="RUBatchCategory"/> categories the writer treats as opaque
+    /// nine <see cref="RUBatchCategory"/> categories the writer treats as opaque
     /// (<see cref="RUBatchCategory.EntityHealthUpdate"/>,
     /// <see cref="RUBatchCategory.PartyMemberHealthUpdate"/>, <see cref="RUBatchCategory.SelfPositionUpdate"/>,
     /// <see cref="RUBatchCategory.SkillCastResult"/>, <see cref="RUBatchCategory.SkillCooldownUpdate"/>,
-    /// <see cref="RUBatchCategory.HitCheckResult"/>, <see cref="RUBatchCategory.LootBidUpdate"/>,
+    /// <see cref="RUBatchCategory.HitCheckResult"/>, <see cref="RUBatchCategory.AutoFaceEvent"/>, <see cref="RUBatchCategory.LootBidUpdate"/>,
     /// <see cref="RUBatchCategory.ConnectionQualityUpdate"/>).
     /// </summary>
     /// <remarks>

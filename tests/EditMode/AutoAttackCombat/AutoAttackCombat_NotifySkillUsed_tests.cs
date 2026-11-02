@@ -104,7 +104,7 @@ namespace IronGrind.Tests.EditMode.AutoAttackCombat
         private AutoAttackCombatSystem NewCombat()
         {
             return new AutoAttackCombatSystem(_pool, _validity, _attackSpeed, _state, _detector, _emitter, _stats, _calc, _applier,
-                new FakeXpAward(), new FakeExperienceSink(), new FakeMobTypeSource(), Zone);
+                new FakeXpAward(), new FakeExperienceSink(), new FakeMobTypeSource(), Zone, new FakeFaceOutput());
         }
 
         private EntityID AddPlayer()

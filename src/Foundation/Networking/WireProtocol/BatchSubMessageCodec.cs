@@ -447,6 +447,57 @@ namespace IronGrind.Networking
         }
 
         // ---------------------------------------------------------------------------------------
+        // AutoFaceEvent (Auto-Attack Combat Story 009)
+        // ---------------------------------------------------------------------------------------
+
+        /// <summary>Writes a full <see cref="AutoFaceEvent"/> sub-message (header + body) at offset 0. Returns <see cref="AutoFaceEvent.BatchSize"/> (22).</summary>
+        public static int WriteAutoFaceEvent(Span<byte> destination, in AutoFaceEvent autoFaceEvent)
+        {
+            int offset = BatchSubMessageFraming.WriteHeader(destination, AutoFaceEvent.BodySize, AutoFaceEvent.MessageTypeId);
+            offset += WriteAutoFaceEventBody(destination.Slice(offset), in autoFaceEvent);
+            return offset;
+        }
+
+        /// <summary>
+        /// Writes only the <see cref="AutoFaceEvent.BodySize"/>-byte (18) body: entity, rotation x/y/z/w, direction x/y/z.
+        /// Rotation and direction go through the CR-NET-7.2 guards of <see cref="WireFixedPointCodec"/>.
+        /// </summary>
+        /// <returns><see cref="AutoFaceEvent.BodySize"/> (18), always.</returns>
+        public static int WriteAutoFaceEventBody(Span<byte> destination, in AutoFaceEvent autoFaceEvent)
+        {
+            WireIdCodec.SerializeEntityId(destination.Slice(0, 4), autoFaceEvent.EntityId, AutoFaceEvent.MessageTypeId, "entityId");
+            WireFixedPointCodec.EncodeRotation(destination.Slice(4, 8), autoFaceEvent.Rotation);
+            WireFixedPointCodec.EncodeDirection(destination.Slice(12, 6), autoFaceEvent.Direction);
+            return AutoFaceEvent.BodySize;
+        }
+
+        /// <summary>
+        /// Attempts to decode an <see cref="AutoFaceEvent"/> sub-message. Returns false if
+        /// <paramref name="source"/> is shorter than <see cref="AutoFaceEvent.BatchSize"/>.
+        /// </summary>
+        public static bool TryReadAutoFaceEvent(ReadOnlySpan<byte> source, out AutoFaceEvent autoFaceEvent, out int bytesRead)
+        {
+            if (source.Length < AutoFaceEvent.BatchSize || !BatchSubMessageFraming.TryReadHeader(source, out _, out _))
+            {
+                autoFaceEvent = default;
+                bytesRead = 0;
+                return false;
+            }
+
+            int offset = BatchSubMessageFraming.SubMessageHeaderSize;
+            EntityID entity = WireIdCodec.DeserializeEntityId(source.Slice(offset, 4));
+            offset += 4;
+            UnityEngine.Quaternion rotation = WireFixedPointCodec.DecodeRotation(source.Slice(offset, 8));
+            offset += 8;
+            UnityEngine.Vector3 direction = WireFixedPointCodec.DecodeDirection(source.Slice(offset, 6));
+            offset += 6;
+
+            autoFaceEvent = new AutoFaceEvent(entity, rotation, direction);
+            bytesRead = offset;
+            return true;
+        }
+
+        // ---------------------------------------------------------------------------------------
         // PartyMemberHealthUpdate (Story 028)
         // ---------------------------------------------------------------------------------------
 

@@ -87,6 +87,7 @@ namespace IronGrind.Tests.EditMode.Architecture
             "IronGrind.Networking.EntityHealthUpdate",          // consumer (planned): client message handlers (wire schema)
             "IronGrind.Networking.PartyMemberHealthUpdate",     // consumer (planned): client message handlers (wire schema)
             "IronGrind.Networking.HitCheckResult",              // consumer (planned): client message handlers (wire schema)
+            "IronGrind.Networking.AutoFaceEvent",               // consumer (planned): client message handlers (wire schema; Auto-Attack Combat Story 009)
             "IronGrind.Networking.HeartbeatMessage",            // consumer (planned): client message handlers (wire schema)
             "IronGrind.Networking.SetTarget",                   // consumer (planned): client message handlers (wire schema)
             "IronGrind.Networking.SetAutoAttack",               // consumer (planned): Combat UI auto-attack toggle sender (wire schema; Auto-Attack Combat Story 006)

@@ -526,7 +526,7 @@ namespace IronGrind.Tests.EditMode.AutoAttackCombat
                 _pool, new AlwaysValid(), new UnitAttackSpeed(), state, new HitDetector(HitDetectionConfig.Default),
                 hitEmitter, new FakeStatSource { AttackRange = RANGE }, calc,
                 new DamageOutputApplier(inner, _emitter),
-                new FakeXpAward(), new FakeExperienceSink(), new FakeMobTypeSource(), Zone);
+                new FakeXpAward(), new FakeExperienceSink(), new FakeMobTypeSource(), Zone, new FakeFaceOutput());
         }
 
         private static void FireOneCycle(AutoAttackCombatSystem combat, EntityID attacker, EntityID target)

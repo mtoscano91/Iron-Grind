@@ -111,7 +111,7 @@ namespace IronGrind.Tests.EditMode.AutoAttackCombat
             _sink = new FakeDamageApplier();
             _combat = new AutoAttackCombatSystem(
                 _pool, _validity, _attackSpeed, _positions, new HitDetector(HitDetectionConfig.Default), _emitter, _stats, _calc, _sink,
-                new FakeXpAward(), new FakeExperienceSink(), new FakeMobTypeSource(), default(ZoneID));
+                new FakeXpAward(), new FakeExperienceSink(), new FakeMobTypeSource(), default(ZoneID), new FakeFaceOutput());
         }
 
         private EntityID AddPlayer(ZoneSlotPool pool)
@@ -433,7 +433,7 @@ namespace IronGrind.Tests.EditMode.AutoAttackCombat
             var combat = new AutoAttackCombatSystem(
                 pool, validity, attackSpeed, new FakeZoneState(), new HitDetector(HitDetectionConfig.Default),
                 new FakeHitEmitter(), new FakeStatSource(), new FakeDamageCalc(), sink,
-                new FakeXpAward(), new FakeExperienceSink(), new FakeMobTypeSource(), default(ZoneID));
+                new FakeXpAward(), new FakeExperienceSink(), new FakeMobTypeSource(), default(ZoneID), new FakeFaceOutput());
             for (int i = 0; i < ALLOC_PLAYERS; i++)
             {
                 EntityID p = AddPlayer(pool);
