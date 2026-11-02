@@ -295,7 +295,8 @@ namespace IronGrind.Tests.EditMode.StatusEffects
 
             IList<IZoneSimulationStep> steps = rig.Comp.SimulationSteps;
 
-            Assert.AreEqual(3, steps.Count);
+            Assert.AreEqual(4, steps.Count, "Auto-Attack Combat Story 006 adds Combat as the fourth step");
+            Assert.AreSame(rig.Comp.AutoAttackCombat, steps[3]);
             Assert.AreSame(rig.Comp.Movement, steps[2]);
             Assert.AreSame(rig.Comp.ZoneInstancing, steps[0]);
             Assert.IsInstanceOf<ZoneInstancingWiring>(steps[0]);

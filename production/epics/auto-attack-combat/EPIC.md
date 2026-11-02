@@ -73,12 +73,12 @@ Applied to `auto-attack-combat.md`, `hit-detection.md`, `networking-core.md`, AD
 
 ## Carried into stories
 
-- `SetAutoAttack { bool enabled; }` has no MessageTypeID yet. Story 006 assigns one and adds it to `networking-wire-protocol.md`, `networking-channel-contract.md` and `networking-message-criticality.md`.
-- `networking-wire-protocol.md:406` still says "sent after every `CheckHit` call"; Story 006 updates it to the miss-streak exception.
+- `SetAutoAttack` is `0xE050` and is in `networking-wire-protocol.md`, `networking-channel-contract.md`, `networking-message-criticality.md` and ADR-014 Decision 1 (Story 006, done).
+- `networking-wire-protocol.md:406` states the miss-streak exception (Story 006, done).
 - `networking-core.md` CR-NET-8 and `networking-owl-compensation.md` grace-window text marked superseded (Story 005, done). OWL cleanup (later, with the OWL code in `src/`): `networking-test-harness.md:281-283` (`OnSkillGraceWindowEvaluated`) and `networking-wire-protocol.md:1773` (`RTT_PROBE_INTERVAL_SECONDS` rationale) still describe the grace window.
 - Skill System epic: inject `IAutoAttackSkillUseSink` (implemented by `AutoAttackCombatSystem`) and call `NotifySkillUsed` in the request step, before combat's `Run` of the same tick (Story 005).
 - `death-and-respawn.md` still names a Targeting System; dead-entity rejection lands in Combat's validity check (Story 001).
-- Story 006: the composition needs an `IAutoAttackXpAward` (placeholder until Leveling / Enemy AI) and a `ZoneID`; mobs have no `CharacterStats` HP, so production `IsKill` stays false for mobs until Enemy AI (Story 004, user decision 2026-11-02).
+- Composition (Story 006, done): stand-ins in `ZoneServerStandIns.cs` for target validity, damage calculator (rejects every hit), applier, XP award (0) and mob type source; Enemy AI replaces them (the real `ZoneMobRosterMobTypeSource` needs `ZoneInstancingWiring` to expose its roster). Zone entry must register player stats before combat activates (otherwise 40-tick cycle). TD-088: `TargetSlotTracker` not cleared on disconnect. Mobs have no `CharacterStats` HP, so production `IsKill` stays false for mobs until Enemy AI (Story 004, user decision 2026-11-02).
 - Enemy AI: mob health must ignore a second `Apply` on a dead mob (same-tick double kill); decide whether respawn fires when `OnMobDied` is skipped for an unknown mob type (Story 004).
 
 ## Stories
@@ -90,7 +90,7 @@ Applied to `auto-attack-combat.md`, `hit-detection.md`, `networking-core.md`, AD
 | 003 | [Resolution order](story-003-resolution-order.md) | Logic | Complete | ADR-012, ADR-013, ADR-014 |
 | 004 | [Kill sequence](story-004-kill-sequence.md) | Logic | Complete | ADR-010 |
 | 005 | [`NotifySkillUsed`](story-005-notify-skill-used.md) | Logic | Complete | ADR-010 |
-| 006 | [`SetAutoAttack`, input and composition](story-006-set-auto-attack-input-and-composition.md) | Integration | Ready | ADR-004, ADR-014 |
+| 006 | [`SetAutoAttack`, input and composition](story-006-set-auto-attack-input-and-composition.md) | Integration | Complete | ADR-004, ADR-014 |
 | 007 | [Damage output](story-007-damage-output.md) | Integration | Ready | ADR-004 |
 | 008 | [`CycleTimerBroadcast` step](story-008-cycle-timer-broadcast-step.md) | Integration | Ready | ADR-004, ADR-014 |
 | 009 | [Auto-face](story-009-auto-face.md) | Integration | Ready | ADR-004 |
@@ -105,4 +105,4 @@ This epic is complete when:
 
 ## Next Step
 
-Run `/story-readiness production/epics/auto-attack-combat/story-006-set-auto-attack-input-and-composition.md`, then `/dev-story` (Stories 001-005 Complete).
+Run `/story-readiness production/epics/auto-attack-combat/story-007-damage-output.md`, then `/dev-story` (Stories 001-006 Complete; 007, 008 and 009 are each unlocked by 006).

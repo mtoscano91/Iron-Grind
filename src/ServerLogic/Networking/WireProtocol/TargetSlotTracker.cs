@@ -178,6 +178,25 @@ namespace IronGrind.Networking
                 return false;
             }
 
+            // Auto-Attack Combat Story 006 code review: fast paths avoid boxing the enumerator per SetTarget.
+            if (candidates is ZoneEntityIdView view)
+            {
+                return view.Contains(target);
+            }
+
+            if (candidates is IReadOnlyList<EntityID> list)
+            {
+                for (int i = 0; i < list.Count; i++)
+                {
+                    if (list[i] == target)
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
             foreach (EntityID candidate in candidates)
             {
                 if (candidate == target)
@@ -187,6 +206,17 @@ namespace IronGrind.Networking
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Removes <paramref name="clientId"/>'s target-slot entry (e.g. on disconnect / session end) so the
+        /// dictionary does not grow without bound. No-op if the client has no entry. See
+        /// networking-relevance-filter.md RFR-3a; Auto-Attack Combat Story 006 code review.
+        /// </summary>
+        /// <param name="clientId">The connection identity whose entry to drop.</param>
+        public void Clear(uint clientId)
+        {
+            _targetSlots.Remove(clientId);
         }
     }
 }

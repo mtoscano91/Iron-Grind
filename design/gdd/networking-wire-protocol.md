@@ -403,7 +403,7 @@ HitCheckResult {
     uint     serverTick;       // 4 bytes
 }
 ```
-*MessageTypeID: `0x0306` (assigned 2026-10-30, next to `PartyMemberHealthUpdate` 0x0305). Sent after every `CheckHit` call, whatever the result, to the player involved: the attacker for player attacks, the defending player for monster attacks. Never zone-wide. Defined in `hit-detection.md` CR-HD-10.*
+*MessageTypeID: `0x0306` (assigned 2026-10-30, next to `PartyMemberHealthUpdate` 0x0305). Sent after every `CheckHit` call, whatever the result, with one exception: an auto-attack that is ready retries every tick, so Auto-Attack Combat sends a repeated miss once per miss streak (`hit-detection.md` CR-HD-10, `auto-attack-combat.md` Rule 10 Step 2). Sent to the player involved: the attacker for player attacks, the defending player for monster attacks. Never zone-wide. Defined in `hit-detection.md` CR-HD-10.*
 
 **AutoFaceEvent** (R-U batch, 18-byte body; **22 bytes in batch**):
 ```
@@ -571,6 +571,14 @@ SetTarget {
 }
 ```
 *Standalone size: 10 (envelope) + 4 (SenderEntityID per CR-NET-7.1 C→S extension) + 4 (body) = 18 bytes. Server validates: `targetEntityId` must be a valid EntityID in the current zone, or 0 (deselect). Self-target (`targetEntityId == client.ownEntityId`) rejected silently — logs `SelfTargetAttempt` advisory anomaly, target slot unchanged. Invalid EntityIDs discarded silently — logs `InvalidTargetEntityId` advisory anomaly. On valid target change: server updates the EntityHealthUpdate relevance set atomically before next batch flush. See RFR-3, RFR-3a (networking-relevance-filter.md).*
+
+**SetAutoAttack** (R-OD, client → server, 1-byte body; 15 bytes standalone):
+```
+SetAutoAttack {
+    bool enabled;  // 1 byte. 0 = OFF, 1 = ON; any other value is malformed.
+}
+```
+*MessageTypeID: `0xE050` (assigned 2026-11-02, Auto-Attack Combat Story 006, next to `SetTarget` 0xE040). Standalone size: 10 (envelope) + 4 (SenderEntityID per CR-NET-7.1 C→S extension) + 1 (body) = 15 bytes. Sets the sender's auto-attack toggle (`auto-attack-combat.md` Rule 1); applied in the dispatch step, before the simulation step of the same tick (EC-8, ADR-014 Decision 6). A body that is not exactly 1 byte, or a byte other than 0 or 1, is dropped with an `InboundMessageMalformed` log and changes no state. Not held, no rate limit. A dead player may send it; the fire is blocked by state (`death-and-respawn.md` CR-DR-16), not by the wire. No response.*
 
 **PlayerJoinedZone** (R-OD, server → all zone clients, variable body; maximum 40-byte body):
 ```

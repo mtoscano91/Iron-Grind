@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
+using IronGrind.AutoAttackCombat;
 using IronGrind.CharacterPersistence;
 using IronGrind.HitDetection;
 using IronGrind.LevelingSystem;
@@ -361,6 +362,22 @@ namespace IronGrind.ServerLogic.ZoneServer
 
         /// <summary>The zone's hit result emitter, built at S5 right after the R-U batch step (Hit Detection Story 004); null before S5.</summary>
         internal HitResultEmitter HitResultEmitter { get; private set; }
+
+        /// <summary>The Auto-Attack Combat system (Story 006); null until S5 has built it.</summary>
+        internal AutoAttackCombatSystem AutoAttackCombat { get; private set; }
+
+        /// <summary>
+        /// The per-client SetTarget slot tracker (networking-relevance-filter.md RFR-3a). Exposed so a
+        /// disconnect hook can call <see cref="TargetSlotTracker.Clear"/>; wiring deferred (Auto-Attack
+        /// Combat Story 006 code review).
+        /// </summary>
+        internal TargetSlotTracker TargetSlotTracker { get; private set; }
+
+        /// <summary>
+        /// The zone's RPC guard chain; internal test seam so composition tests can register entity ownership and
+        /// session-ready state (Auto-Attack Combat Story 006 code review).
+        /// </summary>
+        internal CrossCuttingRpcGuardChain GuardChain { get; private set; }
 
         /// <summary>The zone's Status Effects service, built at S5 (Story 009); null before S5.</summary>
         internal StatusEffectsService StatusEffects { get; private set; }
@@ -1449,6 +1466,7 @@ namespace IronGrind.ServerLogic.ZoneServer
             private InboundRequestDispatcher BuildDispatcher()
             {
                 var guardChain = new CrossCuttingRpcGuardChain();
+                _owner.GuardChain = guardChain;
                 Observe(nameof(CrossCuttingRpcGuardChain));
                 _gate = new CharacterMutationGate();
                 Observe(nameof(CharacterMutationGate));
@@ -1476,6 +1494,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                 _owner.RUBatch = ruBatch;
                 _owner.HitResultEmitter = new HitResultEmitter(wiring.Pool, ruBatch, _tickLoop);
                 Observe(nameof(HitResultEmitter));
+                BuildAutoAttackCombat(dispatcher, wiring, stateSource, statusEffects, movement);
                 var positions = new PositionBroadcastStep(movement, wiring.Pool, sendSeam, outbox);
                 Observe(nameof(PositionBroadcastStep));
                 _owner.PositionBroadcast = positions;
@@ -1537,7 +1556,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                     new CharacterStatsResourceSink(stats), new ZoneSlotPoolEntityIndex(wiring.Pool),
                     new CharacterStatsDeathSource(stats));
                 Observe(nameof(StatusEffectsService));
-                // The pool's release listener is set in BuildMovement (composite: Status Effects, then Movement).
+                // The pool's release listener is set in BuildAutoAttackCombat (composite: Status Effects, Movement, Combat).
                 _owner.RegisterDisposable(statusEffects);
                 _owner.StatusEffects = statusEffects;
                 _owner._simulationSteps.Add(statusEffects);
@@ -1578,10 +1597,48 @@ namespace IronGrind.ServerLogic.ZoneServer
                 Observe(nameof(MovementService));
                 stateSource.AttachMovement(movement);
                 wiring.EntryCompletion.SetEntryListener(movement);
-                wiring.Pool.SetReleaseListener(new CompositeZoneSlotReleaseListener(statusEffects, movement));
+                // The pool's release listener is set in BuildAutoAttackCombat (composite: Status Effects, Movement, Combat).
                 _owner.Movement = movement;
                 _owner._simulationSteps.Add(movement);
                 return movement;
+            }
+
+            // Auto-Attack Combat Story 006: the Combat step joins phase 3 after Movement (the fire check sees this tick's
+            // positions); SetTarget and SetAutoAttack register before Seal and apply in the dispatch step (EC-8); the slot
+            // release listener is set here, once, with Combat last so BeforeRelease still finds the player's slot.
+            // Mob seams (validity, damage, XP, mob type) are stand-ins until Enemy AI, Leveling and the item database.
+            private void BuildAutoAttackCombat(InboundRequestDispatcher dispatcher, ZoneInstancingWiring wiring,
+                MovementZoneEntityStateSource stateSource, StatusEffectsService statusEffects, MovementService movement)
+            {
+                ZoneStats stats = _owner.ZoneCharacterStats;
+                var combat = new AutoAttackCombatSystem(
+                    wiring.Pool,
+                    new StandInAutoAttackTargetValidity(wiring.Pool),
+                    new CharacterStatsAttackSpeedSource(stats),
+                    stateSource,
+                    new HitDetector(HitDetectionConfig.Default),
+                    _owner.HitResultEmitter,
+                    new CharacterStatsAutoAttackStatSource(stats),
+                    new StandInAutoAttackDamageCalculator(),
+                    new StandInAutoAttackDamageApplier(),
+                    new StandInAutoAttackXpAward(),
+                    new CharacterStatsExperienceSink(stats),
+                    new StandInAutoAttackMobTypeSource(),
+                    _owner._zoneId);
+                Observe(nameof(AutoAttackCombatSystem));
+
+                // RFR-3a: any entity present in the zone (players and mobs) is a valid target-slot entry; combat
+                // still rejects player targets via its own validity check (Rule 1).
+                var tracker = new TargetSlotTracker();
+                var setTarget = new SetTargetRequestHandler(tracker,
+                    new ZoneEntityIdView(wiring.Pool.GetPlayerEntityIDsInZone(_owner._zoneId),
+                        wiring.Pool.GetMobEntityIDsInZone(_owner._zoneId)), combat);
+                _owner.TargetSlotTracker = tracker;
+                NetworkingCoreInboundRegistration.RegisterCombatInput(dispatcher, setTarget, new SetAutoAttackRequestHandler(combat));
+
+                wiring.Pool.SetReleaseListener(new CompositeZoneSlotReleaseListener(statusEffects, movement, combat));
+                _owner.AutoAttackCombat = combat;
+                _owner._simulationSteps.Add(combat);
             }
 
             public bool StartListener()

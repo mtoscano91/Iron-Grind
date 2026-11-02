@@ -5,6 +5,9 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using IronGrind.AutoAttackCombat;
+using IronGrind.CharacterPersistence;
+using IronGrind.CharacterStats;
 using IronGrind.Currency;
 using IronGrind.Networking;
 using IronGrind.ServerLogic.ZoneInstancing;
@@ -211,7 +214,7 @@ namespace IronGrind.Tests.EditMode.Networking
             "CrossZoneRelayAllowlist", "CrossZoneRelayOrigin", "CrossZoneRelayInbox", "CrossZoneRelayReceiver",
             "NpgsqlRelayPublisher", "CrossCuttingRpcGuardChain", "CharacterMutationGate", "InboundRequestDispatcher",
             "ClientMessageOutbox", "ZoneInstancingWiring", "CharacterStats", "StatusEffectsService",
-            "MovementIntentBuffer", "MovementService", "RUBatchOutboundStep", "HitResultEmitter", "PositionBroadcastStep", "ServerWideBroadcaster", "ZoneClientRelayHandler", "ZoneSimulationStep",
+            "MovementIntentBuffer", "MovementService", "RUBatchOutboundStep", "HitResultEmitter", "AutoAttackCombatSystem", "PositionBroadcastStep", "ServerWideBroadcaster", "ZoneClientRelayHandler", "ZoneSimulationStep",
             "ZoneTickPipeline", "Seal", "RegisterTickDriven", "CreateInboundTransport"
         };
 
@@ -528,6 +531,21 @@ namespace IronGrind.Tests.EditMode.Networking
             int b = rig.Log.IndexOf("B:1");
             Assert.GreaterOrEqual(a, 0);
             Assert.Less(a, b);
+        }
+
+        // Auto-Attack Combat Story 006: Combat's step is listed after Movement, so the fire check sees this tick's positions.
+        [Test]
+        public void test_the_combat_step_is_listed_after_the_movement_step_in_the_simulation_steps()
+        {
+            var rig = new WiRig();
+            SuRig.Drive(rig.Comp.Start(SuRig.ARGS));
+
+            int movement = rig.Comp.SimulationSteps.IndexOf(rig.Comp.Movement);
+            int combat = rig.Comp.SimulationSteps.IndexOf(rig.Comp.AutoAttackCombat);
+
+            Assert.IsNotNull(rig.Comp.AutoAttackCombat);
+            Assert.GreaterOrEqual(movement, 0);
+            Assert.Greater(combat, movement, "Combat runs after Movement");
         }
 
         [Test]
@@ -944,6 +962,77 @@ namespace IronGrind.Tests.EditMode.Networking
             }
 
             return code.ToString();
+        }
+
+        // ---------------------------------------------------------------- Auto-Attack Combat Story 006 code review
+
+        private const uint AA_CLIENT_ONE = 11u;
+        private const uint AA_CLIENT_TWO = 12u;
+        private const uint AA_ACCOUNT_OFFSET = 1000u;
+        private const uint AA_SEQUENCE = 1u;
+        private const uint AA_ENVELOPE_TICK = 0u;
+
+        private static EntityID AaAddPlayer(WiRig rig, uint client)
+        {
+            ZoneSlotPool pool = rig.Comp.ZoneInstancing.Pool;
+            Assert.IsTrue(pool.TryAllocatePlayer(pool.Zone, new CharacterID(client), new AccountID(client + AA_ACCOUNT_OFFSET), client,
+                out _, out EntityID id));
+            Assert.IsTrue(rig.Net.Dispatcher.AddConnection(client));
+            rig.Comp.GuardChain.RegisterEntityOwnership(client, id);
+            rig.Comp.GuardChain.MarkSessionReady(client);
+            rig.Comp.ZoneInstancing.Directory.Add(client, new CharacterID(client));
+            return id;
+        }
+
+        private static void AaSendToggle(WiRig rig, uint client, EntityID sender, bool enabled, uint sequence)
+        {
+            var message = new byte[SetAutoAttack.WireSize];
+            SetAutoAttackCodec.Write(message, sequence, AA_ENVELOPE_TICK, sender.RawValue, enabled);
+            Assert.IsTrue(rig.Net.Intake.TryAccept(client, message));
+        }
+
+        private static void AaSendTarget(WiRig rig, uint client, EntityID sender, EntityID target, uint sequence)
+        {
+            var message = new byte[SetTarget.WireSize];
+            SetTargetCodec.Write(message, sequence, AA_ENVELOPE_TICK, sender.RawValue, target.RawValue);
+            Assert.IsTrue(rig.Net.Intake.TryAccept(client, message));
+        }
+
+        [Test]
+        public void test_production_composition_set_auto_attack_and_set_target_activate_combat_then_release_returns_idle()
+        {
+            var rig = new WiRig();
+            SuRig.Drive(rig.Comp.Start(SuRig.ARGS));
+            ZoneSlotPool pool = rig.Comp.ZoneInstancing.Pool;
+            EntityID player = AaAddPlayer(rig, AA_CLIENT_ONE);
+            Assert.IsTrue(pool.TryAllocateMob(pool.Zone, out _, out EntityID mob));
+
+            AaSendToggle(rig, AA_CLIENT_ONE, player, true, AA_SEQUENCE);
+            AaSendTarget(rig, AA_CLIENT_ONE, player, mob, AA_SEQUENCE + 1u);
+            rig.Net.FireTick();
+
+            Assert.AreEqual(AutoAttackState.CombatActive, rig.Comp.AutoAttackCombat.GetState(player));
+            Assert.AreEqual(mob, rig.Comp.AutoAttackCombat.GetTarget(player));
+
+            Assert.IsTrue(pool.ReleasePlayer(player));
+
+            Assert.AreEqual(AutoAttackState.Idle, rig.Comp.AutoAttackCombat.GetState(player));
+        }
+
+        [Test]
+        public void test_production_composition_set_target_on_another_player_is_stored_by_the_tracker_and_combat_stays_idle()
+        {
+            var rig = new WiRig();
+            SuRig.Drive(rig.Comp.Start(SuRig.ARGS));
+            EntityID player = AaAddPlayer(rig, AA_CLIENT_ONE);
+            EntityID other = AaAddPlayer(rig, AA_CLIENT_TWO);
+
+            AaSendToggle(rig, AA_CLIENT_ONE, player, true, AA_SEQUENCE);
+            AaSendTarget(rig, AA_CLIENT_ONE, player, other, AA_SEQUENCE + 1u);
+            rig.Net.FireTick();
+
+            Assert.AreEqual(other, rig.Comp.TargetSlotTracker.GetTarget(AA_CLIENT_ONE), "RFR-3a: any entity in the zone is a valid slot");
+            Assert.AreEqual(AutoAttackState.Idle, rig.Comp.AutoAttackCombat.GetState(player), "Combat rejects player targets (Rule 1)");
         }
     }
 }

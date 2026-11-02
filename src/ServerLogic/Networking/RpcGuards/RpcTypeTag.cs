@@ -76,5 +76,8 @@ namespace IronGrind.Networking
 
         /// <summary><c>MovementIntentMessage</c> (Movement Story 004, ADR-014 Decision 1). No rate limit: two per tick are allowed (AC-MOV-28).</summary>
         MovementIntent = 9,
+
+        /// <summary><c>SetAutoAttack</c> (Auto-Attack Combat Story 006, ADR-014 Decision 1). No rate limit (gap 0).</summary>
+        SetAutoAttack = 10,
     }
 }

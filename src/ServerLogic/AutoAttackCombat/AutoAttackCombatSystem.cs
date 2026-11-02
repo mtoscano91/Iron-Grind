@@ -78,7 +78,8 @@ namespace IronGrind.AutoAttackCombat
     /// combat.Run(tick, dt);                // timer 1; fires once the timer reaches GetCycleTicks and the target is in range
     /// </code>
     /// </example>
-    public sealed class AutoAttackCombatSystem : IZoneSimulationStep, ICombatService, IAutoAttackSkillUseSink
+    public sealed class AutoAttackCombatSystem : IZoneSimulationStep, ICombatService, IAutoAttackSkillUseSink,
+        IAutoAttackInputSink, IZoneSlotReleaseListener
     {
         /// <inheritdoc />
         /// <remarks>
@@ -384,6 +385,13 @@ namespace IronGrind.AutoAttackCombat
             _outOfRange[slot] = false;
             _lastMiss[slot] = NO_MISS;
             _lastRunTick[slot] = NEVER_RUN;
+        }
+
+        /// <inheritdoc />
+        /// <remarks>Story 006: the slot-release hook; resets the player's combat state while it still holds the slot. Same as <see cref="ReleasePlayer"/>.</remarks>
+        public void BeforeRelease(EntityID id)
+        {
+            ReleasePlayer(id);
         }
 
         /// <summary>The cycle length in ticks sampled for the player's current cycle; 0 when the entity has no slot or none was sampled.</summary>

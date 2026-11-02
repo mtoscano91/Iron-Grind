@@ -471,6 +471,7 @@ namespace IronGrind.Networking
                 case RpcTypeTag.CloseNPCInteraction:
                 case RpcTypeTag.EquipRequest:
                 case RpcTypeTag.MovementIntent:
+                case RpcTypeTag.SetAutoAttack:
                     return 0;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(rpcTypeTag), rpcTypeTag,

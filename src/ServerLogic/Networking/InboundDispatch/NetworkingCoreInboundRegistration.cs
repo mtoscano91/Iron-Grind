@@ -40,5 +40,32 @@ namespace IronGrind.Networking
                 new ConnectionMessageDescriptor(HeartbeatMessage.MessageTypeId, maxBodyBytes: 0, carriesSenderEntityId: false),
                 heartbeatSink);
         }
+
+        /// <summary>
+        /// Registers the two Combat input requests (Auto-Attack Combat Story 006, ADR-014 Decision 1):
+        /// <see cref="SetTarget"/> (tag <see cref="RpcTypeTag.SetTarget"/>, body 4) and <see cref="SetAutoAttack"/>
+        /// (tag <see cref="RpcTypeTag.SetAutoAttack"/>, body 1), both not held and without a rate limit. Use it
+        /// instead of <see cref="Register"/> when no heartbeat sink exists (the zone composition); do not call both
+        /// for the same dispatcher, the second would register <see cref="SetTarget"/> twice. Does not call <c>Seal()</c>.
+        /// </summary>
+        /// <param name="dispatcher">The dispatcher to register on.</param>
+        /// <param name="setTargetHandler">The <see cref="SetTarget"/> handler.</param>
+        /// <param name="setAutoAttackHandler">The <see cref="SetAutoAttack"/> handler.</param>
+        public static void RegisterCombatInput(IInboundRequestDispatcher dispatcher, SetTargetRequestHandler setTargetHandler,
+            SetAutoAttackRequestHandler setAutoAttackHandler)
+        {
+            if (dispatcher == null) throw new ArgumentNullException(nameof(dispatcher));
+            if (setTargetHandler == null) throw new ArgumentNullException(nameof(setTargetHandler));
+            if (setAutoAttackHandler == null) throw new ArgumentNullException(nameof(setAutoAttackHandler));
+
+            dispatcher.Register(
+                new InboundRequestDescriptor(SetTarget.MessageTypeId, RpcTypeTag.SetTarget,
+                    heldDuringIrreversibleWrite: false, maxBodyBytes: (ushort)SetTarget.BodySize),
+                setTargetHandler.Handle);
+            dispatcher.Register(
+                new InboundRequestDescriptor(SetAutoAttack.MessageTypeId, RpcTypeTag.SetAutoAttack,
+                    heldDuringIrreversibleWrite: false, maxBodyBytes: (ushort)SetAutoAttack.BodySize),
+                setAutoAttackHandler.Handle);
+        }
     }
 }

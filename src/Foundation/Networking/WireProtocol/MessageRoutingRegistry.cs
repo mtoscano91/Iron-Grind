@@ -224,6 +224,11 @@ namespace IronGrind.Networking
             AddPriority(RejectedNotInTownHub.MessageTypeId, nameof(RejectedNotInTownHub), DesignPillar.Infrastructure,
                 MessageDirection.ServerToOwningClient, "Session validation failure response to OpenNPCInteraction; releases the client's pending state.");
 
+            // Auto-Attack Combat Story 006: the auto-attack toggle, a persistent server state change (R-OD priority path).
+            AddPriority(SetAutoAttack.MessageTypeId, nameof(SetAutoAttack), DesignPillar.Infrastructure,
+                MessageDirection.ClientToServer, "Persistent server state change (auto-attack toggle, auto-attack-combat.md Rule 1); " +
+                "a dropped or reordered toggle leaves server and client disagreeing, so R-U is unacceptable. Single-pillar R-OD.");
+
             // Inventory Story 012: owner bag sync (TD-046), R-OD priority path.
             AddPriority(InventorySlotUpdate.MessageTypeId, nameof(InventorySlotUpdate), DesignPillar.EarnedPower,
                 MessageDirection.ServerToOwningClient, "Owning client's authoritative bag view: absolute post-change state of each changed slot; a lost or reordered update leaves the bag wrong.");

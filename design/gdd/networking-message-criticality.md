@@ -104,6 +104,7 @@ None. This document is a pure infrastructure contract. Its correctness is felt i
 | Respec Phase 1/2 *(schemas pending)* | Pillar 1 | Guaranteed delivery | R-OD | Permanent stat respec. Schemas defined in Character Stats GDD. |
 | Item consumption confirmation *(schema pending)* | Pillar 1 | Guaranteed delivery | R-OD | Permanent inventory change. Schema defined in Inventory System GDD. |
 | `SetTarget` | Infrastructure | Guaranteed delivery | R-OD | Persistent server state change — updates the client's EntityHealthUpdate relevance set (networking-relevance-filter.md RFR-3a). A dropped `SetTarget` leaves the target-slot EHU stale indefinitely. Direction C→S. |
+| `SetAutoAttack` | Infrastructure | Guaranteed delivery | R-OD | Persistent server state change — the auto-attack toggle (`auto-attack-combat.md` Rule 1). A dropped `SetAutoAttack` leaves server and client disagreeing about the toggle until the next one. Direction C→S. Added 2026-11-02 (Auto-Attack Combat Story 006). |
 | `SessionHandshake` | Infrastructure | Guaranteed delivery | R-OD | Zone entry session establishment (client → server). |
 | `SessionReady` | Infrastructure | Guaranteed delivery | R-OD | Zone-entry dual-gate signal (server → owning client). |
 | `ZoneEntryAck` | Infrastructure | Guaranteed delivery | R-OD | Client → server, once, when the zone-entry dual gate opens. Ends the server's "entering" phase; a lost ack would get a successfully entered player reclaimed after `ZONE_ENTRY_STALL_TIMEOUT_SECONDS` (zone-instancing.md CR-ZI-17). Added 2026-10-23. |

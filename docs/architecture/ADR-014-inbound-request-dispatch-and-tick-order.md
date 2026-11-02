@@ -92,6 +92,7 @@ ADR-011 Decision 4 relies on "the session's inbound request dispatcher — the s
 | `CancelEnhancement` | R-OD | request | no | — | 0 |
 | `AllocateFreePointRequest` | R-OD | request | no | `AllocateFreePoint` | no wire schema yet |
 | `SetTarget` | R-OD | request | no | — | 4 |
+| `SetAutoAttack` | R-OD | request | no | — | 1 |
 | `LootBidRequest` | R-OD | request | no | — | 8 |
 | `PartyInviteRequest` | R-OD | request | no | — | 4 |
 | `PartyInviteResponse` | R-OD | request | no | — | 5 |

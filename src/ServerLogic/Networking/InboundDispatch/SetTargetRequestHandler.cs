@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using IronGrind.AutoAttackCombat;
 using IronGrind.CharacterStats;
 using UnityEngine;
 
@@ -20,14 +21,21 @@ namespace IronGrind.Networking
     {
         private readonly TargetSlotTracker _tracker;
         private readonly IReadOnlyCollection<EntityID> _validZoneEntityIds;
+        private readonly IAutoAttackInputSink _combat;
 
         /// <summary>Creates the handler.</summary>
         /// <param name="tracker">The target-slot tracker; not null.</param>
         /// <param name="validZoneEntityIds">The zone's live entity set, supplied by the composition root; may be null (then only a deselect succeeds).</param>
-        public SetTargetRequestHandler(TargetSlotTracker tracker, IReadOnlyCollection<EntityID> validZoneEntityIds)
+        /// <param name="combat">
+        /// Auto-Attack Combat seam (Story 006); an accepted target is forwarded to it. Optional: null keeps the
+        /// tracker-only behaviour of Networking Core Story 036.
+        /// </param>
+        public SetTargetRequestHandler(TargetSlotTracker tracker, IReadOnlyCollection<EntityID> validZoneEntityIds,
+            IAutoAttackInputSink combat = null)
         {
             _tracker = tracker ?? throw new ArgumentNullException(nameof(tracker));
             _validZoneEntityIds = validZoneEntityIds;
+            _combat = combat;
         }
 
         /// <summary>
@@ -45,7 +53,15 @@ namespace IronGrind.Networking
                 return;
             }
 
-            _tracker.ProcessSetTarget(context.ClientId, context.SenderEntityId, new EntityID(targetEntityId), _validZoneEntityIds);
+            var target = new EntityID(targetEntityId);
+            SetTargetOutcome outcome = _tracker.ProcessSetTarget(context.ClientId, context.SenderEntityId, target, _validZoneEntityIds);
+
+            // Auto-Attack Combat Story 006: only an accepted SetTarget (select or deselect) reaches Combat. The tracker
+            // stays the owner of relevance; Combat applies its own validity check on top.
+            if (outcome == SetTargetOutcome.Accepted)
+            {
+                _combat?.SetTarget(context.SenderEntityId, target);
+            }
         }
     }
 }
