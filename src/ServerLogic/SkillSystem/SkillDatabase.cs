@@ -14,7 +14,7 @@ namespace IronGrind.SkillSystem
     /// </code>
     /// </example>
     [CreateAssetMenu(fileName = "SkillDatabase", menuName = "IronGrind/Skill Database")]
-    public sealed class SkillDatabase : ScriptableObject
+    public sealed class SkillDatabase : ScriptableObject, ISkillDefinitionSource
     {
         [SerializeField] private SkillDefinition[] _skills;
 
