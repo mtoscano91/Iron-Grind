@@ -59,7 +59,7 @@ The server runs a fixed 20 Hz tick (50ms interval). The tick interval is fixed a
 - Include `_cycleTimer` snapshots in each client's batch packet (display only — charge bar animation)
 - Evaluate all active server-side TTL timers; TTL expirations fire `ItemReservation.Release()` on the tick boundary
 - Advance tick-registered cooldown and duration counters via registered system delegates
-- **`LastBeatServerTick` update (replaces `BeatResolvedThisTick`):** After Beat evaluation fires for an entity, set `LastBeatServerTick[slot] = ServerTickNumber`. Data structure: a per-session `uint[]` indexed by entity slot, initialized to `uint.MaxValue` on zone load. Read by OWL-compensation logic in CR-NET-8.2 / `networking-owl-compensation.md` CR-OWL-2 during `NotifySkillUsed` evaluation. Never persisted. Slot allocation contract: `networking-owl-compensation.md` CR-OWL-4. Array size: `MAX_PLAYERS_PER_ZONE + MAX_MOBS_PER_ZONE` — see Tuning Knobs.
+- **`LastBeatServerTick` update (replaces `BeatResolvedThisTick`):** After Beat evaluation fires for an entity, set `LastBeatServerTick[slot] = ServerTickNumber`. Data structure: a per-session `uint[]` indexed by entity slot, initialized to `uint.MaxValue` on zone load. Read by OWL-compensation logic in CR-NET-8.2 / `networking-owl-compensation.md` CR-OWL-2 during `NotifySkillUsed` evaluation (superseded 2026-11-02: Combat does not record or read it; see the CR-NET-8 note). Never persisted. Slot allocation contract: `networking-owl-compensation.md` CR-OWL-4. Array size: `MAX_PLAYERS_PER_ZONE + MAX_MOBS_PER_ZONE` — see Tuning Knobs.
 
 **Entity scope note:** "Every entity in `COMBAT_ACTIVE` state" includes both player and mob entities. Mob entities run the same `_cycleTimer` / Beat evaluation loop as players. Zone Instancing GDD confirms `MAX_MOBS_PER_ZONE = 150` mobs in the tick loop (CR-ZI-8 step 10); total tick-loop entities at peak: n + m = 50 + 150 = 200. Tick budget impact of mob entities is modeled in **F-NET-9**.
 
@@ -153,6 +153,8 @@ EnhancementAttemptRequest {
 ---
 
 **CR-NET-8 — RTT-Adaptive Grace Window**
+
+> **Superseded 2026-11-02 (Auto-Attack Combat Story 005; user decision 2026-10-30):** The reactive cooldown model (`auto-attack-combat.md` Rules 12–15) has no grace window. `NotifySkillUsed` only resets `_actionTimer` to 0, and Combat never reads or writes `LastBeatServerTick`. The grace-window evaluation of CR-NET-8.2 and CR-NET-8.3, and F-NET-OWL, no longer apply to any combat decision. The text below is kept for reference. `LastBeatServerTickTracker` and the OWL code stay in `src/` unchanged until a later cleanup, which also decides whether the RTT probe (CR-NET-8.1) and the degraded-mode indicator keep a consumer.
 
 To preserve Pillar 2 (Rhythm Mastery) for players on typical mobile connections (100–150ms RTT), the server applies per-client one-way latency (OWL) compensation when evaluating the Auto-Attack grace window for `NotifySkillUsed` RPCs. At 100ms RTT, a player tapping on-beat on their display has their notification arrive ~50ms after the beat on the server — breaking the grace window for correctly-timed taps. This rule resolves Auto-Attack GDD Rule 19 and OQ-1.
 
@@ -297,6 +299,8 @@ All bandwidth and session memory formulas are in the sub-documents:
 - F-NET-4 (session memory), F-NET-5 (heartbeat timeout): `networking-session.md`
 
 **F-NET-OWL — OWL Compensation**
+
+*Superseded 2026-11-02 with CR-NET-8 (see the note there): the reactive cooldown model has no grace window, so this formula feeds no combat decision. Kept for reference.*
 
 The OWL grace-window adjustment formula is defined in **`networking-owl-compensation.md` F-OWL-1**. Key inputs: `_cycleTimer` (server-authoritative, never client-submitted), `OWL_seconds` (estimated per CR-NET-8.1), `LastBeatServerTick[slot]` (per-entity uint, updated at Beat evaluation), `MAX_WRAP_WINDOW_TICKS` (tuning knob, default 2), `CycleDuration` (server-owned, not transmitted). Output: `adjustedCycleTimer` compared against `BaseGraceThreshold × CycleDuration` to determine skill-trigger vs. auto-attack.
 

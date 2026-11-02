@@ -13,8 +13,8 @@ namespace IronGrind.AutoAttackCombat
 {
     /// <summary>
     /// Per-player auto-attack state, toggle, target, action timer and Rule 10 resolution (design/gdd/auto-attack-combat.md
-    /// Rules 1-4, 10, 23, States and Transitions, EC-1 to EC-10, EC-17, EC-19, EC-27 to EC-30). Auto-Attack Combat
-    /// Stories 001 to 004.
+    /// Rules 1-4, 10, 12-15, 23, States and Transitions, EC-1 to EC-10, EC-17, EC-19, EC-21, EC-24, EC-27 to EC-30).
+    /// Auto-Attack Combat Stories 001 to 005.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -24,9 +24,9 @@ namespace IronGrind.AutoAttackCombat
     /// activation, target selection and fire (Rules 2, 3, 10).
     /// </para>
     /// <para>
-    /// <b>Entry points.</b> <see cref="SetTarget"/>, <see cref="SetAutoAttack"/>, <see cref="SetCombatProhibited"/>
-    /// and <see cref="ReleasePlayer"/>. An entity with no player slot is ignored by every method: no throw, no log.
-    /// Story 006 wires them.
+    /// <b>Entry points.</b> <see cref="SetTarget"/>, <see cref="SetAutoAttack"/>, <see cref="SetCombatProhibited"/>,
+    /// <see cref="NotifySkillUsed"/> and <see cref="ReleasePlayer"/>. An entity with no player slot is ignored by every
+    /// method: no throw, no log. Story 006 wires them.
     /// </para>
     /// <para>
     /// <b>Cycle (Story 002, Rules 5-7, F-1).</b> Each slot holds a cycle length in ticks, sampled from
@@ -54,6 +54,12 @@ namespace IronGrind.AutoAttackCombat
     /// the XP or damage seams is not caught: it leaves the XP granted and escapes <see cref="Run"/>.
     /// </para>
     /// <para>
+    /// <b>Skill reset (Story 005, Rules 12-15, TR-aa-005).</b> <see cref="NotifySkillUsed"/> restarts an active player's
+    /// cycle: timer 0, miss streak ended, cycle length re-sampled. An idle player only has the frozen timer zeroed. No
+    /// resolved auto is reversed (EC-21), and no beat tracker is consulted: the reactive cooldown model replaces the
+    /// OWL grace window.
+    /// </para>
+    /// <para>
     /// <b>Attacker id.</b> <see cref="Run"/> iterates slots, so each slot's <see cref="EntityID"/> is stored in an
     /// array when SetTarget or SetAutoAttack first touches it and cleared in <see cref="ReleasePlayer"/>
     /// (allocation-free; a slot that was never touched is always idle and never read).
@@ -72,7 +78,7 @@ namespace IronGrind.AutoAttackCombat
     /// combat.Run(tick, dt);                // timer 1; fires once the timer reaches GetCycleTicks and the target is in range
     /// </code>
     /// </example>
-    public sealed class AutoAttackCombatSystem : IZoneSimulationStep, ICombatService
+    public sealed class AutoAttackCombatSystem : IZoneSimulationStep, ICombatService, IAutoAttackSkillUseSink
     {
         /// <inheritdoc />
         /// <remarks>
@@ -297,6 +303,31 @@ namespace IronGrind.AutoAttackCombat
             {
                 _state[slot] = ActiveState(slot);
             }
+        }
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// Rules 12-15, TR-aa-005, AC-04, AC-05, EC-21, EC-24; Story 005. Call it in the request step, before
+        /// <see cref="Run"/> of the same tick (ADR-014 Decision 6): the next auto then fires one full cycle after the
+        /// call. Idle: only the frozen timer is zeroed (activation resets it again, Rule 2); the attack speed is not read.
+        /// Active (including out of range and prohibited): the timer resets like any other reset, ending the miss streak
+        /// and sampling the cycle length (Rule 6). State, target, toggle, lock and range mark are unchanged, an auto that
+        /// already resolved is never reversed, and repeated calls simply restart the cycle. Tick thread, no allocation.
+        /// </remarks>
+        public void NotifySkillUsed(EntityID casterEntityID)
+        {
+            if (!_pool.TryGetPlayerSlot(casterEntityID, out byte slot))
+            {
+                return;
+            }
+
+            if (_state[slot] == AutoAttackState.Idle)
+            {
+                _actionTimer[slot] = 0;
+                return;
+            }
+
+            ResetTimer(slot);
         }
 
         // The state of an active slot: the lock wins, then the last range result.

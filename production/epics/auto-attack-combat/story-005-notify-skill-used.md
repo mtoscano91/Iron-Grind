@@ -1,7 +1,7 @@
 # Story 005: NotifySkillUsed
 
 > **Epic**: Auto-Attack Combat
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-26
@@ -28,13 +28,13 @@
 
 *From GDD `design/gdd/auto-attack-combat.md`, scoped to this story:*
 
-- [ ] `NotifySkillUsed(casterEntityID)` sets the caster's `_actionTimer` to 0 and has no other effect (Rule 12).
-- [ ] With the timer at 8 ticks of a 20-tick cycle, the call resets it and the next auto fires 20 ticks later, at t = 1.40s ±1 tick (AC-04).
-- [ ] Auto at t = 1.0s and a skill at t = 1.05s stay two independent full-value events; the timer is 0 at t = 1.05s (AC-05).
-- [ ] A call after an auto resolved reverses nothing and only restarts the countdown (EC-21).
-- [ ] Two calls in a row each reset the timer (EC-24).
-- [ ] A reset ends a miss streak (Story 003).
-- [ ] `LastBeatServerTickTracker.RecordBeat` is not called by Combat (user decision 2026-10-30).
+- [x] `NotifySkillUsed(casterEntityID)` sets the caster's `_actionTimer` to 0 and has no other effect (Rule 12).
+- [x] With the timer at 8 ticks of a 20-tick cycle, the call resets it and the next auto fires 20 ticks later, at t = 1.40s ±1 tick (AC-04).
+- [x] Auto at t = 1.0s and a skill at t = 1.05s stay two independent full-value events; the timer is 0 at t = 1.05s (AC-05).
+- [x] A call after an auto resolved reverses nothing and only restarts the countdown (EC-21).
+- [x] Two calls in a row each reset the timer (EC-24).
+- [x] A reset ends a miss streak (Story 003).
+- [x] `LastBeatServerTickTracker.RecordBeat` is not called by Combat (user decision 2026-10-30).
 
 ---
 
@@ -74,7 +74,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/AutoAttackCombat/AutoAttackCombat_NotifySkillUsed_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 17 tests, all passing
 
 ---
 
@@ -82,3 +82,16 @@
 
 - Depends on: Story 003
 - Unlocks: Skill System epic
+
+---
+
+## Completion Notes
+**Completed**: 2026-11-02
+**Criteria**: 7/7 passing (all auto-verified by `AutoAttackCombat_NotifySkillUsed_tests.cs`; none deferred)
+**Deviations** (advisory, none logged as tech debt):
+- The Tracker QA case uses a reflection test (no constructor parameter or field of type `LastBeatServerTickTracker`, static included) instead of a source search, since unit tests do no file I/O; a grep of `src/ServerLogic/AutoAttackCombat/` found no `RecordBeat` or `LastBeatServerTick`.
+- AC-05 is verified for Combat's half only: the resolved auto keeps its full value and is not reversed. The skill's damage is the Skill System's (out of scope).
+- The method is exposed on a new `IAutoAttackSkillUseSink` (not `ICombatService`), so the Skill System injects only this one call. Idle: only the frozen timer is zeroed and the attack speed is not read; active: `ResetTimer` (timer 0, miss streak ended, cycle re-sampled).
+- Doc edits done: superseded notes on `networking-core.md` CR-NET-8, F-NET-OWL and the `LastBeatServerTick` line, and on `networking-owl-compensation.md` (header, CR-OWL-2). Stale grace-window wording left for the OWL cleanup: `networking-test-harness.md:281-283` (`OnSkillGraceWindowEvaluated`), `networking-wire-protocol.md:1773` (`RTT_PROBE_INTERVAL_SECONDS` rationale).
+**Test Evidence**: Logic: `tests/EditMode/AutoAttackCombat/AutoAttackCombat_NotifySkillUsed_tests.cs` (17 tests). EditMode 5722 / 5593 passed / 0 failed / 129 skipped, no `error CS`.
+**Code Review**: Complete (`/code-review` 2026-11-02: APPROVED WITH SUGGESTIONS → 1-6 applied, 7 (fold duplicated fakes) deferred); QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean)

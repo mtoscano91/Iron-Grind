@@ -4,6 +4,7 @@
 > **Author**: Manuel Toscano + agents
 > **Last Updated**: 2026-05-18
 > **Resolves**: networking-core.md Cluster B (B1–B3) — OWL wrap correction broken at design-target latency
+> **Superseded 2026-11-02 (Auto-Attack Combat Story 005; user decision 2026-10-30)**: The reactive cooldown model (`auto-attack-combat.md` Rules 12–15) has no grace window. `NotifySkillUsed` only resets `_actionTimer` to 0, and Combat never records a beat (`LastBeatServerTick`) or applies OWL compensation. The grace-window text in this document (CR-OWL-2, F-OWL-1 and the coverage and adversarial analysis) no longer drives any combat decision. It is kept for reference. `LastBeatServerTickTracker` and the OWL code stay in `src/` unchanged until a later cleanup.
 
 ## Sub-Document Reference
 
@@ -47,6 +48,8 @@ wrapCorrectionWindow = (LastBeatServerTick[slot] != uint.MaxValue)
 ---
 
 **CR-OWL-2 — Corrected OWL compensation formula (replaces CR-NET-8.2 inline formula)**
+
+*Superseded 2026-11-02 (see the header note): the reactive cooldown model has no grace window to compensate. Kept for reference.*
 
 Applied when a `NotifySkillUsed` RPC is received and the Auto-Attack system evaluates the grace window threshold. OWL compensation is only active when `OWL_seconds <= MAX_COMPENSATABLE_OWL_MS / 1000` (per `networking-core.md` CR-NET-8.3).
 
