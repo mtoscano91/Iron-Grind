@@ -75,7 +75,7 @@ Applied to `skill-system.md` and `entities.yaml`.
 
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
-| 001 | [Skill data types and class skill lists](story-001-skill-data-types.md) | Logic | Ready | ADR-012 |
+| 001 | [Skill data types and class skill lists](story-001-skill-data-types.md) | Logic | Complete | ADR-012 |
 | 002 | [Per-entity skill store, spawn and despawn](story-002-skill-store-spawn-despawn.md) | Logic | Ready | ADR-012 |
 | 003 | [Unlock on level-up and `SkillUnlockNotification`](story-003-unlock-on-level-up.md) | Logic | Ready | ADR-010, ADR-004 |
 | 004 | [Cast intake (`SkillCastRequest`, V-1, V-2)](story-004-cast-intake.md) | Logic | Ready | ADR-014 |
@@ -97,7 +97,7 @@ Order: 001 → 002 → 003; 001 → 004 → 005 → 006 → 007 → 008; 006 →
 - AC-SK-28 (no direct `AddBuffModifier` call) is a text search, not a runtime test.
 - Character spawn path for `OnEntitySpawned`: find where Leveling / Character Stats register a character today.
 - OQ-HD-4 and AC-HD-19 (b): decided at `/create-stories` (Decision 8), implemented in Story 007.
-- Open for `/story-readiness`: who raises `OnMobDied` on a skill kill (Story 007, recommended a combat-owned kill reporter); the party query for V-7 friendliness and `SkillCastResult` relevance (Stories 005, 009); V-8 distance on XZ (Story 005); the missing buff numbers and skill ranges (Story 012).
+- Open for `/story-readiness`: who raises `OnMobDied` on a skill kill (Story 007, recommended a combat-owned kill reporter); the party query for V-7 friendliness and `SkillCastResult` relevance (Stories 005, 009); V-8 distance on XZ (Story 005); the missing buff numbers and skill ranges (Story 012); no production code registers the Warrior / Healer `ClassDefinition`s, so `GetClassSkills` is empty in a real zone (Story 012, found at Story 001 readiness).
 
 ## Definition of Done
 

@@ -159,6 +159,10 @@ namespace IronGrind.Tests.EditMode.LevelingSystem
                     throw new InvalidOperationException("registry failure");
                 return _inner.TryGetClass(classType, out definition);
             }
+
+            // Forwards without counting: the level-up loop never reads skills, so the throw schedule is unchanged.
+            public System.Collections.Generic.IReadOnlyList<IronGrind.SkillSystem.SkillID> GetClassSkills(byte classType)
+                => _inner.GetClassSkills(classType);
         }
 
         private sealed class Rig

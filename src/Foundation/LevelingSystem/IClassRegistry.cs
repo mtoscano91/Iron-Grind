@@ -1,3 +1,6 @@
+using System.Collections.Generic;
+using IronGrind.SkillSystem;
+
 namespace IronGrind.LevelingSystem
 {
     /// <summary>
@@ -14,5 +17,15 @@ namespace IronGrind.LevelingSystem
         /// (and a default <see cref="ClassDefinition"/>) otherwise.
         /// </summary>
         bool TryGetClass(byte classType, out ClassDefinition definition);
+
+        /// <summary>
+        /// The class's skills in authored order (Class System CD-4; Skill System AC-SK-35). Never null: empty for
+        /// an unknown class, a null list or an empty list (EC-CS-8). Callers cast <see cref="ClassType"/> to byte.
+        /// The list is the registry's cache: read it only, and iterate with an index loop over <c>Count</c>
+        /// (a <c>foreach</c> over the interface allocates an enumerator).
+        /// </summary>
+        /// <param name="classType">The class type byte.</param>
+        /// <returns>The skill ids; never null.</returns>
+        IReadOnlyList<SkillID> GetClassSkills(byte classType);
     }
 }

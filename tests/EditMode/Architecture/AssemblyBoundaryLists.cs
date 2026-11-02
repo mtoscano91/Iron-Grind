@@ -61,6 +61,13 @@ namespace IronGrind.Tests.EditMode.Architecture
             "IronGrind.LevelingSystem.IClassRegistry",  // consumer: RespecScreenPresenter
             "IronGrind.LevelingSystem.ClassRegistry",   // consumer: RespecScreenPresenter
 
+            // Skill System: wire types (Skill System Story 001). The consumer of every entry below is planned.
+            "IronGrind.SkillSystem.SkillID",                // consumer (planned): Combat UI skill bar (SkillCastRequest / SkillCastResult wire id)
+            "IronGrind.SkillSystem.ClassType",              // consumer (planned): character creation and skill bar (wire enum)
+            "IronGrind.SkillSystem.TargetConstraint",       // consumer (planned): Combat UI target validation hints (wire enum)
+            "IronGrind.SkillSystem.SkillEffectType",        // consumer (planned): Combat UI skill feedback (wire enum)
+            "IronGrind.SkillSystem.SkillCastRejectionCode", // consumer (planned): Combat UI cast rejection feedback (SkillCastResult.rejectionCode)
+
             // Leveling: client read model (ADR-012 Decision 7).
             "IronGrind.LevelingSystem.LevelingDisplayFormulas", // consumer: LevelUpOverlayPresenter, RespecScreenPresenter
             "IronGrind.LevelingSystem.ILocalPlayerLevelingView", // consumer: RespecScreenPresenter

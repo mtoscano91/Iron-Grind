@@ -31,18 +31,27 @@ namespace IronGrind.LevelingSystem
         /// <summary>Free (player-allocatable) stat points granted per level-up (CR-2.8).</summary>
         public readonly int FreePointsPerLevel;
 
+        /// <summary>
+        /// Raw <c>SkillID</c> values of the class's skills (Class System CD-4). Raw <see cref="uint"/> because Unity
+        /// does not serialize a readonly struct array. May be null (no skills); read it through
+        /// <see cref="IClassRegistry.GetClassSkills"/>.
+        /// </summary>
+        public readonly uint[] SkillList;
+
         public ClassDefinition(
             int strengthAutoAlloc,
             int dexterityAutoAlloc,
             int vitalityAutoAlloc,
             int intelligenceAutoAlloc,
-            int freePointsPerLevel)
+            int freePointsPerLevel,
+            uint[] skillList = null)
         {
             StrengthAutoAlloc = strengthAutoAlloc;
             DexterityAutoAlloc = dexterityAutoAlloc;
             VitalityAutoAlloc = vitalityAutoAlloc;
             IntelligenceAutoAlloc = intelligenceAutoAlloc;
             FreePointsPerLevel = freePointsPerLevel;
+            SkillList = skillList;
         }
     }
 }

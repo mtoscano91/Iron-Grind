@@ -1,7 +1,7 @@
 # Story 001: Skill Data Types and Class Skill Lists
 
 > **Epic**: Skill System
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-26
@@ -30,12 +30,12 @@
 
 *From GDD `design/gdd/skill-system.md`, scoped to this story:*
 
-- [ ] **AC-SK-33**: `SkillID` is a `readonly struct` wrapping a single `uint` field; reflection: value type, exactly one field of type `uint`, readonly. `SkillID(0)` is `SkillID.Invalid`.
-- [ ] **AC-SK-35**: `ClassDefinition.SkillList` is declared as `uint[]`, and `IClassRegistry.GetClassSkills(classType)` returns `IReadOnlyList<SkillID>`.
-- [ ] `GetClassSkills` returns an empty list (never null) when the class has no list, a null array or an unknown class type (Class System EC-CS-8).
-- [ ] `SkillDefinition` has every field in the schema table as a public field; `SkillEffectType` is a flags enum `{PhysicalDamage=1, MagicalDamage=2, InstantHeal=4, ApplyBuff=8, ApplyDebuff=16}`; `TargetConstraint {SingleHostile=0, SingleFriendly=1, Self=2}`; `DamageStat {AttackPower=0, Intelligence=1, Strength=2}`; `SkillCastRejectionCode` values match `entities.yaml` (1–9, 0 unused).
-- [ ] `SkillDatabase.TryGetDefinition(SkillID, out SkillDefinition)` returns false for `SkillID.Invalid` and for an unknown id.
-- [ ] `SkillSystemConfig` holds `MANA_COST_MULTIPLIER` (default 1.0, range [0.5, 2.0]) and `CAST_STALE_TICK_TOLERANCE` (default 5, range [2, 10]); out-of-range asset values are clamped with a warning at load.
+- [x] **AC-SK-33**: `SkillID` is a `readonly struct` wrapping a single `uint` field; reflection: value type, exactly one field of type `uint`, readonly. `SkillID(0)` is `SkillID.Invalid`.
+- [x] **AC-SK-35**: `ClassDefinition.SkillList` is declared as `uint[]`, and `IClassRegistry.GetClassSkills(classType)` returns `IReadOnlyList<SkillID>`.
+- [x] `GetClassSkills` returns an empty list (never null) when the class has no list, a null array or an unknown class type (Class System EC-CS-8).
+- [x] `SkillDefinition` has every field in the schema table as a public field; `SkillEffectType` is a flags enum `{PhysicalDamage=1, MagicalDamage=2, InstantHeal=4, ApplyBuff=8, ApplyDebuff=16}`; `TargetConstraint {SingleHostile=0, SingleFriendly=1, Self=2}`; `DamageStat {AttackPower=0, Intelligence=1, Strength=2}`; `SkillCastRejectionCode` values match `entities.yaml` (1–9, 0 unused).
+- [x] `SkillDatabase.TryGetDefinition(SkillID, out SkillDefinition)` returns false for `SkillID.Invalid` and for an unknown id.
+- [x] `SkillSystemConfig` holds `MANA_COST_MULTIPLIER` (default 1.0, range [0.5, 2.0]) and `CAST_STALE_TICK_TOLERANCE` (default 5, range [2, 10]); out-of-range asset values are clamped with a warning at load.
 
 ---
 
@@ -55,7 +55,14 @@
 
 - Story 002: per-entity `SkillInstance` store
 - Story 012: the roster asset and the class skill lists' contents
-- Updating `entities.yaml` for `ClassType` / `DamageStat`: do it here if the types are new to the registry (check first)
+- `entities.yaml`: `ClassType` and `DamageStat` are already registered with matching values; no registry change (checked at `/story-readiness` 2026-11-02)
+- Production Warrior and Healer class definitions: nothing registers them in the zone server today (Story 012, readiness finding)
+
+---
+
+## Performance
+
+No per-tick cost: types and assets only. `GetClassSkills` returns a cached array (no allocation after the first build), and the `SkillDatabase` id lookup is built once.
 
 ---
 
@@ -76,7 +83,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/SkillSystem/SkillSystem_DataTypes_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing (39 [Test] + 40 [TestCase] = 79 cases; EditMode 5937 / 5808 / 0 failed / 129 skipped, run 2026-11-02 18:44:35Z after the code-review fixes)
 
 ---
 
@@ -84,3 +91,12 @@
 
 - Depends on: None
 - Unlocks: Stories 002, 004, 012
+
+---
+
+## Completion Notes
+**Completed**: 2026-11-02
+**Criteria**: 6/6 passing (none deferred)
+**Deviations**: Advisory, carried to Story 012, no tech debt logged: (1) `skill-system.md` schema row (line 156) names `BuffID.Invalid`, but `BuffID` has no members yet; Story 012 adds `Invalid = 0` with the buff values. (2) `SkillDefinition.BuffDefinition` is a readonly struct that Unity will not serialize; the roster asset needs a serializable authoring form (`StatModifierEntry` precedent). Extra files, all required by the change: `AssemblyBoundaryLists.cs` (5 Foundation allow-list entries), `LevelingSystem_LevelUpCommit_tests.cs` (fake forwards `GetClassSkills`), `SkillSystemConfigValues.cs` (`HitDetectionConfig` precedent). Story 004 note: iterate `GetClassSkills` by index.
+**Test Evidence**: Logic: `tests/EditMode/SkillSystem/SkillSystem_DataTypes_tests.cs`, 39 [Test] + 40 [TestCase] = 79, all pass; EditMode 5937 / 5808 / 0 failed / 129 skipped, run 2026-11-02 18:44:35Z
+**Code Review**: Complete (`/code-review` CHANGES REQUIRED → "fix all": `BuffID` doc, `SkillDatabase` sealed + local lookup build + editor `OnValidate` validation, `GetClassSkills` doc, +7 tests). QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean).
