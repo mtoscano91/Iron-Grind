@@ -56,8 +56,25 @@ namespace IronGrind.Tests.EditMode.AutoAttackCombat
             }
         }
 
+        private sealed class FakeAttackSpeed : IAttackSpeedSource
+        {
+            public float Multiplier = 1.0f;
+
+            public float GetAttackSpeedMultiplier(EntityID entity)
+            {
+                return Multiplier;
+            }
+        }
+
+        private sealed class NoOpReadySink : IAutoAttackReadySink
+        {
+            public void OnAutoAttackReady(EntityID attacker, uint currentTick) { }
+        }
+
         private ZoneSlotPool _pool;
         private FakeValidity _validity;
+        private FakeAttackSpeed _attackSpeed;
+        private NoOpReadySink _readySink;
         private AutoAttackCombatSystem _combat;
         private uint _nextClient;
 
@@ -73,7 +90,9 @@ namespace IronGrind.Tests.EditMode.AutoAttackCombat
             _nextClient = 11u;
             _pool = new ZoneSlotPool(Zone, new FakeTicks(), new FakePoolListener(), MAX_PLAYERS, MAX_MOBS);
             _validity = new FakeValidity();
-            _combat = new AutoAttackCombatSystem(_pool, _validity);
+            _attackSpeed = new FakeAttackSpeed();
+            _readySink = new NoOpReadySink();
+            _combat = new AutoAttackCombatSystem(_pool, _validity, _attackSpeed, _readySink);
         }
 
         private EntityID AddPlayer()
@@ -112,13 +131,25 @@ namespace IronGrind.Tests.EditMode.AutoAttackCombat
         [Test]
         public void test_ctor_null_pool_throws()
         {
-            Assert.Throws<ArgumentNullException>(() => new AutoAttackCombatSystem(null, _validity));
+            Assert.Throws<ArgumentNullException>(() => new AutoAttackCombatSystem(null, _validity, _attackSpeed, _readySink));
         }
 
         [Test]
         public void test_ctor_null_validity_throws()
         {
-            Assert.Throws<ArgumentNullException>(() => new AutoAttackCombatSystem(_pool, null));
+            Assert.Throws<ArgumentNullException>(() => new AutoAttackCombatSystem(_pool, null, _attackSpeed, _readySink));
+        }
+
+        [Test]
+        public void test_ctor_null_attack_speed_throws()
+        {
+            Assert.Throws<ArgumentNullException>(() => new AutoAttackCombatSystem(_pool, _validity, null, _readySink));
+        }
+
+        [Test]
+        public void test_ctor_null_ready_sink_throws()
+        {
+            Assert.Throws<ArgumentNullException>(() => new AutoAttackCombatSystem(_pool, _validity, _attackSpeed, null));
         }
 
         // AC-12, EC-1

@@ -48,6 +48,7 @@
 - Composition: follow `BuildStatusEffects` and `BuildMovement`, with an `Observe(nameof(...))` call and `_owner._simulationSteps.Add(...)`. Movement first, so the fire check sees this tick's positions. Inject `HitResultEmitter`, and fakes-by-default stand-ins for the mob seams in `ZoneServerStandIns.cs`.
 - `SetAutoAttack` is rejected for dead players by state, not by the wire: `SetCombatProhibited` already blocks the fire (`death-and-respawn.md` CR-DR-16).
 - A player who leaves the zone must release combat state; use the existing slot-release listener pattern (`CompositeZoneSlotReleaseListener`). `ReleasePlayer` must be reached from `BeforeRelease`, while the player still holds the slot; `Run` does not check occupancy, so a missed hook leaves a released slot active (Story 001 code review).
+- Wire `CharacterStatsAttackSpeedSource` as the attack speed seam. A player's stats must be registered before combat can activate: an entity with no stats reads 0 and gets the slowest cycle, 40 ticks (Story 002 code review).
 
 ---
 

@@ -1,7 +1,7 @@
 # Story 002: Tick Timer and CycleTicks
 
 > **Epic**: Auto-Attack Combat
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-26
@@ -74,7 +74,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/AutoAttackCombat/AutoAttackCombat_Timer_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing
 
 ---
 
@@ -82,3 +82,12 @@
 
 - Depends on: Story 001
 - Unlocks: Story 003
+
+---
+
+## Completion Notes
+**Completed**: 2026-11-02
+**Criteria**: 7/7 passing
+**Deviations**: Advisory only. After a ready the timer resets to 0 as an interim stand-in for a fire; Story 003 moves the reset to an actual fire and must update the four tests marked "Interim reset". `IAutoAttackReadySink` is an interim seam Story 003 replaces. An entity with no stats reads 0 and gets the slowest cycle (40 ticks); Story 006 notes to register stats before activation. New files: `AutoAttackCycle.cs`, `IAttackSpeedSource.cs`, `CharacterStatsAttackSpeedSource.cs`, `IAutoAttackReadySink.cs`. Extra files touched: `AutoAttackCombat_Activation_tests.cs` (new constructor), Story 006 (code-review note).
+**Test Evidence**: Logic: `tests/EditMode/AutoAttackCombat/AutoAttackCombat_Timer_tests.cs` (28 cases); EditMode 5614 / 5485 passed / 0 failed / 129 skipped
+**Code Review**: Complete (CHANGES REQUIRED, all applied)

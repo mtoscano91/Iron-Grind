@@ -21,15 +21,29 @@ namespace IronGrind.AutoAttackCombat
     /// An entity with no player slot is ignored by every method: no throw, no log. Story 006 wires them.
     /// </para>
     /// <para>
-    /// Tick thread only. Allocates nothing after construction. Story 002 adds the cycle and ready check.
+    /// <b>Cycle (Story 002, Rules 5-7, F-1, EC-11, EC-15, EC-23; TR-aa-002).</b> Each slot holds a cycle length in
+    /// ticks, sampled from <see cref="IAttackSpeedSource"/> whenever the timer is set to 0 (activation, target
+    /// selection, ready reset) and never mid-cycle, so a multiplier change applies from the next cycle. When the
+    /// timer reaches the cycle length, <see cref="IAutoAttackReadySink.OnAutoAttackReady"/> is called and the timer
+    /// resets to 0 with a fresh sample. That reset is an interim stand-in for a fire: Story 003 moves it to an
+    /// actual fire and makes a ready-but-blocked auto retry every tick. No clock is read; neither
+    /// <c>deltaTime</c> nor <c>currentTick</c> affects timing.
+    /// </para>
+    /// <para>
+    /// <b>Attacker id.</b> <see cref="Run"/> iterates slots, so each slot's <see cref="EntityID"/> is stored in an
+    /// array when SetTarget or SetAutoAttack first touches it and cleared in <see cref="ReleasePlayer"/>
+    /// (allocation-free; a slot that was never touched is always idle and never read).
+    /// </para>
+    /// <para>
+    /// Tick thread only. Allocates nothing after construction.
     /// </para>
     /// </remarks>
     /// <example>
     /// <code>
-    /// var combat = new AutoAttackCombatSystem(pool, validity);
+    /// var combat = new AutoAttackCombatSystem(pool, validity, attackSpeed, readySink);
     /// combat.SetAutoAttack(playerId, true);
-    /// combat.SetTarget(playerId, mobId);   // CombatActive, timer 0
-    /// combat.Run(tick, dt);                // timer 1
+    /// combat.SetTarget(playerId, mobId);   // CombatActive, timer 0, cycle sampled
+    /// combat.Run(tick, dt);                // timer 1; ready event once timer reaches GetCycleTicks
     /// </code>
     /// </example>
     public sealed class AutoAttackCombatSystem : IZoneSimulationStep
@@ -40,16 +54,30 @@ namespace IronGrind.AutoAttackCombat
         private readonly bool[] _toggle;
         private readonly EntityID[] _target;
         private readonly AutoAttackState[] _state;
+        private readonly IAttackSpeedSource _attackSpeed;
+        private readonly IAutoAttackReadySink _readySink;
+        private readonly int[] _cycleTicks;
+        private readonly EntityID[] _attacker;
 
         /// <summary>Creates the system with every slot idle.</summary>
         /// <param name="pool">The zone's slot pool; resolves a player to its slot.</param>
         /// <param name="validity">Decides whether a target is valid.</param>
+        /// <param name="attackSpeed">Supplies the attack speed multiplier sampled at each cycle start.</param>
+        /// <param name="readySink">Receives the ready event when a cycle completes.</param>
         /// <exception cref="ArgumentNullException">Any argument is null.</exception>
-        public AutoAttackCombatSystem(ZoneSlotPool pool, IAutoAttackTargetValidity validity)
+        public AutoAttackCombatSystem(
+            ZoneSlotPool pool,
+            IAutoAttackTargetValidity validity,
+            IAttackSpeedSource attackSpeed,
+            IAutoAttackReadySink readySink)
         {
             _pool = pool ?? throw new ArgumentNullException(nameof(pool));
             _validity = validity ?? throw new ArgumentNullException(nameof(validity));
+            _attackSpeed = attackSpeed ?? throw new ArgumentNullException(nameof(attackSpeed));
+            _readySink = readySink ?? throw new ArgumentNullException(nameof(readySink));
             int size = pool.MaxPlayers;
+            _cycleTicks = new int[size];
+            _attacker = new EntityID[size];
             _actionTimer = new int[size];
             _toggle = new bool[size];
             _target = new EntityID[size];
@@ -71,6 +99,7 @@ namespace IronGrind.AutoAttackCombat
                 return;
             }
 
+            _attacker[slot] = attacker;
             if (target == EntityID.Invalid || !_validity.IsValidTarget(target))
             {
                 _target[slot] = EntityID.Invalid;
@@ -79,7 +108,7 @@ namespace IronGrind.AutoAttackCombat
             }
 
             _target[slot] = target;
-            _actionTimer[slot] = 0;
+            ResetTimer(slot);
             _state[slot] = _toggle[slot] ? AutoAttackState.CombatActive : AutoAttackState.Idle;
         }
 
@@ -98,6 +127,7 @@ namespace IronGrind.AutoAttackCombat
                 return;
             }
 
+            _attacker[slot] = attacker;
             _toggle[slot] = enabled;
             if (!enabled)
             {
@@ -117,8 +147,15 @@ namespace IronGrind.AutoAttackCombat
                 return;
             }
 
-            _actionTimer[slot] = 0;
+            ResetTimer(slot);
             _state[slot] = AutoAttackState.CombatActive;
+        }
+
+        // Timer to 0 and a fresh cycle-length sample; the only place the attack speed is read.
+        private void ResetTimer(int slot)
+        {
+            _actionTimer[slot] = 0;
+            _cycleTicks[slot] = AutoAttackCycle.ComputeCycleTicks(_attackSpeed.GetAttackSpeedMultiplier(_attacker[slot]));
         }
 
         /// <summary>
@@ -140,8 +177,18 @@ namespace IronGrind.AutoAttackCombat
 
             _state[slot] = AutoAttackState.Idle;
             _actionTimer[slot] = 0;
+            _cycleTicks[slot] = 0;
+            _attacker[slot] = EntityID.Invalid;
             _toggle[slot] = false;
             _target[slot] = EntityID.Invalid;
+        }
+
+        /// <summary>The cycle length in ticks sampled for the player's current cycle; 0 when the entity has no slot or none was sampled.</summary>
+        /// <param name="attacker">The player.</param>
+        /// <returns>The cycle length in ticks.</returns>
+        public int GetCycleTicks(EntityID attacker)
+        {
+            return _pool.TryGetPlayerSlot(attacker, out byte slot) ? _cycleTicks[slot] : 0;
         }
 
         /// <summary>The player's state; <see cref="AutoAttackState.Idle"/> when the entity has no slot.</summary>
@@ -170,9 +217,11 @@ namespace IronGrind.AutoAttackCombat
 
         /// <summary>
         /// Advances every active player by one tick (Rules 4, 5, 23). A target that is no longer valid is cleared,
-        /// the player goes idle and the timer does not advance (frozen); otherwise the timer gains 1.
+        /// the player goes idle and the timer does not advance (frozen); otherwise the timer gains 1 and, on
+        /// reaching the cycle length, the ready sink is called and the timer resets to 0 with a fresh cycle sample
+        /// (interim stand-in for a fire until Story 003). Rules 5-7, F-1, EC-11, EC-15, EC-23.
         /// </summary>
-        /// <param name="currentTick">The tick being run; unused.</param>
+        /// <param name="currentTick">The tick being run; passed to the ready sink only, never used for timing.</param>
         /// <param name="deltaTime">Ignored: the timer counts ticks.</param>
         /// <remarks>Tick thread, after the request step (ADR-014).</remarks>
         public void Run(uint currentTick, float deltaTime)
@@ -192,6 +241,11 @@ namespace IronGrind.AutoAttackCombat
                 }
 
                 _actionTimer[slot]++;
+                if (_actionTimer[slot] >= _cycleTicks[slot])
+                {
+                    _readySink.OnAutoAttackReady(_attacker[slot], currentTick);
+                    ResetTimer(slot);
+                }
             }
         }
     }

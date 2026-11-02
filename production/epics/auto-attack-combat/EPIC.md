@@ -83,7 +83,7 @@ Applied to `auto-attack-combat.md`, `hit-detection.md`, `networking-core.md`, AD
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
 | 001 | [Combat state and activation](story-001-combat-state-and-activation.md) | Logic | Complete | ADR-012, ADR-014 |
-| 002 | [Tick timer and `CycleTicks`](story-002-tick-timer-and-cycle-ticks.md) | Logic | Ready | ADR-014 |
+| 002 | [Tick timer and `CycleTicks`](story-002-tick-timer-and-cycle-ticks.md) | Logic | Complete | ADR-014 |
 | 003 | [Resolution order](story-003-resolution-order.md) | Logic | Ready | ADR-012, ADR-013, ADR-014 |
 | 004 | [Kill sequence](story-004-kill-sequence.md) | Logic | Ready | ADR-010 |
 | 005 | [`NotifySkillUsed`](story-005-notify-skill-used.md) | Logic | Ready | ADR-010 |
