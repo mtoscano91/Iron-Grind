@@ -1374,7 +1374,7 @@ SkillUnlockNotification {
     uint skillID; // 4 bytes — SkillID of the newly unlocked skill
 }
 ```
-*Standalone size: 10 (envelope) + 4 (body) = 14 bytes. Sent once when `OnLevelUp` causes a skill's `IsUnlocked` to transition from false to true (CR-SK-21). R-OD delivery — must not be dropped; controls the unlock animation and "NEW" badge in the HUD skill bar. `MessageTypeID` assigned in Networking ADR. Defined in `skill-system.md` CR-SK-21.*
+*Standalone size: 10 (envelope) + 4 (body) = 14 bytes. Sent once when `OnLevelUp` causes a skill's `IsUnlocked` to transition from false to true (CR-SK-21). R-OD delivery — must not be dropped; controls the unlock animation and "NEW" badge in the HUD skill bar. MessageTypeID: `0xE151` (assigned 2026-11-02, R-OD priority block 0xE150–0xE15F reserved for the Skill System epic; `SkillCooldownSnapshot` takes 0xE150). Defined in `skill-system.md` CR-SK-21.*
 
 ---
 

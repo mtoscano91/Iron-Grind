@@ -257,6 +257,10 @@ namespace IronGrind.Networking
                 MessageDirection.ServerToAllZoneClients, "Zone-wide appearance update; absolute flags byte; R-OD - a lost update leaves other players seeing stale gear. " +
                 "Audience is this zone's clients only (CCR-3).");
 
+            // Skill System Story 003: unlock notice to the owner, R-OD priority path (not cap-exempt). 0xE150-0xE15F reserved for the epic.
+            AddPriority(SkillUnlockNotification.MessageTypeId, nameof(SkillUnlockNotification), DesignPillar.EarnedPower,
+                MessageDirection.ServerToOwningClient, "Owner-only skill unlock (CR-SK-21); a lost notice leaves the HUD skill bar without the unlock animation and NEW badge.");
+
             // Zone Instancing Story 006: zone join / session / snapshot messages, R-OD priority path.
             // MessageTypeIds 0xE130-0xE135 and 0xF000 are provisional (TD-011).
             AddPriority(ZoneFullResponse.MessageTypeId, nameof(ZoneFullResponse), DesignPillar.Infrastructure,

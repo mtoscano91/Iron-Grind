@@ -13,7 +13,8 @@ namespace IronGrind.SkillSystem
     /// One fixed record per player zone slot (sized from the zone's capacity), allocated once in the constructor;
     /// spawn, despawn and reads do not allocate. Players only (CR-SK-17): a mob index is refused. Reads for an entity
     /// without a record scan every record (fine for spawn-time and test callers; add an index if a per-tick caller
-    /// needs it).
+    /// needs it). Level-ups unlock skills and notify the owner through <see cref="ISkillUnlockOutput"/>
+    /// (CR-SK-21, Story 003).
     /// </summary>
     public sealed class SkillSystemService : ISkillSystem
     {
@@ -29,6 +30,8 @@ namespace IronGrind.SkillSystem
         private readonly ISkillDefinitionSource _definitions;
         private readonly ISkillLevelSource _levels;
         private readonly IEntitySlotIndex _slotIndex;
+        private readonly ISkillUnlockOutput _unlockOutput;
+        private ILevelingEventBroadcaster _subscribedTo;
 
         private readonly SkillInstance[][] _skills;
         private readonly int[] _counts;
@@ -40,6 +43,7 @@ namespace IronGrind.SkillSystem
         /// <param name="definitions">Skill definitions (the <see cref="SkillDatabase"/> asset in production).</param>
         /// <param name="levels">Level read at spawn.</param>
         /// <param name="slotIndex">Entity to zone slot index; players map to [0, <paramref name="maxPlayers"/>).</param>
+        /// <param name="unlockOutput">Sends the unlock notification to the owner (CR-SK-21).</param>
         /// <param name="maxPlayers">
         /// The zone's player capacity, <c>ZoneSlotPool.MaxPlayers</c>, in [1, 255]. A slot index at or above it is a
         /// mob index (<c>ZoneSlotPoolEntityIndex</c>) and is refused.
@@ -51,12 +55,14 @@ namespace IronGrind.SkillSystem
             ISkillDefinitionSource definitions,
             ISkillLevelSource levels,
             IEntitySlotIndex slotIndex,
+            ISkillUnlockOutput unlockOutput,
             int maxPlayers)
         {
             _classRegistry = classRegistry ?? throw new ArgumentNullException(nameof(classRegistry));
             _definitions = definitions ?? throw new ArgumentNullException(nameof(definitions));
             _levels = levels ?? throw new ArgumentNullException(nameof(levels));
             _slotIndex = slotIndex ?? throw new ArgumentNullException(nameof(slotIndex));
+            _unlockOutput = unlockOutput ?? throw new ArgumentNullException(nameof(unlockOutput));
             if (maxPlayers < 1 || maxPlayers > MAX_PLAYERS_LIMIT)
             {
                 throw new ArgumentOutOfRangeException(nameof(maxPlayers), maxPlayers, "must be in [1, 255]");
@@ -184,9 +190,109 @@ namespace IronGrind.SkillSystem
         }
 
         /// <inheritdoc />
-        /// <remarks>No-op stub; implemented in Story 003.</remarks>
+        /// <remarks>
+        /// CR-SK-21: every locked slot whose definition has <c>UnlockLevel == newLevel</c> unlocks permanently and
+        /// sends one notification to the owner, in slot order. Equality, not <c>&lt;=</c>: the Leveling System fires
+        /// once per level gained (CR-2.10), so every level is seen. An entity without a record, and a slot without a
+        /// definition (already logged at spawn), are skipped silently. Mutates no stats. Two passes: every matching
+        /// slot is unlocked first, then the notices are sent, so a throwing output can never leave a later slot
+        /// locked and an output that reads the store sees all unlocks. The service does not catch an output exception.
+        /// </remarks>
         public void OnLevelUp(EntityID entity, int newLevel)
         {
+            int record = FindRecord(entity);
+            if (record < 0)
+            {
+                return;
+            }
+
+            ushort newlyUnlocked = UnlockMatchingSlots(record, newLevel);
+            if (newlyUnlocked == 0)
+            {
+                return;
+            }
+
+            SkillInstance[] slots = _skills[record];
+            for (int i = 0; i < _counts[record]; i++)
+            {
+                if ((newlyUnlocked & (1 << i)) != 0)
+                {
+                    _unlockOutput.SendUnlock(entity, slots[i].SkillID);
+                }
+            }
+        }
+
+        // Unlocks every locked slot whose definition's UnlockLevel equals newLevel; returns a bitmask of those slots
+        // (bit i = slot i; MAX_SKILLS_PER_ENTITY = 10 fits a ushort).
+        private ushort UnlockMatchingSlots(int record, int newLevel)
+        {
+            ushort mask = 0;
+            SkillInstance[] slots = _skills[record];
+            for (int i = 0; i < _counts[record]; i++)
+            {
+                if (slots[i].IsUnlocked
+                    || !_definitions.TryGetDefinition(slots[i].SkillID, out SkillDefinition definition)
+                    || definition.UnlockLevel != newLevel)
+                {
+                    continue;
+                }
+
+                slots[i].IsUnlocked = true;
+                mask |= (ushort)(1 << i);
+            }
+
+            return mask;
+        }
+
+        /// <summary>
+        /// Subscribes <see cref="HandleLevelUp"/> to <paramref name="broadcaster"/>'s <c>OnLevelUp</c> (ADR-010: a
+        /// named method, never a lambda). The composition root calls this once (Story 011). One subscription at a
+        /// time: a second call, for any broadcaster, would double every notice, so it throws.
+        /// </summary>
+        /// <param name="broadcaster">The Leveling System's event source.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="broadcaster"/> is null.</exception>
+        /// <exception cref="InvalidOperationException">Already subscribed; call <see cref="Unsubscribe"/> first.</exception>
+        public void Subscribe(ILevelingEventBroadcaster broadcaster)
+        {
+            if (broadcaster == null)
+            {
+                throw new ArgumentNullException(nameof(broadcaster));
+            }
+
+            if (_subscribedTo != null)
+            {
+                throw new InvalidOperationException("SkillSystemService is already subscribed to a level-up broadcaster");
+            }
+
+            broadcaster.OnLevelUp += HandleLevelUp;
+            _subscribedTo = broadcaster;
+        }
+
+        /// <summary>
+        /// Removes the subscription made by <see cref="Subscribe"/>. A no-op when <paramref name="broadcaster"/> is not
+        /// the one subscribed to (including when nothing is subscribed).
+        /// </summary>
+        /// <param name="broadcaster">The same event source passed to <see cref="Subscribe"/>.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="broadcaster"/> is null.</exception>
+        public void Unsubscribe(ILevelingEventBroadcaster broadcaster)
+        {
+            if (broadcaster == null)
+            {
+                throw new ArgumentNullException(nameof(broadcaster));
+            }
+
+            if (!ReferenceEquals(_subscribedTo, broadcaster))
+            {
+                return;
+            }
+
+            broadcaster.OnLevelUp -= HandleLevelUp;
+            _subscribedTo = null;
+        }
+
+        private void HandleLevelUp(LevelUpEventArgs args)
+        {
+            OnLevelUp(args.EntityId, args.NewLevel);
         }
 
         /// <summary>Number of skill slots held for the entity; 0 when it has no record.</summary>

@@ -64,6 +64,11 @@ namespace IronGrind.Tests.EditMode.SkillSystem
             }
         }
 
+        private sealed class NoOpUnlockOutput : ISkillUnlockOutput
+        {
+            public void SendUnlock(EntityID owner, SkillID skillId) { }
+        }
+
         private sealed class FakeSlotIndex : IEntitySlotIndex
         {
             private readonly Dictionary<uint, int> _map = new Dictionary<uint, int>();
@@ -118,7 +123,7 @@ namespace IronGrind.Tests.EditMode.SkillSystem
         {
             _database = ScriptableObject.CreateInstance<SkillDatabase>();
             _database.SetForTesting(defs);
-            _service = new SkillSystemService(_registry, _database, _levels, _slots, MAX_PLAYERS);
+            _service = new SkillSystemService(_registry, _database, _levels, _slots, new NoOpUnlockOutput(), MAX_PLAYERS);
         }
 
         private static int[] Repeat(int value, int count)
@@ -394,7 +399,7 @@ namespace IronGrind.Tests.EditMode.SkillSystem
             ISkillLevelSource levels = nullIndex == 2 ? null : _levels;
             IEntitySlotIndex slots = nullIndex == 3 ? null : _slots;
 
-            Assert.Throws<ArgumentNullException>(() => new SkillSystemService(registry, definitions, levels, slots, MAX_PLAYERS));
+            Assert.Throws<ArgumentNullException>(() => new SkillSystemService(registry, definitions, levels, slots, new NoOpUnlockOutput(), MAX_PLAYERS));
         }
 
         // ---- OnLevelUp stub ----
@@ -436,14 +441,14 @@ namespace IronGrind.Tests.EditMode.SkillSystem
             BuildFullClass(UNLOCK_LEVELS);
 
             Assert.Throws<ArgumentOutOfRangeException>(
-                () => new SkillSystemService(_registry, _database, _levels, _slots, maxPlayers));
+                () => new SkillSystemService(_registry, _database, _levels, _slots, new NoOpUnlockOutput(), maxPlayers));
         }
 
         [Test]
         public void test_spawn_index_at_small_capacity_is_refused_as_mob()
         {
             BuildFullClass(UNLOCK_LEVELS);
-            var service = new SkillSystemService(_registry, _database, _levels, _slots, SMALL_CAPACITY);
+            var service = new SkillSystemService(_registry, _database, _levels, _slots, new NoOpUnlockOutput(), SMALL_CAPACITY);
             _slots.Map(PLAYER_A, SMALL_CAPACITY);
             LogAssert.Expect(LogType.Warning, new Regex("no player slot"));
 

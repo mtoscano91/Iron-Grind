@@ -69,7 +69,7 @@ Applied to `skill-system.md` and `entities.yaml`.
 6. **Silence is a seam (Decision A).** V-5b reads `ISkillSilenceSource`; the production stand-in never silences, because `status-effects.md` defines no silence effect. Story 005.
 7. **Skill damage reaches clients through `SkillCastResult` only (Decision B).** Skills apply damage through the inner damage applier, never the `DamageOutputApplier` wrapper, so no `DamageEvent` / `SelfDamageEvent` is sent for a skill. Story 007.
 8. **Targeted casts face the target (Decision C, OQ-HD-4).** An accepted `SingleHostile` or `SingleFriendly` cast on another entity turns the caster and sends `AutoFaceEvent` through `AutoFaceEmitter`; `Self` casts don't. Closes AC-HD-19 (b). Story 007; rule written into `hit-detection.md` OQ-HD-4.
-9. **Skill message ids reserved:** `0x0308` `SkillCastRequest`, `0x0309` `SkillCastResult`, `0x030A` `SkillCooldownUpdate`, `0x030B` `SkillCooldownSnapshot`, `0x030C` `SkillUnlockNotification`. Each story records its id in `networking-wire-protocol.md`.
+9. **Skill message ids reserved:** R-U / U-U path: `0x0308` `SkillCastRequest`, `0x0309` `SkillCastResult`, `0x030A` `SkillCooldownUpdate`. R-OD priority block `0xE150`–`0xE15F` (`ClientMessageOutbox` sends R-OD only in `0xE000`–`0xEFFF`): `0xE150` `SkillCooldownSnapshot`, `0xE151` `SkillUnlockNotification` (reassigned 2026-11-02 from `0x030B` / `0x030C`, Story 003 code review). Each story records its id in `networking-wire-protocol.md`.
 
 ## Stories
 
@@ -77,7 +77,7 @@ Applied to `skill-system.md` and `entities.yaml`.
 |---|-------|------|--------|-----|
 | 001 | [Skill data types and class skill lists](story-001-skill-data-types.md) | Logic | Complete | ADR-012 |
 | 002 | [Per-entity skill store, spawn and despawn](story-002-skill-store-spawn-despawn.md) | Logic | Complete | ADR-012 |
-| 003 | [Unlock on level-up and `SkillUnlockNotification`](story-003-unlock-on-level-up.md) | Logic | Ready | ADR-010, ADR-004 |
+| 003 | [Unlock on level-up and `SkillUnlockNotification`](story-003-unlock-on-level-up.md) | Logic | Complete | ADR-010, ADR-004 |
 | 004 | [Cast intake (`SkillCastRequest`, V-1, V-2)](story-004-cast-intake.md) | Logic | Ready | ADR-014 |
 | 005 | [Validation sequence (V-0, V-3 to V-8)](story-005-validation-sequence.md) | Logic | Ready | ADR-014 |
 | 006 | [Mana cost (V-9) and cooldown registration](story-006-mana-and-cooldowns.md) | Logic | Ready | ADR-014, ADR-012 |

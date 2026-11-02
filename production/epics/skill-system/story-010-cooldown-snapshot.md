@@ -28,7 +28,7 @@
 
 *From GDD `design/gdd/skill-system.md`, scoped to this story:*
 
-- [ ] `SkillCooldownSnapshot` codec: 80-byte body, 10 entries of `{ uint skillID, uint cooldownExpiryTick }` in class-skill-list order, `MessageTypeId = 0x030B`; round-trips.
+- [ ] `SkillCooldownSnapshot` codec: 80-byte body, 10 entries of `{ uint skillID, uint cooldownExpiryTick }` in class-skill-list order, `MessageTypeId = 0xE150`; round-trips.
 - [ ] **AC-SK-09 / AC-SK-44**: on zone join with at least one skill on cooldown, the joiner receives one snapshot with 10 entries and the correct `cooldownExpiryTick` for that skill.
 - [ ] Locked skills and skills never cast carry `cooldownExpiryTick = 0`.
 - [ ] A class with fewer than 10 skills pads the remaining entries with `skillID = 0`, `cooldownExpiryTick = 0`.
@@ -45,7 +45,7 @@
 - **Ordering versus spawn**: `OnPlayerEntering` (the entry listener) runs before the snapshot (`ZoneEntryCompletion.cs:113` then 120). Story 011 hooks `OnEntitySpawned` to that listener, so the store exists when the snapshot is built. Assert this in Story 011's pipeline test; here, test the empty-store fallback.
 - **Reconnect**: the GDD also sends the snapshot on reconnect. In this codebase a reconnect re-enters the zone through the same entry path (check `zone-instancing.md`); if so, nothing extra is needed. Note what you found.
 - **Cooldowns across zones**: cooldowns are per zone process and not persisted (Story 006, EC-SK-13), so a player entering a new zone has no cooldowns. That matches "skill returns to Ready" in EC-SK-13; note it for Combat UI.
-- **Wire**: struct and codec in `src/Foundation/Networking/WireProtocol/`; send R-OD through `ClientMessageOutbox`. Record `0x030B` in `networking-wire-protocol.md`.
+- **Wire**: struct and codec in `src/Foundation/Networking/WireProtocol/`; send R-OD through `ClientMessageOutbox`. Record `0xE150` in `networking-wire-protocol.md`.
 
 ---
 
@@ -58,7 +58,7 @@
 
 ## QA Test Cases
 
-- **Codec**: round trip of 10 entries; a body of 79 or 81 bytes rejected; id `0x030B`.
+- **Codec**: round trip of 10 entries; a body of 79 or 81 bytes rejected; id `0xE150`.
 - **AC-SK-44**: store with slot 2 at expiry 1200, others 0 → snapshot entries match by index and id.
 - **Locked / never cast**: zero expiry.
 - **Short class**: 3 skills → entries 3–9 are `(0, 0)`.
