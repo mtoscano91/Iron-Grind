@@ -1,6 +1,6 @@
 # Epics Index
 
-Last Updated: 2026-10-30
+Last Updated: 2026-11-02
 Engine: Unity 6.3 LTS (6000.3)
 Control Manifest Version: 2026-10-26
 
@@ -22,6 +22,7 @@ Control Manifest Version: 2026-10-26
 | [Movement System](movement-system/EPIC.md) | Core | Movement System | design/gdd/movement-system.md | 13 stories (001-013 written 2026-10-29; server 001-009, client 010-013): 13 Complete | Complete |
 | [Hit Detection](hit-detection/EPIC.md) | Core | Hit Detection | design/gdd/hit-detection.md | 4 stories (001-004), all Complete (2026-10-30) | Complete |
 | [Auto-Attack Combat](auto-attack-combat/EPIC.md) | Core | Auto-Attack Combat | design/gdd/auto-attack-combat.md | 9 stories (001-009 written 2026-10-30): 9 Complete | Complete |
+| [Skill System](skill-system/EPIC.md) | Core | Skill System | design/gdd/skill-system.md | Not yet created | Ready |
 | [Enhancement System](enhancement-system/EPIC.md) | Feature | Enhancement System | design/gdd/enhancement-system.md | 16 stories (001-016 Complete); DoD open: AC-ENH-2 and the other deferred criteria | In Progress |
 
 ## Notes
@@ -38,6 +39,6 @@ Control Manifest Version: 2026-10-26
 | Layer | Epics Created | Remaining |
 |-------|--------------|-----------|
 | Foundation | 4 / 4 (all Complete) | — |
-| Core | 12 created (Equipment added 2026-10-07, Character Persistence 2026-10-12, Movement 2026-10-29, Hit Detection 2026-10-30, Auto-Attack Combat 2026-10-30) | Skill System has no epic yet; run `/create-stories [epic-slug]` per created epic |
+| Core | 13 created (Equipment added 2026-10-07, Character Persistence 2026-10-12, Movement 2026-10-29, Hit Detection 2026-10-30, Auto-Attack Combat 2026-10-30, Skill System 2026-11-02) | Run `/create-stories skill-system`; Authentication has no stories yet |
 | Feature | 1 (Enhancement, created 2026-10-07 ahead of its two gates) | Run `/create-epics layer: feature` for the rest after Core is nearly complete |
 | Presentation | 0 | Run `/create-epics layer: presentation` after Feature is nearly complete |

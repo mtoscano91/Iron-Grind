@@ -25,7 +25,7 @@
 # STATUS VALUES: active | deprecated | superseded-by: TR-[system]-NNN
 
 version: 2
-last_updated: "2026-11-02"  # 2026-11-02: TR-aa-001..009 added (Auto-Attack Combat EPIC.md table, by hand at user request). 2026-10-15: 107 TR-IDs registered from the 13 EPIC.md tables (/architecture-review, docs/architecture/architecture-review-2026-10-15-tr-registry.md); 7 carry a revised date
+last_updated: "2026-11-02"  # 2026-11-02: TR-sk-001..011 added (Skill System EPIC.md table, /create-epics). Same day, earlier: TR-aa-001..009 added (Auto-Attack Combat EPIC.md table, by hand at user request). 2026-10-15: 107 TR-IDs registered from the 13 EPIC.md tables (/architecture-review, docs/architecture/architecture-review-2026-10-15-tr-registry.md); 7 carry a revised date
 
 requirements:
   # --- auth: design/gdd/authentication.md (production/epics/authentication/EPIC.md) ---
@@ -863,6 +863,84 @@ requirements:
     system: aa
     gdd: design/gdd/auto-attack-combat.md
     requirement: "One `HitCheckResult` per miss streak, and damage is delivered as a typed `DamageEvent` (Rule 10 Step 2; CR-HD-10, AC-HD-11a)"
+    created: 2026-11-02
+    revised: ""
+    status: active
+  # --- sk: design/gdd/skill-system.md (production/epics/skill-system/EPIC.md) ---
+  - id: TR-sk-001
+    system: sk
+    gdd: design/gdd/skill-system.md
+    requirement: "`SkillID` (readonly struct wrapping uint, 0 = Invalid), `SkillDefinition` with public fields, and the `SkillDatabase` and `SkillSystemConfig` ScriptableObjects (SkillDefinition Schema, AC-SK-33 to AC-SK-35)"
+    created: 2026-11-02
+    revised: ""
+    status: active
+  - id: TR-sk-002
+    system: sk
+    gdd: design/gdd/skill-system.md
+    requirement: "Each entity holds a `SkillInstance[10]` aligned with `GetClassSkills(classType)`; `OnEntitySpawned` caches `IsUnlocked` from level, an empty class list gives an empty array, `OnEntityDespawned` releases it (CR-SK-20, EC-SK-12, AC-SK-10, 13, 47, 48)"
+    created: 2026-11-02
+    revised: ""
+    status: active
+  - id: TR-sk-003
+    system: sk
+    gdd: design/gdd/skill-system.md
+    requirement: "On `OnLevelUp(entity, newLevel)` every skill with `UnlockLevel == newLevel` unlocks permanently and the owner gets one `SkillUnlockNotification` per unlock (CR-SK-21, AC-SK-11, 14, 45, 46, 49)"
+    created: 2026-11-02
+    revised: ""
+    status: active
+  - id: TR-sk-004
+    system: sk
+    gdd: design/gdd/skill-system.md
+    requirement: "At most one `SkillCastRequest` per entity per tick, resolved in a phase-3 step after Auto-Attack Combat; validation V-0 to V-9 in order, the first failure exits, no state changes before V-9; `Self` skills replace the target with the caster (CR-SK-1, CR-SK-2, CR-SK-19, AC-SK-01 to 05, 12, 34, 39 to 41)"
+    created: 2026-11-02
+    revised: ""
+    status: active
+  - id: TR-sk-005
+    system: sk
+    gdd: design/gdd/skill-system.md
+    requirement: "An accepted cast calls `NotifySkillUsed` once before damage; damaging skills compute BaseDamage = floor(stat x DamageMultiplier) from `DamageBaseStat` and call Damage Calculation with `PhysicalSkill` or `MagicalSkill`; a kill runs GetXPAward, AddExperience, ApplyDamage (CR-SK-3 to CR-SK-6, AC-SK-20 to 25, 30 to 32)"
+    created: 2026-11-02
+    revised: ""
+    status: active
+  - id: TR-sk-006
+    system: sk
+    gdd: design/gdd/skill-system.md
+    requirement: "Buff and debuff skills call `ApplyEffect` per target after damage, never on a target killed this tick; heals call `ApplyInstantHeal(floor(INT x HealMultiplier))` (CR-SK-7, F-SK-3, AC-SK-26 to 29)"
+    created: 2026-11-02
+    revised: ""
+    status: active
+  - id: TR-sk-007
+    system: sk
+    gdd: design/gdd/skill-system.md
+    requirement: "Cooldowns are absolute expiry ticks, written after effects on every accepted cast; each skill is independent; no global cooldown (CR-SK-8, CR-SK-10, CR-SK-11, AC-SK-06 to 08)"
+    created: 2026-11-02
+    revised: ""
+    status: active
+  - id: TR-sk-008
+    system: sk
+    gdd: design/gdd/skill-system.md
+    requirement: "Effective mana cost = Ceil(ManaCost x MANA_COST_MULTIPLIER) from `SkillSystemConfig`, consumed at V-9, never refunded (CR-SK-13, CR-SK-16, F-SK-4, AC-SK-15 to 19)"
+    created: 2026-11-02
+    revised: ""
+    status: active
+  - id: TR-sk-009
+    system: sk
+    gdd: design/gdd/skill-system.md
+    requirement: "`SkillCastResult` goes to the caster for every request past V-2 and, when accepted, to clients with the caster or target in relevance; V-1 and V-2 drops send nothing (CR-SK-9, AC-SK-42, 43)"
+    created: 2026-11-02
+    revised: ""
+    status: active
+  - id: TR-sk-010
+    system: sk
+    gdd: design/gdd/skill-system.md
+    requirement: "`SkillCooldownUpdate { skillID, cooldownExpiryTick }` rides the R-U batch with an accepted cast and with an `OnCooldown` rejection, never on expiry; a 10-slot `SkillCooldownSnapshot` is sent on zone join (CR-SK-12, CR-SK-23, AC-SK-09, 44)"
+    created: 2026-11-02
+    revised: ""
+    status: active
+  - id: TR-sk-011
+    system: sk
+    gdd: design/gdd/skill-system.md
+    requirement: "The 20-skill MVP roster (10 Warrior, 10 Healer) is authored as `SkillDatabase` data within the class cost and unlock constraints, with BuffIDs and BuffDefinitions for the 10 buff and debuff skills (Skill Roster, CR-SK-14, 15, 22, AC-SK-36 to 38, OQ-SK-6)"
     created: 2026-11-02
     revised: ""
     status: active

@@ -2,7 +2,7 @@
 
 > **Status**: Approved (pass 1 — 2026-04-29)
 > **Author**: Manuel Toscano + Claude Code agents
-> **Last Updated**: 2026-05-28 (Skill System amendment: SA-2 Step 5 null-conditional removed; interactions + dependencies tables updated to hard dependency; OQ-CS-1 resolved)
+> **Last Updated**: 2026-11-02 (Skill System `/create-epics`: `SkillList` type in the field table is `uint[]`, matching CD-4). Previous: 2026-05-28 (Skill System amendment: SA-2 Step 5 null-conditional removed; interactions + dependencies tables updated to hard dependency; OQ-CS-1 resolved)
 > **Implements Pillar**: Earned Power (primary), Social Gravity (secondary)
 
 ## Overview
@@ -40,7 +40,7 @@ Healers keep the party standing. Not by doing more damage — by making sure the
 | `ArchetypeRole` | `enum ArchetypeRole : byte` | `DamageTank = 0`, `Support = 1`. Read by Party System to surface role icon and validate composition. |
 | `AutoAllocIncrement` | `AutoAllocIncrement` struct | Per-level attribute increments applied by the Leveling System at every CR-2.4 execution. See CD-2. |
 | `FreePointsPerLevel` | `int` | Unallocated stat points granted each level-up, accumulated and tracked by the Leveling System. Warrior: 1. Healer: 2. |
-| `SkillList` | `SkillID[]` | **Provisional.** List of skill identifiers this class may access. Type and interface confirmed by Skill System GDD. See CD-4. |
+| `SkillList` | `uint[]` | List of skill identifiers this class may access, stored as raw `uint` (CD-4); `GetClassSkills` wraps them into `SkillID`. Confirmed by `skill-system.md` AC-SK-35 (2026-11-02). |
 
 **CD-2 — AutoAllocIncrement struct.** A `[Serializable]` struct with four `int` fields representing per-level auto-allocation increments. Not a `Dictionary<StatID, int>` — Unity's serializer cannot serialize Dictionary without a custom wrapper (same trap as ValueTuple on ItemDefinition).
 

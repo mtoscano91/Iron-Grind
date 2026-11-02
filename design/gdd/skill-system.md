@@ -1,8 +1,8 @@
 # Skill System
 
-> **Status**: In Design
+> **Status**: Approved (2026-05-28)
 > **Author**: Manuel Toscano + Claude Code agents
-> **Last Updated**: 2026-05-28 (lean re-review fixes: EC-SK-1 stale variable corrected to _actionTimer/CycleDuration; networking-wire-protocol.md downstream ref updated; OQ-SK-9 pending qualifier removed; OQ-SK-3 resolved — DamageContext.MagicalSkill now defined in damage-calculation.md)
+> **Last Updated**: 2026-11-02 (`/create-epics`: casts resolve in a phase-3 step after Auto-Attack Combat (CR-SK-1); the auto-attack timer counts whole ticks (CR-SK-3, EC-SK-1, AC-SK-30); `SkillList` stored as `uint[]` (OQ-CS-1 (a), AC-SK-35); the snapshot carries `cooldownExpiryTick` (AC-SK-09, AC-SK-44); OQ-SK-5 resolved; OQ-SK-6 assigned to the roster story). Previous: 2026-05-28 (lean re-review fixes: EC-SK-1 stale variable corrected to _actionTimer/CycleDuration; networking-wire-protocol.md downstream ref updated; OQ-SK-9 pending qualifier removed; OQ-SK-3 resolved — DamageContext.MagicalSkill now defined in damage-calculation.md)
 > **Implements Pillar**: Rhythm Mastery (primary), Social Gravity (secondary), Earned Power (supporting)
 
 ## Overview
@@ -29,7 +29,7 @@ The skill system serves two distinct power fantasies that reflect each class's r
 
 **Skill Execution Lifecycle**
 
-**CR-SK-1 — Cast Request.** The client submits a `SkillCastRequest { casterEntityID: uint, skillID: uint, targetEntityID: uint, clientTickNumber: uint }` message (16 bytes). The server enqueues it in the per-entity input queue. At most one `SkillCastRequest` per entity is processed per server tick; additional queued requests are discarded.
+**CR-SK-1 — Cast Request.** The client submits a `SkillCastRequest { casterEntityID: uint, skillID: uint, targetEntityID: uint, clientTickNumber: uint }` message (16 bytes). The server enqueues it in the per-entity input queue. At most one `SkillCastRequest` per entity is processed per server tick; additional queued requests are discarded. *(2026-11-02, `/create-epics`: the ADR-014 handler only stores the request; a Skill System step in ADR-014 phase 3, listed after Auto-Attack Combat, runs CR-SK-2 to CR-SK-9 for every stored request on that tick. This gives EC-SK-1 and EC-SK-6 their order.)*
 
 **CR-SK-2 — Validation Sequence.** The following checks execute in order on the next tick boundary. The first failure emits a `SkillCastRejectionCode` and exits; no subsequent checks run.
 
@@ -51,11 +51,11 @@ Mana is consumed at V-9, the final check, immediately before execution begins. A
 
 **CR-SK-3 — Auto-Attack Notification.** Immediately after all validations pass, before any damage or effect resolution: call `CombatSystem.NotifySkillUsed(casterEntityID)`.
 
-**Reactive cooldown model (authoritative).** The auto-attack timer is not fixed-cadence. It resets on any action — auto-attack or skill cast. When `NotifySkillUsed()` is called, the Auto-Attack Combat system resets `_actionTimer = 0.0` (float, seconds). The next auto-attack fires when `_actionTimer >= CycleDuration` (default 1.0s at `AttackSpeedMultiplier = 1.0`). See `auto-attack-combat.md` F-3 for the full fire-check formula.
+**Reactive cooldown model (authoritative).** The auto-attack timer is not fixed-cadence. It resets on any action — auto-attack or skill cast. When `NotifySkillUsed()` is called, the Auto-Attack Combat system resets `_actionTimer` to 0. `_actionTimer` counts whole server ticks (`auto-attack-combat.md` Rule 5, corrected 2026-11-02 from float seconds). The next auto-attack fires when `_actionTimer >= CycleTicks` (20 ticks, 1.0s, at `AttackSpeedMultiplier = 1.0`). See `auto-attack-combat.md` F-3 for the full fire-check formula.
 
 Skill damage is always additive — it resolves independently and never suppresses the auto-attack. The only effect on the auto-attack cadence is a timer reset from the skill cast tick. Players who cast immediately after the auto fires delay the next auto by 1–2 ticks (negligible). Players who cast before the auto fires push the next auto back by however many ticks remained — nothing is cancelled, but the delay accumulates. Skilled play: wait for auto, then cast. Impatient play: cast early, next auto is pushed further out.
 
-> ✅ **Cross-doc dependency resolved (2026-05-27).** `auto-attack-combat.md` has been revised and approved under the reactive cooldown model. The `_skillUsedThisCycle` flag, grace window, and `SKILL_COMMITTED` state have been removed. Both documents use `_actionTimer` (float, seconds) as the shared timer variable. Implementation may proceed once skill-system.md's remaining blockers are resolved.
+> ✅ **Cross-doc dependency resolved (2026-05-27).** `auto-attack-combat.md` has been revised and approved under the reactive cooldown model. The `_skillUsedThisCycle` flag, grace window, and `SKILL_COMMITTED` state have been removed. Both documents use `_actionTimer` (whole ticks since 2026-10-30) as the shared timer variable. Implementation may proceed once skill-system.md's remaining blockers are resolved.
 
 **CR-SK-4 — BaseDamage Computation (damaging skills only).**
 `BaseDamage = floor(GetEffectiveStat(casterEntityID, SkillDefinition.DamageBaseStat) × SkillDefinition.DamageMultiplier)`
@@ -88,7 +88,7 @@ Cooldown is always registered when a cast fully validates, regardless of whether
 
 **CR-SK-11 — No Global Cooldown at MVP.** Each skill has its own independent cooldown. The 1.0-second auto-attack cadence functions as the natural inter-skill pacing constraint. Adding a GCD on top of individual cooldowns would double-gate Warrior play without design benefit.
 
-**CR-SK-12 — Cooldown Client Sync.** On each tick, the server includes `SkillCooldownUpdate { skillID, cooldownExpiryTick }` in the R-U batch for any skill whose cooldown state changed (started or expired). `cooldownExpiryTick` is an absolute server tick at which the cooldown expires; amended 2026-06-20 from `ticksRemaining` (relative duration) to `cooldownExpiryTick` (absolute tick) to enable drift-correct cooldown fraction rendering in the Combat UI. **Amendment (2026-06-20):** When a cast fails V-6 (`OnCooldown` rejection), the server MUST include `SkillCooldownUpdate { skillID, cooldownExpiryTick }` for the rejected skill in the same R-U batch as the `SkillCastResult`. This guarantees the Combat UI's EC-CUI-4 self-correction path — a client whose snapshot was lost can recover accurate cooldown state from the first rejected cast. On zone join or reconnect, the server sends a full `SkillCooldownSnapshot` covering all 10 of the caster's skills. The client renders cooldown UI from server-authoritative values only; it does not compute cooldown state independently.
+**CR-SK-12 — Cooldown Client Sync.** On each tick, the server includes `SkillCooldownUpdate { skillID, cooldownExpiryTick }` in the R-U batch for any skill whose cooldown started that tick; expiry sends nothing (CR-SK-23; "or expired" removed 2026-11-02). `cooldownExpiryTick` is an absolute server tick at which the cooldown expires; amended 2026-06-20 from `ticksRemaining` (relative duration) to `cooldownExpiryTick` (absolute tick) to enable drift-correct cooldown fraction rendering in the Combat UI. **Amendment (2026-06-20):** When a cast fails V-6 (`OnCooldown` rejection), the server MUST include `SkillCooldownUpdate { skillID, cooldownExpiryTick }` for the rejected skill in the same R-U batch as the `SkillCastResult`. This guarantees the Combat UI's EC-CUI-4 self-correction path — a client whose snapshot was lost can recover accurate cooldown state from the first rejected cast. On zone join or reconnect, the server sends a full `SkillCooldownSnapshot` covering all 10 of the caster's skills. The client renders cooldown UI from server-authoritative values only; it does not compute cooldown state independently.
 
 **CR-SK-23 — SkillCooldownUpdate Delivery Contract.** `SkillCooldownUpdate { skillID, cooldownExpiryTick }` is emitted in two cases: (1) after any accepted cast — carries the newly registered `CooldownExpiryTick` (CR-SK-8); (2) as a companion to an `OnCooldown` rejection (V-6) — carries the current `CooldownExpiryTick` for the rejected skill. In both cases the update is included in the R-U batch containing the `SkillCastResult`. `SkillCooldownUpdate` is NOT emitted for cooldown expiry events — expiry is derived by the client from `cooldownExpiryTick` vs. `NetworkManager.ServerTime.Tick`. The `SkillCooldownSnapshot` (zone join / reconnect) is the bulk equivalent covering all 10 skills; it uses the same `cooldownExpiryTick` format.
 
@@ -162,7 +162,7 @@ No AoE at MVP. Multi-target resolution is post-MVP.
 
 The Class System has a binding open question (OQ-CS-1) requiring: (a) `SkillID` type definition, (b) `OnEntitySpawned` interface definition, (c) at least one INT-scaled Healer offensive skill, (d) distinct per-class combat feel within the first 3 levels. This GDD resolves all four.
 
-(a) `SkillID` is a `readonly struct wrapping uint`. `SkillID(0)` = Invalid. `ClassDefinition.SkillList` stores `SkillID[]`. `IClassRegistry.GetClassSkills(ClassType)` returns `IReadOnlyList<SkillID>`. The null-conditional in the Class System's SA-2 Step 5 must be replaced with a hard dependency once this GDD is approved.
+(a) `SkillID` is a `readonly struct wrapping uint`. `SkillID(0)` = Invalid. `ClassDefinition.SkillList` stores `uint[]` (Class System CD-4: Unity's serializer drops a `SkillID[]`; corrected 2026-11-02). `IClassRegistry.GetClassSkills(ClassType)` returns `IReadOnlyList<SkillID>`. The null-conditional in the Class System's SA-2 Step 5 must be replaced with a hard dependency once this GDD is approved.
 
 (b) `ISkillSystem` interface (declared by Skill System, consumed by Class System): `void OnEntitySpawned(EntityID, ClassType)`, `void OnEntityDespawned(EntityID)`, `void OnLevelUp(EntityID, int)`.
 
@@ -264,7 +264,7 @@ The per-entity skill store is a flat `SkillInstance[10]` array positionally alig
 | System | Data IN | Data OUT | Interface Owner | Sequence Constraints |
 |--------|---------|----------|-----------------|---------------------|
 | **Character Stats** | `GetEffectiveStat(entityID, StatID.Level)` at spawn; `GetEffectiveStat(entityID, StatID.AP)` / `StatID.INT` at cast; `ConsumeMana(entityID, amount) → bool` at V-9 | None — does not write stats directly | `ICharacterStatsProvider` — owned by Character Stats | Valid from SA-2 Step 5 onward |
-| **Auto-Attack Combat** | None — Skill System does not read auto-attack state | `CombatSystem.NotifySkillUsed(casterEntityID)` — resets `_actionTimer` to 0.0 in the reactive cooldown model | `ICombatSystem` — declared by Auto-Attack Combat (approved 2026-05-27) | Called after all validation passes (CR-SK-3), before damage resolution; never called on rejected casts |
+| **Auto-Attack Combat** | None — Skill System does not read auto-attack state | `CombatSystem.NotifySkillUsed(casterEntityID)` — resets `_actionTimer` (whole ticks) to 0 in the reactive cooldown model | `ICombatSystem` — declared by Auto-Attack Combat (approved 2026-05-27) | Called after all validation passes (CR-SK-3), before damage resolution; never called on rejected casts |
 | **Damage Calculation** | `DamageResult { DamageDealt, IsCrit, IsKill }` | `BaseDamage`, `AttackerID`, `TargetID`, `DamageContext` | `DamageCalculation()` — owned by Damage Calculation | Called only for damage-flagged skills; after CR-SK-3 |
 | **Status Effects / Buffs** | `ApplyResult` from `ApplyEffect()`; `ApplyInstantHeal` is fire-and-forget | `BuffDefinition` (fully assembled); target list assembled by Skill System before first call; `float healAmount` | `ApplyEffect()` and `ApplyInstantHeal()` — owned by Status Effects; Skill System is sole external caller (CR-SE-14) | Do not call `ApplyEffect` on a target with `IsKill == true` from the same tick |
 | **Class System** | `IClassRegistry.GetClassSkills(ClassType) → IReadOnlyList<SkillID>` at spawn; `ClassType` via `OnEntitySpawned` | `ISkillSystem.OnEntitySpawned(EntityID, ClassType)`; `OnEntityDespawned(EntityID)`; `OnLevelUp(EntityID, int)` | `ISkillSystem` declared by Skill System; `IClassRegistry` declared by Class System | `OnEntitySpawned` always called after SA-2 Step 4, before SA-2 Step 6 |
@@ -382,7 +382,7 @@ Example (CooldownTicks=200): `cooldownSeconds = 200 × 0.05 = 10.0 seconds`
 
 ## Edge Cases
 
-**EC-SK-1 — Skill cast submitted on the same tick as an auto-attack.** If both auto-attack resolution and a skill cast request arrive for the same entity on the same tick, auto-attack resolution runs first (per Auto-Attack Combat's tick ordering), then the skill cast is validated. Both deal damage independently. `NotifySkillUsed` fires after the auto-attack completes; since both events share the same tick, `_actionTimer` is reset to `0.0` in either case and the next auto fires when `_actionTimer >= CycleDuration` — the same as if only the auto had fired.
+**EC-SK-1 — Skill cast submitted on the same tick as an auto-attack.** If both auto-attack resolution and a skill cast request arrive for the same entity on the same tick, auto-attack resolution runs first (the Skill System step is listed after Auto-Attack Combat in ADR-014 phase 3, CR-SK-1), then the skill cast is validated. Both deal damage independently. `NotifySkillUsed` fires after the auto-attack completes; since both events share the same tick, `_actionTimer` is reset to 0 in either case and the next auto fires when `_actionTimer >= CycleTicks` — the same as if only the auto had fired.
 
 **EC-SK-2 — Insufficient mana at V-9 after earlier checks passed.** If checks V-1 through V-8 pass but `ConsumeMana()` returns false, the cast is rejected with `InsufficientMana`. The skill remains in `Ready` state — no cooldown is registered, no auto-attack notification fires.
 
@@ -753,7 +753,7 @@ All criteria are binary pass/fail and independently verifiable by a QA tester.
 
 **AC-SK-08:** After a successful cast, two different skills on the same entity carry independent `CooldownExpiryTick` values; verified by casting Skill A and confirming Skill B's `CooldownExpiryTick` is unchanged.
 
-**AC-SK-09:** A `SkillCooldownSnapshot` covering all 10 skill slots is sent on zone join; verified by joining a zone with at least one skill on cooldown and confirming the snapshot message contains the correct `ticksRemaining` for that skill.
+**AC-SK-09:** A `SkillCooldownSnapshot` covering all 10 skill slots is sent on zone join; verified by joining a zone with at least one skill on cooldown and confirming the snapshot message contains the correct `cooldownExpiryTick` for that skill (CR-SK-23; corrected 2026-11-02 from `ticksRemaining`).
 
 ---
 
@@ -815,7 +815,7 @@ All criteria are binary pass/fail and independently verifiable by a QA tester.
 
 **Auto-Attack Cadence**
 
-**AC-SK-30:** After a successful skill cast, the caster's auto-attack `_actionTimer` resets to 0.0; verified by reading `_actionTimer` before the cast (any value in `[0, CycleDuration]`) and asserting the value is 0.0 immediately after `NotifySkillUsed()` is called, before any further tick advance.
+**AC-SK-30:** After a successful skill cast, the caster's auto-attack `_actionTimer` resets to 0; verified by reading `_actionTimer` before the cast (any value in `[0, CycleTicks]`, whole ticks) and asserting the value is 0 immediately after `NotifySkillUsed()` is called, before any further tick advance.
 
 **AC-SK-31:** `CombatSystem.NotifySkillUsed(casterEntityID)` is called exactly once per accepted cast, after validation passes but before damage resolution; verified by asserting a count of 1 per cast across 10 casts, and by confirming call order relative to `DamageCalculation`.
 
@@ -829,7 +829,7 @@ All criteria are binary pass/fail and independently verifiable by a QA tester.
 
 **AC-SK-34:** A `SkillCastRequest` with `skillID == 0` (i.e., `SkillID(0)`) is rejected at V-3 with `rejectionCode == InvalidSkill`; verified by submitting such a request and asserting the rejection code.
 
-**AC-SK-35:** `ClassDefinition.SkillList` is declared as `SkillID[]`; verified by reflection — asserting `classDefinition.GetType().GetField("SkillList").FieldType == typeof(SkillID[])`.
+**AC-SK-35:** `ClassDefinition.SkillList` is declared as `uint[]` and `IClassRegistry.GetClassSkills(ClassType)` returns `IReadOnlyList<SkillID>`; verified by reflection — asserting `classDefinition.GetType().GetField("SkillList").FieldType == typeof(uint[])` and the method's return type. *(Corrected 2026-11-02 from `SkillID[]`, Class System CD-4.)*
 
 ---
 
@@ -859,7 +859,7 @@ All criteria are binary pass/fail and independently verifiable by a QA tester.
 
 **AC-SK-43:** V-1 and V-2 failures produce no `SkillCastResult` message to any client; verified by submitting a mismatched entity ID (V-1) and a stale tick number (V-2) and asserting zero `SkillCastResult` broadcasts.
 
-**AC-SK-44:** A `SkillCooldownSnapshot` containing all 10 skill slots with correct `ticksRemaining` values is sent during zone join; verified by capturing all messages during zone join with at least one skill on cooldown and asserting 10-entry snapshot with correct values.
+**AC-SK-44:** A `SkillCooldownSnapshot` containing all 10 skill slots with correct `cooldownExpiryTick` values (corrected 2026-11-02 from `ticksRemaining`) is sent during zone join; verified by capturing all messages during zone join with at least one skill on cooldown and asserting 10-entry snapshot with correct values.
 
 **AC-SK-45:** A `SkillUnlockNotification { skillID }` is sent to the client when `OnLevelUp` causes a skill's `IsUnlocked` to transition from `false` to `true`; verified by triggering a level-up that unlocks exactly one skill and asserting exactly one notification containing the correct `skillID`.
 
@@ -889,9 +889,9 @@ All criteria are binary pass/fail and independently verifiable by a QA tester.
 
 **OQ-SK-4 — Healer INT at L60 confirmation.** Example calculations use INT=246 for the Healer L60 value. This must be verified against the Character Stats GDD formula before `SkillDatabase.asset` authoring begins.
 
-**OQ-SK-5 — BLOCKING — Leveling System GDD tick-phase ordering.** EC-SK-6 requires the Leveling System to fire `OnLevelUp` before Skill System cast processing within the same tick. The Leveling System GDD's tick-phase ordering has not been confirmed. Blocking for: EC-SK-6 correctness guarantee. Must be resolved before skill-system.md can be approved — implementation cannot begin until the ordering contract is documented in both GDDs.
+**OQ-SK-5 — RESOLVED (2026-11-02).** `leveling-system.md` CR-2.10 documents the ordering: all `OnLevelUp` notifications complete before Skill System cast processing on the same tick, and casts resolve in a phase-3 step after Auto-Attack Combat (CR-SK-1). Original text: **Leveling System GDD tick-phase ordering.** EC-SK-6 requires the Leveling System to fire `OnLevelUp` before Skill System cast processing within the same tick. The Leveling System GDD's tick-phase ordering has not been confirmed. Blocking for: EC-SK-6 correctness guarantee. Must be resolved before skill-system.md can be approved — implementation cannot begin until the ordering contract is documented in both GDDs.
 
-**OQ-SK-6 — BuffID values for Skill System buff-granting skills.** The `BuffID enum : uint` registry entry defers specific value assignment to this GDD. No Warrior or Healer buff/debuff BuffID values have been authored. Required before buff-granting skill entries in `SkillDatabase.asset` can be completed.
+**OQ-SK-6 — ASSIGNED (2026-11-02, `/create-epics`).** The Skill System epic's roster story authors the BuffIDs and BuffDefinitions for the 10 buff and debuff skills and records them here and in `entities.yaml`. Original text: **BuffID values for Skill System buff-granting skills.** The `BuffID enum : uint` registry entry defers specific value assignment to this GDD. No Warrior or Healer buff/debuff BuffID values have been authored. Required before buff-granting skill entries in `SkillDatabase.asset` can be completed.
 
 **OQ-SK-7 — Skill unlock audio timing coordination.** The unlock chime fires 300ms after the Leveling System's level-up audio. The Leveling System's audio spec does not yet exist. Non-blocking for implementation; blocking for audio asset finalization.
 
