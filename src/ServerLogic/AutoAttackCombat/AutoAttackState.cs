@@ -2,7 +2,7 @@ namespace IronGrind.AutoAttackCombat
 {
     /// <summary>
     /// Top-level auto-attack state of one player (design/gdd/auto-attack-combat.md, States and Transitions).
-    /// Story 001 has the two states below; Story 003 adds <c>OUT_OF_RANGE</c> and <c>PROHIBITED</c>.
+    /// Every state except <see cref="Idle"/> runs the action timer.
     /// </summary>
     public enum AutoAttackState
     {
@@ -11,5 +11,11 @@ namespace IronGrind.AutoAttackCombat
 
         /// <summary>A valid target is selected and the toggle is ON. The action timer runs.</summary>
         CombatActive = 1,
+
+        /// <summary>Active, and the last fire attempt missed out of range. The timer runs; a hit returns to CombatActive.</summary>
+        OutOfRange = 2,
+
+        /// <summary>Active, but <c>SetCombatProhibited</c> is set. The timer runs; no auto fires.</summary>
+        Prohibited = 3,
     }
 }

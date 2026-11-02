@@ -84,7 +84,7 @@ Applied to `auto-attack-combat.md`, `hit-detection.md`, `networking-core.md`, AD
 |---|-------|------|--------|-----|
 | 001 | [Combat state and activation](story-001-combat-state-and-activation.md) | Logic | Complete | ADR-012, ADR-014 |
 | 002 | [Tick timer and `CycleTicks`](story-002-tick-timer-and-cycle-ticks.md) | Logic | Complete | ADR-014 |
-| 003 | [Resolution order](story-003-resolution-order.md) | Logic | Ready | ADR-012, ADR-013, ADR-014 |
+| 003 | [Resolution order](story-003-resolution-order.md) | Logic | Complete | ADR-012, ADR-013, ADR-014 |
 | 004 | [Kill sequence](story-004-kill-sequence.md) | Logic | Ready | ADR-010 |
 | 005 | [`NotifySkillUsed`](story-005-notify-skill-used.md) | Logic | Ready | ADR-010 |
 | 006 | [`SetAutoAttack`, input and composition](story-006-set-auto-attack-input-and-composition.md) | Integration | Ready | ADR-004, ADR-014 |
@@ -102,4 +102,4 @@ This epic is complete when:
 
 ## Next Step
 
-Run `/story-readiness production/epics/auto-attack-combat/story-001-combat-state-and-activation.md`, then `/dev-story`.
+Run `/story-readiness production/epics/auto-attack-combat/story-004-kill-sequence.md`, then `/dev-story` (Stories 001-003 Complete).

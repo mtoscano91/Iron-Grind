@@ -1,7 +1,7 @@
 # Story 003: Resolution Order
 
 > **Epic**: Auto-Attack Combat
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-26
@@ -29,23 +29,23 @@
 
 *From GDD `design/gdd/auto-attack-combat.md` and `hit-detection.md`, scoped to this story:*
 
-- [ ] Rule 10 runs in order: prohibited check → `CheckHit` → damage → reset. `autoShouldFire` follows F-3.
-- [ ] Out of range: no damage, timer keeps running, the auto retries every tick and fires on the first in-range tick (AC-09, AC-20, EC-6).
-- [ ] A 5.0-unit Y difference within 3.0 units on XZ hits (AC-10).
-- [ ] `PROHIBITED`: no damage, timer keeps running, the auto fires on the first tick after the flag clears, and the timer is not reset on exit (AC-11, EC-7).
-- [ ] A prohibition cleared in the request step of a tick lets that tick's check fire (EC-8).
-- [ ] A miss calls neither `DamageCalculator.Calculate` nor health (AC-HD-12, AC-HD-13).
-- [ ] `IHitResultEmitter.Emit` runs once per hit and once per miss streak; a repeat of the same miss is not re-sent; a hit, timer reset, target change or deactivation ends the streak (Rule 10 Step 2, AC-HD-11a).
-- [ ] A target invalidated on the tick the timer is ready does not fire and does not reset the timer (EC-10).
-- [ ] A timer past `CycleTicks` fires one auto and resets to 0 (EC-17); a second evaluation in that tick does nothing (EC-19).
+- [x] Rule 10 runs in order: prohibited check → `CheckHit` → damage → reset. `autoShouldFire` follows F-3.
+- [x] Out of range: no damage, timer keeps running, the auto retries every tick and fires on the first in-range tick (AC-09, AC-20, EC-6).
+- [x] A 5.0-unit Y difference within 3.0 units on XZ hits (AC-10).
+- [x] `PROHIBITED`: no damage, timer keeps running, the auto fires on the first tick after the flag clears, and the timer is not reset on exit (AC-11, EC-7).
+- [x] A prohibition cleared in the request step of a tick lets that tick's check fire (EC-8).
+- [x] A miss calls neither `DamageCalculator.Calculate` nor health (AC-HD-12, AC-HD-13).
+- [x] `IHitResultEmitter.Emit` runs once per hit and once per miss streak; a repeat of the same miss is not re-sent; a hit, timer reset, target change or deactivation ends the streak (Rule 10 Step 2, AC-HD-11a).
+- [x] A target invalidated on the tick the timer is ready does not fire and does not reset the timer (EC-10).
+- [x] A timer past `CycleTicks` fires one auto and resets to 0 (EC-17); a second evaluation in that tick does nothing (EC-19).
 
 ---
 
 ## Implementation Notes
 
-- `capturedForward = normalize(targetPos − attackerPos)` on XZ. Attacker and target at the same XZ must not produce NaN; check `HitDetector`'s handling and pin it with a test.
+- `capturedForward = normalize(targetPos − attackerPos)` on XZ. Attacker and target at the same XZ must not produce NaN. *Resolved at `/story-readiness` 2026-11-02:* `HitDetector.CheckHit` returns `Hit` when the XZ distance squared is below `POINT_BLANK_EPSILON_SQ`, before it reads `capturedForward` (`HitDetector.cs` point-blank guard), so the forward vector is never used at the same XZ. Still, do not divide by a near-zero length: pass `Vector3.zero` as the forward when the XZ delta is below the epsilon. Pin it with a test: same XZ → `Hit`, damage applied.
 - Positions come through `IZoneEntityStateSource` (`TryGetPlayerState`, `TryGetMobState`) or a narrower interface. Each fire attempt decodes position only for ready players.
-- `AttackRange` and `BaseDamage` are read per attempt, not cached. `DamageCalculator.Calculate` takes `int baseDamage`; confirm at `/story-readiness` that the source is `StatID.AttackPower`.
+- `AttackRange` and `BaseDamage` are read per attempt, not cached. `DamageCalculator.Calculate` takes `int baseDamage`. *Resolved at `/story-readiness` 2026-11-02:* the source is `CharacterStats.GetEffectiveStat(attackerId, StatID.AttackPower)` (`int`), passed straight through. There is no `StatID.BaseDamage`; `character-stats.md` Rule 6 defines BaseDamage as effective AttackPower. `auto-attack-combat.md` (Interactions table and Dependencies table) still calls `BaseDamage` a `float` and talks about widening it; that wording is out of date, so don't widen it. This is the first production caller of `Calculate`.
 - Add `OUT_OF_RANGE` and `PROHIBITED`. `SetCombatProhibited(entityId, bool)` is public here; Status Effects and Death and Respawn call it later. It is not a deactivation.
 - Depend on an interface for damage application, so Story 004 can add the kill path and Story 007 the output, without changing this flow. A rejected calculation (`FinalDamage` 0) applies nothing.
 - A `DamageResult.IsKill` result stops at a seam in this story; Story 004 fills it.
@@ -86,7 +86,7 @@ Use recording fakes for the emitter and damage; real `HitDetector`.
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/AutoAttackCombat/AutoAttackCombat_Resolution_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing (EditMode 5674 / 5545 passed / 0 failed / 129 skipped, 2026-11-02)
 
 ---
 
@@ -94,3 +94,17 @@ Use recording fakes for the emitter and damage; real `HitDetector`.
 
 - Depends on: Story 002; Hit Detection Stories 001, 004 (Complete)
 - Unlocks: Stories 004, 005, 006
+
+---
+
+## Completion Notes
+**Completed**: 2026-11-02
+**Criteria**: 9/9 passing (all auto-verified by `AutoAttackCombat_Resolution_tests.cs`; none deferred)
+**Deviations** (advisory, none logged as tech debt):
+- Position-lookup failure on a ready tick: no fire, no emit, timer kept, retry next tick (user decision at `/code-review`; documented in code).
+- `auto-attack-combat.md` Interactions and Dependencies tables still call `BaseDamage` a `float` to widen; implementation uses `int` effective `AttackPower` per the `/story-readiness` resolution. GDD wording not yet corrected.
+- TR-aa-009 covered for the miss-streak half only; the typed `DamageEvent` half is Story 007.
+- No production `IAutoAttackDamageApplier` yet (Story 004); `DamageResult.IsKill` stops at the applier seam.
+- `IAutoAttackReadySink` (Story 002 interim) deleted; Timer and Activation tests updated to the real fire/reset.
+**Test Evidence**: Logic: `tests/EditMode/AutoAttackCombat/AutoAttackCombat_Resolution_tests.cs` (Resolution 60, Timer 29, Activation 35 cases); shared fakes in `AutoAttackCombat_TestFakes.cs`. EditMode 5674 / 5545 passed / 0 failed / 129 skipped, no `error CS`.
+**Code Review**: Complete (`/code-review` 2026-11-02: CHANGES REQUIRED → all applied); QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean)

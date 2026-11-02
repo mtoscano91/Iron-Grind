@@ -3,6 +3,7 @@ using IronGrind.AutoAttackCombat;
 using IronGrind.CharacterPersistence;
 using IronGrind.CharacterStats;
 using IronGrind.Currency;
+using IronGrind.HitDetection;
 using IronGrind.Networking;
 using IronGrind.ServerLogic.ZoneInstancing;
 using IronGrind.Tests.EditMode.CharacterStats;
@@ -18,14 +19,13 @@ namespace IronGrind.Tests.EditMode.AutoAttackCombat
     /// EC-23; AC-01 to AC-03; TR-aa-002).
     /// </summary>
     /// <remarks>
-    /// Tests marked "Interim reset" rely on the Story 002 stand-in where the timer resets to 0 after every ready.
-    /// Story 003 moves that reset to an actual fire; update those tests then.
+    /// Since Story 003 the timer resets only on an actual fire; the default fakes put the target in range, so a ready
+    /// player fires and resets as before.
     /// </remarks>
     [TestFixture]
     internal sealed class AutoAttackCombat_Timer_Tests
     {
         private const uint ZONE_RAW = 7u;
-        private const uint MOB_A_RAW = 5001u;
         private const uint UNKNOWN_ENTITY_RAW = 900000u;
         private const int MAX_PLAYERS = 4;
         private const int MAX_MOBS = 4;
@@ -80,36 +80,21 @@ namespace IronGrind.Tests.EditMode.AutoAttackCombat
             }
         }
 
-        // Fixed arrays and counter: records without allocating.
-        private sealed class RecordingSink : IAutoAttackReadySink
-        {
-            public readonly uint[] Ticks = new uint[EVENT_CAPACITY];
-            public readonly EntityID[] Attackers = new EntityID[EVENT_CAPACITY];
-            public int Count;
-
-            public void OnAutoAttackReady(EntityID attacker, uint currentTick)
-            {
-                if (Count < Ticks.Length)
-                {
-                    Ticks[Count] = currentTick;
-                    Attackers[Count] = attacker;
-                }
-
-                Count++;
-            }
-        }
-
         private ZoneSlotPool _pool;
         private FakeValidity _validity;
         private FakeAttackSpeed _attackSpeed;
-        private RecordingSink _sink;
+        private FakeZoneState _positions;
+        private FakeHitEmitter _emitter;
+        private FakeStatSource _stats;
+        private FakeDamageCalc _calc;
+        private FakeDamageApplier _sink;
         private AutoAttackCombatSystem _combat;
         private uint _nextClient;
         private uint _tick;
 
         private static ZoneID Zone => new ZoneID(ZONE_RAW);
 
-        private static EntityID MobA => new EntityID(MOB_A_RAW);
+        private static EntityID MobA => new EntityID(AutoAttackTestFakes.MOB_A_RAW);
 
         [SetUp]
         public void SetUp()
@@ -119,8 +104,13 @@ namespace IronGrind.Tests.EditMode.AutoAttackCombat
             _pool = new ZoneSlotPool(Zone, new FakeTicks(), new FakePoolListener(), MAX_PLAYERS, MAX_MOBS);
             _validity = new FakeValidity();
             _attackSpeed = new FakeAttackSpeed();
-            _sink = new RecordingSink();
-            _combat = new AutoAttackCombatSystem(_pool, _validity, _attackSpeed, _sink);
+            _positions = new FakeZoneState();
+            _emitter = new FakeHitEmitter();
+            _stats = new FakeStatSource();
+            _calc = new FakeDamageCalc();
+            _sink = new FakeDamageApplier();
+            _combat = new AutoAttackCombatSystem(
+                _pool, _validity, _attackSpeed, _positions, new HitDetector(HitDetectionConfig.Default), _emitter, _stats, _calc, _sink);
         }
 
         private EntityID AddPlayer(ZoneSlotPool pool)
@@ -145,6 +135,7 @@ namespace IronGrind.Tests.EditMode.AutoAttackCombat
             for (int i = 0; i < n; i++)
             {
                 _tick++;
+                _sink.Tick = _tick;
                 _combat.Run(_tick, 0.05f);
             }
         }
@@ -159,7 +150,7 @@ namespace IronGrind.Tests.EditMode.AutoAttackCombat
             }
         }
 
-        // AC-01. Interim reset.
+        // AC-01.
         [Test]
         public void test_multiplier_1_over_200_ticks_gives_10_ready_events_20_ticks_apart()
         {
@@ -170,7 +161,7 @@ namespace IronGrind.Tests.EditMode.AutoAttackCombat
             AssertDeltas(AC01_EVENTS, AC01_CYCLE);
         }
 
-        // AC-02. Interim reset.
+        // AC-02.
         [Test]
         public void test_multiplier_2_over_50_ticks_gives_5_ready_events_10_ticks_apart()
         {
@@ -242,7 +233,7 @@ namespace IronGrind.Tests.EditMode.AutoAttackCombat
             Assert.AreEqual(4, _combat.GetActionTimer(p));
         }
 
-        // EC-15: a change mid-cycle applies from the next cycle. Interim reset.
+        // EC-15: a change mid-cycle applies from the next cycle.
         [Test]
         public void test_multiplier_change_mid_cycle_applies_from_next_cycle()
         {
@@ -262,7 +253,7 @@ namespace IronGrind.Tests.EditMode.AutoAttackCombat
             Assert.AreEqual((uint)(AC01_CYCLE + AC02_CYCLE), _sink.Ticks[1]);
         }
 
-        // EC-11: a drop to exactly 0.5 mid-cycle leaves the current 20-tick cycle; the next is 40. Interim reset.
+        // EC-11: a drop to exactly 0.5 mid-cycle leaves the current 20-tick cycle; the next is 40.
         [Test]
         public void test_multiplier_change_to_minimum_mid_cycle_keeps_current_cycle_then_40()
         {
@@ -279,6 +270,25 @@ namespace IronGrind.Tests.EditMode.AutoAttackCombat
             RunTicks(1);
             Assert.AreEqual(2, _sink.Count);
             Assert.AreEqual((uint)(AC01_CYCLE + CLAMPED_CYCLE), _sink.Ticks[1]);
+        }
+
+        // Story 003: a ready auto that cannot fire keeps counting past the cycle and resets only on the fire.
+        [Test]
+        public void test_ready_but_out_of_range_keeps_counting_and_resets_only_on_fire()
+        {
+            EntityID p = ActivePlayer(1.0f);
+            _positions.TargetX = AutoAttackTestFakes.Raw(9f);
+
+            RunTicks(AC01_CYCLE + AC02_TICKS);
+            Assert.AreEqual(0, _sink.Count);
+            Assert.AreEqual(AC01_CYCLE + AC02_TICKS, _combat.GetActionTimer(p));
+
+            _positions.TargetX = AutoAttackTestFakes.Raw(1f);
+            RunTicks(1);
+
+            Assert.AreEqual(1, _sink.Count);
+            Assert.AreEqual((uint)(AC01_CYCLE + AC02_TICKS + 1), _sink.Ticks[0]);
+            Assert.AreEqual(0, _combat.GetActionTimer(p));
         }
 
         [Test]
@@ -413,13 +423,15 @@ namespace IronGrind.Tests.EditMode.AutoAttackCombat
         }
 
         [Test]
-        public void test_run_with_50_active_players_across_a_ready_allocates_nothing()
+        public void test_run_with_50_active_players_across_a_fire_allocates_nothing()
         {
             var pool = new ZoneSlotPool(Zone, new FakeTicks(), new FakePoolListener(), ALLOC_PLAYERS, MAX_MOBS);
             var validity = new FakeValidity();
             var attackSpeed = new FakeAttackSpeed();
-            var sink = new RecordingSink();
-            var combat = new AutoAttackCombatSystem(pool, validity, attackSpeed, sink);
+            var sink = new FakeDamageApplier();
+            var combat = new AutoAttackCombatSystem(
+                pool, validity, attackSpeed, new FakeZoneState(), new HitDetector(HitDetectionConfig.Default),
+                new FakeHitEmitter(), new FakeStatSource(), new FakeDamageCalc(), sink);
             for (int i = 0; i < ALLOC_PLAYERS; i++)
             {
                 EntityID p = AddPlayer(pool);

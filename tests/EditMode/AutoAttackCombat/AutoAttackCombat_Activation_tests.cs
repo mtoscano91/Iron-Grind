@@ -4,6 +4,7 @@ using IronGrind.AutoAttackCombat;
 using IronGrind.CharacterPersistence;
 using IronGrind.CharacterStats;
 using IronGrind.Currency;
+using IronGrind.HitDetection;
 using IronGrind.Networking;
 using IronGrind.ServerLogic.ZoneInstancing;
 using NUnit.Framework;
@@ -21,8 +22,6 @@ namespace IronGrind.Tests.EditMode.AutoAttackCombat
     {
         private const uint ZONE_RAW = 7u;
         private const uint NEVER_ISSUED_ENTITY = 900000u;
-        private const uint MOB_A_RAW = 5001u;
-        private const uint MOB_B_RAW = 5002u;
         private const uint PLAYER_TARGET_RAW = 5003u;
         private const uint DEAD_MOB_RAW = 5004u;
         private const uint FOREIGN_MOB_RAW = 5005u;
@@ -66,23 +65,17 @@ namespace IronGrind.Tests.EditMode.AutoAttackCombat
             }
         }
 
-        private sealed class NoOpReadySink : IAutoAttackReadySink
-        {
-            public void OnAutoAttackReady(EntityID attacker, uint currentTick) { }
-        }
-
         private ZoneSlotPool _pool;
         private FakeValidity _validity;
         private FakeAttackSpeed _attackSpeed;
-        private NoOpReadySink _readySink;
         private AutoAttackCombatSystem _combat;
         private uint _nextClient;
 
         private static ZoneID Zone => new ZoneID(ZONE_RAW);
 
-        private static EntityID MobA => new EntityID(MOB_A_RAW);
+        private static EntityID MobA => new EntityID(AutoAttackTestFakes.MOB_A_RAW);
 
-        private static EntityID MobB => new EntityID(MOB_B_RAW);
+        private static EntityID MobB => new EntityID(AutoAttackTestFakes.MOB_B_RAW);
 
         [SetUp]
         public void SetUp()
@@ -91,8 +84,14 @@ namespace IronGrind.Tests.EditMode.AutoAttackCombat
             _pool = new ZoneSlotPool(Zone, new FakeTicks(), new FakePoolListener(), MAX_PLAYERS, MAX_MOBS);
             _validity = new FakeValidity();
             _attackSpeed = new FakeAttackSpeed();
-            _readySink = new NoOpReadySink();
-            _combat = new AutoAttackCombatSystem(_pool, _validity, _attackSpeed, _readySink);
+            _combat = NewCombat(_pool, _validity, _attackSpeed);
+        }
+
+        private static AutoAttackCombatSystem NewCombat(ZoneSlotPool pool, IAutoAttackTargetValidity validity, IAttackSpeedSource attackSpeed)
+        {
+            return new AutoAttackCombatSystem(
+                pool, validity, attackSpeed, new FakeZoneState(), new HitDetector(HitDetectionConfig.Default),
+                new FakeHitEmitter(), new FakeStatSource(), new FakeDamageCalc(), new FakeDamageApplier());
         }
 
         private EntityID AddPlayer()
@@ -131,25 +130,19 @@ namespace IronGrind.Tests.EditMode.AutoAttackCombat
         [Test]
         public void test_ctor_null_pool_throws()
         {
-            Assert.Throws<ArgumentNullException>(() => new AutoAttackCombatSystem(null, _validity, _attackSpeed, _readySink));
+            Assert.Throws<ArgumentNullException>(() => NewCombat(null, _validity, _attackSpeed));
         }
 
         [Test]
         public void test_ctor_null_validity_throws()
         {
-            Assert.Throws<ArgumentNullException>(() => new AutoAttackCombatSystem(_pool, null, _attackSpeed, _readySink));
+            Assert.Throws<ArgumentNullException>(() => NewCombat(_pool, null, _attackSpeed));
         }
 
         [Test]
         public void test_ctor_null_attack_speed_throws()
         {
-            Assert.Throws<ArgumentNullException>(() => new AutoAttackCombatSystem(_pool, _validity, null, _readySink));
-        }
-
-        [Test]
-        public void test_ctor_null_ready_sink_throws()
-        {
-            Assert.Throws<ArgumentNullException>(() => new AutoAttackCombatSystem(_pool, _validity, _attackSpeed, null));
+            Assert.Throws<ArgumentNullException>(() => NewCombat(_pool, _validity, null));
         }
 
         // AC-12, EC-1

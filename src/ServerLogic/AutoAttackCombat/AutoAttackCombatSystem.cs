@@ -1,33 +1,43 @@
 using System;
 using IronGrind.CharacterStats;
+using IronGrind.DamageCalculation;
+using IronGrind.HitDetection;
 using IronGrind.Networking;
 using IronGrind.ServerLogic.ZoneInstancing;
+using UnityEngine;
 
 namespace IronGrind.AutoAttackCombat
 {
     /// <summary>
-    /// Per-player auto-attack state, toggle, target and action timer (design/gdd/auto-attack-combat.md Rules 1-4, 23,
-    /// States and Transitions, EC-1 to EC-4, EC-27 to EC-30). Auto-Attack Combat Story 001.
+    /// Per-player auto-attack state, toggle, target, action timer and Rule 10 resolution (design/gdd/auto-attack-combat.md
+    /// Rules 1-4, 10, 23, States and Transitions, EC-1 to EC-10, EC-17, EC-19, EC-27 to EC-30). Auto-Attack Combat
+    /// Stories 001 to 003.
     /// </summary>
     /// <remarks>
     /// <para>
     /// <b>State.</b> Arrays of <see cref="ZoneSlotPool.MaxPlayers"/> entries indexed by the player slot. The state is
-    /// <see cref="AutoAttackState.CombatActive"/> only while a valid target is stored and the toggle is ON.
+    /// not <see cref="AutoAttackState.Idle"/> only while a valid target is stored and the toggle is ON.
     /// The action timer counts whole ticks: +1 per <see cref="Run"/> while active, frozen while idle, 0 on every
-    /// activation and every target selection (Rules 2, 3).
+    /// activation, target selection and fire (Rules 2, 3, 10).
     /// </para>
     /// <para>
-    /// <b>Entry points.</b> <see cref="SetTarget"/>, <see cref="SetAutoAttack"/> and <see cref="ReleasePlayer"/>.
-    /// An entity with no player slot is ignored by every method: no throw, no log. Story 006 wires them.
+    /// <b>Entry points.</b> <see cref="SetTarget"/>, <see cref="SetAutoAttack"/>, <see cref="SetCombatProhibited"/>
+    /// and <see cref="ReleasePlayer"/>. An entity with no player slot is ignored by every method: no throw, no log.
+    /// Story 006 wires them.
     /// </para>
     /// <para>
-    /// <b>Cycle (Story 002, Rules 5-7, F-1, EC-11, EC-15, EC-23; TR-aa-002).</b> Each slot holds a cycle length in
-    /// ticks, sampled from <see cref="IAttackSpeedSource"/> whenever the timer is set to 0 (activation, target
-    /// selection, ready reset) and never mid-cycle, so a multiplier change applies from the next cycle. When the
-    /// timer reaches the cycle length, <see cref="IAutoAttackReadySink.OnAutoAttackReady"/> is called and the timer
-    /// resets to 0 with a fresh sample. That reset is an interim stand-in for a fire: Story 003 moves it to an
-    /// actual fire and makes a ready-but-blocked auto retry every tick. No clock is read; neither
-    /// <c>deltaTime</c> nor <c>currentTick</c> affects timing.
+    /// <b>Cycle (Story 002, Rules 5-7, F-1).</b> Each slot holds a cycle length in ticks, sampled from
+    /// <see cref="IAttackSpeedSource"/> whenever the timer is set to 0 and never mid-cycle. No clock is read;
+    /// neither <c>deltaTime</c> nor <c>currentTick</c> affects timing.
+    /// </para>
+    /// <para>
+    /// <b>Resolution (Story 003, Rule 10, F-2, F-3).</b> Once the timer reaches the cycle length: Step 1 a prohibited
+    /// player does not fire; Step 2 <see cref="HitDetector.CheckHit"/> on the ground-plane positions, emitting every
+    /// hit and each miss once per streak; Step 3 on a hit, damage is calculated and applied if it is above 0;
+    /// Step 4 the timer resets, on any actual fire (even a rejected calculation). Any no-fire exit keeps the timer, so
+    /// a ready auto retries every tick. A failed attacker or target position lookup is such a no-fire exit (like
+    /// Step 5): nothing is emitted, the timer and state are kept, and it retries next tick; Story 006 wires validity
+    /// and positions from the same zone state. The kill path is Story 004's, the damage output Story 007's.
     /// </para>
     /// <para>
     /// <b>Attacker id.</b> <see cref="Run"/> iterates slots, so each slot's <see cref="EntityID"/> is stored in an
@@ -40,14 +50,20 @@ namespace IronGrind.AutoAttackCombat
     /// </remarks>
     /// <example>
     /// <code>
-    /// var combat = new AutoAttackCombatSystem(pool, validity, attackSpeed, readySink);
+    /// var combat = new AutoAttackCombatSystem(pool, validity, attackSpeed, positions, hitDetector, emitter,
+    ///     stats, damageCalculator, applier);
     /// combat.SetAutoAttack(playerId, true);
     /// combat.SetTarget(playerId, mobId);   // CombatActive, timer 0, cycle sampled
-    /// combat.Run(tick, dt);                // timer 1; ready event once timer reaches GetCycleTicks
+    /// combat.Run(tick, dt);                // timer 1; fires once the timer reaches GetCycleTicks and the target is in range
     /// </code>
     /// </example>
     public sealed class AutoAttackCombatSystem : IZoneSimulationStep
     {
+        // Wire positions are short x100 (WireFixedPointCodec.PositionScale is private); world = raw / 100.
+        private const float WIRE_POSITION_SCALE = 100f;
+        private const int NO_MISS = -1;
+        private const long NEVER_RUN = -1L;
+
         private readonly ZoneSlotPool _pool;
         private readonly IAutoAttackTargetValidity _validity;
         private readonly int[] _actionTimer;
@@ -55,26 +71,50 @@ namespace IronGrind.AutoAttackCombat
         private readonly EntityID[] _target;
         private readonly AutoAttackState[] _state;
         private readonly IAttackSpeedSource _attackSpeed;
-        private readonly IAutoAttackReadySink _readySink;
+        private readonly IZoneEntityStateSource _positions;
+        private readonly HitDetector _hitDetector;
+        private readonly IHitResultEmitter _emitter;
+        private readonly IAutoAttackStatSource _stats;
+        private readonly IAutoAttackDamageCalculator _damage;
+        private readonly IAutoAttackDamageApplier _applier;
         private readonly int[] _cycleTicks;
         private readonly EntityID[] _attacker;
+        private readonly bool[] _prohibited;
+        private readonly bool[] _outOfRange;
+        private readonly int[] _lastMiss;     // last emitted miss HitResult of the streak, NO_MISS when none
+        private readonly long[] _lastRunTick; // tick of the slot's last evaluation, NEVER_RUN when none
 
         /// <summary>Creates the system with every slot idle.</summary>
         /// <param name="pool">The zone's slot pool; resolves a player to its slot.</param>
         /// <param name="validity">Decides whether a target is valid.</param>
         /// <param name="attackSpeed">Supplies the attack speed multiplier sampled at each cycle start.</param>
-        /// <param name="readySink">Receives the ready event when a cycle completes.</param>
+        /// <param name="positions">Supplies attacker and target positions (wire units).</param>
+        /// <param name="hitDetector">Range and facing check (Rule 10 Step 2).</param>
+        /// <param name="emitter">Receives the hit and miss-streak results.</param>
+        /// <param name="stats">Supplies BaseDamage and AttackRange per fire attempt.</param>
+        /// <param name="damageCalculator">Resolves the hit (Rule 10 Step 3).</param>
+        /// <param name="applier">Applies a resolved hit.</param>
         /// <exception cref="ArgumentNullException">Any argument is null.</exception>
         public AutoAttackCombatSystem(
             ZoneSlotPool pool,
             IAutoAttackTargetValidity validity,
             IAttackSpeedSource attackSpeed,
-            IAutoAttackReadySink readySink)
+            IZoneEntityStateSource positions,
+            HitDetector hitDetector,
+            IHitResultEmitter emitter,
+            IAutoAttackStatSource stats,
+            IAutoAttackDamageCalculator damageCalculator,
+            IAutoAttackDamageApplier applier)
         {
             _pool = pool ?? throw new ArgumentNullException(nameof(pool));
             _validity = validity ?? throw new ArgumentNullException(nameof(validity));
             _attackSpeed = attackSpeed ?? throw new ArgumentNullException(nameof(attackSpeed));
-            _readySink = readySink ?? throw new ArgumentNullException(nameof(readySink));
+            _positions = positions ?? throw new ArgumentNullException(nameof(positions));
+            _hitDetector = hitDetector ?? throw new ArgumentNullException(nameof(hitDetector));
+            _emitter = emitter ?? throw new ArgumentNullException(nameof(emitter));
+            _stats = stats ?? throw new ArgumentNullException(nameof(stats));
+            _damage = damageCalculator ?? throw new ArgumentNullException(nameof(damageCalculator));
+            _applier = applier ?? throw new ArgumentNullException(nameof(applier));
             int size = pool.MaxPlayers;
             _cycleTicks = new int[size];
             _attacker = new EntityID[size];
@@ -82,12 +122,22 @@ namespace IronGrind.AutoAttackCombat
             _toggle = new bool[size];
             _target = new EntityID[size];
             _state = new AutoAttackState[size];
+            _prohibited = new bool[size];
+            _outOfRange = new bool[size];
+            _lastMiss = new int[size];
+            _lastRunTick = new long[size];
+            for (int i = 0; i < size; i++)
+            {
+                _lastMiss[i] = NO_MISS;
+                _lastRunTick[i] = NEVER_RUN;
+            }
         }
 
         /// <summary>
         /// Selects a target, or deselects with <see cref="EntityID.Invalid"/> (Rules 1, 3, 4; EC-2, EC-3).
         /// A valid target resets the timer to 0 (even the same target) and activates when the toggle is ON.
         /// A deselect or a rejected target clears the target, goes idle and freezes the timer; the toggle is unchanged.
+        /// Either way the miss streak ends.
         /// </summary>
         /// <param name="attacker">The player selecting.</param>
         /// <param name="target">The new target, or <see cref="EntityID.Invalid"/>.</param>
@@ -103,13 +153,14 @@ namespace IronGrind.AutoAttackCombat
             if (target == EntityID.Invalid || !_validity.IsValidTarget(target))
             {
                 _target[slot] = EntityID.Invalid;
-                _state[slot] = AutoAttackState.Idle;
+                GoIdle(slot);
                 return;
             }
 
             _target[slot] = target;
             ResetTimer(slot);
-            _state[slot] = _toggle[slot] ? AutoAttackState.CombatActive : AutoAttackState.Idle;
+            _outOfRange[slot] = false;
+            _state[slot] = _toggle[slot] ? ActiveState(slot) : AutoAttackState.Idle;
         }
 
         /// <summary>
@@ -131,7 +182,7 @@ namespace IronGrind.AutoAttackCombat
             _toggle[slot] = enabled;
             if (!enabled)
             {
-                _state[slot] = AutoAttackState.Idle;
+                GoIdle(slot);
                 return;
             }
 
@@ -148,19 +199,68 @@ namespace IronGrind.AutoAttackCombat
             }
 
             ResetTimer(slot);
-            _state[slot] = AutoAttackState.CombatActive;
+            _outOfRange[slot] = false;
+            _state[slot] = ActiveState(slot);
         }
 
-        // Timer to 0 and a fresh cycle-length sample; the only place the attack speed is read.
+        /// <summary>
+        /// Sets or clears the external combat lock (stun, mount; Rule 10 Step 1, EC-7, EC-8). Not a deactivation:
+        /// target, toggle and timer are untouched, so the timer keeps running and the auto fires on the first
+        /// check after the flag clears. Call it in the request step; a clear there lets the same tick's check fire.
+        /// </summary>
+        /// <param name="entity">The player.</param>
+        /// <param name="prohibited">True to lock, false to release.</param>
+        /// <remarks>
+        /// Tick thread. Does nothing for an entity with no player slot. The flag survives a toggle OFF/ON, a deselect and
+        /// reselect, and idle, and shows as <see cref="AutoAttackState.Prohibited"/> on the next activation; only a clear
+        /// or <see cref="ReleasePlayer"/> removes it. A miss streak survives a set/clear: a miss already emitted is not
+        /// re-sent after the clear while it continues.
+        /// </remarks>
+        public void SetCombatProhibited(EntityID entity, bool prohibited)
+        {
+            if (!_pool.TryGetPlayerSlot(entity, out byte slot))
+            {
+                return;
+            }
+
+            _prohibited[slot] = prohibited;
+            _outOfRange[slot] = false;   // range is unknown until the next fire attempt
+            if (_state[slot] != AutoAttackState.Idle)
+            {
+                _state[slot] = ActiveState(slot);
+            }
+        }
+
+        // The state of an active slot: the lock wins, then the last range result.
+        private AutoAttackState ActiveState(int slot)
+        {
+            if (_prohibited[slot])
+            {
+                return AutoAttackState.Prohibited;
+            }
+
+            return _outOfRange[slot] ? AutoAttackState.OutOfRange : AutoAttackState.CombatActive;
+        }
+
+        // Idle ends the miss streak and the out-of-range mark; the timer is left frozen.
+        private void GoIdle(int slot)
+        {
+            _state[slot] = AutoAttackState.Idle;
+            _lastMiss[slot] = NO_MISS;
+            _outOfRange[slot] = false;
+        }
+
+        // Timer to 0 and a fresh cycle-length sample; the only place the attack speed is read. Ends the miss streak.
         private void ResetTimer(int slot)
         {
             _actionTimer[slot] = 0;
+            _lastMiss[slot] = NO_MISS;
             _cycleTicks[slot] = AutoAttackCycle.ComputeCycleTicks(_attackSpeed.GetAttackSpeedMultiplier(_attacker[slot]));
         }
 
         /// <summary>
-        /// Resets the player's slot: idle, timer 0, toggle OFF, no target. Called when the slot is released so a
-        /// new occupant starts clean.
+        /// Resets the player's slot: idle, timer 0, toggle OFF, no target, no lock, no streak. Called when the slot is
+        /// released so a new occupant starts clean.
         /// </summary>
         /// <param name="attacker">The player leaving.</param>
         /// <remarks>
@@ -181,6 +281,10 @@ namespace IronGrind.AutoAttackCombat
             _attacker[slot] = EntityID.Invalid;
             _toggle[slot] = false;
             _target[slot] = EntityID.Invalid;
+            _prohibited[slot] = false;
+            _outOfRange[slot] = false;
+            _lastMiss[slot] = NO_MISS;
+            _lastRunTick[slot] = NEVER_RUN;
         }
 
         /// <summary>The cycle length in ticks sampled for the player's current cycle; 0 when the entity has no slot or none was sampled.</summary>
@@ -216,19 +320,19 @@ namespace IronGrind.AutoAttackCombat
         }
 
         /// <summary>
-        /// Advances every active player by one tick (Rules 4, 5, 23). A target that is no longer valid is cleared,
-        /// the player goes idle and the timer does not advance (frozen); otherwise the timer gains 1 and, on
-        /// reaching the cycle length, the ready sink is called and the timer resets to 0 with a fresh cycle sample
-        /// (interim stand-in for a fire until Story 003). Rules 5-7, F-1, EC-11, EC-15, EC-23.
+        /// Advances every active player by one tick and resolves the auto (Rules 4, 5, 10, 23; F-3; EC-10, EC-17,
+        /// EC-19). A slot already evaluated for <paramref name="currentTick"/> is skipped. A target that is no longer
+        /// valid is cleared, the player goes idle, the timer does not advance and nothing fires or emits. Otherwise the
+        /// timer gains 1 and, once it reaches the cycle length, Rule 10 runs; only an actual fire resets the timer.
         /// </summary>
-        /// <param name="currentTick">The tick being run; passed to the ready sink only, never used for timing.</param>
+        /// <param name="currentTick">The tick being run; used only to reject a second evaluation in the same tick.</param>
         /// <param name="deltaTime">Ignored: the timer counts ticks.</param>
         /// <remarks>Tick thread, after the request step (ADR-014).</remarks>
         public void Run(uint currentTick, float deltaTime)
         {
             for (int slot = 0; slot < _state.Length; slot++)
             {
-                if (_state[slot] == AutoAttackState.Idle)
+                if (_state[slot] == AutoAttackState.Idle || _lastRunTick[slot] == currentTick)
                 {
                     continue;
                 }
@@ -236,17 +340,132 @@ namespace IronGrind.AutoAttackCombat
                 if (!_validity.IsValidTarget(_target[slot]))
                 {
                     _target[slot] = EntityID.Invalid;
-                    _state[slot] = AutoAttackState.Idle;
+                    GoIdle(slot);
                     continue;
                 }
 
+                _lastRunTick[slot] = currentTick;
                 _actionTimer[slot]++;
-                if (_actionTimer[slot] >= _cycleTicks[slot])
+                if (_actionTimer[slot] < _cycleTicks[slot] || _prohibited[slot])
                 {
-                    _readySink.OnAutoAttackReady(_attacker[slot], currentTick);
-                    ResetTimer(slot);
+                    continue;
                 }
+
+                Resolve(slot);
             }
+        }
+
+        // Rule 10 Steps 2-4 for a ready, unprohibited slot.
+        // A failed position lookup (attacker or target) is a no-fire exit like Step 5: nothing is emitted or applied, the
+        // timer and state are kept, and the ready auto retries on the next tick. Story 006 wires target validity and the
+        // positions from the same zone state, so a valid target without a position is a transient inconsistency.
+        private void Resolve(int slot)
+        {
+            EntityID attacker = _attacker[slot];
+            EntityID target = _target[slot];
+
+            if (!_positions.TryGetPlayerState(attacker, out ZonePlayerStateView attackerView))
+            {
+                return;   // no-fire exit, retried next tick
+            }
+
+            if (!TryGetTargetPos(target, out Vector3 targetPos))
+            {
+                return;   // no-fire exit, retried next tick
+            }
+
+            Vector3 attackerPos = ToWorld(attackerView.PosX, attackerView.PosY, attackerView.PosZ);
+
+            // The forward is captured toward the target, so the facing check is a deliberate pass-through for player
+            // autos. The miss-type-change branch of the streak (MissOutOfRange <-> MissFacing) is therefore unreachable
+            // with the real HitDetector today; it stays for correctness should the facing source change.
+            Vector3 forward = ComputeForward(attackerPos, targetPos);
+            float range = SanitiseRange(_stats.GetAttackRange(attacker));
+            HitResult result = _hitDetector.CheckHit(attackerPos, targetPos, range, forward);
+            if (result != HitResult.Hit)
+            {
+                RecordMiss(slot, attacker, target, result);
+                return;
+            }
+
+            _emitter.Emit(attacker, target, HitResult.Hit);
+            _outOfRange[slot] = false;
+            FireDamage(slot, attacker, target);
+        }
+
+        // HitDetector treats a NaN range as "skip the range check" and a negative range as its absolute value, and
+        // EC-HD-4 leaves validation to the caller. A bad stat must never widen the reach: NaN, negative and +Infinity
+        // become 0, which is out of range for any target beyond the point-blank epsilon (fail-safe).
+        private static float SanitiseRange(float range)
+        {
+            return !(range >= 0f) || float.IsPositiveInfinity(range) ? 0f : range;
+        }
+
+        // A miss is sent once per streak: a repeat of the last emitted miss is not re-sent. The timer is kept.
+        private void RecordMiss(int slot, EntityID attacker, EntityID target, HitResult result)
+        {
+            if (_lastMiss[slot] != (int)result)
+            {
+                _emitter.Emit(attacker, target, result);
+                _lastMiss[slot] = (int)result;
+            }
+
+            _outOfRange[slot] = result == HitResult.MissOutOfRange;
+            _state[slot] = ActiveState(slot);
+        }
+
+        // Rule 10 Steps 3-4 after a hit.
+        private void FireDamage(int slot, EntityID attacker, EntityID target)
+        {
+            DamageResult damage = _damage.Calculate(_stats.GetBaseDamage(attacker), attacker, target);
+            if (damage.FinalDamage > 0)
+            {
+                _applier.Apply(attacker, target, in damage);
+            }
+
+            // Step 4: any actual fire resets the cycle, including a rejected calculation (ends the streak).
+            ResetTimer(slot);
+            _state[slot] = ActiveState(slot);
+        }
+
+        // The target's ground position: a mob first, then a player. False when neither is known.
+        private bool TryGetTargetPos(EntityID target, out Vector3 pos)
+        {
+            if (_positions.TryGetMobState(target, out ZoneMobStateView mobView))
+            {
+                pos = ToWorld(mobView.PosX, mobView.PosY, mobView.PosZ);
+                return true;
+            }
+
+            if (_positions.TryGetPlayerState(target, out ZonePlayerStateView playerView))
+            {
+                pos = ToWorld(playerView.PosX, playerView.PosY, playerView.PosZ);
+                return true;
+            }
+
+            pos = Vector3.zero;
+            return false;
+        }
+
+        // The XZ direction to the target. Below the point-blank epsilon CheckHit returns Hit before it reads the
+        // forward, so zero is returned instead of dividing by ~0.
+        private static Vector3 ComputeForward(Vector3 attackerPos, Vector3 targetPos)
+        {
+            float dx = targetPos.x - attackerPos.x;
+            float dz = targetPos.z - attackerPos.z;
+            float dSq = dx * dx + dz * dz;
+            if (dSq < HitDetectionConfig.POINT_BLANK_EPSILON_SQ)
+            {
+                return Vector3.zero;
+            }
+
+            float invLen = 1f / Mathf.Sqrt(dSq);
+            return new Vector3(dx * invLen, 0f, dz * invLen);
+        }
+
+        private static Vector3 ToWorld(short x, short y, short z)
+        {
+            return new Vector3(x / WIRE_POSITION_SCALE, y / WIRE_POSITION_SCALE, z / WIRE_POSITION_SCALE);
         }
     }
 }
