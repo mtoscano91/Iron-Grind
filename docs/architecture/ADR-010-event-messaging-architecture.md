@@ -6,6 +6,8 @@ Accepted (2026-06-27)
 ## Date
 2026-06-27
 
+Note 2026-10-30 (Auto-Attack Combat `/create-epics`): XP is not an `OnMobDied` subscriber. `leveling-system.md` CR-1.1 and `auto-attack-combat.md` Rule 10 Step 3 have the killer's controller call `GetXPAward` then `AddExperience` directly, before `ApplyDamage`. `OnMobDied` stays for loot, party kill credit and respawn. The XP subscriber in this ADR's examples is removed so a kill cannot award XP twice.
+
 Note 2026-10-19 (ADR-009 Amendment 1 Accepted): the `IZoneStartupService.StartZone()` this ADR names as the server-side injection point "(ADR-009)" was never defined in ADR-009. It is `ZoneServerComposition.Start(ZoneStartupArgs)` of ADR-009 Amendment 1 (Decision 5, startup S5), the one server composition root. No `IZoneStartupService` interface is introduced. The wiring rule itself is unchanged.
 
 ## Engine Compatibility
@@ -169,14 +171,14 @@ Leaked subscriptions are the primary maintenance failure mode of the `event` pat
 **Server-side (plain C# classes):**
 ```csharp
 // Subscribe: constructor
-public XPService(ICombatService combat) {
+public MobRespawnService(ICombatService combat) {
     _combat = combat;
-    combat.OnMobDied += AwardXP;
+    combat.OnMobDied += ScheduleRespawn;
 }
 
 // Unsubscribe: IDisposable.Dispose()
 public void Dispose() {
-    _combat.OnMobDied -= AwardXP;
+    _combat.OnMobDied -= ScheduleRespawn;
 }
 ```
 
@@ -250,8 +252,7 @@ CombatService  ──ILootTableService.EvaluateLoot()──► LootTableService
 TIER 2 — BROADCAST (C# event, readonly struct arg)
 ────────────────────────────────────────────────────
                                        ┌──► LootService.HandleMobDeath()
-CombatService ──OnMobDied event───────┼──► LevelingService.AwardXP()
-                                       ├──► MobSpawningService.ScheduleRespawn()
+CombatService ──OnMobDied event───────┼──► MobSpawningService.ScheduleRespawn()
                                        └──► PartyService.RecordKillCredit()
 
                                        ┌──► HUDStatDisplay.UpdateStatDisplay()
@@ -359,7 +360,7 @@ public interface IZoneScopedService : IDisposable {
 |---|---|---|
 | `zone-instancing.md` | `NotifyZoneEntry(PartyID, EntityID, ZoneID)` and `NotifyZoneExit(PartyID, EntityID)` — party system notification on all zone entry/exit causes (CR-ZI-14) | Tier 1: direct method call on `IPartyService` injected into Zone Instancing at startup |
 | `zone-instancing.md` | `GetPlayerEntityIDsInZone(ZoneID)` read by Networking Relevance Filter each tick (CR-ZI-15) | Tier 1: direct method call on `IZoneService` injected into Relevance Filter |
-| `auto-attack-combat.md` | Mob death must trigger loot distribution, XP award, party kill credit, and respawn timer — multiple independent subscribers | Tier 2: `ICombatService.OnMobDied: event Action<MobDeathContext>` — loot, leveling, party, and mob spawning all subscribe independently |
+| `auto-attack-combat.md` | Mob death must trigger loot distribution, party kill credit, and respawn timer — multiple independent subscribers (XP is a direct call, note 2026-10-30) | Tier 2: `ICombatService.OnMobDied: event Action<MobDeathContext>` — loot, party, and mob spawning all subscribe independently |
 | `character-stats.md` | Stat changes must propagate to the HUD and to combat damage recalculation | Tier 2: `ICharacterStatService.OnStatChanged: event Action<StatChangedArgs>` — HUD and combat both subscribe |
 | `loot-table-system.md` | Loot evaluation is a synchronous call with a return value | Tier 1: `ILootTableService.EvaluateLoot(MobTypeID, ZoneID) : LootResult` — direct call from the mob death handler |
 | `networking-core.md` | Server tick loop is the single execution context (CR-ZI Runtime Model: single-threaded main loop); NGO callbacks must not modify game state | Decision 5: NGO callbacks enqueue to `Queue<T>`; tick loop dequeues and processes |

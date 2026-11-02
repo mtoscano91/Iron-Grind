@@ -195,7 +195,7 @@ The Networking Core is the transport and authority layer: it owns no game state 
 | Flow | Direction | Data | Reliability | Notes |
 |------|-----------|------|-------------|-------|
 | Cycle timer broadcast | Server → All clients in zone | `CycleTimerBroadcast { EntityID attackerEntityId; ushort cycleTimer; }` | U-U | Charge bar animation only — never for damage logic. `cycleTimer` is a normalized fraction (÷CycleDuration ×10,000) per CR-NET-7.2. |
-| `NotifySkillUsed` | Owning client → Server | `SkillUsedNotification { EntityID attackerEntityId; }` | R-U | Grace window logic owned by Auto-Attack Combat GDD Rule 17. Server applies OWL compensation per CR-NET-8 before evaluating the grace threshold. |
+| `NotifySkillUsed` | Owning client → Server | `SkillUsedNotification { EntityID attackerEntityId; }` | R-U | Resets `_actionTimer` (`auto-attack-combat.md` Rule 12); the reactive cooldown model has no grace window. The CR-NET-8 grace-window text predates that model. |
 | Auto-face broadcast | Server → All clients in zone | `AutoFaceEvent { EntityID entityId; short rotX; rotY; rotZ; rotW; short dirX; dirY; dirZ; }` | R-U | Fires once per combat activation. Fixed-point quaternion and direction per CR-NET-7.2. |
 | Damage result broadcast | Server → All clients in zone | See Hit Detection below | See Hit Detection | Auto-Attack Combat calls Damage Calculation server-side; result replicated via Hit Detection contract. |
 

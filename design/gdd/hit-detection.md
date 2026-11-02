@@ -2,7 +2,7 @@
 
 > **Status**: Approved (lean re-review, 2026-05-25)
 > **Author**: Manuel Toscano + Claude Code agents
-> **Last Updated**: 2026-10-30 (`/create-stories`: facing convention aligned with Movement — 0° = +Z, clockwise; `FacingAngle` stored as `short` ×10; `ATTACK_FACING_TOLERANCE_DEG` default 60° → 45°; `HitCheckResult` MessageTypeID `0x0306`, 17 bytes in batch)
+> **Last Updated**: 2026-10-30 (Auto-Attack `/create-stories`: `FacingAngle` updates on the first auto after activation, not on toggle ON, matching `auto-attack-combat.md` Rule 20, CR-HD-7 and AC-HD-19; `/create-epics`: one `HitCheckResult` per miss streak for auto-attack retries, CR-HD-10 and AC-HD-11a; earlier `/create-stories`: facing convention aligned with Movement — 0° = +Z, clockwise; `FacingAngle` stored as `short` ×10; `ATTACK_FACING_TOLERANCE_DEG` default 60° → 45°; `HitCheckResult` MessageTypeID `0x0306`, 17 bytes in batch)
 > **Implements Pillar**: Rhythm Mastery (primary), Earned Power (secondary)
 
 ## Overview
@@ -55,9 +55,9 @@ Implemented in `IronGrind.ServerLogic` only. No client equivalent. `IronGrind.Se
 
 | Event | `EntityState.FacingAngle` updated? | `capturedForward` |
 |-------|-----------------------------------|-------------------|
-| Player toggles auto-attack ON | Yes — set toward target | — |
+| First player auto-attack after activation (`auto-attack-combat.md` Rule 20) | Yes — set toward target | Derived on-the-fly as `normalize(targetPos − attackerPos)` by the Auto-Attack Combat loop |
 | Player casts a skill | Yes — set toward target | — |
-| Player auto-attack swing executes | No — `FacingAngle` unchanged | Derived on-the-fly as `normalize(targetPos − attackerPos)` by the Auto-Attack Combat loop |
+| Later player auto-attack swing executes | No — `FacingAngle` unchanged | Derived on-the-fly as `normalize(targetPos − attackerPos)` by the Auto-Attack Combat loop |
 | Monster attack initiates | Yes — set toward target player | Enemy AI derives `capturedForward` from this value immediately and holds it as a local variable |
 | Monster attack executes | No — `FacingAngle` unchanged during swing | Enemy AI provides the `capturedForward` frozen at initiation |
 
@@ -65,7 +65,7 @@ Implemented in `IronGrind.ServerLogic` only. No client equivalent. `IronGrind.Se
 
 **CR-HD-9** — `FacingAngle` wire placement: `FacingAngle` is NOT included in the per-tick `EntityPositionUpdate` (U-U batch). It is replicated via the existing `AutoFaceEvent` (R-U batch), which fires only when `FacingAngle` changes. Entities whose facing is not changing contribute zero bytes to the per-tick stream.
 
-**CR-HD-10** — `HitCheckResult` message: After every `CheckHit` call, the server emits a `HitCheckResult` to the **player's client** (R-U batch, low priority). The player is always the recipient — for monster attacks the player is the defending target; for player attacks the player is the attacker. Monsters have no client and never receive this message. Payload: `{AttackerEntityID: uint (4B), TargetEntityID: uint (4B), Result: byte (1B) [0=Hit, 1=MissOutOfRange, 2=MissFacing], ServerTick: uint (4B)}` — 13 bytes payload, 17 bytes in batch. MessageTypeID `0x0306`. Emitted on every call regardless of `HitResult`. This message is the only signal the client uses to determine hit/miss state; the client does not infer miss from absence of `DamageEvent`. EntityID fields use `uint` (4 bytes each) per CR-NET-7.3.
+**CR-HD-10** — `HitCheckResult` message: After every `CheckHit` call, the server emits a `HitCheckResult` to the **player's client** (R-U batch, low priority). The player is always the recipient — for monster attacks the player is the defending target; for player attacks the player is the attacker. Monsters have no client and never receive this message. Payload: `{AttackerEntityID: uint (4B), TargetEntityID: uint (4B), Result: byte (1B) [0=Hit, 1=MissOutOfRange, 2=MissFacing], ServerTick: uint (4B)}` — 13 bytes payload, 17 bytes in batch. MessageTypeID `0x0306`. Emitted on every call regardless of `HitResult`, with one exception: an auto-attack that is ready retries every tick, so Auto-Attack Combat sends a repeated miss once per miss streak (`auto-attack-combat.md` Rule 10 Step 2). This message is the only signal the client uses to determine hit/miss state; the client does not infer miss from absence of `DamageEvent`. EntityID fields use `uint` (4 bytes each) per CR-NET-7.3.
 
 **CR-HD-11** — On `MissOutOfRange` or `MissFacing`: no damage is applied, no `DamageEvent` is emitted. The swing animation on the client completes normally. The auto-attack loop continues its tick cycle. Miss visual/audio feedback is driven by `HitCheckResult`.
 
@@ -315,7 +315,7 @@ All ACs are server-side unit tests unless otherwise noted. "Pass" means `CheckHi
 
 **HitCheckResult message (CR-HD-10):**
 
-**AC-HD-11a** — Given a player attacker and any `CheckHit` result `R`, a `HitCheckResult` message is enqueued in the R-U batch for the **attacking player's** client. The `Result` byte must equal the exact `HitResult` value returned by `CheckHit` (0=Hit, 1=MissOutOfRange, 2=MissFacing). `AttackerEntityID` and `TargetEntityID` must match the call inputs exactly. `ServerTick` must equal the current server tick at call time. (Integration test.)
+**AC-HD-11a** — Given a player attacker and any `CheckHit` result `R`, a `HitCheckResult` message is enqueued in the R-U batch for the **attacking player's** client. The `Result` byte must equal the exact `HitResult` value returned by `CheckHit` (0=Hit, 1=MissOutOfRange, 2=MissFacing). `AttackerEntityID` and `TargetEntityID` must match the call inputs exactly. `ServerTick` must equal the current server tick at call time. A repeated auto-attack miss in one miss streak is exempt (CR-HD-10). (Integration test.)
 
 **AC-HD-11b** — Given a monster attacker, a `HitCheckResult` message is enqueued in the R-U batch for the **defending player's** client (the target being attacked), not the monster. The `Result` byte, entity IDs, and `ServerTick` requirements are identical to AC-HD-11a. No message is sent to the monster. (Integration test.)
 
@@ -343,7 +343,7 @@ All ACs are server-side unit tests unless otherwise noted. "Pass" means `CheckHi
 
 **FacingAngle update triggers (CR-HD-7):**
 
-**AC-HD-19** — `EntityState.FacingAngle` is updated exactly on the events listed in CR-HD-7: (a) player toggles auto-attack ON, (b) player casts a skill, (c) monster attack initiates (wind-up start). Verified by integration tests: for each trigger event, assert `FacingAngle` changes; for all other events (player auto-attack swing executes, monster attack executes), assert `FacingAngle` is unchanged.
+**AC-HD-19** — `EntityState.FacingAngle` is updated exactly on the events listed in CR-HD-7: (a) first player auto-attack after activation, (b) player casts a skill, (c) monster attack initiates (wind-up start). Verified by integration tests: for each trigger event, assert `FacingAngle` changes; for all other events (later player auto-attack swings, monster attack executes), assert `FacingAngle` is unchanged.
 
 **Miss type distinction (Post-MVP):**
 
