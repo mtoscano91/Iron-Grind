@@ -132,7 +132,8 @@ namespace IronGrind.Tests.EditMode.AutoAttackCombat
 
         private AutoAttackCombatSystem NewCombat()
         {
-            return new AutoAttackCombatSystem(_pool, _validity, _attackSpeed, _state, _detector, _emitter, _stats, _calc, _applier);
+            return new AutoAttackCombatSystem(_pool, _validity, _attackSpeed, _state, _detector, _emitter, _stats, _calc, _applier,
+                new FakeXpAward(), new FakeExperienceSink(), new FakeMobTypeSource(), Zone);
         }
 
         private EntityID AddPlayer()
@@ -865,6 +866,9 @@ namespace IronGrind.Tests.EditMode.AutoAttackCombat
         [TestCase(6)]
         [TestCase(7)]
         [TestCase(8)]
+        [TestCase(9)]
+        [TestCase(10)]
+        [TestCase(11)]
         public void test_ctor_null_argument_throws(int nullIndex)
         {
             Assert.Throws<ArgumentNullException>(() => new AutoAttackCombatSystem(
@@ -876,7 +880,11 @@ namespace IronGrind.Tests.EditMode.AutoAttackCombat
                 nullIndex == 5 ? null : _emitter,
                 nullIndex == 6 ? null : _stats,
                 nullIndex == 7 ? null : _calc,
-                nullIndex == 8 ? null : _applier));
+                nullIndex == 8 ? null : _applier,
+                nullIndex == 9 ? null : new FakeXpAward(),
+                nullIndex == 10 ? null : new FakeExperienceSink(),
+                nullIndex == 11 ? null : new FakeMobTypeSource(),
+                Zone));
         }
 
         [Test]

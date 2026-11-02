@@ -91,7 +91,8 @@ namespace IronGrind.Tests.EditMode.AutoAttackCombat
         {
             return new AutoAttackCombatSystem(
                 pool, validity, attackSpeed, new FakeZoneState(), new HitDetector(HitDetectionConfig.Default),
-                new FakeHitEmitter(), new FakeStatSource(), new FakeDamageCalc(), new FakeDamageApplier());
+                new FakeHitEmitter(), new FakeStatSource(), new FakeDamageCalc(), new FakeDamageApplier(),
+                new FakeXpAward(), new FakeExperienceSink(), new FakeMobTypeSource(), default(ZoneID));
         }
 
         private EntityID AddPlayer()

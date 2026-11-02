@@ -1,7 +1,10 @@
 using System;
+using IronGrind.CharacterPersistence;
 using IronGrind.CharacterStats;
 using IronGrind.DamageCalculation;
+using IronGrind.Events;
 using IronGrind.HitDetection;
+using IronGrind.LootTableSystem;
 using IronGrind.Networking;
 using IronGrind.ServerLogic.ZoneInstancing;
 using UnityEngine;
@@ -11,7 +14,7 @@ namespace IronGrind.AutoAttackCombat
     /// <summary>
     /// Per-player auto-attack state, toggle, target, action timer and Rule 10 resolution (design/gdd/auto-attack-combat.md
     /// Rules 1-4, 10, 23, States and Transitions, EC-1 to EC-10, EC-17, EC-19, EC-27 to EC-30). Auto-Attack Combat
-    /// Stories 001 to 003.
+    /// Stories 001 to 004.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -37,7 +40,18 @@ namespace IronGrind.AutoAttackCombat
     /// Step 4 the timer resets, on any actual fire (even a rejected calculation). Any no-fire exit keeps the timer, so
     /// a ready auto retries every tick. A failed attacker or target position lookup is such a no-fire exit (like
     /// Step 5): nothing is emitted, the timer and state are kept, and it retries next tick; Story 006 wires validity
-    /// and positions from the same zone state. The kill path is Story 004's, the damage output Story 007's.
+    /// and positions from the same zone state. The damage output is Story 007's.
+    /// </para>
+    /// <para>
+    /// <b>Kill sequence (Story 004, Rule 10 Step 3, TR-aa-004).</b> A result with <see cref="DamageResult.IsKill"/> and
+    /// damage above 0 runs, by direct calls and in this order, <see cref="IAutoAttackXpAward.GetXPAward"/>,
+    /// <see cref="IAutoAttackExperienceSink.AddExperience"/>, <see cref="IAutoAttackDamageApplier.Apply"/>; then
+    /// <see cref="OnMobDied"/> is raised once (ADR-010 Decision 3; XP is not a subscriber). The mob type is read before
+    /// the calls, since applying the damage may remove the mob. The attacker reaches its final state (idle, target
+    /// cleared, timer frozen at 0, toggle unchanged) before the raise, so a subscriber that re-targets or releases the
+    /// player acts on that state and is not overwritten. Each subscriber runs in its own try/catch: one that throws is
+    /// logged and the others still run. A failed mob type lookup skips the raise and logs an error. An exception from
+    /// the XP or damage seams is not caught: it leaves the XP granted and escapes <see cref="Run"/>.
     /// </para>
     /// <para>
     /// <b>Attacker id.</b> <see cref="Run"/> iterates slots, so each slot's <see cref="EntityID"/> is stored in an
@@ -51,14 +65,52 @@ namespace IronGrind.AutoAttackCombat
     /// <example>
     /// <code>
     /// var combat = new AutoAttackCombatSystem(pool, validity, attackSpeed, positions, hitDetector, emitter,
-    ///     stats, damageCalculator, applier);
+    ///     stats, damageCalculator, applier, xpAward, experienceSink, mobTypeSource, zoneId);
+    /// combat.OnMobDied += OnMobDiedHandler;   // a named method, subscribed once
     /// combat.SetAutoAttack(playerId, true);
     /// combat.SetTarget(playerId, mobId);   // CombatActive, timer 0, cycle sampled
     /// combat.Run(tick, dt);                // timer 1; fires once the timer reaches GetCycleTicks and the target is in range
     /// </code>
     /// </example>
-    public sealed class AutoAttackCombatSystem : IZoneSimulationStep
+    public sealed class AutoAttackCombatSystem : IZoneSimulationStep, ICombatService
     {
+        /// <inheritdoc />
+        /// <remarks>
+        /// Subscribers are kept in an array rebuilt on add and remove (setup-time allocation only), so the raise
+        /// allocates nothing and can isolate each subscriber. Removing a handler removes its last registration.
+        /// </remarks>
+        public event Action<MobDeathContext> OnMobDied
+        {
+            add
+            {
+                if (value == null)
+                {
+                    return;
+                }
+
+                var next = new Action<MobDeathContext>[_mobDiedHandlers.Length + 1];
+                Array.Copy(_mobDiedHandlers, next, _mobDiedHandlers.Length);
+                next[_mobDiedHandlers.Length] = value;
+                _mobDiedHandlers = next;
+            }
+            remove
+            {
+                int index = Array.LastIndexOf(_mobDiedHandlers, value);
+                if (value == null || index < 0)
+                {
+                    return;
+                }
+
+                var next = new Action<MobDeathContext>[_mobDiedHandlers.Length - 1];
+                Array.Copy(_mobDiedHandlers, 0, next, 0, index);
+                Array.Copy(_mobDiedHandlers, index + 1, next, index, next.Length - index);
+                _mobDiedHandlers = next;
+            }
+        }
+
+        // Replaced, never mutated, on add/remove; the raise iterates a snapshot, so a subscriber may (un)subscribe.
+        private Action<MobDeathContext>[] _mobDiedHandlers = Array.Empty<Action<MobDeathContext>>();
+
         // Wire positions are short x100 (WireFixedPointCodec.PositionScale is private); world = raw / 100.
         private const float WIRE_POSITION_SCALE = 100f;
         private const int NO_MISS = -1;
@@ -77,6 +129,10 @@ namespace IronGrind.AutoAttackCombat
         private readonly IAutoAttackStatSource _stats;
         private readonly IAutoAttackDamageCalculator _damage;
         private readonly IAutoAttackDamageApplier _applier;
+        private readonly IAutoAttackXpAward _xpAward;
+        private readonly IAutoAttackExperienceSink _experience;
+        private readonly IAutoAttackMobTypeSource _mobTypes;
+        private readonly ZoneID _zoneId;
         private readonly int[] _cycleTicks;
         private readonly EntityID[] _attacker;
         private readonly bool[] _prohibited;
@@ -94,7 +150,11 @@ namespace IronGrind.AutoAttackCombat
         /// <param name="stats">Supplies BaseDamage and AttackRange per fire attempt.</param>
         /// <param name="damageCalculator">Resolves the hit (Rule 10 Step 3).</param>
         /// <param name="applier">Applies a resolved hit.</param>
-        /// <exception cref="ArgumentNullException">Any argument is null.</exception>
+        /// <param name="xpAward">Supplies the XP a killed mob is worth (Rule 10 Step 3).</param>
+        /// <param name="experience">Receives the XP of a kill.</param>
+        /// <param name="mobTypes">Resolves the killed mob's type for <see cref="OnMobDied"/>.</param>
+        /// <param name="zoneId">The zone this process hosts (ADR-007); carried by <see cref="MobDeathContext"/>.</param>
+        /// <exception cref="ArgumentNullException">Any reference argument is null.</exception>
         public AutoAttackCombatSystem(
             ZoneSlotPool pool,
             IAutoAttackTargetValidity validity,
@@ -104,7 +164,11 @@ namespace IronGrind.AutoAttackCombat
             IHitResultEmitter emitter,
             IAutoAttackStatSource stats,
             IAutoAttackDamageCalculator damageCalculator,
-            IAutoAttackDamageApplier applier)
+            IAutoAttackDamageApplier applier,
+            IAutoAttackXpAward xpAward,
+            IAutoAttackExperienceSink experience,
+            IAutoAttackMobTypeSource mobTypes,
+            ZoneID zoneId)
         {
             _pool = pool ?? throw new ArgumentNullException(nameof(pool));
             _validity = validity ?? throw new ArgumentNullException(nameof(validity));
@@ -115,6 +179,10 @@ namespace IronGrind.AutoAttackCombat
             _stats = stats ?? throw new ArgumentNullException(nameof(stats));
             _damage = damageCalculator ?? throw new ArgumentNullException(nameof(damageCalculator));
             _applier = applier ?? throw new ArgumentNullException(nameof(applier));
+            _xpAward = xpAward ?? throw new ArgumentNullException(nameof(xpAward));
+            _experience = experience ?? throw new ArgumentNullException(nameof(experience));
+            _mobTypes = mobTypes ?? throw new ArgumentNullException(nameof(mobTypes));
+            _zoneId = zoneId;
             int size = pool.MaxPlayers;
             _cycleTicks = new int[size];
             _attacker = new EntityID[size];
@@ -390,7 +458,7 @@ namespace IronGrind.AutoAttackCombat
 
             _emitter.Emit(attacker, target, HitResult.Hit);
             _outOfRange[slot] = false;
-            FireDamage(slot, attacker, target);
+            FireDamage(slot, attacker, target, targetPos);
         }
 
         // HitDetector treats a NaN range as "skip the range check" and a negative range as its absolute value, and
@@ -414,10 +482,17 @@ namespace IronGrind.AutoAttackCombat
             _state[slot] = ActiveState(slot);
         }
 
-        // Rule 10 Steps 3-4 after a hit.
-        private void FireDamage(int slot, EntityID attacker, EntityID target)
+        // Rule 10 Steps 3-4 after a hit. A kill (IsKill with damage above 0) goes to ResolveKill (Story 004). A rejected
+        // result (FinalDamage 0) ignores IsKill.
+        private void FireDamage(int slot, EntityID attacker, EntityID target, Vector3 targetPos)
         {
             DamageResult damage = _damage.Calculate(_stats.GetBaseDamage(attacker), attacker, target);
+            if (damage.FinalDamage > 0 && damage.IsKill)
+            {
+                ResolveKill(slot, attacker, target, targetPos, in damage);
+                return;
+            }
+
             if (damage.FinalDamage > 0)
             {
                 _applier.Apply(attacker, target, in damage);
@@ -426,6 +501,47 @@ namespace IronGrind.AutoAttackCombat
             // Step 4: any actual fire resets the cycle, including a rejected calculation (ends the streak).
             ResetTimer(slot);
             _state[slot] = ActiveState(slot);
+        }
+
+        // Rule 10 Step 3 kill. The mob type is read first, since the applier may remove the mob; then the direct calls
+        // GetXPAward -> AddExperience -> Apply. The slot reaches its final state (Step 4 reset, target cleared, IDLE,
+        // toggle unchanged) before OnMobDied, so a subscriber that re-targets or releases the player is not overwritten.
+        private void ResolveKill(int slot, EntityID attacker, EntityID target, Vector3 deathPosition, in DamageResult damage)
+        {
+            bool typeKnown = _mobTypes.TryGetMobType(target, out MobTypeID type);
+            int xp = _xpAward.GetXPAward(target);
+            _experience.AddExperience(attacker, xp);
+            _applier.Apply(attacker, target, in damage);
+
+            ResetTimer(slot);
+            _target[slot] = EntityID.Invalid;
+            GoIdle(slot);   // IDLE, timer frozen at 0
+
+            if (!typeKnown)
+            {
+                Debug.LogError($"AutoAttackCombat: OnMobDied skipped, no mob type for target {target} killed by {attacker}.");
+                return;
+            }
+
+            RaiseMobDied(new MobDeathContext(_zoneId, target, type, deathPosition, attacker));
+        }
+
+        // Each subscriber runs in its own try/catch, so one that throws is logged and the others still run. Iterates a
+        // snapshot of the handler array; no allocation unless a subscriber throws.
+        private void RaiseMobDied(in MobDeathContext context)
+        {
+            Action<MobDeathContext>[] handlers = _mobDiedHandlers;
+            for (int i = 0; i < handlers.Length; i++)
+            {
+                try
+                {
+                    handlers[i](context);
+                }
+                catch (Exception e)
+                {
+                    Debug.LogException(e);
+                }
+            }
         }
 
         // The target's ground position: a mob first, then a player. False when neither is known.
