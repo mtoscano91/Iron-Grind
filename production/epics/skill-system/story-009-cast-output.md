@@ -47,6 +47,7 @@
 - **Relevance**: `RelevanceFilter` (`src/ServerLogic/Networking/WireProtocol/RelevanceFilter.cs`) is specific to health updates. Build the recipient set from the same sources: party membership (the party query `RelevanceFilter` uses) and `TargetSlotTracker` (each client's hostile target). Use a pre-allocated, de-duplicated recipient buffer. If no party query is available in the zone process, fall back to target-slot membership plus the caster, and note it.
 - **Batch order and overflow** are already fixed in `RUBatchWriter` (`SkillCastResult` before `SkillCooldownUpdate` in write order, the reverse in drop order). Only the categories are set here.
 - **Wire**: structs and codecs in `src/Foundation/Networking/WireProtocol/`. Record `0x0309` and `0x030A` in `networking-wire-protocol.md`. `SkillCastResult` fields: `int damageDealt`, `int healAmount`, `int newCooldownTicks`.
+- **From Story 004 (code review 2026-11-02)**: AC-SK-43 was only shown at Story 004 as "a V-1 / V-2 drop stores nothing". Add the real test here: submit a mismatched-caster and a stale request through `SkillCastRequestHandler`, run the phase-3 step and this output, and assert zero `SkillCastResult` messages to any client.
 
 ---
 

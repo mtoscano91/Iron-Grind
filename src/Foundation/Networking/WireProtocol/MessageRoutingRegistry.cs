@@ -261,6 +261,17 @@ namespace IronGrind.Networking
             AddPriority(SkillUnlockNotification.MessageTypeId, nameof(SkillUnlockNotification), DesignPillar.EarnedPower,
                 MessageDirection.ServerToOwningClient, "Owner-only skill unlock (CR-SK-21); a lost notice leaves the HUD skill bar without the unlock animation and NEW badge.");
 
+            // Skill System Story 004: the cast request, U-U (dropped requests are not retransmitted; the client re-submits next beat).
+            Add(new MessageRoutingEntry(
+                messageTypeId: SkillCastRequest.MessageTypeId,
+                messageName: nameof(SkillCastRequest),
+                pillars: DesignPillar.Infrastructure,
+                channel: NetworkChannel.Unreliable,
+                direction: MessageDirection.ClientToServer,
+                deliveryContext: MessageDeliveryContext.Standalone,
+                isMcr3Exception: false,
+                rationale: "Per-beat cast input; a dropped request is re-submitted by the client next beat (skill-system.md CR-SK-1, MCR-2)."));
+
             // Zone Instancing Story 006: zone join / session / snapshot messages, R-OD priority path.
             // MessageTypeIds 0xE130-0xE135 and 0xF000 are provisional (TD-011).
             AddPriority(ZoneFullResponse.MessageTypeId, nameof(ZoneFullResponse), DesignPillar.Infrastructure,

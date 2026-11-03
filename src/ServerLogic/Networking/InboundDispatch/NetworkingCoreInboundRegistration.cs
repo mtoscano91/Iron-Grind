@@ -67,5 +67,23 @@ namespace IronGrind.Networking
                     heldDuringIrreversibleWrite: false, maxBodyBytes: (ushort)SetAutoAttack.BodySize),
                 setAutoAttackHandler.Handle);
         }
+
+        /// <summary>
+        /// Registers <see cref="SkillCastRequest"/> (Skill System Story 004, ADR-014 Decision 1): tag
+        /// <see cref="RpcTypeTag.NotifySkillUsed"/>, not held, body 16 bytes. Does not call <c>Seal()</c>; wiring into
+        /// the zone composition is Skill System Story 011.
+        /// </summary>
+        /// <param name="dispatcher">The dispatcher to register on.</param>
+        /// <param name="skillCastHandler">The <see cref="SkillCastRequest"/> handler.</param>
+        public static void RegisterSkillInput(IInboundRequestDispatcher dispatcher, SkillCastRequestHandler skillCastHandler)
+        {
+            if (dispatcher == null) throw new ArgumentNullException(nameof(dispatcher));
+            if (skillCastHandler == null) throw new ArgumentNullException(nameof(skillCastHandler));
+
+            dispatcher.Register(
+                new InboundRequestDescriptor(SkillCastRequest.MessageTypeId, RpcTypeTag.NotifySkillUsed,
+                    heldDuringIrreversibleWrite: false, maxBodyBytes: (ushort)SkillCastRequest.BodySize),
+                skillCastHandler.Handle);
+        }
     }
 }

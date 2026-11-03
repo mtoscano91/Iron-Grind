@@ -78,7 +78,7 @@ Applied to `skill-system.md` and `entities.yaml`.
 | 001 | [Skill data types and class skill lists](story-001-skill-data-types.md) | Logic | Complete | ADR-012 |
 | 002 | [Per-entity skill store, spawn and despawn](story-002-skill-store-spawn-despawn.md) | Logic | Complete | ADR-012 |
 | 003 | [Unlock on level-up and `SkillUnlockNotification`](story-003-unlock-on-level-up.md) | Logic | Complete | ADR-010, ADR-004 |
-| 004 | [Cast intake (`SkillCastRequest`, V-1, V-2)](story-004-cast-intake.md) | Logic | Ready | ADR-014 |
+| 004 | [Cast intake (`SkillCastRequest`, V-1, V-2)](story-004-cast-intake.md) | Logic | Complete | ADR-014 |
 | 005 | [Validation sequence (V-0, V-3 to V-8)](story-005-validation-sequence.md) | Logic | Ready | ADR-014 |
 | 006 | [Mana cost (V-9) and cooldown registration](story-006-mana-and-cooldowns.md) | Logic | Ready | ADR-014, ADR-012 |
 | 007 | [Cast execution (`NotifySkillUsed`, damage, kill, facing)](story-007-cast-execution.md) | Logic | Ready | ADR-010, ADR-013 |

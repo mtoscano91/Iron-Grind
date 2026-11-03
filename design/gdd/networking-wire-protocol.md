@@ -1311,7 +1311,7 @@ All schemas are body-only; prepend the 10-byte CR-NET-7.1 envelope (+ 4-byte `Se
 
 ---
 
-**SkillCastRequest** (U-U, client → server, standalone, 16-byte body; 30 bytes standalone):
+**SkillCastRequest** (U-U, client → server, standalone, 16-byte body; 30 bytes standalone; `MessageTypeID: 0x0308`):
 ```
 SkillCastRequest {
     uint casterEntityID;    // 4 bytes — server validates against authenticated session (V-1); redundant with C→S extension but included for explicit validation

@@ -4,11 +4,11 @@ namespace IronGrind.Networking
     /// Identifies which named rate-limit bucket an inbound RPC belongs to, for
     /// <see cref="CrossCuttingRpcGuardChain"/>'s per-entity, per-RPC-type rate limiting (Cross-Cutting
     /// Constraint 3, Networking Core Story 010). This is a tag on the generic
-    /// <see cref="InboundRpcDescriptor"/> carrier — not a real message class. Neither
-    /// <c>AllocateFreePointRequest</c> nor <c>NotifySkillUsed</c> exists as a concrete type in this
-    /// codebase yet (owned by the not-yet-started Leveling System and Skill System epics
-    /// respectively); this enum lets the guard chain's rate-limit logic be proven now, against a
-    /// test double, without inventing placeholder message types for either system (mirrors Story
+    /// <see cref="InboundRpcDescriptor"/> carrier — not a real message class. The Skill System's
+    /// message for <c>NotifySkillUsed</c> is <see cref="SkillCastRequest"/> (Skill System Story 004
+    /// registers it with this tag). <c>AllocateFreePointRequest</c> has no concrete type yet (owned
+    /// by the not-yet-started Leveling System epic); this enum lets the guard chain's rate-limit logic
+    /// be proven against a test double, without inventing placeholder message types (mirrors Story
     /// 007's <c>PendingSubMessage</c> category-tag approach for the same forward-dependency shape).
     /// </summary>
     /// <remarks>
@@ -37,7 +37,7 @@ namespace IronGrind.Networking
         AllocateFreePoint = 0,
 
         /// <summary>
-        /// The (not-yet-implemented) Skill System's <c>NotifySkillUsed</c> RPC. Rate-limited via
+        /// The Skill System's cast RPC (<see cref="SkillCastRequest"/>, tag name from the GDD's <c>NotifySkillUsed</c>). Rate-limited via
         /// <see cref="CrossCuttingRpcGuardChain.NOTIFY_SKILL_USED_RATE_LIMIT_MS"/> (AC-NC-46).
         /// </summary>
         NotifySkillUsed = 1,

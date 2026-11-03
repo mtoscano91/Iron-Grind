@@ -97,6 +97,8 @@ namespace IronGrind.Tests.EditMode.Architecture
             "IronGrind.Networking.AutoFaceEvent",               // consumer (planned): client message handlers (wire schema; Auto-Attack Combat Story 009)
             "IronGrind.Networking.SkillUnlockNotification",             // consumer (planned): client message handlers, HUD skill bar (wire schema; Skill System Story 003)
             "IronGrind.Networking.SkillUnlockNotificationCodec",        // consumer (planned): client message handlers (codec; Skill System Story 003)
+            "IronGrind.Networking.SkillCastRequest",                    // consumer (planned): client skill bar cast sender (wire schema; Skill System Story 004)
+            "IronGrind.Networking.SkillCastRequestCodec",               // consumer (planned): client skill bar cast sender (codec; Skill System Story 004)
             "IronGrind.Networking.HeartbeatMessage",            // consumer (planned): client message handlers (wire schema)
             "IronGrind.Networking.SetTarget",                   // consumer (planned): client message handlers (wire schema)
             "IronGrind.Networking.SetAutoAttack",               // consumer (planned): Combat UI auto-attack toggle sender (wire schema; Auto-Attack Combat Story 006)

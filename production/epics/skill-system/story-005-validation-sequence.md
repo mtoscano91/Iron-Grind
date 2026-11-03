@@ -54,6 +54,7 @@
   - V-8 positions: the `MovementZoneEntityStateSource` used by combat (positions are this tick's, since the step runs after Movement). Distance on the XZ plane, as Hit Detection does (Y ignored), unless the GDD says 3D. It says `distanceSq(caster, target)`: confirm at readiness, the recommendation is XZ like Hit Detection.
 - `Self` resolution changes only the working copy of the target, not the stored request.
 - Rejection reporting goes through `ISkillCastOutput` (declared here, with a recording fake; Story 009 implements it).
+- **From Story 004 (code review 2026-11-02)**: read each kept request with `SkillCastIntake.TryGetPending(slot, out PendingSkillCast cast)` for `slot < Capacity`, use `cast.Caster` as the caster (do not resolve the entity again from the slot: a slot can change owner within a tick), and call `ClearAll()` once the step has run.
 
 ---
 
