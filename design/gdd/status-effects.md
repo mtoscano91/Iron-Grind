@@ -468,3 +468,7 @@ CR-SE-8 calls `ApplyDamage(entityId, 0.0f)` to trigger the `CurrentHP` clamp-on-
 
 **OQ-SE-2 — Zone departure notification interface** — **Resolved 2026-10-28** (Status Effects Story 008 readiness)
 Resolved as a direct call, not an event: the zone slot pool calls `IZoneSlotReleaseListener.BeforeRelease(EntityID)` before every player and mob slot release (`zone-instancing.md` CR-ZI-4), and Status Effects implements it with `ClearEntity` (CR-SE-11). One hook in the pool covers all six release sites, including teardown and admission rollback.
+
+**OQ-SE-3 — Silence query for Skill System V-5b** — **Open** (raised 2026-11-04, Skill System Story 005, Decision A of 2026-11-02)
+`skill-system.md` V-5b rejects a cast with `Silenced` when `StatusEffects.IsSilenced(casterEntityID)` is true, but this GDD defines no silence effect and no such query. At MVP the Skill System reads `ISkillSilenceSource` (`src/ServerLogic/SkillSystem/`), whose production stand-in `NoSilenceSource` always returns false, so V-5b never fires. When a silence effect is designed, Status Effects implements `ISkillSilenceSource.IsSilenced(EntityID)` and replaces the stand-in in the composition root.
+*Owner: Status Effects author. Not blocking MVP.*
