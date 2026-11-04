@@ -3,7 +3,7 @@
 > **Layer**: Core
 > **GDD**: design/gdd/character-persistence.md
 > **Architecture Module**: Character Persistence — `CharacterPersistenceService : ICharacterPersistence` (async), PostgreSQL via Npgsql and Dapper
-> **Status**: In Progress (created 2026-10-12; 16 stories written 2026-10-12 — 13 Complete (001–004, 006–010, 012–014, 017 — 017 added and Complete 2026-10-16 for TD-070 / TD-060; 012–014 Complete 2026-10-19); 011 Complete 2026-10-26 → 14 Complete; 015 Complete 2026-10-26 → 15 Complete; 005 Complete 2026-10-28 → 16 Complete, 016 Complete 2026-10-28 → 17 Complete; Definition of Done still open: ADR-006 Verification 1–3, AC-CP-27/28/29)
+> **Status**: In Progress (created 2026-10-12; 16 stories written 2026-10-12 — 13 Complete (001–004, 006–010, 012–014, 017 — 017 added and Complete 2026-10-16 for TD-070 / TD-060; 012–014 Complete 2026-10-19); 011 Complete 2026-10-26 → 14 Complete; 015 Complete 2026-10-26 → 15 Complete; 005 Complete 2026-10-28 → 16 Complete, 016 Complete 2026-10-28 → 17 Complete; 018–020 added and Complete 2026-11-04 → 20 Complete; Definition of Done still open: ADR-006 Verification 1–3, AC-CP-27/28/29)
 > **Stories**: 16 stories created 2026-10-12 (001–016); Story 017 added 2026-10-16
 > **Manifest Version**: 2026-10-09
 
@@ -95,6 +95,7 @@ This epic is complete when:
 | 017 | [Session-End Saves Wait for the Mutation Gate](story-017-session-end-waits-for-the-mutation-gate.md) | Integration | Complete (2026-10-16; 16 new test cases, EditMode 2932 / 2932; COMPLETE WITH NOTES; closes TD-070 and TD-060, adds TD-071) | ADR-011 |
 | 018 | [Zone Wires the Full Persistence Applier](story-018-zone-wires-full-persistence-applier.md) | Integration | Complete (2026-11-04; resolves TD-090; save path deferred to TD-091) | ADR-006, ADR-014 |
 | 019 | [Zone Uses Real Inventory and Equipment](story-019-zone-real-inventory-and-equipment.md) | Integration | Complete (2026-11-04; COMPLETE WITH NOTES; first half of TD-091: S2 item database, real Inventory / Equipment in the zone; save path in Story 020) | ADR-006, ADR-009, ADR-014 |
+| 020 | [Zone Save Path](story-020-zone-save-path.md) | Integration | Complete (2026-11-04; COMPLETE WITH NOTES; second half of TD-091, closes it: zone locator, write queue, save constructor, missing item database fails startup; zone close and clean logout save) | ADR-006, ADR-009, ADR-011, ADR-014 |
 
 **Acceptance criteria owned outside this epic**: AC-CP-27 (enhancement commit before broadcast) — Enhancement Story 011. AC-CP-28 (respec failure with its compensating `AddGold`) and AC-CP-29 (item consumption) — the Respec and Consumable Use systems, which have no code.
 

@@ -26,7 +26,6 @@ using EnhancementConfig = IronGrind.EnhancementSystem.EnhancementConfig;
 using EquipmentService = IronGrind.EquipmentSystem.EquipmentService;
 using IItemDatabase = IronGrind.ItemDatabase.IItemDatabase;
 using InventoryService = IronGrind.InventorySystem.InventoryService;
-using ItemDefinition = IronGrind.ItemDatabase.ItemDefinition;
 
 namespace IronGrind.ServerLogic.ZoneServer
 {
@@ -97,6 +96,9 @@ namespace IronGrind.ServerLogic.ZoneServer
         private const string STEP_RETURNED_FALSE = "StepReturnedFalse";
         private const string PASSWORD_VARIABLE = "IRONGRIND_PG_PASSWORD";
         private const string APPLICATION_NAME_PREFIX = "irongrind-zone-";
+
+        /// <summary>Logged once at S5 when neither the override nor the S2 loader gives an item database (Character Persistence Story 020).</summary>
+        internal const string NO_ITEM_DATABASE_ERROR = "[ZoneServer] S5: no item database from S2";
 
         /// <summary>
         /// Seconds without a completed network tick, with a quit pending (or the zone Draining), after which
@@ -408,12 +410,12 @@ namespace IronGrind.ServerLogic.ZoneServer
 
         /// <summary>
         /// Test seam (Character Persistence Story 019): the item database under Inventory and Equipment. Null means the S2
-        /// loader's database (<see cref="IZoneItemData"/>), or an empty ready database with one warning when the loader has
-        /// none (tests only: the production host always provides one). Set before the run starts.
+        /// loader's database (<see cref="IZoneItemData"/>); when the loader has none, S5 fails with <see cref="NO_ITEM_DATABASE_ERROR"/>
+        /// (Story 020; the production host always provides one). Set before the run starts.
         /// </summary>
         internal IItemDatabase ItemDatabaseOverride;
 
-        /// <summary>The item database Inventory and Equipment actually use (override, S2 or the empty fallback); null before S5.</summary>
+        /// <summary>The item database Inventory and Equipment actually use (the override or S2's); null before S5.</summary>
         internal IItemDatabase ItemDatabaseInUse { get; private set; }
 
         /// <summary>The zone's Inventory, shared by Persistence (restore) and Zone Instancing (session end), built at S5 (Story 019); null before S5.</summary>
@@ -1537,33 +1539,48 @@ namespace IronGrind.ServerLogic.ZoneServer
             // Leveling come first inside BuildPersistence (Character Persistence Story 018): the applier needs them.
             public bool ConstructObjects()
             {
-                BuildPersistence();
+                if (!BuildPersistence())
+                {
+                    return false;
+                }
+
                 BuildRelay();
                 InboundRequestDispatcher dispatcher = BuildDispatcher();
                 BuildOutboundAndPipeline(dispatcher);
                 return true;
             }
 
-            private void BuildPersistence()
+            // False (S5 fails, nothing after Character Stats is built) when there is no item database (Story 020).
+            private bool BuildPersistence()
             {
                 _queue = new TickCompletionQueue();
                 Observe(nameof(TickCompletionQueue));
                 _tickLoop = new ServerTickLoop();
                 Observe(nameof(ServerTickLoop));
                 BuildCharacterStats();
-                BuildInventoryAndEquipment();
+                if (!BuildInventoryAndEquipment())
+                {
+                    return false;
+                }
+
                 ICharacterRecordStore store = _owner.RecordStoreOverride ?? new NpgsqlCharacterRecordStore(_dataSource);
                 // Observed under the production name even when the test override is used: the construction-order
                 // check names the step, not the type that filled it.
                 Observe(nameof(NpgsqlCharacterRecordStore));
 
-                // Story 018 (TD-090): the six-service constructor, so ApplyLoadedRecord works at admission. Story 019: the
-                // real Inventory / Equipment. The save constructor is still not used (no zone locator or write queue), so
-                // SaveSession keeps throwing before it writes (TD-091, Story 020).
+                // Story 020 (TD-091): the save constructor. The zone locator reports this zone for every character; the
+                // write queue serialises writes per character (CR-CP-7); the composition root is the one place that reads
+                // the system clock (Character Persistence only measures write latency with it).
+                var writeQueue = new CharacterWriteQueue();
+                Observe(nameof(CharacterWriteQueue));
+                var locator = new ZoneServerCharacterZoneLocator(_owner._zoneId);
+                Observe(nameof(ZoneServerCharacterZoneLocator));
                 _owner.ZoneCurrency = new ZoneCurrencySystem();
                 _owner.PersistenceService = new CharacterPersistenceService(store, _owner.ZoneCharacterStats,
-                    _owner.ZoneLeveling, _owner.ZoneInventory, _owner.ZoneCurrency, _owner.ZoneEquipment);
+                    _owner.ZoneLeveling, _owner.ZoneInventory, _owner.ZoneCurrency, _owner.ZoneEquipment, locator, writeQueue,
+                    () => DateTime.UtcNow, TimeSpan.FromSeconds(CharacterPersistenceConstants.PERSISTENCE_WRITE_TIMEOUT_SECONDS));
                 Observe(nameof(CharacterPersistenceService));
+                return true;
             }
 
             // Status Effects Story 009 / Skill System Story 013, moved ahead of Persistence by Character Persistence Story 018:
@@ -1588,18 +1605,16 @@ namespace IronGrind.ServerLogic.ZoneServer
 
             // Character Persistence Story 019: the item database from S2 (ADR-009 S2), then the real Inventory and Equipment
             // over Character Stats. Built before Persistence (the load applier restores into them). Needs no wiring.
-            private void BuildInventoryAndEquipment()
+            // Story 020: no database is a startup failure. With an empty one every bag would be imported empty and then
+            // saved that way over the stored record.
+            private bool BuildInventoryAndEquipment()
             {
                 IItemDatabase items = _owner.ItemDatabaseOverride
                     ?? (_owner._staticDataLoader as IZoneItemData)?.LoadedItemDatabase;
                 if (items == null)
                 {
-                    // Tests only. Story 020 must make this a startup failure before saves are enabled: with an empty
-                    // database every bag would be imported as empty and then saved that way.
-                    var empty = new IronGrind.ItemDatabase.ItemDatabase();
-                    empty.Initialize(Array.Empty<ItemDefinition>());
-                    items = empty;
-                    Debug.LogWarning("[ZoneServer] no item database from S2; using an empty one (tests only)");
+                    Debug.LogError(NO_ITEM_DATABASE_ERROR);
+                    return false;
                 }
 
                 _owner.ItemDatabaseInUse = items;
@@ -1610,6 +1625,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                 _owner.ZoneEquipment = new EquipmentService(inventory, _owner.ZoneCharacterStats, items,
                     new EnhancementBonusProvider(enhancement), enhancement);
                 Observe(nameof(EquipmentService));
+                return true;
             }
 
             private void BuildRelay()

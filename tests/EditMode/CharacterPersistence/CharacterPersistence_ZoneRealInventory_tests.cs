@@ -25,8 +25,8 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
     /// Character Persistence Story 019: the zone composition builds the real <see cref="InventoryService"/> and
     /// <see cref="EquipmentService"/> over the S2 item database, a player admitted through the real
     /// <see cref="ZoneEntryAdmission"/> gets the record's bag and gear back (gear modifiers in Character Stats), an unknown
-    /// gear item is dropped with the one <c>ItemDatabaseMiss</c> warning, and the save path stays disabled (TD-091, Story
-    /// 020). Built over <see cref="WiRig"/> with an in-memory record store, an accepting token validator and the MVP items.
+    /// gear item is dropped with the one <c>ItemDatabaseMiss</c> warning. The save path (Story 020) is tested in
+    /// <c>CharacterPersistence_ZoneSavePath_tests.cs</c>. Built over <see cref="WiRig"/> with an in-memory record store, an accepting token validator and the MVP items.
     /// </summary>
     [TestFixture]
     internal sealed class CharacterPersistence_ZoneRealInventory_Tests
@@ -48,8 +48,6 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
         private const byte BAG_GEAR_LEVEL = 2;
         private const uint UNKNOWN_ITEM = 999u;                    // not an MVP item id
         private const int RELOADED_POTION_COUNT = 9;
-
-        private const string NO_DATABASE_WARNING = "[ZoneServer] no item database from S2; using an empty one (tests only)";
 
         private MvpItemFixture _items;
         private MemoryStore _store;
@@ -186,10 +184,8 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             rig.Comp.RespawnProviderOverride = new FakeRespawn();
             rig.Comp.RecordStoreOverride = _store;
             rig.Comp.EntryTokenValidatorOverride = new AcceptAllValidator();
-            if (useOverride)
-            {
-                rig.Comp.ItemDatabaseOverride = _items.Database;
-            }
+            // Null: S5 takes the S2 loader's database (the rig default is an empty one, Story 020).
+            rig.Comp.ItemDatabaseOverride = useOverride ? _items.Database : null;
 
             SuRig.Drive(rig.Comp.Start(SuRig.ARGS));
             return rig;
@@ -242,21 +238,7 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
                 WiRig rig = StartRig(null, useOverride: false, loader: new ItemDataLoader(_items.Database));
 
                 Assert.AreSame(_items.Database, rig.Comp.ItemDatabaseInUse);
-                Assert.IsFalse(log.Lines.Contains(NO_DATABASE_WARNING), "no fallback warning");
-            }
-        }
-
-        [Test]
-        public void test_zone_real_inventory_no_database_falls_back_to_an_empty_ready_one_with_one_warning()
-        {
-            using (var log = new WiLogCapture())
-            {
-                WiRig rig = StartRig(null, useOverride: false);
-
-                Assert.IsNotNull(rig.Comp.ItemDatabaseInUse);
-                Assert.IsTrue(rig.Comp.ItemDatabaseInUse.IsReady);
-                Assert.IsFalse(rig.Comp.ItemDatabaseInUse.TryGetItem(new ItemID(WEAPON), out ItemDefinition _), "empty");
-                Assert.AreEqual(1, log.Lines.FindAll(l => l == NO_DATABASE_WARNING).Count);
+                Assert.IsFalse(log.Lines.Contains(ZoneServerComposition.NO_ITEM_DATABASE_ERROR), "no missing-database error");
             }
         }
 
@@ -376,45 +358,10 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             CollectionAssert.AreEqual(ExpectedGear(reloaded), rig.Comp.ZoneEquipment.ExportSlots(new CharacterID(CLIENT)));
         }
 
-        // ---------------------------------------------------------------- AC-7: save path still disabled
-
-        [Test]
-        public void test_zone_real_inventory_save_session_still_throws_before_any_write()
-        {
-            WiRig rig = StartRig(MakeRecord());
-            Assert.IsTrue(EnterThroughAdmission(rig, CLIENT, true, out _));
-
-            var ex = Assert.Throws<InvalidOperationException>(() =>
-                rig.Comp.PersistenceService.SaveSession(new CharacterID(CLIENT), SessionEndReason.CleanLogout, CancellationToken.None));
-
-            StringAssert.Contains("zone locator", ex.Message);
-            Assert.AreEqual(0, _store.Writes, "nothing written");
-        }
-
-        // In the composed zone an admitted player stays "entering" (SessionReady is not wired yet), so close step 2 skips
-        // it and starts no save; either way nothing reaches the store.
-        [Test]
-        public void test_zone_real_inventory_zone_close_writes_nothing()
-        {
-            WiRig rig = StartRig(MakeRecord());
-            Assert.IsTrue(EnterThroughAdmission(rig, CLIENT, true, out EntityID e));
-            Assert.IsTrue(rig.Comp.ZoneInstancing.Reclamation.IsEntering(e), "the admitted player is still entering, so step 2 skips it");
-
-            using (var log = new WiLogCapture())
-            {
-                rig.Comp.ZoneInstancing.RunCloseSteps();
-
-                Assert.IsFalse(log.Lines.Exists(l => l.Contains("zone close step 2")), "no save was started");
-            }
-
-            Assert.AreEqual(0, _store.Writes, "nothing written");
-        }
-
         // ---------------------------------------------------------------- unknown bag item (current behaviour)
 
         // InventoryService.ImportSnapshot skips a bag entry whose item is not in the database (one warning, slot left
-        // empty) and the player is admitted. Pinned here because once saves are enabled (Story 020) the next save would
-        // drop that item from the stored record for good.
+        // empty) and the player is admitted. The next save drops it from the record (GDD EC-CP-1; Story 020 tests that).
         [Test]
         public void test_zone_real_inventory_unknown_bag_item_is_skipped_with_a_warning_and_the_player_admitted()
         {
