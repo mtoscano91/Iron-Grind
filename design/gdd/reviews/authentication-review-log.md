@@ -1,5 +1,14 @@
 # Review Log: Authentication
 
+## Review — 2026-11-04 — Verdict: NEEDS REVISION
+Scope signal: L
+Specialists: None (lean mode — single-session analysis)
+Blocking items: 3 (resolved in session) | Recommended: 7 (resolved in session)
+Summary: Re-review of the ADR-016 revision (gateway authentication). The revision itself was coherent, but using the username as the character name made every login name public; with no-decay lockouts any player could keep any other locked out. Fixed by a separate characterName (new CR-AUTH-13, five RegistrationError codes, unique index in migration 003). Also fixed: two stale internal references (networking-session dependency row, CR-AUTH-12 step number), and the token path now checks isBanned. Recommended items applied: single abort check stated, Evict save failure proceeds, account→zone map lifecycle, UI (character name, class picker, error strings), ACs 35–38, AC-AUTH-19 measured in the gateway, networking-core / networking-session wording propagated. CR-AUTH-13 is new structure — re-review in a new session.
+Prior verdict resolved: Yes — prior APPROVED (2026-05-21); this pass reviewed the 2026-11-04 ADR-016 revision.
+
+---
+
 ## Review — 2026-05-21 — Verdict: APPROVED
 
 Scope signal: L

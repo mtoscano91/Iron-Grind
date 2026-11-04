@@ -1,6 +1,6 @@
 # Authentication Wire Messages — Protocol Primitive
 
-> **Status**: Approved 2026-11-04 (aligned with ADR-016: HTTPS bodies, `LoginResponse`, `classType`). Before: Draft (2026-05-29)
+> **Status**: Approved 2026-11-04 (aligned with ADR-016: HTTPS bodies, `LoginResponse`, `classType`; `characterName` + character-name errors added after the authentication.md lean re-review the same day). Before: Draft (2026-05-29)
 > **Author**: Manuel Toscano + agents
 > **Last Updated**: 2026-11-04
 > **Type**: Protocol primitive — referenced by authentication.md, networking-session-token.md and zone-instancing.md
@@ -59,13 +59,14 @@ ConnectionRequest {
 
 ```
 RegistrationRequest {
-  username:  string   // UTF-8; max USERNAME_MAX_LENGTH (24) chars; also becomes the character name
-  password:  string   // UTF-8 plaintext
-  classType: byte     // ClassType of the new character (class-system.md); unknown value → ClassInvalid
+  username:      string   // UTF-8; max USERNAME_MAX_LENGTH (24) chars; private login name, never shown in game
+  password:      string   // UTF-8 plaintext
+  characterName: string   // ASCII [A-Za-z0-9_], max CHARACTER_NAME_MAX_LENGTH (16); the visible name (authentication.md CR-AUTH-13)
+  classType:     byte     // ClassType of the new character (class-system.md); unknown value → ClassInvalid
 }
 ```
 
-`classType` added 2026-11-04 (ADR-016). The character's name is the normalized username (`authentication.md` CR-AUTH-8).
+`classType` and `characterName` added 2026-11-04. The character name is chosen separately from the username and must not equal it (`authentication.md` CR-AUTH-13).
 
 ---
 
@@ -112,9 +113,9 @@ RegistrationResult {
 }
 ```
 
-`RegistrationError : byte { UsernameTaken=0, UsernameTooShort=1, UsernameTooLong=2, UsernameInvalidChars=3, PasswordTooShort=4, PasswordTooLong=5, ClassInvalid=6, ServerError=255 }`
+`RegistrationError : byte { UsernameTaken=0, UsernameTooShort=1, UsernameTooLong=2, UsernameInvalidChars=3, PasswordTooShort=4, PasswordTooLong=5, ClassInvalid=6, CharacterNameTaken=7, CharacterNameTooShort=8, CharacterNameTooLong=9, CharacterNameInvalidChars=10, CharacterNameMatchesUsername=11, ServerError=255 }`
 
-`ClassInvalid` added 2026-11-04.
+`ClassInvalid` and the `CharacterName*` codes added 2026-11-04.
 
 ---
 
@@ -142,7 +143,7 @@ Field-level encoding rules come from `networking-wire-protocol.md` (see Transpor
 | `authentication.md` | All S→C auth success message references | "`SessionHandshake`" — CCR-2 conflict | ✅ Renamed to "`ConnectionAccepted`" (2026-05-21); now `LoginResponse` (2026-11-04) |
 | `authentication.md` | CR-AUTH-11 step 3 | "SessionHandshake contains AccountID" | ✅ AccountID removed (2026-05-21); step rewritten for the gateway (2026-11-04) |
 | `authentication.md` | AC-AUTH-21(b), AC-AUTH-30 | AccountID on the wire | ✅ Asserted absent from `LoginResponse` (2026-11-04) |
-| `authentication.md` | CR-AUTH-8, AC-AUTH-34 | `classType`, `ClassInvalid`, name = username | ✅ Added 2026-11-04 (ADR-016) |
+| `authentication.md` | CR-AUTH-8, CR-AUTH-13, AC-AUTH-34/35 | `classType`, `ClassInvalid`; separate `characterName` (name = username dropped after the lean re-review: public login names enabled lockout griefing) | ✅ Added 2026-11-04 |
 | `networking-session-token.md` | CR-TOK-3/CR-TOK-4 | "AccountID is included in ConnectionRequest" | ✅ Updated (2026-05-20) |
 | `networking-session-token.md` | CR-TOK-2, CR-TOK-5 step 3, EC-TOK, AC-TOK-1/5 | Token delivered in `SessionHandshake` / `ConnectionAccepted` | ✅ Now `LoginResponse` (2026-11-04) |
 | `auth-wire-messages.md` | `LoginResult` | Unified success+failure result carrying `zoneId` (OQ-ZI-4, 2026-05-29) | ✅ Superseded by `LoginResponse` 2026-11-04 |

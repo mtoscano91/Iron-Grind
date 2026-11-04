@@ -63,7 +63,7 @@ Proposed
 - Endpoints: `POST /v1/login` and `POST /v1/register`, `Content-Type: application/octet-stream`. The request body is a `ConnectionRequest` or `RegistrationRequest`. The response body is `LoginResponse` or `RegistrationResult`. Every outcome, including failure, returns HTTP 200 with the result in the body; non-200 means transport or server failure and the client treats it as `ServerError`.
 - Body encoding follows `networking-wire-protocol.md` field rules (little-endian integers, length-prefixed UTF-8 strings). The schemas live in shared code (Decision 6) so that client and gateway use one codec.
 - `LoginResponse` is a single body carrying what `auth-wire-messages.md` sends as two messages: `success`, `errorCode`, then on success `sessionToken[16]`, `characterId`, `zoneId`, `zoneServerPort` (ADR-007's field). `AccountID` is not a field (CR-AUTH-2, AC-AUTH-30).
-- `RegistrationRequest` gains `classType: byte`. The character's name is the username.
+- `RegistrationRequest` gains `classType: byte` and `characterName: string`. The character name is chosen separately and must not equal the username (`authentication.md` CR-AUTH-13): login names stay private, because public login names plus the no-decay lockout would let any player lock out any other. *(Amended 2026-11-04 after the authentication.md lean re-review; the first draft used the username as the character name.)*
 - The client uses `UnityWebRequest` with default certificate validation and an explicit `timeout` of `LOGIN_HTTP_TIMEOUT_SECONDS`. That value is above the worst-case login: hashing, plus `GATEWAY_EVICT_TIMEOUT_MS`, plus `GATEWAY_ZONE_REQUEST_TIMEOUT_MS`. No `CertificateHandler` that accepts every certificate may ship.
 - Client builds never use plain HTTP. Local development runs Caddy with `tls internal`. If the Editor cannot trust that certificate, a dev-only certificate handler for it lives only in `IronGrind.DevHarness`. Player Settings keep HTTP downloads disallowed.
 
@@ -100,7 +100,7 @@ Proposed
 5. Generate a 16-byte token with `RandomNumberGenerator` and send `Admit`. The zone calls `SessionTokenStore.IssueToken`, records the expected `(AccountID, CharacterID)` and starts the `CONNECTING_TIMEOUT_SECONDS` clock. If no `SessionHandshake` arrives in time, the zone drops the entry and sends `SessionReleased`.
 6. On `AdmitResult.accepted`, reply `LoginResponse` with token, CharacterID, ZoneID and port. On rejection, re-route once; otherwise reply `ServerError`. The gateway does not keep the token after replying.
 
-**Token path** (`tokenField` non-zero): the gateway resolves AccountID from the normalized username, and does not hash. If no zone holds a session for the account, it returns `InvalidCredentials`. Otherwise it sends `Reconnect` to that zone; the zone runs `TryValidateAndRotate` and the `REAUTH_FAILURE_LIMIT` count, and the gateway relays the new token.
+**Token path** (`tokenField` non-zero): the gateway resolves AccountID from the normalized username, and does not hash. If the account is unknown or banned (`is_banned`), or no zone holds a session for it, it returns `InvalidCredentials`. Otherwise it sends `Reconnect` to that zone; the zone runs `TryValidateAndRotate` and the `REAUTH_FAILURE_LIMIT` count, and the gateway relays the new token.
 
 **Zone leaves Active after Admit**: the zone rejects further `Admit`s, drops admitted entries whose client has not arrived and sends `SessionReleased` for each. A late `SessionHandshake` gets `ZoneFullResponse(ZoneDoesNotExist)` and the client returns to login. `RoutingRedirectMessage` (`auth-wire-messages.md`, 2026-05-29) is retired: zones cannot route.
 
@@ -127,10 +127,11 @@ ALTER TABLE character_records
     ADD CONSTRAINT fk_character_records_account
     FOREIGN KEY (account_id) REFERENCES accounts (account_id);
 CREATE INDEX ix_character_records_account_id ON character_records (account_id);
+CREATE UNIQUE INDEX ux_character_records_name_lower ON character_records (lower(character_name));
 ```
 
-- `VARCHAR(32)` is the top of `USERNAME_MAX_LENGTH`'s safe range, so tuning the knob needs no migration. Because the character name is the username, `USERNAME_MAX_LENGTH` must stay ≤ 26 (`character_name VARCHAR(26)`); this is a joint constraint added to the GDD.
-- Registration is one transaction: `nextval` both sequences, `INSERT accounts`, `INSERT character_records (character_id, account_id, character_name, class_type)` with every other column taking its DDL default (the CR-CP-9 Level 1 values). Both rows commit or neither does; this is stronger than EC-AUTH-4's allowed orphan state. Sequence values are consumed even on rollback, which is the never-reissued rule (EC-AUTH-4, AC-AUTH-31 (b)). A unique violation (`23505`) on `username_lower` returns `UsernameTaken` (EC-AUTH-1, AC-AUTH-25).
+- `VARCHAR(32)` is the top of `USERNAME_MAX_LENGTH`'s safe range, so tuning the knob needs no migration. `CHARACTER_NAME_MAX_LENGTH` must stay ≤ 26 (`character_name VARCHAR(26)`). Dev databases whose existing character names collide case-insensitively must be cleaned before the unique index is created.
+- Registration is one transaction: `nextval` both sequences, `INSERT accounts`, `INSERT character_records (character_id, account_id, character_name, class_type)` (`character_name` = the request's `characterName`) with every other column taking its DDL default (the CR-CP-9 Level 1 values). Both rows commit or neither does; this is stronger than EC-AUTH-4's allowed orphan state. Sequence values are consumed even on rollback, which is the never-reissued rule (EC-AUTH-4, AC-AUTH-31 (b)). A unique violation (`23505`) on `username_lower` returns `UsernameTaken`; one on `ux_character_records_name_lower` returns `CharacterNameTaken` (told apart by the violated constraint's name; EC-AUTH-1, AC-AUTH-25, AC-AUTH-35).
 - Failure counting is one transaction: `SELECT … FOR UPDATE` on the account row, compute F-AUTH-1 in C#, `UPDATE`. Concurrent attempts on one account are serialized by the row lock (CR-AUTH-9 atomicity).
 - The gateway connects as its own role `gateway`: all rights on `accounts` and both sequences, `INSERT` and `SELECT (character_id, account_id, last_zone_id)` on `character_records`, nothing else. `last_zone_id` is read for CR-ZI-6 rule 2 (returning character). Zone roles get no rights on `accounts`.
 
@@ -182,7 +183,7 @@ public interface IPasswordHasher
 public interface IAccountRepository
 {
     Task<AccountRecord?> FindByUsernameAsync(string usernameLower, CancellationToken ct);
-    Task<RegistrationOutcome> RegisterAsync(string usernameLower, string passwordHashPhc, byte classType, CancellationToken ct);
+    Task<RegistrationOutcome> RegisterAsync(string usernameLower, string passwordHashPhc, string characterName, byte classType, CancellationToken ct);
     Task<LoginFailureState> RecordFailureAsync(AccountID account, DateTime utcNow, CancellationToken ct); // row lock, F-AUTH-1
     Task ResetFailuresAsync(AccountID account, CancellationToken ct);
     Task<CharacterID> GetCharacterIDAsync(AccountID account, CancellationToken ct);
@@ -273,7 +274,7 @@ IZoneEntryTokenValidator  // bool IsValid(in ZoneEntryRequest) — local Session
 | authentication.md | CR-AUTH-4 auth outside the Unity binary, off the tick | Auth runs in the .NET gateway; zones do no auth work (AC-AUTH-05a holds by construction) |
 | authentication.md | CR-AUTH-5 Argon2id | Konscious Argon2 in the gateway, PHC strings |
 | authentication.md | CR-AUTH-6 TLS only | Caddy on 443 only; port 80 closed |
-| authentication.md | CR-AUTH-8 registration | One transaction, account + stub; `classType` added, name = username |
+| authentication.md | CR-AUTH-8 / CR-AUTH-13 registration | One transaction, account + stub; `classType` and a separate `characterName` (unique, case-insensitive) |
 | authentication.md | CR-AUTH-9/10 login, lockout, atomic counter | Row lock + F-AUTH-1 in the gateway; dummy hash at startup |
 | authentication.md | CR-AUTH-11 session establishment | Token generated by the gateway, stored by the zone via Admit; load at zone admission |
 | authentication.md | EC-AUTH-6 session stealing | Evict before Admit |
@@ -289,7 +290,7 @@ IZoneEntryTokenValidator  // bool IsValid(in ZoneEntryRequest) — local Session
 
 ## Migration Plan
 1. Accept this ADR. Amend ADR-007 (gateway runtime .NET 10, HTTPS via Caddy, loopback TCP link, `LoginResponse`) with a pointer here.
-2. One GDD authoring session: `authentication.md` (CR-AUTH-4 rewritten; CR-AUTH-8 `classType` + name = username + one transaction; CR-AUTH-11 step 5 at zone admission; EC-AUTH-10 / AC-AUTH-29 re-targeted to gateway → database or zone-link failure; `USERNAME_MAX_LENGTH` ≤ 26 joint constraint); `auth-wire-messages.md` (HTTPS bodies, `LoginResponse`, `classType`, then Approved); `auth-sidecar-ipc.md` → Superseded by ADR-016; `networking-session-token.md` CR-TOK-8 (filled by Admit); `zone-instancing.md` CR-ZI-6 (routing in the gateway).
+2. One GDD authoring session: `authentication.md` (CR-AUTH-4 rewritten; CR-AUTH-8 `classType` + separate `characterName` (CR-AUTH-13) + one transaction; CR-AUTH-11 step 5 at zone admission; EC-AUTH-10 / AC-AUTH-29 re-targeted to gateway → database or zone-link failure; `CHARACTER_NAME_MAX_LENGTH` ≤ 26 joint constraint) — done 2026-11-04; `auth-wire-messages.md` (HTTPS bodies, `LoginResponse`, `classType`, then Approved); `auth-sidecar-ipc.md` → Superseded by ADR-016; `networking-session-token.md` CR-TOK-8 (filled by Admit); `zone-instancing.md` CR-ZI-6 (routing in the gateway).
 3. Install the .NET 10 SDK; add the gateway solution and CI job.
 4. Apply migration 003. Dev databases with character rows whose `account_id` has no account: insert matching account rows or truncate first; the FK will refuse otherwise.
 5. Move `AccountID`, `CharacterID`, `ZoneID` into `src/Foundation/Shared/` (namespaces unchanged; `.meta` files move with them).

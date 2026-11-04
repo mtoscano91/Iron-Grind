@@ -71,7 +71,7 @@ The server runs a fixed 20 Hz tick (50ms interval). The tick interval is fixed a
 - Damage and kill notifications — queued on Beat resolution for the current tick's batch
 
 **Connection-driven (exempt from batch buffering — sent immediately):**
-- On new connection: authentication, zone assignment, session handshake emission
+- On new connection: validation of the gateway-admitted session token (authentication and zone assignment happen earlier, in the gateway — ADR-016), session handshake emission
 - On reconnection: session state recovery, handshake re-emission, respec reservation check (`networking-session.md` CR-NET-6.4)
 - On clean disconnection: begin 5-minute session TTL countdown
 - On session TTL expiry: write final character state to persistence, release all session resources
@@ -387,7 +387,7 @@ Implementation additionally depends on three infrastructure components selected 
 
 | System | GDD Status | Interface Required | Specified in this GDD? |
 |--------|------------|-------------------|----------------------|
-| Authentication | Not Started | Session handshake, connection lifecycle events | Partially — handshake structure defined; auth protocol deferred |
+| Authentication | Revised 2026-11-04 (ADR-016) | Session handshake, connection lifecycle events; login runs in the gateway, the zone only validates the admitted token | Yes — `authentication.md`, `auth-wire-messages.md` |
 | Zone Instancing | Not Started | Zone session lifecycle, player join/leave events, zone state snapshot | Yes — Interactions #4 |
 | Party System | Not Started | Party state sync, HP/MP tick, invite routing | Yes — Interactions #5 |
 | Character Persistence | Not Started | Session load gate, save-on-disconnect event, commit-before-broadcast | Yes — Interactions #6 |

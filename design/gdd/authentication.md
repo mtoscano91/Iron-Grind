@@ -1,6 +1,6 @@
 # Authentication
 
-> **Status**: Revised 2026-11-04 for ADR-016 (gateway authentication) — lean re-review pending. Before: Approved (lean re-review, 2026-05-21)
+> **Status**: Revised 2026-11-04 for ADR-016 (gateway authentication); lean re-review 2026-11-04 NEEDS REVISION (3 blocking) — all fixes applied the same session (separate character name CR-AUTH-13, token-path ban check, Evict save failure, map lifecycle, ACs 35–38). Before: Approved (lean re-review, 2026-05-21)
 > **Author**: Manuel Toscano + agents
 > **Last Updated**: 2026-11-04
 > **Implements Pillar**: Pillar 1 — Earned Power (account identity is the permanent record of everything the player has earned)
@@ -43,21 +43,19 @@ The client sends the plaintext username and password over TLS. The server hashes
 All usernames are stored and compared lowercase. The server normalizes to lowercase before any lookup or storage. Valid characters: `[a-z0-9_]`, length `USERNAME_MIN_LENGTH`–`USERNAME_MAX_LENGTH` (post-normalization). Uniqueness is enforced case-insensitively.
 
 **CR-AUTH-8 — Registration Flow**
-1. Client sends `RegistrationRequest { username: string, password: string, classType: byte }` to the gateway over HTTPS (`POST /v1/register`, `auth-wire-messages.md`).
-2. Gateway normalizes username. Validates: length [`USERNAME_MIN_LENGTH`, `USERNAME_MAX_LENGTH`], charset `[a-z0-9_]`, password length [`PASSWORD_MIN_LENGTH`, `PASSWORD_MAX_LENGTH`], `classType` is a playable class (`class-system.md`). Unknown class: `RegistrationError.ClassInvalid`.
+1. Client sends `RegistrationRequest { username: string, password: string, characterName: string, classType: byte }` to the gateway over HTTPS (`POST /v1/register`, `auth-wire-messages.md`).
+2. Gateway normalizes username. Validates, in this order, returning the first failure: username length [`USERNAME_MIN_LENGTH`, `USERNAME_MAX_LENGTH`] and charset `[a-z0-9_]`; password length [`PASSWORD_MIN_LENGTH`, `PASSWORD_MAX_LENGTH`]; `characterName` per CR-AUTH-13; `classType` is a playable class (`class-system.md`) — unknown class: `RegistrationError.ClassInvalid`. All validation runs before hashing.
 3. Computes `Argon2id(password, salt)`, generates PHC string.
-4. In **one database transaction**: allocates the next `AccountID` (`account_id_seq`) and `CharacterID` (`character_id_seq`); inserts the account record `{ accountId, username_lower, passwordHashPHC, createdAtUtc, isBanned:false, loginFailureCount:0, lockoutUntilUtc:null }`; inserts the character stub `{ characterId, accountId, characterName = normalized username, classType }`, every other column taking its DDL default (the CR-CP-9 Level 1 values). Both rows commit or neither does, before the response (CR-NET-5 pattern).
-5. Username uniqueness (case-insensitive) is enforced by the unique constraint on `username_lower`: a violation rolls the transaction back and returns `RegistrationError.UsernameTaken` (EC-AUTH-1). No application-level pre-check is authoritative.
+4. In **one database transaction**: allocates the next `AccountID` (`account_id_seq`) and `CharacterID` (`character_id_seq`); inserts the account record `{ accountId, username_lower, passwordHashPHC, createdAtUtc, isBanned:false, loginFailureCount:0, lockoutUntilUtc:null }`; inserts the character stub `{ characterId, accountId, characterName (as submitted, case preserved), classType }`, every other column taking its DDL default (the CR-CP-9 Level 1 values). Both rows commit or neither does, before the response (CR-NET-5 pattern).
+5. Uniqueness is enforced by unique constraints, never by an application-level pre-check: a violation on `accounts.username_lower` rolls the transaction back and returns `RegistrationError.UsernameTaken`; a violation on the case-insensitive character-name index returns `RegistrationError.CharacterNameTaken` (EC-AUTH-1). `UsernameTaken` tells the requester that a login name exists. That is an accepted tradeoff: login names are private (CR-AUTH-13) and never shown in game, and registration spam is OQ-AUTH-6.
 6. Responds `RegistrationResult { success:true }`. No session token on registration — player must log in.
 7. On failure: `RegistrationResult { success:false, errorCode:RegistrationError }`.
 
-The character's name is the username. Because `character_name` is `VARCHAR(26)`, `USERNAME_MAX_LENGTH` must stay ≤ 26 (Tuning Knobs joint constraint).
-
-`RegistrationError : byte { UsernameTaken=0, UsernameTooShort=1, UsernameTooLong=2, UsernameInvalidChars=3, PasswordTooShort=4, PasswordTooLong=5, ClassInvalid=6, ServerError=255 }`
+`RegistrationError : byte { UsernameTaken=0, UsernameTooShort=1, UsernameTooLong=2, UsernameInvalidChars=3, PasswordTooShort=4, PasswordTooLong=5, ClassInvalid=6, CharacterNameTaken=7, CharacterNameTooShort=8, CharacterNameTooLong=9, CharacterNameInvalidChars=10, CharacterNameMatchesUsername=11, ServerError=255 }`
 
 **CR-AUTH-9 — Login Flow**
 1. Client sends `ConnectionRequest { username:string, password:string, tokenField:byte[16] }` to the gateway over HTTPS (`POST /v1/login`).
-2. If `tokenField` is non-zero: delegate entirely to CR-TOK-4 (`networking-session-token.md`) — the gateway resolves `AccountID` from the username and sends `Reconnect` to the zone holding the session; no hash runs. Do not evaluate credentials.
+2. If `tokenField` is non-zero: delegate to CR-TOK-4 (`networking-session-token.md`). The gateway resolves `AccountID` from the username; no hash runs and the password is not evaluated. If the account is not found, is banned (`isBanned = true`), or no zone holds a session for it, the gateway returns `InvalidCredentials` and sends nothing to any zone. Otherwise it sends `Reconnect` to the zone holding the session. The lockout state is not checked on this path: the token is the credential, and failed tokens are counted by the zone (`REAUTH_FAILURE_LIMIT`).
 3. Server normalizes username. Looks up account record by `username_lower`.
 4. **If account not found:** Server MUST still execute the full Argon2id computation against a pre-computed dummy hash generated at gateway startup (same live Argon2id parameters — `iterations`, `memorySize`, `parallelism`) before returning failure (prevents timing-oracle username enumeration). Result is discarded.
 5. If `lockoutUntilUtc != null` and `UtcNow < lockoutUntilUtc`: increment `loginFailureCount++`; set `lockoutUntilUtc = UtcNow + LockoutDuration(loginFailureCount)`; return auth failure immediately (no hash computation — counter advances even on the locked path).
@@ -70,7 +68,7 @@ The character's name is the username. Because `character_name` is `VARCHAR(26)`,
 
 **All failure reasons return identical response content:** `LoginResponse { success:false, errorCode:AuthFailureReason.InvalidCredentials }` — no hint about which condition fired in the response message. Response timing varies by path: locked and banned paths return immediately (<10ms); credential evaluation runs Argon2id (~300ms). This timing delta is a known design tradeoff for DoS resistance (running Argon2id on locked accounts would expose the gateway to compute exhaustion). See AC-AUTH-16 for the credential-path timing floor and AC-AUTH-19 for the locked-path fast-return requirement.
 
-**Abandoned auth:** If the client aborts the HTTPS request or its `LOGIN_HTTP_TIMEOUT_SECONDS` expires during `Auth_Pending`, the gateway lets the hash finish, then checks whether the request was aborted **before writing anything**. If it was: no `loginFailureCount` change, no reset, no `Evict`, no `Admit` — the result is discarded. See EC-AUTH-2 and EC-AUTH-3.
+**Abandoned auth:** If the client aborts the HTTPS request or its `LOGIN_HTTP_TIMEOUT_SECONDS` expires during `Auth_Pending`, the gateway lets the hash finish, then checks whether the request was aborted **before writing anything**. If it was: no `loginFailureCount` change, no reset, no `Evict`, no `Admit` — the result is discarded. This is the only abort check. An abort after it (while waiting for `EvictResult` or `AdmitResult`) is not observed: the failure-count write stands, the login runs to completion, and the unused admission expires in the zone after `CONNECTING_TIMEOUT_SECONDS` (CR-AUTH-11 rollback). See EC-AUTH-2 and EC-AUTH-3.
 
 `AuthFailureReason : byte { None=0, InvalidCredentials=1, ServerError=255 }` — intentionally minimal.
 
@@ -99,10 +97,25 @@ All steps run in the gateway (ADR-016 Decision 4):
 5. On `AdmitResult.accepted`: reply `LoginResponse { success:true, sessionToken, characterId, zoneId, zoneServerPort }` (`auth-wire-messages.md`). `AccountID` is never a field (CR-AUTH-2). The gateway does not keep the token after replying.
 6. The client connects to the zone and sends `SessionHandshake`; the zone validates the token, loads the character (Character Persistence) and admits the player (`zone-instancing.md` CR-ZI-8 steps 2–3). Networking session `Connecting → Connected` (networking-session.md ST-NET-1) happens there, not in the gateway.
 
-**Rollback:** If `Admit` is rejected (zone full or not Active), re-route once (step 3); if that also fails, or no `AdmitResult` arrives within `GATEWAY_ZONE_REQUEST_TIMEOUT_MS`, reply `ServerError`. An admitted entry the client never uses is dropped by the zone after `CONNECTING_TIMEOUT_SECONDS`, which then sends `SessionReleased`. The gateway holds no token, so there is nothing to delete on its side.
+**Rollback:** If `Admit` is rejected (zone full or not Active), re-route once (step 3), excluding the zone that rejected; if that also fails, or no `AdmitResult` arrives within `GATEWAY_ZONE_REQUEST_TIMEOUT_MS`, reply `ServerError`. An admitted entry the client never uses is dropped by the zone after `CONNECTING_TIMEOUT_SECONDS`, which then sends `SessionReleased`. The gateway holds no token, so there is nothing to delete on its side.
+
+**Account → zone map (gateway, in memory):** one entry per account with a session in some zone, value = that zone's `ZoneID`.
+- **Added** when `AdmitResult.accepted` arrives (so an admitted client that has not arrived yet counts as a live session for EC-AUTH-6).
+- **Removed** when that zone sends `SessionReleased` for the account, when `EvictResult` arrives for it, or when the zone's link is replaced or lost with no re-registration listing the account.
+- **Rebuilt** from `RegisterZone.liveAccounts` after a gateway restart or a link reconnect (ADR-016 Decision 3). `liveAccounts` includes admitted-but-not-arrived entries.
 
 **CR-AUTH-12 — 1:1 AccountID to CharacterID Mapping (MVP)**
-Each `AccountID` maps to exactly one `CharacterID`, established at registration (CR-AUTH-8 step 6) and immutable at MVP. Account and character are **separate DB records linked by FK** — never merged into a single row. This enables multi-character support post-MVP without schema migration. `CharacterID(0)` in the mapping is a persistence corruption error and must halt character load.
+Each `AccountID` maps to exactly one `CharacterID`, established at registration (CR-AUTH-8 step 4) and immutable at MVP. Account and character are **separate DB records linked by FK** — never merged into a single row. This enables multi-character support post-MVP without schema migration. `CharacterID(0)` in the mapping is a persistence corruption error and must halt character load.
+
+**CR-AUTH-13 — Character Name (separate from the login username)**
+The login username is private: it is never shown to other players, never sent in any game message, and never used as a character name. The player picks a separate `characterName` at registration. It is what other players see (nameplates, party, chat — `party-chat.md` `CharacterName`). Rules:
+- Charset `[A-Za-z0-9_]` (ASCII only, so byte count = character count); case is preserved for display.
+- Length [`CHARACTER_NAME_MIN_LENGTH`, `CHARACTER_NAME_MAX_LENGTH`] characters; the maximum must stay ≤ 26 (`character_name VARCHAR(26)`, ADR-006).
+- Unique case-insensitively across all characters (unique index on `lower(character_name)`, migration 003).
+- Must not equal the username case-insensitively, so the visible name does not reveal the login name. Otherwise `RegistrationError.CharacterNameMatchesUsername`.
+- Failures: `CharacterNameTooShort`, `CharacterNameTooLong`, `CharacterNameInvalidChars` (same non-ASCII handling as EC-AUTH-9), `CharacterNameMatchesUsername`, `CharacterNameTaken`.
+
+Rationale (lean re-review 2026-11-04): with name = username, every login name is public. Combined with CR-AUTH-10's no-decay lockout, any player could keep any visible player locked out by sending one bad login every few minutes, and credential stuffing would only need passwords. Renaming is out of scope at MVP.
 
 ---
 
@@ -191,7 +204,7 @@ MapSizeBytes(N) = N × (sizeof(AccountID) + sizeof(CharacterID) + DictionaryOver
 
 | Symbol | Type | Range | Description |
 |---|---|---|---|
-| N | int | [1, 200] | Concurrent sessions across all zones (MVP: 1–4 zones × `MAX_PLAYERS_PER_ZONE` 50, ADR-007) |
+| N | int | [1, 200] | Concurrent sessions across all zones (MVP: 1–4 zones × `MAX_PLAYERS_PER_ZONE` 50, ADR-007). The map value is the `ZoneID` (4 bytes, same size as `CharacterID`) |
 | DictionaryOverheadPerEntry | int constant | ~24 bytes | .NET `Dictionary` bucket + pointer overhead per entry |
 | MapSizeBytes | int | [32, 6400] bytes | Total map footprint |
 
@@ -205,7 +218,7 @@ MapSizeBytes(N) = N × (sizeof(AccountID) + sizeof(CharacterID) + DictionaryOver
 
 ## Edge Cases
 
-**EC-AUTH-1 — Duplicate registration race (same username, simultaneous requests)**: The first write succeeds; the second hits the database-level unique constraint on `username_lower` and receives `RegistrationError.UsernameTaken`. No partial record is written for the loser. Application-level read-then-write uniqueness checks have a TOCTOU window — the DB constraint is the authoritative guard.
+**EC-AUTH-1 — Duplicate registration race (same username or same character name, simultaneous requests)**: The first transaction commits; the second hits the database-level unique constraint on `username_lower` (→ `RegistrationError.UsernameTaken`) or on `lower(character_name)` (→ `CharacterNameTaken`). If both collide, the error is whichever constraint the database reports first. No partial record is written for the loser. Application-level read-then-write uniqueness checks have a TOCTOU window — the DB constraint is the authoritative guard.
 
 **EC-AUTH-2 — Client aborts the request during `Auth_Pending` (Argon2id interrupted)**: The gateway completes the computation, sees the request was aborted, and discards the result before any write. No `loginFailureCount` change, no `Evict`, no `Admit` (CR-AUTH-9 "Abandoned auth"). No zone session exists yet, so nothing else is released. Rationale: completing and discarding is cheaper under attacker control than aborting mid-computation (no retry cost). `MAX_AUTH_PENDING` (gateway hashing semaphore, ADR-016) bounds concurrent in-flight computations and is the primary DoS mitigation against drop-cycling. *(See OQ-AUTH-1 re: network-layer rate limiting as a secondary layer.)*
 
@@ -215,9 +228,9 @@ MapSizeBytes(N) = N × (sizeof(AccountID) + sizeof(CharacterID) + DictionaryOver
 
 **EC-AUTH-5 — `CharacterID(0)` returned from account-character mapping (corruption)**: Gateway sends no `Admit` (so no zone loads the character), logs corruption as a critical error with `AccountID` and timestamp, and the client receives `LoginResponse { success:false, errorCode:ServerError=255 }`. Account requires manual operator remediation.
 
-**EC-AUTH-6 — `CharacterID` already active in a live session (duplicate login / session-stealing)**: Before routing, the gateway sends `Evict` to the zone holding the account's session and waits for `EvictResult` (up to `GATEWAY_EVICT_TIMEOUT_MS`; no reply → `ServerError`). That zone follows networking-session.md's session-stealing protocol: prior session invalidated (token deleted per CR-TOK-6), character state written to persistence, resources released; `EvictResult` follows the save. The new login then proceeds to `Admit` and `Auth_Success`. No duplicate session for the same `CharacterID` is permitted. Prior client receives connection close with no reconnect window.
+**EC-AUTH-6 — `CharacterID` already active in a live session (duplicate login / session-stealing)**: Before routing, the gateway sends `Evict` to the zone holding the account's session and waits for `EvictResult` (up to `GATEWAY_EVICT_TIMEOUT_MS`; no reply → `ServerError`). That zone follows networking-session.md's session-stealing protocol: prior session invalidated (token deleted per CR-TOK-6), character state written to persistence, resources released; `EvictResult` follows the save. The new login then proceeds to `Admit` and `Auth_Success`. **If the eviction's save fails**, the new login still proceeds: the old session is already closed either way, so the new zone loads the last committed state (progress since the last successful save is lost), and the old zone logs a critical persistence event. Returning `ServerError` would gain nothing — the next attempt would find no live session and load the same state. If the account's entry is an admission whose client has not arrived, the zone just deletes the entry and token (nothing to save) and answers `EvictResult`. No duplicate session for the same `CharacterID` is permitted. Prior client receives connection close with no reconnect window.
 
-**EC-AUTH-7 — Account banned while player is `Connected` (admin action mid-session)**: `isBanned` is checked at login only, not on every tick. A currently connected session is NOT immediately terminated by the auth system. An explicit admin kick command (`AdminBanKick(AccountID)`) must terminate the in-flight session. Without it, the ban takes effect on the player's next login attempt. Admin kick mechanism is outside auth scope. *(See OQ-AUTH-4.)* See AC-AUTH-33 for the acceptance criterion codifying this intentional two-step policy.
+**EC-AUTH-7 — Account banned while player is `Connected` (admin action mid-session)**: `isBanned` is checked at every gateway login request — the credential path (CR-AUTH-9 step 6) and the token path (CR-AUTH-9 step 2, so a banned player's ghost cannot reconnect) — not on every tick. A currently connected session is NOT immediately terminated by the auth system. An explicit admin kick command (`AdminBanKick(AccountID)`) must terminate the in-flight session. Without it, the ban takes effect on the player's next login attempt. Admin kick mechanism is outside auth scope. *(See OQ-AUTH-4.)* See AC-AUTH-33 for the acceptance criterion codifying this intentional two-step policy.
 
 **EC-AUTH-8 — `loginFailureCount` with long inactivity (no decay)**: The counter does not decay over time. A counter of 9 (600s lockout repeating) remains 9 permanently until a successful login resets it to 0. Time-based decay would allow an attacker to brute-force `LOGIN_FAILURE_LIMIT − 1` credentials, wait for decay, and repeat indefinitely. The admin override (CR-AUTH-10) is the only release valve for locked-out legitimate players. **Design position:** No decay — intentional. Admin override is the only release valve at MVP. Self-service account unlock (e.g. email-based) is deferred to post-MVP.
 
@@ -236,13 +249,13 @@ MapSizeBytes(N) = N × (sizeof(AccountID) + sizeof(CharacterID) + DictionaryOver
 |---|---|---|
 | ADR-016 (`docs/architecture/ADR-016-gateway-and-authentication-process.md`) | **Architecture** (hard) | Places authentication in the gateway; defines HTTPS transport, the gateway↔zone link, the accounts table (migration 003) and token ownership by the zone. |
 | `networking-core.md` | **Upstream** (hard) | Networking Core defines the zone's connection-driven path. CR-NET-2's "authentication" step is now the zone's validation of a gateway-admitted token at `SessionHandshake`; credentials are never checked in the zone. `SESSION_TTL_SECONDS` (300s) and `CONNECTING_TIMEOUT_SECONDS` (30s, the Admit → handshake window) govern session expiry. |
-| `networking-session.md` | **Upstream** (hard) | Defines ST-NET-1 session state machine. `Auth_Success` triggers `Connecting → Connected`. `REAUTH_FAILURE_LIMIT` (value=3, reconnect-token path) is owned by this GDD and must not be redefined here — it is distinct from `LOGIN_FAILURE_LIMIT`. |
+| `networking-session.md` | **Upstream** (hard) | Defines ST-NET-1 session state machine. `Connecting → Connected` fires in the zone when the `SessionHandshake` carrying the token from a gateway `Auth_Success` is accepted (CR-AUTH-11 step 6). `REAUTH_FAILURE_LIMIT` (value=3, reconnect-token path) is owned by this GDD and must not be redefined here — it is distinct from `LOGIN_FAILURE_LIMIT`. |
 | `networking-session-token.md` | **Upstream** (hard) | Defines session token generation, storage, validation, and rotation (CR-TOK-1 through CR-TOK-8). Authentication delegates all token logic here. Auth provides `AccountID` (the dictionary key) and the fresh token via `Admit`; the zone's store owns everything else. `F-TOK-2` documents token store memory overhead at MAX_PLAYERS_PER_ZONE. |
 | `character-persistence.md` | **Downstream** (hard, Approved) | Owns the full character record whose stub registration creates (`character_records`, FK `account_id` → `accounts`, migration 003). Loads character state at zone admission for the `CharacterID` the gateway admitted. |
 | `zone-instancing.md` | **Downstream** (hard, Approved) | The gateway applies Zone Instancing's routing rules (CR-ZI-6) at login and sends `Admit` to the chosen zone; Zone Instancing admits the player at `SessionHandshake` (CR-ZI-8). |
 
 **Bidirectional consistency:**
-- `networking-core.md` mentions authentication in its connection-driven path — since ADR-016 this is token validation at zone entry (CR-AUTH-4). ⚠️ Wording in `networking-core.md` CR-NET-2 not yet updated.
+- `networking-core.md` and `networking-session.md` ST-NET-1 describe the zone connection path as token validation of a gateway login (updated 2026-11-04) ✅
 - `networking-session-token.md` uses `AccountID` as its dictionary key but does not define it — this GDD defines it ✅
 - `networking-session.md` owns `REAUTH_FAILURE_LIMIT` (reconnect path); this GDD owns `LOGIN_FAILURE_LIMIT` (credential path) — no naming collision ✅
 - `character-persistence.md` and `zone-instancing.md` are Approved and reference this GDD; `zone-instancing.md` CR-ZI-6 / CR-ZI-8 updated for the gateway 2026-11-04 ✅
@@ -258,7 +271,9 @@ MapSizeBytes(N) = N × (sizeof(AccountID) + sizeof(CharacterID) + DictionaryOver
 | Argon2id `memorySize` | 19456 KB (19 MiB) | [19456, 65536] | < 19456: violates OWASP minimum | > 65536 (64 MiB): may saturate gateway memory under concurrent logins at MVP server specs (`MAX_AUTH_PENDING` × memorySize) |
 | Argon2id `parallelism` | 1 | [1, 2] | — | > 2: no benefit on single-threaded auth path |
 | `USERNAME_MIN_LENGTH` | 3 | [2, 6] | 2-char usernames allow squatting of short premium names | 6-char minimum too restrictive for most desired usernames |
-| `USERNAME_MAX_LENGTH` | 24 | [12, 26] | 12-char max too tight for creative names | > 26: the username is the character name and `character_name` is `VARCHAR(26)` — registration would fail on insert; long names also crowd HUD display fields |
+| `USERNAME_MAX_LENGTH` | 24 | [12, 32] | 12-char max too tight for memorable login names | > 32: exceeds `accounts.username_lower VARCHAR(32)` — needs a migration |
+| `CHARACTER_NAME_MIN_LENGTH` | 3 | [2, 4] | 2-char names allow squatting of very short names | > 4: blocks common short names |
+| `CHARACTER_NAME_MAX_LENGTH` | 16 | [12, 26] | < 12: too tight for creative names | > 16: long names crowd nameplates, party frames and chat lines on a phone screen; > 26 exceeds `character_name VARCHAR(26)` |
 | `PASSWORD_MIN_LENGTH` | 8 | [6, 12] | 6-char allows weak passwords | 12-char frustrates mobile users on virtual keyboards |
 | `PASSWORD_MAX_LENGTH` | 72 | [72, 128] | Do not reduce below 72 — mobile UX choice (virtual keyboard limit), not an Argon2id constraint; Argon2id safe floor is [16, 256] | 128+ functionally uncapped in Argon2id — no concern |
 | `MAX_AUTH_PENDING` | 10 | [5, 20] | < 5: bursts of legitimate logins may hit the cap during server load | > 20: gateway hashing memory (`MAX_AUTH_PENDING` × 19 MiB) exceeds its budget (ADR-007 / ADR-016) |
@@ -267,7 +282,8 @@ MapSizeBytes(N) = N × (sizeof(AccountID) + sizeof(CharacterID) + DictionaryOver
 - `LockoutTable[5]` through `LockoutTable[9+]` must be monotonically increasing — a lockout step must never be shorter than the prior step.
 - `LOGIN_FAILURE_LIMIT` and `LockoutTable[9+]` determine brute-force deterrence together; tune as a pair.
 - Argon2id `iterations` and `memorySize` must be tuned together — re-derive performance benchmarks on target server hardware when changing either.
-- `USERNAME_MAX_LENGTH` ≤ 26 (`character_name VARCHAR(26)`, ADR-006), because the character name is the username (CR-AUTH-8). `accounts.username_lower` is `VARCHAR(32)`, so tuning inside [12, 26] needs no migration.
+- `CHARACTER_NAME_MAX_LENGTH` ≤ 26 (`character_name VARCHAR(26)`, ADR-006). `USERNAME_MAX_LENGTH` ≤ 32 (`accounts.username_lower VARCHAR(32)`, ADR-016). Both are tunable inside their ranges without a migration.
+- `CHARACTER_NAME_MIN_LENGTH` < `CHARACTER_NAME_MAX_LENGTH`.
 - `LOGIN_HTTP_TIMEOUT_SECONDS` (ADR-016) must exceed hashing + `GATEWAY_EVICT_TIMEOUT_MS` + `GATEWAY_ZONE_REQUEST_TIMEOUT_MS`.
 
 **Cross-system note:** `REAUTH_FAILURE_LIMIT` (value=3, owned by `networking-session.md`) governs the reconnect-token re-auth path. It must not be confused with `LOGIN_FAILURE_LIMIT`.
@@ -280,13 +296,13 @@ Authentication has no visual effects or audio events. The gateway is invisible t
 
 **Login screen**: Username input field (max 24 chars, ASCII-only keyboard, auto-lowercase on submit), password input field (masked, max 72 chars), login button, link to registration screen.
 
-**Registration screen**: Username input (same constraints as login), password input (masked), confirm-password input (client-side match check before submit — do not send mismatched passwords to server), register button, link to login screen.
+**Registration screen**: Username input (same constraints as login; labelled as the private login name, with a note that other players never see it), password input (masked), confirm-password input (client-side match check before submit — do not send mismatched passwords to server), character name input (`[A-Za-z0-9_]`, max `CHARACTER_NAME_MAX_LENGTH`, case kept; note that this is the name other players see), class picker (one per playable class, `class-system.md`), register button, link to login screen.
 
-**Error display**: All auth failures show a single generic message "Invalid username or password." — no distinction between wrong password, unknown account, or lockout is transmitted to the client.
+**Error display**: All credential failures (`InvalidCredentials`) show a single generic message "Invalid username or password." — no distinction between wrong password, unknown account, ban or lockout is transmitted to the client. `ServerError` and any transport failure (non-200, no response, `LOGIN_HTTP_TIMEOUT_SECONDS`) show "The server is unavailable. Please try again." Exact strings are owned by the login and registration UX specs.
 
 **Lockout feedback**: No lockout duration is transmitted to the client (by design — the response is always generic). The client shows "Please try again later." A local retry cooldown on the client is a UX decision outside this GDD's scope. **Design position (no-duration exposure):** intentional — lockout state and remaining duration are not exposed to the client. Client-side retry logic MUST NOT assume or infer server lockout state from response timing or message content.
 
-**Registration error messages**: The server returns `RegistrationError` codes; the client maps them to user-readable strings: `UsernameTaken`, `UsernameTooShort/TooLong`, `UsernameInvalidChars`, `PasswordTooShort`, `PasswordTooLong`.
+**Registration error messages**: The server returns `RegistrationError` codes; the client maps each to a user-readable string: `UsernameTaken`, `UsernameTooShort/TooLong`, `UsernameInvalidChars`, `PasswordTooShort`, `PasswordTooLong`, `ClassInvalid`, `CharacterNameTaken`, `CharacterNameTooShort/TooLong`, `CharacterNameInvalidChars`, `CharacterNameMatchesUsername`, `ServerError`.
 
 > **📌 UX Flag — Authentication**: This system has UI requirements (login screen, registration screen). In Phase 4 (Pre-Production), run `/ux-design` to create UX specs for these screens before writing implementation epics. Stories that reference the login or registration UI should cite `design/ux/login-screen.md` and `design/ux/registration-screen.md`, not this GDD directly.
 
@@ -316,7 +332,7 @@ Authentication has no visual effects or audio events. The gateway is invisible t
 
 **AC-AUTH-11** [Logic] BLOCKING — Given boundary username inputs (2-char, 25-char, `!` char, space, 3-char, 24-char, `alice_0`), when the server validates each, then: 2-char → `UsernameTooShort`; 25-char → `UsernameTooLong`; `!` and space → `UsernameInvalidChars`; 3-char, 24-char, `alice_0` → pass validation. One assertion per boundary.
 
-**AC-AUTH-12** [Integration] BLOCKING — Given a valid `RegistrationRequest`, when registration completes, then: (a) account record is committed to persistence with all required fields before response is sent; (b) stub character record exists linked to `AccountID` by FK, with `character_name` = the normalized username, `class_type` = the request's `classType`, and every other column at its DDL default; (c) response is `RegistrationResult { success:true }`; (d) no session token is issued and no zone receives `Admit`.
+**AC-AUTH-12** [Integration] BLOCKING — Given a valid `RegistrationRequest`, when registration completes, then: (a) account record is committed to persistence with all required fields before response is sent; (b) stub character record exists linked to `AccountID` by FK, with `character_name` = the request's `characterName` (case preserved), `class_type` = the request's `classType`, and every other column at its DDL default; (c) response is `RegistrationResult { success:true }`; (d) no session token is issued and no zone receives `Admit`.
 
 **AC-AUTH-13** [Logic] BLOCKING — Given a password of length 7 (one below minimum), when submitted to registration, then response is `RegistrationError.PasswordTooShort`. Given length 8: passes validation. Unit test both boundary values.
 
@@ -330,7 +346,7 @@ Authentication has no visual effects or audio events. The gateway is invisible t
 
 **AC-AUTH-18** [Logic] BLOCKING — Given `LockoutDuration(F)` is evaluated for F ∈ {0, 1, 4, 5, 6, 7, 8, 9, 15, 100}, when each is computed, then the results are exactly {0, 0, 0, 30, 60, 120, 300, 600, 600, 600} seconds respectively. Assert `lockoutUntilUtc = UtcNow + LockoutDuration` within 1-second tolerance.
 
-**AC-AUTH-19** [Logic] BLOCKING — Given an account with `lockoutUntilUtc` in the future, when a login attempt arrives, then: (a) the response arrives in < 10ms (no Argon2id latency); (b) `loginFailureCount` increments by 1; (c) `lockoutUntilUtc` is reset to `UtcNow + LockoutDuration(new loginFailureCount)`. Assert all three outcomes via account record inspection after the attempt.
+**AC-AUTH-19** [Logic] BLOCKING — Given an account with `lockoutUntilUtc` in the future, when a login attempt arrives, then: (a) the gateway's handling time for the request (measured in the gateway handler against a local test database, not client round trip) is < 10ms (no Argon2id latency); (b) `loginFailureCount` increments by 1; (c) `lockoutUntilUtc` is reset to `UtcNow + LockoutDuration(new loginFailureCount)`. Assert all three outcomes via account record inspection after the attempt.
 
 **AC-AUTH-20** [Logic] BLOCKING — Given `loginFailureCount=9`, when a failed login is submitted, then `loginFailureCount=10` and `lockoutUntilUtc ≈ UtcNow + 600s`. Repeat with `loginFailureCount=50`: assert `lockoutUntilUtc ≈ UtcNow + 600s` (cap holds).
 
@@ -346,7 +362,7 @@ Authentication has no visual effects or audio events. The gateway is invisible t
 
 **AC-AUTH-26** [Integration] BLOCKING — Given a client aborts its login request during `Auth_Pending` (Argon2id executing), once with a wrong password and once with the correct one, when the gateway completes and discards the result, then in both cases `loginFailureCount` and `lockoutUntilUtc` are unchanged from their pre-attempt values and no `Evict` or `Admit` was sent. *(Abort injected through the gateway test host's request-aborted token — GAP-3.)*
 
-**AC-AUTH-27** [Integration] BLOCKING — Given client A is `Connected` in zone Z for account X, when client B submits valid credentials for account X, then: (a) the gateway sends `Evict` to Z and sends no `Admit` before `EvictResult` arrives; (b) client A's session transitions to `Disconnected_SessionExpired` with final state written to persistence before `EvictResult` is sent; (c) client A's connection is closed (no reconnect window) and its token deleted; (d) the routed zone's `ActiveSessionTokens[AccountID X]` holds client B's new token and client B receives `LoginResponse { success:true }`. All four verified via test instrumentation.
+**AC-AUTH-27** [Integration] BLOCKING — Given client A is `Connected` in zone Z for account X, when client B submits valid credentials for account X, then: (a) the gateway sends `Evict` to Z and sends no `Admit` before `EvictResult` arrives; (b) client A's session transitions to `Disconnected_SessionExpired` with final state written to persistence before `EvictResult` is sent; (c) client A's connection is closed (no reconnect window) and its token deleted; (d) the routed zone's `ActiveSessionTokens[AccountID X]` holds client B's new token and client B receives `LoginResponse { success:true }`. All four verified via test instrumentation. (e) With the old zone's save forced to fail: `EvictResult` is still sent, client B still receives `LoginResponse { success:true }`, the new zone loads the last committed state, and the old zone logs a critical persistence event (EC-AUTH-6).
 
 **AC-AUTH-28** [Security] BLOCKING — Given username inputs `"аlice"` (Cyrillic U+0430), `"ａlice"` (Fullwidth U+FF41), `"àlice"` (U+00E0), `"日本語"` (CJK), when each is submitted to registration, then all return `RegistrationError.UsernameInvalidChars`. Four separate assertions.
 
@@ -360,7 +376,15 @@ Authentication has no visual effects or audio events. The gateway is invisible t
 
 **AC-AUTH-33** [Logic] BLOCKING — Given an account is banned (`isBanned = true`) while a session for that account is in `Connected` state, when the auth system processes the ban, then the live session is NOT auto-terminated — the player remains connected. The ban takes effect on the next login attempt only. Verified by: (1) establishing a `Connected` session; (2) setting `isBanned = true` on the account record; (3) asserting session remains `Connected` for ≥ 5s with no auto-disconnect event. *(Tests intentional two-step policy: ban + explicit admin kick required; see EC-AUTH-7 and OQ-AUTH-4.)*
 
-**AC-AUTH-34** [Integration] BLOCKING — Given `RegistrationRequest`s with an unknown `classType` (e.g. `0` and `255`), and separately one per playable class, when registration runs, then: unknown → `RegistrationError.ClassInvalid` and no rows written; each playable class → `success:true`, `character_records.class_type` equals the request's `classType`, and `character_name` equals the normalized username. *(Added 2026-11-04, ADR-016.)*
+**AC-AUTH-34** [Integration] BLOCKING — Given `RegistrationRequest`s with an unknown `classType` (e.g. `0` and `255`), and separately one per playable class, when registration runs, then: unknown → `RegistrationError.ClassInvalid` and no rows written; each playable class → `success:true`, `character_records.class_type` equals the request's `classType`, and `character_name` equals the request's `characterName`. *(Added 2026-11-04, ADR-016.)*
+
+**AC-AUTH-35** [Integration] BLOCKING — Given registrations with these `characterName`s (username `"alice_login"`, defaults 3/16), when each runs, then: 2 chars → `CharacterNameTooShort`; 17 chars → `CharacterNameTooLong`; `"Bad Name"` (space), `"Évan"` and `"аlex"` (Cyrillic U+0430) → `CharacterNameInvalidChars`; `"ALICE_LOGIN"` → `CharacterNameMatchesUsername`; 3 chars, 16 chars and `"Grim_Iron7"` → `success:true` with `character_name` stored exactly as sent; then `"grim_iron7"` for a different username → `CharacterNameTaken`, with exactly one character row named case-insensitively `grim_iron7`. One assertion per case. *(Added 2026-11-04, CR-AUTH-13.)*
+
+**AC-AUTH-36** [Integration] BLOCKING — Given `MAX_AUTH_PENDING` hashes are in flight (Argon2id delayed in the gateway test host), when one more login with a correct password arrives, then it receives `LoginResponse { success:false, errorCode:ServerError=255 }` without hashing, its account's `loginFailureCount` and `lockoutUntilUtc` are unchanged, and no `Admit` is sent; the same holds for one more registration (`RegistrationResult` `ServerError`, no rows written).
+
+**AC-AUTH-37** [Integration] BLOCKING — Given two routable zones where the first choice rejects `Admit` (`AdmitResult.accepted = false`), when a correct login runs, then the gateway sends `Admit` to the second zone and the client receives `LoginResponse { success:true }` for it; given both zones reject, the client receives `ServerError` after exactly two `Admit`s, and the account map has no entry for the account.
+
+**AC-AUTH-38** [Integration] BLOCKING — Given a non-zero `tokenField`, when (i) the username is unknown, (ii) no zone holds a session for the account, and (iii) the account has a live session but `isBanned = true`, then each returns `LoginResponse { success:false, errorCode:InvalidCredentials }`, no `Reconnect` is sent to any zone, and no hash runs. Given a live session and `isBanned = false`, exactly one `Reconnect` is sent to the zone in the account map.
 
 ---
 
@@ -371,7 +395,7 @@ Authentication has no visual effects or audio events. The gateway is invisible t
 | GAP-1 | AC-AUTH-01, AC-AUTH-05a | MEDIUM | Server-side step-timestamp and tick-timing instrumentation (prerequisite tracked by AC-AUTH-05b) |
 | GAP-2 | AC-AUTH-16 | MEDIUM | Define latency floor (≥150ms) as a named constant before sprint |
 | GAP-3 | AC-AUTH-26 | MEDIUM | Request-abort injection in the gateway test host (ASP.NET Core test server, request-aborted token) |
-| GAP-4 | EC-AUTH-3 (no AC) | LOW | Implicit coverage via AC-AUTH-26; add explicit AC if session-state transitions are observable |
+| GAP-4 | AC-AUTH-32 | LOW | Argon2id delay injection in the gateway test host (shared with AC-AUTH-36) |
 | GAP-5 | AC-AUTH-31 | LOW | Fault hook between the two registration inserts in the gateway account repository |
 | GAP-6 | AC-AUTH-09(b) | MEDIUM | Gateway log output capturable in tests (in-memory logger provider) |
 
@@ -379,8 +403,8 @@ Authentication has no visual effects or audio events. The gateway is invisible t
 
 | ID | Question | Blocking? | Escalate To |
 |---|---|---|---|
-| OQ-AUTH-1 | Should per-IP rate limiting for TCP connect-and-drop cycling be specified? `loginFailureCount` does not increment on abandoned auth — rapid drop cycling is unmitigated by the account lockout system. | No | Architecture / Security review |
-| OQ-AUTH-2 | Should the gateway expose a server-side monitor alert when `Auth_Pending` duration exceeds 2s? Would surface Argon2id performance regression before it reaches the 30s timeout. | No | Monitoring / observability ADR |
+| OQ-AUTH-1 | Should per-IP rate limiting (e.g. in Caddy) be specified for login requests that are aborted during hashing? `loginFailureCount` does not change on abandoned auth — rapid abort cycling is unmitigated by the account lockout system; `MAX_AUTH_PENDING` only bounds it. | No | Architecture / Security review |
+| OQ-AUTH-2 | Should the gateway expose a server-side monitor alert when `Auth_Pending` duration exceeds 2s? Would surface Argon2id performance regression before it reaches the client's 15s `LOGIN_HTTP_TIMEOUT_SECONDS`. | No | Monitoring / observability ADR |
 | OQ-AUTH-3 | `AccountID` counter advances on failed registration (non-contiguous IDs). Functionally harmless (AccountID is never client-visible). Confirm no admin or analytics requirement changes this. | No | User |
 | OQ-AUTH-4 | Should the gateway push a notification (over the zone link) to the zone holding the session when `isBanned` is set (enabling auto-kick), or is the two-step "ban + explicit kick" admin workflow acceptable for MVP? | No | Admin tooling design |
 | OQ-AUTH-5 | ~~Should the game server queue `ConnectionRequest` messages for ~5s during a transient sidecar outage and retry, or fail immediately?~~ | — | **RESOLVED 2026-11-04 (ADR-016)** — immediate `ServerError`; there is no sidecar, and the gateway's infrastructure failures are EC-AUTH-10. |

@@ -69,7 +69,7 @@ Equipment state, active buff list, and full inventory are included in a follow-u
 
 | State | Description |
 |-------|-------------|
-| `Connecting` | Client has initiated a connection. Authentication and zone assignment in progress. No game state delivered yet. |
+| `Connecting` | Client has initiated a connection to the zone after a gateway login (ADR-016: authentication and zone assignment already done by the gateway). Admitted token being validated and character loading. No game state delivered yet. |
 | `Connected` | Session fully established. Client received the session handshake. Server delivering tick batches; client sending input RPCs. |
 | `Disconnected_SessionActive` | Client has not sent a packet beyond the heartbeat timeout. 5-minute TTL running. Server continues processing the player's entity. |
 | `Reconnecting` | Client re-established the transport connection within the TTL. Server is re-authenticating. |
@@ -77,8 +77,8 @@ Equipment state, active buff list, and full inventory are included in a follow-u
 
 | From | To | Trigger | Server action |
 |------|----|---------|---------------|
-| — | `Connecting` | Client initiates transport connection | Allocate pending session slot; begin authentication |
-| `Connecting` | `Connected` | Auth succeeds, zone assignment completes | Emit session handshake; load entity into zone; begin tick delivery |
+| — | `Connecting` | Client initiates transport connection to the zone the gateway admitted it to | Allocate pending session slot; validate the admitted token from `SessionHandshake` (ADR-016; `authentication.md` CR-AUTH-11 step 6) |
+| `Connecting` | `Connected` | Token validates, character loads, zone slot allocated | Emit session handshake; load entity into zone; begin tick delivery |
 | `Connecting` | `Disconnected_SessionExpired` | Auth fails, zone full, client drops during handshake, or `CONNECTING_TIMEOUT_SECONDS` elapses without auth completion | Release session slot; log failure reason; no TTL started |
 | `Connected` | `Disconnected_SessionActive` | Heartbeat timeout — no packet from client for >N seconds (OQ-NET-1) | Freeze client output; begin 5-minute TTL; continue processing entity; reset `_skillUsedThisCycle` to `false`. **Not taken for an entering slot** (no `ZoneEntryAck` yet): the slot is reclaimed instead, with no ghost, and the session goes `Connected → Disconnected_SessionExpired` (row below) (`zone-instancing.md` CR-ZI-17 case (c), added 2026-10-23) |
 | `Connected` | `Disconnected_SessionExpired` | Entering slot reclaimed (`zone-instancing.md` CR-ZI-17: stall timeout, duplicate handshake on the same zone instance — the B-NP-7 entering-slot exception to the session-stealing row below, or transport drop / heartbeat timeout before `ZoneEntryAck`) | **No persistence write**, no TTL; release the session. Token (CR-TOK-6): stall timeout or drop — delete `ActiveSessionTokens[AccountID]` only if its `sessionId` is this session's; duplicate handshake — leave it (it already holds the new connection's token). Stall timeout: the server closes the connection after `ZoneFullResponse(Other)`. The client's retry is a fresh connect (EC-TOK-1). Added 2026-10-23 |

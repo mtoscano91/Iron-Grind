@@ -1513,8 +1513,8 @@ constants:
       - design/gdd/authentication.md
       - docs/architecture/ADR-016-gateway-and-authentication-process.md
     type: "struct (HTTPS request body, client → gateway, POST /v1/register)"
-    fields: "{username: string, password: string, classType: byte}"
-    note: "classType added 2026-11-04 (ADR-016). Character name = normalized username, so USERNAME_MAX_LENGTH must stay <= 26 (character_name VARCHAR(26)). Account + character stub written in one transaction (authentication.md CR-AUTH-8)."
+    fields: "{username: string, password: string, characterName: string, classType: byte}"
+    note: "classType and characterName added 2026-11-04. The username is a private login name; characterName is the visible name, chosen separately, must not equal the username (authentication.md CR-AUTH-13; name = username dropped after the lean re-review — public login names enabled lockout griefing). Account + character stub written in one transaction (CR-AUTH-8)."
     added: "2026-11-04"
     revised: ""
 
@@ -1525,8 +1525,22 @@ constants:
       - design/gdd/authentication.md
       - design/gdd/auth-wire-messages.md
     type: "enum : byte"
-    values: "{UsernameTaken=0, UsernameTooShort=1, UsernameTooLong=2, UsernameInvalidChars=3, PasswordTooShort=4, PasswordTooLong=5, ClassInvalid=6, ServerError=255}"
-    note: "Carried in RegistrationResult.errorCode. ClassInvalid added 2026-11-04 (unknown RegistrationRequest.classType; AC-AUTH-34)."
+    values: "{UsernameTaken=0, UsernameTooShort=1, UsernameTooLong=2, UsernameInvalidChars=3, PasswordTooShort=4, PasswordTooLong=5, ClassInvalid=6, CharacterNameTaken=7, CharacterNameTooShort=8, CharacterNameTooLong=9, CharacterNameInvalidChars=10, CharacterNameMatchesUsername=11, ServerError=255}"
+    note: "Carried in RegistrationResult.errorCode. ClassInvalid (AC-AUTH-34) and the CharacterName* codes (CR-AUTH-13, AC-AUTH-35) added 2026-11-04."
+    added: "2026-11-04"
+    revised: ""
+
+  - name: CHARACTER_NAME_MAX_LENGTH
+    status: active
+    source: design/gdd/authentication.md
+    referenced_by:
+      - design/gdd/authentication.md
+      - design/gdd/auth-wire-messages.md
+      - design/gdd/character-persistence.md
+      - docs/architecture/ADR-016-gateway-and-authentication-process.md
+    type: "int constant (tuning knob)"
+    value: 16
+    note: "Max visible character name length, ASCII [A-Za-z0-9_] so chars = bytes. Safe range [12, 26]; hard ceiling 26 = character_name VARCHAR(26) (ADR-006, character-persistence.md CharacterName max 26 bytes). Companion CHARACTER_NAME_MIN_LENGTH = 3 [2, 4]. Unique case-insensitively (ux_character_records_name_lower, migration 003). Added 2026-11-04 (authentication.md CR-AUTH-13)."
     added: "2026-11-04"
     revised: ""
 
