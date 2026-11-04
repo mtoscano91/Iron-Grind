@@ -23,7 +23,7 @@ namespace IronGrind.Networking
         /// <summary>Wire size of the body: 16 bytes.</summary>
         public const int BodySize = 16;
 
-        /// <summary>Wire <c>MessageTypeID</c> for <see cref="SkillCastRequest"/> (U-U skill block 0x0308-0x030A).</summary>
+        /// <summary>Wire <c>MessageTypeID</c> for <see cref="SkillCastRequest"/> (skill block 0x0308-0x030A: request U-U; result and cooldown update R-U).</summary>
         public const ushort MessageTypeId = 0x0308;
 
         /// <summary>The caster claimed by the client; must equal the connection's sender entity (V-1).</summary>

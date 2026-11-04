@@ -339,6 +339,36 @@ namespace IronGrind.SkillSystem
             return false;
         }
 
+        /// <summary>
+        /// Reads the current cooldown expiry tick of one of the entity's skills by skill id (Story 009). Scans the
+        /// entity's at most <see cref="MAX_SKILLS_PER_ENTITY"/> slots; allocation-free.
+        /// </summary>
+        /// <param name="entity">The skill owner.</param>
+        /// <param name="skillId">The raw skill id.</param>
+        /// <param name="cooldownExpiryTick">The expiry tick, or 0 when not found.</param>
+        /// <returns>False when the entity has no record or no slot holds the skill.</returns>
+        public bool TryGetCooldownExpiry(EntityID entity, uint skillId, out uint cooldownExpiryTick)
+        {
+            cooldownExpiryTick = 0;
+            int record = FindRecord(entity);
+            if (record < 0)
+            {
+                return false;
+            }
+
+            SkillInstance[] slots = _skills[record];
+            for (int i = 0; i < _counts[record]; i++)
+            {
+                if (slots[i].SkillID.Value == skillId)
+                {
+                    cooldownExpiryTick = slots[i].CooldownExpiryTick;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         /// <summary>Test seam: writes a cooldown expiry into a slot; false when the slot does not exist.</summary>
         internal bool SetCooldownForTesting(EntityID entity, int slot, uint expiryTick)
         {

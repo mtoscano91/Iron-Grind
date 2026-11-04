@@ -131,6 +131,30 @@ namespace IronGrind.Networking
                 rationale: "Facing snap cue for the whole zone (CR-HD-7, AC-HD-18); the authoritative facing lives in the " +
                            "movement state, so a dropped event loses one visual snap only (MCR-2)."));
 
+            // Skill System Story 009: cast outcome and cooldown, both R-U batch sub-messages (0x0309, 0x030A).
+            Add(new MessageRoutingEntry(
+                messageTypeId: SkillCastResult.MessageTypeId,
+                messageName: nameof(SkillCastResult),
+                pillars: DesignPillar.RhythmMastery,
+                channel: NetworkChannel.ReliableUnordered,
+                direction: MessageDirection.ServerToRelevantClients,
+                deliveryContext: MessageDeliveryContext.ReliableUnorderedBatch,
+                isMcr3Exception: false,
+                rationale: "Cast outcome (skill-system.md CR-SK-9): rejected to the caster only, accepted to the caster and every " +
+                           "client with the caster or target in its relevance set; damage and HP state are authoritative elsewhere, " +
+                           "so a dropped result loses that cast's feedback only (MCR-2)."));
+
+            Add(new MessageRoutingEntry(
+                messageTypeId: SkillCooldownUpdate.MessageTypeId,
+                messageName: nameof(SkillCooldownUpdate),
+                pillars: DesignPillar.RhythmMastery,
+                channel: NetworkChannel.ReliableUnordered,
+                direction: MessageDirection.ServerToOwningClient,
+                deliveryContext: MessageDeliveryContext.ReliableUnorderedBatch,
+                isMcr3Exception: false,
+                rationale: "Caster-only absolute cooldown expiry with an accepted cast or an OnCooldown rejection (CR-SK-12, " +
+                           "CR-SK-23); the server enforces cooldowns, and the next cast or zone-join snapshot re-sends the value."));
+
             Add(new MessageRoutingEntry(
                 messageTypeId: EntityHealthUpdate.MessageTypeId,
                 messageName: nameof(EntityHealthUpdate),

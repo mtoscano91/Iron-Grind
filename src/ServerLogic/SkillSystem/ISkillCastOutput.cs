@@ -5,7 +5,7 @@ namespace IronGrind.SkillSystem
 {
     /// <summary>
     /// Where the cast step reports a rejected cast (skill-system.md V-0 to V-9). Declared by Story 005; Story 009
-    /// implements it as the <c>SkillCastResult</c> wire message.
+    /// implements it as the <c>SkillCastResult</c> wire message in <see cref="SkillCastOutputEmitter"/>.
     /// </summary>
     public interface ISkillCastOutput
     {

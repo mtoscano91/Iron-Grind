@@ -10,8 +10,8 @@ namespace IronGrind.Networking
     /// </summary>
     /// <remarks>
     /// Wire layout (little-endian): <c>uint skillID</c> = 4-byte body, 14 bytes standalone. The Skill System epic
-    /// reserves the R-OD priority block 0xE150-0xE15F: 0xE150 SkillCooldownSnapshot, 0xE151 this message (the R-U and
-    /// U-U skill messages use 0x0308-0x030A). Codec: <see cref="SkillUnlockNotificationCodec"/>.
+    /// reserves the R-OD priority block 0xE150-0xE15F: 0xE150 SkillCooldownSnapshot, 0xE151 this message (the skill
+    /// block 0x0308-0x030A: request U-U; result and cooldown update R-U). Codec: <see cref="SkillUnlockNotificationCodec"/>.
     /// </remarks>
     public readonly struct SkillUnlockNotification : IEquatable<SkillUnlockNotification>
     {

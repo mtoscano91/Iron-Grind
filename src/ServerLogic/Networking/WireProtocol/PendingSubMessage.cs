@@ -46,7 +46,7 @@ namespace IronGrind.Networking
     /// <code>
     /// byte[] serializedSkillCastResult = new byte[SkillCastResultBodySize];
     /// // ... future Skill System story serializes its fields into serializedSkillCastResult ...
-    /// var pending = new PendingSubMessage(RUBatchCategory.SkillCastResult, messageTypeId: 0x0A10, serializedSkillCastResult);
+    /// var pending = new PendingSubMessage(RUBatchCategory.SkillCastResult, messageTypeId: 0x0309, serializedSkillCastResult);
     /// </code>
     /// </example>
     public readonly struct PendingSubMessage
