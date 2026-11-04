@@ -198,10 +198,17 @@ namespace IronGrind.ServerLogic.ZoneServer
 
     /// <summary>
     /// Stand-in for <see cref="IInventoryService"/> in the zone composition (Zone Instancing Story 014). The session end
-    /// coordinator only calls <see cref="UnregisterCharacter"/>; it logs "[ZoneServer] inventory service not implemented"
-    /// once and does nothing. Every other member throws <see cref="NotSupportedException"/>. The real
-    /// <c>InventoryService</c> needs the item database wiring (inventory epic).
+    /// coordinator calls <see cref="UnregisterCharacter"/>; the load applier (Character Persistence Story 018) calls
+    /// <see cref="ImportSnapshot"/>, which accepts and discards the bag (returns true). Both log
+    /// "[ZoneServer] inventory service not implemented" once per instance and do nothing else. Every other member,
+    /// <see cref="ExportSnapshot"/> included, throws <see cref="NotSupportedException"/>: a save must never export an
+    /// empty bag over the stored one (TD-091). The real <c>InventoryService</c> needs the item database wiring (inventory epic).
     /// </summary>
+    /// <remarks>
+    /// Accepting the import throws the loaded bag away: the player plays with no inventory in this zone. That is safe
+    /// only while no save can export (the zone's Persistence has no save wiring, and <see cref="ExportSnapshot"/>
+    /// throws). Replace this stand-in and enable the save path together (TD-091), never one without the other.
+    /// </remarks>
     /// <example>
     /// <code>
     /// new StandInZoneInventoryService().UnregisterCharacter(characterId); // logs once
@@ -292,15 +299,28 @@ namespace IronGrind.ServerLogic.ZoneServer
         public InventorySnapshot ExportSnapshot(CharacterID charId) => throw new NotSupportedException();
 
         /// <inheritdoc/>
-        public bool ImportSnapshot(CharacterID charId, InventorySnapshot? snapshot) => throw new NotSupportedException();
+        public bool ImportSnapshot(CharacterID charId, InventorySnapshot? snapshot)
+        {
+            _log.Log();
+            return true;
+        }
     }
 
     /// <summary>
     /// Stand-in for <see cref="IEquipmentService"/> in the zone composition (Equipment Story 008). The session end
-    /// coordinator only calls <see cref="UnregisterCharacter"/>; it logs "[ZoneServer] equipment service not implemented"
-    /// once and does nothing. Every other member throws <see cref="NotSupportedException"/>. The real
-    /// <c>EquipmentService</c> needs Character Stats, the item database and the real inventory (server bootstrap).
+    /// coordinator calls <see cref="UnregisterCharacter"/>; the load applier (Character Persistence Story 018) calls
+    /// <see cref="UnregisterCharacter"/>, <see cref="RegisterCharacter"/> and <see cref="RestoreSlots"/>, which accepts and
+    /// discards the gear and reports no dropped slot (so admission logs no <c>ItemDatabaseMiss</c> warning). All three log
+    /// "[ZoneServer] equipment service not implemented" once per instance and do nothing else. Every other member,
+    /// <see cref="ExportSlots"/> included, throws <see cref="NotSupportedException"/>: a save must never export empty gear
+    /// over the stored gear (TD-091). The real <c>EquipmentService</c> needs Character Stats, the item database and the
+    /// real inventory (server bootstrap).
     /// </summary>
+    /// <remarks>
+    /// Accepting the restore throws the loaded gear away: no gear modifiers reach Character Stats in this zone. That is
+    /// safe only while no save can export (the zone's Persistence has no save wiring, and <see cref="ExportSlots"/>
+    /// throws). Replace this stand-in and enable the save path together (TD-091), never one without the other.
+    /// </remarks>
     /// <example>
     /// <code>
     /// new StandInZoneEquipmentService().UnregisterCharacter(characterId); // logs once
@@ -327,7 +347,10 @@ namespace IronGrind.ServerLogic.ZoneServer
         public byte GetAppearanceFlags(CharacterID charId) => throw new NotSupportedException();
 
         /// <inheritdoc/>
-        public void RegisterCharacter(CharacterID charId, EntityID entityId) => throw new NotSupportedException();
+        public void RegisterCharacter(CharacterID charId, EntityID entityId)
+        {
+            _log.Log();
+        }
 
         /// <inheritdoc/>
         public EquipmentSlotState GetEquipmentSlotState(CharacterID charId, GearSlot slot) => throw new NotSupportedException();
@@ -354,7 +377,11 @@ namespace IronGrind.ServerLogic.ZoneServer
         public MergeResult RequestMerge(CharacterID charId, int slotIdx1, int slotIdx2, int slotIdx3) => throw new NotSupportedException();
 
         /// <inheritdoc/>
-        public GearRestoreResult RestoreSlots(CharacterID charId, ReadOnlySpan<SavedGearSlot> slots) => throw new NotSupportedException();
+        public GearRestoreResult RestoreSlots(CharacterID charId, ReadOnlySpan<SavedGearSlot> slots)
+        {
+            _log.Log();
+            return default; // no slot dropped
+        }
 
         /// <inheritdoc/>
         public SavedGearSlot[] ExportSlots(CharacterID charId) => throw new NotSupportedException();

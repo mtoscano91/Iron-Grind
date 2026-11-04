@@ -20,6 +20,7 @@ using UnityEngine.AI;
 using Debug = UnityEngine.Debug;
 // The simple name CharacterStats resolves to the IronGrind.CharacterStats namespace, so the class takes an alias.
 using ZoneStats = IronGrind.CharacterStats.CharacterStats;
+using ZoneCurrencySystem = IronGrind.Currency.CurrencySystem;
 
 namespace IronGrind.ServerLogic.ZoneServer
 {
@@ -383,6 +384,27 @@ namespace IronGrind.ServerLogic.ZoneServer
 
         /// <summary>The class registry Leveling and Skill actually use (the override or the empty fallback); null before S5.</summary>
         internal ClassRegistry ClassRegistryInUse { get; private set; }
+
+        /// <summary>
+        /// Test seam (Character Persistence Story 018): the record store under <see cref="PersistenceService"/>. Null builds
+        /// <see cref="NpgsqlCharacterRecordStore"/> over the S4 data source. Set before the run starts.
+        /// </summary>
+        internal ICharacterRecordStore RecordStoreOverride;
+
+        /// <summary>
+        /// Test seam (Character Persistence Story 018): the entry token validator Zone Instancing admission uses. Null keeps
+        /// <see cref="RejectingZoneEntryTokenValidator"/> (the session epic wires the real one). Set before the run starts.
+        /// </summary>
+        internal IZoneEntryTokenValidator EntryTokenValidatorOverride;
+
+        /// <summary>The zone's Currency, built at S5 (Character Persistence Story 018: receives the gold restore on load); null before S5.</summary>
+        internal ZoneCurrencySystem ZoneCurrency { get; private set; }
+
+        /// <summary>The inventory stand-in shared by Persistence (restore) and Zone Instancing (session end), built at S5 (Story 018); null before S5.</summary>
+        internal StandInZoneInventoryService ZoneInventory { get; private set; }
+
+        /// <summary>The equipment stand-in shared by Persistence (restore) and Zone Instancing (session end), built at S5 (Story 018); null before S5.</summary>
+        internal StandInZoneEquipmentService ZoneEquipment { get; private set; }
 
         /// <summary>The zone's Skill System service, built at S5 (Story 011); null before S5.</summary>
         internal SkillSystemService SkillService { get; private set; }
@@ -1495,7 +1517,8 @@ namespace IronGrind.ServerLogic.ZoneServer
                 _owner.ConstructionObserver?.Invoke(name);
             }
 
-            // S5, in the AC-6 order: persistence, relay, dispatch, then outbound and the pipeline.
+            // S5, in the AC-6 order: persistence, relay, dispatch, then outbound and the pipeline. Character Stats and
+            // Leveling come first inside BuildPersistence (Character Persistence Story 018): the applier needs them.
             public bool ConstructObjects()
             {
                 BuildPersistence();
@@ -1511,10 +1534,41 @@ namespace IronGrind.ServerLogic.ZoneServer
                 Observe(nameof(TickCompletionQueue));
                 _tickLoop = new ServerTickLoop();
                 Observe(nameof(ServerTickLoop));
-                var store = new NpgsqlCharacterRecordStore(_dataSource);
+                BuildCharacterStats();
+                ICharacterRecordStore store = _owner.RecordStoreOverride ?? new NpgsqlCharacterRecordStore(_dataSource);
+                // Observed under the production name even when the test override is used: the construction-order
+                // check names the step, not the type that filled it.
                 Observe(nameof(NpgsqlCharacterRecordStore));
-                _owner.PersistenceService = new CharacterPersistenceService(store);
+
+                // Story 018 (TD-090): the six-service constructor, so ApplyLoadedRecord works at admission. The save
+                // constructor is not used: with stand-in Inventory / Equipment a save would overwrite the stored bag and
+                // gear with empty ones, so SaveSession keeps throwing before it writes (TD-091).
+                _owner.ZoneCurrency = new ZoneCurrencySystem();
+                _owner.ZoneInventory = new StandInZoneInventoryService();
+                _owner.ZoneEquipment = new StandInZoneEquipmentService();
+                _owner.PersistenceService = new CharacterPersistenceService(store, _owner.ZoneCharacterStats,
+                    _owner.ZoneLeveling, _owner.ZoneInventory, _owner.ZoneCurrency, _owner.ZoneEquipment);
                 Observe(nameof(CharacterPersistenceService));
+            }
+
+            // Status Effects Story 009 / Skill System Story 013, moved ahead of Persistence by Character Persistence Story 018:
+            // one class registry, Leveling and Character Stats per zone. Needs no wiring.
+            private void BuildCharacterStats()
+            {
+                // Story 013: the override, then the S2 loader's registry, then an empty one (stand-in loader: tests only).
+                // The data is found by type on the loader itself: a decorator around ZoneClassSkillDataLoader must also
+                // implement IZoneClassSkillData, or S5 silently falls back to the empty registry.
+                ClassRegistry classRegistry = _owner.ClassRegistryOverride
+                    ?? (_owner._staticDataLoader as IZoneClassSkillData)?.LoadedClassRegistry
+                    ?? new ClassRegistry();
+
+                var leveling = new LevelingService(XpThresholdTable.Values, classRegistry);
+                var stats = new ZoneStats(leveling);
+                leveling.AttachCharacterStats(stats);
+                _owner.ZoneLeveling = leveling;
+                _owner.ClassRegistryInUse = classRegistry;
+                _owner.ZoneCharacterStats = stats;
+                Observe("CharacterStats");
             }
 
             private void BuildRelay()
@@ -1611,13 +1665,16 @@ namespace IronGrind.ServerLogic.ZoneServer
             {
                 var wiring = new ZoneInstancingWiring(_owner._zoneId, _tickLoop, _queue, dispatcher, outbox,
                     _owner.PersistenceService, _owner.PersistenceService, _owner.PersistenceService, _gate,
-                    new StandInZoneInventoryService(), _disconnector, _owner.RequestTeardown,
+                    _owner.ZoneInventory, _disconnector, _owner.RequestTeardown,
                     new ZoneInstancingWiringOptions
                     {
                         Directory = _directory,
                         LogTransitions = _owner.LogTeardownSteps,
                         EntityState = entityState,
-                        Responder = _owner.EntryResponder
+                        Responder = _owner.EntryResponder,
+                        // Story 018: the same stand-in Persistence restores into, so session end unregisters what load registered.
+                        Equipment = _owner.ZoneEquipment,
+                        Validator = _owner.EntryTokenValidatorOverride
                     });
                 Observe(nameof(ZoneInstancingWiring));
                 _owner._simulationSteps.Add(wiring);
@@ -1625,25 +1682,12 @@ namespace IronGrind.ServerLogic.ZoneServer
                 return wiring;
             }
 
-            // Status Effects Story 009: one Character Stats per zone, then the Status Effects service over it. The
-            // service joins phase 3 after Zone Instancing, listens for slot releases and is disposed in the teardown
-            // Dispose pass (ADR-010).
+            // Status Effects Story 009: the Status Effects service over the zone's Character Stats (built in
+            // BuildCharacterStats, Story 018). The service joins phase 3 after Zone Instancing, listens for slot releases
+            // and is disposed in the teardown Dispose pass (ADR-010).
             private StatusEffectsService BuildStatusEffects(ZoneInstancingWiring wiring)
             {
-                // Story 013: the override, then the S2 loader's registry, then an empty one (stand-in loader: tests only).
-                // The data is found by type on the loader itself: a decorator around ZoneClassSkillDataLoader must also
-                // implement IZoneClassSkillData, or S5 silently falls back to the empty registry.
-                ClassRegistry classRegistry = _owner.ClassRegistryOverride
-                    ?? (_owner._staticDataLoader as IZoneClassSkillData)?.LoadedClassRegistry
-                    ?? new ClassRegistry();
-
-                var leveling = new LevelingService(XpThresholdTable.Values, classRegistry);
-                var stats = new ZoneStats(leveling);
-                leveling.AttachCharacterStats(stats);
-                _owner.ZoneLeveling = leveling;
-                _owner.ClassRegistryInUse = classRegistry;
-                _owner.ZoneCharacterStats = stats;
-                Observe("CharacterStats");
+                ZoneStats stats = _owner.ZoneCharacterStats;
                 var statusEffects = new StatusEffectsService(new CharacterStatsBuffModifierLayer(stats),
                     new CharacterStatsResourceSink(stats), new ZoneSlotPoolEntityIndex(wiring.Pool),
                     new CharacterStatsDeathSource(stats));

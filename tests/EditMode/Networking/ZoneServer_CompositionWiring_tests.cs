@@ -212,10 +212,11 @@ namespace IronGrind.Tests.EditMode.Networking
     {
         private static readonly string[] CONSTRUCTION_ORDER =
         {
-            "TickCompletionQueue", "ServerTickLoop", "NpgsqlCharacterRecordStore", "CharacterPersistenceService",
+            // Character Persistence Story 018: Character Stats (and Leveling) before Persistence, Status Effects after Zone Instancing.
+            "TickCompletionQueue", "ServerTickLoop", "CharacterStats", "NpgsqlCharacterRecordStore", "CharacterPersistenceService",
             "CrossZoneRelayAllowlist", "CrossZoneRelayOrigin", "CrossZoneRelayInbox", "CrossZoneRelayReceiver",
             "NpgsqlRelayPublisher", "CrossCuttingRpcGuardChain", "CharacterMutationGate", "InboundRequestDispatcher",
-            "ClientMessageOutbox", "ZoneInstancingWiring", "CharacterStats", "StatusEffectsService",
+            "ClientMessageOutbox", "ZoneInstancingWiring", "StatusEffectsService",
             "MovementIntentBuffer", "MovementService", "RUBatchOutboundStep", "HitResultEmitter", "AutoAttackCombatSystem", "SkillSystemService", "CycleTimerBroadcastStep", "PositionBroadcastStep", "ServerWideBroadcaster", "ZoneClientRelayHandler", "ZoneSimulationStep",
             "ZoneTickPipeline", "Seal", "RegisterTickDriven", "CreateInboundTransport"
         };

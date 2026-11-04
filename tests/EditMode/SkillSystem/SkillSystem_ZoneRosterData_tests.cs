@@ -477,8 +477,9 @@ namespace IronGrind.Tests.EditMode.SkillSystemTests
             rig.Comp.GuardChain.RegisterEntityOwnership(CLIENT_ONE, id);
             rig.Comp.GuardChain.MarkSessionReady(CLIENT_ONE);
             rig.Comp.ZoneInstancing.Directory.Add(CLIENT_ONE, new CharacterID(CLIENT_ONE));
-            // Class type registered directly until Character Persistence Story 018 (TD-090).
-            rig.Comp.ZoneLeveling.RegisterPlayerClassType(id, (byte)type);
+            // The class type comes from the record, through the zone's own Persistence applier (Character Persistence Story 018).
+            CharacterRecord record = CharacterStubDefaults.CreateRecord(new AccountID(CLIENT_ONE + ACCOUNT_OFFSET), new CharacterID(CLIENT_ONE), (byte)type);
+            Assert.AreEqual(CharacterLoadCode.Success, rig.Comp.PersistenceService.ApplyLoadedRecord(id, record));
             rig.Comp.ZoneInstancing.EntryCompletion.OnPlayerAdmitted(CLIENT_ONE, slot, id);
             LogAssert.Expect(LogType.Error, new Regex("NavMesh unavailable"));
 

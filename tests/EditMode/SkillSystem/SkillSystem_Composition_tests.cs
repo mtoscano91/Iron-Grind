@@ -115,11 +115,13 @@ namespace IronGrind.Tests.EditMode.SkillSystemTests
             return id;
         }
 
-        // Adds the player, registers its class type, then runs the real entry completion.
+        // Adds the player, applies a Level 1 record through the zone's own Persistence applier (as admission does after
+        // the slot is allocated, Character Persistence Story 018), then runs the real entry completion.
         private static EntityID Admit(WiRig rig, uint client)
         {
             EntityID id = AddPlayer(rig, client, out byte slot);
-            rig.Comp.ZoneLeveling.RegisterPlayerClassType(id, CLASS_WARRIOR);
+            CharacterRecord record = CharacterStubDefaults.CreateRecord(new AccountID(client + ACCOUNT_OFFSET), new CharacterID(client), CLASS_WARRIOR);
+            Assert.AreEqual(CharacterLoadCode.Success, rig.Comp.PersistenceService.ApplyLoadedRecord(id, record));
             rig.Comp.ZoneInstancing.EntryCompletion.OnPlayerAdmitted(client, slot, id);
             return id;
         }
@@ -541,7 +543,6 @@ namespace IronGrind.Tests.EditMode.SkillSystemTests
         {
             WiRig rig = StartRig();
             EntityID player = AddPlayer(rig, CLIENT_TWO, out _);
-            rig.Comp.ZoneLeveling.RegisterPlayerClassType(player, CLASS_WARRIOR);
             rig.Comp.SkillService.OnEntitySpawned(player, ClassType.Warrior);
             using (var log = new WiLogCapture())
             {
