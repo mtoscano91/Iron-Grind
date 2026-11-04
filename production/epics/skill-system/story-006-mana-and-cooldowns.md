@@ -1,7 +1,7 @@
 # Story 006: Mana Cost (V-9) and Cooldown Registration
 
 > **Epic**: Skill System
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-10-26
@@ -28,16 +28,16 @@
 
 *From GDD `design/gdd/skill-system.md`, scoped to this story:*
 
-- [ ] **F-SK-4**: `effectiveManaCost = Ceil(ManaCost × MANA_COST_MULTIPLIER)`. **AC-SK-17**: 100 × 0.75 → exactly 75 passed to `ConsumeMana`. **AC-SK-18**: 101 × 1.5 → exactly 152.
-- [ ] **AC-SK-19**: the multiplier is read from `SkillSystemConfig` at cast time; changing the config instance between two casts changes the second cost without rebuilding the service.
-- [ ] **V-9 / EC-SK-2**: `ConsumeMana` false → `InsufficientMana`; no cooldown registered, `NotifySkillUsed` not called, skill stays Ready.
-- [ ] **AC-SK-15**: on success, mana is deducted (by the effective cost) before any damage or effect step runs. A test seam between V-9 and execution observes the mana value.
-- [ ] **CR-SK-8**: after execution completes, `CooldownExpiryTick = serverCurrentTick + CooldownTicks`, on every accepted cast, hit or miss.
-- [ ] **AC-SK-06**: after a cast at tick N writes `N + 20`, a cast at N + 1 is rejected `OnCooldown`. **AC-SK-07**: a cast at exactly `N + 20` passes V-6.
-- [ ] **AC-SK-08**: casting skill A leaves skill B's `CooldownExpiryTick` unchanged (no global cooldown, CR-SK-11).
-- [ ] **AC-SK-05**: a V-6 rejection changes neither mana, nor cooldowns, nor the auto-attack timer.
-- [ ] `CooldownTicks == 0` → the skill is castable again on the next tick (States table: Executing → Ready).
-- [ ] `ManaCost == 0` → `ConsumeMana` is called with 0, or skipped (document which); the cast is never rejected for mana.
+- [x] **F-SK-4**: `effectiveManaCost = Ceil(ManaCost × MANA_COST_MULTIPLIER)`. **AC-SK-17**: 100 × 0.75 → exactly 75 passed to `ConsumeMana`. **AC-SK-18**: 101 × 1.5 → exactly 152.
+- [x] **AC-SK-19**: the multiplier is read from `SkillSystemConfig` at cast time; changing the config instance between two casts changes the second cost without rebuilding the service.
+- [x] **V-9 / EC-SK-2**: `ConsumeMana` false → `InsufficientMana`; no cooldown registered, `NotifySkillUsed` not called, skill stays Ready.
+- [x] **AC-SK-15**: on success, mana is deducted (by the effective cost) before any damage or effect step runs. A test seam between V-9 and execution observes the mana value.
+- [x] **CR-SK-8**: after execution completes, `CooldownExpiryTick = serverCurrentTick + CooldownTicks`, on every accepted cast, hit or miss.
+- [x] **AC-SK-06**: after a cast at tick N writes `N + 20`, a cast at N + 1 is rejected `OnCooldown`. **AC-SK-07**: a cast at exactly `N + 20` passes V-6.
+- [x] **AC-SK-08**: casting skill A leaves skill B's `CooldownExpiryTick` unchanged (no global cooldown, CR-SK-11).
+- [x] **AC-SK-05**: a V-6 rejection changes neither mana, nor cooldowns, nor the auto-attack timer.
+- [x] `CooldownTicks == 0` → the skill is castable again on the next tick (States table: Executing → Ready).
+- [x] `ManaCost == 0` → `ConsumeMana` is called with 0, or skipped (document which); the cast is never rejected for mana.
 
 ---
 
@@ -49,6 +49,13 @@
 - **AC-SK-15 seam**: the GDD flags it as a testability concern. A recording fake shared by the mana sink and the execution seam, asserting the call order (mana, then execution), satisfies it.
 - **EC-SK-13** (crash between mana and cooldown): no persistence of cooldowns, so nothing to do; cooldowns are not saved by Character Persistence. Confirm and note.
 - Accepted casts go to `ISkillCastOutput` (Story 009) with `newCooldownTicks = CooldownTicks`, after the cooldown write.
+
+**User decisions, `/story-readiness` 2026-11-04:**
+- **A, V-9 rejection path**: add `SkillCastRequest Request` to `ValidatedSkillCast` (Story 005 builds it with the pending request). The mana stage calls `ISkillCastOutput.SendRejection(caster, in cast.Request, InsufficientMana)` itself.
+- **B, accepted-cast output**: Story 006 adds `SendAccepted(EntityID caster, in SkillCastRequest request, int newCooldownTicks)` to `ISkillCastOutput` and calls it after the cooldown write, verified with a recording fake. Story 009 implements the wire side.
+- **C, zero mana**: an effective cost of 0 skips `ConsumeMana` (it returns false while stat events are firing, which would reject a free skill); the cast is never rejected for mana.
+- **Cooldown write**: the service has only `SetCooldownForTesting`; add an internal production write method (e.g. `SetCooldownExpiry(entity, slot, tick)`).
+- **Vacuous until Story 007**: EC-SK-2 "no `NotifySkillUsed`" and AC-SK-05 "auto-attack timer unchanged" pass trivially here (nothing calls the auto-attack sink yet). Still write them against a fake `IAutoAttackSkillUseSink` so they guard once Story 007 adds the call.
 
 ---
 
@@ -79,7 +86,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/SkillSystem/SkillSystem_ManaCooldown_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created
 
 ---
 
@@ -87,3 +94,19 @@
 
 - Depends on: Story 005
 - Unlocks: Stories 007, 009
+
+---
+
+## Completion Notes
+**Completed**: 2026-11-04
+**Criteria**: 10/10 passing, none deferred
+**Deviations** (advisory, no tech debt):
+- Readiness decisions A–C: `ValidatedSkillCast.Request`; `ISkillCastOutput.SendAccepted` (Story 009 implements the wire side); an effective cost of 0 skips `ConsumeMana`.
+- The effective cost is computed in `decimal`, not `double`: `(double)1.1f` charged 111 for 100 × 1.1 (code review).
+- Fail-safe guards for unvalidated data: a cost of 0 or less becomes 0, the cost saturates at `int.MaxValue`, and a negative `CooldownTicks` is treated as 0. Load-time validation belongs to the skill data loader.
+- The multiplier is read through `ISkillSystemConfigSource` on every cast. The production holder (built once per swap, so `FromAsset` clamp warnings are not logged per cast) is wired in Story 011.
+- `SetCooldownExpiry`'s result is checked with a `Debug.Assert`; it cannot fail within the tick that validated the slot.
+- The execution extension point is an optional `ISkillExecutionStep` between V-9 and the cooldown write (Stories 007, 008).
+**Carried**: Story 007 decides refund vs loss when the execution step throws after mana is deducted; Story 009 implements `SendAccepted`; Story 011 wires `SkillCastExecutor` as `SkillCastStep`'s sink with `CharacterStatsSkillManaSink` and a production config source.
+**Test Evidence**: Logic: `tests/EditMode/SkillSystem/SkillSystem_ManaCooldown_tests.cs` (26 [Test] + 10 [TestCase]); full EditMode run 6178 / 6049 passed / 0 failed / 129 skipped, started 2026-11-04 13:09:11Z after the last edit.
+**Code Review**: Complete (`/code-review` 2026-11-04: CHANGES REQUIRED, then "fix all", fixed and re-verified)

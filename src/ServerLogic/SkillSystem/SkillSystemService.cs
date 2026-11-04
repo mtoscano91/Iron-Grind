@@ -342,6 +342,16 @@ namespace IronGrind.SkillSystem
         /// <summary>Test seam: writes a cooldown expiry into a slot; false when the slot does not exist.</summary>
         internal bool SetCooldownForTesting(EntityID entity, int slot, uint expiryTick)
         {
+            return SetCooldownExpiry(entity, slot, expiryTick);
+        }
+
+        /// <summary>
+        /// Writes a slot's cooldown expiry (CR-SK-8, Story 006). False when the entity has no record or the slot does
+        /// not exist. Allocation-free.
+        /// </summary>
+        /// <remarks>The executor does not treat false as a rejection: it cannot happen in the tick that validated the slot.</remarks>
+        internal bool SetCooldownExpiry(EntityID entity, int slot, uint expiryTick)
+        {
             int record = FindRecord(entity);
             if (record < 0 || slot < 0 || slot >= _counts[record])
             {

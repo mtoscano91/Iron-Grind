@@ -1,4 +1,5 @@
 using IronGrind.CharacterStats;
+using IronGrind.Networking;
 
 namespace IronGrind.SkillSystem
 {
@@ -20,14 +21,19 @@ namespace IronGrind.SkillSystem
         /// <summary>The server tick being run.</summary>
         public readonly uint CurrentTick;
 
+        /// <summary>The request as received; the V-9 stage echoes it in a rejection.</summary>
+        public readonly SkillCastRequest Request;
+
         /// <summary>Creates a validated cast.</summary>
         /// <param name="caster">The caster (the pending request's caster, never the slot owner).</param>
         /// <param name="target">The effective target: the caster for a Self skill, else the requested target.</param>
         /// <param name="definition">The skill definition.</param>
         /// <param name="skillSlot">The skill's slot in the caster's store.</param>
         /// <param name="currentTick">The server tick being run.</param>
-        public ValidatedSkillCast(EntityID caster, EntityID target, in SkillDefinition definition, int skillSlot, uint currentTick)
+        /// <param name="request">The request as received.</param>
+        public ValidatedSkillCast(EntityID caster, EntityID target, in SkillDefinition definition, int skillSlot, uint currentTick, in SkillCastRequest request)
         {
+            Request = request;
             Caster = caster;
             Target = target;
             Definition = definition;

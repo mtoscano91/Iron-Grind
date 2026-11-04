@@ -158,6 +158,8 @@ namespace IronGrind.Tests.EditMode.SkillSystem
             {
                 Sent.Add((caster, request.SkillId, code));
             }
+
+            public void SendAccepted(EntityID caster, in SkillCastRequest request, int newCooldownTicks) { }
         }
 
         private sealed class CountingOutput : ISkillCastOutput
@@ -165,6 +167,8 @@ namespace IronGrind.Tests.EditMode.SkillSystem
             public int Count;
 
             public void SendRejection(EntityID caster, in SkillCastRequest request, SkillCastRejectionCode code) { Count++; }
+
+            public void SendAccepted(EntityID caster, in SkillCastRequest request, int newCooldownTicks) { }
         }
 
         private sealed class RecordingSink : ISkillCastValidatedSink

@@ -167,7 +167,7 @@ namespace IronGrind.SkillSystem
                 return;
             }
 
-            var validated = new ValidatedSkillCast(caster, target, in definition, skillSlot, currentTick);
+            var validated = new ValidatedSkillCast(caster, target, in definition, skillSlot, currentTick, in request);
             _next.Accept(in validated);
         }
 
