@@ -165,7 +165,9 @@ namespace IronGrind.Tests.EditMode.Networking
         public string ListenerConnectionString;
         public double Now;
 
-        public WiRig(string configJson = DEFAULT_CONFIG, bool realWarmUpAndListener = false)
+        /// <param name="staticDataLoader">The S2 loader; null keeps the recording <see cref="SuStatic"/> (Skill System Story 013).</param>
+        public WiRig(string configJson = DEFAULT_CONFIG, bool realWarmUpAndListener = false,
+            IZoneStaticDataLoader staticDataLoader = null)
         {
             App = new SuApp(Log, Plan);
             Net = new WiNetwork(Log);
@@ -173,7 +175,7 @@ namespace IronGrind.Tests.EditMode.Networking
             Env.Variables["IRONGRIND_PG_PASSWORD"] = PASSWORD;
             Comp = ZoneServerComposition.CreateWithRealBackend(
                 App, Net, new SuNav(Log, Plan), new ZsClose(Log), new SuScene(Log, Plan), new SuBounds(Log, Plan),
-                new SuStatic(Log, Plan), new SuStateOwner(Log), new SuGateway(Log, Plan), Config, Env, () => Now);
+                staticDataLoader ?? new SuStatic(Log, Plan), new SuStateOwner(Log), new SuGateway(Log, Plan), Config, Env, () => Now);
             Comp.ConstructionObserver = Observed.Add;
             if (realWarmUpAndListener)
             {

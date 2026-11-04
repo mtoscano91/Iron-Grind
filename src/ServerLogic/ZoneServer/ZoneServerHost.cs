@@ -1,6 +1,8 @@
 using System;
 using System.Globalization;
+using IronGrind.LevelingSystem;
 using IronGrind.ServerLogic.ZoneInstancing;
+using IronGrind.SkillSystem;
 using UnityEngine;
 
 namespace IronGrind.ServerLogic.ZoneServer
@@ -34,6 +36,10 @@ namespace IronGrind.ServerLogic.ZoneServer
 
         [SerializeField] private ZoneSceneRegistry _registry;
 
+        // Skill System Story 013: validated at S2 by ZoneClassSkillDataLoader; a missing reference fails S2.
+        [SerializeField] private SkillDatabase _skillDatabase;
+        [SerializeField] private ClassDatabase _classDatabase;
+
         private ZoneServerComposition _composition;
         private NgoZoneNetwork _network;
 #if DEVELOPMENT_BUILD || UNITY_EDITOR
@@ -56,7 +62,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                     null, // close steps: the Zone Instancing wiring built at S5 (Story 014)
                     new UnitySceneLoader(gameObject, _registry, slot),
                     new ZoneDefinitionBoundsValidator(slot),
-                    new StandInZoneStaticDataLoader(),
+                    new ZoneClassSkillDataLoader(_skillDatabase, _classDatabase, new StandInZoneStaticDataLoader()),
                     null, // zone state owner: the Zone Instancing wiring built at S5 (Story 014)
                     new StandInGatewayRegistration(),
                     new FileZoneConfigSource(),

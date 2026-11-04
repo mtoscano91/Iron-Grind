@@ -360,13 +360,15 @@ namespace IronGrind.ServerLogic.ZoneServer
 
         /// <summary>
         /// Test seam / production hook (Skill System Story 011): the class registry shared by Leveling and the Skill
-        /// System. Set before the run starts. Null means an empty registry and one log line (not a warning: warnings fail composition tests) at S5.
+        /// System. Set before the run starts. Null means the S2 loader's registry (<see cref="IZoneClassSkillData"/>, Story 013),
+        /// or an empty registry when the loader has none (the stand-in loader: tests only).
         /// </summary>
         internal ClassRegistry ClassRegistryOverride;
 
         /// <summary>
-        /// Skill roster for the Skill System (Story 011); the Story 012 asset goes here. Null means an empty in-code
-        /// database and one log line (not a warning: warnings fail composition tests) at S5. Set before the run starts.
+        /// Test seam (Story 011): the skill roster for the Skill System. Null means the S2 loader's roster
+        /// (<see cref="IZoneClassSkillData"/>, Story 013), or a silent empty in-code database when the loader has none
+        /// (the stand-in loader: tests only). Set before the run starts.
         /// </summary>
         internal SkillDatabase SkillDatabaseOverride;
 
@@ -1628,11 +1630,12 @@ namespace IronGrind.ServerLogic.ZoneServer
             // Dispose pass (ADR-010).
             private StatusEffectsService BuildStatusEffects(ZoneInstancingWiring wiring)
             {
-                ClassRegistry classRegistry = _owner.ClassRegistryOverride;
-                if (classRegistry == null)
-                {
-                    classRegistry = new ClassRegistry();
-                }
+                // Story 013: the override, then the S2 loader's registry, then an empty one (stand-in loader: tests only).
+                // The data is found by type on the loader itself: a decorator around ZoneClassSkillDataLoader must also
+                // implement IZoneClassSkillData, or S5 silently falls back to the empty registry.
+                ClassRegistry classRegistry = _owner.ClassRegistryOverride
+                    ?? (_owner._staticDataLoader as IZoneClassSkillData)?.LoadedClassRegistry
+                    ?? new ClassRegistry();
 
                 var leveling = new LevelingService(XpThresholdTable.Values, classRegistry);
                 var stats = new ZoneStats(leveling);
@@ -1743,11 +1746,11 @@ namespace IronGrind.ServerLogic.ZoneServer
             // Skill System Story 011: builds the whole Skill System graph and joins phase 3 after Combat (epic
             // Decision 3, EC-SK-1); SkillCastRequest is registered before Seal and stored in dispatch.
             // Decisions (user, 2026-11-04):
-            //  - Class registry: _owner.ClassRegistryOverride, shared with Leveling (BuildStatusEffects); an empty
-            //    registry when unset (silent: composition tests fail on any unexpected log).
+            //  - Class registry: _owner.ClassRegistryOverride, else the S2 loader's (Story 013), shared with Leveling
+            //    (BuildStatusEffects); an empty registry when neither (silent: composition tests fail on any unexpected log).
             //  - Damage: StandInSkillDamageCalculator (logs once, rejects every hit); DamageCalculatorSkillAdapter stays
             //    unwired until the item database and equipment exist in the zone.
-            //  - Roster / config: _owner.SkillDatabaseOverride and _owner.SkillSystemConfigOverride; the fallbacks are an
+            //  - Roster / config: _owner.SkillDatabaseOverride (else the S2 loader's) and _owner.SkillSystemConfigOverride; the fallbacks are an
             //    empty in-code SkillDatabase (silent, destroyed in the Dispose pass) and SkillSystemConfigValues.Default.
             //  - Decision B: the damage step takes the INNER stand-in applier, not DamageOutputApplier, so a skill hit
             //    sends no DamageEvent / SelfDamageEvent.
@@ -1760,7 +1763,16 @@ namespace IronGrind.ServerLogic.ZoneServer
                 ZoneStats stats = _owner.ZoneCharacterStats;
                 ZoneSlotPool pool = wiring.Pool;
 
+                // Story 013: the override, then the S2 loader's roster (owned by the scene, never destroyed here),
+                // then an empty in-code database (stand-in loader: tests only). Unity's == null also treats a destroyed
+                // asset as missing, so a destroyed roster would fall back silently; the scene owns it, so it is not
+                // destroyed while the zone runs.
                 SkillDatabase database = _owner.SkillDatabaseOverride;
+                if (database == null)
+                {
+                    database = (_owner._staticDataLoader as IZoneClassSkillData)?.LoadedSkillDatabase;
+                }
+
                 SkillDatabase ownedDatabase = null;
                 if (database == null)
                 {

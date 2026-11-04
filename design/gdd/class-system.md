@@ -2,7 +2,7 @@
 
 > **Status**: Approved (pass 1 — 2026-04-29)
 > **Author**: Manuel Toscano + Claude Code agents
-> **Last Updated**: 2026-11-02 (Skill System `/create-epics`: `SkillList` type in the field table is `uint[]`, matching CD-4). Previous: 2026-05-28 (Skill System amendment: SA-2 Step 5 null-conditional removed; interactions + dependencies tables updated to hard dependency; OQ-CS-1 resolved)
+> **Last Updated**: 2026-11-04 (Skill System Story 013: CD-10 zone server note, S2 failure in all builds plus the skill list cross-check). Previous: 2026-11-02 (Skill System `/create-epics`: `SkillList` type in the field table is `uint[]`, matching CD-4). Earlier: 2026-05-28 (Skill System amendment: SA-2 Step 5 null-conditional removed; interactions + dependencies tables updated to hard dependency; OQ-CS-1 resolved)
 > **Implements Pillar**: Earned Power (primary), Social Gravity (secondary)
 
 ## Overview
@@ -168,6 +168,8 @@ Step 6 — Broadcast spawn complete:
 - For each entry: `autoAllocIncrement.Total() + FreePointsPerLevel == 5` (MVP invariant). Uses the `Total()` method on `AutoAllocIncrement` to remain correct when new fields are added to the struct.
 
 In dev builds, validation failure halts the spawn system and logs a critical error. In release builds, an error is logged but the spawn system continues — a malformed class definition is a data-authoring error, not a runtime exception condition.
+
+**Zone server note (Skill System Story 013, user decision 2026-11-04):** the zone server runs these checks at startup step S2 (`ZoneClassSkillDataLoader`, over the `ClassDatabase` asset) and fails S2 in **all** builds, release included (ADR-009 Amendment 1 S2: "Any failure → S-fail"). It adds two checks: every id in a class's `SkillList` exists in the `SkillDatabase`, and each class has exactly 10 skills. The release-build "log and continue" rule above applies only outside the zone server.
 
 ---
 

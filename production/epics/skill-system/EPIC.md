@@ -87,7 +87,7 @@ Applied to `skill-system.md` and `entities.yaml`.
 | 010 | [`SkillCooldownSnapshot` on zone join](story-010-cooldown-snapshot.md) | Integration | Complete | ADR-004 |
 | 011 | [Composition and tick-order wiring](story-011-composition.md) | Integration | Complete | ADR-014 |
 | 012 | [MVP skill roster and BuffIDs](story-012-mvp-roster-data.md) | Config/Data | Complete | ADR-012 |
-| 013 | [Zone loads the roster and class data](story-013-zone-loads-roster-class-data.md) | Integration | Draft | ADR-014, ADR-012 |
+| 013 | [Zone loads the roster and class data](story-013-zone-loads-roster-class-data.md) | Integration | Complete | ADR-009 A1, ADR-012 |
 
 Order: 001 → 002 → 003; 001 → 004 → 005 → 006 → 007 → 008; 006 → 009 → 010; 011 last of the code stories; 012 after 001, buff data final after 008; 013 after 012 (its end-to-end criterion also needs Character Persistence 018).
 

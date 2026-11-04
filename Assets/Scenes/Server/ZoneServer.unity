@@ -149,6 +149,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: IronGrind.ServerLogic::IronGrind.ServerLogic.ZoneServer.ZoneServerHost
   _registry: {fileID: 11400000, guid: dba248cf38834aa18e266de44f4f018a, type: 2}
+  _skillDatabase: {fileID: 11400000, guid: 9079c13f333444afb29425db756473c8, type: 2}
+  _classDatabase: {fileID: 11400000, guid: 8ef0df099ca147e4bc0862ca706e2980, type: 2}
   _editorArgs:
   - -zoneTemplate
   - StartingZone
