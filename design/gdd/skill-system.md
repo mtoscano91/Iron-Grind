@@ -2,7 +2,7 @@
 
 > **Status**: Approved (2026-05-28)
 > **Author**: Manuel Toscano + Claude Code agents
-> **Last Updated**: 2026-11-02 (`/create-epics`: casts resolve in a phase-3 step after Auto-Attack Combat (CR-SK-1); the auto-attack timer counts whole ticks (CR-SK-3, EC-SK-1, AC-SK-30); `SkillList` stored as `uint[]` (OQ-CS-1 (a), AC-SK-35); the snapshot carries `cooldownExpiryTick` (AC-SK-09, AC-SK-44); OQ-SK-5 resolved; OQ-SK-6 assigned to the roster story). Previous: 2026-05-28 (lean re-review fixes: EC-SK-1 stale variable corrected to _actionTimer/CycleDuration; networking-wire-protocol.md downstream ref updated; OQ-SK-9 pending qualifier removed; OQ-SK-3 resolved — DamageContext.MagicalSkill now defined in damage-calculation.md)
+> **Last Updated**: 2026-11-04 (Skill System Story 012: OQ-SK-6 resolved — BuffIDs 1–10, buff definitions, skill ids and ranges added to the Skill Roster; Minor Heal L8 → L5 (CR-SK-22); Mortal Wound −healing received → −15% AP; Prayer 5 s HoT, flat; Rend no damage; stale "no HoT skills" line fixed). Previous: 2026-11-02 (`/create-epics`: casts resolve in a phase-3 step after Auto-Attack Combat (CR-SK-1); the auto-attack timer counts whole ticks (CR-SK-3, EC-SK-1, AC-SK-30); `SkillList` stored as `uint[]` (OQ-CS-1 (a), AC-SK-35); the snapshot carries `cooldownExpiryTick` (AC-SK-09, AC-SK-44); OQ-SK-5 resolved; OQ-SK-6 assigned to the roster story). Previous: 2026-05-28 (lean re-review fixes: EC-SK-1 stale variable corrected to _actionTimer/CycleDuration; networking-wire-protocol.md downstream ref updated; OQ-SK-9 pending qualifier removed; OQ-SK-3 resolved — DamageContext.MagicalSkill now defined in damage-calculation.md)
 > **Implements Pillar**: Rhythm Mastery (primary), Social Gravity (secondary), Earned Power (supporting)
 
 ## Overview
@@ -182,14 +182,14 @@ Full authored skill list for both classes. Resolves OQ-SK-1 and OQ-SK-2. Values 
 |---|------|--------|-------------|--------|------|----------------|------------|-------|
 | 1 | Slash | L1 | PhysicalDamage | SingleHostile | 50 | 0 / — | ×0.45 | No cooldown — mana is the only gate |
 | 2 | Stab | L5 | PhysicalDamage | SingleHostile | 60 | 40 / 2s | ×0.75 | First rhythm skill; teaches cadence |
-| 3 | Rend | L15 | ApplyDebuff | SingleHostile | 70 | 100 / 5s | — | Armor reduction; damage via Status Effects |
+| 3 | Rend | L15 | ApplyDebuff | SingleHostile | 70 | 100 / 5s | — | Armor reduction: Defense −15% for 100 ticks (5s) |
 | 4 | Rush | L20 | ApplyBuff | Self | 50 | 400 / 20s | — | +40% movement speed for 60 ticks (3s) |
-| 5 | Shield Bash | L25 | ApplyDebuff | SingleHostile | 80 | 80 / 4s | — | Slow debuff |
+| 5 | Shield Bash | L25 | ApplyDebuff | SingleHostile | 80 | 80 / 4s | — | Slow debuff: MovementSpeed −30% for 60 ticks (3s) |
 | 6 | Cross Slash | L35 | PhysicalDamage | SingleHostile | 100 | 60 / 3s | ×0.90 | Reliable 3-beat rotation anchor post-L35 |
 | 7 | War Cry | L38 | ApplyBuff | Self | 70 | 600 / 30s | — | +20% AP for 200 ticks (10s); see design note |
 | 8 | Fury Strike | L42 | PhysicalDamage | SingleHostile | 140 | 200 / 10s | ×1.30 | Big mana spend; save for priority targets |
-| 9 | Savage Blow | L50 | PhysicalDamage \| ApplyDebuff | SingleHostile | 110 | 140 / 7s | ×0.85 | Damage + defense reduction combo |
-| 10 | Mortal Wound | L58 | PhysicalDamage \| ApplyDebuff | SingleHostile | 150 | 400 / 20s | ×1.60 | Signature finisher; applies -healing received debuff |
+| 9 | Savage Blow | L50 | PhysicalDamage \| ApplyDebuff | SingleHostile | 110 | 140 / 7s | ×0.85 | Damage + defense reduction combo: Defense −20% for 100 ticks (5s) |
+| 10 | Mortal Wound | L58 | PhysicalDamage \| ApplyDebuff | SingleHostile | 150 | 400 / 20s | ×1.60 | Signature finisher; target AttackPower −15% for 200 ticks (10s). *Was "−healing received" until 2026-11-04: no `StatID` exists for it and mobs do not heal at MVP; healing-received reduction is post-MVP.* |
 
 **Warrior rotation character at L60:** Slash (free), Stab (2s), Shield Bash (4s), Rend (5s), Savage Blow (7s), Fury Strike (10s), Mortal Wound/Rush (20s), War Cry (30s). Interlocking cooldown windows create real rotation management within the 1.0s auto-attack cadence. 440 MaxMP at L60 is meaningfully scarce across a full cycle.
 
@@ -204,14 +204,14 @@ Full authored skill list for both classes. Resolves OQ-SK-1 and OQ-SK-2. Values 
 | # | Name | Unlock | Effect Type | Target | Mana | CD (ticks / s) | Scale | Mult | Notes |
 |---|------|--------|-------------|--------|------|----------------|-------|------|-------|
 | 1 | Holy Smite | L1 | MagicalDamage | SingleHostile | 90 | 40 / 2s | INT | ×1.5 | Solo offensive starter |
-| 2 | Minor Heal | L8 | InstantHeal | SingleFriendly | 80 | 40 / 2s | INT | ×1.5 | Baseline reactive heal |
-| 3 | Prayer | L12 | ApplyBuff (HoT) | SingleFriendly | 100 | 200 / 10s | INT | per-tick in BuffDef | Pre-pull HoT; 5-tick duration |
-| 4 | Bless | L18 | ApplyBuff | SingleFriendly | 120 | 600 / 30s | — | — | AP/DEF buff on party member |
+| 2 | Minor Heal | L5 | InstantHeal | SingleFriendly | 80 | 40 / 2s | INT | ×1.5 | Baseline reactive heal. *Unlock moved L8 → L5 on 2026-11-04 to meet CR-SK-22 (second skill by L5).* |
+| 3 | Prayer | L12 | ApplyBuff (HoT) | SingleFriendly | 100 | 200 / 10s | — (flat) | per-tick in BuffDef | Pre-pull HoT: 2.0 HP/tick for 100 ticks (5s), 200 HP total. *Was "5-tick duration" (250 ms) until 2026-11-04.* |
+| 4 | Bless | L18 | ApplyBuff | SingleFriendly | 120 | 600 / 30s | — | — | AP/DEF buff on party member: AttackPower +10%, Defense +10% for 600 ticks (30s) |
 | 5 | Holy Blast | L25 | MagicalDamage | SingleHostile | 130 | 80 / 4s | INT | ×2.0 | Stronger INT offensive option |
 | 6 | Divine Strike | L32 | PhysicalDamage | SingleHostile | 120 | 60 / 3s | STR | ×1.2 | Paper build enabler — first STR skill |
 | 7 | Greater Heal | L38 | InstantHeal | SingleFriendly | 160 | 80 / 4s | INT | ×2.5 | Emergency high-value heal |
-| 8 | Smite Armor | L45 | PhysicalDamage \| ApplyDebuff | SingleHostile | 140 | 120 / 6s | STR | ×1.5 | STR damage + defense reduction |
-| 9 | Holy Shield | L52 | ApplyBuff | Self | 180 | 600 / 30s | — | — | Defense + magic resistance on self |
+| 8 | Smite Armor | L45 | PhysicalDamage \| ApplyDebuff | SingleHostile | 140 | 120 / 6s | STR | ×1.5 | STR damage + defense reduction: Defense −15% for 120 ticks (6s) |
+| 9 | Holy Shield | L52 | ApplyBuff | Self | 180 | 600 / 30s | — | — | Defense + magic resistance on self: Defense +25%, MagicDefense +25% for 200 ticks (10s) |
 | 10 | Judgment | L58 | PhysicalDamage | SingleHostile | 200 | 200 / 10s | STR | ×2.2 | Paper build signature finisher |
 
 **Build paths at L60:**
@@ -219,7 +219,29 @@ Full authored skill list for both classes. Resolves OQ-SK-1 and OQ-SK-2. Values 
 - **STR Priest** ("paper"): Divine Strike, Smite Armor, and Judgment form the damage core. Minor Heal and Prayer remain functional at reduced output due to low INT stat. True glass cannon — viable for solo grinding, fragile to sustained damage.
 - **Hybrid**: Mid-tier across all skills; viable for casual play.
 
-**Prayer (HoT) implementation note.** Prayer uses `SkillEffectType.ApplyBuff`. The per-tick heal amount and HoT duration live in `BuffDefinition` and are owned by the Status Effects system. The Skill System fires `ApplyEffect()` and does not track per-tick delivery. `HealMultiplier` in `SkillDefinition` is unused for Prayer; all healing parameters are authored in the buff definition.
+**Prayer (HoT) implementation note.** Prayer uses `SkillEffectType.ApplyBuff`. The per-tick heal amount and HoT duration live in `BuffDefinition` and are owned by the Status Effects system. The Skill System fires `ApplyEffect()` and does not track per-tick delivery. `HealMultiplier` in `SkillDefinition` is unused for Prayer; all healing parameters are authored in the buff definition. Because a `BuffDefinition` holds a flat `HpRegenPerTick`, Prayer's heal does **not** scale with INT at MVP (balance-pass item, 2026-11-04).
+
+#### Buff IDs, buff definitions and ranges (resolves OQ-SK-6; Skill System Story 012, 2026-11-04)
+
+`BuffID` values are stable (persisted in `SkillDatabase.asset`; never renumber). `pct` is a fraction (character-stats.md F-1); all flat bonuses and `MpRegenPerTick` are 0. Separate BuffIDs stack additively (CR-SE stack rule), so Rend + Smite Armor on one target gives Defense −30%.
+
+| BuffID | Skill | Modifiers | HpRegenPerTick | DurationTicks |
+|---|---|---|---|---|
+| 0 | `Invalid` (reserved) | — | — | — |
+| 1 | Rend | Defense −0.15 | 0 | 100 (5s) |
+| 2 | Rush | MovementSpeed +0.40 | 0 | 60 (3s) |
+| 3 | Shield Bash | MovementSpeed −0.30 | 0 | 60 (3s) |
+| 4 | War Cry | AttackPower +0.20 | 0 | 200 (10s) |
+| 5 | Savage Blow | Defense −0.20 | 0 | 100 (5s) |
+| 6 | Mortal Wound | AttackPower −0.15 | 0 | 200 (10s) |
+| 7 | Prayer | — | 2.0 | 100 (5s) |
+| 8 | Bless | AttackPower +0.10, Defense +0.10 | 0 | 600 (30s) |
+| 9 | Smite Armor | Defense −0.15 | 0 | 120 (6s) |
+| 10 | Holy Shield | Defense +0.25, MagicDefense +0.25 | 0 | 200 (10s) |
+
+Rationale: debuff durations match the skill's cooldown where it is a rotation debuff (Rend, Smite Armor) so a focused player can keep it up; Bless matches its 30s cooldown (full uptime on one party member); Prayer's 200 HP total is the Status Effects `HpRegenPerTick` anchor (≈50% of tier-1 MaxHP 400). Rend deals no damage: Status Effects has no damage-over-time (regen is positive only).
+
+**Skill ids**: Warrior 101–110, Healer 201–210, in table order. **`RangeUnits`**: Warrior `SingleHostile` skills 3.0 (base `AttackRange`, character-stats.md); Healer `SingleHostile` / `SingleFriendly` skills 12.0 (Tuning Knobs mobile ceiling); `Self` skills 0. **Slash's ×0.45** is below the Tuning Knobs `DamageMultiplier` safe range [0.5, 5.0] (schema [0, 5]); kept as authored, review in the balance pass.
 
 > ⚠️ **Design Note — Level Distribution.** Same concern as Warrior: 5 of 10 Healer skills unlock in L31–60. At L25 the Healer has a functional kit (Holy Smite, Minor Heal, Prayer, Bless, Holy Blast). If playtesting reveals players feel skill-starved in the L25–40 range, shift some L31+ skills earlier before `SkillDatabase.asset` is finalized.
 
@@ -526,7 +548,7 @@ All tuning knobs are stored in `assets/data/SkillSystemConfig.asset` unless note
 
 - Active buffs on party frames: up to 3 `ui_bufficon_[buffname]_active_24` icons below HP bar, Interactive Blue `#4A9EE0` stroke. Downward-sweep duration timer per icon. "+N" overflow badge if >3 active.
 - Active debuffs on target frame: `ui_debufficon_[debuffname]_active_24` icons with Threat Red `#C0392B` stroke (color distinguishes debuffs on enemy from buffs on ally at a glance). Downward-sweep duration timer per icon.
-- No HoT VFX at MVP (no HoT skills exist at MVP; deferred to post-MVP).
+- No HoT VFX at MVP (Prayer is a HoT, but its VFX is deferred to post-MVP; corrected 2026-11-04 from "no HoT skills exist at MVP").
 
 ---
 
@@ -891,7 +913,7 @@ All criteria are binary pass/fail and independently verifiable by a QA tester.
 
 **OQ-SK-5 — RESOLVED (2026-11-02).** `leveling-system.md` CR-2.10 documents the ordering: all `OnLevelUp` notifications complete before Skill System cast processing on the same tick, and casts resolve in a phase-3 step after Auto-Attack Combat (CR-SK-1). Original text: **Leveling System GDD tick-phase ordering.** EC-SK-6 requires the Leveling System to fire `OnLevelUp` before Skill System cast processing within the same tick. The Leveling System GDD's tick-phase ordering has not been confirmed. Blocking for: EC-SK-6 correctness guarantee. Must be resolved before skill-system.md can be approved — implementation cannot begin until the ordering contract is documented in both GDDs.
 
-**OQ-SK-6 — ASSIGNED (2026-11-02, `/create-epics`).** The Skill System epic's roster story authors the BuffIDs and BuffDefinitions for the 10 buff and debuff skills and records them here and in `entities.yaml`. Original text: **BuffID values for Skill System buff-granting skills.** The `BuffID enum : uint` registry entry defers specific value assignment to this GDD. No Warrior or Healer buff/debuff BuffID values have been authored. Required before buff-granting skill entries in `SkillDatabase.asset` can be completed.
+**OQ-SK-6 — RESOLVED (2026-11-04, Skill System Story 012).** BuffIDs 1–10 and their definitions are in the Skill Roster section ("Buff IDs, buff definitions and ranges") and in `entities.yaml` (`BuffID` values). Assignment history: ASSIGNED 2026-11-02 (`/create-epics`). The Skill System epic's roster story authors the BuffIDs and BuffDefinitions for the 10 buff and debuff skills and records them here and in `entities.yaml`. Original text: **BuffID values for Skill System buff-granting skills.** The `BuffID enum : uint` registry entry defers specific value assignment to this GDD. No Warrior or Healer buff/debuff BuffID values have been authored. Required before buff-granting skill entries in `SkillDatabase.asset` can be completed.
 
 **OQ-SK-7 — Skill unlock audio timing coordination.** The unlock chime fires 300ms after the Leveling System's level-up audio. The Leveling System's audio spec does not yet exist. Non-blocking for implementation; blocking for audio asset finalization.
 

@@ -58,16 +58,25 @@ namespace IronGrind.SkillSystem
         public float HealMultiplier;
 
         /// <summary>
-        /// <c>default(BuffID)</c> (0) = no buff; required when ApplyBuff or ApplyDebuff is set. <see cref="CharacterStats.BuffID"/>
-        /// has no members yet: the roster (Story 012) assigns the values.
+        /// <see cref="CharacterStats.BuffID.Invalid"/> (0) = no buff; required when ApplyBuff or ApplyDebuff is set.
+        /// The MVP values are the roster's 10 buff and debuff skills (Story 012).
         /// </summary>
         public BuffID BuffID;
 
+        /// <summary>
+        /// Authored, savable form of <see cref="BuffDefinition"/> (Story 012). When authored,
+        /// <see cref="SkillDatabase"/> validates it and builds <see cref="BuffDefinition"/> from it with
+        /// <see cref="BuffID"/> when it builds its lookup.
+        /// </summary>
+        public BuffDefinitionData BuffData;
+
         /// <summary>Passed to StatusEffects.ApplyEffect; no heap allocation.</summary>
         /// <remarks>
-        /// <see cref="StatusEffects.BuffDefinition"/> is a readonly struct, so Unity's serializer will not persist
-        /// it in an asset. The roster asset (Story 012) must resolve that.
+        /// <see cref="StatusEffects.BuffDefinition"/> is a readonly struct, so Unity's serializer does not persist
+        /// it: in an asset it is built from <see cref="BuffData"/> by <see cref="SkillDatabase"/>. Code that builds
+        /// definitions in memory (tests) may set it directly and leave <see cref="BuffData"/> empty.
         /// </remarks>
+        [NonSerialized]
         public BuffDefinition BuffDefinition;
 
         /// <summary>The typed skill id.</summary>

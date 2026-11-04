@@ -1,0 +1,428 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ca303f4bda7d3e0488abd55fa7825d5c, type: 3}
+  m_Name: SkillDatabase
+  m_EditorClassIdentifier: IronGrind.ServerLogic::IronGrind.SkillSystem.SkillDatabase
+  _skills:
+  - ID: 101
+    DisplayName: Slash
+    ClassType: 0
+    UnlockLevel: 1
+    ManaCost: 50
+    CooldownTicks: 0
+    RangeUnits: 3
+    TargetConstraint: 0
+    SkillEffectType: 1
+    DamageMultiplier: 0.45
+    DamageBaseStat: 0
+    DamageContext: 1
+    HealMultiplier: 0
+    BuffID: 0
+    BuffData:
+      DurationTicks: 0
+      HpRegenPerTick: 0
+      MpRegenPerTick: 0
+      Modifiers: []
+  - ID: 102
+    DisplayName: Stab
+    ClassType: 0
+    UnlockLevel: 5
+    ManaCost: 60
+    CooldownTicks: 40
+    RangeUnits: 3
+    TargetConstraint: 0
+    SkillEffectType: 1
+    DamageMultiplier: 0.75
+    DamageBaseStat: 0
+    DamageContext: 1
+    HealMultiplier: 0
+    BuffID: 0
+    BuffData:
+      DurationTicks: 0
+      HpRegenPerTick: 0
+      MpRegenPerTick: 0
+      Modifiers: []
+  - ID: 103
+    DisplayName: Rend
+    ClassType: 0
+    UnlockLevel: 15
+    ManaCost: 70
+    CooldownTicks: 100
+    RangeUnits: 3
+    TargetConstraint: 0
+    SkillEffectType: 16
+    DamageMultiplier: 0
+    DamageBaseStat: 0
+    DamageContext: 0
+    HealMultiplier: 0
+    BuffID: 1
+    BuffData:
+      DurationTicks: 100
+      HpRegenPerTick: 0
+      MpRegenPerTick: 0
+      Modifiers:
+      - StatId: 6
+        FlatBonus: 0
+        PctBonus: -0.15
+  - ID: 104
+    DisplayName: Rush
+    ClassType: 0
+    UnlockLevel: 20
+    ManaCost: 50
+    CooldownTicks: 400
+    RangeUnits: 0
+    TargetConstraint: 2
+    SkillEffectType: 8
+    DamageMultiplier: 0
+    DamageBaseStat: 0
+    DamageContext: 0
+    HealMultiplier: 0
+    BuffID: 2
+    BuffData:
+      DurationTicks: 60
+      HpRegenPerTick: 0
+      MpRegenPerTick: 0
+      Modifiers:
+      - StatId: 17
+        FlatBonus: 0
+        PctBonus: 0.4
+  - ID: 105
+    DisplayName: Shield Bash
+    ClassType: 0
+    UnlockLevel: 25
+    ManaCost: 80
+    CooldownTicks: 80
+    RangeUnits: 3
+    TargetConstraint: 0
+    SkillEffectType: 16
+    DamageMultiplier: 0
+    DamageBaseStat: 0
+    DamageContext: 0
+    HealMultiplier: 0
+    BuffID: 3
+    BuffData:
+      DurationTicks: 60
+      HpRegenPerTick: 0
+      MpRegenPerTick: 0
+      Modifiers:
+      - StatId: 17
+        FlatBonus: 0
+        PctBonus: -0.3
+  - ID: 106
+    DisplayName: Cross Slash
+    ClassType: 0
+    UnlockLevel: 35
+    ManaCost: 100
+    CooldownTicks: 60
+    RangeUnits: 3
+    TargetConstraint: 0
+    SkillEffectType: 1
+    DamageMultiplier: 0.9
+    DamageBaseStat: 0
+    DamageContext: 1
+    HealMultiplier: 0
+    BuffID: 0
+    BuffData:
+      DurationTicks: 0
+      HpRegenPerTick: 0
+      MpRegenPerTick: 0
+      Modifiers: []
+  - ID: 107
+    DisplayName: War Cry
+    ClassType: 0
+    UnlockLevel: 38
+    ManaCost: 70
+    CooldownTicks: 600
+    RangeUnits: 0
+    TargetConstraint: 2
+    SkillEffectType: 8
+    DamageMultiplier: 0
+    DamageBaseStat: 0
+    DamageContext: 0
+    HealMultiplier: 0
+    BuffID: 4
+    BuffData:
+      DurationTicks: 200
+      HpRegenPerTick: 0
+      MpRegenPerTick: 0
+      Modifiers:
+      - StatId: 5
+        FlatBonus: 0
+        PctBonus: 0.2
+  - ID: 108
+    DisplayName: Fury Strike
+    ClassType: 0
+    UnlockLevel: 42
+    ManaCost: 140
+    CooldownTicks: 200
+    RangeUnits: 3
+    TargetConstraint: 0
+    SkillEffectType: 1
+    DamageMultiplier: 1.3
+    DamageBaseStat: 0
+    DamageContext: 1
+    HealMultiplier: 0
+    BuffID: 0
+    BuffData:
+      DurationTicks: 0
+      HpRegenPerTick: 0
+      MpRegenPerTick: 0
+      Modifiers: []
+  - ID: 109
+    DisplayName: Savage Blow
+    ClassType: 0
+    UnlockLevel: 50
+    ManaCost: 110
+    CooldownTicks: 140
+    RangeUnits: 3
+    TargetConstraint: 0
+    SkillEffectType: 17
+    DamageMultiplier: 0.85
+    DamageBaseStat: 0
+    DamageContext: 1
+    HealMultiplier: 0
+    BuffID: 5
+    BuffData:
+      DurationTicks: 100
+      HpRegenPerTick: 0
+      MpRegenPerTick: 0
+      Modifiers:
+      - StatId: 6
+        FlatBonus: 0
+        PctBonus: -0.2
+  - ID: 110
+    DisplayName: Mortal Wound
+    ClassType: 0
+    UnlockLevel: 58
+    ManaCost: 150
+    CooldownTicks: 400
+    RangeUnits: 3
+    TargetConstraint: 0
+    SkillEffectType: 17
+    DamageMultiplier: 1.6
+    DamageBaseStat: 0
+    DamageContext: 1
+    HealMultiplier: 0
+    BuffID: 6
+    BuffData:
+      DurationTicks: 200
+      HpRegenPerTick: 0
+      MpRegenPerTick: 0
+      Modifiers:
+      - StatId: 5
+        FlatBonus: 0
+        PctBonus: -0.15
+  - ID: 201
+    DisplayName: Holy Smite
+    ClassType: 1
+    UnlockLevel: 1
+    ManaCost: 90
+    CooldownTicks: 40
+    RangeUnits: 12
+    TargetConstraint: 0
+    SkillEffectType: 2
+    DamageMultiplier: 1.5
+    DamageBaseStat: 1
+    DamageContext: 2
+    HealMultiplier: 0
+    BuffID: 0
+    BuffData:
+      DurationTicks: 0
+      HpRegenPerTick: 0
+      MpRegenPerTick: 0
+      Modifiers: []
+  - ID: 202
+    DisplayName: Minor Heal
+    ClassType: 1
+    UnlockLevel: 5
+    ManaCost: 80
+    CooldownTicks: 40
+    RangeUnits: 12
+    TargetConstraint: 1
+    SkillEffectType: 4
+    DamageMultiplier: 0
+    DamageBaseStat: 0
+    DamageContext: 0
+    HealMultiplier: 1.5
+    BuffID: 0
+    BuffData:
+      DurationTicks: 0
+      HpRegenPerTick: 0
+      MpRegenPerTick: 0
+      Modifiers: []
+  - ID: 203
+    DisplayName: Prayer
+    ClassType: 1
+    UnlockLevel: 12
+    ManaCost: 100
+    CooldownTicks: 200
+    RangeUnits: 12
+    TargetConstraint: 1
+    SkillEffectType: 8
+    DamageMultiplier: 0
+    DamageBaseStat: 0
+    DamageContext: 0
+    HealMultiplier: 0
+    BuffID: 7
+    BuffData:
+      DurationTicks: 100
+      HpRegenPerTick: 2
+      MpRegenPerTick: 0
+      Modifiers: []
+  - ID: 204
+    DisplayName: Bless
+    ClassType: 1
+    UnlockLevel: 18
+    ManaCost: 120
+    CooldownTicks: 600
+    RangeUnits: 12
+    TargetConstraint: 1
+    SkillEffectType: 8
+    DamageMultiplier: 0
+    DamageBaseStat: 0
+    DamageContext: 0
+    HealMultiplier: 0
+    BuffID: 8
+    BuffData:
+      DurationTicks: 600
+      HpRegenPerTick: 0
+      MpRegenPerTick: 0
+      Modifiers:
+      - StatId: 5
+        FlatBonus: 0
+        PctBonus: 0.1
+      - StatId: 6
+        FlatBonus: 0
+        PctBonus: 0.1
+  - ID: 205
+    DisplayName: Holy Blast
+    ClassType: 1
+    UnlockLevel: 25
+    ManaCost: 130
+    CooldownTicks: 80
+    RangeUnits: 12
+    TargetConstraint: 0
+    SkillEffectType: 2
+    DamageMultiplier: 2
+    DamageBaseStat: 1
+    DamageContext: 2
+    HealMultiplier: 0
+    BuffID: 0
+    BuffData:
+      DurationTicks: 0
+      HpRegenPerTick: 0
+      MpRegenPerTick: 0
+      Modifiers: []
+  - ID: 206
+    DisplayName: Divine Strike
+    ClassType: 1
+    UnlockLevel: 32
+    ManaCost: 120
+    CooldownTicks: 60
+    RangeUnits: 12
+    TargetConstraint: 0
+    SkillEffectType: 1
+    DamageMultiplier: 1.2
+    DamageBaseStat: 2
+    DamageContext: 1
+    HealMultiplier: 0
+    BuffID: 0
+    BuffData:
+      DurationTicks: 0
+      HpRegenPerTick: 0
+      MpRegenPerTick: 0
+      Modifiers: []
+  - ID: 207
+    DisplayName: Greater Heal
+    ClassType: 1
+    UnlockLevel: 38
+    ManaCost: 160
+    CooldownTicks: 80
+    RangeUnits: 12
+    TargetConstraint: 1
+    SkillEffectType: 4
+    DamageMultiplier: 0
+    DamageBaseStat: 0
+    DamageContext: 0
+    HealMultiplier: 2.5
+    BuffID: 0
+    BuffData:
+      DurationTicks: 0
+      HpRegenPerTick: 0
+      MpRegenPerTick: 0
+      Modifiers: []
+  - ID: 208
+    DisplayName: Smite Armor
+    ClassType: 1
+    UnlockLevel: 45
+    ManaCost: 140
+    CooldownTicks: 120
+    RangeUnits: 12
+    TargetConstraint: 0
+    SkillEffectType: 17
+    DamageMultiplier: 1.5
+    DamageBaseStat: 2
+    DamageContext: 1
+    HealMultiplier: 0
+    BuffID: 9
+    BuffData:
+      DurationTicks: 120
+      HpRegenPerTick: 0
+      MpRegenPerTick: 0
+      Modifiers:
+      - StatId: 6
+        FlatBonus: 0
+        PctBonus: -0.15
+  - ID: 209
+    DisplayName: Holy Shield
+    ClassType: 1
+    UnlockLevel: 52
+    ManaCost: 180
+    CooldownTicks: 600
+    RangeUnits: 0
+    TargetConstraint: 2
+    SkillEffectType: 8
+    DamageMultiplier: 0
+    DamageBaseStat: 0
+    DamageContext: 0
+    HealMultiplier: 0
+    BuffID: 10
+    BuffData:
+      DurationTicks: 200
+      HpRegenPerTick: 0
+      MpRegenPerTick: 0
+      Modifiers:
+      - StatId: 6
+        FlatBonus: 0
+        PctBonus: 0.25
+      - StatId: 7
+        FlatBonus: 0
+        PctBonus: 0.25
+  - ID: 210
+    DisplayName: Judgment
+    ClassType: 1
+    UnlockLevel: 58
+    ManaCost: 200
+    CooldownTicks: 200
+    RangeUnits: 12
+    TargetConstraint: 0
+    SkillEffectType: 1
+    DamageMultiplier: 2.2
+    DamageBaseStat: 2
+    DamageContext: 1
+    HealMultiplier: 0
+    BuffID: 0
+    BuffData:
+      DurationTicks: 0
+      HpRegenPerTick: 0
+      MpRegenPerTick: 0
+      Modifiers: []

@@ -817,9 +817,9 @@ constants:
       - design/gdd/skill-system.md
     type: "enum : uint"
     special_value: "BuffID(0) = BuffID.Invalid — reserved, must not be assigned to any buff definition"
-    note: "Identifies a buff definition. One active BuffID per entity at a time — applying the same BuffID to an entity that already holds it triggers a refresh (CR-SE-4), not a new stack. Skill System assigns BuffIDs to its buff-granting skills; the registry of specific BuffID values belongs in the Skill System GDD. enum:uint (not byte) — allows >256 unique buff types for expansion."
+    note: "Identifies a buff definition. One active BuffID per entity at a time — applying the same BuffID to an entity that already holds it triggers a refresh (CR-SE-4), not a new stack. Skill System assigns BuffIDs to its buff-granting skills; the registry of specific BuffID values belongs in the Skill System GDD (Skill Roster, \"Buff IDs, buff definitions and ranges\"). MVP values (Skill System Story 012, OQ-SK-6 resolved 2026-11-04): Invalid=0, Rend=1, Rush=2, ShieldBash=3, WarCry=4, SavageBlow=5, MortalWound=6, Prayer=7, Bless=8, SmiteArmor=9, HolyShield=10 — stable, never renumber. enum:uint (not byte) — allows >256 unique buff types for expansion."
     added: "2026-05-20"
-    revised: ""
+    revised: "2026-11-04"
 
   - name: MAX_STATS_PER_BUFF
     status: active

@@ -60,6 +60,8 @@ namespace IronGrind.Tests.EditMode.Architecture
             "IronGrind.LevelingSystem.ClassDefinition", // consumer: RespecScreenPresenter
             "IronGrind.LevelingSystem.IClassRegistry",  // consumer: RespecScreenPresenter
             "IronGrind.LevelingSystem.ClassRegistry",   // consumer: RespecScreenPresenter
+            "IronGrind.LevelingSystem.ClassDatabase",      // consumer (planned): client fills its ClassRegistry for the respec screen (Skill System Story 013)
+            "IronGrind.LevelingSystem.ClassDefinitionEntry", // consumer (planned): same, savable ClassDatabase entry
 
             // Skill System: wire types (Skill System Story 001). The consumer of every entry below is planned.
             "IronGrind.SkillSystem.SkillID",                // consumer (planned): Combat UI skill bar (SkillCastRequest / SkillCastResult wire id)
