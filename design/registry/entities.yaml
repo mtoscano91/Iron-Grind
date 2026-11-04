@@ -855,12 +855,14 @@ constants:
       - design/gdd/auth-wire-messages.md
       - design/gdd/auth-sidecar-ipc.md
       - design/gdd/character-persistence.md
+      - design/gdd/zone-instancing.md
+      - docs/architecture/ADR-016-gateway-and-authentication-process.md
     type: "readonly struct wrapping uint"
     special_value: "AccountID(0) = AccountID.Invalid — reserved, must not be assigned to any account"
     il2cpp_note: "Requires IEqualityComparer<AccountID> for Dictionary use — nested AccountIDComparer class defined in source GDD. Consistent pattern with CharacterID (currency-system.md) and ItemID (item-database.md)."
-    note: "Server-allocated monotonically increasing counter; never visible to the client. Defined by Authentication as the identity key that precedes all session and character records. networking-session-token.md CR-TOK-7 uses AccountID as the dictionary key for ActiveSessionTokens[]. Character Persistence GDD and Zone Instancing GDD must add themselves to referenced_by when authored — both will reference AccountID as the join key between account, character, and zone records. The 1:1 AccountID:CharacterID mapping (MVP) is defined in authentication.md CR-AUTH-12 — CharacterID is the companion struct defined in currency-system.md."
+    note: "Server-allocated monotonically increasing counter; never visible to the client. Defined by Authentication as the identity key that precedes all session and character records. networking-session-token.md CR-TOK-7 uses AccountID as the dictionary key for ActiveSessionTokens[]. Character Persistence GDD and Zone Instancing GDD must add themselves to referenced_by when authored — both will reference AccountID as the join key between account, character, and zone records. The 1:1 AccountID:CharacterID mapping (MVP) is defined in authentication.md CR-AUTH-12 — CharacterID is the companion struct defined in currency-system.md. 2026-11-04 (ADR-016): allocated by PostgreSQL account_id_seq in the gateway; accounts table + FK from character_records (migration 003); type moves to src/Foundation/Shared/ (namespace unchanged) so the gateway compiles it — still never in a client-facing schema."
     added: "2026-05-20"
-    revised: "2026-05-21"
+    revised: "2026-11-04"
 
   - name: HitResult
     status: active
@@ -1474,7 +1476,7 @@ constants:
     revised: ""
 
   - name: LoginResult
-    status: active
+    status: deprecated
     source: design/gdd/auth-wire-messages.md
     referenced_by:
       - design/gdd/auth-wire-messages.md
@@ -1483,12 +1485,53 @@ constants:
     type: "struct (network message)"
     fields: "{success: bool, errorCode: AuthFailureReason(byte), zoneId: ZoneID(uint)}"
     wire_size: "6-byte body (1B success + 1B errorCode + 4B zoneId)"
-    note: "Unified auth+zone-routing result. On success (success=true): errorCode=None(0), zoneId=server-assigned zone per CR-ZI-6. On failure (success=false): errorCode carries reason, zoneId=0 (not used). Server sends ConnectionAccepted (token+charId) alongside this on success path. Client MUST wait for this message before sending SessionHandshake — zoneId is the zone target. AMENDED 2026-05-29 (OQ-ZI-4): previously documented as failure-only; now unified success+failure result carrying zoneId."
+    note: "Unified auth+zone-routing result. On success (success=true): errorCode=None(0), zoneId=server-assigned zone per CR-ZI-6. On failure (success=false): errorCode carries reason, zoneId=0 (not used). Server sends ConnectionAccepted (token+charId) alongside this on success path. Client MUST wait for this message before sending SessionHandshake — zoneId is the zone target. AMENDED 2026-05-29 (OQ-ZI-4): previously documented as failure-only; now unified success+failure result carrying zoneId. DEPRECATED 2026-11-04 (ADR-016): replaced, together with ConnectionAccepted, by the HTTPS body LoginResponse."
     added: "2026-05-29"
+    revised: "2026-11-04"
+
+  - name: LoginResponse
+    status: active
+    source: design/gdd/auth-wire-messages.md
+    referenced_by:
+      - design/gdd/auth-wire-messages.md
+      - design/gdd/authentication.md
+      - design/gdd/networking-session-token.md
+      - design/gdd/zone-instancing.md
+      - docs/architecture/ADR-016-gateway-and-authentication-process.md
+    type: "struct (HTTPS response body, gateway → client)"
+    fields: "{success: bool, errorCode: AuthFailureReason(byte); on success only: sessionToken: byte[16], characterId: CharacterID(uint), zoneId: ZoneID(uint), zoneServerPort: ushort}"
+    wire_size: "2-byte body on failure; 28-byte body on success (no message-type header — endpoint POST /v1/login identifies it)"
+    note: "Answers every POST /v1/login (fresh and token path, success and failure); always HTTP 200, non-200 = client-side ServerError. Replaces LoginResult + ConnectionAccepted (ADR-016 Decision 2). The target zone has accepted Admit (fresh) or rotated the token (Reconnect) before it is written. AccountID is never a field (CR-AUTH-2, AC-AUTH-30). Codec in src/Foundation/Shared/."
+    added: "2026-11-04"
+    revised: ""
+
+  - name: RegistrationRequest
+    status: active
+    source: design/gdd/auth-wire-messages.md
+    referenced_by:
+      - design/gdd/auth-wire-messages.md
+      - design/gdd/authentication.md
+      - docs/architecture/ADR-016-gateway-and-authentication-process.md
+    type: "struct (HTTPS request body, client → gateway, POST /v1/register)"
+    fields: "{username: string, password: string, classType: byte}"
+    note: "classType added 2026-11-04 (ADR-016). Character name = normalized username, so USERNAME_MAX_LENGTH must stay <= 26 (character_name VARCHAR(26)). Account + character stub written in one transaction (authentication.md CR-AUTH-8)."
+    added: "2026-11-04"
+    revised: ""
+
+  - name: RegistrationError
+    status: active
+    source: design/gdd/authentication.md
+    referenced_by:
+      - design/gdd/authentication.md
+      - design/gdd/auth-wire-messages.md
+    type: "enum : byte"
+    values: "{UsernameTaken=0, UsernameTooShort=1, UsernameTooLong=2, UsernameInvalidChars=3, PasswordTooShort=4, PasswordTooLong=5, ClassInvalid=6, ServerError=255}"
+    note: "Carried in RegistrationResult.errorCode. ClassInvalid added 2026-11-04 (unknown RegistrationRequest.classType; AC-AUTH-34)."
+    added: "2026-11-04"
     revised: ""
 
   - name: RoutingRedirectMessage
-    status: active
+    status: deprecated
     source: design/gdd/auth-wire-messages.md
     referenced_by:
       - design/gdd/auth-wire-messages.md
@@ -1496,9 +1539,9 @@ constants:
     type: "struct (network message)"
     fields: "{newZoneId: ZoneID(uint)}"
     wire_size: "4-byte body; 18 bytes standalone (R-OD, S→C)"
-    note: "Sent when the zone from LoginResult becomes unavailable (Draining/Closed/T-3 failed) before the client's SessionHandshake is processed. Server re-runs CR-ZI-6 routing and sends new zone assignment. Client replaces stored zoneId and resubmits SessionHandshake(newZoneId). If re-routing also fails (all instances at hard cap): server sends ZoneFullResponse(ZoneFull=0) instead. Added 2026-05-29 (OQ-ZI-4 resolved)."
+    note: "Sent when the zone from LoginResult becomes unavailable (Draining/Closed/T-3 failed) before the client's SessionHandshake is processed. Server re-runs CR-ZI-6 routing and sends new zone assignment. Client replaces stored zoneId and resubmits SessionHandshake(newZoneId). If re-routing also fails (all instances at hard cap): server sends ZoneFullResponse(ZoneFull=0) instead. Added 2026-05-29 (OQ-ZI-4 resolved). DEPRECATED 2026-11-04 (ADR-016): routing runs in the gateway, so a zone cannot re-route; a zone that leaves Active drops un-arrived admissions (SessionReleased) and a late SessionHandshake gets ZoneFullResponse(ZoneDoesNotExist) — the client returns to login (zone-instancing.md EC-ZI-1)."
     added: "2026-05-29"
-    revised: ""
+    revised: "2026-11-04"
 
   # ── Consumable Use System (design/gdd/consumable-use-system.md) ──────────
 

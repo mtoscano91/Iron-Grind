@@ -96,11 +96,13 @@ Proposed
 1. Hash check, lockout, ban and failure counting as CR-AUTH-9 and CR-AUTH-10, against the accounts table (Decision 5).
 2. Resolve `CharacterID` from `character_records.account_id`. If it is `CharacterID(0)` or missing, fail with `ServerError` and log critical (EC-AUTH-5).
 3. If the gateway's account → zone map holds a live session for this account, send `Evict` to that zone and wait for `EvictResult` (EC-AUTH-6).
-4. Pick the zone by fill-first routing (CR-ZI-6).
+4. Pick the zone by fill-first routing (CR-ZI-6). Rule 1 (party co-location) is skipped at MVP: the gateway has no party data (`zone-instancing.md` OQ-ZI-9). Rule 2 reads `character_records.last_zone_id`.
 5. Generate a 16-byte token with `RandomNumberGenerator` and send `Admit`. The zone calls `SessionTokenStore.IssueToken`, records the expected `(AccountID, CharacterID)` and starts the `CONNECTING_TIMEOUT_SECONDS` clock. If no `SessionHandshake` arrives in time, the zone drops the entry and sends `SessionReleased`.
 6. On `AdmitResult.accepted`, reply `LoginResponse` with token, CharacterID, ZoneID and port. On rejection, re-route once; otherwise reply `ServerError`. The gateway does not keep the token after replying.
 
 **Token path** (`tokenField` non-zero): the gateway resolves AccountID from the normalized username, and does not hash. If no zone holds a session for the account, it returns `InvalidCredentials`. Otherwise it sends `Reconnect` to that zone; the zone runs `TryValidateAndRotate` and the `REAUTH_FAILURE_LIMIT` count, and the gateway relays the new token.
+
+**Zone leaves Active after Admit**: the zone rejects further `Admit`s, drops admitted entries whose client has not arrived and sends `SessionReleased` for each. A late `SessionHandshake` gets `ZoneFullResponse(ZoneDoesNotExist)` and the client returns to login. `RoutingRedirectMessage` (`auth-wire-messages.md`, 2026-05-29) is retired: zones cannot route.
 
 **Zone entry**: `SessionHandshake` carries CharacterID and the token, never AccountID. The real `IZoneEntryTokenValidator` looks up the admitted entry by CharacterID and compares the token with `CryptographicOperations.FixedTimeEquals` in the local store, without blocking. Character load stays in zone admission (Zone Instancing), so CR-AUTH-11 step 5 ("load character") runs in the zone, after the client arrives.
 
@@ -130,7 +132,7 @@ CREATE INDEX ix_character_records_account_id ON character_records (account_id);
 - `VARCHAR(32)` is the top of `USERNAME_MAX_LENGTH`'s safe range, so tuning the knob needs no migration. Because the character name is the username, `USERNAME_MAX_LENGTH` must stay ≤ 26 (`character_name VARCHAR(26)`); this is a joint constraint added to the GDD.
 - Registration is one transaction: `nextval` both sequences, `INSERT accounts`, `INSERT character_records (character_id, account_id, character_name, class_type)` with every other column taking its DDL default (the CR-CP-9 Level 1 values). Both rows commit or neither does; this is stronger than EC-AUTH-4's allowed orphan state. Sequence values are consumed even on rollback, which is the never-reissued rule (EC-AUTH-4, AC-AUTH-31 (b)). A unique violation (`23505`) on `username_lower` returns `UsernameTaken` (EC-AUTH-1, AC-AUTH-25).
 - Failure counting is one transaction: `SELECT … FOR UPDATE` on the account row, compute F-AUTH-1 in C#, `UPDATE`. Concurrent attempts on one account are serialized by the row lock (CR-AUTH-9 atomicity).
-- The gateway connects as its own role `gateway`: all rights on `accounts` and both sequences, `INSERT` and `SELECT (character_id, account_id)` on `character_records`, nothing else. Zone roles get no rights on `accounts`.
+- The gateway connects as its own role `gateway`: all rights on `accounts` and both sequences, `INSERT` and `SELECT (character_id, account_id, last_zone_id)` on `character_records`, nothing else. `last_zone_id` is read for CR-ZI-6 rule 2 (returning character). Zone roles get no rights on `accounts`.
 
 ### 6. Code placement and shared code
 - `gateway/IronGrind.Gateway/` (app), `gateway/IronGrind.Gateway.Tests/` (NUnit, `dotnet test`), `gateway/IronGrind.Gateway.sln`. The folder is outside `src/` and `Assets/`, so Unity never compiles it.

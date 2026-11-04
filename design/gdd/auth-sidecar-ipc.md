@@ -1,9 +1,11 @@
 # Auth Sidecar IPC Specification
 
-> **Status**: Draft
+> **Status**: **Superseded by ADR-016** (`docs/architecture/ADR-016-gateway-and-authentication-process.md`), 2026-11-04. Before: Draft (2026-05-20)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-05-20
-> **Type**: Architecture primitive — referenced by authentication.md
+> **Last Updated**: 2026-11-04
+> **Type**: Architecture primitive — historical; no longer referenced as a source by authentication.md
+
+> **⚠️ Superseded — do not implement.** Authentication runs in the .NET gateway (ADR-016); the Unity zone server has no auth channel, no named pipe and no sidecar health gate. What survives: `MAX_AUTH_PENDING` (now the gateway's hashing semaphore, ADR-016 Decision 1) and the sizing formula below for re-deriving it after the Argon2id benchmark. The rest of this document is kept for history only.
 
 ## Purpose
 

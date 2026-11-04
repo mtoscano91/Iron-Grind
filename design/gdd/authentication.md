@@ -1,13 +1,13 @@
 # Authentication
 
-> **Status**: Approved
+> **Status**: Revised 2026-11-04 for ADR-016 (gateway authentication) — lean re-review pending. Before: Approved (lean re-review, 2026-05-21)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-05-21
+> **Last Updated**: 2026-11-04
 > **Implements Pillar**: Pillar 1 — Earned Power (account identity is the permanent record of everything the player has earned)
 
 ## Overview
 
-Authentication is the server-side identity verification layer that gates all player access to Project Iron Grind. When a client connects, Authentication validates the player's credentials, binds the verified account to a `CharacterID`, and issues a session token that all subsequent server operations reference. No character state is loaded, no zone is entered, and no server-authoritative game operation is permitted until Authentication succeeds. Authentication runs entirely in the server's connection-driven path — it fires before the tick loop and before zone assignment, and has no presence in the 20 Hz tick loop. The specific credential scheme (device token, platform SSO, custom account system) is deferred to an Architecture Decision Record; this GDD specifies the behavioural contract that any credential scheme must satisfy.
+Authentication is the server-side identity verification layer that gates all player access to Project Iron Grind. When a client connects, Authentication validates the player's credentials, binds the verified account to a `CharacterID`, and issues a session token that all subsequent server operations reference. No character state is loaded, no zone is entered, and no server-authoritative game operation is permitted until Authentication succeeds. Authentication runs in the gateway process (ADR-016), outside the Unity zone servers: it completes before the client is routed to a zone and has no presence in the 20 Hz tick loop. The credential scheme is username + password (Argon2id, CR-AUTH-5); this GDD specifies the behavioural contract, ADR-016 the process, transport and storage.
 
 ## Player Fantasy
 
@@ -29,7 +29,7 @@ Full authentication is the server-side process that (a) verifies a credential pa
 `AccountID` values are allocated by a server-side monotonically increasing counter starting at 1. Values are never reused. The counter persists across server restarts in the same store as account records. `AccountID` and `CharacterID` counters are separately persisted and independently allocated — no shared state between them.
 
 **CR-AUTH-4 — Authentication Service Architecture**
-Authentication runs as a standalone .NET sidecar process, separate from the Unity headless game server binary. The game server calls the auth service via an internal IPC channel (named pipes; see `auth-sidecar-ipc.md` for transport spec, concurrency cap `MAX_AUTH_PENDING`, and health check contract). This separation: (a) permits the full .NET NuGet ecosystem (Argon2id library, no IL2CPP constraint); (b) ensures auth logic never runs on the combat tick thread. The boundary is defined by `IAuthenticationService`.
+Authentication runs in the gateway, `IronGrind.Gateway`: one .NET 10 process, separate from the Unity zone server binaries (ADR-016). Clients reach it over HTTPS (Caddy on 443 terminates TLS and proxies to the gateway on loopback). The gateway owns the accounts table, runs Argon2id, issues the session token, and routes the client to a zone (CR-ZI-6). Zones do no authentication work and have no channel to call it; the gateway talks to zones over the loopback gateway↔zone link (`Admit`, `Evict`, `Reconnect`, `RegisterZone`, …). This separation: (a) permits the full .NET NuGet ecosystem (Argon2id library, no IL2CPP constraint); (b) keeps auth work off every zone tick thread by construction. Concurrent hashing is capped by `MAX_AUTH_PENDING`; a request over the cap gets `ServerError` immediately with no failure count change. *(Replaces the named-pipe sidecar of `auth-sidecar-ipc.md`, superseded 2026-11-04.)*
 
 **CR-AUTH-5 — Password Hashing**
 Password hashes use **Argon2id** via `Konscious.Security.Cryptography`. Minimum parameters: `iterations=2`, `memorySize=19456 KB` (19 MiB), `parallelism=1`. Output is stored as a PHC string (self-describing: includes salt, parameters, and hash — no separate salt column). Salt: `RandomNumberGenerator.GetBytes(16)`.
@@ -43,33 +43,34 @@ The client sends the plaintext username and password over TLS. The server hashes
 All usernames are stored and compared lowercase. The server normalizes to lowercase before any lookup or storage. Valid characters: `[a-z0-9_]`, length `USERNAME_MIN_LENGTH`–`USERNAME_MAX_LENGTH` (post-normalization). Uniqueness is enforced case-insensitively.
 
 **CR-AUTH-8 — Registration Flow**
-1. Client sends `RegistrationRequest { username: string, password: string }` over TLS.
-2. Server normalizes username. Validates: length [`USERNAME_MIN_LENGTH`, `USERNAME_MAX_LENGTH`], charset `[a-z0-9_]`, password length [`PASSWORD_MIN_LENGTH`, `PASSWORD_MAX_LENGTH`].
-3. Checks username uniqueness (case-insensitive). On conflict: `RegistrationError.UsernameTaken`.
-4. Computes `Argon2id(password, salt)`, generates PHC string.
-5. Allocates next `AccountID` from server counter. Writes account record to persistence: `{ accountId, username_lower, passwordHashPHC, createdAtUtc, isBanned:false, loginFailureCount:0, lockoutUntilUtc:null }`. Persistence commit before response (CR-NET-5 pattern).
-6. Allocates a `CharacterID` (server counter, same pattern). Writes stub character record linked to `AccountID` for Character Persistence to expand.
-7. Responds `RegistrationResult { success:true }`. No session token on registration — player must log in.
-8. On failure: `RegistrationResult { success:false, errorCode:RegistrationError }`.
+1. Client sends `RegistrationRequest { username: string, password: string, classType: byte }` to the gateway over HTTPS (`POST /v1/register`, `auth-wire-messages.md`).
+2. Gateway normalizes username. Validates: length [`USERNAME_MIN_LENGTH`, `USERNAME_MAX_LENGTH`], charset `[a-z0-9_]`, password length [`PASSWORD_MIN_LENGTH`, `PASSWORD_MAX_LENGTH`], `classType` is a playable class (`class-system.md`). Unknown class: `RegistrationError.ClassInvalid`.
+3. Computes `Argon2id(password, salt)`, generates PHC string.
+4. In **one database transaction**: allocates the next `AccountID` (`account_id_seq`) and `CharacterID` (`character_id_seq`); inserts the account record `{ accountId, username_lower, passwordHashPHC, createdAtUtc, isBanned:false, loginFailureCount:0, lockoutUntilUtc:null }`; inserts the character stub `{ characterId, accountId, characterName = normalized username, classType }`, every other column taking its DDL default (the CR-CP-9 Level 1 values). Both rows commit or neither does, before the response (CR-NET-5 pattern).
+5. Username uniqueness (case-insensitive) is enforced by the unique constraint on `username_lower`: a violation rolls the transaction back and returns `RegistrationError.UsernameTaken` (EC-AUTH-1). No application-level pre-check is authoritative.
+6. Responds `RegistrationResult { success:true }`. No session token on registration — player must log in.
+7. On failure: `RegistrationResult { success:false, errorCode:RegistrationError }`.
 
-`RegistrationError : byte { UsernameTaken=0, UsernameTooShort=1, UsernameTooLong=2, UsernameInvalidChars=3, PasswordTooShort=4, PasswordTooLong=5, ServerError=255 }`
+The character's name is the username. Because `character_name` is `VARCHAR(26)`, `USERNAME_MAX_LENGTH` must stay ≤ 26 (Tuning Knobs joint constraint).
+
+`RegistrationError : byte { UsernameTaken=0, UsernameTooShort=1, UsernameTooLong=2, UsernameInvalidChars=3, PasswordTooShort=4, PasswordTooLong=5, ClassInvalid=6, ServerError=255 }`
 
 **CR-AUTH-9 — Login Flow**
-1. Client sends `ConnectionRequest { username:string, password:string, tokenField:byte[16] }` over TLS.
-2. If `tokenField` is non-zero: delegate entirely to CR-TOK-4 (`networking-session-token.md`). Do not evaluate credentials.
+1. Client sends `ConnectionRequest { username:string, password:string, tokenField:byte[16] }` to the gateway over HTTPS (`POST /v1/login`).
+2. If `tokenField` is non-zero: delegate entirely to CR-TOK-4 (`networking-session-token.md`) — the gateway resolves `AccountID` from the username and sends `Reconnect` to the zone holding the session; no hash runs. Do not evaluate credentials.
 3. Server normalizes username. Looks up account record by `username_lower`.
-4. **If account not found:** Server MUST still execute the full Argon2id computation against a pre-computed dummy hash generated at sidecar startup (same live Argon2id parameters — `iterations`, `memorySize`, `parallelism`; see `auth-sidecar-ipc.md`) before returning failure (prevents timing-oracle username enumeration). Result is discarded.
+4. **If account not found:** Server MUST still execute the full Argon2id computation against a pre-computed dummy hash generated at gateway startup (same live Argon2id parameters — `iterations`, `memorySize`, `parallelism`) before returning failure (prevents timing-oracle username enumeration). Result is discarded.
 5. If `lockoutUntilUtc != null` and `UtcNow < lockoutUntilUtc`: increment `loginFailureCount++`; set `lockoutUntilUtc = UtcNow + LockoutDuration(loginFailureCount)`; return auth failure immediately (no hash computation — counter advances even on the locked path).
 6. If `isBanned = true`: return auth failure immediately.
 7. Run `Argon2id(password, storedSalt)`, compare to `storedPasswordHashPHC` with `CryptographicOperations.FixedTimeEquals`.
 8. On mismatch: increment `loginFailureCount`; apply exponential lockout schedule (CR-AUTH-10); return generic auth failure.
 9. On match: reset `loginFailureCount=0`, `lockoutUntilUtc=null`. Proceed to CR-AUTH-11.
 
-**Atomicity:** `loginFailureCount` reads and writes MUST be atomic. Use DB-level atomic increment (`UPDATE ... SET loginFailureCount = loginFailureCount + 1 WHERE ...`) or a serialized per-account lock. Plain read-modify-write is not safe under concurrent login attempts.
+**Atomicity:** `loginFailureCount` reads and writes MUST be atomic. The gateway does it in one transaction: `SELECT … FOR UPDATE` on the account row, F-AUTH-1 computed in C#, `UPDATE` (ADR-016). The row lock serializes concurrent attempts on one account. Plain read-modify-write without the lock is not safe.
 
-**All failure reasons return identical response content:** `LoginResult { success:false, errorCode:AuthFailureReason.InvalidCredentials }` — no hint about which condition fired in the response message. Response timing varies by path: locked and banned paths return immediately (<10ms); credential evaluation runs Argon2id (~300ms). This timing delta is a known design tradeoff for DoS resistance (running Argon2id on locked accounts would expose the sidecar to compute exhaustion). See AC-AUTH-16 for the credential-path timing floor and AC-AUTH-19 for the locked-path fast-return requirement.
+**All failure reasons return identical response content:** `LoginResponse { success:false, errorCode:AuthFailureReason.InvalidCredentials }` — no hint about which condition fired in the response message. Response timing varies by path: locked and banned paths return immediately (<10ms); credential evaluation runs Argon2id (~300ms). This timing delta is a known design tradeoff for DoS resistance (running Argon2id on locked accounts would expose the gateway to compute exhaustion). See AC-AUTH-16 for the credential-path timing floor and AC-AUTH-19 for the locked-path fast-return requirement.
 
-**Abandoned auth:** If the connection drops or `CONNECTING_TIMEOUT_SECONDS` expires during `Auth_Pending` (before step 7 completes), the `loginFailureCount` is NOT incremented — no credential evaluation completed. See EC-AUTH-2 and EC-AUTH-3.
+**Abandoned auth:** If the client aborts the HTTPS request or its `LOGIN_HTTP_TIMEOUT_SECONDS` expires during `Auth_Pending`, the gateway lets the hash finish, then checks whether the request was aborted **before writing anything**. If it was: no `loginFailureCount` change, no reset, no `Evict`, no `Admit` — the result is discarded. See EC-AUTH-2 and EC-AUTH-3.
 
 `AuthFailureReason : byte { None=0, InvalidCredentials=1, ServerError=255 }` — intentionally minimal.
 
@@ -90,13 +91,15 @@ All usernames are stored and compared lowercase. The server normalizes to lowerc
 > **Note:** `REAUTH_FAILURE_LIMIT` (defined in `networking-session.md`, default=3) governs failed reconnect token validations after disconnect. It is a distinct constant from `LOGIN_FAILURE_LIMIT`. Do not conflate them.
 
 **CR-AUTH-11 — Session Establishment After Successful Login**
-1. Resolve `AccountID → CharacterID` from the account-character mapping.
-2. Generate a 16-byte session token per CR-TOK-1 (`networking-session-token.md`). Store at `ActiveSessionTokens[AccountID]` per CR-TOK-8.
-3. Emit `ConnectionAccepted` containing session token and `CharacterID` to client. (`AccountID` is server-internal only — CR-AUTH-2; wire schema defined in `auth-wire-messages.md`.)
-4. Networking session transitions: `Connecting → Connected` (networking-session.md ST-NET-1).
-5. Character Persistence loads character state for the resolved `CharacterID`. Zone assignment proceeds after load.
+All steps run in the gateway (ADR-016 Decision 4):
+1. Resolve `AccountID → CharacterID` from `character_records.account_id`. `CharacterID(0)` or no row: EC-AUTH-5.
+2. If the gateway's account → zone map holds a live session for this account, send `Evict` to that zone and wait for `EvictResult` (EC-AUTH-6).
+3. Pick the zone by fill-first routing (`zone-instancing.md` CR-ZI-6).
+4. Generate a 16-byte session token per CR-TOK-1 and send `Admit { accountId, characterId, token }` to that zone. The zone stores the token in its own `ActiveSessionTokens` (CR-TOK-8) and starts the `CONNECTING_TIMEOUT_SECONDS` clock for the client's arrival.
+5. On `AdmitResult.accepted`: reply `LoginResponse { success:true, sessionToken, characterId, zoneId, zoneServerPort }` (`auth-wire-messages.md`). `AccountID` is never a field (CR-AUTH-2). The gateway does not keep the token after replying.
+6. The client connects to the zone and sends `SessionHandshake`; the zone validates the token, loads the character (Character Persistence) and admits the player (`zone-instancing.md` CR-ZI-8 steps 2–3). Networking session `Connecting → Connected` (networking-session.md ST-NET-1) happens there, not in the gateway.
 
-**Rollback:** If step 3, 4, or 5 fails after step 2 has written the token, delete `ActiveSessionTokens[AccountID]` and transition to `Auth_Failed`.
+**Rollback:** If `Admit` is rejected (zone full or not Active), re-route once (step 3); if that also fails, or no `AdmitResult` arrives within `GATEWAY_ZONE_REQUEST_TIMEOUT_MS`, reply `ServerError`. An admitted entry the client never uses is dropped by the zone after `CONNECTING_TIMEOUT_SECONDS`, which then sends `SessionReleased`. The gateway holds no token, so there is nothing to delete on its side.
 
 **CR-AUTH-12 — 1:1 AccountID to CharacterID Mapping (MVP)**
 Each `AccountID` maps to exactly one `CharacterID`, established at registration (CR-AUTH-8 step 6) and immutable at MVP. Account and character are **separate DB records linked by FK** — never merged into a single row. This enables multi-character support post-MVP without schema migration. `CharacterID(0)` in the mapping is a persistence corruption error and must halt character load.
@@ -107,14 +110,14 @@ Each `AccountID` maps to exactly one `CharacterID`, established at registration 
 
 | Auth State | Description | Entry Condition | Exit Condition |
 |---|---|---|---|
-| `Auth_Idle` | Transport connected; no credentials received | TCP connection established | `ConnectionRequest` or `RegistrationRequest` received |
-| `Auth_Pending` | Credentials received; Argon2id executing | `ConnectionRequest` with zero `tokenField` | Match → `Auth_Success`; mismatch → `Auth_Failed` |
-| `Auth_Success` | Credentials verified; identities resolved; session token issued | Argon2id match confirmed | `ConnectionAccepted` sent; transitions to `Connected` |
-| `Auth_Failed` | Login failed — all causes return identical generic response to client | Mismatch, lockout check, or unknown account (see CR-AUTH-9) | Connection closed; no retry on this connection |
-| `Auth_Registration` | Processing a registration request | `RegistrationRequest` received | Completes (success or failure); connection closed; no session issued |
-| `Auth_TokenPath` | Reconnect via token; delegated entirely to CR-TOK-4 | `ConnectionRequest.tokenField != byte[16]{0}` | Token valid → `Reconnecting` (networking-session.md); invalid → `Auth_Failed` |
+| `Auth_Idle` | Request received; body not yet decoded | HTTPS `POST /v1/login` or `/v1/register` reaches the gateway | `ConnectionRequest` or `RegistrationRequest` decoded |
+| `Auth_Pending` | Credentials received; Argon2id executing | `ConnectionRequest` with zero `tokenField` | Match → `Auth_Success`; mismatch → `Auth_Failed`; request aborted → result discarded (CR-AUTH-9 "Abandoned auth") |
+| `Auth_Success` | Credentials verified; CharacterID resolved; zone admitted the token | Argon2id match, then CR-AUTH-11 steps 1–4 succeed | `LoginResponse { success:true }` sent; request ends |
+| `Auth_Failed` | Login failed — credential failures return an identical generic response | Mismatch, lockout check, or unknown account (CR-AUTH-9); `ServerError` causes (EC-AUTH-5, EC-AUTH-10) | `LoginResponse { success:false }` sent; request ends |
+| `Auth_Registration` | Processing a registration request | `RegistrationRequest` decoded | `RegistrationResult` sent; request ends; no session issued |
+| `Auth_TokenPath` | Reconnect via token; delegated entirely to CR-TOK-4 | `ConnectionRequest.tokenField != byte[16]{0}` | Zone accepts `Reconnect` → `LoginResponse` with the rotated token; rejected → `Auth_Failed` |
 
-`Connecting → Connected` (networking-session.md ST-NET-1) fires only when `Auth_Success` is reached. `CONNECTING_TIMEOUT_SECONDS` (30s per networking-session.md) is the outer envelope — if Authentication does not complete within that window, the session is abandoned.
+States are per gateway HTTPS request (ADR-016), not per zone connection. `Connecting → Connected` (networking-session.md ST-NET-1) fires in the zone, when the client's `SessionHandshake` is accepted after `Auth_Success`. `CONNECTING_TIMEOUT_SECONDS` (30s per networking-session.md) bounds the gap between `Admit` and that handshake. The client bounds the login request itself with `LOGIN_HTTP_TIMEOUT_SECONDS` (15s, ADR-016).
 
 ---
 
@@ -122,14 +125,15 @@ Each `AccountID` maps to exactly one `CharacterID`, established at registration 
 
 | System | Direction | Contract |
 |---|---|---|
-| Networking Core | Receives hook from | Auth is the first handler in `OnNewConnection`. Zone assignment must not proceed until `Auth_Success`. |
-| networking-session-token.md | Delegates to | Auth resolves `AccountID` from credentials; token GDD uses `AccountID` as its dictionary key. All token logic is owned by that GDD. Auth does not re-implement it. |
-| Character Persistence | Exports to | On `Auth_Success`: Auth calls `ICharacterPersistence.LoadCharacter(CharacterID)`. `CharacterID(0)` must never be forwarded — it is a persistence corruption error. |
-| Zone Instancing | Exports to | After character load: Auth hands off `(AccountID, CharacterID, ZoneID from character record)` to Zone Instancing for zone placement. Zone Instancing is not invoked until `Auth_Success` is confirmed. |
-| `IAuthenticationService` | Implements | `Task<AuthResult> AuthenticateAsync(ConnectionRequest)`, `Task<RegistrationResult> RegisterAsync(RegistrationRequest)`, `Task<CharacterID> GetCharacterIDAsync(AccountID)`. All async — Argon2id must never block the tick thread. |
+| Gateway (ADR-016) | Runs in | Authentication is the gateway's login and registration handling. Clients reach it over HTTPS; zones never call it. |
+| Networking Core | Precedes | The zone's connection path (`OnNewConnection`, `SessionHandshake`) runs only after the gateway's `Auth_Success`; the zone validates the admitted token, it does not authenticate. |
+| networking-session-token.md | Delegates to | Auth resolves `AccountID` from credentials and generates the token; the zone that holds the session stores, validates and rotates it (CR-TOK-4/5/8). All token logic is owned by that GDD. Auth does not re-implement it. |
+| Character Persistence | Precedes | The character loads at zone admission (`zone-instancing.md` CR-ZI-8 step 3), after the client arrives with the admitted token — not in the gateway. Registration writes the character stub (CR-AUTH-8). `CharacterID(0)` must never be admitted — EC-AUTH-5. |
+| Zone Instancing | Exports to | The gateway routes by CR-ZI-6 and sends `Admit (AccountID, CharacterID, token)` to the chosen zone before replying. Zone Instancing admits nothing without a matching admitted token. |
+| `IAuthenticationService` | Implements (gateway-internal) | `Task<AuthResult> AuthenticateAsync(ConnectionRequest)`, `Task<RegistrationResult> RegisterAsync(RegistrationRequest)`, `Task<CharacterID> GetCharacterIDAsync(AccountID)`. Gateway code only, not a Unity interface. Hashing runs on the thread pool, never on a request's I/O path. |
 
 ```csharp
-// IAuthenticationService return types
+// IAuthenticationService return types (gateway-internal)
 AuthResult {
   Success: bool,
   AccountID: AccountID,       // AccountID.Invalid on failure
@@ -176,7 +180,7 @@ resetting the window to UtcNow + LockoutDuration(new F). There is no "lockout al
 
 **F-AUTH-2 — Account-Character Map Memory Overhead (Informational)**
 
-*Not evaluated at runtime. Documents that the in-memory account-character map is safe to keep in-process at design-load concurrency.*
+*Not evaluated at runtime. Documents that the gateway's in-memory account → zone/character map is safe to keep in-process at design-load concurrency.*
 
 ```
 MapSizeBytes(N) = N × (sizeof(AccountID) + sizeof(CharacterID) + DictionaryOverheadPerEntry)
@@ -187,13 +191,13 @@ MapSizeBytes(N) = N × (sizeof(AccountID) + sizeof(CharacterID) + DictionaryOver
 
 | Symbol | Type | Range | Description |
 |---|---|---|---|
-| N | int | [1, 50] | Concurrent authenticated sessions (bounded by MAX_PLAYERS_PER_ZONE) |
+| N | int | [1, 200] | Concurrent sessions across all zones (MVP: 1–4 zones × `MAX_PLAYERS_PER_ZONE` 50, ADR-007) |
 | DictionaryOverheadPerEntry | int constant | ~24 bytes | .NET `Dictionary` bucket + pointer overhead per entry |
-| MapSizeBytes | int | [32, 1600] bytes | Total map footprint |
+| MapSizeBytes | int | [32, 6400] bytes | Total map footprint |
 
-**Output Range:** 32 to 1,600 bytes at MAX_PLAYERS_PER_ZONE=50.
+**Output Range:** 32 to 6,400 bytes at 4 full zones (1,600 bytes per full zone).
 
-**Example:** N=50 (full zone): 50 × 32 = **1,600 bytes**. Combined with token store from `networking-session-token.md` F-TOK-2 (~3 KB at 50 sessions): total auth service session overhead ≈ **4.6 KB** at peak. No in-memory sizing concern.
+**Example:** N=50 (full zone): 50 × 32 = **1,600 bytes**. The token store (`networking-session-token.md` F-TOK-2, ~3 KB at 50 sessions) lives in each zone, not in the gateway. No in-memory sizing concern.
 
 ---
 
@@ -203,15 +207,15 @@ MapSizeBytes(N) = N × (sizeof(AccountID) + sizeof(CharacterID) + DictionaryOver
 
 **EC-AUTH-1 — Duplicate registration race (same username, simultaneous requests)**: The first write succeeds; the second hits the database-level unique constraint on `username_lower` and receives `RegistrationError.UsernameTaken`. No partial record is written for the loser. Application-level read-then-write uniqueness checks have a TOCTOU window — the DB constraint is the authoritative guard.
 
-**EC-AUTH-2 — Connection drops during `Auth_Pending` (Argon2id interrupted)**: The sidecar completes the computation and discards the result. No `loginFailureCount` increment is applied (no credential evaluation completed). Session slot transitions to `Disconnected_SessionExpired` immediately. Rationale: completing and discarding is cheaper under attacker control than aborting mid-computation (no retry cost). `MAX_AUTH_PENDING` (`auth-sidecar-ipc.md`) bounds concurrent in-flight computations and is the primary DoS mitigation against drop-cycling. *(See OQ-AUTH-1 re: network-layer rate limiting as a secondary layer.)*
+**EC-AUTH-2 — Client aborts the request during `Auth_Pending` (Argon2id interrupted)**: The gateway completes the computation, sees the request was aborted, and discards the result before any write. No `loginFailureCount` change, no `Evict`, no `Admit` (CR-AUTH-9 "Abandoned auth"). No zone session exists yet, so nothing else is released. Rationale: completing and discarding is cheaper under attacker control than aborting mid-computation (no retry cost). `MAX_AUTH_PENDING` (gateway hashing semaphore, ADR-016) bounds concurrent in-flight computations and is the primary DoS mitigation against drop-cycling. *(See OQ-AUTH-1 re: network-layer rate limiting as a secondary layer.)*
 
-**EC-AUTH-3 — `CONNECTING_TIMEOUT_SECONDS` (30s) expires during `Auth_Pending`**: Session transitions to `Disconnected_SessionExpired`; in-flight Argon2id computation completes and is discarded. No `loginFailureCount` increment. Client must reconnect from scratch. A 30s expiry during normal hashing implies server overload or configuration error — neither is a player credential issue.
+**EC-AUTH-3 — Client `LOGIN_HTTP_TIMEOUT_SECONDS` (15s) expires during `Auth_Pending`**: The client abandons the request and treats it as `ServerError`; the gateway sees the aborted request and discards the result as in EC-AUTH-2. No `loginFailureCount` change. Client must log in again from scratch. A 15s expiry during normal hashing implies gateway overload or configuration error — neither is a player credential issue.
 
-**EC-AUTH-4 — Persistence write failure during registration**: Server returns `RegistrationResult { success:false, errorCode:ServerError=255 }`. No partial account record exists — write must commit before response (CR-NET-5 pattern). The allocated `AccountID` counter value is permanently consumed and not re-issued. Client must retry as a fresh registration. Two-phase compensating cleanup is deferred to post-MVP.
+**EC-AUTH-4 — Persistence write failure during registration**: Gateway returns `RegistrationResult { success:false, errorCode:ServerError=255 }`. The account and character stub are one transaction (CR-AUTH-8 step 4), so neither row exists — there is no orphan account. The `AccountID` and `CharacterID` sequence values are consumed even on rollback and never re-issued. Client must retry as a fresh registration.
 
-**EC-AUTH-5 — `CharacterID(0)` returned from account-character mapping (corruption)**: Server does NOT forward to Character Persistence. Session transitions to `Disconnected_SessionExpired`, corruption is logged as a critical error with `AccountID` and timestamp, and client receives `LoginResult { success:false, errorCode:ServerError=255 }`. Account requires manual operator remediation.
+**EC-AUTH-5 — `CharacterID(0)` returned from account-character mapping (corruption)**: Gateway sends no `Admit` (so no zone loads the character), logs corruption as a critical error with `AccountID` and timestamp, and the client receives `LoginResponse { success:false, errorCode:ServerError=255 }`. Account requires manual operator remediation.
 
-**EC-AUTH-6 — `CharacterID` already active in a live session (duplicate login / session-stealing)**: Server follows networking-session.md's session-stealing protocol: prior session immediately invalidated (token deleted per CR-TOK-6), character state written to persistence, resources released. New connection proceeds to `Auth_Success`. No duplicate session for the same `CharacterID` is permitted. Prior client receives connection close with no reconnect window.
+**EC-AUTH-6 — `CharacterID` already active in a live session (duplicate login / session-stealing)**: Before routing, the gateway sends `Evict` to the zone holding the account's session and waits for `EvictResult` (up to `GATEWAY_EVICT_TIMEOUT_MS`; no reply → `ServerError`). That zone follows networking-session.md's session-stealing protocol: prior session invalidated (token deleted per CR-TOK-6), character state written to persistence, resources released; `EvictResult` follows the save. The new login then proceeds to `Admit` and `Auth_Success`. No duplicate session for the same `CharacterID` is permitted. Prior client receives connection close with no reconnect window.
 
 **EC-AUTH-7 — Account banned while player is `Connected` (admin action mid-session)**: `isBanned` is checked at login only, not on every tick. A currently connected session is NOT immediately terminated by the auth system. An explicit admin kick command (`AdminBanKick(AccountID)`) must terminate the in-flight session. Without it, the ban takes effect on the player's next login attempt. Admin kick mechanism is outside auth scope. *(See OQ-AUTH-4.)* See AC-AUTH-33 for the acceptance criterion codifying this intentional two-step policy.
 
@@ -219,23 +223,29 @@ MapSizeBytes(N) = N × (sizeof(AccountID) + sizeof(CharacterID) + DictionaryOver
 
 **EC-AUTH-9 — Username passes client validation but fails server (Unicode / multibyte bypass)**: Server normalizes to lowercase via `ToLowerInvariant`, then validates against the `[a-z0-9_]` ASCII-only charset. Any non-ASCII character (including Cyrillic homoglyphs, accented chars, CJK) fails this check regardless of visual similarity. Length is validated by character count post-normalization, not byte count. Result: `RegistrationError.UsernameInvalidChars`. The ASCII whitelist is simpler and more robust than a Unicode denylist.
 
-**EC-AUTH-10 — Auth sidecar unavailable (IPC channel down)**: For both login and registration: return `ServerError=255`, do not increment `loginFailureCount`, transition session to `Disconnected_SessionExpired` immediately. Sidecar unavailability is logged as a critical infrastructure event, separate from account-level auth failures. If the sidecar is unreachable at game server startup, the game server refuses new connections until the sidecar is confirmed healthy. *(See OQ-AUTH-5 re: queuing vs. immediate fail.)* **Degraded sidecar (slow but not down):** If the sidecar is responding but latency exceeds expected bounds, the game server does NOT short-circuit — it allows the in-flight request to complete until `CONNECTING_TIMEOUT_SECONDS` expires. The health check hysteresis (`SIDECAR_HEALTH_FAILURE_THRESHOLD` and `RECOVERY_THRESHOLD`) governs when the sidecar is reclassified as down; see `auth-sidecar-ipc.md`.
+**EC-AUTH-10 — Infrastructure unavailable (gateway, database, or zone link)**: Three cases, all failing immediately (OQ-AUTH-5 resolved — no queuing):
+- **Gateway down:** the client's HTTPS request fails (connection refused, non-200, or `LOGIN_HTTP_TIMEOUT_SECONDS`); the client shows the `ServerError` message. Zones keep serving their current sessions — there is no zone → auth dependency and no startup health gate.
+- **Database unavailable to the gateway:** login and registration return `ServerError=255`; `loginFailureCount` is not changed (no write happened); a critical infrastructure event is logged, separate from account-level auth failures.
+- **Zone link down, or no `AdmitResult` / `ReconnectResult` within `GATEWAY_ZONE_REQUEST_TIMEOUT_MS`:** the login returns `ServerError=255` and a critical infrastructure event is logged. A zone with no link is unroutable until it re-registers. The credential check already completed, so a correct password has reset `loginFailureCount` as normal (CR-AUTH-9 step 9) — the failure is not the player's.
+
+**Degraded gateway (slow but not down):** no short-circuit; the client's `LOGIN_HTTP_TIMEOUT_SECONDS` is the bound, and EC-AUTH-3 applies.
 
 ## Dependencies
 
 | Document | Type | Relationship |
 |---|---|---|
-| `networking-core.md` | **Upstream** (hard) | Networking Core defines the connection-driven execution path Authentication plugs into. CR-NET-2: "On new connection: authentication, zone assignment, session handshake emission." Authentication receives the `OnNewConnection` hook; Networking Core must not invoke zone assignment before `Auth_Success`. `SESSION_TTL_SECONDS` (300s) and `CONNECTING_TIMEOUT_SECONDS` (30s) govern session expiry and the outer auth timeout. |
+| ADR-016 (`docs/architecture/ADR-016-gateway-and-authentication-process.md`) | **Architecture** (hard) | Places authentication in the gateway; defines HTTPS transport, the gateway↔zone link, the accounts table (migration 003) and token ownership by the zone. |
+| `networking-core.md` | **Upstream** (hard) | Networking Core defines the zone's connection-driven path. CR-NET-2's "authentication" step is now the zone's validation of a gateway-admitted token at `SessionHandshake`; credentials are never checked in the zone. `SESSION_TTL_SECONDS` (300s) and `CONNECTING_TIMEOUT_SECONDS` (30s, the Admit → handshake window) govern session expiry. |
 | `networking-session.md` | **Upstream** (hard) | Defines ST-NET-1 session state machine. `Auth_Success` triggers `Connecting → Connected`. `REAUTH_FAILURE_LIMIT` (value=3, reconnect-token path) is owned by this GDD and must not be redefined here — it is distinct from `LOGIN_FAILURE_LIMIT`. |
-| `networking-session-token.md` | **Upstream** (hard) | Defines session token generation, storage, validation, and rotation (CR-TOK-1 through CR-TOK-8). Authentication delegates all token logic here. Auth provides `AccountID` (the dictionary key); the token GDD owns everything else. `F-TOK-2` documents token store memory overhead at MAX_PLAYERS_PER_ZONE. |
-| `character-persistence.md` | **Downstream** (hard, Not Started) | Character Persistence receives `(AccountID, CharacterID)` from Authentication on `Auth_Success` and loads character state. Must not load any character without a valid pair from `IAuthenticationService`. Also owns the full character record whose stub is created during registration. Must reference `AccountID` (this GDD) as the FK in its schema. |
-| `zone-instancing.md` | **Downstream** (hard, Not Started) | Zone Instancing receives `(AccountID, CharacterID, ZoneID)` from Authentication after character load and places the player in a zone. Zone assignment must not begin before `Auth_Success`. Must reference `AccountID` and `CharacterID` from this GDD. |
+| `networking-session-token.md` | **Upstream** (hard) | Defines session token generation, storage, validation, and rotation (CR-TOK-1 through CR-TOK-8). Authentication delegates all token logic here. Auth provides `AccountID` (the dictionary key) and the fresh token via `Admit`; the zone's store owns everything else. `F-TOK-2` documents token store memory overhead at MAX_PLAYERS_PER_ZONE. |
+| `character-persistence.md` | **Downstream** (hard, Approved) | Owns the full character record whose stub registration creates (`character_records`, FK `account_id` → `accounts`, migration 003). Loads character state at zone admission for the `CharacterID` the gateway admitted. |
+| `zone-instancing.md` | **Downstream** (hard, Approved) | The gateway applies Zone Instancing's routing rules (CR-ZI-6) at login and sends `Admit` to the chosen zone; Zone Instancing admits the player at `SessionHandshake` (CR-ZI-8). |
 
 **Bidirectional consistency:**
-- `networking-core.md` mentions authentication in its connection-driven path — consistent with CR-AUTH-4 and the auth state machine ✅
+- `networking-core.md` mentions authentication in its connection-driven path — since ADR-016 this is token validation at zone entry (CR-AUTH-4). ⚠️ Wording in `networking-core.md` CR-NET-2 not yet updated.
 - `networking-session-token.md` uses `AccountID` as its dictionary key but does not define it — this GDD defines it ✅
 - `networking-session.md` owns `REAUTH_FAILURE_LIMIT` (reconnect path); this GDD owns `LOGIN_FAILURE_LIMIT` (credential path) — no naming collision ✅
-- `character-persistence.md` and `zone-instancing.md` are Not Started — bidirectional rows must be added when those GDDs are authored
+- `character-persistence.md` and `zone-instancing.md` are Approved and reference this GDD; `zone-instancing.md` CR-ZI-6 / CR-ZI-8 updated for the gateway 2026-11-04 ✅
 
 ## Tuning Knobs
 
@@ -245,24 +255,26 @@ MapSizeBytes(N) = N × (sizeof(AccountID) + sizeof(CharacterID) + DictionaryOver
 | `LockoutTable[5]` (first lockout) | 30s | [15s, 120s] | 15s barely deters automated scripts | 120s at first lockout frustrates legitimate players who mistyped once too many |
 | `LockoutTable[9+]` (maximum lockout) | 600s | [300s, 3600s] | 300s — attacker can script around short caps | 3600s — legitimate player with stuck counter is effectively locked out until admin intervenes |
 | Argon2id `iterations` | 2 | [2, 4] | < 2: violates OWASP minimum; brute-force resistance degrades | > 4: hash computation exceeds 1–2s per attempt; auth latency becomes noticeable under concurrent logins |
-| Argon2id `memorySize` | 19456 KB (19 MiB) | [19456, 65536] | < 19456: violates OWASP minimum | > 65536 (64 MiB): may saturate sidecar heap under concurrent logins at MVP server specs |
+| Argon2id `memorySize` | 19456 KB (19 MiB) | [19456, 65536] | < 19456: violates OWASP minimum | > 65536 (64 MiB): may saturate gateway memory under concurrent logins at MVP server specs (`MAX_AUTH_PENDING` × memorySize) |
 | Argon2id `parallelism` | 1 | [1, 2] | — | > 2: no benefit on single-threaded auth path |
 | `USERNAME_MIN_LENGTH` | 3 | [2, 6] | 2-char usernames allow squatting of short premium names | 6-char minimum too restrictive for most desired usernames |
-| `USERNAME_MAX_LENGTH` | 24 | [12, 32] | 12-char max too tight for creative names | 32-char max expands all display fields; may cause HUD layout issues |
+| `USERNAME_MAX_LENGTH` | 24 | [12, 26] | 12-char max too tight for creative names | > 26: the username is the character name and `character_name` is `VARCHAR(26)` — registration would fail on insert; long names also crowd HUD display fields |
 | `PASSWORD_MIN_LENGTH` | 8 | [6, 12] | 6-char allows weak passwords | 12-char frustrates mobile users on virtual keyboards |
 | `PASSWORD_MAX_LENGTH` | 72 | [72, 128] | Do not reduce below 72 — mobile UX choice (virtual keyboard limit), not an Argon2id constraint; Argon2id safe floor is [16, 256] | 128+ functionally uncapped in Argon2id — no concern |
-| `MAX_AUTH_PENDING` | 10 | [5, 20] | < 5: bursts of legitimate logins may hit the cap during server load | > 20: sidecar memory budget exceeded (see `auth-sidecar-ipc.md` for sizing formula) |
+| `MAX_AUTH_PENDING` | 10 | [5, 20] | < 5: bursts of legitimate logins may hit the cap during server load | > 20: gateway hashing memory (`MAX_AUTH_PENDING` × 19 MiB) exceeds its budget (ADR-007 / ADR-016) |
 
 **Joint constraints:**
 - `LockoutTable[5]` through `LockoutTable[9+]` must be monotonically increasing — a lockout step must never be shorter than the prior step.
 - `LOGIN_FAILURE_LIMIT` and `LockoutTable[9+]` determine brute-force deterrence together; tune as a pair.
 - Argon2id `iterations` and `memorySize` must be tuned together — re-derive performance benchmarks on target server hardware when changing either.
+- `USERNAME_MAX_LENGTH` ≤ 26 (`character_name VARCHAR(26)`, ADR-006), because the character name is the username (CR-AUTH-8). `accounts.username_lower` is `VARCHAR(32)`, so tuning inside [12, 26] needs no migration.
+- `LOGIN_HTTP_TIMEOUT_SECONDS` (ADR-016) must exceed hashing + `GATEWAY_EVICT_TIMEOUT_MS` + `GATEWAY_ZONE_REQUEST_TIMEOUT_MS`.
 
 **Cross-system note:** `REAUTH_FAILURE_LIMIT` (value=3, owned by `networking-session.md`) governs the reconnect-token re-auth path. It must not be confused with `LOGIN_FAILURE_LIMIT`.
 
 ## Visual/Audio Requirements
 
-Authentication has no visual effects or audio events. The auth sidecar is invisible to the player during successful authentication. The moment of arrival in the zone (loading transition → world) is owned by Zone Instancing, not Authentication. Login and registration screen animations or sounds are UI-layer concerns owned by the screen's UX spec.
+Authentication has no visual effects or audio events. The gateway is invisible to the player during successful authentication. The moment of arrival in the zone (loading transition → world) is owned by Zone Instancing, not Authentication. Login and registration screen animations or sounds are UI-layer concerns owned by the screen's UX spec.
 
 ## UI Requirements
 
@@ -280,15 +292,15 @@ Authentication has no visual effects or audio events. The auth sidecar is invisi
 
 ## Acceptance Criteria
 
-**AC-AUTH-01** [Integration] BLOCKING — Given a client sends a valid `ConnectionRequest` (correct credentials, zero `tokenField`) over TLS, when the server processes it, then all three steps complete before `ConnectionAccepted` is sent: (a) Argon2id credential verification, (b) `AccountID → CharacterID` mapping resolution, (c) session token generation and storage in `ActiveSessionTokens`. Verified by confirming the response carries a non-zero token, a valid `CharacterID`, and `ActiveSessionTokens[AccountID]` is populated at response time.
+**AC-AUTH-01** [Integration] BLOCKING — Given a client sends a valid `ConnectionRequest` (correct credentials, zero `tokenField`) to the gateway, when the gateway processes it, then all three steps complete before `LoginResponse` is sent: (a) Argon2id credential verification, (b) `AccountID → CharacterID` mapping resolution, (c) session token generation and its `Admit` accepted by the routed zone. Verified against a test database and a fake zone link: the response carries a non-zero token, a valid `CharacterID`, a non-zero `zoneId` and port, and the fake zone received `Admit` with the same token and `CharacterID` before the response was written.
 
 **AC-AUTH-02** [Logic] BLOCKING — Given `AccountID(0)` is used as a dictionary key or operand, when compared via `AccountIDComparer`, then it equals `AccountID.Invalid` and is never produced by the server counter. Unit test: construct `AccountID(0)`, assert `Equals(AccountID.Invalid)` is `true`; assert first counter allocation is 1.
 
 **AC-AUTH-03** [Logic] BLOCKING — Given two `AccountID` instances with the same wrapped `uint`, when compared via `AccountIDComparer`, then `Equals` returns `true` and hash codes match. With different `uint` values: `Equals` returns `false`. Unit test both.
 
-**AC-AUTH-04** [Logic] BLOCKING — Given a fresh `AccountID` counter initialized from persistence, when three accounts are registered in order, then allocated IDs are strictly monotonically increasing starting at 1. Assert counter state is durably persisted: a second instantiation reads the last-issued value, not 1.
+**AC-AUTH-04** [Integration] BLOCKING — Given a freshly migrated test database, when three accounts are registered in order, then the allocated `AccountID`s are strictly monotonically increasing starting at 1. Restart the gateway and register a fourth: its `AccountID` is 4, not 1 (`account_id_seq` is durable).
 
-**AC-AUTH-05a** [Integration] BLOCKING — Given a `ConnectionRequest` arrives while the 20 Hz game server tick is executing, when the auth sidecar processes Argon2id (~200–400ms), then the game server tick completes within its 50ms budget during the computation. Verified by server-side tick timestamp logs showing no gap exceeding 50ms correlated with login events.
+**AC-AUTH-05a** [Integration] BLOCKING — Given logins are submitted to the gateway while a zone runs its 20 Hz tick with connected players, when the gateway processes Argon2id (~200–400ms each, up to `MAX_AUTH_PENDING` at once) and sends `Admit` to that zone, then the zone tick completes within its 50ms budget throughout. Verified by server-side tick timestamp logs showing no gap exceeding 50ms correlated with login events.
 
 **AC-AUTH-05b** [Infrastructure] PREREQUISITE — Tick timestamp instrumentation must exist and be captured per-frame before AC-AUTH-05a can be verified. This AC gates sprint commitment on AC-AUTH-05a — do not schedule AC-AUTH-05a until instrumentation story is complete.
 
@@ -296,21 +308,21 @@ Authentication has no visual effects or audio events. The auth sidecar is invisi
 
 **AC-AUTH-07** [Logic] BLOCKING — Given a password is hashed and stored as a PHC string, when verified with the same plaintext, then returns `true`. With a different plaintext: returns `false`. Unit test round-trip.
 
-**AC-AUTH-08** [Security] BLOCKING — Given a client attempts a plaintext (non-TLS) connection, when the server's connection handler evaluates it, then the connection is closed before any application-layer data is read, and no `LoginResult` or `RegistrationResult` is emitted. Integration test: connect via plaintext TCP; assert closed within one round-trip.
+**AC-AUTH-08** [Security] BLOCKING — Given a client attempts a plaintext (non-TLS) connection to port 443, when Caddy evaluates it, then the connection is closed during the TLS handshake, no request reaches the gateway, and no `LoginResponse` or `RegistrationResult` is emitted; and nothing listens on port 80. Integration test: plaintext TCP to 443 → closed within one round-trip and the gateway request log is empty; TCP connect to 80 → refused.
 
-**AC-AUTH-09** [Security] BLOCKING — Given a client sends `ConnectionRequest` with plaintext credentials over TLS, when the server processes it, then: (a) `account.passwordHashPHC` begins with `$argon2id$`, not the plaintext; (b) server logs contain no substring matching the submitted password. For (b): log capture method (stdout redirect or sidecar log file path) must be specified in auth sidecar config before sprint — flag as GAP-6.
+**AC-AUTH-09** [Security] BLOCKING — Given a client sends `ConnectionRequest` with plaintext credentials over TLS, when the server processes it, then: (a) `account.passwordHashPHC` begins with `$argon2id$`, not the plaintext; (b) server logs contain no substring matching the submitted password. For (b): capture the gateway's log output during the test — GAP-6.
 
 **AC-AUTH-10** [Logic] BLOCKING — Given usernames `"Alice"`, `"ALICE"`, and `"alice"` are submitted, when the server normalizes and looks up each, then all three resolve to the same account record `"alice"`. Unit test: register `"alice"`; login with `"Alice"` and `"ALICE"`; assert both succeed.
 
 **AC-AUTH-11** [Logic] BLOCKING — Given boundary username inputs (2-char, 25-char, `!` char, space, 3-char, 24-char, `alice_0`), when the server validates each, then: 2-char → `UsernameTooShort`; 25-char → `UsernameTooLong`; `!` and space → `UsernameInvalidChars`; 3-char, 24-char, `alice_0` → pass validation. One assertion per boundary.
 
-**AC-AUTH-12** [Integration] BLOCKING — Given a valid `RegistrationRequest`, when registration completes, then: (a) account record is committed to persistence with all required fields before response is sent; (b) stub character record exists linked to `AccountID` by FK; (c) response is `RegistrationResult { success:true }`; (d) no session token is issued.
+**AC-AUTH-12** [Integration] BLOCKING — Given a valid `RegistrationRequest`, when registration completes, then: (a) account record is committed to persistence with all required fields before response is sent; (b) stub character record exists linked to `AccountID` by FK, with `character_name` = the normalized username, `class_type` = the request's `classType`, and every other column at its DDL default; (c) response is `RegistrationResult { success:true }`; (d) no session token is issued and no zone receives `Admit`.
 
 **AC-AUTH-13** [Logic] BLOCKING — Given a password of length 7 (one below minimum), when submitted to registration, then response is `RegistrationError.PasswordTooShort`. Given length 8: passes validation. Unit test both boundary values.
 
 **AC-AUTH-14** [Integration] BLOCKING — Given `"alice"` is registered, when `"Alice"` is submitted for registration, then response is `RegistrationError.UsernameTaken` and exactly one account record for `"alice"` exists in the DB.
 
-**AC-AUTH-15** [Integration] BLOCKING — Given a `ConnectionRequest` with non-zero `tokenField` and a wrong password, when the server receives it, then it delegates to CR-TOK-4 (reconnect path) and does NOT evaluate the credential fields. Verified by asserting the reconnect path is followed, not the credential failure path.
+**AC-AUTH-15** [Integration] BLOCKING — Given a `ConnectionRequest` with non-zero `tokenField` and a wrong password, when the gateway receives it, then it delegates to CR-TOK-4 (sends `Reconnect` to the zone holding the session) and does NOT evaluate the credential fields. Verified by asserting the fake zone received `Reconnect`, no hash ran, and `loginFailureCount` is unchanged.
 
 **AC-AUTH-16** [Security] BLOCKING — Given 20 login attempts against a non-existent username and 20 against a known username that fail at Argon2id, when response latencies are measured, then: (a) both paths take ≥150ms per sample (Argon2id runs in both cases); (b) mean latency delta between the two distributions is < 20ms across the 20-sample sets. Assert no sample from the non-existent path completes in < 150ms. The 150ms floor and 20ms delta threshold are named constants (`AUTH_TIMING_FLOOR_MS = 150`, `AUTH_TIMING_DELTA_THRESHOLD_MS = 20`) — define in test config before sprint.
 
@@ -322,31 +334,33 @@ Authentication has no visual effects or audio events. The auth sidecar is invisi
 
 **AC-AUTH-20** [Logic] BLOCKING — Given `loginFailureCount=9`, when a failed login is submitted, then `loginFailureCount=10` and `lockoutUntilUtc ≈ UtcNow + 600s`. Repeat with `loginFailureCount=50`: assert `lockoutUntilUtc ≈ UtcNow + 600s` (cap holds).
 
-**AC-AUTH-21** [Integration] BLOCKING — Given a successful login, when session establishment runs, then: (a) `ActiveSessionTokens[AccountID]` contains a new non-zero 16-byte token; (b) `ConnectionAccepted` carries the session token and `CharacterID` — assert no `AccountID` field is present in the wire message (per `auth-wire-messages.md`); (c) networking session transitions to `Connected`; (d) `ICharacterPersistence.LoadCharacter(CharacterID)` is called exactly once. Verified via test spy on the interface.
+**AC-AUTH-21** [Integration] BLOCKING — Given a successful login followed by the client's `SessionHandshake` at the routed zone, when session establishment runs, then: (a) the zone's `ActiveSessionTokens[AccountID]` contains the non-zero 16-byte token from `Admit`; (b) `LoginResponse` carries the same token, `CharacterID`, `zoneId` and `zoneServerPort` — assert no `AccountID` field is present (per `auth-wire-messages.md`); (c) the zone's networking session transitions to `Connected` on the handshake; (d) `LoadCharacter(CharacterID)` is called exactly once, by the zone at admission, never by the gateway. Verified via a gateway test with a fake zone link for (a)–(b) and a zone test spy for (c)–(d).
 
 **AC-AUTH-22** [Integration] BLOCKING — Given an MVP account, when `GetCharacterIDAsync(AccountID)` is called, then the result matches the stub created at registration. Account and character are separate DB rows — assert account row contains no character data fields; character row contains `accountId` FK.
 
-**AC-AUTH-23** [Logic] BLOCKING — Given `GetCharacterIDAsync` returns `CharacterID(0)`, when the server checks the result, then: `LoadCharacter` is NOT called (spy count = 0); critical error is logged with `AccountID` and timestamp; session transitions to `Disconnected_SessionExpired`; response is `AuthFailureReason.ServerError=255`.
+**AC-AUTH-23** [Logic] BLOCKING — Given `GetCharacterIDAsync` returns `CharacterID(0)`, when the gateway checks the result, then: no `Admit` is sent (fake zone link count = 0); a critical error is logged with `AccountID` and timestamp; response is `LoginResponse { success:false, errorCode:ServerError=255 }`.
 
-**AC-AUTH-24** [Logic] ADVISORY — Given the account-character map is instantiated with 50 entries, when `GC.GetTotalMemory` is measured before and after (with `GC.Collect()` before), then delta does not exceed 3,200 bytes (2× the 1,600-byte formula estimate). Assert across 3 consecutive runs.
+**AC-AUTH-24** [Logic] ADVISORY — Given the gateway's account map is instantiated with 200 entries, when `GC.GetTotalMemory` is measured before and after (with `GC.Collect()` before), then delta does not exceed 12,800 bytes (2× the 6,400-byte formula estimate). Assert across 3 consecutive runs.
 
 **AC-AUTH-25** [Integration] BLOCKING — Given two simultaneous `RegistrationRequest` messages for the same username, when both are processed concurrently, then exactly one account record exists; one response is `success:true`; the other is `RegistrationError.UsernameTaken`.
 
-**AC-AUTH-26** [Integration] BLOCKING — Given a client drops the TCP connection (RST) during `Auth_Pending` (Argon2id executing), when the sidecar completes and discards the result, then `loginFailureCount` on the account record is unchanged from its pre-attempt value. *(Requires TCP RST injection hook — flag GAP-3 for test infrastructure design before sprint.)*
+**AC-AUTH-26** [Integration] BLOCKING — Given a client aborts its login request during `Auth_Pending` (Argon2id executing), once with a wrong password and once with the correct one, when the gateway completes and discards the result, then in both cases `loginFailureCount` and `lockoutUntilUtc` are unchanged from their pre-attempt values and no `Evict` or `Admit` was sent. *(Abort injected through the gateway test host's request-aborted token — GAP-3.)*
 
-**AC-AUTH-27** [Integration] BLOCKING — Given client A is `Connected` for account X, when client B submits valid credentials for account X, then: (a) client A's session transitions to `Disconnected_SessionExpired` with final state written to persistence; (b) `ActiveSessionTokens[AccountID X]` is repopulated with a new token for client B; (c) client A's connection is closed (no reconnect window); (d) client B reaches `Auth_Success`. All four outcomes verified via test instrumentation.
+**AC-AUTH-27** [Integration] BLOCKING — Given client A is `Connected` in zone Z for account X, when client B submits valid credentials for account X, then: (a) the gateway sends `Evict` to Z and sends no `Admit` before `EvictResult` arrives; (b) client A's session transitions to `Disconnected_SessionExpired` with final state written to persistence before `EvictResult` is sent; (c) client A's connection is closed (no reconnect window) and its token deleted; (d) the routed zone's `ActiveSessionTokens[AccountID X]` holds client B's new token and client B receives `LoginResponse { success:true }`. All four verified via test instrumentation.
 
 **AC-AUTH-28** [Security] BLOCKING — Given username inputs `"аlice"` (Cyrillic U+0430), `"ａlice"` (Fullwidth U+FF41), `"àlice"` (U+00E0), `"日本語"` (CJK), when each is submitted to registration, then all return `RegistrationError.UsernameInvalidChars`. Four separate assertions.
 
-**AC-AUTH-29** [Integration] BLOCKING — Given the auth sidecar IPC channel is unavailable, when a client attempts login or registration, then: (a) response is `ServerError=255`; (b) session transitions to `Disconnected_SessionExpired`; (c) `loginFailureCount` is NOT incremented; (d) server logs a critical infrastructure event (not an account-level auth failure). If sidecar is unreachable at startup: `OnNewConnection` is not invoked until sidecar health check passes.
+**AC-AUTH-29** [Integration] BLOCKING — Given (i) the gateway's database is unavailable, and separately (ii) the routed zone's link is down or never answers `Admit` within `GATEWAY_ZONE_REQUEST_TIMEOUT_MS`, when a client attempts login (and, for (i), registration), then: (a) the response is `ServerError=255`; (b) for (i), `loginFailureCount` is unchanged; for (ii), `loginFailureCount` is 0 after a correct password (normal reset) and no zone holds a token for the account; (c) the gateway logs a critical infrastructure event (not an account-level auth failure); (d) with the gateway process stopped, zones with live sessions keep ticking and serving them.
 
-**AC-AUTH-30** [Security] BLOCKING — Given a `ConnectionAccepted` is sent to a client on `Auth_Success`, when the client-side message is deserialized, then the message struct does not contain an `AccountID` field — verified by asserting the wire message schema (`auth-wire-messages.md`) has no `accountId` field. *(AccountID is server-internal only per CR-AUTH-2.)*
+**AC-AUTH-30** [Security] BLOCKING — Given a `LoginResponse` is sent to a client on `Auth_Success`, when the client decodes the body, then it contains no `AccountID` field — verified by asserting the shared codec's `LoginResponse` schema (`auth-wire-messages.md`) has no `accountId` field and the encoded success body is exactly the documented length. *(AccountID is server-internal only per CR-AUTH-2.)*
 
-**AC-AUTH-31** [Integration] BLOCKING — Given a persistence fault is injected between the account write and the character stub write during registration (EC-AUTH-4 path), when the fault fires, then: (a) no partial account row exists — the account record is either fully committed or fully absent (column-level atomicity guaranteed; note: account-committed + character-stub-absent is a known possible orphan state at MVP, to be resolved by post-MVP compensating cleanup per EC-AUTH-4); (b) the allocated `AccountID` counter value is consumed (not re-issued); (c) client receives `RegistrationResult { success:false, errorCode:ServerError=255 }`. Requires `IAccountRepository` mock that throws on character stub write after account commit.
+**AC-AUTH-31** [Integration] BLOCKING — Given a fault is injected after the account insert and before the character stub insert during registration (EC-AUTH-4 path), when the fault fires, then: (a) neither the account row nor the character row exists (one transaction, CR-AUTH-8 step 4); (b) the `AccountID` and `CharacterID` sequence values taken by the failed attempt are not re-issued — the next successful registration gets higher values; (c) the client receives `RegistrationResult { success:false, errorCode:ServerError=255 }`. Requires a fault hook in the gateway's account repository between the two inserts, against a test database.
 
-**AC-AUTH-32** [Integration] BLOCKING — Given `CONNECTING_TIMEOUT_SECONDS` (30s) expires while a login is in `Auth_Pending` (Argon2id executing), when the timeout fires, then: (a) session transitions to `Disconnected_SessionExpired`; (b) `loginFailureCount` on the account record is unchanged from its pre-attempt value; (c) the sidecar completes the computation and discards the result without incrementing failure state. Distinct from AC-AUTH-26 (TCP RST path) — this tests the server-side timeout path. *(Flag for test infrastructure: requires controllable Argon2id delay injection in test environment.)*
+**AC-AUTH-32** [Integration] BLOCKING — Given the client's `LOGIN_HTTP_TIMEOUT_SECONDS` expires while a login is in `Auth_Pending` (Argon2id delayed past it), when the client gives up, then: (a) the client reports `ServerError`; (b) `loginFailureCount` on the account record is unchanged from its pre-attempt value; (c) the gateway completes the computation and discards the result, sending no `Admit`. Distinct from AC-AUTH-26 (explicit abort) — this tests the client timeout path. *(Requires controllable Argon2id delay injection in the gateway test host.)*
 
 **AC-AUTH-33** [Logic] BLOCKING — Given an account is banned (`isBanned = true`) while a session for that account is in `Connected` state, when the auth system processes the ban, then the live session is NOT auto-terminated — the player remains connected. The ban takes effect on the next login attempt only. Verified by: (1) establishing a `Connected` session; (2) setting `isBanned = true` on the account record; (3) asserting session remains `Connected` for ≥ 5s with no auto-disconnect event. *(Tests intentional two-step policy: ban + explicit admin kick required; see EC-AUTH-7 and OQ-AUTH-4.)*
+
+**AC-AUTH-34** [Integration] BLOCKING — Given `RegistrationRequest`s with an unknown `classType` (e.g. `0` and `255`), and separately one per playable class, when registration runs, then: unknown → `RegistrationError.ClassInvalid` and no rows written; each playable class → `success:true`, `character_records.class_type` equals the request's `classType`, and `character_name` equals the normalized username. *(Added 2026-11-04, ADR-016.)*
 
 ---
 
@@ -356,18 +370,18 @@ Authentication has no visual effects or audio events. The auth sidecar is invisi
 |---|---|---|---|
 | GAP-1 | AC-AUTH-01, AC-AUTH-05a | MEDIUM | Server-side step-timestamp and tick-timing instrumentation (prerequisite tracked by AC-AUTH-05b) |
 | GAP-2 | AC-AUTH-16 | MEDIUM | Define latency floor (≥150ms) as a named constant before sprint |
-| GAP-3 | AC-AUTH-26 | HIGH | TCP RST injection hook in test infrastructure |
+| GAP-3 | AC-AUTH-26 | MEDIUM | Request-abort injection in the gateway test host (ASP.NET Core test server, request-aborted token) |
 | GAP-4 | EC-AUTH-3 (no AC) | LOW | Implicit coverage via AC-AUTH-26; add explicit AC if session-state transitions are observable |
-| GAP-5 | EC-AUTH-4 (no AC) | LOW | Requires persistence layer fault injection (`IAccountRepository` mock that throws on write) |
-| GAP-6 | AC-AUTH-09(b) | MEDIUM | Log capture interface (stdout redirect or sidecar log file path) must be specified in auth sidecar config before sprint |
+| GAP-5 | AC-AUTH-31 | LOW | Fault hook between the two registration inserts in the gateway account repository |
+| GAP-6 | AC-AUTH-09(b) | MEDIUM | Gateway log output capturable in tests (in-memory logger provider) |
 
 ## Open Questions
 
 | ID | Question | Blocking? | Escalate To |
 |---|---|---|---|
 | OQ-AUTH-1 | Should per-IP rate limiting for TCP connect-and-drop cycling be specified? `loginFailureCount` does not increment on abandoned auth — rapid drop cycling is unmitigated by the account lockout system. | No | Architecture / Security review |
-| OQ-AUTH-2 | Should the auth sidecar expose a server-side monitor alert when `Auth_Pending` duration exceeds 2s? Would surface Argon2id performance regression before it reaches the 30s timeout. | No | Monitoring / observability ADR |
+| OQ-AUTH-2 | Should the gateway expose a server-side monitor alert when `Auth_Pending` duration exceeds 2s? Would surface Argon2id performance regression before it reaches the 30s timeout. | No | Monitoring / observability ADR |
 | OQ-AUTH-3 | `AccountID` counter advances on failed registration (non-contiguous IDs). Functionally harmless (AccountID is never client-visible). Confirm no admin or analytics requirement changes this. | No | User |
-| OQ-AUTH-4 | Should the auth sidecar push a notification to the game server when `isBanned` is set (enabling auto-kick), or is the two-step "ban + explicit kick" admin workflow acceptable for MVP? | No | Admin tooling design |
-| OQ-AUTH-5 | Should the game server queue `ConnectionRequest` messages for ~5s during a transient sidecar outage and retry, or fail immediately? Immediate failure is the safer MVP default (prevents session slot exhaustion during prolonged outages). | No | Auth sidecar resilience design |
+| OQ-AUTH-4 | Should the gateway push a notification (over the zone link) to the zone holding the session when `isBanned` is set (enabling auto-kick), or is the two-step "ban + explicit kick" admin workflow acceptable for MVP? | No | Admin tooling design |
+| OQ-AUTH-5 | ~~Should the game server queue `ConnectionRequest` messages for ~5s during a transient sidecar outage and retry, or fail immediately?~~ | — | **RESOLVED 2026-11-04 (ADR-016)** — immediate `ServerError`; there is no sidecar, and the gateway's infrastructure failures are EC-AUTH-10. |
 | OQ-AUTH-6 | Should per-IP rate limiting on the registration endpoint be specified? The `AccountID` counter advances on each attempt — sustained registration spam from one IP could exhaust the counter over a very long time horizon (functionally harmless at MVP scale, but a DoS vector on launch). | No | Architecture / Security review |
