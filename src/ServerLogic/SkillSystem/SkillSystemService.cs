@@ -302,6 +302,12 @@ namespace IronGrind.SkillSystem
             return record < 0 ? 0 : _counts[record];
         }
 
+        /// <summary>True when the entity holds a store record (spawned, not despawned), even one with zero skills (Story 010).</summary>
+        internal bool HasRecord(EntityID entity)
+        {
+            return FindRecord(entity) >= 0;
+        }
+
         /// <summary>Reads slot <paramref name="slot"/>; false for no record or a slot outside [0, count).</summary>
         internal bool TryGetSkill(EntityID entity, int slot, out SkillInstance skill)
         {

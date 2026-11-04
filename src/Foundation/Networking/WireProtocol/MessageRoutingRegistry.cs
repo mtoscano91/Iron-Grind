@@ -285,6 +285,10 @@ namespace IronGrind.Networking
             AddPriority(SkillUnlockNotification.MessageTypeId, nameof(SkillUnlockNotification), DesignPillar.EarnedPower,
                 MessageDirection.ServerToOwningClient, "Owner-only skill unlock (CR-SK-21); a lost notice leaves the HUD skill bar without the unlock animation and NEW badge.");
 
+            // Skill System Story 010: cooldown snapshot to the joiner after SessionReady, R-OD priority path (not cap-exempt).
+            AddPriority(SkillCooldownSnapshot.MessageTypeId, nameof(SkillCooldownSnapshot), DesignPillar.RhythmMastery,
+                MessageDirection.ServerToOwningClient, "Owner-only cooldown state of all 10 skill slots on zone join (CR-SK-12); a lost snapshot leaves the HUD skill bar without the running cooldowns.");
+
             // Skill System Story 004: the cast request, U-U (dropped requests are not retransmitted; the client re-submits next beat).
             Add(new MessageRoutingEntry(
                 messageTypeId: SkillCastRequest.MessageTypeId,

@@ -84,7 +84,7 @@ Applied to `skill-system.md` and `entities.yaml`.
 | 007 | [Cast execution (`NotifySkillUsed`, damage, kill, facing)](story-007-cast-execution.md) | Logic | Complete | ADR-010, ADR-013 |
 | 008 | [Effect application (buffs, debuffs, instant heal)](story-008-effect-application.md) | Logic | Complete | ADR-010 |
 | 009 | [Cast output (`SkillCastResult`, `SkillCooldownUpdate`)](story-009-cast-output.md) | Logic | Complete | ADR-004 |
-| 010 | [`SkillCooldownSnapshot` on zone join](story-010-cooldown-snapshot.md) | Integration | Ready | ADR-004 |
+| 010 | [`SkillCooldownSnapshot` on zone join](story-010-cooldown-snapshot.md) | Integration | Complete | ADR-004 |
 | 011 | [Composition and tick-order wiring](story-011-composition.md) | Integration | Ready | ADR-014 |
 | 012 | [MVP skill roster and BuffIDs](story-012-mvp-roster-data.md) | Config/Data | Ready | ADR-012 |
 

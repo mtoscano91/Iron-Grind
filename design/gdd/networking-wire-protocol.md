@@ -1364,7 +1364,7 @@ SkillCooldownSnapshot {
     //   uint cooldownExpiryTick; // 4 bytes — absolute server tick; 0 if no cooldown has been registered
 }
 ```
-*Standalone size: 10 (envelope) + 80 (body) = 90 bytes. Fixed-size — always exactly 10 entries. Sent once per zone join or reconnect as part of the join-snapshot sequence, after `SessionReady`. Same `cooldownExpiryTick` format as `SkillCooldownUpdate` (`skill-system.md` CR-SK-23; corrected 2026-11-02 from `ticksRemaining`); a slot is Ready when `cooldownExpiryTick <= NetworkManager.ServerTime.Tick`. Locked skills carry `cooldownExpiryTick=0`; the client derives `Locked` vs `Ready` from the `IsUnlocked` flags established at spawn. `MessageTypeID` assigned in Networking ADR. Defined in `skill-system.md` CR-SK-12.*
+*Standalone size: 10 (envelope) + 80 (body) = 90 bytes. Fixed-size — always exactly 10 entries. Sent once per zone join or reconnect as part of the join-snapshot sequence, after `SessionReady`. Same `cooldownExpiryTick` format as `SkillCooldownUpdate` (`skill-system.md` CR-SK-23; corrected 2026-11-02 from `ticksRemaining`); a slot is Ready when `cooldownExpiryTick <= NetworkManager.ServerTime.Tick`. Locked skills carry `cooldownExpiryTick=0`; the client derives `Locked` vs `Ready` from the `IsUnlocked` flags established at spawn. MessageTypeID: `0xE150` (R-OD priority block 0xE150–0xE15F, assigned with `SkillUnlockNotification`'s `0xE151`; implemented in Skill System Story 010). Defined in `skill-system.md` CR-SK-12.*
 
 ---
 
