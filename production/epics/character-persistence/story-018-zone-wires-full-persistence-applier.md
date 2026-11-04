@@ -75,7 +75,7 @@
 **Completed**: 2026-11-04
 **Criteria**: 7/7 passing (all automated; none deferred)
 **Deviations** (advisory, no new tech debt):
-- The zone-close save (`ZoneCloseSteps` step 2) now logs one failed save start per admitted player (the service has no save wiring, so `SaveCore` throws at its wiring check before any export). Nothing is written; covered by TD-091.
+- The zone-close save (`ZoneCloseSteps` step 2) now logs one failed save start per admitted player (the service has no save wiring, so `SaveCore` throws at its wiring check before any export). Nothing is written; covered by TD-091. **Correction (Story 019, 2026-11-04):** in the composed zone an admitted player stays "entering" (SessionReady is not wired), so step 2 skips it and no save start is logged; `SaveSession` called directly still throws.
 - Inventory and gear loaded from the record are discarded in the zone (stand-ins accept and drop them): no bag, no gear modifiers until real services exist. Documented in the stand-ins' remarks; replace them together with enabling the save path (TD-091).
 - Logout / session-TTL saves would throw synchronously, but neither is reachable in the composed zone yet (logging ghost source, no `BeginCleanLogout` caller).
 - Test-only seams added: `RecordStoreOverride`, `EntryTokenValidatorOverride` (internal, null in production).

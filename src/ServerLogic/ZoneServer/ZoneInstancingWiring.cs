@@ -115,8 +115,8 @@ namespace IronGrind.ServerLogic.ZoneServer
         public Action<EntityID> UnregisterPlayerEntity;
 
         /// <summary>
-        /// The Equipment System, unregistered at session end (Equipment Story 008). Null:
-        /// <see cref="StandInZoneEquipmentService"/>.
+        /// The Equipment System, unregistered at session end (Equipment Story 008). Required: the wiring constructor throws
+        /// <see cref="ArgumentNullException"/> when it is null (Character Persistence Story 019 removed the stand-in).
         /// </summary>
         public IronGrind.EquipmentSystem.IEquipmentService Equipment;
 
@@ -221,7 +221,7 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// <param name="inventory">The Inventory service (<c>UnregisterCharacter</c> at session end).</param>
         /// <param name="disconnector">The transport close seam; the zone client id equals the transport client id.</param>
         /// <param name="requestTeardown">Called once when the zone closes (composition <c>RequestTeardown</c>).</param>
-        /// <param name="options">Knobs and test seams; null for the production defaults.</param>
+        /// <param name="options">Knobs and test seams; required for <see cref="ZoneInstancingWiringOptions.Equipment"/>.</param>
         /// <exception cref="ArgumentNullException">A required argument is null.</exception>
         public ZoneInstancingWiring(ZoneID zone, IServerTickSource ticks, ITickCompletionQueue queue,
             IInboundRequestDispatcher dispatcher, IClientMessageOutbox outbox, ICharacterPersistence persistence,
@@ -249,6 +249,9 @@ namespace IronGrind.ServerLogic.ZoneServer
             {
                 throw new ArgumentNullException(nameof(persistence));
             }
+
+            IronGrind.EquipmentSystem.IEquipmentService equipment = options.Equipment
+                ?? throw new ArgumentNullException(nameof(options), "options.Equipment is required (Character Persistence Story 019).");
 
             IPartyZonePresence party = options.Party ?? new NoPartyZonePresence();
             IZoneEntityStateSource state = options.EntityState ?? new LoggingZoneEntityStateSource();
@@ -289,7 +292,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                 options.TeardownSessionSink ?? new LoggingZoneTeardownSessionSink(), this, outbox, zone);
             _playerExit = new ZonePlayerExit(_pool, _reclamation);
             _sessionEnds = new SessionEndCoordinator(persistence, sessionRelease, queue, gate, _sessions, inventory,
-                options.Equipment ?? new StandInZoneEquipmentService(), options.ClearEquipRequestStore ?? (_ => { }),
+                equipment, options.ClearEquipRequestStore ?? (_ => { }),
                 options.UnregisterPlayerEntity ?? (_ => { }), _ => { },
                 (characterId, type) => _playerExit.ReleasePlayer(characterId, type));
         }

@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using IronGrind.ItemDatabase;
 using IronGrind.LevelingSystem;
 using IronGrind.ServerLogic.ZoneInstancing;
 using IronGrind.SkillSystem;
@@ -40,6 +41,10 @@ namespace IronGrind.ServerLogic.ZoneServer
         [SerializeField] private SkillDatabase _skillDatabase;
         [SerializeField] private ClassDatabase _classDatabase;
 
+        // Character Persistence Story 019: the item records, validated at S2 by ZoneItemDataLoader; a missing, empty or
+        // invalid list fails S2. Holds every ItemDefinition asset under Assets/data/items/.
+        [SerializeField] private ItemDefinition[] _items;
+
         private ZoneServerComposition _composition;
         private NgoZoneNetwork _network;
 #if DEVELOPMENT_BUILD || UNITY_EDITOR
@@ -62,7 +67,8 @@ namespace IronGrind.ServerLogic.ZoneServer
                     null, // close steps: the Zone Instancing wiring built at S5 (Story 014)
                     new UnitySceneLoader(gameObject, _registry, slot),
                     new ZoneDefinitionBoundsValidator(slot),
-                    new ZoneClassSkillDataLoader(_skillDatabase, _classDatabase, new StandInZoneStaticDataLoader()),
+                    new ZoneClassSkillDataLoader(_skillDatabase, _classDatabase,
+                        new ZoneItemDataLoader(_items, new StandInZoneStaticDataLoader())),
                     null, // zone state owner: the Zone Instancing wiring built at S5 (Story 014)
                     new StandInGatewayRegistration(),
                     new FileZoneConfigSource(),

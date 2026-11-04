@@ -23,7 +23,8 @@ namespace IronGrind.ServerLogic.ZoneServer
     /// <summary>
     /// Startup S2 loader for the class and skill data (Skill System Story 013; ADR-009 Amendment 1 S2; class-system.md
     /// CD-10, AC-CS-18). Validates the two assets, fills a <see cref="ClassRegistry"/>, then runs the loader for the
-    /// remaining static data (still a stand-in). A missing or invalid asset logs one
+    /// remaining static data (the item records, Character Persistence Story 019, then a stand-in), whose item database it
+    /// forwards (<see cref="IZoneItemData"/>). A missing or invalid asset logs one
     /// <c>[ZoneServer] S2: &lt;reason&gt;</c> error and returns false (S-fail in every build). The reason names the
     /// asset, the class and the check, never an asset path.
     /// </summary>
@@ -40,7 +41,7 @@ namespace IronGrind.ServerLogic.ZoneServer
     /// if (!loader.LoadAndValidate()) { /* S-fail */ }
     /// </code>
     /// </example>
-    public sealed class ZoneClassSkillDataLoader : IZoneStaticDataLoader, IZoneClassSkillData
+    public sealed class ZoneClassSkillDataLoader : IZoneStaticDataLoader, IZoneClassSkillData, IZoneItemData
     {
         /// <summary>CD-10: lowest auto-allocation per stat per level at MVP.</summary>
         public const int MIN_AUTO_ALLOC = 0;
@@ -77,6 +78,13 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// <inheritdoc/>
         public SkillDatabase LoadedSkillDatabase { get; private set; }
 
+        /// <summary>
+        /// The item database of the <c>rest</c> loader when it provides one (<see cref="ZoneItemDataLoader"/>, Character
+        /// Persistence Story 019), forwarded so S5 finds it on this loader; null until <c>LoadAndValidate</c> succeeded or
+        /// when the rest loader has none.
+        /// </summary>
+        public IronGrind.ItemDatabase.IItemDatabase LoadedItemDatabase { get; private set; }
+
         /// <inheritdoc/>
         public bool LoadAndValidate()
         {
@@ -96,6 +104,7 @@ namespace IronGrind.ServerLogic.ZoneServer
 
             LoadedClassRegistry = registry;
             LoadedSkillDatabase = _skillDatabase;
+            LoadedItemDatabase = (_rest as IZoneItemData)?.LoadedItemDatabase;
             return true;
         }
 

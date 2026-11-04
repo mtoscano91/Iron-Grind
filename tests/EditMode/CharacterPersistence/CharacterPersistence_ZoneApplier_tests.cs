@@ -7,8 +7,6 @@ using System.Threading.Tasks;
 using IronGrind.CharacterPersistence;
 using IronGrind.CharacterStats;
 using IronGrind.Currency;
-using IronGrind.EquipmentSystem;
-using IronGrind.InventorySystem;
 using IronGrind.LevelingSystem;
 using IronGrind.Networking;
 using IronGrind.ServerLogic.ZoneInstancing;
@@ -59,9 +57,9 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
         private const float CURRENT_MP = 33f;
         private const uint GOLD = 4321u;
         private const uint GOLD_VERSION = 7u;
-        private const uint GEAR_ITEM = 5u;
+        private const uint GEAR_ITEM = MvpItemFixture.BRONZE_SWORD; // a Weapon: restored into slot 0 (GearSlot.Weapon)
         private const byte GEAR_LEVEL = 2;
-        private const uint BAG_ITEM = 12u;
+        private const uint BAG_ITEM = MvpItemFixture.HP_POTION_SMALL; // stackable
         private const int BAG_COUNT = 4;
 
         private const uint CLIENT_SECOND = 22u;
@@ -70,6 +68,7 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
         private const uint GOLD_VERSION_RELOADED = 8u;
 
         private SkillDatabase _database;
+        private MvpItemFixture _items;
         private MemoryStore _store;
 
         private sealed class MemoryStore : ICharacterRecordStore
@@ -108,6 +107,9 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
                 UnityEngine.Object.DestroyImmediate(_database);
                 _database = null;
             }
+
+            _items?.Dispose();
+            _items = null;
         }
 
         private static CharacterRecord MakeRecord()
@@ -135,7 +137,7 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             r.CurrentMP = CURRENT_MP;
             r.GoldBalance = GOLD;
             r.GoldVersion = GOLD_VERSION;
-            // Non-empty gear and bag: the stand-ins must accept them (no ItemDatabaseMiss, no InventoryNotRestored).
+            // Non-empty gear and bag, both in the MVP item database (Story 019): no ItemDatabaseMiss, no InventoryNotRestored.
             r.GearSlots[0] = new GearSlotRecord(new ItemID(GEAR_ITEM), GEAR_LEVEL);
             r.InventorySlots[0] = new ItemID(BAG_ITEM);
             r.InventoryItemCounts[0] = BAG_COUNT;
@@ -171,6 +173,8 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             rig.Comp.RespawnProviderOverride = new FakeRespawn();
             rig.Comp.RecordStoreOverride = store;
             rig.Comp.EntryTokenValidatorOverride = new AcceptAllValidator();
+            _items = new MvpItemFixture();
+            rig.Comp.ItemDatabaseOverride = _items.Database;
             SuRig.Drive(rig.Comp.Start(SuRig.ARGS));
             return rig;
         }
@@ -365,7 +369,7 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
         }
 
         [Test]
-        public void test_zone_applier_readmitted_character_gets_the_new_record_and_stand_ins_still_log_once()
+        public void test_zone_applier_readmitted_character_gets_the_new_record()
         {
             WiRig rig = StartRig(MakeRecord());
             using (var log = new WiLogCapture())
@@ -383,8 +387,6 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
                 Assert.IsTrue(rig.Comp.ZoneCurrency.TryGetState(new CharacterID(CLIENT), out uint balance, out uint version));
                 Assert.AreEqual(GOLD_RELOADED, balance, "the reload overwrites the earlier balance");
                 Assert.AreEqual(GOLD_VERSION_RELOADED, version);
-                Assert.AreEqual(1, log.Lines.FindAll(l => l == "[ZoneServer] inventory service not implemented").Count);
-                Assert.AreEqual(1, log.Lines.FindAll(l => l == "[ZoneServer] equipment service not implemented").Count);
             }
         }
 
@@ -434,57 +436,6 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
                     StringAssert.DoesNotContain("no class type", line);
                 }
             }
-        }
-
-        // ---------------------------------------------------------------- AC-6: stand-ins accept the restore
-
-        [Test]
-        public void test_zone_applier_admission_logs_each_stand_in_exactly_once()
-        {
-            WiRig rig = StartRig(MakeRecord());
-            using (var log = new WiLogCapture())
-            {
-                Assert.IsTrue(EnterThroughAdmission(rig, out _));
-
-                Assert.AreEqual(1, log.Lines.FindAll(l => l == "[ZoneServer] inventory service not implemented").Count);
-                Assert.AreEqual(1, log.Lines.FindAll(l => l == "[ZoneServer] equipment service not implemented").Count);
-            }
-        }
-
-        [Test]
-        public void test_zone_applier_inventory_stand_in_accepts_import_logs_once_and_still_refuses_export()
-        {
-            var inventory = new StandInZoneInventoryService();
-            var id = new CharacterID(CLIENT);
-            using (var log = new WiLogCapture())
-            {
-                Assert.IsTrue(inventory.ImportSnapshot(id, InventorySnapshot.Empty));
-                Assert.IsTrue(inventory.ImportSnapshot(id, null));
-                inventory.UnregisterCharacter(id);
-
-                Assert.AreEqual(1, log.Lines.FindAll(l => l == "[ZoneServer] inventory service not implemented").Count);
-            }
-
-            Assert.Throws<NotSupportedException>(() => inventory.ExportSnapshot(id));
-        }
-
-        [Test]
-        public void test_zone_applier_equipment_stand_in_accepts_restore_reports_no_drop_logs_once_and_still_refuses_export()
-        {
-            var equipment = new StandInZoneEquipmentService();
-            var id = new CharacterID(CLIENT);
-            var gear = new[] { new SavedGearSlot(new ItemID(GEAR_ITEM), GEAR_LEVEL) };
-            using (var log = new WiLogCapture())
-            {
-                equipment.UnregisterCharacter(id);
-                equipment.RegisterCharacter(id, new EntityID(7u));
-                GearRestoreResult result = equipment.RestoreSlots(id, gear);
-
-                Assert.AreEqual(0, result.DroppedCount);
-                Assert.AreEqual(1, log.Lines.FindAll(l => l == "[ZoneServer] equipment service not implemented").Count);
-            }
-
-            Assert.Throws<NotSupportedException>(() => equipment.ExportSlots(id));
         }
     }
 }

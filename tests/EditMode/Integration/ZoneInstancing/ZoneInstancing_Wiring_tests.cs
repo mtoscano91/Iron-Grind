@@ -289,6 +289,7 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
                 Validator = new AcceptAllValidator(),
                 TeardownSessionSink = _sink,
                 Ghosts = _ghosts,
+                Equipment = new FakeEquipmentService(),
             };
 #if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
             _observer = new NetworkTestObserver();
@@ -1177,22 +1178,15 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
         }
 
         [Test]
-        public void test_stand_in_inventory_logs_once_on_unregister_and_throws_on_other_members()
+        public void test_wiring_constructor_rejects_null_equipment()
         {
-            var inventory = new StandInZoneInventoryService();
-            var id = new CharacterID(1u);
+            // Character Persistence Story 019: no stand-in fallback; the composition always passes the zone's Equipment.
+            var options = new ZoneInstancingWiringOptions { Validator = new AcceptAllValidator() };
 
-            List<string> logs = CaptureLogs(() =>
-            {
-                inventory.UnregisterCharacter(id);
-                inventory.UnregisterCharacter(id);
-            });
-
-            Assert.AreEqual(1, CountContaining(logs, "inventory service not implemented"));
-            Assert.Throws<NotSupportedException>(() => inventory.RegisterCharacter(id));
-            Assert.Throws<NotSupportedException>(() => inventory.IsFull(id));
-            Assert.Throws<NotSupportedException>(() => inventory.FilledSlots(id));
-            Assert.Throws<NotSupportedException>(() => inventory.GetSlot(id, 0));
+            var ex = Assert.Throws<ArgumentNullException>(() => new ZoneInstancingWiring(Zone, _ticks, _queue, _dispatcher,
+                _outbox, _persistence, _persistence, new FakeApplier(), new CharacterMutationGate(), new RecordingInventory(),
+                new FakeDisconnector(), _ => { }, options));
+            StringAssert.Contains("options.Equipment", ex.Message);
         }
     }
 }

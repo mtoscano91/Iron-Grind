@@ -213,7 +213,8 @@ namespace IronGrind.Tests.EditMode.Networking
         private static readonly string[] CONSTRUCTION_ORDER =
         {
             // Character Persistence Story 018: Character Stats (and Leveling) before Persistence, Status Effects after Zone Instancing.
-            "TickCompletionQueue", "ServerTickLoop", "CharacterStats", "NpgsqlCharacterRecordStore", "CharacterPersistenceService",
+            // Story 019: the real Inventory and Equipment between Character Stats and the store.
+            "TickCompletionQueue", "ServerTickLoop", "CharacterStats", "InventoryService", "EquipmentService", "NpgsqlCharacterRecordStore", "CharacterPersistenceService",
             "CrossZoneRelayAllowlist", "CrossZoneRelayOrigin", "CrossZoneRelayInbox", "CrossZoneRelayReceiver",
             "NpgsqlRelayPublisher", "CrossCuttingRpcGuardChain", "CharacterMutationGate", "InboundRequestDispatcher",
             "ClientMessageOutbox", "ZoneInstancingWiring", "StatusEffectsService",
@@ -485,6 +486,8 @@ namespace IronGrind.Tests.EditMode.Networking
             rig.Now = 10.0;
             // S3: RandomProviderFactory writes the one seed line itself.
             LogAssert.Expect(LogType.Log, new System.Text.RegularExpressions.Regex(@"^\[Random\] PRNG seed: -?\d+$"));
+            // S5: the recording S2 loader has no item database (Character Persistence Story 019).
+            LogAssert.Expect(LogType.Warning, "[ZoneServer] no item database from S2; using an empty one (tests only)");
             SuRig.Drive(rig.Comp.Start(SuRig.ARGS));
 
             rig.Now = 10.05;

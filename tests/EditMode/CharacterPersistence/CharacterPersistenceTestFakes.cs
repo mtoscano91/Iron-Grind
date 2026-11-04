@@ -293,4 +293,53 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
 
         public MergeResult RequestMerge(CharacterID charId, int slotIdx1, int slotIdx2, int slotIdx3) => throw new NotSupportedException();
     }
+
+    /// <summary>
+    /// The 38 MVP item records (<c>MvpItemRecordData.BuildAll</c>: Sword 1-4, Helmet 5-8, Chestplate 9-12, Leggings 13-16,
+    /// Boots 17-20, Ring 21-24, Necklace 25-28, HP Potion 29-31, MP Potion 32-34, scrolls 35-38) and a ready database over
+    /// them (Character Persistence Story 019). The records are in-memory ScriptableObjects: dispose to destroy them.
+    /// </summary>
+    internal sealed class MvpItemFixture : IDisposable
+    {
+        public const uint BRONZE_SWORD = 1u;
+        public const uint BRONZE_HELMET = 5u;
+        public const uint IRON_HELMET = 6u;
+        public const uint HP_POTION_SMALL = 29u;
+
+        public MvpItemFixture()
+        {
+            Items = MvpItemRecordData.BuildAll();
+            Database = new IronGrind.ItemDatabase.ItemDatabase();
+            Database.Initialize(Items);
+        }
+
+        public List<ItemDefinition> Items { get; }
+
+        public IronGrind.ItemDatabase.ItemDatabase Database { get; }
+
+        /// <summary>The summed flat bonus of one stat on an equipment record (no enhancement).</summary>
+        public float FlatBonus(uint itemId, StatID stat)
+        {
+            float total = 0f;
+            foreach (StatModifierEntry entry in Database.GetItem(new ItemID(itemId)).EquipmentData.StatModifiers)
+            {
+                if (entry.StatId == stat)
+                {
+                    total += entry.FlatBonus;
+                }
+            }
+
+            return total;
+        }
+
+        public void Dispose()
+        {
+            foreach (ItemDefinition item in Items)
+            {
+                UnityEngine.Object.DestroyImmediate(item);
+            }
+
+            Items.Clear();
+        }
+    }
 }

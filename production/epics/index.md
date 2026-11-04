@@ -1,6 +1,6 @@
 # Epics Index
 
-Last Updated: 2026-11-02
+Last Updated: 2026-11-04
 Engine: Unity 6.3 LTS (6000.3)
 Control Manifest Version: 2026-10-26
 
@@ -18,11 +18,11 @@ Control Manifest Version: 2026-10-26
 | [Status Effects / Buffs](status-effects/EPIC.md) | Core | Status Effects | design/gdd/status-effects.md | 9 stories (001-009), all Complete (009 on 2026-10-29); TR-se-006 (client buff display) deferred | Complete |
 | [Equipment System](equipment-system/EPIC.md) | Core | Equipment System | design/gdd/equipment-system.md | 9 stories (001-009 written 2026-10-26): 9 Complete (001-008 on 2026-10-26, 009 on 2026-10-28) | Complete — unblocks Character Persistence Story 005 |
 | [Zone Instancing](zone-instancing/EPIC.md) | Core | Zone Instancing (zone-process side) | design/gdd/zone-instancing.md | 14 stories (001-014, written 2026-10-22), all Complete (2026-10-26) | Complete — routing ACs (AC-ZI-1, 2, 3, 16, 19, 20) move with the gateway work (needs a gateway ADR + epic) |
-| [Character Persistence](character-persistence/EPIC.md) | Core | Character Persistence | design/gdd/character-persistence.md | 17 stories (001-016 written 2026-10-12, 017 added 2026-10-16): 17 Complete (last 016 on 2026-10-28); DoD open: ADR-006 Verification 1–3, AC-CP-27/28/29 | In Progress |
+| [Character Persistence](character-persistence/EPIC.md) | Core | Character Persistence | design/gdd/character-persistence.md | 19 stories (001-016 written 2026-10-12, 017 added 2026-10-16, 018-019 added 2026-11-04): 19 Complete (last 019 on 2026-11-04); DoD open: ADR-006 Verification 1–3, AC-CP-27/28/29 | In Progress |
 | [Movement System](movement-system/EPIC.md) | Core | Movement System | design/gdd/movement-system.md | 13 stories (001-013 written 2026-10-29; server 001-009, client 010-013): 13 Complete | Complete |
 | [Hit Detection](hit-detection/EPIC.md) | Core | Hit Detection | design/gdd/hit-detection.md | 4 stories (001-004), all Complete (2026-10-30) | Complete |
 | [Auto-Attack Combat](auto-attack-combat/EPIC.md) | Core | Auto-Attack Combat | design/gdd/auto-attack-combat.md | 9 stories (001-009 written 2026-10-30): 9 Complete | Complete |
-| [Skill System](skill-system/EPIC.md) | Core | Skill System | design/gdd/skill-system.md | 12 stories (001-012 written 2026-11-02): 12 Ready | Ready |
+| [Skill System](skill-system/EPIC.md) | Core | Skill System | design/gdd/skill-system.md | 13 stories (001-012 written 2026-11-02, 013 added): 13 Complete (last 013 on 2026-11-04) | Complete |
 | [Enhancement System](enhancement-system/EPIC.md) | Feature | Enhancement System | design/gdd/enhancement-system.md | 16 stories (001-016 Complete); DoD open: AC-ENH-2 and the other deferred criteria | In Progress |
 
 ## Notes

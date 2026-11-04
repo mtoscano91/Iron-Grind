@@ -94,6 +94,7 @@ This epic is complete when:
 | 016 | [The Real-Database Verification Run](story-016-real-database-verification-run.md) | Integration | Complete (2026-10-28, COMPLETE WITH NOTES; 18 Database tests, latency P95 1.22 ms, TD-084) | ADR-006 |
 | 017 | [Session-End Saves Wait for the Mutation Gate](story-017-session-end-waits-for-the-mutation-gate.md) | Integration | Complete (2026-10-16; 16 new test cases, EditMode 2932 / 2932; COMPLETE WITH NOTES; closes TD-070 and TD-060, adds TD-071) | ADR-011 |
 | 018 | [Zone Wires the Full Persistence Applier](story-018-zone-wires-full-persistence-applier.md) | Integration | Complete (2026-11-04; resolves TD-090; save path deferred to TD-091) | ADR-006, ADR-014 |
+| 019 | [Zone Uses Real Inventory and Equipment](story-019-zone-real-inventory-and-equipment.md) | Integration | Complete (2026-11-04; COMPLETE WITH NOTES; first half of TD-091: S2 item database, real Inventory / Equipment in the zone; save path in Story 020) | ADR-006, ADR-009, ADR-014 |
 
 **Acceptance criteria owned outside this epic**: AC-CP-27 (enhancement commit before broadcast) — Enhancement Story 011. AC-CP-28 (respec failure with its compensating `AddGold`) and AC-CP-29 (item consumption) — the Respec and Consumable Use systems, which have no code.
 

@@ -119,12 +119,17 @@ namespace IronGrind.Tests.EditMode.Networking
         {
             var persistence = new DrPersistence();
             var wiring = new ZoneInstancingWiring(ZONE, rig.Backend.TickLoop, _queue, new DrDispatcher(), new DrOutbox(),
-                persistence, persistence, new DrApplier(), new CharacterMutationGate(), new StandInZoneInventoryService(),
+                persistence, persistence, new DrApplier(), new CharacterMutationGate(),
+                new IronGrind.Tests.EditMode.CharacterPersistence.RecordingInventory(),
                 new DrDisconnector(),
                 code =>
                 {
                     requests?.Add(code);
                     rig.Comp.RequestTeardown(code);
+                },
+                new ZoneInstancingWiringOptions
+                {
+                    Equipment = new IronGrind.Tests.EditMode.CharacterPersistence.FakeEquipmentService()
                 });
             rig.Comp.AttachZoneInstancing(wiring);
             return wiring;
