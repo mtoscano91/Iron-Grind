@@ -251,7 +251,7 @@ namespace IronGrind.Tests.EditMode.SkillSystem
 
         private sealed class ThrowingStep : ISkillExecutionStep
         {
-            public void Execute(in ValidatedSkillCast cast)
+            public void Execute(in ValidatedSkillCast cast, ref SkillExecutionOutcome outcome)
             {
                 throw new System.InvalidOperationException("step-fault");
             }
@@ -341,7 +341,7 @@ namespace IronGrind.Tests.EditMode.SkillSystem
                 Rejections.Add(code);
             }
 
-            public void SendAccepted(EntityID caster, in SkillCastRequest request, int newCooldownTicks)
+            public void SendAccepted(EntityID caster, in SkillCastRequest request, int newCooldownTicks, in SkillExecutionOutcome outcome)
             {
                 AcceptedCount++;
                 Log.Add(CallKind.Accepted);
@@ -469,11 +469,13 @@ namespace IronGrind.Tests.EditMode.SkillSystem
         }
 
         // Runs the step directly with a validated cast.
-        private void Execute(SkillDamageExecutionStep step, in SkillDefinition def, EntityID caster, EntityID target)
+        private SkillExecutionOutcome Execute(SkillDamageExecutionStep step, in SkillDefinition def, EntityID caster, EntityID target)
         {
             var request = new SkillCastRequest(caster.RawValue, def.ID, target.RawValue, 0u);
             var cast = new ValidatedSkillCast(caster, target, in def, 0, TICK, in request);
-            step.Execute(in cast);
+            var outcome = default(SkillExecutionOutcome);
+            step.Execute(in cast, ref outcome);
+            return outcome;
         }
 
         private void Run(in SkillDefinition def)
@@ -1269,10 +1271,53 @@ namespace IronGrind.Tests.EditMode.SkillSystem
             SkillDefinition def = Physical();
             var request = new SkillCastRequest(ID_A, SKILL_MAIN, ID_MOB, 0u);
             var cast = new ValidatedSkillCast(PLAYER_A, MOB, in def, 0, TICK, in request);
-            _step.Execute(in cast);
+            var outcome = default(SkillExecutionOutcome);
+            _step.Execute(in cast, ref outcome);
             _calls.Clear();
 
-            Assert.That(() => _step.Execute(in cast), Is.Not.AllocatingGCMemory());
+            Assert.That(() => _step.Execute(in cast, ref outcome), Is.Not.AllocatingGCMemory());
+        }
+
+        // ---- Story 008 outcome seam (damage part) ----
+
+        [Test]
+        public void test_execution_outcome_damage_step_fills_damage_crit_and_kill()
+        {
+            _calc.Result = new DamageResult(HIT_DAMAGE, 0, HIT_DAMAGE, true, true, DamageContext.PhysicalSkill, false);
+            SkillDefinition def = Physical();
+
+            SkillExecutionOutcome outcome = Execute(_step, in def, PLAYER_A, MOB);
+
+            Assert.That(outcome.DamageDealt, Is.EqualTo(HIT_DAMAGE));
+            Assert.That(outcome.IsCrit, Is.True);
+            Assert.That(outcome.IsKill, Is.True);
+            Assert.That(outcome.HealAmount, Is.EqualTo(0));
+        }
+
+        [Test]
+        public void test_execution_outcome_non_kill_hit_sets_damage_and_leaves_kill_false()
+        {
+            SkillDefinition def = Physical();
+
+            SkillExecutionOutcome outcome = Execute(_step, in def, PLAYER_A, MOB);
+
+            Assert.That(outcome.DamageDealt, Is.EqualTo(HIT_DAMAGE));
+            Assert.That(outcome.IsCrit, Is.False);
+            Assert.That(outcome.IsKill, Is.False);
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void test_execution_outcome_zero_final_damage_leaves_outcome_zeroed(bool killFlag)
+        {
+            _calc.Result = new DamageResult(0, 0, 0, true, killFlag, DamageContext.PhysicalSkill, false);
+            SkillDefinition def = Physical();
+
+            SkillExecutionOutcome outcome = Execute(_step, in def, PLAYER_A, MOB);
+
+            Assert.That(outcome.DamageDealt, Is.EqualTo(0));
+            Assert.That(outcome.IsCrit, Is.False);
+            Assert.That(outcome.IsKill, Is.False);
         }
     }
 }

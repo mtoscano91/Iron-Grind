@@ -17,6 +17,8 @@ namespace IronGrind.SkillSystem
     /// EC-SK-13: cooldowns are not persisted (Character Persistence does not save them), so a crash between the mana
     /// deduction and the cooldown write needs no handling. The cooldown is a <c>uint</c> tick sum; at 20 Hz the tick
     /// counter wraps after about 6.8 years of uptime and no wrap handling exists (same as the tick source).
+    /// Story 008: a zeroed <see cref="SkillExecutionOutcome"/> stack local is passed by ref to the execution step and by
+    /// <c>in</c> to <c>SendAccepted</c>; with no execution step it is sent zeroed. On the Decision E throw path nothing is sent.
     /// Allocation-free.
     /// </remarks>
     public sealed class SkillCastExecutor : ISkillCastValidatedSink
@@ -86,9 +88,11 @@ namespace IronGrind.SkillSystem
             // Story 007 (NotifySkillUsed, damage) then Story 008 (effects). Decision E (Story 007 readiness): a throw is a
             // server bug, not a game rule. Mana stays spent (ISkillManaSink has no refund), the exception is logged, and
             // no cooldown write or SendAccepted follows.
+            // The outcome is a zeroed stack local (Story 008): the steps fill it, SendAccepted reports it.
+            var outcome = default(SkillExecutionOutcome);
             try
             {
-                _execution?.Execute(in cast);
+                _execution?.Execute(in cast, ref outcome);
             }
             catch (Exception e)
             {
@@ -105,7 +109,7 @@ namespace IronGrind.SkillSystem
             bool written = _service.SetCooldownExpiry(cast.Caster, cast.SkillSlot, cast.CurrentTick + cd);
             // Cannot fail in the tick that validated the slot (V-3..V-8 ran in the same call), so it is not a rejection.
             Debug.Assert(written, "Cooldown write failed for a slot validated in the same tick.");
-            _output.SendAccepted(cast.Caster, in cast.Request, (int)cd);
+            _output.SendAccepted(cast.Caster, in cast.Request, (int)cd, in outcome);
         }
     }
 }

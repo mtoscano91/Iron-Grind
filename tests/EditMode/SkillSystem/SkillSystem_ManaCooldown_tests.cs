@@ -157,7 +157,7 @@ namespace IronGrind.Tests.EditMode.SkillSystem
             public int Calls;
             public uint CooldownSeenDuringExecution = uint.MaxValue;
 
-            public void Execute(in ValidatedSkillCast cast)
+            public void Execute(in ValidatedSkillCast cast, ref SkillExecutionOutcome outcome)
             {
                 Calls++;
                 Log?.Add(LOG_EXECUTE);
@@ -192,7 +192,7 @@ namespace IronGrind.Tests.EditMode.SkillSystem
                 RejectedSkillIds.Add(request.SkillId);
             }
 
-            public void SendAccepted(EntityID caster, in SkillCastRequest request, int newCooldownTicks)
+            public void SendAccepted(EntityID caster, in SkillCastRequest request, int newCooldownTicks, in SkillExecutionOutcome outcome)
             {
                 AcceptedCount++;
                 AcceptedCasters.Add(caster);
@@ -212,7 +212,7 @@ namespace IronGrind.Tests.EditMode.SkillSystem
 
             public void SendRejection(EntityID caster, in SkillCastRequest request, SkillCastRejectionCode code) { Rejections++; }
 
-            public void SendAccepted(EntityID caster, in SkillCastRequest request, int newCooldownTicks) { Accepted++; }
+            public void SendAccepted(EntityID caster, in SkillCastRequest request, int newCooldownTicks, in SkillExecutionOutcome outcome) { Accepted++; }
         }
 
         private sealed class FakeAutoAttack : IAutoAttackSkillUseSink

@@ -22,6 +22,8 @@ namespace IronGrind.SkillSystem
     /// <para>
     /// <c>SkillDefinition.DamageContext</c> is deliberately not read: the context comes from the effect flags per GDD CR-SK-5,
     /// so a Physical|Magical skill takes the physical path. A load-time agreement check is carried to Story 012.
+    /// Story 008: after Calculate the step writes <c>DamageDealt</c>, <c>IsCrit</c> and <c>IsKill</c> to the outcome, except for a
+    /// result with <c>FinalDamage &lt;= 0</c>, which leaves it zeroed.
     /// The death position has Y = 0, a known limit until a 3D position seam exists.
     /// A throw partway through the kill sequence (after AddExperience, before Apply) leaves the XP awarded. This is
     /// accepted under Decision E; there is no rollback.
@@ -76,7 +78,7 @@ namespace IronGrind.SkillSystem
         }
 
         /// <inheritdoc />
-        public void Execute(in ValidatedSkillCast cast)
+        public void Execute(in ValidatedSkillCast cast, ref SkillExecutionOutcome outcome)
         {
             EntityID caster = cast.Caster;
             EntityID target = cast.Target;
@@ -99,8 +101,13 @@ namespace IronGrind.SkillSystem
             DamageResult result = _damage.Calculate(baseDamage, caster, target, context);
             if (result.FinalDamage <= 0)
             {
+                // Nothing is applied, so the target is not dead: the outcome stays zeroed (Story 008).
                 return;
             }
+
+            outcome.DamageDealt = result.FinalDamage;
+            outcome.IsCrit = result.IsCrit;
+            outcome.IsKill = result.IsKill;
 
             if (!result.IsKill)
             {

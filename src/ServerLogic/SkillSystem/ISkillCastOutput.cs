@@ -22,6 +22,10 @@ namespace IronGrind.SkillSystem
         /// <param name="caster">The caster.</param>
         /// <param name="request">The request as received.</param>
         /// <param name="newCooldownTicks">The skill's <c>CooldownTicks</c>, the length of the cooldown just started.</param>
-        void SendAccepted(EntityID caster, in SkillCastRequest request, int newCooldownTicks);
+        /// <param name="outcome">
+        /// What the execution did (zeroed when the executor has no execution step). Story 009 serializes damage, crit,
+        /// kill and heal amount from it into the cast result.
+        /// </param>
+        void SendAccepted(EntityID caster, in SkillCastRequest request, int newCooldownTicks, in SkillExecutionOutcome outcome);
     }
 }
