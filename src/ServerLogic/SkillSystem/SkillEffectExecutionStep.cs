@@ -15,7 +15,8 @@ namespace IronGrind.SkillSystem
     /// The buff ApplyResult is read and never acted on: CapacityExceeded (EC-SK-9) and InvalidTarget (EC-SK-4, killed by
     /// someone else earlier this tick) leave the cast accepted with mana and cooldown paid; no retry, no undo.
     /// InstantHeal: floor(INT x HealMultiplier), called even when 0; <see cref="SkillExecutionOutcome.HealAmount"/> is the HP
-    /// delivered, so it is written only when ApplyInstantHeal returns <see cref="ApplyResult.Success"/> and stays 0 otherwise.
+    /// actually delivered (target CurrentHP read before and after, so a heal clamped at MaxHP reports less than the
+    /// computed amount). It is written only when ApplyInstantHeal returns <see cref="ApplyResult.Success"/> and stays 0 otherwise.
     /// Single target at MVP (CR-SK-17): the outcome's IsKill describes that one target; AoE will need a target list and
     /// per-target kill info. Stateless and allocation-free.
     /// </remarks>
@@ -30,7 +31,7 @@ namespace IronGrind.SkillSystem
 
         /// <summary>Creates the step.</summary>
         /// <param name="effects">Status Effects seam.</param>
-        /// <param name="stats">Reads INT for the heal.</param>
+        /// <param name="stats">Reads the caster's INT and the target's CurrentHP (before/after the heal).</param>
         /// <exception cref="ArgumentNullException">Any argument is null.</exception>
         public SkillEffectExecutionStep(ISkillEffectSink effects, ISkillStatSource stats)
         {
@@ -79,14 +80,18 @@ namespace IronGrind.SkillSystem
             _effects.ApplyEffect(cast.Target, cast.Caster, in cast.Definition.BuffDefinition);
         }
 
-        // F-SK-3. The cast is never rejected on the result; only a delivered heal is reported.
+        // F-SK-3. The cast is never rejected on the result; only the HP actually delivered is reported:
+        // max(0, CurrentHP after - CurrentHP before), so a heal clamped at MaxHP reports the clamped amount.
+        // ApplyInstantHeal -> ApplyRegen writes CurrentHP synchronously, so the after-read sees it.
         private void ApplyHeal(in ValidatedSkillCast cast, ref SkillExecutionOutcome outcome)
         {
             int stat = _stats.GetStat(cast.Caster, StatID.Intelligence);
             int amount = ComputeHealAmount(stat, cast.Definition.HealMultiplier);
+            int before = _stats.GetStat(cast.Target, StatID.CurrentHP);
             if (_effects.ApplyInstantHeal(cast.Target, amount) == ApplyResult.Success)
             {
-                outcome.HealAmount = amount;
+                int after = _stats.GetStat(cast.Target, StatID.CurrentHP);
+                outcome.HealAmount = after > before ? after - before : 0;
             }
         }
     }

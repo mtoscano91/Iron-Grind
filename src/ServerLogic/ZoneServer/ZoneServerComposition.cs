@@ -12,6 +12,7 @@ using IronGrind.MovementSystem;
 using IronGrind.Networking;
 using IronGrind.Randomness;
 using IronGrind.ServerLogic.ZoneInstancing;
+using IronGrind.SkillSystem;
 using IronGrind.StatusEffects;
 using Npgsql;
 using UnityEngine;
@@ -351,6 +352,54 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// </summary>
         internal ITownRespawnPointProvider RespawnProviderOverride;
 
+        /// <summary>
+        /// Test seam (like <see cref="RespawnProviderOverride"/>): the inner entity-state source under the Movement
+        /// state source. Null keeps <c>LoggingZoneEntityStateSource</c>. Set before the run starts.
+        /// </summary>
+        internal IZoneEntityStateSource EntityStateSourceOverride;
+
+        /// <summary>
+        /// Test seam / production hook (Skill System Story 011): the class registry shared by Leveling and the Skill
+        /// System. Set before the run starts. Null means an empty registry and one log line (not a warning: warnings fail composition tests) at S5.
+        /// </summary>
+        internal ClassRegistry ClassRegistryOverride;
+
+        /// <summary>
+        /// Skill roster for the Skill System (Story 011); the Story 012 asset goes here. Null means an empty in-code
+        /// database and one log line (not a warning: warnings fail composition tests) at S5. Set before the run starts.
+        /// </summary>
+        internal SkillDatabase SkillDatabaseOverride;
+
+        /// <summary>Skill System config asset (Story 011). Null means <c>SkillSystemConfigValues.Default</c>. Set before the run starts.</summary>
+        internal SkillSystemConfig SkillSystemConfigOverride;
+
+        /// <summary>Test seam (Skill System Story 011 Part B): the skill damage calculator. Null keeps <see cref="StandInSkillDamageCalculator"/>. Set before the run starts.</summary>
+        internal ISkillDamageCalculator SkillDamageCalculatorOverride;
+
+        /// <summary>The zone's Leveling service, built at S5 (Skill System Story 011); null before S5.</summary>
+        internal LevelingService ZoneLeveling { get; private set; }
+
+        /// <summary>The class registry Leveling and Skill actually use (the override or the empty fallback); null before S5.</summary>
+        internal ClassRegistry ClassRegistryInUse { get; private set; }
+
+        /// <summary>The zone's Skill System service, built at S5 (Story 011); null before S5.</summary>
+        internal SkillSystemService SkillService { get; private set; }
+
+        /// <summary>The zone's skill-cast intake, built at S5 (Story 011); null before S5.</summary>
+        internal SkillCastIntake SkillIntake { get; private set; }
+
+        /// <summary>The zone's skill-cast validation step, built at S5 (Story 011); null before S5.</summary>
+        internal SkillCastStep SkillStep { get; private set; }
+
+        /// <summary>The zone's skill-cast executor, built at S5 (Story 011); null before S5.</summary>
+        internal SkillCastExecutor SkillExecutor { get; private set; }
+
+        /// <summary>The inner (stand-in) auto-attack damage applier under <see cref="AutoAttackDamageApplier"/>; null before S5.</summary>
+        internal IAutoAttackDamageApplier AutoAttackInnerDamageApplier { get; private set; }
+
+        /// <summary>The late-bound zone entry responder (Story 011); null before S5.</summary>
+        internal ForwardingZoneEntryResponder EntryResponder { get; private set; }
+
         /// <summary>The zone's Movement service, built at S5 (Movement Story 009); null before S5.</summary>
         internal MovementService Movement { get; private set; }
 
@@ -381,6 +430,7 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// stand-in applier (Auto-Attack Combat Story 007); null until S5 has built it.
         /// </summary>
         internal IAutoAttackDamageApplier AutoAttackDamageApplier { get; private set; }
+
         /// <summary>The auto-face output handed to Auto-Attack Combat (Story 009): an <see cref="AutoFaceEmitter"/>; null until S5 has built it.</summary>
         internal IAutoAttackFaceOutput AutoAttackFaceOutput { get; private set; }
 
@@ -1501,7 +1551,9 @@ namespace IronGrind.ServerLogic.ZoneServer
                 var outbox = new ClientMessageOutbox(sendSeam);
                 Observe(nameof(ClientMessageOutbox));
                 // Movement Story 009: the snapshot builder is built inside the wiring, before Movement exists.
-                var stateSource = new MovementZoneEntityStateSource(new LoggingZoneEntityStateSource());
+                var stateSource = new MovementZoneEntityStateSource(_owner.EntityStateSourceOverride ?? new LoggingZoneEntityStateSource());
+                // Skill System Story 011: ZoneEntryCompletion takes its responder once, before Skill exists.
+                _owner.EntryResponder = new ForwardingZoneEntryResponder();
                 ZoneInstancingWiring wiring = BuildZoneInstancing(dispatcher, outbox, stateSource);
                 StatusEffectsService statusEffects = BuildStatusEffects(wiring);
                 MovementService movement = BuildMovement(dispatcher, wiring, stateSource, statusEffects);
@@ -1511,6 +1563,13 @@ namespace IronGrind.ServerLogic.ZoneServer
                 _owner.HitResultEmitter = new HitResultEmitter(wiring.Pool, ruBatch, _tickLoop);
                 Observe(nameof(HitResultEmitter));
                 BuildAutoAttackCombat(dispatcher, wiring, stateSource, statusEffects, movement, outbox, ruBatch);
+                SkillSystemService skill = BuildSkillSystem(dispatcher, wiring, stateSource, statusEffects, outbox, ruBatch);
+                // Once, after both builds (the pool and the entry completion each take one listener). Order: Movement
+                // first on entry; Combat last on release so BeforeRelease still finds the player's slot.
+                wiring.EntryCompletion.SetEntryListener(new CompositeZonePlayerEntryListener(
+                    movement, new SkillSpawnEntryListener(skill, _owner.ZoneLeveling)));
+                wiring.Pool.SetReleaseListener(new CompositeZoneSlotReleaseListener(
+                    statusEffects, movement, new SkillSlotReleaseListener(skill), _owner.AutoAttackCombat));
                 var cycleBroadcast = new CycleTimerBroadcastStep(_owner.AutoAttackCombat, wiring.Pool, sendSeam, outbox);
                 Observe(nameof(CycleTimerBroadcastStep));
                 _owner.CycleTimerBroadcast = cycleBroadcast;
@@ -1555,7 +1614,8 @@ namespace IronGrind.ServerLogic.ZoneServer
                     {
                         Directory = _directory,
                         LogTransitions = _owner.LogTeardownSteps,
-                        EntityState = entityState
+                        EntityState = entityState,
+                        Responder = _owner.EntryResponder
                     });
                 Observe(nameof(ZoneInstancingWiring));
                 _owner._simulationSteps.Add(wiring);
@@ -1568,14 +1628,24 @@ namespace IronGrind.ServerLogic.ZoneServer
             // Dispose pass (ADR-010).
             private StatusEffectsService BuildStatusEffects(ZoneInstancingWiring wiring)
             {
-                var stats = new ZoneStats(new LevelingService(XpThresholdTable.Values));
+                ClassRegistry classRegistry = _owner.ClassRegistryOverride;
+                if (classRegistry == null)
+                {
+                    classRegistry = new ClassRegistry();
+                }
+
+                var leveling = new LevelingService(XpThresholdTable.Values, classRegistry);
+                var stats = new ZoneStats(leveling);
+                leveling.AttachCharacterStats(stats);
+                _owner.ZoneLeveling = leveling;
+                _owner.ClassRegistryInUse = classRegistry;
                 _owner.ZoneCharacterStats = stats;
                 Observe("CharacterStats");
                 var statusEffects = new StatusEffectsService(new CharacterStatsBuffModifierLayer(stats),
                     new CharacterStatsResourceSink(stats), new ZoneSlotPoolEntityIndex(wiring.Pool),
                     new CharacterStatsDeathSource(stats));
                 Observe(nameof(StatusEffectsService));
-                // The pool's release listener is set in BuildAutoAttackCombat (composite: Status Effects, Movement, Combat).
+                // The pool's release listener is set in BuildOutboundAndPipeline (composite: Status Effects, Movement, Skill, Combat).
                 _owner.RegisterDisposable(statusEffects);
                 _owner.StatusEffects = statusEffects;
                 _owner._simulationSteps.Add(statusEffects);
@@ -1615,8 +1685,8 @@ namespace IronGrind.ServerLogic.ZoneServer
 
                 Observe(nameof(MovementService));
                 stateSource.AttachMovement(movement);
-                wiring.EntryCompletion.SetEntryListener(movement);
-                // The pool's release listener is set in BuildAutoAttackCombat (composite: Status Effects, Movement, Combat).
+                // The entry listener (Movement, then Skill) is set once in BuildOutboundAndPipeline after both builds.
+                // The pool's release listener is set in BuildOutboundAndPipeline (composite: Status Effects, Movement, Skill, Combat).
                 _owner.Movement = movement;
                 _owner._simulationSteps.Add(movement);
                 return movement;
@@ -1624,7 +1694,7 @@ namespace IronGrind.ServerLogic.ZoneServer
 
             // Auto-Attack Combat Story 006: the Combat step joins phase 3 after Movement (the fire check sees this tick's
             // positions); SetTarget and SetAutoAttack register before Seal and apply in the dispatch step (EC-8); the slot
-            // release listener is set here, once, with Combat last so BeforeRelease still finds the player's slot.
+            // release listener is set in BuildOutboundAndPipeline, once, with Combat last so BeforeRelease still finds the slot.
             // Mob seams (validity, damage, XP, mob type) are stand-ins until Enemy AI, Leveling and the item database.
             // Story 007: the damage applier is wrapped so each applied hit also sends SelfDamageEvent (R-OD, attacker) and
             // DamageEvent (R-U, other zone clients); the stand-in still changes no health.
@@ -1633,7 +1703,9 @@ namespace IronGrind.ServerLogic.ZoneServer
                 ClientMessageOutbox outbox, RUBatchOutboundStep ruBatch)
             {
                 ZoneStats stats = _owner.ZoneCharacterStats;
-                var damageApplier = new DamageOutputApplier(new StandInAutoAttackDamageApplier(),
+                var innerApplier = new StandInAutoAttackDamageApplier();
+                _owner.AutoAttackInnerDamageApplier = innerApplier;
+                var damageApplier = new DamageOutputApplier(innerApplier,
                     new AutoAttackDamageOutputEmitter(wiring.Pool, _owner._zoneId, outbox, ruBatch));
                 var faceEmitter = new AutoFaceEmitter(wiring.Pool, _owner._zoneId, movement, ruBatch);
                 _owner.AutoAttackFaceOutput = faceEmitter;
@@ -1664,9 +1736,97 @@ namespace IronGrind.ServerLogic.ZoneServer
                 _owner.AutoAttackDamageApplier = damageApplier;
                 NetworkingCoreInboundRegistration.RegisterCombatInput(dispatcher, setTarget, new SetAutoAttackRequestHandler(combat));
 
-                wiring.Pool.SetReleaseListener(new CompositeZoneSlotReleaseListener(statusEffects, movement, combat));
                 _owner.AutoAttackCombat = combat;
                 _owner._simulationSteps.Add(combat);
+            }
+
+            // Skill System Story 011: builds the whole Skill System graph and joins phase 3 after Combat (epic
+            // Decision 3, EC-SK-1); SkillCastRequest is registered before Seal and stored in dispatch.
+            // Decisions (user, 2026-11-04):
+            //  - Class registry: _owner.ClassRegistryOverride, shared with Leveling (BuildStatusEffects); an empty
+            //    registry when unset (silent: composition tests fail on any unexpected log).
+            //  - Damage: StandInSkillDamageCalculator (logs once, rejects every hit); DamageCalculatorSkillAdapter stays
+            //    unwired until the item database and equipment exist in the zone.
+            //  - Roster / config: _owner.SkillDatabaseOverride and _owner.SkillSystemConfigOverride; the fallbacks are an
+            //    empty in-code SkillDatabase (silent, destroyed in the Dispose pass) and SkillSystemConfigValues.Default.
+            //  - Decision B: the damage step takes the INNER stand-in applier, not DamageOutputApplier, so a skill hit
+            //    sends no DamageEvent / SelfDamageEvent.
+            // The entry and release listeners are set once in BuildOutboundAndPipeline (Skill joins both composites); the
+            // cooldown snapshot responder is bound to the forwarding responder here.
+            private SkillSystemService BuildSkillSystem(InboundRequestDispatcher dispatcher, ZoneInstancingWiring wiring,
+                MovementZoneEntityStateSource stateSource, StatusEffectsService statusEffects, ClientMessageOutbox outbox,
+                RUBatchOutboundStep ruBatch)
+            {
+                ZoneStats stats = _owner.ZoneCharacterStats;
+                ZoneSlotPool pool = wiring.Pool;
+
+                SkillDatabase database = _owner.SkillDatabaseOverride;
+                SkillDatabase ownedDatabase = null;
+                if (database == null)
+                {
+                    ownedDatabase = ScriptableObject.CreateInstance<SkillDatabase>();
+                    database = ownedDatabase;
+                }
+
+                SkillSystemConfigValues configValues = _owner.SkillSystemConfigOverride != null
+                    ? SkillSystemConfigValues.FromAsset(_owner.SkillSystemConfigOverride)
+                    : SkillSystemConfigValues.Default;
+                var configSource = new StaticSkillSystemConfigSource(configValues);
+
+                var slotIndex = new ZoneSlotPoolEntityIndex(pool);
+                var unlockOutput = new SkillUnlockOutputEmitter(pool, outbox);
+                var service = new SkillSystemService(_owner.ClassRegistryInUse, database,
+                    new CharacterStatsSkillLevelSource(stats), slotIndex, unlockOutput, pool.MaxPlayers);
+                Observe(nameof(SkillSystemService));
+
+                var intake = new SkillCastIntake(slotIndex, pool.MaxPlayers);
+                var party = new ZoneSkillCastPartySource(pool, new NoPartyZonePresence());
+                var output = new SkillCastOutputEmitter(pool, _owner._zoneId, _owner.TargetSlotTracker, party, ruBatch, service);
+
+                BuildSkillCastPipeline(wiring, stateSource, statusEffects, service, database, configSource, output,
+                    intake, out SkillCastExecutor executor, out SkillCastStep castStep);
+
+                var handler = new SkillCastRequestHandler(intake, _tickLoop, configValues.CastStaleTickTolerance);
+                NetworkingCoreInboundRegistration.RegisterSkillInput(dispatcher, handler);
+
+                service.Subscribe(_owner.ZoneLeveling);
+                _owner.RegisterDisposable(new SkillSystemTeardown(service, _owner.ZoneLeveling, ownedDatabase));
+
+                _owner.EntryResponder.Target = new SkillCooldownSnapshotResponder(new LoggingZoneEntryResponder(), service, outbox);
+
+                _owner.SkillService = service;
+                _owner.SkillIntake = intake;
+                _owner.SkillStep = castStep;
+                _owner.SkillExecutor = executor;
+                _owner._simulationSteps.Add(castStep);
+                return service;
+            }
+
+            // Skill System Story 011: the damage and effect steps, the executor and the validation step.
+            private void BuildSkillCastPipeline(ZoneInstancingWiring wiring, MovementZoneEntityStateSource stateSource,
+                StatusEffectsService statusEffects, SkillSystemService service, SkillDatabase database,
+                ISkillSystemConfigSource configSource, SkillCastOutputEmitter output, SkillCastIntake intake,
+                out SkillCastExecutor executor, out SkillCastStep castStep)
+            {
+                ZoneStats stats = _owner.ZoneCharacterStats;
+                AutoAttackCombatSystem combat = _owner.AutoAttackCombat;
+                var statSource = new CharacterStatsSkillStatSource(stats);
+                var positions = new ZoneSkillPositionSource(stateSource);
+                var damageStep = new SkillDamageExecutionStep(
+                    combat,
+                    statSource,
+                    positions,
+                    _owner.SkillDamageCalculatorOverride ?? new StandInSkillDamageCalculator(),
+                    new StandInAutoAttackXpAward(),
+                    new CharacterStatsExperienceSink(stats),
+                    _owner.AutoAttackInnerDamageApplier,
+                    _owner.AutoAttackFaceOutput,
+                    combat);
+                var effectStep = new SkillEffectExecutionStep(new StatusEffectsSkillEffectSink(statusEffects), statSource);
+                executor = new SkillCastExecutor(new CharacterStatsSkillManaSink(stats), configSource, service, output,
+                    new CompositeSkillExecutionStep(damageStep, effectStep));
+                castStep = new SkillCastStep(intake, service, database, new CharacterStatsSkillCasterAliveSource(stats),
+                    new NoSilenceSource(), new ZoneSkillTargetSource(wiring.Pool, stateSource), positions, output, executor);
             }
 
             public bool StartListener()

@@ -8,6 +8,7 @@ using IronGrind.ItemDatabase;
 using IronGrind.InventorySystem;
 using IronGrind.Networking;
 using IronGrind.ServerLogic.ZoneInstancing;
+using IronGrind.SkillSystem;
 using UnityEngine;
 using UnityEngine.AI;
 using CharacterID = IronGrind.Currency.CharacterID;
@@ -467,6 +468,23 @@ namespace IronGrind.ServerLogic.ZoneServer
         {
             _log.Log();
             return true;
+        }
+    }
+
+    /// <summary>
+    /// Stand-in for <see cref="ISkillDamageCalculator"/> until the item database and equipment are wired into the zone
+    /// (Skill System Story 011; the real <see cref="DamageCalculatorSkillAdapter"/> needs them): rejects every hit, so
+    /// nothing is applied. Logs "[ZoneServer] skill damage calculation not implemented" once.
+    /// </summary>
+    public sealed class StandInSkillDamageCalculator : ISkillDamageCalculator
+    {
+        private readonly StandInLogOnce _log = new StandInLogOnce("skill damage calculation");
+
+        /// <inheritdoc/>
+        public DamageResult Calculate(int baseDamage, EntityID attackerId, EntityID targetId, DamageContext context)
+        {
+            _log.Log();
+            return DamageResult.Rejected(context);
         }
     }
 }

@@ -219,6 +219,16 @@ namespace IronGrind.LevelingSystem
             _classTypes[entityId] = classType;
         }
 
+        /// <summary>
+        /// Reads the class type cached for <paramref name="entityId"/> (see <see cref="RegisterPlayerClassType"/>).
+        /// Unlike the private auto-alloc lookup this does not default: an entity never registered returns false.
+        /// </summary>
+        /// <param name="entityId">The player entity.</param>
+        /// <param name="classType">The cached class type, or 0 when not found.</param>
+        /// <returns>True when a class type was registered for the entity.</returns>
+        public bool TryGetClassType(IronGrind.CharacterStats.EntityID entityId, out byte classType)
+            => _classTypes.TryGetValue(entityId, out classType);
+
         private byte GetClassType(IronGrind.CharacterStats.EntityID entityId)
             => _classTypes.TryGetValue(entityId, out byte classType) ? classType : (byte)0;
 

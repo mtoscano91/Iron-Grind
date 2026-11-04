@@ -40,6 +40,9 @@ namespace IronGrind.Tests.EditMode.SkillSystem
         private const int AP = 650;
         private const int HIT_DAMAGE = 55;
         private const int SENTINEL = -1;
+        private const int HP_MAX = 1000000;
+        private const int HP_START = 1;
+        private const int HP_SHORT_OF_MAX = 5;
         private const string LOG_CALCULATE = "Calculate";
         private const string LOG_EFFECT = "ApplyEffect";
         private const string LOG_HEAL = "ApplyHeal";
@@ -61,6 +64,7 @@ namespace IronGrind.Tests.EditMode.SkillSystem
             public BuffID LastBuffId;
             public EntityID LastHealTarget;
             public float LastHealAmount = SENTINEL;
+            public FakeStats Stats;
 
             public ApplyResult ApplyEffect(EntityID target, EntityID caster, in BuffDefinition definition)
             {
@@ -78,6 +82,13 @@ namespace IronGrind.Tests.EditMode.SkillSystem
                 LastHealTarget = entity;
                 LastHealAmount = amount;
                 Log?.Add(LOG_HEAL);
+                if (HealResult == ApplyResult.Success && Stats != null && amount > 0f)
+                {
+                    // Models CharacterStats.ApplyRegen: raise CurrentHP, clamped to MaxHP.
+                    long raised = (long)Stats.CurrentHp + (long)amount;
+                    Stats.CurrentHp = raised > Stats.MaxHp ? Stats.MaxHp : (int)raised;
+                }
+
                 return HealResult;
             }
         }
@@ -86,10 +97,17 @@ namespace IronGrind.Tests.EditMode.SkillSystem
         {
             public int Int = INT_STAT;
             public int Ap = AP;
+            public int MaxHp = HP_MAX;
+            public int CurrentHp = HP_START;
 
             public int GetStat(EntityID entity, StatID stat)
             {
-                return stat == StatID.Intelligence ? Int : Ap;
+                switch (stat)
+                {
+                    case StatID.Intelligence: return Int;
+                    case StatID.CurrentHP: return CurrentHp;
+                    default: return Ap;
+                }
             }
         }
 
@@ -223,6 +241,7 @@ namespace IronGrind.Tests.EditMode.SkillSystem
             _log.Clear();
             _sink = new RecEffectSink { Log = _log };
             _stats = new FakeStats();
+            _sink.Stats = _stats;
             _calc = new RecCalc { Log = _log };
             _applier = new CountingApplier();
             _damageStep = new SkillDamageExecutionStep(
@@ -406,6 +425,30 @@ namespace IronGrind.Tests.EditMode.SkillSystem
             Assert.That(_sink.LastHealAmount, Is.EqualTo((float)expected));
             Assert.That(outcome.HealAmount, Is.EqualTo(expected));
             Assert.That(_sink.EffectCalls, Is.EqualTo(0));
+        }
+
+        [Test]
+        public void test_effects_instant_heal_near_full_hp_reports_only_the_delivered_amount()
+        {
+            _stats.CurrentHp = _stats.MaxHp - HP_SHORT_OF_MAX;
+            SkillDefinition def = Skill(SkillEffectType.InstantHeal, TargetConstraint.SingleFriendly, HEAL_MULT_2);
+
+            SkillExecutionOutcome outcome = Run(_effectStep, in def, PLAYER_A);
+
+            Assert.That(_sink.LastHealAmount, Is.EqualTo((float)HEAL_246), "the full computed heal is requested");
+            Assert.That(outcome.HealAmount, Is.EqualTo(HP_SHORT_OF_MAX));
+            Assert.That(_stats.CurrentHp, Is.EqualTo(_stats.MaxHp));
+        }
+
+        [Test]
+        public void test_effects_instant_heal_at_full_hp_reports_zero()
+        {
+            _stats.CurrentHp = _stats.MaxHp;
+            SkillDefinition def = Skill(SkillEffectType.InstantHeal, TargetConstraint.SingleFriendly, HEAL_MULT_2);
+
+            SkillExecutionOutcome outcome = Run(_effectStep, in def, PLAYER_A);
+
+            Assert.That(outcome.HealAmount, Is.EqualTo(0));
         }
 
         [TestCase(100, float.NaN, 0)]
