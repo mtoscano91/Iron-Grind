@@ -30,7 +30,7 @@
 #   Superseded entries:     Grep pattern="status: superseded"
 
 version: 1
-last_updated: "2026-10-19"
+last_updated: "2026-11-04"
 
 # ─── STATE OWNERSHIP ─────────────────────────────────────────────────────────
 # Who is the authoritative owner of each piece of shared game state.
@@ -81,6 +81,28 @@ state_ownership:
       - docs/architecture/ADR-014-inbound-request-dispatch-and-tick-order.md
       - docs/architecture/ADR-015-cross-zone-message-relay.md
     added: 2026-10-19
+    revised: ""
+
+  - state: active_session_tokens
+    status: active
+    owner_system: zone process (SessionTokenStore)
+    adr: docs/architecture/ADR-016-gateway-and-authentication-process.md
+    interface: "SessionTokenStore in the zone that holds the session; filled by the gateway's Admit before the client is told the zone; validated and rotated by the zone on Reconnect and SessionHandshake (CR-TOK-4/5). The gateway keeps no token after replying."
+    write_access: zone process only (Admit / Reconnect / session end), driven by gateway-link messages
+    referenced_by:
+      - docs/architecture/ADR-016-gateway-and-authentication-process.md
+    added: 2026-11-04
+    revised: ""
+
+  - state: account_records
+    status: active
+    owner_system: IronGrind.Gateway
+    adr: docs/architecture/ADR-016-gateway-and-authentication-process.md
+    interface: "accounts table + account_id_seq / character_id_seq (migration 003); gateway IAccountRepository; failure counting under SELECT ... FOR UPDATE"
+    write_access: gateway-only (DB role gateway); zone roles have no rights on accounts
+    referenced_by:
+      - docs/architecture/ADR-016-gateway-and-authentication-process.md
+    added: 2026-11-04
     revised: ""
 
 # Example:
@@ -289,6 +311,19 @@ interfaces:
     added: 2026-10-16
     revised: ""
 
+  - contract: gateway_zone_link
+    status: active
+    pattern: rpc
+    producer: IronGrind.Gateway
+    consumers:
+      - zone process (src/ServerLogic/Gateway)
+    adr: docs/architecture/ADR-016-gateway-and-authentication-process.md
+    signal_signature: "Loopback TCP 127.0.0.1:GATEWAY_ZONE_LINK_PORT, one link per zone opened at S10; frame = uint32 LE length + byte type + payload, requestId echoed; Z→G RegisterZone{zoneId,templateId,udpPort,capacity,liveAccounts[]}, PlayerCount, ZoneDraining, SessionReleased{accountId}; G→Z Admit{accountId,characterId,token[16]}, Evict{accountId}, Reconnect{accountId,token[16]} with *Result replies. Zone side: background thread + bounded inbox drained by the tick; never touched by the tick directly"
+    referenced_by:
+      - docs/architecture/ADR-016-gateway-and-authentication-process.md
+    added: 2026-11-04
+    revised: ""
+
 # Example:
 #
 # interfaces:
@@ -410,6 +445,7 @@ api_decisions:
     reason: "ADR-006 co-location constraint (≤50ms PostgreSQL write latency) is satisfied at ~0.1ms on loopback. Managed fleet services add engineering overhead that returns value only at 20+ concurrent zone instances. Hetzner CPX41 at ~€20/month handles 4 concurrent Unity IL2CPP processes with headroom. Scale-out path (Agones/Cloud SQL) documented for post-MVP."
     referenced_by:
       - docs/architecture/ADR-007-hosting-backend.md
+      - docs/architecture/ADR-016-gateway-and-authentication-process.md
     added: 2026-06-27
     revised: ""
 
@@ -538,6 +574,39 @@ api_decisions:
       - docs/architecture/ADR-009-scene-zone-load-management.md
       - docs/architecture/ADR-015-cross-zone-message-relay.md
     added: 2026-10-19
+    revised: ""
+
+  - purpose: gateway_runtime
+    status: active
+    api: ".NET 10 console app on ASP.NET Core minimal APIs (gateway/IronGrind.Gateway), HTTP on loopback only, behind Caddy terminating TLS on 443; POST /v1/login and /v1/register with binary bodies; client uses UnityWebRequest with default certificate validation"
+    not: ".NET 8 (support ends 2026-11-10); a Unity headless build as gateway; a raw SslStream socket; a separate auth sidecar; port 80 open"
+    adr: docs/architecture/ADR-016-gateway-and-authentication-process.md
+    reason: "Plain .NET gives NuGet Argon2id/Npgsql without IL2CPP limits; HTTPS via UnityWebRequest is the supported iOS path; Caddy manages certificates."
+    referenced_by:
+      - docs/architecture/ADR-016-gateway-and-authentication-process.md
+    added: 2026-11-04
+    revised: ""
+
+  - purpose: password_hashing
+    status: active
+    api: "Argon2id via Konscious.Security.Cryptography.Argon2 (iterations 2, memory 19456 KB, parallelism 1, 16-byte salt), PHC strings, in the gateway only, bounded by MAX_AUTH_PENDING"
+    not: "bcrypt (72-byte truncation); client-side pre-hashing; hashing in a zone process"
+    adr: docs/architecture/ADR-016-gateway-and-authentication-process.md
+    reason: "authentication.md CR-AUTH-5/6."
+    referenced_by:
+      - docs/architecture/ADR-016-gateway-and-authentication-process.md
+    added: 2026-11-04
+    revised: ""
+
+  - purpose: shared_code_placement
+    status: active
+    api: "Code compiled by both Unity and the gateway lives in src/Foundation/Shared/ (no .csproj there) and is built by gateway/IronGrind.Shared (netstandard2.1, LangVersion 9.0); AccountID, CharacterID, ZoneID, auth body codecs and the gateway-link codec"
+    not: "Unity references, APIs above .NET Standard 2.1 or C# above 9 in shared files; gateway code under src/ or Assets/"
+    adr: docs/architecture/ADR-016-gateway-and-authentication-process.md
+    reason: "One codec for client and gateway; the netstandard2.1 build enforces Unity's apiCompatibilityLevel and language version."
+    referenced_by:
+      - docs/architecture/ADR-016-gateway-and-authentication-process.md
+    added: 2026-11-04
     revised: ""
 
 # Example:
@@ -760,6 +829,20 @@ forbidden_patterns:
     why: "Teardown stops the tick and blocks on the drain. Run inside a tick it would re-enter the pipeline. Run inside wantsToQuit it would block Unity's quit path. Returning true early skips the drain and loses the last saves."
     adr: docs/architecture/ADR-009-scene-zone-load-management.md
     added: 2026-10-19
+
+  - pattern: accept_all_certificate_handler
+    status: active
+    description: "No CertificateHandler that accepts every certificate, and no plain-HTTP login or registration URL, in a client build. A dev-only handler for the local Caddy 'tls internal' certificate may live only in IronGrind.DevHarness."
+    why: "Credentials are sent in plaintext inside TLS (CR-AUTH-6); disabling validation hands them to any interceptor."
+    adr: docs/architecture/ADR-016-gateway-and-authentication-process.md
+    added: 2026-11-04
+
+  - pattern: auth_in_zone_process
+    status: active
+    description: "A zone process never receives a password, hashes one, or reads or writes the accounts table. Zones only accept Admit/Evict/Reconnect from the gateway link and validate tokens locally."
+    why: "Keeps Argon2id off the tick (CR-AUTH-4) and credentials off NGO UDP; one place to secure."
+    adr: docs/architecture/ADR-016-gateway-and-authentication-process.md
+    added: 2026-11-04
 
 # Example:
 #

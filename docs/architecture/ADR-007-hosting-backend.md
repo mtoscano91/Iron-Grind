@@ -3,6 +3,8 @@
 ## Status
 Accepted (2026-06-27)
 
+> **Pending amendment (2026-11-04): ADR-016 (Gateway and Authentication Process, Proposed).** When ADR-016 is Accepted, it replaces three parts of this ADR. The gateway becomes .NET 10, not .NET 8. Clients reach it over HTTPS through Caddy on 443, and the gateway listens on loopback only. Zones register over a loopback TCP link, not a Unix domain socket. Login results go out as one `LoginResponse` HTTPS body that carries `zoneServerPort`. The gateway also does authentication; there is no separate sidecar.
+
 ## Date
 2026-06-27
 
