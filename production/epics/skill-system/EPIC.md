@@ -81,7 +81,7 @@ Applied to `skill-system.md` and `entities.yaml`.
 | 004 | [Cast intake (`SkillCastRequest`, V-1, V-2)](story-004-cast-intake.md) | Logic | Complete | ADR-014 |
 | 005 | [Validation sequence (V-0, V-3 to V-8)](story-005-validation-sequence.md) | Logic | Complete | ADR-014 |
 | 006 | [Mana cost (V-9) and cooldown registration](story-006-mana-and-cooldowns.md) | Logic | Complete | ADR-014, ADR-012 |
-| 007 | [Cast execution (`NotifySkillUsed`, damage, kill, facing)](story-007-cast-execution.md) | Logic | Ready | ADR-010, ADR-013 |
+| 007 | [Cast execution (`NotifySkillUsed`, damage, kill, facing)](story-007-cast-execution.md) | Logic | Complete | ADR-010, ADR-013 |
 | 008 | [Effect application (buffs, debuffs, instant heal)](story-008-effect-application.md) | Logic | Ready | ADR-010 |
 | 009 | [Cast output (`SkillCastResult`, `SkillCooldownUpdate`)](story-009-cast-output.md) | Logic | Ready | ADR-004 |
 | 010 | [`SkillCooldownSnapshot` on zone join](story-010-cooldown-snapshot.md) | Integration | Ready | ADR-004 |

@@ -83,8 +83,19 @@ namespace IronGrind.SkillSystem
                 return;
             }
 
-            // Extension point: Story 007 (NotifySkillUsed, damage) then Story 008 (effects).
-            _execution?.Execute(in cast);
+            // Story 007 (NotifySkillUsed, damage) then Story 008 (effects). Decision E (Story 007 readiness): a throw is a
+            // server bug, not a game rule. Mana stays spent (ISkillManaSink has no refund), the exception is logged, and
+            // no cooldown write or SendAccepted follows.
+            try
+            {
+                _execution?.Execute(in cast);
+            }
+            catch (Exception e)
+            {
+                UnityEngine.Debug.LogError($"SkillCast: execution failed for caster {cast.Caster}, skill {cast.Definition.ID}; mana spent, no cooldown (Decision E).");
+                UnityEngine.Debug.LogException(e);
+                return;
+            }
 
             // CR-SK-8: after execution, on every accepted cast. CooldownTicks 0 writes the current tick: ready next tick.
             // No data validation exists yet: a negative CooldownTicks fails safe to 0 (load-time validation belongs to

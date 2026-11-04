@@ -79,7 +79,7 @@ namespace IronGrind.AutoAttackCombat
     /// </code>
     /// </example>
     public sealed class AutoAttackCombatSystem : IZoneSimulationStep, ICombatService, IAutoAttackSkillUseSink,
-        IAutoAttackInputSink, IZoneSlotReleaseListener
+        IAutoAttackInputSink, IZoneSlotReleaseListener, IMobKillReporter
     {
         /// <inheritdoc />
         /// <remarks>
@@ -581,6 +581,25 @@ namespace IronGrind.AutoAttackCombat
             }
 
             RaiseMobDied(new MobDeathContext(_zoneId, target, type, deathPosition, attacker));
+        }
+
+        /// <summary>
+        /// Raises <see cref="OnMobDied"/> for a kill made by another damage source (a skill; Skill System Story 007
+        /// Decision D). The caller applies damage and awards XP itself. An unknown mob type logs an error and raises nothing,
+        /// as <c>ResolveKill</c> does. The auto-attack slot state is not touched.
+        /// </summary>
+        /// <param name="killer">The killing player.</param>
+        /// <param name="target">The killed mob.</param>
+        /// <param name="deathPosition">Where the mob died, in world units.</param>
+        public void ReportKill(EntityID killer, EntityID target, Vector3 deathPosition)
+        {
+            if (!_mobTypes.TryGetMobType(target, out MobTypeID type))
+            {
+                Debug.LogError($"AutoAttackCombat: OnMobDied skipped, no mob type for target {target} killed by {killer}.");
+                return;
+            }
+
+            RaiseMobDied(new MobDeathContext(_zoneId, target, type, deathPosition, killer));
         }
 
         // Each subscriber runs in its own try/catch, so one that throws is logged and the others still run. Iterates a

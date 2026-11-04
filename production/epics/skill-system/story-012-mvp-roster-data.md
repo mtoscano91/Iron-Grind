@@ -51,6 +51,7 @@
 - **War Cry / Rogue note**: keep +20% AP at MVP; the note applies when Rogue is designed.
 - **Data test**: a test loads the real asset (`AssetDatabase.LoadAssetAtPath` in EditMode) and checks every rule above. This is the Config/Data smoke check, automated.
 - **Prayer HoT**: check that the Status Effects `BuffDefinition` supports a per-tick heal; if it doesn't, raise it at readiness. The visual section's "No HoT skills exist at MVP" line is stale; fix it in the GDD.
+- **Story 007 carry (2026-11-04)**: `SkillDamageExecutionStep` derives the damage context from the effect flags (CR-SK-5) and never reads `SkillDefinition.DamageContext`. Check at load that the authored value agrees with the flags (PhysicalDamage → PhysicalSkill, MagicalDamage → MagicalSkill), or drop the field. Also validate `DamageMultiplier` in [0.0, 5.0] (the step fails safe to 0 on NaN or a negative product).
 
 ---
 

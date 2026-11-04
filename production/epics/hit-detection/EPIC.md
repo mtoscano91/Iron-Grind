@@ -22,7 +22,7 @@ Moved to the caller epics, not yet created:
 | AC-HD-12, AC-HD-13 (no damage on a miss) | Auto-Attack Combat |
 | AC-HD-15 (`capturedForward` frozen at initiation) | Enemy AI |
 | AC-HD-16 (600 ms wind-up) | Enemy AI |
-| AC-HD-18, AC-HD-19 (facing updates and `AutoFaceEvent`, except anything already covered by Movement) | Auto-Attack Combat, Enemy AI |
+| AC-HD-18, AC-HD-19 (facing updates and `AutoFaceEvent`, except anything already covered by Movement); AC-HD-19 (b) (targeted skill casts face the target) closed by Skill System Story 007, 2026-11-04 | Auto-Attack Combat, Enemy AI |
 
 AC-HD-20 (distinct `MissFacing` feedback) is a Polish item, outside MVP.
 

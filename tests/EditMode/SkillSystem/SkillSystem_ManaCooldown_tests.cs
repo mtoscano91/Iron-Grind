@@ -570,7 +570,9 @@ namespace IronGrind.Tests.EditMode.SkillSystem
         public void test_manacooldown_throwing_execution_writes_no_cooldown_and_next_caster_is_processed()
         {
             _execution.Throw = true;
-            LogAssert.Expect(LogType.Error, new Regex("threw InvalidOperationException"));
+            // Decision E (Story 007): the executor catches and logs the exception itself.
+            LogAssert.Expect(LogType.Error, new Regex("execution failed"));
+            LogAssert.Expect(LogType.Exception, new Regex("execution fault"));
             _intake.Submit(PLAYER_A, new SkillCastRequest(ID_A, SKILL_MAIN, ID_MOB, 0u));
             _intake.Submit(PLAYER_B, new SkillCastRequest(ID_B, SKILL_MAIN, ID_MOB, 0u));
 

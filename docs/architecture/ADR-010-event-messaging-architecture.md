@@ -6,6 +6,8 @@ Accepted (2026-06-27)
 ## Date
 2026-06-27
 
+Note 2026-11-04 (Skill System Story 007 readiness, user decision): a skill kill raises the same `ICombatService.OnMobDied`. Combat owns `IMobKillReporter.ReportKill(EntityID killer, EntityID target, Vector3 deathPosition)` in `src/ServerLogic/AutoAttackCombat/`, implemented by `AutoAttackCombatSystem`, which resolves the mob type and raises the event through its existing subscriber-isolated path. The Skill System calls it after `GetXPAward → AddExperience → ApplyDamage`. One event source for all mob deaths; Tier 1 direct call into Tier 2 broadcast. No decision of this ADR changes.
+
 Note 2026-10-30 (Auto-Attack Combat `/create-epics`): XP is not an `OnMobDied` subscriber. `leveling-system.md` CR-1.1 and `auto-attack-combat.md` Rule 10 Step 3 have the killer's controller call `GetXPAward` then `AddExperience` directly, before `ApplyDamage`. `OnMobDied` stays for loot, party kill credit and respawn. The XP subscriber in this ADR's examples is removed so a kill cannot award XP twice.
 
 Note 2026-10-19 (ADR-009 Amendment 1 Accepted): the `IZoneStartupService.StartZone()` this ADR names as the server-side injection point "(ADR-009)" was never defined in ADR-009. It is `ZoneServerComposition.Start(ZoneStartupArgs)` of ADR-009 Amendment 1 (Decision 5, startup S5), the one server composition root. No `IZoneStartupService` interface is introduced. The wiring rule itself is unchanged.

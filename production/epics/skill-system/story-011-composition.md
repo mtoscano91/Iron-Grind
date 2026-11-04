@@ -49,6 +49,7 @@
 - **Cooldown snapshot**: install the Story 010 responder (or decorator) in `ZoneInstancingWiring` options.
 - **Observe**: call `Observe(nameof(SkillSystemService))` as the other builds do.
 - **Pipeline tests**: drive the real `ZoneTickPipeline` with test doubles at the edges, as `AutoAttackCombat_AutoFace_tests.cs` did for N / N+1 and the write order.
+- **Story 007 carry (2026-11-04)**: wire `SkillDamageExecutionStep` as `SkillCastExecutor`'s execution step (a composite with Story 008's step): `CharacterStatsSkillStatSource`, `DamageCalculatorSkillAdapter`, the zone's `AutoAttackCombatSystem` as `IAutoAttackSkillUseSink` and `IMobKillReporter`, `AutoFaceEmitter`, the stand-in XP award and the inner `StandInAutoAttackDamageApplier` (not `DamageOutputApplier`). Add the Decision B test Story 007 could only assert structurally: a skill hit through the production inner applier with a recording outbox and batch sends zero `DamageEvent` / `SelfDamageEvent`.
 
 ---
 
