@@ -1,5 +1,14 @@
 # Review Log: Authentication
 
+## Review — 2026-11-04 (lean re-review #2) — Verdict: NEEDS REVISION → fixes applied, accepted as Approved
+Scope signal: L
+Specialists: None (lean mode — single-session analysis)
+Blocking items: 1 (resolved in session) | Recommended: 4 (resolved in session)
+Summary: All 3 prior blockers verified closed; CR-AUTH-13 (separate character name) is consistent with auth-wire-messages.md, ADR-016 and the registry. One blocker: CHARACTER_NAME_MAX_LENGTH's ceiling of 26 (VARCHAR) exceeded the 24-byte EntityState.characterName wire cap, so legal tuning values would break snapshot encoding — ceiling lowered to 24. Recommended items applied: character-name check order, token-path tradeoff documented (live-session timing, REAUTH session expiry — limited by private usernames), OQ-AUTH-7 for offensive names, UI literal replaced by USERNAME_MAX_LENGTH; AC-AUTH-21(e) added. User accepted the fixes and marked the GDD Approved without a verify pass.
+Prior verdict resolved: Yes
+
+---
+
 ## Review — 2026-11-04 — Verdict: NEEDS REVISION
 Scope signal: L
 Specialists: None (lean mode — single-session analysis)

@@ -1540,9 +1540,9 @@ constants:
       - docs/architecture/ADR-016-gateway-and-authentication-process.md
     type: "int constant (tuning knob)"
     value: 16
-    note: "Max visible character name length, ASCII [A-Za-z0-9_] so chars = bytes. Safe range [12, 26]; hard ceiling 26 = character_name VARCHAR(26) (ADR-006, character-persistence.md CharacterName max 26 bytes). Companion CHARACTER_NAME_MIN_LENGTH = 3 [2, 4]. Unique case-insensitively (ux_character_records_name_lower, migration 003). Added 2026-11-04 (authentication.md CR-AUTH-13)."
+    note: "Max visible character name length, ASCII [A-Za-z0-9_] so chars = bytes. Safe range [12, 24]; hard ceiling 24 = EntityState.characterName wire cap (networking-wire-protocol.md, max 24 bytes UTF-8), tighter than character_name VARCHAR(26) (ADR-006, character-persistence.md CharacterName max 26 bytes). Checks in order: length (code points) -> charset -> MatchesUsername -> Taken (unique index). Companion CHARACTER_NAME_MIN_LENGTH = 3 [2, 4]. Unique case-insensitively (ux_character_records_name_lower, migration 003). Added 2026-11-04 (authentication.md CR-AUTH-13)."
     added: "2026-11-04"
-    revised: ""
+    revised: "2026-11-04"  # ceiling 26 -> 24 (wire cap), authentication.md lean re-review #2
 
   - name: RoutingRedirectMessage
     status: deprecated

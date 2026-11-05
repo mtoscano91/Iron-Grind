@@ -1,6 +1,6 @@
 # Authentication
 
-> **Status**: Revised 2026-11-04 for ADR-016 (gateway authentication); lean re-review 2026-11-04 NEEDS REVISION (3 blocking) — all fixes applied the same session (separate character name CR-AUTH-13, token-path ban check, Evict save failure, map lifecycle, ACs 35–38). Before: Approved (lean re-review, 2026-05-21)
+> **Status**: Approved 2026-11-04 (fixes from lean re-review #2 accepted without a verify pass). Revised 2026-11-04 for ADR-016 (gateway authentication); lean re-review #2 2026-11-04 NEEDS REVISION (1 blocking: `CHARACTER_NAME_MAX_LENGTH` ceiling 26 → 24, the `EntityState` wire cap) — fixed with 4 recommended items (name check order, token-path tradeoff note, OQ-AUTH-7, UI constant) and AC-AUTH-21(e). Lean re-review #1 the same day: NEEDS REVISION (3 blocking) — fixed (separate character name CR-AUTH-13, token-path ban check, Evict save failure, map lifecycle, ACs 35–38). Before: Approved (lean re-review, 2026-05-21)
 > **Author**: Manuel Toscano + agents
 > **Last Updated**: 2026-11-04
 > **Implements Pillar**: Pillar 1 — Earned Power (account identity is the permanent record of everything the player has earned)
@@ -110,12 +110,13 @@ Each `AccountID` maps to exactly one `CharacterID`, established at registration 
 **CR-AUTH-13 — Character Name (separate from the login username)**
 The login username is private: it is never shown to other players, never sent in any game message, and never used as a character name. The player picks a separate `characterName` at registration. It is what other players see (nameplates, party, chat — `party-chat.md` `CharacterName`). Rules:
 - Charset `[A-Za-z0-9_]` (ASCII only, so byte count = character count); case is preserved for display.
-- Length [`CHARACTER_NAME_MIN_LENGTH`, `CHARACTER_NAME_MAX_LENGTH`] characters; the maximum must stay ≤ 26 (`character_name VARCHAR(26)`, ADR-006).
+- Length [`CHARACTER_NAME_MIN_LENGTH`, `CHARACTER_NAME_MAX_LENGTH`] characters; the maximum must stay ≤ 24, the tighter of two limits: `EntityState.characterName` carries at most 24 UTF-8 bytes (`networking-wire-protocol.md`), and the column is `character_name VARCHAR(26)` (ADR-006).
 - Unique case-insensitively across all characters (unique index on `lower(character_name)`, migration 003).
 - Must not equal the username case-insensitively, so the visible name does not reveal the login name. Otherwise `RegistrationError.CharacterNameMatchesUsername`.
-- Failures: `CharacterNameTooShort`, `CharacterNameTooLong`, `CharacterNameInvalidChars` (same non-ASCII handling as EC-AUTH-9), `CharacterNameMatchesUsername`, `CharacterNameTaken`.
+- Checks run in this order, returning the first failure: (1) length, counted in Unicode code points → `CharacterNameTooShort` / `CharacterNameTooLong`; (2) charset → `CharacterNameInvalidChars` (same non-ASCII handling as EC-AUTH-9); (3) `CharacterNameMatchesUsername`. `CharacterNameTaken` comes last, from the unique index at insert (CR-AUTH-8 step 5).
+- The name other players see — session registry `CharacterName`, `EntityState.characterName`, chat `senderName` — is always `character_records.character_name`, never the username.
 
-Rationale (lean re-review 2026-11-04): with name = username, every login name is public. Combined with CR-AUTH-10's no-decay lockout, any player could keep any visible player locked out by sending one bad login every few minutes, and credential stuffing would only need passwords. Renaming is out of scope at MVP.
+Rationale (lean re-review 2026-11-04): with name = username, every login name is public. Combined with CR-AUTH-10's no-decay lockout, any player could keep any visible player locked out by sending one bad login every few minutes, and credential stuffing would only need passwords. The same privacy limits two token-path weaknesses that are accepted, not fixed: someone who knows a username can tell from response timing whether that account has a live session (immediate failure vs. a `Reconnect` round trip, CR-AUTH-9 step 2), and can send `REAUTH_FAILURE_LIMIT` bad tokens while that player is disconnected, expiring the session so they must log in with their password. Renaming is out of scope at MVP; offensive names are OQ-AUTH-7.
 
 ---
 
@@ -273,7 +274,7 @@ MapSizeBytes(N) = N × (sizeof(AccountID) + sizeof(CharacterID) + DictionaryOver
 | `USERNAME_MIN_LENGTH` | 3 | [2, 6] | 2-char usernames allow squatting of short premium names | 6-char minimum too restrictive for most desired usernames |
 | `USERNAME_MAX_LENGTH` | 24 | [12, 32] | 12-char max too tight for memorable login names | > 32: exceeds `accounts.username_lower VARCHAR(32)` — needs a migration |
 | `CHARACTER_NAME_MIN_LENGTH` | 3 | [2, 4] | 2-char names allow squatting of very short names | > 4: blocks common short names |
-| `CHARACTER_NAME_MAX_LENGTH` | 16 | [12, 26] | < 12: too tight for creative names | > 16: long names crowd nameplates, party frames and chat lines on a phone screen; > 26 exceeds `character_name VARCHAR(26)` |
+| `CHARACTER_NAME_MAX_LENGTH` | 16 | [12, 24] | < 12: too tight for creative names | > 16: long names crowd nameplates, party frames and chat lines on a phone screen; > 24 exceeds the 24-byte `EntityState.characterName` wire field (`networking-wire-protocol.md`) |
 | `PASSWORD_MIN_LENGTH` | 8 | [6, 12] | 6-char allows weak passwords | 12-char frustrates mobile users on virtual keyboards |
 | `PASSWORD_MAX_LENGTH` | 72 | [72, 128] | Do not reduce below 72 — mobile UX choice (virtual keyboard limit), not an Argon2id constraint; Argon2id safe floor is [16, 256] | 128+ functionally uncapped in Argon2id — no concern |
 | `MAX_AUTH_PENDING` | 10 | [5, 20] | < 5: bursts of legitimate logins may hit the cap during server load | > 20: gateway hashing memory (`MAX_AUTH_PENDING` × 19 MiB) exceeds its budget (ADR-007 / ADR-016) |
@@ -282,7 +283,7 @@ MapSizeBytes(N) = N × (sizeof(AccountID) + sizeof(CharacterID) + DictionaryOver
 - `LockoutTable[5]` through `LockoutTable[9+]` must be monotonically increasing — a lockout step must never be shorter than the prior step.
 - `LOGIN_FAILURE_LIMIT` and `LockoutTable[9+]` determine brute-force deterrence together; tune as a pair.
 - Argon2id `iterations` and `memorySize` must be tuned together — re-derive performance benchmarks on target server hardware when changing either.
-- `CHARACTER_NAME_MAX_LENGTH` ≤ 26 (`character_name VARCHAR(26)`, ADR-006). `USERNAME_MAX_LENGTH` ≤ 32 (`accounts.username_lower VARCHAR(32)`, ADR-016). Both are tunable inside their ranges without a migration.
+- `CHARACTER_NAME_MAX_LENGTH` ≤ 24 (`EntityState.characterName` max 24 bytes, `networking-wire-protocol.md`; the `character_name VARCHAR(26)` column, ADR-006, is looser). `USERNAME_MAX_LENGTH` ≤ 32 (`accounts.username_lower VARCHAR(32)`, ADR-016). Both are tunable inside their ranges without a migration.
 - `CHARACTER_NAME_MIN_LENGTH` < `CHARACTER_NAME_MAX_LENGTH`.
 - `LOGIN_HTTP_TIMEOUT_SECONDS` (ADR-016) must exceed hashing + `GATEWAY_EVICT_TIMEOUT_MS` + `GATEWAY_ZONE_REQUEST_TIMEOUT_MS`.
 
@@ -294,7 +295,7 @@ Authentication has no visual effects or audio events. The gateway is invisible t
 
 ## UI Requirements
 
-**Login screen**: Username input field (max 24 chars, ASCII-only keyboard, auto-lowercase on submit), password input field (masked, max 72 chars), login button, link to registration screen.
+**Login screen**: Username input field (max `USERNAME_MAX_LENGTH` chars, ASCII-only keyboard, auto-lowercase on submit), password input field (masked, max 72 chars), login button, link to registration screen.
 
 **Registration screen**: Username input (same constraints as login; labelled as the private login name, with a note that other players never see it), password input (masked), confirm-password input (client-side match check before submit — do not send mismatched passwords to server), character name input (`[A-Za-z0-9_]`, max `CHARACTER_NAME_MAX_LENGTH`, case kept; note that this is the name other players see), class picker (one per playable class, `class-system.md`), register button, link to login screen.
 
@@ -350,7 +351,7 @@ Authentication has no visual effects or audio events. The gateway is invisible t
 
 **AC-AUTH-20** [Logic] BLOCKING — Given `loginFailureCount=9`, when a failed login is submitted, then `loginFailureCount=10` and `lockoutUntilUtc ≈ UtcNow + 600s`. Repeat with `loginFailureCount=50`: assert `lockoutUntilUtc ≈ UtcNow + 600s` (cap holds).
 
-**AC-AUTH-21** [Integration] BLOCKING — Given a successful login followed by the client's `SessionHandshake` at the routed zone, when session establishment runs, then: (a) the zone's `ActiveSessionTokens[AccountID]` contains the non-zero 16-byte token from `Admit`; (b) `LoginResponse` carries the same token, `CharacterID`, `zoneId` and `zoneServerPort` — assert no `AccountID` field is present (per `auth-wire-messages.md`); (c) the zone's networking session transitions to `Connected` on the handshake; (d) `LoadCharacter(CharacterID)` is called exactly once, by the zone at admission, never by the gateway. Verified via a gateway test with a fake zone link for (a)–(b) and a zone test spy for (c)–(d).
+**AC-AUTH-21** [Integration] BLOCKING — Given a successful login followed by the client's `SessionHandshake` at the routed zone, when session establishment runs, then: (a) the zone's `ActiveSessionTokens[AccountID]` contains the non-zero 16-byte token from `Admit`; (b) `LoginResponse` carries the same token, `CharacterID`, `zoneId` and `zoneServerPort` — assert no `AccountID` field is present (per `auth-wire-messages.md`); (c) the zone's networking session transitions to `Connected` on the handshake; (d) `LoadCharacter(CharacterID)` is called exactly once, by the zone at admission, never by the gateway; (e) for an account registered with username `"alice_login"` and character name `"Grim_Iron7"`, the zone's session registry `CharacterName` and the player's `EntityState.characterName` are `"Grim_Iron7"` — the username appears in neither (CR-AUTH-13). Verified via a gateway test with a fake zone link for (a)–(b) and a zone test spy for (c)–(e).
 
 **AC-AUTH-22** [Integration] BLOCKING — Given an MVP account, when `GetCharacterIDAsync(AccountID)` is called, then the result matches the stub created at registration. Account and character are separate DB rows — assert account row contains no character data fields; character row contains `accountId` FK.
 
@@ -409,3 +410,4 @@ Authentication has no visual effects or audio events. The gateway is invisible t
 | OQ-AUTH-4 | Should the gateway push a notification (over the zone link) to the zone holding the session when `isBanned` is set (enabling auto-kick), or is the two-step "ban + explicit kick" admin workflow acceptable for MVP? | No | Admin tooling design |
 | OQ-AUTH-5 | ~~Should the game server queue `ConnectionRequest` messages for ~5s during a transient sidecar outage and retry, or fail immediately?~~ | — | **RESOLVED 2026-11-04 (ADR-016)** — immediate `ServerError`; there is no sidecar, and the gateway's infrastructure failures are EC-AUTH-10. |
 | OQ-AUTH-6 | Should per-IP rate limiting on the registration endpoint be specified? The `AccountID` counter advances on each attempt — sustained registration spam from one IP could exhaust the counter over a very long time horizon (functionally harmless at MVP scale, but a DoS vector on launch). | No | Architecture / Security review |
+| OQ-AUTH-7 | How are offensive character names handled? Names are public in every zone (nameplates), with no filter and no rename at MVP; party chat defers moderation too (party-chat.md CR-PC-6). Options: a reserved/blocked name list checked at registration (new `RegistrationError` code), an admin rename command, or both. App Store review expects a way to moderate player-created content. | No (MVP); before public launch | Admin tooling design / Live ops |
