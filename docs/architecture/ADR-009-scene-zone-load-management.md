@@ -8,6 +8,8 @@ Accepted (2026-06-27) — Amendment 1 Accepted 2026-10-19
 
 Note 2026-10-16 (ADR-015 Accepted): Decision 3 gains step 2a — stop the cross-zone relay listener (`NpgsqlRelayListener.Stop()`) after the tick loop has stopped. The listener is also stopped from the server host `MonoBehaviour.OnDestroy`, because this teardown does not run when the Editor leaves Play mode (ADR-015 Decision 3). This adds to the open teardown-order item C2 in `architecture-traceability.md`.
 
+Note 2026-11-06 (ADR-016 Accepted): startup step S10 (`Gateway.RegisterZone`) is now a real gateway registration: `IGatewayRegistration` opens the zone's loopback TCP link to the gateway and sends `RegisterZone { zoneId, templateId, udpPort, capacity, liveAccounts[] }` (ADR-016 Decision 3). Teardown step 2a also stops the gateway link thread (`Stop()` closes the socket, then joins with a timeout), next to the relay listener, and the server host's `OnDestroy` stops it too, as for the relay listener. The zone's `ZoneID` still comes from `-zoneId`; the gateway allocates it from `zone_id_seq` and starts the process as the systemd unit `irongrind-zone@<zoneId>.service`, which is never restarted automatically.
+
 Note 2026-10-19: **Amendment 1 (Accepted 2026-10-19)** at the end of this file replaces the step lists of Decision 2 (startup) and Decision 3 (teardown), adds Decision 5 (the composition root) and replaces `Process.Exit(0)` with `Application.Quit(int)`. Where the body below still shows `Process.Exit(0)` or the old step lists, the amendment wins. It closes C2 and P4 (`architecture-review-2026-10-19-adr-009-a1.md`).
 
 ## Engine Compatibility

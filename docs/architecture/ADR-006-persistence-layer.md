@@ -6,6 +6,8 @@ Accepted (2026-06-27) — amended 2026-10-01 (Amendment 1: `inventory_slots` ent
 ## Date
 2026-06-27
 
+Note 2026-11-06 (ADR-016 Accepted): the gateway adds to this schema in migration `004_create_accounts.sql` — an `accounts` table, the sequences `account_id_seq`, `character_id_seq` and `zone_id_seq`, a foreign key from `character_records.account_id` to `accounts`, an index on `character_records.account_id` and a case-insensitive unique index on `character_name`. The gateway connects as its own role `gateway`: all rights on `accounts` and the account and character sequences, `USAGE` on `zone_id_seq`, `INSERT` and `SELECT (character_id, account_id, last_zone_id)` on `character_records`, nothing else. Zone roles get no rights on `accounts`. The gateway is a plain .NET 10 process using current Npgsql and Dapper from NuGet with its own connection pool; this ADR's Unity DLL delivery and Amendment 3 pool apply to zone processes only. Details: ADR-016 Decision 5.
+
 ## Engine Compatibility
 
 | Field | Value |

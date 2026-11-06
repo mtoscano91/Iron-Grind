@@ -3,7 +3,7 @@
 ## Status
 Accepted (2026-06-27)
 
-> **Pending amendment (2026-11-04): ADR-016 (Gateway and Authentication Process, Accepted 2026-11-06).** ADR-016 replaces three parts of this ADR. The gateway becomes .NET 10, not .NET 8. Clients reach it over HTTPS through Caddy on 443, and the gateway listens on loopback only. Zones register over a loopback TCP link, not a Unix domain socket. Login results go out as one `LoginResponse` HTTPS body that carries `zoneServerPort`. The gateway also does authentication; there is no separate sidecar.
+> **Amended 2026-11-06 by ADR-016 (Gateway and Authentication Process, Accepted 2026-11-06).** ADR-016 replaces four parts of this ADR. (1) The gateway is .NET 10, not .NET 8. (2) Clients reach it over HTTPS through Caddy on 443, and the gateway listens on loopback only. It also does authentication; there is no separate sidecar. (3) Zones register over a loopback TCP link, not a Unix domain socket, and login results go out as one `LoginResponse` HTTPS body that carries `zoneServerPort`. (4) Zones are instances of the systemd template unit `irongrind-zone@.service`, with `Restart=no`, started by the gateway (ADR-016 Decision 3). The affected passages below are updated in place and marked "(ADR-016)". Where this file and ADR-016 disagree, ADR-016 wins.
 
 ## Date
 2026-06-27
@@ -65,9 +65,9 @@ Self-hosted Linux VPS (Hetzner) with all components co-located on a single machi
                │                    │  ──────────────────────────────────────────────────────────  │
                │                    │                                                              │
                │                    │  ┌────────────────────────────────────┐                     │
-               └───────────────────►│  │  Gateway Process (C# .NET 8)       │                     │
-                                    │  │  Port 443 TLS                      │                     │
-                                    │  │  - Session token issue              │                     │
+               └───────────────────►│  │  Gateway Process (C# .NET 10)      │                     │
+                                    │  │  443 TLS via Caddy (ADR-016)       │                     │
+                                    │  │  - Auth + session token issue       │                     │
                                     │  │  - Zone assignment (CR-ZI-6)        │                     │
                                     │  │  - Returns zone server port         │                     │
                                     │  └──────────────┬─────────────────────┘                     │
@@ -97,19 +97,18 @@ All components (gateway, zone server processes, PostgreSQL) run on a single Hetz
 **Client → Gateway (auth + zone routing)**
 
 ```
-TLS connection → Port 443 (TCP)
-→ Authenticate (session token exchange with Authentication system)
-→ Receive LoginResult { uint zoneId; ushort zoneServerPort; }
-→ Close TLS connection
+HTTPS POST /v1/login → Caddy on port 443 (TLS) → gateway on 127.0.0.1   (ADR-016)
+→ Gateway authenticates (Argon2id), evicts any prior session, sends Admit to the chosen zone
+→ Receive LoginResponse { success; errorCode; sessionToken[16]; characterId; zoneId; zoneServerPort; }
 → Open UDP connection to [same public IP]:[zoneServerPort]
 → Send SessionHandshake (NGO R-OD) per networking-session.md CR-NET-6
 ```
 
-`zoneServerPort` is a new field added to `LoginResult` by this ADR. The existing `zoneId: uint` field was established by zone-instancing.md OQ-ZI-4. A follow-up amendment to zone-instancing.md and auth-wire-messages.md is required to register `zoneServerPort` formally.
+`zoneServerPort` was added to the login result by this ADR. The existing `zoneId: uint` field was established by zone-instancing.md OQ-ZI-4. *(ADR-016: the result is the single HTTPS body `LoginResponse`, registered in `auth-wire-messages.md`.)*
 
 **Zone Server ↔ Gateway (process registry)**
 
-At MVP the gateway and zone server processes run on the same machine. The gateway maintains an in-memory routing table (`Dictionary<ZoneID, ushort> zonePortMap`). Zone processes register with the gateway on startup via a local Unix domain socket. On scale-out to a second VPS, this registry moves to a lightweight shared store (Redis or file-based) — deferred to post-MVP.
+At MVP the gateway and zone server processes run on the same machine. The gateway maintains an in-memory routing table (ZoneID → port, player count, state). *(ADR-016: each zone registers at startup step S10 over a loopback TCP link to `127.0.0.1:GATEWAY_ZONE_LINK_PORT`, not a Unix domain socket, and keeps the link open for `PlayerCount`, `ZoneDraining`, `Admit`, `Evict` and `Reconnect`; ADR-016 Decision 3.)* On scale-out to a second VPS, this registry moves to a lightweight shared store (Redis or file-based) — deferred to post-MVP.
 
 **PostgreSQL connection string (per zone process)**
 
@@ -167,7 +166,7 @@ Zone server processes are managed as systemd services. *(Amended 2026-11-06 by A
 
 ### Negative
 - No auto-scaling: adding zone capacity requires manual intervention (provision a second VPS, deploy a zone process). Acceptable at MVP player counts.
-- No automated fleet management: zone process crashes trigger systemd restart (near-instant) but do not auto-redistribute in-session players. Players receive `ZoneSessionEnded` and reconnect via the gateway, which creates a new zone instance per CR-ZI-6.
+- No automated fleet management: a crashed zone process is not restarted (`Restart=no`, ADR-016) and its in-session players are not redistributed. They lose the connection, log in again through the gateway and are routed per CR-ZI-6 to another instance with a new ZoneID.
 - Single point of failure at MVP: if the VPS goes down, all zones go down. Mitigated by Hetzner's SLA (99.9% uptime), PostgreSQL daily backups, and the reconnect/ghost-session machinery in networking-session.md.
 
 ### Risks
@@ -177,7 +176,7 @@ Zone server processes are managed as systemd services. *(Amended 2026-11-06 by A
 | VPS hardware failure or DDoS | HIGH | Hetzner 99.9% uptime SLA; daily PostgreSQL backup to object storage; cold standby VPS provisionable in <10 minutes from backup |
 | Zone process memory leak → OOM kill | MEDIUM | `MemoryMax` set per unit; no automatic restart (`Restart=no`, ADR-016 Decision 3 — the killed zone's players log in again and get a new zone); Unity IL2CPP GC monitored via structured server logs |
 | PostgreSQL disk fills | MEDIUM | `character_records` rows are O(player count); `pending_purchases` rows cleaned on reconciliation; alert at 80% disk usage via `pg_stat_user_tables` |
-| Multi-VPS scale-out needed before gateway IPC is ready | LOW | Gateway → zone registry is in-process at MVP; multi-VPS refactor (Unix socket → Redis) is a discrete story completable in <1 sprint |
+| Multi-VPS scale-out needed before gateway IPC is ready | LOW | Gateway → zone registry is in-process at MVP; multi-VPS refactor (loopback TCP link → a link over the private LAN, registry → Redis; ADR-016) is a discrete story completable in <1 sprint |
 | `NetworkTransform.Update` override breaks in NGO 6.3 | MEDIUM | NGO 6.3 breaking change: `NetworkTransform.Update()` can no longer be overridden; must use `NetworkTransform.OnUpdate()` instead. Any zone server code subclassing `NetworkTransform` must be audited before the first IL2CPP build. See Unity 6.3 upgrade guide. |
 | Unity IL2CPP Linux headless build fails to compile | MEDIUM | ADR-006 link.xml for Npgsql/Dapper already specified; NGO IL2CPP compatibility established by ADR-004; first build is a Validation Criteria gate before any stories are marked Done |
 
@@ -186,7 +185,7 @@ Zone server processes are managed as systemd services. *(Amended 2026-11-06 by A
 | GDD System | Requirement | How This ADR Addresses It |
 |---|---|---|
 | `zone-instancing.md` | CR-ZI (Runtime Model): Unity headless server build (Unity 6.3 LTS, IL2CPP) on Linux | VPS runs Ubuntu 22.04 LTS; zone server binary is a Unity 6.3 IL2CPP Linux headless build deployed as a systemd service |
-| `zone-instancing.md` | CR-ZI-6 (Fill-first routing): Zone assignment computed server-side; routing table in-memory, rebuilt at server start | Gateway process holds the in-memory routing table (`Dictionary<ZoneID, ushort port>`); rebuilt when zone processes register on startup |
+| `zone-instancing.md` | CR-ZI-6 (Fill-first routing): Zone assignment computed server-side; routing table in-memory, rebuilt at server start | Gateway process holds the in-memory routing table; rebuilt when zone processes register (`RegisterZone`, then `PlayerCount` / `ZoneDraining` over the zone link; ADR-016 Decision 3) |
 | `zone-instancing.md` | CR-ZI-3 (Player Capacity): `MAX_PLAYERS_PER_ZONE` = 50; capacity enforced server-side | Capacity enforcement is logic within the Unity zone process — no hosting-layer constraint required; one process per zone instance isolates capacity enforcement naturally |
 | `character-persistence.md` | ADR-006 Decision 4: PostgreSQL co-located with game server, ≤50ms P95 write latency | PostgreSQL runs on the same VPS as zone server processes; loopback connection (~0.1ms P95) — 500× headroom below the 50ms budget |
 | `networking-core.md` | OQ-NET-5: Persistence write latency must not exceed `ENHANCEMENT_PROCESS_LATENCY_MAX_MS` = 200ms budget | ~0.1ms write latency leaves 199.9ms for RTT and server processing; CR-NET-5 commit-before-broadcast is achievable |
@@ -195,7 +194,7 @@ Zone server processes are managed as systemd services. *(Amended 2026-11-06 by A
 ## Performance Implications
 
 - **CPU**: Hetzner CPX41 provides 8 vCPU. Each Unity IL2CPP zone process at 20Hz tick with 50 players + 150 mobs: estimated 1–2 vCPU under load (F-NET-9 profiling requirement still open). Supports 4 concurrent zones with headroom for gateway and PostgreSQL. The F-NET-9 mob-density tick budget profiling pass must be run on the target VPS hardware tier.
-- **Memory**: Unity IL2CPP headless process: ~200–350MB per zone at MVP asset scope. 4 zones: ~1.4GB. PostgreSQL: ~300–500MB at default `shared_buffers`. Gateway: ~50MB. Total: ~2GB of 16GB VPS RAM — well within budget.
+- **Memory**: Unity IL2CPP headless process: ~200–350MB per zone at MVP asset scope. 4 zones: ~1.4GB. PostgreSQL: ~300–500MB at default `shared_buffers`. Gateway: ~50MB, plus up to ~190 MiB while hashing (`MAX_AUTH_PENDING` × 19 MiB, ADR-016). Total: ~2GB of 16GB VPS RAM — well within budget.
 - **Disk I/O**: PostgreSQL writes are small (23-field character record UPDATE, ~1KB). At 50 concurrent players with periodic session saves and purchase records, I/O is negligible on a local NVMe SSD (Hetzner CPX VMs use local NVMe).
 - **Network**: F-NET-6 bandwidth model: ~6 Mbit/s per zone at n=50 full load. 4 zones: ~24 Mbit/s. Hetzner CPX41 includes 20 TB/month traffic — no per-GB billing at this scale.
 
@@ -204,11 +203,11 @@ Zone server processes are managed as systemd services. *(Amended 2026-11-06 by A
 Greenfield — no existing server infrastructure. First deployment sequence:
 
 1. Provision Hetzner CPX41 VPS (Ubuntu 22.04 LTS); configure firewall (allow TCP 443, UDP 7000–7099)
-2. Install PostgreSQL 16; apply DDL from ADR-006 (`character_records`, `pending_purchases`, indexes)
+2. Install PostgreSQL 16; apply DDL from ADR-006 (`character_records`, `pending_purchases`, indexes) and ADR-016 migration 004 (`accounts`, sequences, `gateway` role)
 3. Build Unity 6.3 IL2CPP Linux headless server binary; verify `link.xml` includes Npgsql + Dapper (ADR-006 IL2CPP section); audit any `NetworkTransform.Update()` overrides → migrate to `NetworkTransform.OnUpdate()`
-4. Deploy gateway process (C# .NET 8 binary) as systemd service on port 443 TLS
-5. Deploy zone server processes as systemd units; verify gateway routing table populates on process register
-6. Smoke test: iOS client → TLS auth → receive `zoneServerPort` → UDP connect → `SessionHandshake` completes → `SessionReady` received
+4. Deploy Caddy on port 443 (TLS, port 80 closed) and the gateway process (C# .NET 10 binary, ADR-016) as a systemd service listening on loopback
+5. Install the zone template unit `irongrind-zone@.service` (`Restart=no`) and the polkit rule that lets the gateway start it (ADR-016 Decision 3); verify the gateway starts the warm spare and its routing table populates when zones register
+6. Smoke test: iOS client → HTTPS login → receive `LoginResponse` with `zoneServerPort` → UDP connect → `SessionHandshake` completes → `SessionReady` received
 
 **Scale-out path (post-MVP)**:
 - Add a second Hetzner VPS: gateway moves to a standalone routing VPS; PostgreSQL primary + streaming replica on a Hetzner managed database; zone processes on worker VPSes connect to primary over Hetzner private LAN (~1ms — within ADR-006 budget); gateway registry migrates from in-process dict to Redis
@@ -220,12 +219,13 @@ Greenfield — no existing server infrastructure. First deployment sequence:
 - PostgreSQL write P95 latency ≤ 1ms on the target VPS measured via `EXPLAIN ANALYZE` on the `character_records` UPDATE with `save_version` constraint (hard ceiling 50ms per ADR-006)
 - Zone server process handles 50 concurrent simulated players at 20Hz tick loop for 60 seconds without tick drift (per EC-NET-10: no tick averaging >50ms over a 60s window), verified via `INetworkTestObserver.OnTickCompleted`
 - Hetzner CPX41 monthly cost ≤ €25/month at MVP launch (1–4 active zone instances)
-- Crash recovery: zone process killed with `SIGKILL` restarts within 5 seconds via systemd; gateway process killed restarts within 5 seconds
+- Crash recovery (ADR-016): a zone process killed with `SIGKILL` is not restarted, and its players can log in again to another zone within `GATEWAY_LINK_RETRY_SECONDS × 2` of the kill; a gateway process killed restarts within 5 seconds via systemd, running zones keep running and re-register
 
 ## Related Decisions
 
 - ADR-004: Networking Library — NGO (Accepted): establishes NGO direct-connect UDP as the transport; this ADR selects a hosting topology compatible with it
 - ADR-006: Persistence Layer — PostgreSQL + Npgsql + Dapper (Proposed): establishes co-location constraint and connection string pattern this ADR fulfils
+- ADR-016: Gateway and Authentication Process (Accepted 2026-11-06): amends this ADR's gateway runtime, client login path, zone link and zone process management
 - `design/gdd/zone-instancing.md`: Runtime Model (CR-ZI), Capacity (CR-ZI-3), Fill-First Routing (CR-ZI-6)
 - `design/gdd/networking-core.md`: OQ-NET-5 (persistence write latency budget); ADR-004 OQ-ADR4-1 (hosting backend deferred)
 - `design/gdd/networking-session.md`: `SESSION_TTL_SECONDS`, reconnect and ghost-session machinery (zone crash recovery path)

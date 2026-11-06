@@ -158,8 +158,8 @@ This manifest is a programmer's quick-reference extracted from all Accepted ADRs
 **Hosting backend (ADR-007):**
 - Unity 6.3 IL2CPP headless server processes on Ubuntu 22.04 LTS (Hetzner VPS) — source: ADR-007
 - PostgreSQL co-located on same machine; connect via loopback `127.0.0.1:5432` — source: ADR-007
-- Zone processes managed as systemd services (`irongrind-zone-{N}.service`, `Restart=always`) — source: ADR-007
-- Gateway process on port 443 (TLS) for auth + zone routing; clients receive `zoneServerPort`, then connect via direct NGO UDP — source: ADR-007
+- Zone processes are instances of the systemd template unit `irongrind-zone@.service`, started by the gateway with `systemctl start irongrind-zone@<zoneId>.service`, `Restart=no` (a crashed zone is never restarted; its ZoneID is never reused) — source: ADR-007 as amended by ADR-016 (2026-11-06)
+- Gateway process (.NET 10) behind Caddy on port 443 (TLS) for auth + zone routing; clients receive `zoneServerPort` in `LoginResponse`, then connect via direct NGO UDP — source: ADR-007 as amended by ADR-016 (2026-11-06)
 - `NetworkTransform.Update()` override must be migrated to `NetworkTransform.OnUpdate()` before first NGO 6.3 build — source: ADR-007
 
 **Scene/zone-load management (ADR-009):**

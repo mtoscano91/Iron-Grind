@@ -6,6 +6,8 @@ Accepted (2026-10-08)
 ## Date
 2026-10-08. Amended 2026-10-08 after `architecture-review-2026-10-08.md` (CONCERNS): B1–B3 and C1–C7 — Decision 1 (server-only DLLs), Decision 4 (custom messages), Decision 6 (checks 1 and 3), new Decision 7 (what the client reads), Migration Plan steps 2, 4 and 5. Amended again 2026-10-08 after `architecture-review-2026-10-08-rereview.md` (no blocker): N1–N5 — Decision 6 (Item Database types on the shared allow-list; `src/DevHarness/` in check 3), Decision 7 (class data), Migration Plan steps 2 and 5, GDD Requirements Addressed, Risks. Accepted the same day. Corrected 2026-10-08 (no decision change): Decision 7 "When" — the step 1 UI move needs `LevelingService.GetLevelTierMultiplier` made `public`.
 
+Note 2026-11-06 (ADR-016 Accepted): the .NET gateway compiles two source folders from this repository through `gateway/IronGrind.Shared/` (netstandard2.1, C# 9, no Unity references). `src/Foundation/Shared/` is in `IronGrind.Foundation` and holds what the client uses: the client-facing auth body schemas and codec, `CharacterID` and `ZoneID`. `src/ServerLogic/Gateway/Shared/` is in `IronGrind.ServerLogic` and holds what only zones and the gateway use: the gateway-link codec and `AccountID`. `AccountID` therefore leaves `IronGrind.Foundation` (no client consumer; CR-AUTH-2 forbids sending it to a client), and its Decision 6 shared allow-list entry is removed when the file moves (ADR-016 Migration Plan step 6). Files in `src/ServerLogic/Gateway/Shared/` must not use Npgsql, Dapper or any other server-only DLL, because the gateway build compiles them without those references. No assembly or decision in this ADR changes.
+
 ## Engine Compatibility
 
 | Field | Value |

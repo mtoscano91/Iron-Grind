@@ -46,9 +46,9 @@ requirements:
   - id: TR-auth-003
     system: auth
     gdd: design/gdd/authentication.md
-    requirement: "Authentication runs as a standalone .NET sidecar process (not the Unity IL2CPP binary), communicating via internal IPC named pipes (CR-AUTH-4)"
+    requirement: "Authentication runs outside the Unity IL2CPP binary and off the zone tick, in the .NET gateway process (ADR-016): HTTPS through Caddy for clients, loopback TCP link to zones; no sidecar, no named pipes (CR-AUTH-4)"
     created: 2026-08-11
-    revised: ""
+    revised: "2026-11-06"
     status: active
   - id: TR-auth-004
     system: auth

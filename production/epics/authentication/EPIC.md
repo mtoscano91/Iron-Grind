@@ -14,9 +14,12 @@ Authentication is the server-side identity verification layer that gates all pla
 
 | ADR | Decision Summary | Engine Risk |
 |-----|-----------------|-------------|
-| ADR-004: Networking — NGO Substrate | Authentication runs on the connection-driven path before `SessionHandshake`; consumes the Networking Core envelope for its own wire messages | LOW (consumer only, not owner) |
+| ADR-016: Gateway and Authentication Process (Accepted 2026-11-06) | Authentication runs in the .NET 10 gateway (`gateway/IronGrind.Gateway/`): HTTPS `/v1/login` and `/v1/register` through Caddy, Argon2id (Konscious) behind `MAX_AUTH_PENDING`, accounts table (migration 004), account → zone map; the zone keeps its `SessionTokenStore`, filled by `Admit` (`AdmitToken`); shared code in `src/Foundation/Shared/` and `src/ServerLogic/Gateway/Shared/` | MEDIUM — `UnityWebRequest` on iOS, link thread under IL2CPP |
+| ADR-004: Networking — NGO Substrate | The zone side (`SessionHandshake` with CharacterID + token) uses the Networking Core envelope; the login itself is HTTPS, not NGO | LOW (consumer only, not owner) |
+| ADR-006: Persistence Layer (+ note 2026-11-06) | `accounts` table, sequences and the `gateway` role (ADR-016 Decision 5) | LOW |
+| ADR-013: Server Random Provider | Session tokens and salts from `RandomNumberGenerator` | LOW |
 
-**⚠️ Untraced architecture decision**: CR-AUTH-4 specifies Authentication runs as a **standalone .NET sidecar process**, separate from the Unity IL2CPP headless game server binary, communicating via internal IPC (named pipes). This is a real architectural decision — process topology, IPC transport, concurrency cap (`MAX_AUTH_PENDING`), health-check contract — with **no Accepted ADR covering it**. The two GDDs that would fully specify this boundary, `design/gdd/auth-wire-messages.md` and `design/gdd/auth-sidecar-ipc.md`, are both still **Draft** (not Approved) per `systems-index.md`. Stories touching the sidecar/IPC boundary (CR-AUTH-4 through CR-AUTH-6, credential hashing, IPC transport) will be **Blocked** at `/story-readiness` until those primitives are Approved and this decision is either ADR'd or resolved as GDD-only (same treatment `/architecture-decision` gave ADR-004's own prerequisite gate). Stories scoped to the pure behavioral contract (CR-AUTH-1 through CR-AUTH-3: what "full authentication" means, `AccountID` type/generation) do not depend on the sidecar boundary and are not blocked by this gap.
+*Resolved 2026-11-06:* the untraced sidecar decision this epic was created with (CR-AUTH-4: standalone .NET sidecar over named pipes, no ADR) is replaced by ADR-016. `auth-sidecar-ipc.md` is superseded. Gateway code and its tests live in `gateway/` (`dotnet test gateway/IronGrind.Gateway.sln`), outside the Unity test runner; zone-side code lives in `src/ServerLogic/Gateway/`, client code in `src/Client/Auth/`.
 
 ## GDD Requirements
 
@@ -24,11 +27,11 @@ Authentication is the server-side identity verification layer that gates all pla
 |-------|-------------|--------------|
 | TR-auth-001 | Full authentication = credential verification + AccountID→CharacterID resolution + session token issuance, all three complete before any game operation is permitted (CR-AUTH-1) | ❌ No ADR (design-only, LOW risk) |
 | TR-auth-002 | `AccountID` is a `readonly struct` wrapping `uint`; `AccountID(0)` reserved/invalid; monotonic server-side counter, never reused, persisted independently from `CharacterID`'s counter (CR-AUTH-2/3) | ❌ No ADR (design-only, LOW risk) |
-| TR-auth-003 | Authentication runs as a standalone .NET sidecar process (not the Unity IL2CPP binary), communicating via internal IPC named pipes (CR-AUTH-4) | ❌ No ADR — see Untraced Architecture Decision above |
-| TR-auth-004 | Password hashing via Argon2id (`Konscious.Security.Cryptography`), minimum `iterations=2, memorySize=19456KB, parallelism=1`, PHC string storage, 16-byte salt; bcrypt explicitly rejected (72-byte truncation defect) (CR-AUTH-5) | ❌ No ADR — see Untraced Architecture Decision above |
+| TR-auth-003 | Authentication runs outside the Unity IL2CPP binary and off the zone tick, in the .NET gateway process (ADR-016): HTTPS through Caddy for clients, loopback TCP link to zones; no sidecar, no named pipes (CR-AUTH-4) — revised 2026-11-06 | ✅ ADR-016 Decisions 1–3 |
+| TR-auth-004 | Password hashing via Argon2id (`Konscious.Security.Cryptography`), minimum `iterations=2, memorySize=19456KB, parallelism=1`, PHC string storage, 16-byte salt; bcrypt explicitly rejected (72-byte truncation defect) (CR-AUTH-5) | ✅ ADR-016 Decision 1 |
 | TR-auth-005 | Client sends plaintext credentials over TLS only; server hashes on receipt; client MUST NOT pre-hash; server MUST reject non-TLS connections (CR-AUTH-6) | ❌ No ADR (design-only, LOW risk) |
 
-> **TR registry note**: All TR-IDs above are placeholders — `docs/architecture/tr-registry.yaml` is empty. Populate the registry before running `/story-readiness` checks.
+> **TR registry note**: TR-auth-001 to 005 are registered in `docs/architecture/tr-registry.yaml` (TR-auth-003 revised 2026-11-06 for ADR-016).
 
 ## Definition of Done
 
@@ -36,9 +39,10 @@ This epic is complete when:
 - All stories are implemented, reviewed, and closed via `/story-done`
 - All acceptance criteria from `design/gdd/authentication.md` are verified
 - Logic stories (AccountID type, credential validation) have passing test files in `tests/EditMode/Authentication/`
-- Integration/sidecar stories have tests or documented playtest evidence in `production/qa/evidence/`
-- The sidecar/IPC architecture decision (CR-AUTH-4) is resolved — either via `/architecture-decision` or by promoting `auth-wire-messages.md`/`auth-sidecar-ipc.md` from Draft to Approved — before any sidecar-boundary story is implemented
+- Gateway stories have passing tests in `gateway/IronGrind.Gateway.Tests/` (ADR-016 Decision 6)
+- Integration stories (client → Caddy → gateway → zone) have tests or documented playtest evidence in `production/qa/evidence/`
+- ADR-016's Validation Criteria and Engine Compatibility verification items pass (resolved 2026-11-06: the sidecar/IPC decision is ADR-016)
 
 ## Next Step
 
-Run `/create-stories authentication` to break this epic into implementable stories. Expect the sidecar/IPC-touching stories to come back Blocked at `/story-readiness` until the architecture gap above is resolved.
+Run `/create-stories authentication` to break this epic into implementable stories. The architecture gap is closed (ADR-016); stories that need the .NET 10 SDK or Caddy wait for ADR-016 Migration Plan step 4.

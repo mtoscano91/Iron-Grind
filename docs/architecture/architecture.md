@@ -86,7 +86,7 @@ These five principles govern every technical decision, derived from the game pil
 │       Criticality, Channel, Relevance sub-contracts)                          │
 │   Movement   Damage Calc   Hit Detection   Status Effects                     │
 │   Navigation/Pathfinding ▸ADR-002/003   Character Persistence ▸ADR-006        │
-│   Authentication (+ Wire Messages*, Sidecar IPC* primitives)                  │
+│   Authentication ▸ADR-016 (gateway; + Wire Messages)                          │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │ FOUNDATION                                                                    │
 │   Character Stats   Item Database   Currency   Leveling                        │
@@ -138,7 +138,7 @@ networking substrate.
 | Status Effects | Buff/debuff stacks | Apply/tick/expire | Character Stats | none (LOW) |
 | Navigation (ADR-002/003) | `ZoneNavigationService`, agent pool (150), tick-phase order | `INavigationProvider` | NavMesh subsystem | `NavMeshAgent`, `NavMesh.AddNavMeshData` (HIGH) |
 | Character Persistence (ADR-006) | 23-field character record, `PendingPurchase`, save-version concurrency | `ICharacterPersistence` (async) | PostgreSQL via Npgsql/Dapper | Npgsql/Dapper IL2CPP (MED) |
-| Authentication | Session token issue/validate | Auth API | Networking Core | (sidecar IPC primitive*) |
+| Authentication (ADR-016) | Gateway (.NET 10): Argon2id, accounts, routing, account → zone map; zone: session token store, entry validation | HTTPS `/v1/login`, `/v1/register` (via Caddy); gateway ↔ zone loopback TCP link | Networking Core, Character Persistence | `UnityWebRequest` on iOS, link thread under IL2CPP (MED) |
 
 ### Feature & Presentation Layers
 
