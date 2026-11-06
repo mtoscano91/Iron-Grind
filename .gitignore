@@ -59,6 +59,9 @@ export_presets.cfg
 *.unityproj
 *.sln
 *.slnx
+# The gateway (ADR-016) is a hand-written .NET solution, not Unity-generated: track it.
+!gateway/**/*.csproj
+!gateway/*.sln
 *.suo
 *.tmp
 *.user

@@ -44,6 +44,34 @@ jobs:
           path: test-results/
 
   # ---------------------------------------------------------------------------
+  # Gateway tests (ADR-016 §7, Migration Plan step 4): the gateway is a plain
+  # .NET 10 solution outside src/ and Assets/, so Unity never compiles it and
+  # the Unity test runner above does not cover it. Independent of the Unity job.
+  # ---------------------------------------------------------------------------
+  gateway-tests:
+    name: Run Gateway Tests (.NET 10)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Test gateway solution
+        run: dotnet test gateway/IronGrind.Gateway.sln --configuration Release --logger "trx;LogFileName=gateway-tests.trx" --results-directory test-results/gateway
+
+      - name: Upload Gateway Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gateway-test-results
+          path: test-results/gateway/
+
+  # ---------------------------------------------------------------------------
   # AC-TC-02 (Networking Core epic, Story 002 — networking-test-harness.md):
   # pre-build static analysis. Fails the pipeline if any of the four
   # test-harness interfaces (ITransportFaultInjector, IServerCrashInjector,
