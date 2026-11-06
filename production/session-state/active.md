@@ -6186,3 +6186,33 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: None new (TD-077 note added at /code-review; TD-095 still open)
 - EPIC.md row 014 → Complete, Next Step updated. Story 014 uncommitted (013 committed as 35214e5)
 - Next recommended: /story-readiness production/epics/authentication/story-015-client-https-auth-client.md (016 also unblocked)
+
+## Session Extract — /story-readiness 2026-11-06 (Story 015)
+- Story: production/epics/authentication/story-015-client-https-auth-client.md — verdict NEEDS WORK → user "apply gaps" → all 8 applied, now READY (lean, QL-STORY-READY skipped)
+- Decisions: plain C# callbacks (`Login(..., onDone, onServerStarting)`, `Register(..., onDone)`); `IAuthHttpTransport.Post(url, body, timeoutSeconds, onDone)` → `AuthHttpResult` {Ok, HttpError, TransportError, Timeout}; real `UnityWebRequestAuthTransport` MonoBehaviour (coroutine); `IAuthRetryScheduler` seam (fake in tests, no real-time waits); `AuthClientConfig` ScriptableObject in src/Client/Auth (URL, 20 / 5 / 8; Validate rejects non-https), no .asset in this story; oversized fields: Register → UsernameTooLong / PasswordTooLong / CharacterNameTooLong, Login → InvalidCredentials, no request; token path sends password ""
+- iOS device check (ADR-016 Verification 3 + auth-client-ios-ats-evidence.md) moved to Story 017 (needs the VPS's publicly trusted certificate; Story 016 only has the dev cert); Story 016 Unlocks line updated
+- Estimate 6 h; performance note; QA cases AC-6 (oversized), AC-7 (plaintext + token path); engine note: verify UnityWebRequest against the 6.3 manual (no engine-reference entry)
+- GDD authentication.md: two stale "15s" LOGIN_HTTP_TIMEOUT_SECONDS mentions → 20 s (States paragraph, EC-AUTH-3); Last Updated note. Registry: LOGIN_HTTP_TIMEOUT_SECONDS added (20 s)
+- Not committed. Next: /dev-story production/epics/authentication/story-015-client-https-auth-client.md
+
+## Session Extract — /dev-story 2026-11-06 (Story 015)
+- Story: production/epics/authentication/story-015-client-https-auth-client.md — Client HTTPS auth client
+- Files changed: src/Client/Auth/AuthClient.cs, AuthClientConfig.cs, IAuthHttpTransport.cs (+ AuthHttpResult, AuthHttpOutcome), IAuthRetryScheduler.cs, UnityWebRequestAuthTransport.cs (+ .meta)
+- Test written: tests/EditMode/Client/Auth/AuthClient_tests.cs — 40 tests, 40/40 pass; full EditMode suite 6659 total, 6530 passed, 0 failed, 129 skipped (Database category, PG not running)
+- Notes: agent added [CreateAssetMenu] on AuthClientConfig; Login clones the token; timeout surfaces as TransportError in the real transport (no 6.3 timeout signal) — both map to ServerError
+- Blockers: None. Not committed.
+- Next: /code-review src/Client/Auth/*.cs tests/EditMode/Client/Auth/AuthClient_tests.cs then /story-done production/epics/authentication/story-015-client-https-auth-client.md
+
+## Session Extract — /code-review 2026-11-06 (Story 015)
+- Verdict APPROVED WITH SUGGESTIONS (unity-specialist + qa-tester: no blocking); user "yes" → all 7 applied
+- UnityWebRequestAuthTransport: inactive host → Post fails at once (TransportError), Schedule runs callback at once; OnDisable stops coroutines, aborts + reports in-flight posts, runs pending waits (exactly-once); redirectLimit = 0; single Content-Type (upload handler)
+- AuthClient: Login split (CopyTokenField, IsAllZero, IsOk200, nested LoginAttempt) — no behaviour change
+- Tests: 40 → 54 (null body, 204, explicit zero token, failure on retry ×2, delays count, Login 255-byte, token-path long username, Validate as 4 TestCases with field-name message check, 3 inactive-host transport tests, named constants). Suite 6673 total, 6544 passed, 0 failed, 129 skipped (Database)
+- Not committed. Next: /story-done production/epics/authentication/story-015-client-https-auth-client.md
+
+## Session Extract — /story-done 2026-11-06 (Story 015)
+- Verdict: COMPLETE
+- Story: production/epics/authentication/story-015-client-https-auth-client.md — Client HTTPS auth client
+- EPIC.md row 015 → Complete, Next Step updated
+- Tech debt logged: None
+- Next recommended: /story-readiness production/epics/authentication/story-016-caddy-tls-front.md

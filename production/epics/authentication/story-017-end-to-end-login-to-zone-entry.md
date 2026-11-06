@@ -35,6 +35,7 @@
 - [ ] AC-AUTH-29 (d): with the gateway stopped, the zone keeps ticking and serving its connected players (tick log + a client still moving)
 - [ ] Round trip: login → UDP zone entry → disconnect → token reconnect works (Editor; and on the VPS when it exists — ADR-007 smoke test step 6)
 - [ ] ADR-016 Verification 1 and 2 pass and are recorded
+- [ ] *(moved from Story 015, 2026-11-06)* ADR-016 Verification 3: an iOS device build logs in through Caddy on the VPS over TLS with default certificate validation (Let's Encrypt, or another publicly trusted certificate) and App Transport Security on — `LoginResponse.success = true` logged on the device, no ATS error in the Xcode console; recorded in `production/qa/evidence/auth-client-ios-ats-evidence.md`
 - [ ] Evidence in `production/qa/evidence/auth-end-to-end-evidence.md`; Konscious hash timing on the VPS recorded there when the VPS exists (re-derive `MAX_AUTH_PENDING` if it differs from ~300 ms)
 
 ---
@@ -85,6 +86,7 @@
 **Story Type**: Integration
 **Required evidence**:
 - `production/qa/evidence/auth-end-to-end-evidence.md` (manual runs + logs)
+- `production/qa/evidence/auth-client-ios-ats-evidence.md` (iOS device run, ADR-016 Verification 3)
 - Any instrumentation added has its own EditMode test
 
 **Status**: [ ] Not yet created

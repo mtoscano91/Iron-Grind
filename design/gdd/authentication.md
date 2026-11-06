@@ -2,7 +2,7 @@
 
 > **Status**: Approved 2026-11-04 (fixes from lean re-review #2 accepted without a verify pass). Revised 2026-11-04 for ADR-016 (gateway authentication); lean re-review #2 2026-11-04 NEEDS REVISION (1 blocking: `CHARACTER_NAME_MAX_LENGTH` ceiling 26 → 24, the `EntityState` wire cap) — fixed with 4 recommended items (name check order, token-path tradeoff note, OQ-AUTH-7, UI constant) and AC-AUTH-21(e). Lean re-review #1 the same day: NEEDS REVISION (3 blocking) — fixed (separate character name CR-AUTH-13, token-path ban check, Evict save failure, map lifecycle, ACs 35–38). Before: Approved (lean re-review, 2026-05-21)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-11-06 (propagated from the zone-instancing.md lean re-review: `AuthFailureReason.ServerStarting`, CR-AUTH-11 step 3, error display — no rule change to authentication itself). Previous: 2026-11-04
+> **Last Updated**: 2026-11-06 (Story 015 readiness: two stale "15s" `LOGIN_HTTP_TIMEOUT_SECONDS` mentions → 20 s — States paragraph and EC-AUTH-3; no rule change). Previous: 2026-11-06 (propagated from the zone-instancing.md lean re-review: `AuthFailureReason.ServerStarting`, CR-AUTH-11 step 3, error display — no rule change to authentication itself). Previous: 2026-11-04
 > **Implements Pillar**: Pillar 1 — Earned Power (account identity is the permanent record of everything the player has earned)
 
 ## Overview
@@ -134,7 +134,7 @@ Rationale (lean re-review 2026-11-04): with name = username, every login name is
 | `Auth_Registration` | Processing a registration request | `RegistrationRequest` decoded | `RegistrationResult` sent; request ends; no session issued |
 | `Auth_TokenPath` | Reconnect via token; delegated entirely to CR-TOK-4 | `ConnectionRequest.tokenField != byte[16]{0}` | Zone accepts `Reconnect` → `LoginResponse` with the rotated token; rejected → `Auth_Failed` |
 
-States are per gateway HTTPS request (ADR-016), not per zone connection. `Connecting → Connected` (networking-session.md ST-NET-1) fires in the zone, when the client's `SessionHandshake` is accepted after `Auth_Success`. `CONNECTING_TIMEOUT_SECONDS` (30s per networking-session.md) bounds the gap between `Admit` and that handshake. The client bounds the login request itself with `LOGIN_HTTP_TIMEOUT_SECONDS` (15s, ADR-016).
+States are per gateway HTTPS request (ADR-016), not per zone connection. `Connecting → Connected` (networking-session.md ST-NET-1) fires in the zone, when the client's `SessionHandshake` is accepted after `Auth_Success`. `CONNECTING_TIMEOUT_SECONDS` (30s per networking-session.md) bounds the gap between `Admit` and that handshake. The client bounds the login request itself with `LOGIN_HTTP_TIMEOUT_SECONDS` (20 s, ADR-016).
 
 ---
 
@@ -226,7 +226,7 @@ MapSizeBytes(N) = N × (sizeof(AccountID) + sizeof(CharacterID) + DictionaryOver
 
 **EC-AUTH-2 — Client aborts the request during `Auth_Pending` (Argon2id interrupted)**: The gateway completes the computation, sees the request was aborted, and discards the result before any write. No `loginFailureCount` change, no `Evict`, no `Admit` (CR-AUTH-9 "Abandoned auth"). No zone session exists yet, so nothing else is released. Rationale: completing and discarding is cheaper under attacker control than aborting mid-computation (no retry cost). `MAX_AUTH_PENDING` (gateway hashing semaphore, ADR-016) bounds concurrent in-flight computations and is the primary DoS mitigation against drop-cycling. *(See OQ-AUTH-1 re: network-layer rate limiting as a secondary layer.)*
 
-**EC-AUTH-3 — Client `LOGIN_HTTP_TIMEOUT_SECONDS` (20 s) expires during `Auth_Pending`**: The client abandons the request and treats it as `ServerError`; the gateway sees the aborted request and discards the result as in EC-AUTH-2. No `loginFailureCount` change. Client must log in again from scratch. A 15s expiry during normal hashing implies gateway overload or configuration error — neither is a player credential issue.
+**EC-AUTH-3 — Client `LOGIN_HTTP_TIMEOUT_SECONDS` (20 s) expires during `Auth_Pending`**: The client abandons the request and treats it as `ServerError`; the gateway sees the aborted request and discards the result as in EC-AUTH-2. No `loginFailureCount` change. Client must log in again from scratch. A 20 s expiry during normal hashing implies gateway overload or configuration error — neither is a player credential issue.
 
 **EC-AUTH-4 — Persistence write failure during registration**: Gateway returns `RegistrationResult { success:false, errorCode:ServerError=255 }`. The account and character stub are one transaction (CR-AUTH-8 step 4), so neither row exists — there is no orphan account. The `AccountID` and `CharacterID` sequence values are consumed even on rollback and never re-issued. Client must retry as a fresh registration.
 

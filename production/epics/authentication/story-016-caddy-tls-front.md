@@ -84,4 +84,4 @@
 ## Dependencies
 
 - Depends on: Story 012 (gateway endpoints)
-- Unlocks: Story 015 device check, Story 017
+- Unlocks: Story 017 (which now also holds the iOS device check, ADR-016 Verification 3 — moved from Story 015 on 2026-11-06)
