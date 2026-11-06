@@ -38,7 +38,7 @@ Authentication is the server-side identity verification layer that gates all pla
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
 | 001 | Shared code folders and `IronGrind.Shared` | Logic | Complete | ADR-016, ADR-012 |
-| 002 | Auth body codec | Logic | Ready | ADR-016 |
+| 002 | Auth body codec | Logic | Complete | ADR-016 |
 | 003 | Migration 004 and the `gateway` database role | Integration | Ready | ADR-016, ADR-006 |
 | 004 | Gateway packages, config and the Argon2id hasher | Logic | Ready | ADR-016, ADR-013 |
 | 005 | Credential validation and the lockout formula | Logic | Ready | ADR-016 |
@@ -69,4 +69,4 @@ This epic is complete when:
 
 ## Next Step
 
-Story 001 Complete (2026-11-06; ADR-016 Migration Plan step 6 done). Next: `/story-readiness production/epics/authentication/story-002-auth-body-codec.md` (Story 004 is also unblocked; Story 003 = step 5).
+Stories 001-002 Complete (2026-11-06). Next: `/story-readiness production/epics/authentication/story-004-gateway-packages-config-and-hasher.md` (Story 003 = ADR-016 step 5 is also unblocked; Story 005 waits for 004).

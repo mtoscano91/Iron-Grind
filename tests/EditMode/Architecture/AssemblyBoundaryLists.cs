@@ -26,6 +26,16 @@ namespace IronGrind.Tests.EditMode.Architecture
             "IronGrind.CharacterPersistence.ZoneID",    // consumer (planned): client session and zone transition messages (wire id)
             "IronGrind.Currency.GoldTransactionReason", // consumer (planned): gold sync event display (wire enum)
 
+            // Authentication HTTPS bodies and their codec (src/Foundation/Shared/Auth/, ADR-016 Decision 2 and 6;
+            // Authentication Story 002). Consumer of every entry below (planned): client auth client, Story 015.
+            "IronGrind.Authentication.AuthBodyCodec",       // consumer (planned): client auth client (Story 015)
+            "IronGrind.Authentication.AuthFailureReason",   // consumer (planned): login screen error display (Story 015)
+            "IronGrind.Authentication.ConnectionRequest",   // consumer (planned): client auth client (Story 015)
+            "IronGrind.Authentication.LoginResponse",       // consumer (planned): client auth client (Story 015)
+            "IronGrind.Authentication.RegistrationError",   // consumer (planned): registration screen error display (Story 015)
+            "IronGrind.Authentication.RegistrationRequest", // consumer (planned): client auth client (Story 015)
+            "IronGrind.Authentication.RegistrationResult",  // consumer (planned): client auth client (Story 015)
+
             // Item Database: static definition data both sides load (whole folder is shared, ADR-012
             // Decision 6). The consumer of every entry below is planned, not built.
             "IronGrind.ItemDatabase.ConsumableData",        // consumer: item tooltip and inventory screens
