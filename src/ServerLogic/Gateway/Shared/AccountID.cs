@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace IronGrind.CharacterPersistence
 {
@@ -9,6 +10,9 @@ namespace IronGrind.CharacterPersistence
     /// <remarks>
     /// Identifies the owning account of a persistent character (Character Persistence CR-CP-1).
     /// Shaped like <c>IronGrind.Currency.CharacterID</c>.
+    /// Lives in the server-only shared folder (<c>src/ServerLogic/Gateway/Shared/</c>, ADR-016 Decision 6):
+    /// it is compiled by Unity's server assembly and by the gateway, and must never be sent to a client
+    /// (Authentication CR-AUTH-2). Use <see cref="AccountIDComparer"/> for Dictionary keys (IL2CPP-safe).
     /// </remarks>
     public readonly struct AccountID : IEquatable<AccountID>
     {
@@ -46,5 +50,24 @@ namespace IronGrind.CharacterPersistence
 
         /// <inheritdoc/>
         public override string ToString() => $"AccountID({_value})";
+
+        /// <summary>
+        /// Allocation-free equality comparer for <see cref="AccountID"/> Dictionary/HashSet keys
+        /// (CR-AUTH-2: IL2CPP-safe keys; avoids the default comparer path).
+        /// </summary>
+        /// <example><c>var map = new Dictionary&lt;AccountID, int&gt;(AccountID.AccountIDComparer.Instance);</c></example>
+        public sealed class AccountIDComparer : IEqualityComparer<AccountID>
+        {
+            /// <summary>Shared stateless instance.</summary>
+            public static readonly AccountIDComparer Instance = new AccountIDComparer();
+
+            private AccountIDComparer() { }
+
+            /// <summary>Returns true if both identifiers have the same <see cref="RawValue"/>.</summary>
+            public bool Equals(AccountID x, AccountID y) => x.RawValue == y.RawValue;
+
+            /// <summary>Returns the hash code of the raw value.</summary>
+            public int GetHashCode(AccountID obj) => obj.RawValue.GetHashCode();
+        }
     }
 }

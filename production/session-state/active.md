@@ -5805,3 +5805,20 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Open for review: DamageContext derived from effect flags (CR-SK-5), authored SkillDefinition.DamageContext ignored; Apply called on a 0-damage non-kill; death position Vector3(x,0,z), zero if unknown; AC-SK-30 precondition asserts timer > 0 not == 8
 - Blockers: None
 - Next: /code-review on the Story 007 files, then /story-done
+
+## Session Extract — /dev-story 2026-11-06
+- Story: production/epics/authentication/story-001-shared-code-folders.md — Shared code folders and `IronGrind.Shared`
+- Files changed: CharacterID/ZoneID (+.meta) → src/Foundation/Shared/; AccountID (+.meta) → src/ServerLogic/Gateway/Shared/ with nested AccountIDComparer; tests/EditMode/Architecture/AssemblyBoundaryLists.cs (AccountID entry removed); tests/EditMode/CharacterPersistence/CharacterPersistence_Contract_tests.cs (IdTypes test split: AccountID now asserted in ServerLogic); gateway/IronGrind.Shared/IronGrind.Shared.csproj (new); gateway/IronGrind.Gateway.sln; gateway/IronGrind.Gateway/IronGrind.Gateway.csproj; folder .meta files src/Foundation/Shared.meta, src/ServerLogic/Gateway.meta, src/ServerLogic/Gateway/Shared.meta, tests/EditMode/Authentication.meta
+- Test written: tests/EditMode/Authentication/Authentication_AccountID_tests.cs (7), gateway/IronGrind.Gateway.Tests/Shared_Types_tests.cs (2)
+- Results: dotnet test 3/3; EditMode 6520 total, 6391 passed, 0 failed, 129 skipped
+- Unity-reference check: `ZoneID.cs(1,7): error CS0246: The type or namespace name 'UnityEngine' could not be found` — reverted
+- Blockers: None. Not committed.
+- Next: /code-review then /story-done production/epics/authentication/story-001-shared-code-folders.md
+
+## Session Extract — /story-done 2026-11-06
+- Verdict: COMPLETE
+- Story: production/epics/authentication/story-001-shared-code-folders.md — Shared code folders and `IronGrind.Shared`
+- Code review: APPROVED WITH SUGGESTIONS; both applied (.sln trimmed to Any CPU + no BOM; real test count in Completion Notes). dotnet test 3/3 after trim.
+- Tech debt logged: None
+- EPIC.md row 001 → Complete, Next Step updated. Not committed.
+- Next recommended: /story-readiness production/epics/authentication/story-002-auth-body-codec.md (004 also unblocked)

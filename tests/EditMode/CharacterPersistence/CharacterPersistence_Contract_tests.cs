@@ -155,8 +155,14 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
         public void IdTypes_LiveInFoundationAssembly()
         {
             Assembly foundation = typeof(CharacterID).Assembly;
-            Assert.AreSame(foundation, typeof(AccountID).Assembly);
             Assert.AreSame(foundation, typeof(ZoneID).Assembly);
+        }
+
+        [Test]
+        public void AccountID_LivesInServerLogicAssembly()
+        {
+            // ADR-016 Decision 6: AccountID is server-only (src/ServerLogic/Gateway/Shared/), never sent to a client (CR-AUTH-2).
+            Assert.AreSame(typeof(CurrencySystem).Assembly, typeof(AccountID).Assembly);
         }
 
         [Test]

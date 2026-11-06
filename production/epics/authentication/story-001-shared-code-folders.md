@@ -1,10 +1,11 @@
 # Story 001: Shared code folders and `IronGrind.Shared`
 
 > **Epic**: Authentication
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-11-06
+> **Estimate**: 3 hours (moves with `.meta`, comparer + tests, shared `.csproj`, one Unity-reference build check, full EditMode run)
 
 ## Context
 
@@ -29,14 +30,15 @@
 
 *From GDD `design/gdd/authentication.md` and ADR-016 Decision 6 / Validation Criteria, scoped to this story:*
 
-- [ ] `CharacterID` (`src/Foundation/Currency/CharacterID.cs`) and `ZoneID` (`src/Foundation/CharacterPersistence/ZoneID.cs`) are moved to `src/Foundation/Shared/` with their `.meta` files; namespaces unchanged (`IronGrind.Currency`, `IronGrind.CharacterPersistence`)
-- [ ] `AccountID` (`src/Foundation/CharacterPersistence/AccountID.cs`) is moved to `src/ServerLogic/Gateway/Shared/` with its `.meta` file; namespace unchanged; the `IronGrind.CharacterPersistence.AccountID` entry is removed from `tests/EditMode/Architecture/AssemblyBoundaryLists.cs`, and the assembly-boundary tests still pass
-- [ ] `AccountID` gets a nested `AccountIDComparer : IEqualityComparer<AccountID>` (CR-AUTH-2, IL2CPP-safe `Dictionary` keys)
-- [ ] AC-AUTH-02: `new AccountID(0)` equals `AccountID.Invalid` through `AccountIDComparer` *(the "first counter allocation is 1" half is Story 006)*
-- [ ] AC-AUTH-03: two `AccountID`s with the same `uint` are equal through `AccountIDComparer` with equal hash codes; different values are not equal
-- [ ] `gateway/IronGrind.Shared/IronGrind.Shared.csproj` (`netstandard2.1`, `<LangVersion>9.0</LangVersion>`, `<Compile Include="../../src/Foundation/Shared/**/*.cs" />` and `<Compile Include="../../src/ServerLogic/Gateway/Shared/**/*.cs" />`) is in `IronGrind.Gateway.sln`; `IronGrind.Gateway` references it; `dotnet test gateway/IronGrind.Gateway.sln` passes
-- [ ] ADR-016 Validation: a shared file that references `UnityEngine` makes `dotnet build` of the shared project fail (shown once, then reverted — recorded in Completion Notes)
-- [ ] The Unity project compiles and the full EditMode suite passes after the moves
+- [x] `CharacterID` (`src/Foundation/Currency/CharacterID.cs`) and `ZoneID` (`src/Foundation/CharacterPersistence/ZoneID.cs`) are moved to `src/Foundation/Shared/` with their `.meta` files; namespaces unchanged (`IronGrind.Currency`, `IronGrind.CharacterPersistence`)
+- [x] `AccountID` (`src/Foundation/CharacterPersistence/AccountID.cs`) is moved to `src/ServerLogic/Gateway/Shared/` with its `.meta` file; namespace unchanged; the `IronGrind.CharacterPersistence.AccountID` entry is removed from `tests/EditMode/Architecture/AssemblyBoundaryLists.cs`, and the assembly-boundary tests still pass
+- [x] `AccountID` gets a nested `AccountIDComparer : IEqualityComparer<AccountID>` (CR-AUTH-2, IL2CPP-safe `Dictionary` keys)
+- [x] AC-AUTH-02: `new AccountID(0)` equals `AccountID.Invalid` through `AccountIDComparer` *(the "first counter allocation is 1" half is Story 006)*
+- [x] AC-AUTH-03: two `AccountID`s with the same `uint` are equal through `AccountIDComparer` with equal hash codes; different values are not equal
+- [x] `gateway/IronGrind.Shared/IronGrind.Shared.csproj` (`netstandard2.1`, `<LangVersion>9.0</LangVersion>`, `<Compile Include="../../src/Foundation/Shared/**/*.cs" />` and `<Compile Include="../../src/ServerLogic/Gateway/Shared/**/*.cs" />`) is in `IronGrind.Gateway.sln`; `IronGrind.Gateway` references it; `dotnet test gateway/IronGrind.Gateway.sln` passes
+- [x] ADR-016 Validation: a shared file that references `UnityEngine` makes `dotnet build` of the shared project fail (shown once, then reverted — recorded in Completion Notes)
+- [x] The Unity project compiles and the full EditMode suite passes after the moves
+- No runtime performance impact expected — file moves, a comparer class and a build-only project; no tick-path code changes.
 
 ---
 
@@ -95,7 +97,7 @@
 - `tests/EditMode/Authentication/Authentication_AccountID_tests.cs` (AC-1 to AC-3, Unity side)
 - `gateway/IronGrind.Gateway.Tests/Shared_Types_tests.cs` (AC-4, gateway side)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing (2026-11-06)
 
 ---
 
@@ -103,3 +105,13 @@
 
 - Depends on: None (ADR-016 Migration Plan step 4 done 2026-11-06)
 - Unlocks: Story 002, Story 004
+
+---
+
+## Completion Notes
+**Completed**: 2026-11-06
+**Criteria**: 8/8 passing (none deferred)
+**Deviations**: None. TR-auth-002's monotonic counter half is Story 006 by design. Extra file touched: `tests/EditMode/CharacterPersistence/CharacterPersistence_Contract_tests.cs` (old assertion expected `AccountID` in Foundation; split into `AccountID_LivesInServerLogicAssembly`).
+**Test Evidence**: Logic — `tests/EditMode/Authentication/Authentication_AccountID_tests.cs` (9 methods, 11 cases) and `gateway/IronGrind.Gateway.Tests/Shared_Types_tests.cs` (2 tests). `dotnet test gateway/IronGrind.Gateway.sln`: 3/3. Full EditMode: 6520 total, 6391 passed, 0 failed, 129 skipped.
+**Unity-reference check (ADR-016 Validation)**: `using UnityEngine;` added to `ZoneID.cs` → `dotnet build` of `IronGrind.Shared` failed with `ZoneID.cs(1,7): error CS0246: The type or namespace name 'UnityEngine' could not be found`; reverted.
+**Code Review**: Complete — APPROVED WITH SUGGESTIONS (2026-11-06); `.sln` x64/x86 platform noise and BOM trimmed. LP-CODE-REVIEW / QL-TEST-COVERAGE skipped (lean).

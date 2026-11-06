@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Shared source between Unity and the gateway (ADR-016 Decision 6).
+    Compiles the two shared folders (neither holds a .csproj). This build enforces: no UnityEngine/Unity.*
+    reference, nothing above .NET Standard 2.1, C# 9 at most.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <RootNamespace>IronGrind</RootNamespace>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- Validates doc-comment XML and crefs in shared files; missing comments (CS1591) are left to code review. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../../src/Foundation/Shared/**/*.cs" />
+    <Compile Include="../../src/ServerLogic/Gateway/Shared/**/*.cs" />
+  </ItemGroup>
+
+</Project>
