@@ -164,6 +164,26 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         /// <param name="character">The character to check.</param>
         public bool IsLoadPending(CharacterID character) => _pendingByCharacter.ContainsKey(character);
 
+        /// <summary>
+        /// Gateway <c>Evict</c> while the character's load is in flight (Authentication Story 014): the pending entry is
+        /// marked dropped (so the load's completion allocates no slot), the load is cancelled and the connection closed.
+        /// </summary>
+        /// <param name="character">The evicted account's character.</param>
+        /// <returns>True when a pending load was dropped.</returns>
+        public bool DropPendingFor(CharacterID character)
+        {
+            if (!_pendingByCharacter.TryGetValue(character, out PendingEntry entry))
+            {
+                return false;
+            }
+
+            uint clientId = entry.ClientId;
+            DropPending(entry);
+            CancelLoad(entry);
+            _reclamation?.CloseConnection(clientId);
+            return true;
+        }
+
         /// <summary>Number of connections with a load in flight.</summary>
         public int PendingCount => _pending.Count;
 

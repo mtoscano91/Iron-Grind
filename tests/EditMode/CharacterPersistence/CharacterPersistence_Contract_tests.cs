@@ -60,7 +60,7 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
         [Test]
         public void SessionEndReason_ValuesPinned()
         {
-            AssertEnum(typeof(SessionEndReason), ("CleanLogout", 0), ("SessionTTLExpiry", 1), ("ZoneClosed", 2));
+            AssertEnum(typeof(SessionEndReason), ("CleanLogout", 0), ("SessionTTLExpiry", 1), ("ZoneClosed", 2), ("Evicted", 3));
         }
 
         [Test]

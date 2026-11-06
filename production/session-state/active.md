@@ -6157,3 +6157,32 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: 1 — TD-095 (zone-side client entry wiring unowned: SessionHandshake decode → BeginEntry, zone SessionTokenStore, Connected on entry; AC-AUTH-21 (e) registry/EntityState check; P1, before Story 017)
 - EPIC.md row 013 → Complete, Next Step updated. Story 013 uncommitted (003–012 committed as 0b6bde3)
 - Next recommended: /story-readiness production/epics/authentication/story-014-zone-evict-and-reconnect-handlers.md (015 also unblocked)
+
+## Session Extract — /story-readiness 2026-11-06 (Story 014)
+- Story: production/epics/authentication/story-014-zone-evict-and-reconnect-handlers.md — verdict NEEDS WORK → user "yes" → all 8 gaps applied, now READY (lean, QL-STORY-READY skipped)
+- Decision: Evict goes through SessionEndCoordinator.BeginEviction + new ConnectionStateMachine.CompleteEviction (Connected / SessionActive / Reconnecting, trigger "GatewayEvict"); release runs whatever the save result; token invalidated at Evict; HandleSessionSteal not reused (sync save, re-registers Connecting, no entity removal)
+- Added ACs: load in flight (entry.Dropped, no slot), entering slot (CR-ZI-17 reclaim, no save), ghost + Reconnecting (B-NP-7), end already in flight / duplicate Evict (EC-CP-4), Reconnect rules (success: rotate only, expiry unchanged, state unchanged; failure counted only from SessionActive; at the limit the end goes through the coordinator; other states not counted)
+- Estimate 8 h; performance note; gate wait counts against GATEWAY_EVICT_TIMEOUT_MS; QA cases AC-3b/3c/3d, AC-4 extended
+- Not committed. Next: /dev-story production/epics/authentication/story-014-zone-evict-and-reconnect-handlers.md
+
+## Session Extract — /dev-story 2026-11-06 (Story 014)
+- Story: production/epics/authentication/story-014-zone-evict-and-reconnect-handlers.md — Zone Evict and Reconnect handlers
+- network-programmer (two passes, hit turn limit once). New: src/ServerLogic/Gateway/GatewayEvictHandler.cs, GatewayReconnectHandler.cs. Modified: SessionEndCoordinator (BeginEviction joins in-flight ends via waiters, BeginReauthExhaustion, AfterNonForcedEnd, optional closeTransportIfOpen ctor param, internal TestObserver), SessionEndReason (+Evicted = 3), ConnectionStateMachine (CompleteEviction "GatewayEvict", CompleteReauthExhaustion "ReauthLimitExceeded", TryGetReauthFailureCount), IGatewayLinkOutbox + LoggingGatewayLinkOutbox (EvictResult, ReconnectResult), AdmittedEntries.TryEvict, ZoneEntryAdmission.DropPendingFor, ZoneEntryReclamation.ReclaimEnteringForEviction (+Cause.Evicted), ZoneInstancingWiring (GatewayEvict, GatewayReconnect, option ReauthFailureLimit = 3, CloseClientOfAccount)
+- Orchestrator fixes: CharacterPersistence_Contract SessionEndReason pin + Evicted; token-before-save test completes its save before teardown
+- Test: tests/EditMode/Authentication/Authentication_ZoneEvictReconnect_tests.cs (19). Full EditMode 6617: 6488 passed, 0 failed, 129 skipped, no error CS (batch, started 22:58:30Z)
+- Deviations: limiting re-auth failure skips RecordFailedReAuthAttempt (no OnReAuthAttemptFailed for that attempt) and ends via CompleteReauthExhaustion; Reconnect validates only from Disconnected_SessionActive — a Connected account with the right token is rejected (story silent); no critical-log assertion (fake persistence; the real SaveSession logs); observer cross-list order not asserted; REAUTH_FAILURE_LIMIT is a new wiring option (no existing config)
+- Not committed. Next: /code-review then /story-done production/epics/authentication/story-014-zone-evict-and-reconnect-handlers.md
+
+## Session Extract — /code-review 2026-11-06 (Story 014)
+- Verdict CHANGES REQUIRED (inline review, no specialist spawn); user "yes all" → required fix + 4 suggestions applied
+- Fix 1: Reconnect during an in-flight session end (TTL/logout/eviction/exhaustion) could move the session to Reconnecting, fail the end's completion re-check and leak session + entity + slot → new SessionEndCoordinator.IsEndInFlight; GatewayReconnectHandler rejects (nothing rotated or counted). +2 tests
+- 2: CompleteReauthExhaustion reports OnReAuthAttemptFailed(attempt, 0) after the save (limit test asserts it); 3: close-before-release assumption commented in CompleteForcedEnd; 4: TD-077 note (entering-slot eviction leaves the session record to the stand-in); 5: story Implementation Notes record the Connected-rejected and in-flight-rejected decisions
+- Authentication_ZoneEvictReconnect_tests.cs now 21. Full EditMode 6619: 6490 passed, 0 failed, 129 skipped, no error CS (started 23:30:27Z)
+- Not committed. Next: /story-done production/epics/authentication/story-014-zone-evict-and-reconnect-handlers.md
+
+## Session Extract — /story-done 2026-11-06 (Story 014)
+- Verdict: COMPLETE WITH NOTES (lean — QL-TEST-COVERAGE and LP-CODE-REVIEW skipped; /code-review covered both)
+- Story: production/epics/authentication/story-014-zone-evict-and-reconnect-handlers.md — Zone Evict and Reconnect handlers (12/12 criteria, 21 tests)
+- Tech debt logged: None new (TD-077 note added at /code-review; TD-095 still open)
+- EPIC.md row 014 → Complete, Next Step updated. Story 014 uncommitted (013 committed as 35214e5)
+- Next recommended: /story-readiness production/epics/authentication/story-015-client-https-auth-client.md (016 also unblocked)

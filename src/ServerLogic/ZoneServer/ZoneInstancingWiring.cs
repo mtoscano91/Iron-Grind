@@ -100,6 +100,9 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// <summary>Zone-to-gateway link outbox. Null: <see cref="LoggingGatewayLinkOutbox"/>.</summary>
         public IGatewayLinkOutbox GatewayOutbox;
 
+        /// <summary><c>REAUTH_FAILURE_LIMIT</c> for the gateway <c>Reconnect</c> handler (GDD default 3).</summary>
+        public int ReauthFailureLimit = 3;
+
         /// <summary><c>CONNECTING_TIMEOUT_SECONDS</c>; ticks = seconds x <see cref="TickRateHz"/>.</summary>
         public int ConnectingTimeoutSeconds = AdmittedEntries.CONNECTING_TIMEOUT_SECONDS;
 
@@ -205,6 +208,8 @@ namespace IronGrind.ServerLogic.ZoneServer
         private readonly SessionTokenStore _tokenStore;
         private readonly AdmittedEntries _admitted;
         private readonly GatewayAdmitHandler _gatewayAdmit;
+        private readonly GatewayEvictHandler _gatewayEvict;
+        private readonly GatewayReconnectHandler _gatewayReconnect;
         private readonly ZoneLifecycle _lifecycle;
         private readonly ZoneSlotPool _pool;
         private readonly ZoneMobRoster _mobs;
@@ -321,8 +326,31 @@ namespace IronGrind.ServerLogic.ZoneServer
             _sessionEnds = new SessionEndCoordinator(persistence, sessionRelease, queue, gate, _sessions, inventory,
                 equipment, options.ClearEquipRequestStore ?? (_ => { }),
                 options.UnregisterPlayerEntity ?? (_ => { }), _ => { },
-                (characterId, type) => _playerExit.ReleasePlayer(characterId, type));
+                (characterId, type) => _playerExit.ReleasePlayer(characterId, type),
+                CloseClientOfAccount);
+            _gatewayEvict = new GatewayEvictHandler(_admitted, _tokenStore, gatewayOutbox, _admission, _reclamation, _sessions, _sessionEnds);
+            _gatewayReconnect = new GatewayReconnectHandler(_sessions, _tokenStore, _sessionEnds, gatewayOutbox, options.ReauthFailureLimit);
         }
+
+        // Closes the transport connection of the account's slot, if it holds one (gateway eviction, Story 014).
+        private void CloseClientOfAccount(uint accountId)
+        {
+            System.Collections.Generic.IReadOnlyList<EntityID> players = _pool.GetPlayerEntityIDsInZone(_pool.Zone);
+            for (int i = 0; i < players.Count; i++)
+            {
+                if (_pool.TryGetPlayer(players[i], out ZonePlayerSlot slot) && slot.Account.RawValue == accountId)
+                {
+                    _reclamation.CloseConnection(slot.ClientId);
+                    return;
+                }
+            }
+        }
+
+        /// <summary>The <c>Evict</c> handler (Authentication Story 014); the gateway link feeds it decoded messages on the tick thread.</summary>
+        internal GatewayEvictHandler GatewayEvict => _gatewayEvict;
+
+        /// <summary>The <c>Reconnect</c> handler (Authentication Story 014).</summary>
+        internal GatewayReconnectHandler GatewayReconnect => _gatewayReconnect;
 
         /// <summary>The lifecycle state machine.</summary>
         public ZoneLifecycle Lifecycle => _lifecycle;

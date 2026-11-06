@@ -71,6 +71,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             Stall,
             DuplicateHandshake,
             TransportDrop,
+            Evicted,
         }
 
         private struct Entering
@@ -297,6 +298,28 @@ namespace IronGrind.ServerLogic.ZoneInstancing
                     Reclaim(i, Cause.Stall);
                 }
             }
+        }
+
+        /// <summary>
+        /// Gateway <c>Evict</c> for an account whose slot is still entering (Authentication Story 014,
+        /// <c>networking-session.md</c> B-NP-7 entering-slot exception): reclaims the slot through the CR-ZI-17 leave path
+        /// without a persistence write, closes the connection with no message and tells the session sink to expire the
+        /// entering session (token deleted when owned). An acked slot is not touched.
+        /// </summary>
+        /// <param name="account">The evicted account.</param>
+        /// <returns>True when an entering slot of the account was reclaimed.</returns>
+        public bool ReclaimEnteringForEviction(AccountID account)
+        {
+            for (int i = 0; i < _entering.Count; i++)
+            {
+                if (_pool.TryGetPlayer(_entering[i].Entity, out ZonePlayerSlot slot) && slot.Account == account)
+                {
+                    Reclaim(i, Cause.Evicted);
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>

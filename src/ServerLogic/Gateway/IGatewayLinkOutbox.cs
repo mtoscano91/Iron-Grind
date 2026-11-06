@@ -17,5 +17,15 @@ namespace IronGrind.ServerLogic.Gateway
         /// <summary>Queues <c>SessionReleased { accountId }</c>: the zone no longer holds a reservation for the account.</summary>
         /// <param name="account">The account whose reservation ended without a handshake.</param>
         void EnqueueSessionReleased(AccountID account);
+
+        /// <summary>Queues <c>EvictResult { requestId }</c> (Authentication Story 014): the account's session no longer exists in the zone.</summary>
+        /// <param name="requestId">The <c>requestId</c> of the <c>Evict</c> being answered, echoed unchanged.</param>
+        void EnqueueEvictResult(uint requestId);
+
+        /// <summary>Queues <c>ReconnectResult { requestId, accepted, newToken }</c> (Authentication Story 014).</summary>
+        /// <param name="requestId">The <c>requestId</c> of the <c>Reconnect</c> being answered, echoed unchanged.</param>
+        /// <param name="accepted">True when the presented token was valid and was rotated.</param>
+        /// <param name="newToken">The rotated token when accepted; null otherwise.</param>
+        void EnqueueReconnectResult(uint requestId, bool accepted, byte[] newToken);
     }
 }

@@ -158,6 +158,29 @@ namespace IronGrind.ServerLogic.Gateway
             return false;
         }
 
+        /// <summary>
+        /// Gateway <c>Evict</c> (Authentication Story 014): deletes the account's entry, reserved or kept. The token is NOT
+        /// touched and no <c>SessionReleased</c> is queued (the gateway removes its own map entry on <c>EvictResult</c>).
+        /// </summary>
+        /// <param name="account">The evicted account.</param>
+        /// <param name="serverTick">The current tick, passed to the reserved-count notification.</param>
+        /// <param name="character">The entry's character when one existed; otherwise default.</param>
+        /// <returns>True when an entry existed and was removed.</returns>
+        public bool TryEvict(AccountID account, uint serverTick, out CharacterID character)
+        {
+            if (!_byAccount.TryGetValue(account, out Entry e))
+            {
+                character = default;
+                return false;
+            }
+
+            character = e.Character;
+            int before = _reserved;
+            Remove(e);
+            NotifyIfChanged(before, serverTick);
+            return true;
+        }
+
         /// <summary>Step 4: the reservation ends. The entry is removed (the token stays in the store); no <c>SessionReleased</c>.</summary>
         /// <param name="character">The character that now holds a slot.</param>
         /// <param name="serverTick">The allocation tick.</param>

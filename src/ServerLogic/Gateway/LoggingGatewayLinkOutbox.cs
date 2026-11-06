@@ -26,5 +26,21 @@ namespace IronGrind.ServerLogic.Gateway
             Debug.Log($"{LOG_PREFIX} SessionReleased({account}) not sent: gateway link not implemented.");
 #endif
         }
+
+        /// <inheritdoc/>
+        public void EnqueueEvictResult(uint requestId)
+        {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            Debug.Log($"{LOG_PREFIX} EvictResult(requestId={requestId}) not sent: gateway link not implemented.");
+#endif
+        }
+
+        /// <inheritdoc/>
+        public void EnqueueReconnectResult(uint requestId, bool accepted, byte[] newToken)
+        {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            Debug.Log($"{LOG_PREFIX} ReconnectResult(requestId={requestId}, accepted={accepted}) not sent: gateway link not implemented.");
+#endif
+        }
     }
 }

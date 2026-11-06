@@ -11,5 +11,8 @@ namespace IronGrind.CharacterPersistence
 
         /// <summary>The zone the character was in closed.</summary>
         ZoneClosed = 2,
+
+        /// <summary>The gateway evicted the session (<c>Evict</c> link message, Authentication Story 014).</summary>
+        Evicted = 3,
     }
 }

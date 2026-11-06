@@ -65,6 +65,10 @@ namespace IronGrind.Tests.EditMode.Authentication
                 Results.Add((requestId, accepted, reason));
 
             public void EnqueueSessionReleased(AccountID account) => Released.Add(account);
+
+            public void EnqueueEvictResult(uint requestId) { }
+
+            public void EnqueueReconnectResult(uint requestId, bool accepted, byte[] newToken) { }
         }
 
         private sealed class FakeTicks : IServerTickSource

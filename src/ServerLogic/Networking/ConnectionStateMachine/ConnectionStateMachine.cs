@@ -1432,6 +1432,161 @@ namespace IronGrind.Networking
 #endif
         }
 
+        /// <summary>
+        /// Returns the number of failed re-authentication attempts recorded on <paramref name="accountId"/>'s entry
+        /// (<see cref="RecordFailedReAuthAttempt"/>), if registered. Read-only. Lets the gateway <c>Reconnect</c> handler
+        /// see that a failure reaches <c>REAUTH_FAILURE_LIMIT</c> before it starts the asynchronous session end.
+        /// </summary>
+        /// <param name="accountId">The account to query.</param>
+        /// <param name="failureCount">The recorded count, if registered; otherwise 0.</param>
+        /// <returns><see langword="true"/> if <paramref name="accountId"/> has a registry entry.</returns>
+        /// <example><code>stateMachine.TryGetReauthFailureCount(accountId: 7, out int failures);</code></example>
+        public bool TryGetReauthFailureCount(uint accountId, out int failureCount)
+        {
+            if (_sessions.TryGetValue(accountId, out AccountSessionRecord record))
+            {
+                failureCount = record.ReauthFailureCount;
+                return true;
+            }
+
+            failureCount = 0;
+            return false;
+        }
+
+        /// <summary>
+        /// Completes a gateway eviction (Authentication Story 014, ADR-016 Decision 3): the account's session ends from
+        /// <see cref="SessionState.Connected"/>, <see cref="SessionState.Disconnected_SessionActive"/> or
+        /// <see cref="SessionState.Reconnecting"/> to <see cref="SessionState.Disconnected_SessionExpired"/>, with no
+        /// reconnect window. Called from the session-end coordinator's completion callback, after the asynchronous
+        /// save has finished (or failed), so no persist delegate is taken. Call order (observer):
+        /// <c>OnSessionInvalidatedBySteal</c> → <c>OnPersistenceWriteCompleted(characterId, SessionSteal)</c> →
+        /// <c>OnSessionStateTransitioned(accountId, from, Disconnected_SessionExpired, "GatewayEvict")</c> →
+        /// <paramref name="closeTransportIfOpen"/> → <paramref name="removeEntityFromZone"/> →
+        /// <paramref name="broadcastPlayerLeftZone"/> (<see cref="DisconnectType.Graceful"/>) → registry removal.
+        /// </summary>
+        /// <param name="accountId">The evicted account.</param>
+        /// <param name="closeTransportIfOpen">Closes the account's transport connection if one is still open; called with <paramref name="accountId"/>.</param>
+        /// <param name="removeEntityFromZone">Removes the character's entity from the zone; called with the character id.</param>
+        /// <param name="broadcastPlayerLeftZone">Broadcasts <c>PlayerLeftZone</c>; called with the character id.</param>
+        /// <param name="observer">Optional test/dev-build observer.</param>
+        /// <exception cref="ArgumentNullException">A delegate is <see langword="null"/>.</exception>
+        /// <exception cref="InvalidOperationException">The account is not in one of the three accepted states.</exception>
+        /// <example><code>stateMachine.CompleteEviction(7, id =&gt; transport.Close(id), c =&gt; zone.RemoveEntity(c), (c, t) =&gt; zone.Broadcast(c, t));</code></example>
+        public void CompleteEviction(
+            uint accountId,
+            Action<uint> closeTransportIfOpen,
+            Action<uint> removeEntityFromZone,
+            Action<uint, DisconnectType> broadcastPlayerLeftZone
+#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
+            , INetworkTestObserver observer = null
+#endif
+            )
+        {
+            CompleteForcedEnd(accountId, closeTransportIfOpen, removeEntityFromZone, broadcastPlayerLeftZone, true, "GatewayEvict"
+#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
+                , observer
+#endif
+                );
+        }
+
+        /// <summary>
+        /// Completes a session end caused by <c>REAUTH_FAILURE_LIMIT</c> exhaustion through the asynchronous path
+        /// (Authentication Story 014): <see cref="SessionState.Reconnecting"/> → <see cref="SessionState.Disconnected_SessionExpired"/>.
+        /// Same steps as <see cref="CompleteEviction"/> except that no steal invalidation is reported, the persistence
+        /// reason is <see cref="PersistenceWriteReason.SessionExpiry"/> and the trigger is <c>"ReauthLimitExceeded"</c>.
+        /// </summary>
+        /// <param name="accountId">The account whose re-authentication attempts are exhausted.</param>
+        /// <param name="closeTransportIfOpen">Closes the account's transport connection if one is still open.</param>
+        /// <param name="removeEntityFromZone">Removes the character's entity from the zone.</param>
+        /// <param name="broadcastPlayerLeftZone">Broadcasts <c>PlayerLeftZone</c> (<see cref="DisconnectType.Timeout"/>).</param>
+        /// <param name="observer">Optional test/dev-build observer.</param>
+        /// <exception cref="ArgumentNullException">A delegate is <see langword="null"/>.</exception>
+        /// <exception cref="InvalidOperationException">The account is not <see cref="SessionState.Reconnecting"/>.</exception>
+        /// <example><code>stateMachine.CompleteReauthExhaustion(7, id =&gt; transport.Close(id), c =&gt; zone.RemoveEntity(c), (c, t) =&gt; zone.Broadcast(c, t));</code></example>
+        public void CompleteReauthExhaustion(
+            uint accountId,
+            Action<uint> closeTransportIfOpen,
+            Action<uint> removeEntityFromZone,
+            Action<uint, DisconnectType> broadcastPlayerLeftZone
+#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
+            , INetworkTestObserver observer = null
+#endif
+            )
+        {
+            CompleteForcedEnd(accountId, closeTransportIfOpen, removeEntityFromZone, broadcastPlayerLeftZone, false, "ReauthLimitExceeded"
+#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
+                , observer
+#endif
+                );
+        }
+
+        private void CompleteForcedEnd(
+            uint accountId,
+            Action<uint> closeTransportIfOpen,
+            Action<uint> removeEntityFromZone,
+            Action<uint, DisconnectType> broadcastPlayerLeftZone,
+            bool isEviction,
+            string trigger
+#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
+            , INetworkTestObserver observer
+#endif
+            )
+        {
+            if (closeTransportIfOpen == null)
+            {
+                throw new ArgumentNullException(nameof(closeTransportIfOpen));
+            }
+
+            if (removeEntityFromZone == null)
+            {
+                throw new ArgumentNullException(nameof(removeEntityFromZone));
+            }
+
+            if (broadcastPlayerLeftZone == null)
+            {
+                throw new ArgumentNullException(nameof(broadcastPlayerLeftZone));
+            }
+
+            string caller = isEviction ? nameof(CompleteEviction) : nameof(CompleteReauthExhaustion);
+            if (!_sessions.TryGetValue(accountId, out AccountSessionRecord record)
+                || (isEviction
+                    ? record.State != SessionState.Connected && record.State != SessionState.Disconnected_SessionActive
+                        && record.State != SessionState.Reconnecting
+                    : record.State != SessionState.Reconnecting))
+            {
+                throw new InvalidOperationException(
+                    $"[ConnectionStateMachine] {caller}: accountId={accountId} is not in a state this call accepts.");
+            }
+
+            SessionState from = record.State;
+            uint characterId = record.CharacterId;
+
+#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
+            if (isEviction)
+            {
+                observer?.OnSessionInvalidatedBySteal(accountId, characterId);
+            }
+            else
+            {
+                // The limiting attempt was not counted through RecordFailedReAuthAttempt (that would have removed the
+                // session before the async save), so it is reported here, once the save has completed.
+                observer?.OnReAuthAttemptFailed(accountId, record.ReauthFailureCount + 1, 0);
+            }
+
+            observer?.OnPersistenceWriteCompleted(characterId,
+                isEviction ? PersistenceWriteReason.SessionSteal : PersistenceWriteReason.SessionExpiry);
+            observer?.OnSessionStateTransitioned(accountId, from, SessionState.Disconnected_SessionExpired, trigger);
+#endif
+
+            // Assumes the transport reports the disconnect later (next poll), not from inside closeTransportIfOpen: the session
+            // is removed below, so a disconnect event arriving afterwards finds no session. A transport that called back
+            // synchronously would see this account still registered here and could start a ghost transition mid-end.
+            closeTransportIfOpen(accountId);
+            removeEntityFromZone(characterId);
+            broadcastPlayerLeftZone(characterId, isEviction ? DisconnectType.Graceful : DisconnectType.Timeout);
+            _sessions.Remove(accountId);
+        }
+
         // =====================================================================================
         // Story 018 — Ghost Session cluster: CGS-6 single-tick death-vs-reconnect priority
         // (AC-CGS-3). See class remarks' "Story 018 addition" paragraph, and GhostCleanupSequencer

@@ -90,9 +90,23 @@ namespace IronGrind.CharacterPersistence
         // Session ends requested while the character's gate was held, keyed by character (one account <-> one character).
         private readonly Dictionary<CharacterID, PendingEnd> _pending = new Dictionary<CharacterID, PendingEnd>();
 
+        // Gateway-forced ends (Authentication Story 014): accounts whose in-flight end is an eviction or a re-auth exhaustion,
+        // and the onEnded callbacks waiting for the account's session end (EC-CP-4). Tick thread only.
+        private readonly HashSet<uint> _forced = new HashSet<uint>();
+        private readonly Dictionary<uint, List<Action>> _waiters = new Dictionary<uint, List<Action>>();
+        private readonly Action<uint> _closeTransportIfOpen;
+
+#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
+        /// <summary>Test/dev-build observer passed to the state machine's eviction and exhaustion completions.</summary>
+        internal INetworkTestObserver TestObserver { get; set; }
+#endif
+
         private sealed class PendingEnd
         {
             public uint AccountId;
+            public bool IsForced;
+            public bool IsExhaustion;
+            public SessionEndReason Reason;
             public bool IsLogout;
             public uint SessionExpiryTick;
             public Action<CharacterSaveResult> OnResult;
@@ -113,7 +127,11 @@ namespace IronGrind.CharacterPersistence
         /// <param name="unregisterPlayerEntity">Leveling's <c>UnregisterPlayerEntity</c> (not on <c>ILevelingService</c>, so a seam).</param>
         /// <param name="removeEntityFromZone">Passed to the state machine; removes the character's entity from its zone.</param>
         /// <param name="broadcastPlayerLeftZone">Passed to the state machine; broadcasts <c>PlayerLeftZone</c>.</param>
-        /// <exception cref="ArgumentNullException">Any argument is null.</exception>
+        /// <param name="closeTransportIfOpen">
+        /// Optional (Story 014): closes the account's transport connection when a gateway eviction or re-auth exhaustion ends
+        /// its session; called with the account id. Null: nothing is closed.
+        /// </param>
+        /// <exception cref="ArgumentNullException">Any required argument is null.</exception>
         public SessionEndCoordinator(
             ICharacterPersistence persistence,
             ICharacterSessionRelease sessionRelease,
@@ -125,8 +143,10 @@ namespace IronGrind.CharacterPersistence
             Action<CharacterID> clearEquipRequestStore,
             Action<EntityID> unregisterPlayerEntity,
             Action<uint> removeEntityFromZone,
-            Action<uint, DisconnectType> broadcastPlayerLeftZone)
+            Action<uint, DisconnectType> broadcastPlayerLeftZone,
+            Action<uint> closeTransportIfOpen = null)
         {
+            _closeTransportIfOpen = closeTransportIfOpen ?? (_ => { });
             _persistence = persistence ?? throw new ArgumentNullException(nameof(persistence));
             _sessionRelease = sessionRelease ?? throw new ArgumentNullException(nameof(sessionRelease));
             _queue = queue ?? throw new ArgumentNullException(nameof(queue));
@@ -143,6 +163,15 @@ namespace IronGrind.CharacterPersistence
 
         /// <summary>Number of session ends started and not yet handled by their completion callback, or waiting on the mutation gate.</summary>
         public int InFlightCount => _inFlight.Count;
+
+        /// <summary>
+        /// Whether a session end (logout, TTL expiry, eviction or re-auth exhaustion) is started or waiting on the mutation gate
+        /// for <paramref name="accountId"/>. The gateway <c>Reconnect</c> handler rejects while this is true, so it never moves a
+        /// session that an end in flight is about to release (Authentication Story 014).
+        /// </summary>
+        /// <param name="accountId">The account to check.</param>
+        /// <returns><see langword="true"/> while an end for the account has not yet been handled by its completion callback.</returns>
+        public bool IsEndInFlight(uint accountId) => _inFlight.Contains(accountId);
 
         /// <summary>
         /// Starts a clean logout save for a <see cref="SessionState.Connected"/> account. Nothing is released before the save is handled.
@@ -285,7 +314,11 @@ namespace IronGrind.CharacterPersistence
 
             _pending.Remove(charId);
             bool stateFound = _stateMachine.TryGetSessionState(end.AccountId, out SessionState state);
-            if (end.IsLogout)
+            if (end.IsForced)
+            {
+                ResumeForced(end, charId, stateFound, state);
+            }
+            else if (end.IsLogout)
             {
                 ResumeLogout(end, charId, stateFound, state);
             }
@@ -302,6 +335,7 @@ namespace IronGrind.CharacterPersistence
             {
                 _inFlight.Remove(end.AccountId);
                 Debug.LogWarning($"{LOG_PREFIX} Clean logout for {charId} was dropped: the session is no longer {SessionState.Connected} when the mutation gate opened (the irreversible write it waited on failed, or the session ended); a preserved session is saved by its TTL expiry.");
+                AfterNonForcedEnd(end.AccountId);
                 end.OnResult(CharacterSaveResult.DatabaseError);
                 return;
             }
@@ -314,6 +348,7 @@ namespace IronGrind.CharacterPersistence
             {
                 _inFlight.Remove(end.AccountId);
                 Debug.LogError($"{LOG_PREFIX} Starting the clean logout save for {charId} after the mutation gate opened threw: {ex}");
+                AfterNonForcedEnd(end.AccountId);
                 end.OnResult(CharacterSaveResult.DatabaseError);
             }
         }
@@ -334,6 +369,7 @@ namespace IronGrind.CharacterPersistence
                     Debug.LogError(message);
                 }
 
+                AfterNonForcedEnd(end.AccountId);
                 return;
             }
 
@@ -345,6 +381,7 @@ namespace IronGrind.CharacterPersistence
             {
                 _inFlight.Remove(end.AccountId);
                 Debug.LogError($"{LOG_PREFIX} Starting the TTL expiry save for {charId} after the mutation gate opened threw: {ex}");
+                AfterNonForcedEnd(end.AccountId);
             }
         }
 
@@ -380,6 +417,7 @@ namespace IronGrind.CharacterPersistence
             if (outcome != CharacterSaveResult.Success)
             {
                 Debug.LogWarning($"{LOG_PREFIX} Clean logout save for {charId} did not succeed ({result.Status}, {outcome}); the session stays Connected for a retry.");
+                AfterNonForcedEnd(accountId); // a joined eviction starts its own save now (EC-CP-4)
                 onResult(outcome);
                 return;
             }
@@ -389,6 +427,7 @@ namespace IronGrind.CharacterPersistence
                 Release(charId, "clean logout", () => _stateMachine.ProcessExplicitDisconnect(accountId, NoOpPersist, _removeEntityFromZone, _broadcastPlayerLeftZone));
             }
 
+            AfterNonForcedEnd(accountId);
             onResult(CharacterSaveResult.Success);
         }
 
@@ -407,6 +446,237 @@ namespace IronGrind.CharacterPersistence
             {
                 Release(charId, "TTL expiry", () => _stateMachine.CompleteSessionActiveTTLExpiry(
                     accountId, sessionExpiryTick, sessionExpiryTick, NoOpPersist, _removeEntityFromZone, _broadcastPlayerLeftZone));
+            }
+
+            AfterNonForcedEnd(accountId);
+        }
+
+        // ----- Gateway-forced ends (Authentication Story 014) ---------------------------------------------
+
+        /// <summary>
+        /// Ends the account's session on a gateway <c>Evict</c> (Authentication Story 014, ADR-016 Decision 3): saves with
+        /// <see cref="SessionEndReason.Evicted"/> exactly like a logout or TTL end (started and tracked in the same statement,
+        /// waiting on the mutation gate if held), then releases whatever the save result and completes the state machine
+        /// through <see cref="ConnectionStateMachine.CompleteEviction"/>. Accepts <see cref="SessionState.Connected"/>,
+        /// <see cref="SessionState.Disconnected_SessionActive"/> and <see cref="SessionState.Reconnecting"/>.
+        /// </summary>
+        /// <remarks>
+        /// Joins an end already in flight (EC-CP-4): no second save starts and every waiting <paramref name="onEnded"/> fires
+        /// when that end completes. If the in-flight end was a clean logout whose save failed (or whose wait on the gate was
+        /// dropped) and the session still exists, the eviction save starts then. A failed save is logged critically by the
+        /// save itself; this class adds no second log.
+        /// </remarks>
+        /// <param name="accountId">The evicted account.</param>
+        /// <param name="onEnded">Called once on the tick when the account's session end finished, whatever the save result, or at once when the account has no session in an accepted state.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="onEnded"/> is null.</exception>
+        /// <example><code>ends.BeginEviction(accountId: 7, () =&gt; outbox.EnqueueEvictResult(requestId));</code></example>
+        public void BeginEviction(uint accountId, Action onEnded)
+        {
+            if (onEnded == null)
+            {
+                throw new ArgumentNullException(nameof(onEnded));
+            }
+
+            if (!_waiters.TryGetValue(accountId, out List<Action> list))
+            {
+                list = new List<Action>(1);
+                _waiters[accountId] = list;
+            }
+
+            list.Add(onEnded);
+            if (_inFlight.Contains(accountId))
+            {
+                return; // joined: the end in flight drains the waiters
+            }
+
+            if (!IsEvictable(accountId))
+            {
+                FireWaiters(accountId);
+                return;
+            }
+
+            StartForcedEndOrFire(accountId, SessionEndReason.Evicted, false);
+        }
+
+        /// <summary>
+        /// Ends a <see cref="SessionState.Reconnecting"/> session whose re-authentication failures reached
+        /// <c>REAUTH_FAILURE_LIMIT</c> (Authentication Story 014): async save (<see cref="SessionEndReason.SessionTTLExpiry"/>),
+        /// release whatever the result, then <see cref="ConnectionStateMachine.CompleteReauthExhaustion"/>. Never uses a
+        /// synchronous persist delegate.
+        /// </summary>
+        /// <param name="accountId">The account whose attempts are exhausted.</param>
+        /// <returns><see langword="true"/> if the end was started or is waiting on the gate; <see langword="false"/> if an end is already in flight or the session is not <see cref="SessionState.Reconnecting"/>.</returns>
+        /// <example><code>ends.BeginReauthExhaustion(accountId: 7);</code></example>
+        public bool BeginReauthExhaustion(uint accountId)
+        {
+            if (_inFlight.Contains(accountId)
+                || !_stateMachine.TryGetSessionState(accountId, out SessionState state)
+                || state != SessionState.Reconnecting)
+            {
+                return false;
+            }
+
+            StartForcedEndOrFire(accountId, SessionEndReason.SessionTTLExpiry, true);
+            return true;
+        }
+
+        private bool IsEvictable(uint accountId)
+        {
+            return _stateMachine.TryGetSessionState(accountId, out SessionState state)
+                && (state == SessionState.Connected || state == SessionState.Disconnected_SessionActive || state == SessionState.Reconnecting);
+        }
+
+        // Starts (or queues behind the gate) a forced end; a start that throws is logged and the waiters are released.
+        private void StartForcedEndOrFire(uint accountId, SessionEndReason reason, bool exhaustion)
+        {
+            CharacterID charId = CharacterOf(accountId);
+            try
+            {
+                if (_gate.IsHeld(charId))
+                {
+                    _pending[charId] = new PendingEnd { AccountId = accountId, IsForced = true, IsExhaustion = exhaustion, Reason = reason };
+                    _inFlight.Add(accountId);
+                    _forced.Add(accountId);
+                    return;
+                }
+
+                StartForcedSave(accountId, charId, reason, exhaustion);
+            }
+            catch (Exception ex)
+            {
+                _inFlight.Remove(accountId);
+                _forced.Remove(accountId);
+                Debug.LogError($"{LOG_PREFIX} Starting the forced session-end save for {charId} threw: {ex}");
+                FireWaiters(accountId);
+            }
+        }
+
+        private void StartForcedSave(uint accountId, CharacterID charId, SessionEndReason reason, bool exhaustion)
+        {
+            var cts = new CancellationTokenSource();
+            try
+            {
+                _queue.Track(
+                    _persistence.SaveSession(charId, reason, cts.Token),
+                    cts,
+                    result => OnForcedSaved(accountId, charId, exhaustion, cts, result));
+            }
+            catch
+            {
+                cts.Dispose();
+                throw;
+            }
+
+            _inFlight.Add(accountId);
+            _forced.Add(accountId);
+        }
+
+        private void ResumeForced(PendingEnd end, CharacterID charId, bool stateFound, SessionState state)
+        {
+            bool ok = stateFound && (end.IsExhaustion
+                ? state == SessionState.Reconnecting
+                : IsEvictable(end.AccountId));
+            if (!ok)
+            {
+                _inFlight.Remove(end.AccountId);
+                _forced.Remove(end.AccountId);
+                Debug.LogError($"{LOG_PREFIX} Forced session end for account {end.AccountId} / {charId} was waiting on the mutation gate but the session is no longer in an accepted state; nothing was started.");
+                FireWaiters(end.AccountId);
+                return;
+            }
+
+            try
+            {
+                StartForcedSave(end.AccountId, charId, end.Reason, end.IsExhaustion);
+            }
+            catch (Exception ex)
+            {
+                _inFlight.Remove(end.AccountId);
+                _forced.Remove(end.AccountId);
+                Debug.LogError($"{LOG_PREFIX} Starting the forced session-end save for {charId} after the mutation gate opened threw: {ex}");
+                FireWaiters(end.AccountId);
+            }
+        }
+
+        private void OnForcedSaved(uint accountId, CharacterID charId, bool exhaustion, CancellationTokenSource cts,
+            TickTaskResult<CharacterSaveResult> result)
+        {
+            _inFlight.Remove(accountId);
+            _forced.Remove(accountId);
+            DisposeUnlessTimedOut(cts, result.Status);
+
+            // Released whatever the result; the save already logged its critical error (no second log here).
+            bool accepted = exhaustion
+                ? HasState(accountId, SessionState.Reconnecting, "re-auth exhaustion", charId)
+                : (IsEvictable(accountId) || LogNotEvictable(accountId, charId));
+            if (accepted)
+            {
+                Release(charId, exhaustion ? "re-auth exhaustion" : "eviction", () =>
+                {
+                    if (exhaustion)
+                    {
+                        _stateMachine.CompleteReauthExhaustion(accountId, _closeTransportIfOpen, _removeEntityFromZone, _broadcastPlayerLeftZone
+#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
+                            , TestObserver
+#endif
+                            );
+                    }
+                    else
+                    {
+                        _stateMachine.CompleteEviction(accountId, _closeTransportIfOpen, _removeEntityFromZone, _broadcastPlayerLeftZone
+#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
+                            , TestObserver
+#endif
+                            );
+                    }
+                });
+            }
+
+            FireWaiters(accountId);
+        }
+
+        private bool LogNotEvictable(uint accountId, CharacterID charId)
+        {
+            Debug.LogError($"{LOG_PREFIX} Session end (eviction) for account {accountId} / {charId} finished but the session is no longer Connected, Disconnected_SessionActive or Reconnecting; no release step was run.");
+            return false;
+        }
+
+        // A logout or TTL end finished. A joined eviction starts its own save if the session still exists, else is answered.
+        private void AfterNonForcedEnd(uint accountId)
+        {
+            if (!_waiters.ContainsKey(accountId) || _inFlight.Contains(accountId))
+            {
+                return;
+            }
+
+            if (IsEvictable(accountId))
+            {
+                StartForcedEndOrFire(accountId, SessionEndReason.Evicted, false);
+            }
+            else
+            {
+                FireWaiters(accountId);
+            }
+        }
+
+        private void FireWaiters(uint accountId)
+        {
+            if (!_waiters.TryGetValue(accountId, out List<Action> list))
+            {
+                return;
+            }
+
+            _waiters.Remove(accountId);
+            for (int i = 0; i < list.Count; i++)
+            {
+                try
+                {
+                    list[i]();
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"{LOG_PREFIX} An eviction callback for account {accountId} threw: {ex}");
+                }
             }
         }
 
