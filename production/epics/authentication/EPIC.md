@@ -4,7 +4,7 @@
 > **GDD**: design/gdd/authentication.md
 > **Architecture Module**: Authentication
 > **Status**: Ready
-> **Stories**: Not yet created — run `/create-stories authentication`
+> **Stories**: 17 created 2026-11-06 (`/create-stories authentication`, lean) — see Stories below
 
 ## Overview
 
@@ -33,6 +33,30 @@ Authentication is the server-side identity verification layer that gates all pla
 
 > **TR registry note**: TR-auth-001 to 005 are registered in `docs/architecture/tr-registry.yaml` (TR-auth-003 revised 2026-11-06 for ADR-016).
 
+## Stories
+
+| # | Story | Type | Status | ADR |
+|---|-------|------|--------|-----|
+| 001 | Shared code folders and `IronGrind.Shared` | Logic | Ready | ADR-016, ADR-012 |
+| 002 | Auth body codec | Logic | Ready | ADR-016 |
+| 003 | Migration 004 and the `gateway` database role | Integration | Ready | ADR-016, ADR-006 |
+| 004 | Gateway packages, config and the Argon2id hasher | Logic | Ready | ADR-016, ADR-013 |
+| 005 | Credential validation and the lockout formula | Logic | Ready | ADR-016 |
+| 006 | Account repository — registration | Integration | Ready | ADR-016, ADR-006 |
+| 007 | Account repository — login state | Integration | Ready | ADR-016 |
+| 008 | Registration service | Logic | Ready | ADR-016 |
+| 009 | Login — credential path | Logic | Ready | ADR-016 |
+| 010 | Login — session establishment | Logic | Ready | ADR-016, ADR-013 |
+| 011 | Login — token path | Logic | Ready | ADR-016 |
+| 012 | HTTP endpoints and the gateway host | Integration | Ready | ADR-016 |
+| 013 | Zone admits a gateway token | Logic | Ready | ADR-016, ADR-011 |
+| 014 | Zone `Evict` and `Reconnect` handlers | Integration | Ready | ADR-016, ADR-011 |
+| 015 | Client HTTPS auth client | Integration | Ready | ADR-016 |
+| 016 | Caddy TLS-only front | Integration | Ready | ADR-016, ADR-007 |
+| 017 | End-to-end login → zone entry | Integration | Ready | ADR-016 |
+
+Work in order; each story's `Depends on:` says what must be Done first. Story 017 also waits for the gateway epic's link, map and router stories (epic not yet created — ADR-016 Migration Plan step 7). Story 005 has no TR-ID yet (`TR-auth-???`: CR-AUTH-7/13, F-AUTH-1) — register at the next `/architecture-review`. AC-AUTH-24 (map memory, advisory) belongs to the gateway epic.
+
 ## Definition of Done
 
 This epic is complete when:
@@ -45,4 +69,4 @@ This epic is complete when:
 
 ## Next Step
 
-Run `/create-stories authentication` to break this epic into implementable stories. The architecture gap is closed (ADR-016); stories that need the .NET 10 SDK or Caddy wait for ADR-016 Migration Plan step 4.
+Run `/story-readiness production/epics/authentication/story-001-shared-code-folders.md`, then `/dev-story`. ADR-016 Migration Plan step 4 (.NET 10 SDK, gateway solution, CI job) is done (2026-11-06); steps 5 and 6 are Stories 003 and 001.
