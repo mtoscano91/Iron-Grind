@@ -159,6 +159,58 @@ namespace IronGrind.Networking
         }
 
         /// <summary>
+        /// Stores a token the gateway generated as <paramref name="accountId"/>'s active entry (ADR-016 Decision 4,
+        /// fresh login step 5), replacing any existing entry for the account. The store keeps a COPY, so later
+        /// changes to <paramref name="token"/> by the caller never alter the stored entry; the entry itself is a fresh
+        /// immutable instance (see class remarks). Not concurrency-hardened, like <see cref="IssueToken"/>.
+        /// </summary>
+        /// <param name="accountId">The account the gateway authenticated.</param>
+        /// <param name="token">The gateway-generated token; must be exactly <see cref="TOKEN_LENGTH_BYTES"/> bytes and not all zeros.</param>
+        /// <param name="expiresAtTick">
+        /// The absolute tick at which the entry expires — caller-supplied (admit tick + CONNECTING_TIMEOUT_TICKS) and
+        /// not enforced by this store.
+        /// </param>
+        /// <returns>
+        /// <see langword="true"/> when the entry was stored. <see langword="false"/> with the store unchanged when
+        /// <paramref name="token"/> is <see langword="null"/>, has the wrong length, or is the zero-filled sentinel.
+        /// </returns>
+        /// <example>
+        /// <code>bool admitted = tokenStore.AdmitToken(accountId: 7, token: gatewayToken, expiresAtTick: 6100u);</code>
+        /// </example>
+        public bool AdmitToken(uint accountId, byte[] token, uint expiresAtTick)
+        {
+            if (token == null || token.Length != TOKEN_LENGTH_BYTES || IsZeroToken(token))
+            {
+                return false;
+            }
+
+            var copy = new byte[TOKEN_LENGTH_BYTES];
+            Buffer.BlockCopy(token, 0, copy, 0, TOKEN_LENGTH_BYTES);
+            _activeSessionTokens[accountId] = new ActiveTokenEntry(copy, Guid.NewGuid(), expiresAtTick);
+            return true;
+        }
+
+        /// <summary>
+        /// Checks <paramref name="presented"/> against <paramref name="accountId"/>'s stored token with
+        /// <see cref="CryptographicOperations.FixedTimeEquals"/>. Read-only: no rotation, no mutation, no allocation,
+        /// never throws.
+        /// </summary>
+        /// <param name="accountId">The account to check.</param>
+        /// <param name="presented">The presented token; may be <see langword="null"/>.</param>
+        /// <returns><see langword="true"/> only when the account has an entry and the token matches it; <see langword="false"/> for an unknown account, a null token, or a wrong length.</returns>
+        /// <example><code>bool ok = tokenStore.TokenMatches(accountId: 7, presented: clientToken);</code></example>
+        public bool TokenMatches(uint accountId, byte[] presented)
+        {
+            if (presented == null || presented.Length != TOKEN_LENGTH_BYTES
+                || !_activeSessionTokens.TryGetValue(accountId, out ActiveTokenEntry entry))
+            {
+                return false;
+            }
+
+            return CryptographicOperations.FixedTimeEquals(presented, entry.Token);
+        }
+
+        /// <summary>
         /// Atomically validates <paramref name="presentedToken"/> against <paramref name="accountId"/>'s
         /// stored token and, only on a match, rotates to a freshly generated token (CR-TOK-4, CR-TOK-5;
         /// AC-TOK-2, AC-TOK-3, AC-TOK-4, AC-TOK-6, AC-TOK-8). See class remarks for the full

@@ -129,7 +129,11 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
 
         private sealed class FakeValidator : IZoneEntryTokenValidator
         {
-            public bool IsValid(in ZoneEntryRequest request) => true;
+            public bool TryValidate(in ZoneEntryRequest request, out AccountID account)
+            {
+                account = new AccountID(request.Character.RawValue + 5000u);
+                return true;
+            }
         }
 
         private sealed class FakeApplier : ILoadedRecordApplier
@@ -284,7 +288,7 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
             _reclamation = new ZoneEntryReclamation(Zone, _pool, _directory, _roster, _party, _outbox,
                 _disconnector, new FakeSessionSink(_log), _ticks);
             _admission = new ZoneEntryAdmission(Zone, _pool, _lifecycle, _persistence, new FakeApplier(), _queue,
-                new FakeValidator(), _outbox, _continuation, _directory, reclamation: _reclamation);
+                new FakeValidator(), _disconnector, _outbox, _continuation, _directory, reclamation: _reclamation);
             _nextCharacter = 1000u;
         }
 
@@ -294,7 +298,7 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
 
         private void BeginHandshake(uint clientId, uint characterRaw)
         {
-            var request = new ZoneEntryRequest(clientId, new AccountID(characterRaw + 5000u), new CharacterID(characterRaw), Zone, new byte[16]);
+            var request = new ZoneEntryRequest(clientId, new CharacterID(characterRaw), Zone, new byte[16]);
             _admission.BeginEntry(in request);
         }
 

@@ -198,7 +198,11 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
 
         private sealed class AcceptAllValidator : IZoneEntryTokenValidator
         {
-            public bool IsValid(in ZoneEntryRequest request) => true;
+            public bool TryValidate(in ZoneEntryRequest request, out AccountID account)
+            {
+                account = new AccountID(request.Character.RawValue + 5000u);
+                return true;
+            }
         }
 
         private sealed class RecordingTeardownSink : IZoneTeardownSessionSink
@@ -434,7 +438,7 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
         private ZoneEntryRequest Request(uint client)
         {
             uint n = _nextCharacter++;
-            return new ZoneEntryRequest(client, new AccountID(n + 5000u), new CharacterID(n), Zone, new byte[SessionTokenStore.TOKEN_LENGTH_BYTES]);
+            return new ZoneEntryRequest(client, new CharacterID(n), Zone, new byte[SessionTokenStore.TOKEN_LENGTH_BYTES]);
         }
 
         private void AssertExit(ZoneExitCode code, uint tick)
@@ -1146,7 +1150,7 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             {
                 Build(o =>
                 {
-                    o.Validator = null;
+                    o.Validator = new RejectingZoneEntryTokenValidator(); // the null default is now the gateway validator (Authentication Story 013)
                     o.TeardownSessionSink = null;
                     o.Ghosts = null;
                 });

@@ -1,3 +1,4 @@
+using IronGrind.CharacterPersistence;
 using UnityEngine;
 
 namespace IronGrind.ServerLogic.ZoneInstancing
@@ -14,8 +15,9 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         private bool _logged;
 
         /// <inheritdoc/>
-        public bool IsValid(in ZoneEntryRequest request)
+        public bool TryValidate(in ZoneEntryRequest request, out AccountID account)
         {
+            account = AccountID.Invalid;
             if (!_logged)
             {
                 _logged = true;

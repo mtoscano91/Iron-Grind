@@ -19,8 +19,9 @@ namespace IronGrind.ServerLogic.ZoneInstancing
     /// <see cref="BeginEntry"/> runs on the tick thread with an already-decoded <see cref="ZoneEntryRequest"/>. Order
     /// of checks: (0) a connection the directory already maps is ignored with one warning
     /// (<c>EntryHandshakeAlreadyAdmitted</c>); (1) a load already pending for the connection is ignored with one warning
-    /// (<c>EntryHandshakeDuplicate</c>); (2) wrong zone -> <c>ZoneDoesNotExist</c>; (3) token rejected -> <c>Other</c>,
-    /// connection kept open; (4) pre-check: zone not Active -> <c>ZoneDoesNotExist</c>, at cap -> <c>ZoneFull</c> with
+    /// (<c>EntryHandshakeDuplicate</c>); (2) wrong zone -> <c>ZoneDoesNotExist</c>; (3) token rejected -> the connection is
+    /// closed with no message and no state change (CR-ZI-8 step 3, through the <see cref="IInboundTransportDisconnector"/>); the
+    /// account comes from <see cref="IZoneEntryTokenValidator.TryValidate"/>, never from the client; (4) pre-check: zone not Active -> <c>ZoneDoesNotExist</c>, at cap -> <c>ZoneFull</c> with
     /// <see cref="ZONE_FULL_RETRY_AFTER_SECONDS"/>; (5) <c>LoadCharacter</c> is started and passed to
     /// <see cref="ITickCompletionQueue.Track{T}"/> in the same statement. A reply in (2)-(4) starts no load. Replies
     /// carry the zone id the client sent.
@@ -79,6 +80,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         private readonly ILoadedRecordApplier _applier;
         private readonly ITickCompletionQueue _queue;
         private readonly IZoneEntryTokenValidator _validator;
+        private readonly IInboundTransportDisconnector _disconnector;
         private readonly IClientMessageOutbox _outbox;
         private readonly IZoneEntryContinuation _continuation;
         private readonly IConnectionCharacterDirectory _directory;
@@ -88,6 +90,8 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         private readonly HashSet<uint> _duplicateWarned = new HashSet<uint>();
         private readonly byte[] _replyBuffer = new byte[ZoneFullResponse.BodySize];
         private readonly ZoneEntryReclamation _reclamation;
+        private readonly IServerTickSource _ticks;
+        private IZoneEntryReservationSink _reservationSink;
         private readonly HashSet<uint> _inZoneWarned = new HashSet<uint>();
         private readonly Dictionary<CharacterID, PendingEntry> _pendingByCharacter = new Dictionary<CharacterID, PendingEntry>();
 
@@ -98,20 +102,24 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         /// <param name="persistence">Starts the character load.</param>
         /// <param name="applier">Applies the loaded record.</param>
         /// <param name="queue">Hands the load result back on the tick.</param>
-        /// <param name="validator">Checks the session token.</param>
+        /// <param name="validator">Checks the session token and resolves the account.</param>
+        /// <param name="disconnector">Closes a connection whose token is rejected (silent close, CR-ZI-8 step 3).</param>
         /// <param name="outbox">Receives the <see cref="ZoneFullResponse"/> replies.</param>
         /// <param name="continuation">Receives an admitted player.</param>
         /// <param name="directory">Tells which connections already play a character (Story 010); a handshake from one is ignored.</param>
         /// <param name="retryAfterSeconds">Retry hint of <c>ZoneFull</c>.</param>
         /// <param name="reclamation">Story 011: entering-slot tracking and stale slot reclamation; null disables cases (b) and (c) and the entering registration.</param>
+        /// <param name="ticks">Optional tick source; stamps the <see cref="IZoneEntryReservationSink"/> call (0 when null).</param>
         /// <exception cref="ArgumentNullException">A reference argument is null.</exception>
         /// <exception cref="ArgumentException"><paramref name="zone"/> is invalid.</exception>
         public ZoneEntryAdmission(ZoneID zone, ZoneSlotPool pool, ZoneLifecycle lifecycle, ICharacterPersistence persistence,
             ILoadedRecordApplier applier, ITickCompletionQueue queue, IZoneEntryTokenValidator validator,
-            IClientMessageOutbox outbox, IZoneEntryContinuation continuation, IConnectionCharacterDirectory directory,
-            byte retryAfterSeconds = ZONE_FULL_RETRY_AFTER_SECONDS, ZoneEntryReclamation reclamation = null)
+            IInboundTransportDisconnector disconnector, IClientMessageOutbox outbox, IZoneEntryContinuation continuation, IConnectionCharacterDirectory directory,
+            byte retryAfterSeconds = ZONE_FULL_RETRY_AFTER_SECONDS, ZoneEntryReclamation reclamation = null,
+            IServerTickSource ticks = null)
         {
             _reclamation = reclamation;
+            _ticks = ticks;
             if (zone == ZoneID.Invalid)
             {
                 throw new ArgumentException($"{LOG_PREFIX} zone must not be ZoneID.Invalid.", nameof(zone));
@@ -124,11 +132,37 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             _applier = applier ?? throw new ArgumentNullException(nameof(applier));
             _queue = queue ?? throw new ArgumentNullException(nameof(queue));
             _validator = validator ?? throw new ArgumentNullException(nameof(validator));
+            _disconnector = disconnector ?? throw new ArgumentNullException(nameof(disconnector));
             _outbox = outbox ?? throw new ArgumentNullException(nameof(outbox));
             _continuation = continuation ?? throw new ArgumentNullException(nameof(continuation));
             _directory = directory ?? throw new ArgumentNullException(nameof(directory));
             _retryAfterSeconds = retryAfterSeconds;
         }
+
+        /// <summary>
+        /// Registers the sink told right after each successful slot allocation (CR-ZI-8 step 4), before the continuation.
+        /// Set once at construction time; without one the behavior is unchanged.
+        /// </summary>
+        /// <param name="sink">The reservation sink.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="sink"/> is null.</exception>
+        /// <exception cref="InvalidOperationException">A sink is already set.</exception>
+        public void SetReservationSink(IZoneEntryReservationSink sink)
+        {
+            if (sink == null)
+                throw new ArgumentNullException(nameof(sink));
+            if (_reservationSink != null)
+                throw new InvalidOperationException($"{LOG_PREFIX} the reservation sink is already set.");
+
+            _reservationSink = sink;
+        }
+
+        /// <summary>
+        /// True while a <c>LoadCharacter</c> for <paramref name="character"/> is in flight (its handshake was accepted and
+        /// the slot is not allocated yet). Authentication Story 013: an admitted entry does not time out while its load runs.
+        /// No allocation.
+        /// </summary>
+        /// <param name="character">The character to check.</param>
+        public bool IsLoadPending(CharacterID character) => _pendingByCharacter.ContainsKey(character);
 
         /// <summary>Number of connections with a load in flight.</summary>
         public int PendingCount => _pending.Count;
@@ -172,9 +206,10 @@ namespace IronGrind.ServerLogic.ZoneInstancing
                 return;
             }
 
-            if (!_validator.IsValid(in request))
+            if (!_validator.TryValidate(in request, out AccountID account))
             {
-                Reply(clientId, request.TargetZone, JoinRejectedReason.Other, 0);
+                // CR-ZI-8 step 3: silent close, no reply and no state change.
+                _disconnector.DisconnectClient(clientId);
                 return;
             }
 
@@ -191,7 +226,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             }
 
             // The pre-check runs before anything is superseded: a handshake the zone rejects leaves the first entry untouched.
-            if (!TryPreCheck(clientId, request.TargetZone))
+            if (!TryPreCheck(clientId, request.TargetZone, closeWhenNotActive: true))
             {
                 return;
             }
@@ -212,7 +247,6 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             _pendingByCharacter[request.Character] = entry;
             ZoneID targetZone = request.TargetZone;
             var character = request.Character;
-            var account = request.Account;
 
             Task<CharacterLoadResult> load;
             try
@@ -295,11 +329,17 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         }
 
         // Zone not Active or at cap -> reply and report false.
-        private bool TryPreCheck(uint clientId, ZoneID sentZone)
+        private bool TryPreCheck(uint clientId, ZoneID sentZone, bool closeWhenNotActive = false)
         {
             if (!_lifecycle.AcceptsPlayers)
             {
                 Reply(clientId, sentZone, JoinRejectedReason.ZoneDoesNotExist, 0);
+                if (closeWhenNotActive)
+                {
+                    // CR-ZI-8 steps 3/4: send ZoneDoesNotExist, then close.
+                    _disconnector.DisconnectClient(clientId);
+                }
+
                 return false;
             }
 
@@ -349,6 +389,8 @@ namespace IronGrind.ServerLogic.ZoneInstancing
                 Reply(clientId, targetZone, JoinRejectedReason.Other, 0);
                 return;
             }
+
+            _reservationSink?.OnSlotAllocated(character, _ticks?.ServerTickNumber ?? 0u);
 
             CharacterLoadCode applied;
             try

@@ -6,20 +6,19 @@ namespace IronGrind.ServerLogic.ZoneInstancing
     /// <summary>
     /// An already-decoded <c>SessionHandshake</c> for zone entry (Zone Instancing Story 009). The wire codec is not
     /// part of the story (schema pending OQ-NC-SER-2); the caller decodes and hands this to
-    /// <see cref="ZoneEntryAdmission.BeginEntry"/> on the tick thread.
+    /// <see cref="ZoneEntryAdmission.BeginEntry"/> on the tick thread. It carries no account: the client never sends
+    /// one (CR-TOK-8), <see cref="IZoneEntryTokenValidator.TryValidate"/> resolves it.
     /// </summary>
     public readonly struct ZoneEntryRequest
     {
         /// <summary>Creates a request.</summary>
         /// <param name="clientId">The connection the handshake arrived on.</param>
-        /// <param name="account">The account the client claims.</param>
         /// <param name="character">The character the client wants to enter with.</param>
         /// <param name="targetZone">The zone the client asked for.</param>
         /// <param name="sessionToken">The presented session token (<c>SessionTokenStore.TOKEN_LENGTH_BYTES</c> bytes); may be null.</param>
-        public ZoneEntryRequest(uint clientId, AccountID account, CharacterID character, ZoneID targetZone, byte[] sessionToken)
+        public ZoneEntryRequest(uint clientId, CharacterID character, ZoneID targetZone, byte[] sessionToken)
         {
             ClientId = clientId;
-            Account = account;
             Character = character;
             TargetZone = targetZone;
             SessionToken = sessionToken;
@@ -27,9 +26,6 @@ namespace IronGrind.ServerLogic.ZoneInstancing
 
         /// <summary>The connection the handshake arrived on.</summary>
         public uint ClientId { get; }
-
-        /// <summary>The account the client claims.</summary>
-        public AccountID Account { get; }
 
         /// <summary>The character the client wants to enter with.</summary>
         public CharacterID Character { get; }

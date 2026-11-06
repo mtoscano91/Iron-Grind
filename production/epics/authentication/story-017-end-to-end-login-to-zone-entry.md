@@ -94,4 +94,5 @@
 ## Dependencies
 
 - Depends on: Stories 012–016; the gateway epic's zone link (both sides), account → zone map, router and `IGatewayRegistration` stories (epic not yet created — ADR-016 Migration Plan step 7)
+- Also depends on (no owner yet, found at Story 013 readiness 2026-11-06): the zone-side `SessionHandshake` decode → `ZoneEntryAdmission.BeginEntry`, the zone process's `SessionTokenStore` instance, and the networking `Connected` transition on entry. Assign to the gateway epic or a networking-core story before this story starts.
 - Unlocks: Authentication epic Definition of Done

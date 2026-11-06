@@ -120,7 +120,11 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
 
         private sealed class AcceptAllValidator : IZoneEntryTokenValidator
         {
-            public bool IsValid(in ZoneEntryRequest request) => true;
+            public bool TryValidate(in ZoneEntryRequest request, out AccountID account)
+            {
+                account = new AccountID(request.Character.RawValue + ACCOUNT_OFFSET);
+                return true;
+            }
         }
 
         private sealed class FakeRespawn : ITownRespawnPointProvider
@@ -231,7 +235,7 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             Assert.IsTrue(rig.Net.Dispatcher.AddConnection(client));
             rig.Net.ClientListener.AddClient(client);
             ZoneSlotPool pool = rig.Comp.ZoneInstancing.Pool;
-            rig.Comp.ZoneInstancing.Admission.BeginEntry(new ZoneEntryRequest(client, new AccountID(character + ACCOUNT_OFFSET),
+            rig.Comp.ZoneInstancing.Admission.BeginEntry(new ZoneEntryRequest(client,
                 new CharacterID(character), pool.Zone, new byte[SessionTokenStore.TOKEN_LENGTH_BYTES]));
             if (firstEntry)
             {

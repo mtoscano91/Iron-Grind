@@ -87,7 +87,11 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
 
         private sealed class FakeValidator : IZoneEntryTokenValidator
         {
-            public bool IsValid(in ZoneEntryRequest request) => true;
+            public bool TryValidate(in ZoneEntryRequest request, out AccountID account)
+            {
+                account = new AccountID(request.Character.RawValue + 5000u);
+                return true;
+            }
         }
 
         private sealed class FakeApplier : ILoadedRecordApplier
@@ -177,7 +181,7 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             var reclamation = new ZoneEntryReclamation(Zone, _pool, _directory, roster, new FakeParty(), _outbox,
                 _disconnector, new NoopSink(), ticks);
             _svc = new ZoneEntryAdmission(Zone, _pool, lifecycle, _persistence, new FakeApplier(), _queue, new FakeValidator(),
-                _outbox, _continuation, _directory, reclamation: reclamation);
+                _disconnector, _outbox, _continuation, _directory, reclamation: reclamation);
             _tick = 0u;
         }
 
@@ -194,7 +198,7 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
         }
 
         private static ZoneEntryRequest Request(uint clientId, uint characterRaw) =>
-            new ZoneEntryRequest(clientId, new AccountID(characterRaw + 5000u), new CharacterID(characterRaw), Zone, new byte[TOKEN_LENGTH]);
+            new ZoneEntryRequest(clientId, new CharacterID(characterRaw), Zone, new byte[TOKEN_LENGTH]);
 
         private static CharacterLoadResult Loaded() => new CharacterLoadResult(CharacterLoadCode.Success, Zone, new CharacterRecord());
 
@@ -448,7 +452,8 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             Begin(CLIENT_B, CHARACTER_RAW);
 
             Assert.AreEqual(1, _outbox.Count, "client B got the ZoneDoesNotExist reply");
-            Assert.IsEmpty(_disconnector.Closed, "client A is not closed");
+            // Authentication Story 013: a not-Active ZoneDoesNotExist reply also closes that connection (CR-ZI-8 step 3).
+            CollectionAssert.AreEqual(new ulong[] { CLIENT_B }, _disconnector.Closed, "only client B is closed; client A is not");
             Assert.AreEqual(1, _persistence.Loads.Count);
             Assert.AreEqual(1, _svc.PendingCount);
             Assert.AreEqual(1, _svc.PendingCharacterCount);

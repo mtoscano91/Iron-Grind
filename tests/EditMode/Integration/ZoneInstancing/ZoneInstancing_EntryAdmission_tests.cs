@@ -188,12 +188,23 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             public int Calls;
             public ZoneEntryRequest LastRequest;
 
-            public bool IsValid(in ZoneEntryRequest request)
+            /// <summary>The account the fake resolves for a character (CR-TOK-8: the zone, not the client, supplies it).</summary>
+            public static AccountID AccountFor(CharacterID character) => new AccountID(character.RawValue + 5000u);
+
+            public bool TryValidate(in ZoneEntryRequest request, out AccountID account)
             {
                 Calls++;
                 LastRequest = request;
+                account = Accept ? AccountFor(request.Character) : AccountID.Invalid;
                 return Accept;
             }
+        }
+
+        private sealed class FakeDisconnector : IInboundTransportDisconnector
+        {
+            public readonly List<ulong> Disconnected = new List<ulong>();
+
+            public void DisconnectClient(ulong transportClientId) => Disconnected.Add(transportClientId);
         }
 
         private sealed class FakeContinuation : IZoneEntryContinuation
@@ -206,6 +217,7 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
         private FakePersistence _persistence;
         private FakeApplier _applier;
         private FakeValidator _validator;
+        private FakeDisconnector _disconnector;
         private FakeContinuation _continuation;
         private ZoneConnectionCharacterDirectory _directory;
         private FakeOutbox _outbox;
@@ -224,6 +236,7 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             _persistence = new FakePersistence();
             _applier = new FakeApplier();
             _validator = new FakeValidator();
+            _disconnector = new FakeDisconnector();
             _continuation = new FakeContinuation();
             _directory = new ZoneConnectionCharacterDirectory();
             _outbox = new FakeOutbox();
@@ -239,12 +252,12 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
         // ----- helpers --------------------------------------------------------------------------
 
         private ZoneEntryAdmission Build(ZoneSlotPool pool, byte retryAfterSeconds = ZoneEntryAdmission.ZONE_FULL_RETRY_AFTER_SECONDS) =>
-            new ZoneEntryAdmission(Zone, pool, _lifecycle, _persistence, _applier, _queue, _validator, _outbox, _continuation, _directory, retryAfterSeconds);
+            new ZoneEntryAdmission(Zone, pool, _lifecycle, _persistence, _applier, _queue, _validator, _disconnector, _outbox, _continuation, _directory, retryAfterSeconds);
 
         private ZoneEntryRequest Request(uint clientId, uint zoneRaw = ZONE_RAW)
         {
             uint n = _nextCharacter++;
-            return new ZoneEntryRequest(clientId, new AccountID(n + 5000u), new CharacterID(n), new ZoneID(zoneRaw), new byte[TOKEN_LENGTH]);
+            return new ZoneEntryRequest(clientId, new CharacterID(n), new ZoneID(zoneRaw), new byte[TOKEN_LENGTH]);
         }
 
         private EntityID AddPlayer(uint clientId)
@@ -299,10 +312,10 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
         }
 
         [Test]
-        public void test_rejecting_validator_replies_other_zero_starts_no_load_and_logs_once_per_instance()
+        public void test_rejecting_validator_closes_silently_starts_no_load_and_logs_once_per_instance()
         {
             var rejecting = new RejectingZoneEntryTokenValidator();
-            var svc = new ZoneEntryAdmission(Zone, _pool, _lifecycle, _persistence, _applier, _queue, rejecting, _outbox, _continuation, _directory);
+            var svc = new ZoneEntryAdmission(Zone, _pool, _lifecycle, _persistence, _applier, _queue, rejecting, _disconnector, _outbox, _continuation, _directory);
             LogAssert.Expect(LogType.Warning, RejectingZoneEntryTokenValidator.NOT_IMPLEMENTED_MESSAGE);
             var first = Request(CLIENT_A);
             var second = Request(CLIENT_B);
@@ -310,23 +323,22 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             svc.BeginEntry(in first);
             svc.BeginEntry(in second);
 
-            Assert.AreEqual(2, _outbox.Sent.Count);
-            Assert.AreEqual(CLIENT_A, _outbox.Sent[0].Key);
-            Assert.AreEqual(new ZoneFullResponse(Zone, JoinRejectedReason.Other, 0), _outbox.Sent[0].Value);
-            AssertLastReply(CLIENT_B, JoinRejectedReason.Other, 0);
+            Assert.AreEqual(0, _outbox.Sent.Count, "a rejected token is a silent close");
+            CollectionAssert.AreEqual(new ulong[] { CLIENT_A, CLIENT_B }, _disconnector.Disconnected);
             Assert.AreEqual(0, _persistence.Loads.Count);
             LogAssert.NoUnexpectedReceived();
         }
 
         [Test]
-        public void test_rejected_token_replies_other_and_keeps_zone_state_untouched()
+        public void test_rejected_token_closes_silently_and_keeps_zone_state_untouched()
         {
             _validator.Accept = false;
             var request = Request(CLIENT_A);
 
             _svc.BeginEntry(in request);
 
-            AssertLastReply(CLIENT_A, JoinRejectedReason.Other, 0);
+            Assert.IsEmpty(_outbox.Sent);
+            CollectionAssert.AreEqual(new ulong[] { CLIENT_A }, _disconnector.Disconnected);
             Assert.AreEqual(0, _persistence.Loads.Count);
             Assert.AreEqual(0, _pool.OccupiedPlayerCount);
             Assert.AreEqual(0, _svc.PendingCount);
@@ -342,7 +354,6 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
 
             Assert.AreEqual(1, _validator.Calls);
             Assert.AreEqual(request.ClientId, _validator.LastRequest.ClientId);
-            Assert.AreEqual(request.Account, _validator.LastRequest.Account);
             Assert.AreEqual(request.Character, _validator.LastRequest.Character);
             Assert.AreEqual(request.TargetZone, _validator.LastRequest.TargetZone);
             Assert.AreSame(request.SessionToken, _validator.LastRequest.SessionToken);
@@ -414,7 +425,8 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
 
             _svc.BeginEntry(in request);
 
-            AssertLastReply(CLIENT_A, JoinRejectedReason.Other, 0);
+            Assert.IsEmpty(_outbox.Sent);
+            CollectionAssert.AreEqual(new ulong[] { CLIENT_A }, _disconnector.Disconnected);
             Assert.AreEqual(0, _persistence.Loads.Count);
             LogAssert.NoUnexpectedReceived();
         }
@@ -428,7 +440,8 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
 
             _svc.BeginEntry(in request);
 
-            AssertLastReply(CLIENT_A, JoinRejectedReason.Other, 0);
+            Assert.IsEmpty(_outbox.Sent);
+            CollectionAssert.AreEqual(new ulong[] { CLIENT_A }, _disconnector.Disconnected);
             Assert.AreEqual(0, _persistence.Loads.Count);
             LogAssert.NoUnexpectedReceived();
         }
@@ -807,7 +820,7 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             Assert.AreEqual(_applier.LastEntity, admitted.Entity);
             Assert.IsTrue(_pool.TryGetPlayer(admitted.Entity, out ZonePlayerSlot slot));
             Assert.AreEqual(request.Character, slot.Character);
-            Assert.AreEqual(request.Account, slot.Account);
+            Assert.AreEqual(FakeValidator.AccountFor(request.Character), slot.Account);
             Assert.AreEqual(CLIENT_A, slot.ClientId);
             Assert.AreEqual(ZoneSessionState.Connected, slot.State);
             Assert.IsTrue(_pool.TryGetPlayerSlot(admitted.Entity, out byte index));
@@ -991,13 +1004,15 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
         public void test_constructor_rejects_invalid_zone_and_null_arguments()
         {
             Assert.Throws<ArgumentException>(() => new ZoneEntryAdmission(ZoneID.Invalid, _pool, _lifecycle, _persistence,
-                _applier, _queue, _validator, _outbox, _continuation, _directory));
+                _applier, _queue, _validator, _disconnector, _outbox, _continuation, _directory));
             Assert.Throws<ArgumentNullException>(() => new ZoneEntryAdmission(Zone, null, _lifecycle, _persistence,
-                _applier, _queue, _validator, _outbox, _continuation, _directory));
+                _applier, _queue, _validator, _disconnector, _outbox, _continuation, _directory));
             Assert.Throws<ArgumentNullException>(() => new ZoneEntryAdmission(Zone, _pool, _lifecycle, _persistence,
-                _applier, _queue, _validator, _outbox, null, _directory));
+                _applier, _queue, _validator, null, _outbox, _continuation, _directory));
             Assert.Throws<ArgumentNullException>(() => new ZoneEntryAdmission(Zone, _pool, _lifecycle, _persistence,
-                _applier, _queue, _validator, _outbox, _continuation, null));
+                _applier, _queue, _validator, _disconnector, _outbox, null, _directory));
+            Assert.Throws<ArgumentNullException>(() => new ZoneEntryAdmission(Zone, _pool, _lifecycle, _persistence,
+                _applier, _queue, _validator, _disconnector, _outbox, _continuation, null));
             LogAssert.NoUnexpectedReceived();
         }
 

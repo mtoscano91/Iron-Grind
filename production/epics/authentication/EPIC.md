@@ -50,7 +50,7 @@ Authentication is the server-side identity verification layer that gates all pla
 | 010 | Login — session establishment | Logic | Complete | ADR-016, ADR-013 |
 | 011 | Login — token path | Logic | Complete | ADR-016 |
 | 012 | HTTP endpoints and the gateway host | Integration | Complete | ADR-016 |
-| 013 | Zone admits a gateway token | Logic | Ready | ADR-016, ADR-011 |
+| 013 | Zone admits a gateway token | Logic | Complete | ADR-016, ADR-011 |
 | 014 | Zone `Evict` and `Reconnect` handlers | Integration | Ready | ADR-016, ADR-011 |
 | 015 | Client HTTPS auth client | Integration | Ready | ADR-016 |
 | 016 | Caddy TLS-only front | Integration | Ready | ADR-016, ADR-007 |
@@ -70,4 +70,4 @@ This epic is complete when:
 
 ## Next Step
 
-Stories 001–012 Complete (2026-11-06). Next: `/story-readiness production/epics/authentication/story-013-zone-admits-gateway-token.md` (014 waits for 013; 015 is also unblocked — its device check also needs 016).
+Stories 001–013 Complete (2026-11-06). Next: `/story-readiness production/epics/authentication/story-014-zone-evict-and-reconnect-handlers.md` (015 is also unblocked — its device check also needs 016). Story 017 also needs TD-095 (zone-side client entry wiring) to have an owner.

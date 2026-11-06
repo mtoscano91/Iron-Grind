@@ -6125,3 +6125,35 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: None (TD-092 resolved by this story)
 - EPIC.md row 012 → Complete, Next Step updated. Stories 003–012 uncommitted
 - Next recommended: /story-readiness production/epics/authentication/story-013-zone-admits-gateway-token.md (015 also unblocked)
+
+## Session Extract — commit + /story-readiness 2026-11-06 (Story 013)
+- Committed Stories 003–012 as 0b6bde3 (left out: bash.exe.stackdump, ProjectSettings/Packages/, ProjectSettings/SceneTemplateSettings.json)
+- Story: production/epics/authentication/story-013-zone-admits-gateway-token.md — verdict NEEDS WORK → fixed (user "continue" = accept recommendations), now READY
+- Decisions: IZoneEntryTokenValidator → TryValidate(in request, out AccountID); ZoneEntryRequest drops client-claimed Account (CR-TOK-8); a second Admit for the same account replaces the entry
+- Fixes: Estimate 8 h; SessionTokenStore.TokenMatches; AdmitResult echoes requestId + AdmitRejectReason {None, NotActive, Full, InvalidToken}; reservation ends at slot allocation (no SessionReleased after); step 3 reject = silent close (replaces JoinRejectedReason.Other); T-4 keeps token until CONNECTING_TIMEOUT_TICKS (AC-ZI-35); session count occupied + reserved feeds Admit check and idle timer (AC-ZI-21); expiresAtTick = admit tick + CONNECTING_TIMEOUT_TICKS; tests in tests/EditMode/Authentication/ (014 same); new QA cases AC-3b, AC-3c
+- Ownership gap: no story wires SessionHandshake decode → BeginEntry, the zone's SessionTokenStore, or networking Connected on entry; noted in 013 and 017 Dependencies
+- Not committed. Next: /dev-story production/epics/authentication/story-013-zone-admits-gateway-token.md
+
+## Session Extract — /dev-story 2026-11-06 (Story 013)
+- Story: production/epics/authentication/story-013-zone-admits-gateway-token.md — Zone admits a gateway token
+- Two network-programmer passes. A: SessionTokenStore.AdmitToken + TokenMatches; IZoneEntryTokenValidator.TryValidate(in request, out AccountID); ZoneEntryRequest.Account removed; ZoneEntryAdmission silent close on validation failure (new IInboundTransportDisconnector ctor param after validator); 7 existing test files updated. B: src/ServerLogic/Gateway/{AdmitRejectReason, IGatewayLinkOutbox, LoggingGatewayLinkOutbox, AdmittedEntries (CONNECTING_TIMEOUT_SECONDS = 30, implements IZoneEntryReservationSink), GatewayAdmitHandler, GatewayZoneEntryTokenValidator}.cs; src/ServerLogic/ZoneInstancing/IZoneEntryReservationSink.cs; ZoneEntryAdmission SetReservationSink + optional IServerTickSource + close after not-Active ZoneDoesNotExist in BeginEntry pre-check; ZoneInstancingWiring options TokenStore/GatewayOutbox/ConnectingTimeoutSeconds, default validator = gateway validator, GatewayAdmit/Admitted/TokenStore/SessionCount, idle input = occupied + reserved, Run ticks admitted before lifecycle, OnDraining → OnLeftActive
+- Orchestrator fixes: Wiring_tests default-stand-ins test passes RejectingZoneEntryTokenValidator explicitly; DuplicateLoad draining test now expects client B closed
+- Test: tests/EditMode/Authentication/Authentication_ZoneAdmit_tests.cs (15 tests). Full EditMode suite 6595: 6466 passed, 0 failed, 129 skipped (batch mode)
+- Deviation: AC-4 (AC-AUTH-21 e) tested on the applied record's CharacterName + slot, not session registry / EntityState.characterName (needs the unowned session wiring)
+- Open: Admit for a character held by a different account silently replaces that account's entry (story silent; gateway map should prevent it); T-4 with zero occupied + reserved entries drains at once (matches CR-ZI-2 T-5 (c))
+- Not committed. Next: /code-review then /story-done production/epics/authentication/story-013-zone-admits-gateway-token.md
+
+## Session Extract — /code-review 2026-11-06 (Story 013)
+- Verdict CHANGES REQUIRED (inline review, no specialist spawn); user "yes" → items 1–4 applied
+- Fix 1: AdmittedEntries.OnTick skips an entry whose LoadCharacter is in flight (new ZoneEntryAdmission.IsLoadPending, passed as Func from the wiring) — timeout mid-load no longer invalidates the token / sends SessionReleased for a player about to get a slot
+- Fix 2: Admit for a character held by another account releases the older entry (token invalidated, SessionReleased if reserved, warning)
+- Fix 3: SetReservationSink set-once + null guard; 4: AdmittedEntries remarks updated
+- Tests +3 (Authentication_ZoneAdmit_tests.cs now 18). Full EditMode 6598: 6469 passed, 0 failed, 129 skipped
+- Next: /story-done production/epics/authentication/story-013-zone-admits-gateway-token.md
+
+## Session Extract — /story-done 2026-11-06 (Story 013)
+- Verdict: COMPLETE WITH NOTES (lean — QL-TEST-COVERAGE and LP-CODE-REVIEW skipped)
+- Story: production/epics/authentication/story-013-zone-admits-gateway-token.md — Zone admits a gateway token
+- Tech debt logged: 1 — TD-095 (zone-side client entry wiring unowned: SessionHandshake decode → BeginEntry, zone SessionTokenStore, Connected on entry; AC-AUTH-21 (e) registry/EntityState check; P1, before Story 017)
+- EPIC.md row 013 → Complete, Next Step updated. Story 013 uncommitted (003–012 committed as 0b6bde3)
+- Next recommended: /story-readiness production/epics/authentication/story-014-zone-evict-and-reconnect-handlers.md (015 also unblocked)

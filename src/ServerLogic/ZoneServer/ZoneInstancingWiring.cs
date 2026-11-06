@@ -5,6 +5,7 @@ using IronGrind.CharacterStats;
 using IronGrind.Currency;
 using IronGrind.InventorySystem;
 using IronGrind.Networking;
+using IronGrind.ServerLogic.Gateway;
 using IronGrind.ServerLogic.ZoneInstancing;
 using UnityEngine;
 
@@ -87,8 +88,20 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// <summary>The session state machine. Null: the wiring creates one (nothing else in <c>src/</c> constructs it yet).</summary>
         public ConnectionStateMachine Sessions;
 
-        /// <summary>Token validator. Null: <see cref="RejectingZoneEntryTokenValidator"/>.</summary>
+        /// <summary>
+        /// Token validator. Null: <see cref="GatewayZoneEntryTokenValidator"/> over the wiring's admitted entries and
+        /// token store. <see cref="RejectingZoneEntryTokenValidator"/> stays available for tests that need it.
+        /// </summary>
         public IZoneEntryTokenValidator Validator;
+
+        /// <summary>The zone process's session token store holding the gateway's tokens. Null: the wiring creates one.</summary>
+        public SessionTokenStore TokenStore;
+
+        /// <summary>Zone-to-gateway link outbox. Null: <see cref="LoggingGatewayLinkOutbox"/>.</summary>
+        public IGatewayLinkOutbox GatewayOutbox;
+
+        /// <summary><c>CONNECTING_TIMEOUT_SECONDS</c>; ticks = seconds x <see cref="TickRateHz"/>.</summary>
+        public int ConnectingTimeoutSeconds = AdmittedEntries.CONNECTING_TIMEOUT_SECONDS;
 
         /// <summary><c>SessionReady</c> sender. Null: <see cref="LoggingZoneEntryResponder"/>.</summary>
         public IZoneEntryResponder Responder;
@@ -159,11 +172,13 @@ namespace IronGrind.ServerLogic.ZoneServer
     /// </para>
     /// <para>
     /// <b>Tick step.</b> <see cref="Run"/> applies the pending quits, activates the tick roster, ticks the entry
-    /// reclamation, evaluates the session TTL of every ghost the injected source lists, ticks the lifecycle, and last
+    /// reclamation, evaluates the session TTL of every ghost the injected source lists, drops timed-out gateway
+    /// admissions (<see cref="AdmittedEntries.OnTick"/>), ticks the lifecycle, and last
     /// serves the recorded snapshot requests. It allocates nothing in steady state.
     /// </para>
     /// <para>
-    /// <b>Not wired here.</b> The <c>SessionHandshake</c> decode that calls <see cref="ZoneEntryAdmission.BeginEntry"/>, the
+    /// <b>Not wired here.</b> The gateway link that decodes <c>Admit</c> and calls <see cref="GatewayAdmit"/> (gateway
+    /// epic), and the drain of <see cref="ZoneInstancingWiringOptions.GatewayOutbox"/>. The <c>SessionHandshake</c> decode that calls <see cref="ZoneEntryAdmission.BeginEntry"/>, the
     /// <see cref="IClientConnectionListener"/> registration of <see cref="Admission"/>, the transport-disconnect and
     /// logout inputs of <see cref="SessionEnds"/> belong to the session epic.
     /// </para>
@@ -187,6 +202,9 @@ namespace IronGrind.ServerLogic.ZoneServer
         private readonly IClientMessageOutbox _outbox;
         private readonly Action<ZoneExitCode> _requestTeardown;
         private readonly IZoneGhostSessionSource _ghosts;
+        private readonly SessionTokenStore _tokenStore;
+        private readonly AdmittedEntries _admitted;
+        private readonly GatewayAdmitHandler _gatewayAdmit;
         private readonly ZoneLifecycle _lifecycle;
         private readonly ZoneSlotPool _pool;
         private readonly ZoneMobRoster _mobs;
@@ -259,6 +277,12 @@ namespace IronGrind.ServerLogic.ZoneServer
             _directory = options.Directory ?? new ZoneConnectionCharacterDirectory();
             _sessions = options.Sessions ?? new ConnectionStateMachine();
 
+            _tokenStore = options.TokenStore ?? new SessionTokenStore();
+            IGatewayLinkOutbox gatewayOutbox = options.GatewayOutbox ?? new LoggingGatewayLinkOutbox();
+            _admitted = new AdmittedEntries(_tokenStore, gatewayOutbox,
+                options.ConnectingTimeoutSeconds * options.TickRateHz, OnReservedCountChanged,
+                character => _admission != null && _admission.IsLoadPending(character));
+
             _lifecycle = new ZoneLifecycle(zone, this, 0u, options.IdleCloseSeconds, options.DrainGraceSeconds,
                 options.LoadTimeoutSeconds, options.TickRateHz
 #if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
@@ -266,6 +290,8 @@ namespace IronGrind.ServerLogic.ZoneServer
 #endif
                 );
             _pool = new ZoneSlotPool(zone, ticks, this, options.MaxPlayers, options.MaxMobs, options.FirstEntityId);
+            _gatewayAdmit = new GatewayAdmitHandler(_admitted, _tokenStore, gatewayOutbox,
+                () => _lifecycle.AcceptsPlayers, () => SessionCount, options.MaxPlayers);
             _mobs = new ZoneMobRoster(_pool, ticks);
             _roster = new ZoneTickRoster(_pool, ticks);
             _reclamation = new ZoneEntryReclamation(zone, _pool, _directory, _roster, party, outbox, disconnector,
@@ -280,8 +306,9 @@ namespace IronGrind.ServerLogic.ZoneServer
             _completion = new ZoneEntryCompletion(zone, _pool, _directory, _snapshotBuilder,
                 options.Responder ?? new LoggingZoneEntryResponder(), party, state, outbox, _roster);
             _admission = new ZoneEntryAdmission(zone, _pool, _lifecycle, persistence, applier, queue,
-                options.Validator ?? new RejectingZoneEntryTokenValidator(), outbox, _completion, _directory,
-                reclamation: _reclamation);
+                options.Validator ?? new GatewayZoneEntryTokenValidator(_admitted, _tokenStore), disconnector, outbox,
+                _completion, _directory, reclamation: _reclamation, ticks: ticks);
+            _admission.SetReservationSink(_admitted);
 
             _notifiedAtDrain = new HashSet<uint>(options.MaxPlayers);
             _drainBodySize = ZoneSessionEndedCodec.WriteBody(_drainBody,
@@ -317,6 +344,36 @@ namespace IronGrind.ServerLogic.ZoneServer
 
         /// <summary>Admission; the session epic feeds it the decoded handshakes and registers it as a connection listener.</summary>
         public ZoneEntryAdmission Admission => _admission;
+
+        /// <summary>
+        /// The <c>Admit</c> handler. The gateway link (gateway epic) feeds it decoded <c>Admit</c> messages on the tick
+        /// thread; the handshake decode that reaches <see cref="Admission"/> is unowned (Authentication Story 013, Dependencies).
+        /// </summary>
+        internal GatewayAdmitHandler GatewayAdmit => _gatewayAdmit;
+
+        /// <summary>The gateway admissions awaiting their handshake.</summary>
+        internal AdmittedEntries Admitted => _admitted;
+
+        /// <summary>The zone's session token store (supplied through the options, or created here).</summary>
+        internal SessionTokenStore TokenStore => _tokenStore;
+
+        /// <summary>The zone's session count: occupied player slots plus reserved gateway admissions. The one definition, used by the Admit capacity check and the lifecycle idle input.</summary>
+        internal int SessionCount => SessionsFor(_pool.OccupiedPlayerCount);
+
+        private int SessionsFor(int occupied) => occupied + (_admitted?.ReservedCount ?? 0);
+
+        // Reserved admissions changed: the lifecycle idle input follows the session count.
+        private void OnReservedCountChanged(uint serverTick)
+        {
+            try
+            {
+                _lifecycle?.OnOccupiedPlayerSlotsChanged(SessionsFor(_pool.OccupiedPlayerCount), serverTick);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"{LOG_PREFIX} reserved count forward failed ({ex.GetType().Name}).\n{ex}");
+            }
+        }
 
         /// <summary>The player exit service.</summary>
         public ZonePlayerExit PlayerExit => _playerExit;
@@ -404,6 +461,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                 _sessionEnds.EvaluateSessionTTL(accountId, currentTick, expiryTick);
             }
 
+            _admitted.OnTick(currentTick);
             _lifecycle.OnTick(currentTick);
             _snapshotRequests.ServePending(currentTick);
         }
@@ -416,6 +474,15 @@ namespace IronGrind.ServerLogic.ZoneServer
             try
             {
                 LogTransition("Draining", serverTick);
+                try
+                {
+                    _admitted.OnLeftActive(serverTick); // T-4: reservations end, tokens are kept (AC-ZI-35)
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"{LOG_PREFIX} admitted entries T-4 release failed ({ex.GetType().Name}).\n{ex}");
+                }
+
                 IReadOnlyList<EntityID> players = _pool.GetPlayerEntityIDsInZone(_zone);
                 for (int i = 0; i < players.Count; i++)
                 {
@@ -482,7 +549,7 @@ namespace IronGrind.ServerLogic.ZoneServer
         {
             try
             {
-                _lifecycle?.OnOccupiedPlayerSlotsChanged(occupied, serverTick);
+                _lifecycle?.OnOccupiedPlayerSlotsChanged(SessionsFor(occupied), serverTick);
             }
             catch (Exception ex)
             {
