@@ -34,6 +34,7 @@
 - [ ] AC-AUTH-32 (a): a request that exceeds the timeout reports `ServerError`
 - [ ] `ServerStarting`: the same `ConnectionRequest` is resent after `LOGIN_SERVER_STARTING_RETRY_SECONDS`, at most `LOGIN_SERVER_STARTING_MAX_RETRIES` times; then `ServerError`; a callback reports "server starting" status while retrying
 - [ ] The password is sent as entered (UTF-8 plaintext in the body) — no hashing, no trimming
+- [ ] *(added 2026-11-06, Story 005 readiness)* A username, password or character name over 255 UTF-8 bytes (`AuthBodyCodec.MAX_STRING_BYTES`) is rejected before sending — a password as `PasswordTooLong` — with no request made; a 72-code-point password of 4-byte characters (288 bytes) is the test case
 - [ ] No `CertificateHandler` subclass exists in `IronGrind.Client` (an EditMode architecture test greps the client assembly's types); Player Settings "Allow downloads over HTTP" is "Not allowed" (asserted from `PlayerSettings.insecureHttpOption` in an EditMode test)
 - [ ] ADR-016 Verification 3: an iOS device build logs in through Caddy over TLS with default validation (needs Story 016's production-like certificate — Let's Encrypt on the VPS, or a publicly trusted test certificate); result recorded in `production/qa/evidence/auth-client-ios-ats-evidence.md`
 

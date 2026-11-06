@@ -30,8 +30,9 @@ Authentication is the server-side identity verification layer that gates all pla
 | TR-auth-003 | Authentication runs outside the Unity IL2CPP binary and off the zone tick, in the .NET gateway process (ADR-016): HTTPS through Caddy for clients, loopback TCP link to zones; no sidecar, no named pipes (CR-AUTH-4) — revised 2026-11-06 | ✅ ADR-016 Decisions 1–3 |
 | TR-auth-004 | Password hashing via Argon2id (`Konscious.Security.Cryptography`), minimum `iterations=2, memorySize=19456KB, parallelism=1`, PHC string storage, 16-byte salt; bcrypt explicitly rejected (72-byte truncation defect) (CR-AUTH-5) | ✅ ADR-016 Decision 1 |
 | TR-auth-005 | Client sends plaintext credentials over TLS only; server hashes on receipt; client MUST NOT pre-hash; server MUST reject non-TLS connections (CR-AUTH-6) | ❌ No ADR (design-only, LOW risk) |
+| TR-auth-006 | Gateway-only registration validation in CR-AUTH-8 step 2 order (username, password, character name, playable class; first failure wins) and the F-AUTH-1 lockout lookup (CR-AUTH-7, CR-AUTH-13, F-AUTH-1) — added 2026-11-06 | ✅ ADR-016 Decision 6 |
 
-> **TR registry note**: TR-auth-001 to 005 are registered in `docs/architecture/tr-registry.yaml` (TR-auth-003 revised 2026-11-06 for ADR-016).
+> **TR registry note**: TR-auth-001 to 006 are registered in `docs/architecture/tr-registry.yaml` (TR-auth-003 revised 2026-11-06 for ADR-016; TR-auth-006 added 2026-11-06 at Story 005 `/story-readiness`).
 
 ## Stories
 
@@ -39,23 +40,23 @@ Authentication is the server-side identity verification layer that gates all pla
 |---|-------|------|--------|-----|
 | 001 | Shared code folders and `IronGrind.Shared` | Logic | Complete | ADR-016, ADR-012 |
 | 002 | Auth body codec | Logic | Complete | ADR-016 |
-| 003 | Migration 004 and the `gateway` database role | Integration | Ready | ADR-016, ADR-006 |
-| 004 | Gateway packages, config and the Argon2id hasher | Logic | Ready | ADR-016, ADR-013 |
-| 005 | Credential validation and the lockout formula | Logic | Ready | ADR-016 |
-| 006 | Account repository — registration | Integration | Ready | ADR-016, ADR-006 |
-| 007 | Account repository — login state | Integration | Ready | ADR-016 |
-| 008 | Registration service | Logic | Ready | ADR-016 |
-| 009 | Login — credential path | Logic | Ready | ADR-016 |
-| 010 | Login — session establishment | Logic | Ready | ADR-016, ADR-013 |
-| 011 | Login — token path | Logic | Ready | ADR-016 |
-| 012 | HTTP endpoints and the gateway host | Integration | Ready | ADR-016 |
+| 003 | Migration 004 and the `gateway` database role | Integration | Complete | ADR-016, ADR-006 |
+| 004 | Gateway packages, config and the Argon2id hasher | Logic | Complete | ADR-016, ADR-013 |
+| 005 | Credential validation and the lockout formula | Logic | Complete | ADR-016 |
+| 006 | Account repository — registration | Integration | Complete | ADR-016, ADR-006 |
+| 007 | Account repository — login state | Integration | Complete | ADR-016 |
+| 008 | Registration service | Logic | Complete | ADR-016 |
+| 009 | Login — credential path | Logic | Complete | ADR-016 |
+| 010 | Login — session establishment | Logic | Complete | ADR-016, ADR-013 |
+| 011 | Login — token path | Logic | Complete | ADR-016 |
+| 012 | HTTP endpoints and the gateway host | Integration | Complete | ADR-016 |
 | 013 | Zone admits a gateway token | Logic | Ready | ADR-016, ADR-011 |
 | 014 | Zone `Evict` and `Reconnect` handlers | Integration | Ready | ADR-016, ADR-011 |
 | 015 | Client HTTPS auth client | Integration | Ready | ADR-016 |
 | 016 | Caddy TLS-only front | Integration | Ready | ADR-016, ADR-007 |
 | 017 | End-to-end login → zone entry | Integration | Ready | ADR-016 |
 
-Work in order; each story's `Depends on:` says what must be Done first. Story 017 also waits for the gateway epic's link, map and router stories (epic not yet created — ADR-016 Migration Plan step 7). Story 005 has no TR-ID yet (`TR-auth-???`: CR-AUTH-7/13, F-AUTH-1) — register at the next `/architecture-review`. AC-AUTH-24 (map memory, advisory) belongs to the gateway epic.
+Work in order; each story's `Depends on:` says what must be Done first. Story 017 also waits for the gateway epic's link, map and router stories (epic not yet created — ADR-016 Migration Plan step 7). AC-AUTH-24 (map memory, advisory) belongs to the gateway epic.
 
 ## Definition of Done
 
@@ -69,4 +70,4 @@ This epic is complete when:
 
 ## Next Step
 
-Stories 001-002 Complete (2026-11-06). Next: `/story-readiness production/epics/authentication/story-004-gateway-packages-config-and-hasher.md` (Story 003 = ADR-016 step 5 is also unblocked; Story 005 waits for 004).
+Stories 001–012 Complete (2026-11-06). Next: `/story-readiness production/epics/authentication/story-013-zone-admits-gateway-token.md` (014 waits for 013; 015 is also unblocked — its device check also needs 016).

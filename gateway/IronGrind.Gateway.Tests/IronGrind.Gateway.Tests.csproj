@@ -14,6 +14,13 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="NUnit" Version="4.3.2" />
     <PackageReference Include="NUnit3TestAdapter" Version="5.0.0" />
+    <!-- Pinned 2026-11-06 (Authentication Story 012): in-process HTTP tests; test-only. -->
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.14" />
+  </ItemGroup>
+
+  <!-- The gateway's real appsettings.json, copied next to the tests for the binding test. -->
+  <ItemGroup>
+    <None Include="../IronGrind.Gateway/appsettings.json" Link="gateway.appsettings.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

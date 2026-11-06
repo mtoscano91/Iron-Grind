@@ -25,7 +25,7 @@
 # STATUS VALUES: active | deprecated | superseded-by: TR-[system]-NNN
 
 version: 2
-last_updated: "2026-11-02"  # 2026-11-02: TR-sk-001..011 added (Skill System EPIC.md table, /create-epics). Same day, earlier: TR-aa-001..009 added (Auto-Attack Combat EPIC.md table, by hand at user request). 2026-10-15: 107 TR-IDs registered from the 13 EPIC.md tables (/architecture-review, docs/architecture/architecture-review-2026-10-15-tr-registry.md); 7 carry a revised date
+last_updated: "2026-11-06"  # 2026-11-06: TR-auth-006 added (Authentication Story 005 /story-readiness).2026-11-02: TR-sk-001..011 added (Skill System EPIC.md table, /create-epics). Same day, earlier: TR-aa-001..009 added (Auto-Attack Combat EPIC.md table, by hand at user request). 2026-10-15: 107 TR-IDs registered from the 13 EPIC.md tables (/architecture-review, docs/architecture/architecture-review-2026-10-15-tr-registry.md); 7 carry a revised date
 
 requirements:
   # --- auth: design/gdd/authentication.md (production/epics/authentication/EPIC.md) ---
@@ -62,6 +62,13 @@ requirements:
     gdd: design/gdd/authentication.md
     requirement: "Client sends plaintext credentials over TLS only; server hashes on receipt; client MUST NOT pre-hash; server MUST reject non-TLS connections (CR-AUTH-6)"
     created: 2026-08-11
+    revised: ""
+    status: active
+  - id: TR-auth-006
+    system: auth
+    gdd: design/gdd/authentication.md
+    requirement: "Gateway-only registration validation in CR-AUTH-8 step 2 order (username normalized with ToLowerInvariant, length then ASCII [a-z0-9_]; password length; character name length in code points, [A-Za-z0-9_], not equal to the username; playable class), first failure wins; F-AUTH-1 lockout as a table lookup keyed F - LOGIN_FAILURE_LIMIT, capped at the last entry (CR-AUTH-7, CR-AUTH-13, F-AUTH-1)"
+    created: 2026-11-06
     revised: ""
     status: active
 

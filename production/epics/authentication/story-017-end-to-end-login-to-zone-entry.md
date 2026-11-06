@@ -46,6 +46,7 @@
 - This story wires and verifies; it should add little code beyond instrumentation and a scripted load driver (a small console tool or a gateway test that fires N logins).
 - The gateway epic provides the real `IZoneLink`, `IAccountZoneMap`, `IZoneRouter`, the zone's link thread, `IGatewayRegistration` and `IZoneLauncher`. If any of these is not Done, this story stays not started.
 - The VPS parts (ADR-007 smoke test, Caddy prod) may be split into a later story if the VPS does not exist when the rest is ready — record the split rather than leaving ACs open silently.
+- AC-AUTH-16 end to end (Story 009 code review): the wrong-password path makes one `RecordFailureAsync` database write that the unknown-username path does not, so an end-to-end latency comparison includes it (a few ms locally, under the 20 ms threshold). Story 009's unit timing test uses `ARGON2_MEMORY_SIZE_KB = 65536`; the live-parameter 150 ms floor on the VPS belongs here with TD-093.
 
 ---
 

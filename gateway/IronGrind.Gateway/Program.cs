@@ -1,10 +1,9 @@
-// IronGrind gateway entry point (ADR-016). Endpoints and the zone link are
-// added by the authentication epic's stories; this skeleton only hosts.
+// IronGrind gateway entry point (ADR-016). All wiring lives in GatewayHost so tests can build the same app
+// on Kestrel without WebApplicationFactory. The zone-link listener comes from the gateway epic.
 
-var builder = WebApplication.CreateBuilder(args);
-var app = builder.Build();
+using IronGrind.Gateway.Hosting;
 
-app.Run();
+GatewayHost.CreateApp(args).Run();
 
 /// <summary>Entry point type, public so test projects can reference the assembly.</summary>
 public partial class Program;

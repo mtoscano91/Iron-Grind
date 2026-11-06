@@ -5850,3 +5850,278 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: None (open item for Story 005/015: 72-char password can exceed 255 UTF-8 bytes)
 - EPIC.md row 002 → Complete, Next Step updated. Not committed.
 - Next recommended: /story-readiness production/epics/authentication/story-004-gateway-packages-config-and-hasher.md (003 also unblocked)
+
+## Session Extract — /story-readiness 2026-11-06 (Story 004)
+- Story: production/epics/authentication/story-004-gateway-packages-config-and-hasher.md — verdict NEEDS WORK → fixed (user 2026-11-06), now READY
+- Fixes: Estimate 4 h; GatewayOptions validation rules (ports 1–65535 and distinct, positive timeouts/retry/MAX_AUTH_PENDING, evict timeout > zone request timeout; ADR-016 defines no other ranges); AC-4 port cases; new QA AC-5 DummyHash; benchmark as [Explicit] test → Completion Notes
+- Carried: Story 005/015 password byte limit (PASSWORD_MAX_LENGTH up to 128 chars can exceed 255 bytes); technical-preferences must label the gateway Npgsql version apart from Unity's 8.0.9
+- Not committed. Next: /dev-story production/epics/authentication/story-004-gateway-packages-config-and-hasher.md
+
+## Session Extract — /dev-story 2026-11-06 (Story 004)
+- Story: production/epics/authentication/story-004-gateway-packages-config-and-hasher.md — Gateway packages, config and the Argon2id hasher
+- Pins (NuGet checked 2026-11-06): Konscious.Security.Cryptography.Argon2 1.3.1, Npgsql 10.0.3, Dapper 2.1.89; technical-preferences.md bullet added (gateway Npgsql separate from Unity's 8.0.9)
+- Files: gateway/IronGrind.Gateway/{IronGrind.Gateway.csproj, appsettings.json, Config/GatewayOptions.cs, Config/AuthOptions.cs, Config/GatewayOptionsValidator.cs, Config/AuthOptionsValidator.cs, Config/GatewayConfiguration.cs (AddGatewayOptions, not wired — Story 012), Auth/IPasswordHasher.cs, Auth/Argon2idPasswordHasher.cs, Auth/DummyHash.cs}; tests csproj (copies appsettings.json as gateway.appsettings.json)
+- Tests: Auth_PasswordHasher_tests.cs (8 + 1 Explicit benchmark), Gateway_Options_tests.cs (19); full gateway suite 86/86 pass, 0 warnings (re-run by orchestrator)
+- Benchmark (dev machine, Release, 20 runs): mean 68.6 ms, p95 128.5 ms — BELOW the 200–400 ms ADR-016 estimate; flagged, MAX_AUTH_PENDING unchanged. VPS benchmark = Story 017
+- Deviations: Argon2 properties named Argon2Iterations/Argon2MemorySizeKb/Argon2Parallelism (keys ARGON2_*); LockoutTableSeconds is int[]? + EffectiveLockoutTableSeconds (array binding appends to defaults); a partial env override of LOCKOUT_TABLE_SECONDS merges by index with appsettings — Story 012/ops docs must say overrides supply the full table
+- Next: /code-review (gateway Auth/ + Config/ + 2 test files) then /story-done production/epics/authentication/story-004-gateway-packages-config-and-hasher.md
+
+## Session Extract — /code-review 2026-11-06 (Story 004)
+- Verdict APPROVED WITH SUGGESTIONS; user said "yes" → suggestions 1–5 applied
+- Bug found by the new test: Konscious throws ArgumentException on an empty password, so Verify("") threw. Fix: Verify returns false for an empty password (input-only early exit, no account leak); Hash("") throws ArgumentException (documented on IPasswordHasher)
+- Verify memory cap lowered 1048576 → 65536 KB (GDD ARGON2_MEMORY_SIZE_KB max); malformed case m=65537 added
+- Tests added: DummyHash computed-once via counting hasher; m=20480/p=2 old-parameter hash verifies; empty password; 27 auth-knob boundary TestCases; 7 lockout first/last boundary cases; negative gateway values. Gateway suite 122/122 pass, 0 warnings
+- Carried to Story 012: host-level ValidateOnStart test; document that a LOCKOUT_TABLE_SECONDS override must supply the full table
+- Next: /story-done production/epics/authentication/story-004-gateway-packages-config-and-hasher.md
+
+## Session Extract — /story-done 2026-11-06 (Story 004)
+- Verdict: COMPLETE WITH NOTES (lean — QL-TEST-COVERAGE and LP-CODE-REVIEW skipped)
+- Story: production/epics/authentication/story-004-gateway-packages-config-and-hasher.md — Gateway packages, config and the Argon2id hasher
+- Tech debt logged: 2 — TD-092 (partial LOCKOUT_TABLE_SECONDS env override merges by index; Story 012 documents), TD-093 (Argon2 68.6 ms mean vs 200–400 ms estimate; re-derive MAX_AUTH_PENDING after VPS benchmark, Story 017)
+- EPIC.md row 004 → Complete, Next Step updated. Not committed.
+- Next recommended: /story-readiness production/epics/authentication/story-005-credential-validation-and-lockout-formula.md (003 also unblocked)
+
+## Session Extract — /story-readiness 2026-11-06 (Story 005)
+- Story: production/epics/authentication/story-005-credential-validation-and-lockout-formula.md — verdict NEEDS WORK → fixed (user 2026-11-06), now READY
+- Fixes: TR-auth-006 registered (tr-registry.yaml + EPIC.md TR table/note; "TR-auth-???" line in Next Step removed); Estimate 3 h; AC-4 edge "a!" → TooShort, "ab!" → InvalidChars; AC-5 class 2 (+255 invalid, 0/1 valid); password length in code points (+ 72 × U+1F600 case)
+- Decision: playable classes = gateway-side PlayableClasses table {0 Warrior, 1 Healer}, documented duplicate of src/Foundation/SkillSystem/ClassType.cs (no move, no link-compile — ADR-016 Decision 6)
+- Carried 255-byte item resolved: codec rejects >255 UTF-8 bytes before the rules (Story 012 = malformed request); Story 015 got a new AC for the client-side check
+- Not committed (Story 004 also still uncommitted). Next: /dev-story production/epics/authentication/story-005-credential-validation-and-lockout-formula.md
+
+## Session Extract — /dev-story 2026-11-06 (Story 005)
+- Story: production/epics/authentication/story-005-credential-validation-and-lockout-formula.md — Credential validation and the lockout formula
+- Files: gateway/IronGrind.Gateway/Auth/{UsernameRules, PasswordRules, CharacterNameRules, PlayableClasses, RegistrationValidator, LockoutPolicy}.cs
+- Tests: gateway/IronGrind.Gateway.Tests/Auth_CredentialValidation_tests.cs (40 runs), Auth_LockoutPolicy_tests.cs (16 runs); gateway suite 177/177 pass, 0 warnings (re-run by orchestrator)
+- Design: rule classes static with AuthOptions parameter; RegistrationValidator/LockoutPolicy take AuthOptions in ctor; code-point counter internal UsernameRules.CodePointCount (EnumerateRunes); LockoutPolicy returns int seconds, empty table → 0
+- Blockers: None. Story 004 + 005 both uncommitted
+- Next: /code-review gateway Auth/ (6 new files) + 2 test files, then /story-done production/epics/authentication/story-005-credential-validation-and-lockout-formula.md
+
+## Session Extract — /code-review + /story-done 2026-11-06 (Story 005)
+- Code review: APPROVED WITH SUGGESTIONS; user "continue" → all 5 applied (homoglyph TestCases as \u escapes; code-point tests username 13×U+1F600, name 9×U+1F600, password 73×U+1F600; "abc" password in order walk-down; new Auth/AuthText.cs CodePointCount; LockoutUntil UTC doc). Gateway suite 180/180, 0 warnings
+- Verdict: COMPLETE (lean — QL-TEST-COVERAGE and LP-CODE-REVIEW skipped); story Status Complete + Completion Notes; EPIC.md row 005 Complete + Next Step
+- Tech debt logged: None
+- Stories 004 and 005 both uncommitted
+- Next recommended: /story-readiness production/epics/authentication/story-003-migration-004-and-gateway-role.md
+
+## Session Extract — /story-readiness 2026-11-06 (Story 003)
+- Story: production/epics/authentication/story-003-migration-004-and-gateway-role.md — verdict NEEDS WORK → fixed (user 2026-11-06), now READY (lean — QL-STORY-READY skipped)
+- Fixes: Estimate 4 h; role script runs as `postgres`, no committed password; env var fixed as `IRONGRIND_GATEWAY_DB`; dev README note adds `setval` of character/account sequences past existing max IDs; new AC — Database tests run in a rolled-back transaction, "no account" ID is 4294967295
+- Decision: no zone DB role exists (zones connect as `irongrind`, the DB owner), so ADR-016's "zone roles get no rights on accounts" is deferred — log a TD at /story-done; zone role is Out of Scope
+- Stories 003 (story file), 004, 005 all uncommitted
+- Next: /dev-story production/epics/authentication/story-003-migration-004-and-gateway-role.md
+
+## Session Extract — /dev-story 2026-11-06 (Story 003)
+- Story: production/epics/authentication/story-003-migration-004-and-gateway-role.md — Migration 004 and the gateway database role
+- Files: tools/db/migrations/004_create_accounts.sql (ADR-016 Decision 5 DDL verbatim), tools/db/roles/gateway_role.sql (guarded CREATE ROLE, 5 grants, no password), tools/db/README.md (row 4, apply/check blocks, dev-rows note, Gateway role + Database tests sections), tools/postgres/README.md (IRONGRIND_GATEWAY_DB), .github/workflows/tests.yml (gateway filter TestCategory!=Database)
+- Test: gateway/IronGrind.Gateway.Tests/Db_Migration004_tests.cs — 10 methods / 12 cases, [Category("Database")], per-test rolled-back transaction, Assert.Ignore without IRONGRIND_GATEWAY_DB
+- Applied: throwaway irongrind_migration_check (001–004 + role, 004 second run fails exit 3, 12/12 Database pass, dropped) and dev irongrind (004 as irongrind, role as postgres; dev DB had 0 character rows so no cleanup/setval). Full gateway suite with Database: 192/192, 0 warnings; 0 rows left
+- gateway role password generated into %LOCALAPPDATA%\IronGrind\secrets\gateway.pw (never printed); IRONGRIND_GATEWAY_DB NOT set as a User env var (tests used a shell-local value)
+- Tech debt to log at /story-done: no least-privilege zone role (zones connect as irongrind, owner of accounts)
+- Next: /code-review (004 SQL, gateway_role.sql, Db_Migration004_tests.cs, README diffs) then /story-done production/epics/authentication/story-003-migration-004-and-gateway-role.md
+
+## Session Extract — /code-review 2026-11-06 (Story 003)
+- Verdict APPROVED WITH SUGGESTIONS; user "fix all" → all 5 applied
+- Tests: +lock/update account row (FOR UPDATE + UPDATE accounts), +pending_purchases 42501 ("nothing else"); 3 select tests merged into one TestCase with ExecuteReader inside the assert; TearDown nulls fields. Gateway suite 194/194 with Database (14 Database cases), 0 rows left
+- README correction: setval note was moot — accounts starts empty with the FK, so any character row fails 004; dev route is TRUNCATE pending_purchases, character_records. Story AC-3 text annotated to match
+- Next: /story-done production/epics/authentication/story-003-migration-004-and-gateway-role.md
+
+## Session Extract — /story-done 2026-11-06 (Story 003)
+- Verdict: COMPLETE WITH NOTES (lean — QL-TEST-COVERAGE and LP-CODE-REVIEW skipped)
+- Story: production/epics/authentication/story-003-migration-004-and-gateway-role.md — Migration 004 and the gateway database role
+- Tech debt logged: 1 — TD-094 (no least-privilege zone DB role; zones connect as irongrind, owner of accounts)
+- EPIC.md row 003 → Complete, Next Step updated. Stories 003, 004, 005 uncommitted
+- Next recommended: /story-readiness production/epics/authentication/story-006-account-repository-registration.md (007 also unblocked)
+
+## Session Extract — /story-readiness 2026-11-06 (Story 006)
+- Story: production/epics/authentication/story-006-account-repository-registration.md — verdict NEEDS WORK → fixed (user "yes" 2026-11-06), now READY
+- Fixes: Estimate 4 h; test isolation rewritten — committed rows need a reset fixture: IRONGRIND_GATEWAY_DB (gateway role, repository) + new IRONGRIND_GATEWAY_TEST_ADMIN_DB (owner, fixture TRUNCATE + ALTER SEQUENCE RESTART) against a dedicated test DB (e.g. irongrind_auth_test), fixture refuses database "irongrind"; RegistrationOutcome readonly struct typed; repository ctor takes NpgsqlDataSource + IRegistrationFaultHook + ILogger; new QA AC-7 (DB error logged without the PHC); Out of Scope: data source wiring → Story 012 (note added to Story 012 Implementation Notes)
+- Dev-story must create irongrind_auth_test (001–004 + gateway role) and document it + the new env var in tools/db/README.md
+- Stories 003, 004, 005 still uncommitted. Next: /dev-story production/epics/authentication/story-006-account-repository-registration.md
+
+## Session Extract — /dev-story 2026-11-06 (Story 006)
+- Story: production/epics/authentication/story-006-account-repository-registration.md — Account repository — registration
+- Test DB: irongrind_auth_test created (postgres, OWNER irongrind; 001–004 as irongrind; gateway_role.sql as postgres); \d accounts confirms accounts_username_lower_key
+- Files: gateway/IronGrind.Gateway/Auth/{RegistrationOutcome, IAccountRepository (RegisterAsync only), IRegistrationFaultHook (+ NoRegistrationFaultHook), NpgsqlAccountRepository}.cs; tools/db/README.md (test DB + IRONGRIND_GATEWAY_TEST_ADMIN_DB)
+- Test: gateway/IronGrind.Gateway.Tests/Auth_AccountRepository_Registration_tests.cs — 9 methods / 10 cases, Database; full gateway suite with both env vars (shell-local) against irongrind_auth_test: 204/204, 0 warnings (re-run by orchestrator)
+- Notes: DDL-default check casts default to udt_name; now()-defaults checked within 1 min of DB clock; AC-6 classes hardcoded 0/1 (not from PlayableClasses); unknown-constraint mapping untested
+- Blockers: None. Stories 003–006 uncommitted
+- Next: /code-review gateway Auth/ (4 new files) + test file, then /story-done production/epics/authentication/story-006-account-repository-registration.md
+
+## Session Extract — /code-review 2026-11-06 (Story 006)
+- Verdict APPROVED WITH SUGGESTIONS; user "continue" → all 4 applied (doc-only)
+- Repository remarks: Include Error Detail=true would let PostgresException.Detail log the failing row (hash) → Story 012 host must reject it (note added to Story 012); RegistrationOutcome.Error doc: success holds default (UsernameTaken), check Success first; IAccountRepository ct doc: cancellation during commit is ambiguous → callers past abort check pass CancellationToken.None (note added to Story 008); test header dotnet test example
+- Gateway suite 204/204 with Database, 0 warnings
+- Next: /story-done production/epics/authentication/story-006-account-repository-registration.md
+
+## Session Extract — /story-done 2026-11-06 (Story 006)
+- Verdict: COMPLETE WITH NOTES (lean — QL-TEST-COVERAGE and LP-CODE-REVIEW skipped)
+- Story: production/epics/authentication/story-006-account-repository-registration.md — Account repository — registration
+- Tech debt logged: None (advisory deviations in Completion Notes)
+- EPIC.md row 006 → Complete, Next Step updated. Stories 003–006 uncommitted
+- Next recommended: /story-readiness production/epics/authentication/story-007-account-repository-login-state.md (008 also unblocked)
+
+## Session Extract — /story-readiness 2026-11-06 (Story 007)
+- Story: production/epics/authentication/story-007-account-repository-login-state.md — verdict NEEDS WORK → fixed (user "yes" 2026-11-06), now READY
+- Fixes: Estimate 4 h; AccountRecord / LoginFailureState types; GetLastZoneIdAsync → ZoneID (Invalid for 0 or no character row); errors propagate (no mapping), missing account row → InvalidOperationException; repository ctor gains LockoutPolicy (Story 006 test construction updated); new QA AC-7 (last zone); AC-2 lockout asserted exactly; shared fixture helper AuthTestDatabase.cs used by 006 + 007 tests
+- Stories 003–006 uncommitted. Next: /dev-story production/epics/authentication/story-007-account-repository-login-state.md
+
+## Session Extract — /dev-story 2026-11-06 (Story 007)
+- Story: production/epics/authentication/story-007-account-repository-login-state.md — Account repository — login state
+- Files: gateway/IronGrind.Gateway/Auth/{AccountRecord, LoginFailureState}.cs (new); IAccountRepository.cs (+5 methods incl. GetLastZoneIdAsync); NpgsqlAccountRepository.cs (ctor + LockoutPolicy, 5 methods: locked SELECT FOR UPDATE + C# F-AUTH-1, non-UTC → ArgumentException, missing row → InvalidOperationException, errors propagate); tests: AuthTestDatabase.cs (shared fixture + RecordingLogger<T>), Auth_AccountRepository_LoginState_tests.cs (15 methods / 19 cases), Registration tests refactored onto the helper
+- Gateway suite with Database against irongrind_auth_test: 223/223, 0 warnings (re-run by orchestrator)
+- Notes: LoginState test file has its own private NoFaultHook instead of NoRegistrationFaultHook.Instance
+- Blockers: None. Stories 003–007 uncommitted
+- Next: /code-review gateway Auth/ (AccountRecord, LoginFailureState, IAccountRepository, NpgsqlAccountRepository) + 3 test files, then /story-done production/epics/authentication/story-007-account-repository-login-state.md
+
+## Session Extract — /code-review 2026-11-06 (Story 007)
+- Verdict APPROVED WITH SUGGESTIONS; user "continue" → all 3 applied: LoginState tests use NoRegistrationFaultHook.Instance (private NoFaultHook removed); both repository test files null _db after DisposeAsync in TearDown; IAccountRepository docs: GetCharacterIDAsync/GetLastZoneIdAsync assume ≤1 character row per account (2 rows → InvalidOperationException, data fault)
+- Gateway suite 223/223 with Database, 0 warnings
+- Next: /story-done production/epics/authentication/story-007-account-repository-login-state.md
+
+## Session Extract — /story-done 2026-11-06 (Story 007)
+- Verdict: COMPLETE (lean — QL-TEST-COVERAGE and LP-CODE-REVIEW skipped)
+- Story: production/epics/authentication/story-007-account-repository-login-state.md — Account repository — login state
+- Tech debt logged: None
+- EPIC.md row 007 → Complete, Next Step updated. Stories 003–007 uncommitted
+- Next recommended: /story-readiness production/epics/authentication/story-008-registration-service.md (009 waits for 008)
+
+## Session Extract — /story-readiness 2026-11-06 (Story 008)
+- Story: production/epics/authentication/story-008-registration-service.md — verdict NEEDS WORK → fixed (user "continue" 2026-11-06), now READY (lean — QL-STORY-READY skipped)
+- Fixes: Estimate 3 h; invalid classes 2 and 255 (0 = Warrior is playable); StrictZoneLink dropped (IZoneLink is Story 010) — AC-AUTH-12(d) asserted structurally; service logs one LogCritical under category IronGrind.Gateway.Infrastructure for repository ServerError outcome AND exception (real repo already catches + LogError); gate covers hashing only, released in finally before the repository call, also on hasher throw / cancellation (new QA AC-5); ct checked before gate and after hash, then CancellationToken.None; IAuthenticationService created with RegisterAsync only (009–011 add the rest); AuthHashGate singleton DI → Story 012
+- GDD fix: design/gdd/authentication.md AC-AUTH-34 example classType "0 and 255" → "2 and 255" (0 = Warrior). No entity/registry change (example value only); propagation grep clean
+- Stories 003–007 still uncommitted. Next: /dev-story production/epics/authentication/story-008-registration-service.md
+
+## Session Extract — /dev-story 2026-11-06 (Story 008)
+- Story: production/epics/authentication/story-008-registration-service.md — Registration service
+- Files: gateway/IronGrind.Gateway/Auth/{IAuthHashGate, AuthHashGate (SemaphoreSlim Wait(0), IDisposable, ctor rejects ≤0), IAuthenticationService (RegisterAsync only), AuthenticationService (INFRASTRUCTURE_LOG_CATEGORY const, no IZoneLink)}.cs
+- Test: gateway/IronGrind.Gateway.Tests/Auth_RegistrationService_tests.cs — 17 methods / 21 cases, pure fakes (own RecordingLoggerFactory); gateway suite (TestCategory!=Database) 201/201, 0 warnings (re-run by orchestrator)
+- Choices: full gate → ServerError with NO log (load, not infrastructure); cancellation while a hash runs does not stop the Task.Run delegate — the permit returns when the hash finishes and the OCE comes from the post-hash ct check (bounds concurrent hashes); extra structural test: RegistrationResult has no "Token" field
+- Note: dotnet is not on the Git Bash PATH — export PATH="$PATH:/c/Program Files/dotnet"
+- Blockers: None. Stories 003–008 uncommitted
+- Next: /code-review gateway Auth/{IAuthHashGate, AuthHashGate, IAuthenticationService, AuthenticationService}.cs + Auth_RegistrationService_tests.cs, then /story-done production/epics/authentication/story-008-registration-service.md
+
+## Session Extract — /code-review 2026-11-06 (Story 008)
+- Verdict APPROVED WITH SUGGESTIONS (inline review, no specialist spawn — plain .NET gateway); user "continue" → all 4 applied
+- AuthenticationService.RegisterAsync split: HashInsideGateAsync (gate exit in finally; OCE rethrown only `when (ct.IsCancellationRequested)` — a hasher-internal OCE → ServerError + one Critical) and StoreAsync (CancellationToken.None, outcome mapping); methods now 25/20/27 lines
+- Tests: repo-throws uses NpgsqlException; pre-cancelled test proves no permit taken (maxPending 1, next succeeds); +hasher-internal OCE test. Gateway suite (TestCategory!=Database) 202/202, 0 warnings
+- Next: /story-done production/epics/authentication/story-008-registration-service.md
+
+## Session Extract — /story-done 2026-11-06 (Story 008)
+- Verdict: COMPLETE WITH NOTES (lean — QL-TEST-COVERAGE and LP-CODE-REVIEW skipped)
+- Story: production/epics/authentication/story-008-registration-service.md — Registration service
+- Tech debt logged: None (2 advisory design choices in Completion Notes: full gate → ServerError unlogged; cancelled hash finishes before the permit returns)
+- EPIC.md row 008 → Complete, Next Step updated. Stories 003–008 uncommitted
+- Next recommended: /story-readiness production/epics/authentication/story-009-login-credential-path.md
+
+## Session Extract — /story-readiness 2026-11-06 (Story 009)
+- Story: production/epics/authentication/story-009-login-credential-path.md — verdict NEEDS WORK → fixed (user "continue" 2026-11-06), now READY (lean — QL-STORY-READY skipped)
+- Fixes: Estimate 4 h; CredentialOutcome = readonly record struct (CredentialResult enum Passed/InvalidCredentials/ServerError + AccountID); CredentialCheck ctor (repo, hasher, gate, DummyHash, TimeProvider, ILoggerFactory), IAuthenticationService unchanged (010 adds AuthenticateAsync); errors (hasher / Find / RecordFailure / ResetFailures throw) → ServerError + one Critical in IronGrind.Gateway.Infrastructure, permit returned; ct before gate + after hash → OCE, writes take CancellationToken.None, Find takes ct; failure log at Information with AccountID only; AC-AUTH-19/20 assert RecordFailureAsync(utcNow) — F-AUTH-1 stays in the repository (fake uses real LockoutPolicy); <10 ms timed after a warm-up call; new AC-9 QA case
+- Decision: AC-AUTH-16 timing test uses ARGON2_MEMORY_SIZE_KB 65536 (safe range) via AuthTimingTestConfig, since live params hash ~69 ms here (TD-093) and would fail the 150 ms floor; live-param floor on the VPS = Story 017
+- Stories 003–008 still uncommitted. Next: /dev-story production/epics/authentication/story-009-login-credential-path.md
+
+## Session Extract — /dev-story 2026-11-06 (Story 009)
+- Story: production/epics/authentication/story-009-login-credential-path.md — Login — credential path
+- Files: gateway/IronGrind.Gateway/Auth/{CredentialResult, CredentialOutcome, CredentialCheck}.cs; tests AuthTimingTestConfig.cs, Auth_CredentialPath_tests.cs (31 cases, pure fakes), Auth_TimingOracle_tests.cs (1, [Category("Timing")], real Argon2id at 65536 KB)
+- Gateway suite (TestCategory!=Database) 234/234, 0 warnings (re-run by orchestrator). Timing: wrong-password mean 191–197 ms, unknown 193–197 ms, min sample 185 ms, delta 0.4–1.8 ms
+- Choices: failure log category = full type name IronGrind.Gateway.Auth.CredentialCheck, Information with reason + AccountID; clock read at lockout check and again at RecordFailure (review: read once); timing-test fake repo ignores RecordFailure writes so samples stay on the hash path
+- Note for 012/017: the wrong-password path adds a RecordFailure DB write the unknown path lacks — end-to-end timing delta includes it
+- Blockers: None. Stories 003–009 uncommitted
+- Next: /code-review gateway Auth/{CredentialResult, CredentialOutcome, CredentialCheck}.cs + 3 test files, then /story-done production/epics/authentication/story-009-login-credential-path.md
+
+## Session Extract — /code-review 2026-11-06 (Story 009)
+- Verdict APPROVED WITH SUGGESTIONS (inline review, no specialist spawn); user "fix all" → all 4 applied
+- CredentialCheck: RunAsync split (FindAsync returns (Ok, Account), PassAsync); locked path records the same clock read that decided "locked"; wrong-password path reads the clock fresh after the hash (commented); FailAndRecordAsync takes utcNow
+- Test comment: AC-AUTH-19 <10 ms is deliberately wall-clock; end-to-end is Story 012
+- Story 017 Implementation Notes: AC-AUTH-16 end to end includes the wrong-path RecordFailure write; live-parameter floor on the VPS with TD-093
+- Gateway suite (TestCategory!=Database) 234/234, 0 warnings
+- Next: /story-done production/epics/authentication/story-009-login-credential-path.md
+
+## Session Extract — /story-done 2026-11-06 (Story 009)
+- Verdict: COMPLETE WITH NOTES (lean — QL-TEST-COVERAGE and LP-CODE-REVIEW skipped)
+- Story: production/epics/authentication/story-009-login-credential-path.md — Login — credential path
+- Tech debt logged: None (advisory notes covered by TD-093 / Story 017 note)
+- EPIC.md row 009 → Complete, Next Step updated. Stories 003–009 uncommitted
+- Next recommended: /story-readiness production/epics/authentication/story-010-session-establishment.md
+
+## Session Extract — /story-readiness 2026-11-06 (Story 010)
+- Story: production/epics/authentication/story-010-session-establishment.md — verdict NEEDS WORK → fixed (user "yes" 2026-11-06), now READY (lean — QL-STORY-READY skipped)
+- Fixes: Estimate 5 h; RunAsync(accountId) takes no request token (GDD "Abandoned auth": abort after the credential check not observed; repo reads CancellationToken.None, link calls only their timeout token, wait also bounded); GetLastZoneIdAsync feeds IZoneRouter.TryPick(lastZone, excluded, out zone, out port); IZoneLink = Admit + Evict only (011 adds ReconnectAsync/ReconnectOutcome); IAccountZoneMap = TryGetZone / IsLinkUp / SetSession (upsert) — SessionEstablishment does the ADR "added on AdmitResult(accepted)" add, real link must not; errors/timeouts → ServerError + one Critical; only explicit rejection re-routes; rejection with no other zone → ServerError; IAuthenticationService.AuthenticateAsync(ConnectionRequest, ct) (non-zero token → NotSupportedException until 011); Story 008 structural no-ZoneLink test replaced by a strict fake link (Auth_RegistrationService_tests.cs modified); GatewayOptions + TimeProvider injected, tests 50 ms; QA AC-8, AC-9
+- Stories 003–009 uncommitted. Next: /dev-story production/epics/authentication/story-010-session-establishment.md
+
+## Session Extract — /dev-story 2026-11-06 (Story 010)
+- Story: production/epics/authentication/story-010-session-establishment.md — Login — session establishment
+- Files: gateway/IronGrind.Gateway/Auth/{IZoneLink, IAccountZoneMap, IZoneRouter, SessionEstablishment}.cs (new); IAuthenticationService.cs + AuthenticationService.cs (AuthenticateAsync; ctor + CredentialCheck, SessionEstablishment); tests Auth_SessionEstablishment_tests.cs (24 cases), Auth_RegistrationService_tests.cs (structural test → 2 strict-link tests)
+- Gateway suite (TestCategory!=Database) 259/259, 0 warnings (re-run by orchestrator)
+- Choices: one outer try/catch in RunAsync → ServerError + one Critical (timeouts are TimeoutException from WaitAsync); same token reused for the re-route Admit; link-down returns ServerError with no log; AuthenticateAsync tests drive a real CredentialCheck (sealed) via fakes
+- Blockers: None. Stories 003–010 uncommitted
+- Next: /code-review gateway Auth/{IZoneLink, IAccountZoneMap, IZoneRouter, SessionEstablishment, IAuthenticationService, AuthenticationService}.cs + 2 test files, then /story-done production/epics/authentication/story-010-session-establishment.md
+
+## Session Extract — /code-review 2026-11-06 (Story 010)
+- Verdict APPROVED WITH SUGGESTIONS (inline review, no specialist spawn); user "fix all" → all 3 applied
+- SessionEstablishment: fresh token per Admit (AdmitAsync returns the accepted token or null); link-down path logs one Warning (AccountID + zone) in the infrastructure category; WithTimeoutAsync<T>(call, ms, step) rethrows a timeout (WaitAsync or token-honouring OCE) as TimeoutException "Admit to zone N / Evict from zone N timed out after X ms" (no token); Evict wrapped as EvictAsync helper
+- Tests: reroute asserts two different tokens and the response carries the second; link-down asserts one Warning; Evict/Admit timeout tests assert TimeoutException naming the step
+- Gateway suite (TestCategory!=Database) 259/259, 0 warnings
+- Next: /story-done production/epics/authentication/story-010-session-establishment.md
+
+## Session Extract — /story-done 2026-11-06 (Story 010)
+- Verdict: COMPLETE WITH NOTES (lean — QL-TEST-COVERAGE and LP-CODE-REVIEW skipped)
+- Story: production/epics/authentication/story-010-session-establishment.md — Login — session establishment
+- Tech debt logged: None (3 advisory code-review choices in Completion Notes)
+- EPIC.md row 010 → Complete, Next Step updated. Stories 003–010 uncommitted
+- Next recommended: /story-readiness production/epics/authentication/story-011-token-path.md
+
+## Session Extract — /story-readiness 2026-11-06 (Story 011)
+- Story: production/epics/authentication/story-011-token-path.md — verdict NEEDS WORK → fixed (user "continue" 2026-11-06), now READY (lean — QL-STORY-READY skipped)
+- Fixes: Estimate 4 h; port from new IZoneRouter.TryGetPort(zone, out port) (decision; false → ServerError); ReconnectOutcome(bool Accepted, byte[]? NewToken), IZoneLink.ReconnectAsync; order find → banned → map → link-up (down → ServerError + Warning) → CharacterID (Invalid → ServerError + Critical) → port → ct check → Reconnect; ct not observed after Reconnect is sent (token already rotated); WithTimeoutAsync moves to internal static ZoneLinkTimeout shared with SessionEstablishment; errors/timeouts/bad accepted token → ServerError + one Critical; Information logs without username/token; TokenPath ctor has no hasher/gate; existing files listed (IZoneLink, IZoneRouter, SessionEstablishment, AuthenticationService, 2 test files); QA AC-5, AC-6
+- Stories 003–010 uncommitted. Next: /dev-story production/epics/authentication/story-011-token-path.md
+
+## Session Extract — /dev-story 2026-11-06 (Story 011)
+- Story: production/epics/authentication/story-011-token-path.md — Login — token path
+- Files: gateway/IronGrind.Gateway/Auth/{ReconnectOutcome, ZoneLinkTimeout (internal static, WithTimeoutAsync<T> moved from SessionEstablishment), TokenPath}.cs (new); IZoneLink.cs (+ReconnectAsync), IZoneRouter.cs (+TryGetPort), SessionEstablishment.cs (uses ZoneLinkTimeout), AuthenticationService.cs (ctor + TokenPath, non-zero token dispatch); tests Auth_TokenPath_tests.cs (22 cases), Auth_SessionEstablishment_tests.cs + Auth_RegistrationService_tests.cs (fakes + construction; NotSupported test → dispatch test)
+- Gateway suite (TestCategory!=Database) 281/281, 0 warnings (re-run by orchestrator)
+- Choices: TokenPath info logs category IronGrind.Gateway.Auth.TokenPath; a link-raised OCE during Reconnect is wrapped as InvalidOperationException → ServerError + Critical (request ct not observed after Reconnect); TryGetPort false → ServerError with no log; EC-AUTH-5 Critical on this path has no TimeProvider timestamp (ctor has none)
+- Blockers: None. Stories 003–011 uncommitted
+- Next: /code-review gateway Auth/{TokenPath, ReconnectOutcome, ZoneLinkTimeout, IZoneLink, IZoneRouter, SessionEstablishment, AuthenticationService}.cs + 3 test files, then /story-done production/epics/authentication/story-011-token-path.md
+
+## Session Extract — /code-review 2026-11-06 (Story 011)
+- Verdict APPROVED WITH SUGGESTIONS (inline review, no specialist spawn); user "fix all" → all 3 applied
+- New Auth/SessionTokenBytes.cs (internal static: LENGTH 16, IsValid([NotNullWhen(true)] byte[]?), NewRandom()) used by SessionEstablishment (Admit token) and TokenPath (rotated-token check); duplicated TOKEN_LENGTH / zero checks removed
+- TokenPath: ctor gains TimeProvider (after GatewayOptions) — EC-AUTH-5 Critical now includes the UTC time; TryGetPort false logs one Warning (AccountID + zone)
+- Tests: TokenPath tests use a FixedTime clock; CharacterInvalid asserts AccountID + time; no-port asserts one Warning; construction updated in 3 test files. Gateway suite (TestCategory!=Database) 281/281, 0 warnings
+- Next: /story-done production/epics/authentication/story-011-token-path.md
+
+## Session Extract — /story-done 2026-11-06 (Story 011)
+- Verdict: COMPLETE WITH NOTES (lean — QL-TEST-COVERAGE and LP-CODE-REVIEW skipped)
+- Story: production/epics/authentication/story-011-token-path.md — Login — token path
+- Tech debt logged: None (4 advisory notes in Completion Notes)
+- EPIC.md row 011 → Complete, Next Step updated. Stories 003–011 uncommitted
+- Next recommended: /story-readiness production/epics/authentication/story-012-http-endpoints-and-gateway-host.md (013 also unblocked)
+
+## Session Extract — /story-readiness 2026-11-06 (Story 012)
+- Story: production/epics/authentication/story-012-http-endpoints-and-gateway-host.md — verdict NEEDS WORK → fixed (user "yes" 2026-11-06), now READY (lean — QL-STORY-READY skipped)
+- Fixes: Estimate 6 h; no-zone stand-ins Auth/NoZoneStandIns.cs (empty map, router false → ServerStarting, link throws) until the gateway epic; DI list explicit (AuthHashGate + eager DummyHash singletons, NpgsqlDataSource from IRONGRIND_GATEWAY_DB, TokenPath etc.); startup fails on missing DB var / Include Error Detail=true / invalid option (Story 004 ValidateOnStart carry); TD-092 → new gateway/README.md + register resolved; aborted request (OCE with RequestAborted) → no body, no 500/Critical; MAX_REQUEST_BODY_BYTES = 1024, missing Content-Type → 415; GatewayHost.ConfigureKestrel + real-Kestrel loopback test; AC-AUTH-19 timer = test-only IStartupFilter middleware; DB cases via AuthTestDatabase + Assert.Ignore; Mvc.Testing latest 10.0.x pinned at dev-story; new evidence file Gateway_Host_tests.cs; QA AC-7, AC-8
+- Stories 003–011 uncommitted. Next: /dev-story production/epics/authentication/story-012-http-endpoints-and-gateway-host.md
+
+## Session Extract — /dev-story 2026-11-06 (Story 012)
+- Story: production/epics/authentication/story-012-http-endpoints-and-gateway-host.md — HTTP endpoints and the gateway host
+- Files: gateway/IronGrind.Gateway/{Program.cs (→ GatewayHost.CreateApp), Hosting/GatewayHost.cs (CreateApp, ConfigureKestrel loopback, AddGatewayServices, CreateDataSource), Hosting/GatewayStartupCheck.cs (hosted service resolving IAccountRepository + DummyHash at start), Hosting/InfrastructureErrorMiddleware.cs, Http/AuthEndpoints.cs (MAX_REQUEST_BODY_BYTES 1024), Auth/NoZoneStandIns.cs}; gateway/README.md (new, TD-092 rule); TD-092 Resolved; technical-preferences + Microsoft.AspNetCore.Mvc.Testing 10.0.14 (tests only); tools/db/README.md paragraph
+- Tests: Gateway_Endpoints_tests.cs 31, Gateway_AbandonedAuth_tests.cs 6, Gateway_LogRedaction_tests.cs 2 + 2 Database, Gateway_Host_tests.cs 12, helper GatewayTestSupport.cs. Agent hit its turn limit once and was resumed
+- Orchestrator fix: LogRedaction DB lockout SQL used (now() AT TIME ZONE 'utc') into TIMESTAMPTZ → now() + interval '1 hour'
+- Suite: TestCategory!=Database 332/332; full with both env vars (shell-local) against irongrind_auth_test 377/377, 0 warnings
+- Choices: lazy NpgsqlDataSource + startup hosted service (test hosts replacing IAccountRepository need no DB var); host tests set/restore the real process env var; Kestrel test calls GatewayHost.CreateApp directly (TestServer replaces Kestrel); abort tests wait on server-side Aborted/Completed signals (TestServer client calls end only when the handler ends); Content-Type → size → decode order
+- Blockers: None. Stories 003–012 uncommitted
+- Next: /code-review gateway Hosting/*, Http/AuthEndpoints.cs, Auth/NoZoneStandIns.cs, Program.cs + 5 test files, then /story-done production/epics/authentication/story-012-http-endpoints-and-gateway-host.md
+
+## Session Extract — /code-review 2026-11-06 (Story 012)
+- Verdict APPROVED WITH SUGGESTIONS (inline review, no specialist spawn); user "fix all" → all 3 applied
+- AuthEndpoints: Login/Register merged into HandleAsync<TRequest, TResult> (TryDecode delegate over ReadOnlySpan<byte>); 200 responses set Cache-Control: no-store (login carries a token)
+- Tests: Response200_HasCacheControlNoStore (login, register); Gateway_Host_tests [NonParallelizable] (mutates IRONGRIND_GATEWAY_DB)
+- Full gateway suite with both env vars against irongrind_auth_test: 379/379, 0 warnings
+- Next: /story-done production/epics/authentication/story-012-http-endpoints-and-gateway-host.md
+
+## Session Extract — /story-done 2026-11-06 (Story 012)
+- Verdict: COMPLETE WITH NOTES (lean — QL-TEST-COVERAGE and LP-CODE-REVIEW skipped)
+- Story: production/epics/authentication/story-012-http-endpoints-and-gateway-host.md — HTTP endpoints and the gateway host
+- Tech debt logged: None (TD-092 resolved by this story)
+- EPIC.md row 012 → Complete, Next Step updated. Stories 003–012 uncommitted
+- Next recommended: /story-readiness production/epics/authentication/story-013-zone-admits-gateway-token.md (015 also unblocked)

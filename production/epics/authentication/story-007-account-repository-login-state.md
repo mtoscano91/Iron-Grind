@@ -1,10 +1,11 @@
 # Story 007: Account repository — login state
 
 > **Epic**: Authentication
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-11-06
+> **Estimate**: 4 hours (4 methods + 2 record types, LockoutPolicy wiring, one Database test file reusing Story 006's fixture, concurrency case)
 
 ## Context
 
@@ -53,7 +54,12 @@ Task<CharacterID> GetCharacterIDAsync(AccountID account, CancellationToken ct);
 - `RecordFailureAsync`: `BEGIN; SELECT login_failure_count FROM accounts WHERE account_id = @id FOR UPDATE; (C#: n+1, LockoutUntil); UPDATE …; COMMIT;`. F-AUTH-1 stays in C# (`LockoutPolicy`), not SQL.
 - `utcNow` is a parameter (injected clock upstream) so tests are deterministic.
 - `GetLastZoneIdAsync` is not in ADR-016's interface listing but follows from Decision 4 step 4 ("Rule 2 reads `character_records.last_zone_id`") and the role's grant; add it to `IAccountRepository` with a doc comment citing that.
-- Same test fixture and `[Category("Database")]` pattern as Story 006.
+- `AccountRecord` (gateway-local `sealed record` in `Auth/`): `AccountID AccountID`, `string PasswordHashPhc`, `bool IsBanned`, `int LoginFailureCount`, `DateTime? LockoutUntilUtc` (`Kind=Utc`).
+- `LoginFailureState` (`readonly record struct`): `int LoginFailureCount`, `DateTime? LockoutUntilUtc` — the values just written.
+- `Task<ZoneID> GetLastZoneIdAsync(AccountID account, CancellationToken ct);` — `ZoneID.Invalid` when the stored value is 0 (first login) or no character row exists.
+- Errors: these methods do not map exceptions. Database errors propagate to the caller (Story 009/010 turn them into `ServerError`). `RecordFailureAsync`/`ResetFailuresAsync` on an account ID with no row throw `InvalidOperationException` (the caller only passes IDs it just read).
+- `NpgsqlAccountRepository` gains a `LockoutPolicy` constructor parameter; update the construction in `Auth_AccountRepository_Registration_tests.cs` (authorized edit to that file only).
+- Same `[Category("Database")]` pattern and dedicated test database as Story 006. Move the fixture plumbing (env vars, refusal to run against `irongrind`, TRUNCATE/RESTART reset, admin queries, recording logger) into `gateway/IronGrind.Gateway.Tests/AuthTestDatabase.cs` (internal helper) and use it from both the Story 006 and Story 007 test files.
 
 ---
 
@@ -73,7 +79,7 @@ Task<CharacterID> GetCharacterIDAsync(AccountID account, CancellationToken ct);
 - **AC-2 (AC-AUTH-19 b,c)**: Failure during lockout
   - Given: count 5, `lockout_until_utc = t0 + 30 s`
   - When: `RecordFailureAsync(acc, t0 + 1 s)`
-  - Then: count 6; lockout = `t0 + 1 s + 60 s` (± 1 s)
+  - Then: count 6; lockout = `t0 + 1 s + 60 s` exactly (test `utcNow` values have no sub-microsecond ticks)
 - **AC-3 (AC-AUTH-20)**: Cap
   - Given: count 9; separately count 50
   - When: `RecordFailureAsync(acc, t)`
@@ -90,6 +96,10 @@ Task<CharacterID> GetCharacterIDAsync(AccountID account, CancellationToken ct);
   - When: `GetCharacterIDAsync` for a registered account and for an account row inserted with no character
   - Then: the registered CharacterID; `CharacterID.Invalid`
   - Edge cases: schema check — `accounts` columns are exactly the seven of migration 004
+- **AC-7**: Last zone
+  - Given: a registered account; then `last_zone_id = 7` set via the admin connection
+  - When: `GetLastZoneIdAsync` before and after the update; and for an account row with no character
+  - Then: `ZoneID.Invalid`, then `ZoneID` 7; `ZoneID.Invalid`
 
 ---
 
@@ -99,7 +109,7 @@ Task<CharacterID> GetCharacterIDAsync(AccountID account, CancellationToken ct);
 **Required evidence**:
 - `gateway/IronGrind.Gateway.Tests/Auth_AccountRepository_LoginState_tests.cs` (`[Category("Database")]`), run locally — result recorded in Completion Notes
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 19 Database cases pass against irongrind_auth_test (2026-11-06)
 
 ---
 
@@ -107,3 +117,12 @@ Task<CharacterID> GetCharacterIDAsync(AccountID account, CancellationToken ct);
 
 - Depends on: Story 003, Story 004, Story 005 (`LockoutPolicy`)
 - Unlocks: Story 009, Story 010, Story 011
+
+---
+
+## Completion Notes
+**Completed**: 2026-11-06
+**Criteria**: 9/9 passing (all covered by `Auth_AccountRepository_LoginState_tests.cs`, 15 methods / 19 cases, `[Category("Database")]`; plus error-path cases: unknown account → `InvalidOperationException`, non-UTC `utcNow` → `ArgumentException`)
+**Deviations**: None (`GetLastZoneIdAsync` added to `IAccountRepository` per the story, doc cites ADR-016 Decision 4 step 4)
+**Test Evidence**: Integration — gateway suite 223/223 with both env vars set (shell-local) against `irongrind_auth_test`, 0 warnings. Shared fixture `AuthTestDatabase.cs` now used by the Story 006 and 007 test files; repository ctor gained `LockoutPolicy`
+**Code Review**: Complete — APPROVED WITH SUGGESTIONS, 3 applied (`NoRegistrationFaultHook.Instance` in tests; `_db` nulled in TearDown; ≤1 character row per account documented on `GetCharacterIDAsync`/`GetLastZoneIdAsync`)

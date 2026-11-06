@@ -1,10 +1,11 @@
 # Story 006: Account repository — registration
 
 > **Epic**: Authentication
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-11-06
+> **Estimate**: 4 hours (repository + outcome type + fault hook seam, one Database test file with reset fixture, concurrency case)
 
 ## Context
 
@@ -51,8 +52,9 @@ Task<RegistrationOutcome> RegisterAsync(string usernameLower, string passwordHas
 - Fault hook (GAP-5): an injected `IRegistrationFaultHook` (no-op in production) called between the inserts; the test throws from it.
 - `uint` IDs: sequences are `BIGINT` capped at `uint.MaxValue`; cast with `checked`.
 - Catch `PostgresException { SqlState: "23505" }` and map by `ConstraintName`; an unknown constraint name → `ServerError` + log.
-- `NpgsqlDataSource` built once from the `gateway` connection string (config); the repository takes it by constructor.
-- Tests: `[Category("Database")]`, each test in its own throwaway schema or with `TRUNCATE accounts, character_records … RESTART IDENTITY`-equivalent reset of the sequences (`ALTER SEQUENCE … RESTART`) — the reset needs a privileged connection, not the `gateway` role; keep that in the test fixture only.
+- `RegistrationOutcome` is a gateway-local `readonly struct` in `gateway/IronGrind.Gateway/Auth/`: `bool Success`, `AccountID AccountID`, `CharacterID CharacterID`, `RegistrationError Error` (from `IronGrind.Shared`; ignored when `Success`).
+- The repository takes an `NpgsqlDataSource` (built once from the `gateway` connection string — host wiring is Story 012), an `IRegistrationFaultHook` and an `ILogger<NpgsqlAccountRepository>` by constructor.
+- Tests: `[Category("Database")]`. Two connection strings: `IRONGRIND_GATEWAY_DB` (role `gateway`, used by the repository under test) and `IRONGRIND_GATEWAY_TEST_ADMIN_DB` (owner role, used only by the fixture to run `TRUNCATE pending_purchases, character_records, accounts` and `ALTER SEQUENCE account_id_seq RESTART; ALTER SEQUENCE character_id_seq RESTART` in `[SetUp]`). Both must point at a dedicated test database (e.g. `irongrind_auth_test`, migrations 001–004 + role applied), never the dev `irongrind` database — the fixture refuses to run if the database name is `irongrind`. Either variable unset → `Assert.Ignore`. Document the new variable and the test database in `tools/db/README.md`. (Story 003's rolled-back-transaction pattern does not fit: `RegisterAsync` commits, AC-AUTH-25 needs two connections, AC-2 needs rows to survive a new repository.)
 
 ---
 
@@ -60,6 +62,7 @@ Task<RegistrationOutcome> RegisterAsync(string usernameLower, string passwordHas
 
 - Story 007: login-side repository methods
 - Story 008: validation and hashing before the repository call
+- Story 012: building the `NpgsqlDataSource` from `IRONGRIND_GATEWAY_DB` in the host and registering it in DI (the repository only takes a data source in its constructor)
 
 ---
 
@@ -85,6 +88,10 @@ Task<RegistrationOutcome> RegisterAsync(string usernameLower, string passwordHas
 - **AC-6 (AC-AUTH-34 rows)**: Class stored
   - When: one registration per playable class
   - Then: `class_type` equals the request
+- **AC-7**: Database error logged without the hash
+  - Given: a fault hook that throws an `NpgsqlException`; a recording `ILogger`
+  - When: `RegisterAsync`
+  - Then: `ServerError`; exactly one Error log entry; neither its message nor its exception text contains the PHC string
 
 ---
 
@@ -94,7 +101,7 @@ Task<RegistrationOutcome> RegisterAsync(string usernameLower, string passwordHas
 **Required evidence**:
 - `gateway/IronGrind.Gateway.Tests/Auth_AccountRepository_Registration_tests.cs` (`[Category("Database")]`), run locally — result recorded in Completion Notes
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 10 Database cases pass against irongrind_auth_test (2026-11-06)
 
 ---
 
@@ -102,3 +109,12 @@ Task<RegistrationOutcome> RegisterAsync(string usernameLower, string passwordHas
 
 - Depends on: Story 003 (migration 004, role), Story 004 (Npgsql/Dapper pinned)
 - Unlocks: Story 008
+
+---
+
+## Completion Notes
+**Completed**: 2026-11-06
+**Criteria**: 9/9 passing (all covered by `Auth_AccountRepository_Registration_tests.cs`, 9 methods / 10 cases, `[Category("Database")]`)
+**Deviations** (advisory): DDL-default check casts each default to the column's `udt_name` and checks `now()` defaults as "within the last minute" of the database clock; class cases hardcoded 0/1 (`PlayableClasses` only exposes `IsPlayable`); unknown-constraint 23505 → `ServerError` path untested (hard to trigger)
+**Test Evidence**: Integration — gateway suite 204/204 with both env vars set (shell-local) against the dedicated test database `irongrind_auth_test` (OWNER irongrind; 001–004 + gateway role), 0 warnings
+**Code Review**: Complete — APPROVED WITH SUGGESTIONS, 4 applied (Include Error Detail note → Story 012; `Error` holds `default` on success; ambiguous cancellation during commit → callers pass `CancellationToken.None`, Story 008; test header example)

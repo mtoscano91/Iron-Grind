@@ -45,6 +45,8 @@ if you need signed binaries. Record the zip's SHA-256.
    the pipe open). It does not restart after a reboot; run the command again.
 4. As `postgres`, `CREATE ROLE irongrind LOGIN PASSWORD '...'` and `CREATE DATABASE irongrind OWNER irongrind`.
 5. Set `IRONGRIND_DEV_PG` as in step 3 above (`setx` for the user environment; programs see it after a restart).
+   The gateway's `Database` tests read `IRONGRIND_GATEWAY_DB` instead: an Npgsql connection string for the
+   role `gateway`, never committed (`tools/db/README.md`, "Gateway role").
 6. Run the round trip: in the Test Runner (after restarting Unity) as in step 4 above, or with the Editor closed, in batch
    mode (a filter on the full name selects the Explicit test):
 

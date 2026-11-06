@@ -1,10 +1,11 @@
 # Story 004: Gateway packages, config and the Argon2id hasher
 
 > **Epic**: Authentication
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-11-06
+> **Estimate**: 4 hours (NuGet pins + 2 options classes with validation + hasher + dummy hash, tests in the gateway project, 20-run benchmark)
 
 ## Context
 
@@ -30,7 +31,7 @@
 
 - [ ] `Konscious.Security.Cryptography.Argon2`, `Npgsql` (current line for .NET 10) and `Dapper` are added as `PackageReference`s with exact versions checked on NuGet on the day; the versions are added to `.claude/docs/technical-preferences.md` Allowed Libraries (gateway only) with the date
 - [ ] `GatewayOptions` binds from `appsettings.json` + environment: `GATEWAY_HTTP_PORT` 8080, `GATEWAY_ZONE_LINK_PORT` 7900, `GATEWAY_ZONE_REQUEST_TIMEOUT_MS` 2000, `GATEWAY_EVICT_TIMEOUT_MS` 11000, `GATEWAY_LINK_RETRY_SECONDS` 2, `MAX_AUTH_PENDING` 10; `AuthOptions` binds the GDD knobs: `LOGIN_FAILURE_LIMIT` 5, lockout table {30,60,120,300,600}, Argon2 `Iterations` 2 / `MemorySizeKb` 19456 / `Parallelism` 1, username 3–24, character name 3–16, password 8–72
-- [ ] Options validation at startup rejects values outside the GDD safe ranges and the joint constraints (lockout table monotonic; `CHARACTER_NAME_MAX_LENGTH` ≤ 24; `USERNAME_MAX_LENGTH` ≤ 32; min < max; Argon2 iterations ≥ 2 and memory ≥ 19456)
+- [ ] Options validation at startup rejects values outside the GDD safe ranges and the joint constraints (lockout table monotonic; `CHARACTER_NAME_MAX_LENGTH` ≤ 24; `USERNAME_MAX_LENGTH` ≤ 32; min < max; Argon2 iterations ≥ 2 and memory ≥ 19456). `GatewayOptions`: ports 1–65535 and different from each other; timeouts, retry seconds and `MAX_AUTH_PENDING` > 0; `GATEWAY_EVICT_TIMEOUT_MS` > `GATEWAY_ZONE_REQUEST_TIMEOUT_MS`. No other ranges (ADR-016 defines none)
 - [ ] AC-AUTH-06: `IPasswordHasher.Hash` returns a PHC string `$argon2id$v=19$m=19456,t=2,p=1$<salt>$<hash>`; parsed, it has those three parameters and a 16-byte salt; 5 consecutive hashes of the same password have 5 different salts
 - [ ] AC-AUTH-07: `Verify(password, Hash(password))` is `true`; `Verify(other, Hash(password))` is `false`
 - [ ] `Verify` reads the parameters from the PHC string (so an older-parameter hash still verifies after tuning) and returns `false` — never throws — for a malformed PHC string
@@ -84,9 +85,14 @@ public interface IPasswordHasher
   - When: `Verify`
   - Then: `false`, no exception
 - **AC-4**: Options validation
-  - Given: `CHARACTER_NAME_MAX_LENGTH = 25`; lockout table `{30, 20, …}`; `Iterations = 1`
+  - Given: `CHARACTER_NAME_MAX_LENGTH = 25`; lockout table `{30, 20, …}`; `Iterations = 1`; `GATEWAY_HTTP_PORT = 0`; `GATEWAY_HTTP_PORT = GATEWAY_ZONE_LINK_PORT`
   - When: options validated
   - Then: each fails with a message naming the knob
+- **AC-5**: Dummy hash
+  - Given: `DummyHash` built from `AuthOptions` with non-default parameters (`Iterations = 3`)
+  - When: its PHC is read twice and `Verify` is called with any password
+  - Then: the PHC carries `t=3`; `Verify` returns `false` without throwing; both reads return the same instance (computed once)
+- **Benchmark**: an `[Explicit]` test (or a short console run) prints the mean and p95 `Hash` time over 20 runs; the result goes in Completion Notes, not into an assertion
 
 ---
 
@@ -97,7 +103,7 @@ public interface IPasswordHasher
 - `gateway/IronGrind.Gateway.Tests/Auth_PasswordHasher_tests.cs`
 - `gateway/IronGrind.Gateway.Tests/Gateway_Options_tests.cs`
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing (2026-11-06)
 
 ---
 
@@ -105,3 +111,17 @@ public interface IPasswordHasher
 
 - Depends on: Story 001 (the gateway references `IronGrind.Shared`)
 - Unlocks: Story 006, Story 007, Story 008, Story 009
+
+---
+
+## Completion Notes
+**Completed**: 2026-11-06
+**Criteria**: 8/8 passing (all covered by tests in the two evidence files; package pins checked in the csproj and `technical-preferences.md`)
+**Benchmark** (dev machine, Release, 20 runs after one warm-up): mean 68.6 ms, p95 128.5 ms (min 55.3, max 135.4) — **outside the 200–400 ms estimate (faster); flagged, `MAX_AUTH_PENDING` unchanged** (TD-093, re-check after the VPS benchmark in Story 017)
+**Deviations** (advisory, accepted):
+- Argon2 properties named `Argon2Iterations` / `Argon2MemorySizeKb` / `Argon2Parallelism` (config keys `ARGON2_*`)
+- `LockoutTableSeconds` is `int[]?` with `EffectiveLockoutTableSeconds` falling back to the GDD default, because config array binding appends to a non-empty default; a partial env override merges by index with `appsettings.json` (TD-092, Story 012 documents it)
+- Konscious rejects an empty password: `Hash("")` throws `ArgumentException`; `Verify("")` returns `false` (found by a code-review test)
+- Extra checks: `GATEWAY_EVICT_TIMEOUT_MS` > 0, lockout table non-empty; `Verify` rejects PHC parameters m > 65536 KB (GDD max), t/p > 16, salt outside 8–64 bytes, hash outside 16–64 bytes
+**Test Evidence**: Logic — `gateway/IronGrind.Gateway.Tests/Auth_PasswordHasher_tests.cs`, `gateway/IronGrind.Gateway.Tests/Gateway_Options_tests.cs` (63 tests incl. 34 boundary cases, + 1 Explicit benchmark); gateway suite 122/122
+**Code Review**: Complete (2026-11-06, APPROVED WITH SUGGESTIONS; suggestions 1–5 applied). Carried to Story 012: host-level `ValidateOnStart` test, full-table override note

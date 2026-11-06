@@ -60,6 +60,8 @@
 - **Dapper 2.1.66** — micro-ORM, server only (`IronGrind.ServerLogic`), ADR-006. Approved 2026-10-16.
 - Delivery: DLLs taken from NuGet and committed under `Assets/Plugins/Server/`, versions and sources recorded in `docs/` (user decision 2026-10-16; no NuGet-for-Unity tool).
 - Netcode for GameObjects 2.13.3 (`com.unity.netcode.gameobjects`, with Unity Transport 2.6.0) — ADR-004, already in `Packages/manifest.json` since 2026-10-09.
+- **Gateway packages** — `Konscious.Security.Cryptography.Argon2` 1.3.1, `Npgsql` 10.0.3, `Dapper` 2.1.89: gateway only (`gateway/IronGrind.Gateway`, NuGet PackageReference), ADR-016 Decision 7, pinned 2026-11-06 (Authentication Story 004). The gateway's Npgsql 10.0.3 is separate from the Unity server's Npgsql 8.0.9 DLLs above (different process, different target framework).
+- **Microsoft.AspNetCore.Mvc.Testing 10.0.14** — gateway tests only (`gateway/IronGrind.Gateway.Tests`, `WebApplicationFactory<Program>`), Authentication Story 012, pinned 2026-11-06. Not referenced by the gateway or any shipped project.
 
 ## Architecture Decisions Log
 

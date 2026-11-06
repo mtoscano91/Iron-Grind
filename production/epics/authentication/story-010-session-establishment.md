@@ -1,10 +1,11 @@
 # Story 010: Login — session establishment
 
 > **Epic**: Authentication
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-11-06
+> **Estimate**: 5 hours (three seam interfaces, the service, `AuthenticateAsync` wiring, one test file with timeout cases, Story 008 test update)
 
 ## Context
 
@@ -27,16 +28,18 @@
 
 ## Acceptance Criteria
 
-- [ ] `SessionEstablishment.RunAsync(accountId, ct)` → `LoginResponse`, using four injected seams: `IAccountRepository.GetCharacterIDAsync`, `IAccountZoneMap` (lookup / add / link-state query), `IZoneRouter` (`TryPick(excludedZone?) → (ZoneID, port) | NoRoutableZone`), `IZoneLink` (`AdmitAsync`, `EvictAsync`). Real map, router and link come from the gateway epic; this story defines the seam interfaces and uses fakes
+- [ ] `SessionEstablishment.RunAsync(accountId)` → `LoginResponse` (no request token: CR-AUTH-9 "Abandoned auth" — an abort after the credential check is not observed; the login runs to completion and an unused admission expires in the zone). Order: `GetCharacterIDAsync` → `GetLastZoneIdAsync` → map lookup (link down → `ServerError`; session → `Evict`) → route → token → `Admit` → on accept `SetSession` and reply. Injected seams: `IAccountRepository` (`GetCharacterIDAsync`, `GetLastZoneIdAsync`, both called with `CancellationToken.None`); `IAccountZoneMap` (`bool TryGetZone(AccountID, out ZoneID)`, `bool IsLinkUp(ZoneID)`, `void SetSession(AccountID, ZoneID)` — replaces any existing entry for the account); `IZoneRouter` (`bool TryPick(ZoneID lastZone, ZoneID excluded, out ZoneID zone, out ushort port)` — `ZoneID.Invalid` means "none" for both inputs, `false` = no routable zone); `IZoneLink` (`AdmitAsync`, `EvictAsync` only — Story 011 adds `ReconnectAsync` and `ReconnectOutcome`). Also injected: `GatewayOptions` (`ZoneRequestTimeoutMs`, `EvictTimeoutMs`), `TimeProvider`, `ILoggerFactory`. Real map, router and link come from the gateway epic; this story defines the seam interfaces and uses fakes
 - [ ] AC-AUTH-01 (fake link): correct login → response with a non-zero token, the account's `CharacterID`, non-zero `zoneId` and port; the fake link received `Admit` with the same token and `CharacterID` before the response was produced
-- [ ] AC-AUTH-23 / EC-AUTH-5: `GetCharacterIDAsync` returns `CharacterID.Invalid` → no `Admit` (fake count 0), critical log with `AccountID` and timestamp, `ServerError`
+- [ ] AC-AUTH-23 / EC-AUTH-5: `GetCharacterIDAsync` returns `CharacterID.Invalid` → no `Admit` (fake count 0), one critical log containing the `AccountID` and the `TimeProvider` UTC time, `ServerError`
 - [ ] AC-AUTH-27 (a, d — gateway): the map holds account X in zone Z → `Evict(Z, X)` is sent and no `Admit` is sent before `EvictAsync` completes; then `Admit` and `success:true` with the new token
 - [ ] EC-AUTH-6: `Evict` with no reply within `GATEWAY_EVICT_TIMEOUT_MS` → `ServerError`, no `Admit`; the session's zone link down (map's link-state query) → `ServerError` at once, no `Evict`
-- [ ] AC-AUTH-37: first zone rejects `Admit` → `Admit` to a second zone (router called with the first excluded) → `success:true` for it; both reject → `ServerError` after exactly two `Admit`s and no map entry added
-- [ ] AC-AUTH-29 (ii): `Admit` with no reply within `GATEWAY_ZONE_REQUEST_TIMEOUT_MS` → `ServerError`, critical infrastructure log
-- [ ] No routable zone → `LoginResponse { success:false, errorCode:ServerStarting }` at once, no `Admit`
-- [ ] On accept the map entry `X → zone` is added (via `IAccountZoneMap`); the token is not stored anywhere in the gateway after the response (no field, no map value)
-- [ ] `AuthenticationService.AuthenticateAsync` for a zero `tokenField` = Story 009's credential check then this; credential failure never reaches this step
+- [ ] AC-AUTH-37: first zone rejects `Admit` (`AdmitAsync` returns `false`) → `Admit` to a second zone (router called with the first excluded) → `success:true` for it; both reject → `ServerError` after exactly two `Admit`s and no map entry added; after a rejection with no other routable zone → `ServerError` (not `ServerStarting`). Only an explicit rejection re-routes; a timeout or exception never does
+- [ ] AC-AUTH-29 (ii): `Admit` with no reply within `GATEWAY_ZONE_REQUEST_TIMEOUT_MS` → `ServerError`, one critical infrastructure log, no re-route, no map entry
+- [ ] Errors: `GetCharacterIDAsync`, `GetLastZoneIdAsync`, `EvictAsync` or `AdmitAsync` throws, or `Evict` / `Admit` times out → `ServerError` plus exactly one `LogCritical` under `IronGrind.Gateway.Infrastructure` (`AuthenticationService.INFRASTRUCTURE_LOG_CATEGORY`); no log entry contains the token
+- [ ] No routable zone on the first pick → `LoginResponse { success:false, errorCode:ServerStarting }` at once, no `Admit`
+- [ ] On accept `SetSession(X, zone)` is called (replacing any entry); the token is not stored anywhere in the gateway after the response (no field, no map value)
+- [ ] `IAuthenticationService.AuthenticateAsync(ConnectionRequest, CancellationToken)` → `LoginResponse`: for a zero `tokenField` = Story 009's `CredentialCheck` then `SessionEstablishment`; `InvalidCredentials` / `ServerError` → `LoginResponse.ForFailure` of the same reason, `OperationCanceledException` from the credential check propagates; credential failure never reaches session establishment. A non-zero `tokenField` throws `NotSupportedException` until Story 011
+- [ ] AC-AUTH-12 (d) becomes behavioural: `AuthenticationService` now takes `CredentialCheck` and `SessionEstablishment` (which holds an `IZoneLink`), so Story 008's structural test `AuthenticationService_Constructors_TakeNoZoneLink` is replaced in `Auth_RegistrationService_tests.cs` by a strict fake `IZoneLink` (fails on any call) shared through `SessionEstablishment`; registration success and failure assert 0 link calls
 
 ---
 
@@ -49,14 +52,15 @@ public interface IZoneLink
 {
     Task<bool> AdmitAsync(ZoneID zone, AccountID account, CharacterID character, byte[] token, CancellationToken ct);
     Task EvictAsync(ZoneID zone, AccountID account, CancellationToken ct);
-    Task<ReconnectOutcome> ReconnectAsync(ZoneID zone, AccountID account, byte[] token, CancellationToken ct);
+    // ReconnectAsync / ReconnectOutcome: added in Story 011 (ADR-016 Key Interfaces)
 }
 ```
 
-- Timeouts: wrap each link call in a `CancellationTokenSource` with the configured timeout; a timeout is `ServerError`. (Whether the real link enforces the timeout itself is the gateway epic's call; the service must not hang if it does not.)
+- Timeouts: wrap each link call in a `CancellationTokenSource` with the configured timeout (the only token the link sees); a timeout is `ServerError`. Also bound the wait itself (e.g. `Task.WaitAsync(timeout)`) so a fake or real link that ignores the token cannot hang the service. Tests set both timeouts to 50 ms; Story 012 wires the real `GatewayOptions`.
+- Map contract: ADR-016 Decision 3 says the entry is added "when `AdmitResult(accepted)` arrives". In this design `SessionEstablishment` performs that add via `SetSession`, so the real link must not add it a second time; a late `AdmitResult` after a timeout gets an `Evict` from the link and no entry. Zone-matched removal on `EvictResult` / `SessionReleased` stays in the map (gateway epic); `SetSession` replaces whatever entry remains.
 - Token: `RandomNumberGenerator.GetBytes(16)`; regenerate on the impossible all-zero result.
 - `IAccountZoneMap` and `IZoneRouter` are interface-only here, with XML docs quoting ADR-016 Decision 3 rules the gateway epic must implement (late admission → `Evict`, zone-matched removal, link-loss grace, boot wait → `ServerStarting`). The boot-wait `ServerStarting` is the router's `NoRoutableZone` answer, so this story's handling covers it.
-- Re-route excludes only the rejecting zone; exactly one re-route.
+- Re-route excludes only the rejecting zone and passes the same `lastZone`; exactly one re-route.
 - `zoneServerPort` comes from the router's pick (`RegisterZone.udpPort`).
 
 ---
@@ -93,6 +97,13 @@ public interface IZoneLink
   - Then: `ServerStarting`; link calls 0
 - **AC-7**: Token not retained
   - Then: after success, reflection over `SessionEstablishment` and the fake map shows no stored 16-byte token
+- **AC-8**: Routing input and errors
+  - Given: repo last zone 4 → router receives `lastZone` 4, `excluded` Invalid; on re-route `lastZone` 4, `excluded` = rejecting zone
+  - Given: each of `GetCharacterIDAsync` / `GetLastZoneIdAsync` / `EvictAsync` / `AdmitAsync` throws → `ServerError`, one Critical entry, no map entry
+  - Given: zone 5 rejects and the router has nothing else → `ServerError`, one `Admit`
+- **AC-9**: `AuthenticateAsync`
+  - Given: credential check `InvalidCredentials` → `ForFailure(InvalidCredentials)`, link calls 0, router calls 0; `ServerError` → `ForFailure(ServerError)`; `Passed` → session establishment runs with that `AccountID`; non-zero `tokenField` → `NotSupportedException`
+  - Given: Story 008 registration tests with a strict fake link → 0 link calls (replaces the structural constructor test)
 
 ---
 
@@ -101,8 +112,9 @@ public interface IZoneLink
 **Story Type**: Logic
 **Required evidence**:
 - `gateway/IronGrind.Gateway.Tests/Auth_SessionEstablishment_tests.cs`
+- `gateway/IronGrind.Gateway.Tests/Auth_RegistrationService_tests.cs` (modified: strict fake link replaces the structural constructor test)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing (2026-11-06)
 
 ---
 
@@ -110,3 +122,12 @@ public interface IZoneLink
 
 - Depends on: Story 007 (`GetCharacterIDAsync`), Story 009
 - Unlocks: Story 011, Story 012, the gateway epic's link/map/router stories (they implement this story's seams)
+
+---
+
+## Completion Notes
+**Completed**: 2026-11-06
+**Criteria**: 12/12 passing (`Auth_SessionEstablishment_tests.cs` 24 cases, pure fakes, timeouts 50 ms; `Auth_RegistrationService_tests.cs` strict-link tests replace the structural constructor test)
+**Deviations**: Advisory only — (1) `RunAsync` has one outer try/catch: any exception or timeout → `ServerError` + exactly one Critical (a programming error also surfaces as `ServerError`); (2) each `Admit` gets a fresh token (re-route does not reuse the first); (3) the link-down path logs one Warning (AccountID + zone) in the infrastructure category
+**Test Evidence**: Logic — `gateway/IronGrind.Gateway.Tests/Auth_SessionEstablishment_tests.cs`; gateway suite (`TestCategory!=Database`) 259/259, 0 warnings
+**Code Review**: Complete — APPROVED WITH SUGGESTIONS, 3 applied (fresh token per Admit; Warning on link down; `WithTimeoutAsync<T>(call, ms, step)` rethrows timeouts as `TimeoutException` naming the step, never the token)

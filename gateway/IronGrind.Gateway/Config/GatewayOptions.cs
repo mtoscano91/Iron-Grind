@@ -1,0 +1,34 @@
+using Microsoft.Extensions.Configuration;
+
+namespace IronGrind.Gateway.Config;
+
+/// <summary>
+/// Gateway process knobs (ADR-016 Tuning Knobs). Bound from the configuration root so each
+/// knob name is also the environment variable name. Defaults equal the ADR-016 defaults.
+/// </summary>
+public sealed class GatewayOptions
+{
+    /// <summary>ADR-016 knob <c>GATEWAY_HTTP_PORT</c>: HTTP listen port. Valid 1-65535.</summary>
+    [ConfigurationKeyName("GATEWAY_HTTP_PORT")]
+    public int HttpPort { get; set; } = 8080;
+
+    /// <summary>ADR-016 knob <c>GATEWAY_ZONE_LINK_PORT</c>: zone-link listen port. Valid 1-65535, differs from the HTTP port.</summary>
+    [ConfigurationKeyName("GATEWAY_ZONE_LINK_PORT")]
+    public int ZoneLinkPort { get; set; } = 7900;
+
+    /// <summary>ADR-016 knob <c>GATEWAY_ZONE_REQUEST_TIMEOUT_MS</c>: per-request zone timeout in ms. Must be &gt; 0.</summary>
+    [ConfigurationKeyName("GATEWAY_ZONE_REQUEST_TIMEOUT_MS")]
+    public int ZoneRequestTimeoutMs { get; set; } = 2000;
+
+    /// <summary>ADR-016 knob <c>GATEWAY_EVICT_TIMEOUT_MS</c>: eviction timeout in ms. Must be greater than the zone request timeout.</summary>
+    [ConfigurationKeyName("GATEWAY_EVICT_TIMEOUT_MS")]
+    public int EvictTimeoutMs { get; set; } = 11000;
+
+    /// <summary>ADR-016 knob <c>GATEWAY_LINK_RETRY_SECONDS</c>: zone-link reconnect delay in seconds. Must be &gt; 0.</summary>
+    [ConfigurationKeyName("GATEWAY_LINK_RETRY_SECONDS")]
+    public int LinkRetrySeconds { get; set; } = 2;
+
+    /// <summary>ADR-016 knob <c>MAX_AUTH_PENDING</c>: max concurrent hash operations. Must be &gt; 0.</summary>
+    [ConfigurationKeyName("MAX_AUTH_PENDING")]
+    public int MaxAuthPending { get; set; } = 10;
+}
