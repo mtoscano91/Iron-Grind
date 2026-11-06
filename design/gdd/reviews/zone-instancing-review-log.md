@@ -1,5 +1,12 @@
 # Zone Instancing — Design Review Log
 
+## Review — 2026-11-06 (lean verify of the ADR-016 revision fixes) — Verdict: NEEDS REVISION (fixed same session; marked Approved by user)
+Scope signal: S (this revision; GDD overall XL)
+Specialists: None (lean mode)
+Blocking items: 2 | Recommended: 4
+Summary: The three blockers of the earlier 2026-11-06 pass are closed (ZoneID sequence, warm spare + `ServerStarting`, admission reservations) and propagated consistently. Blockers introduced by those fixes: (1) T-7 counted no admitted entries and only a slot allocation cancelled the idle timer, so an emptied zone the gateway still routed to could close between `AdmitResult` and the client's handshake → an accepted `Admit` cancels the timer, admitted entries count for T-7, the timer restarts if the entry drops unused; (2) EC-ZI-1 / ADR-016 promised `ZoneDoesNotExist` to a late handshake after the zone left Active, but the dropped entry made CR-TOK-9 close silently → user decision: T-4 ends the reservation and sends `SessionReleased` but keeps the token until `CONNECTING_TIMEOUT_SECONDS`; step 3 answers a token match on a non-Active zone with `ZoneDoesNotExist`, no `LoadCharacter` (new AC-ZI-35). Recommended applied: Overview ZoneID wording; T-4 side effects (`ZoneDraining`, admitted handling, stale gateway-ADR note); CR-ZI-12 step 8 gateway-side; warm-spare count excludes an idle-closing instance + rule 3 tie-break (drafted, AC-ZI-33(e)(f)). Not applied: re-route failure `ServerError` vs `ServerStarting`. Propagated to ADR-016, networking-session.md ST-NET-2, networking-session-token.md CR-TOK-9, auth-wire-messages.md, entities.yaml.
+Prior verdict resolved: Yes — NEEDS REVISION (2026-11-06 lean, ADR-016 revision)
+
 ## Review — 2026-11-06 (lean, ADR-016 revision) — Verdict: NEEDS REVISION (fixed same session; lean verify pending)
 Scope signal: XL
 Specialists: None (lean mode)

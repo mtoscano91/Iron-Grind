@@ -103,7 +103,7 @@ Body length: failure = 2 bytes; success = 2 + 16 + 4 + 4 + 2 = **28 bytes**.
 
 **Zone routing:** `zoneId` is chosen by fill-first routing (zone-instancing.md CR-ZI-6), run by the gateway, and the zone has accepted `Admit` for this token before the response is written. The gateway never holds a request open while a zone process starts. If no zone is routable, the response is `ServerStarting`; if routing fails (no zone accepts `Admit` after one re-route), the response is `ServerError`.
 
-**Zone no longer Active at handshake (formerly `RoutingRedirectMessage`):** a zone that leaves Active rejects new `Admit`s and drops admitted entries whose client has not arrived, sending `SessionReleased` to the gateway. A `SessionHandshake` that arrives after that gets `ZoneFullResponse(ZoneDoesNotExist)` (zone-instancing.md EC-ZI-1), and the client returns to login. There is no server-initiated redirect.
+**Zone no longer Active at handshake (formerly `RoutingRedirectMessage`):** a zone that leaves Active rejects new `Admit`s and ends the reservation of each admitted entry whose client has not arrived, sending `SessionReleased` to the gateway, but keeps the entry's token until its `CONNECTING_TIMEOUT_SECONDS` runs out. A `SessionHandshake` with that token that arrives after that gets `ZoneFullResponse(ZoneDoesNotExist)` (zone-instancing.md CR-ZI-8 step 3, EC-ZI-1), and the client returns to login. There is no server-initiated redirect.
 
 ---
 

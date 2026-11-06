@@ -770,7 +770,7 @@ constants:
     type: "int constant (tuning knob)"
     value: 120
     unit: "seconds"
-    note: "Time an Active zone may hold zero player sessions (no Connected, no ghost, no entering slot) before T-7 Active -> Closed; the zone process then exits. Timer starts whenever the occupied slot count drops to 0 after having been > 0 (never at T-2: a never-used warm spare does not idle-close — user decision 2026-11-06); any slot allocation cancels it. Must be > ZONE_ENTRY_STALL_TIMEOUT_SECONDS. Safe range: [60, 600]. See CR-ZI-2, zone-instancing.md; networking-session.md ST-NET-2."
+    note: "Time an Active zone may hold zero player sessions and zero admitted entries (no Connected, no ghost, no entering slot, no accepted Admit) before T-7 Active -> Closed; the zone process then exits. Timer starts whenever occupied slots + admitted entries drop to 0 after a slot has been allocated at least once (never at T-2: a never-used warm spare does not idle-close — user decision 2026-11-06); a slot allocation or an accepted Admit cancels it (lean verify 2026-11-06). Must be > ZONE_ENTRY_STALL_TIMEOUT_SECONDS. Safe range: [60, 600]. See CR-ZI-2, zone-instancing.md; networking-session.md ST-NET-2."
     added: "2026-10-22"
     revised: "2026-11-06"  # timer no longer starts at T-2 (warm spare, zone-instancing.md lean re-review)
 

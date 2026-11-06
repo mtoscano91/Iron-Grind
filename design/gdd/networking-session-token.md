@@ -60,7 +60,7 @@ Access to `ActiveSessionTokens` must be thread-safe. `Admit` / `Evict` / `Reconn
 
 **CR-TOK-9 — Zone Entry Token Check (`SessionHandshake`)**
 Every zone entry — fresh login and token path alike — presents a token in `SessionHandshake(zoneId, characterId, token)`; this is the token validation of `zone-instancing.md` CR-ZI-8 step 3. The zone resolves `AccountID` from `characterId` through its own record — the admitted entry (`Admit`, fresh login) or the ghost session (token path) — then compares the presented token with `ActiveSessionTokens[AccountID]` using `CryptographicOperations.FixedTimeEquals`. The client never sends `AccountID`.
-- **Match, fresh login:** entry proceeds (CR-ZI-8 step 3 onward); ST-NET-1 `Connecting → Connected` per `authentication.md` CR-AUTH-11.
+- **Match, fresh login:** entry proceeds (CR-ZI-8 step 3 onward); ST-NET-1 `Connecting → Connected` per `authentication.md` CR-AUTH-11. If the zone left Active after the `Admit` (it keeps the entry's token until `CONNECTING_TIMEOUT_SECONDS`), the reply is `ZoneFullResponse(ZoneDoesNotExist)` instead, with no `LoadCharacter` (`zone-instancing.md` CR-ZI-8 step 3, EC-ZI-1; 2026-11-06).
 - **Match, token path:** ST-NET-1 `Disconnected_SessionActive → Reconnecting` ("session token matches"), then the CR-NET-6.4 sequence and `Reconnecting → Connected`. The token is not rotated again here.
 - **No record for `characterId`, or mismatch:** the connection is closed with no message. No session changes state, the TTL keeps running, and the attempt does **not** count toward `REAUTH_FAILURE_LIMIT` (user decision 2026-11-06 — counting would let anyone who learns a `CharacterID` and zone port expire a ghost; guessing 128 bits per handshake is infeasible, F-TOK-1). Logged once per connection.
 

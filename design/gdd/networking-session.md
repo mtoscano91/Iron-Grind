@@ -102,13 +102,13 @@ Equipment state, active buff list, and full inventory are included in a follow-u
 
 | Zone state | Session event | Zone effect |
 |------------|---------------|-------------|
-| Active | Player slot allocated (join, or first player of a fresh instance) | Cancel the idle timer (CR-ZI-2 T-7) if running |
+| Active | Player slot allocated (join, or first player of a fresh instance), or gateway `Admit` accepted (admitted entry, ADR-016) | Cancel the idle timer (CR-ZI-2 T-7) if running |
 | Active | Any player connects, reconnects, disconnects or becomes a ghost while at least one other session remains | None |
 | Active | Last `Connected` player enters `Disconnected_SessionActive`, or explicitly disconnects, while ghost sessions remain | None — zone stays Active, tick loop continues; ghost TTLs run (ghost entities need the tick, CR-GH-1–6) |
 | Active | Re-authentication fails for a `Reconnecting` session; player returns to `Disconnected_SessionActive` | None; TTL countdown continues from original start time |
-| Active | Last session of any kind released (explicit disconnect, `SESSION_TTL_SECONDS` expiry, `REAUTH_FAILURE_LIMIT`, `CONNECTING_TIMEOUT_SECONDS`) — zero sessions remain | Start the idle timer; after `ZONE_IDLE_CLOSE_SECONDS` with no slot allocated, T-7 Active → Closed |
+| Active | Last session of any kind released (explicit disconnect, `SESSION_TTL_SECONDS` expiry, `REAUTH_FAILURE_LIMIT`, `CONNECTING_TIMEOUT_SECONDS`) — zero sessions and zero admitted entries remain, and a slot has been allocated at least once | Start the idle timer; after `ZONE_IDLE_CLOSE_SECONDS` with no slot allocated and no `Admit` accepted, T-7 Active → Closed |
 | Draining | Last session of any kind released | T-5 Draining → Closed |
-| Draining | New `SessionHandshake`, including a ghost's reconnect | Not admitted to this zone — re-routing per `auth-wire-messages.md` (the zone is no longer Active). The ghost's slot is released with its final save (CR-NET-6.5) before re-routing completes. *Re-routing to another instance is gateway-owned (Zone Instancing EPIC: Blocked until the gateway ADR).* |
+| Draining | New `SessionHandshake`, including a ghost's reconnect | No slot in this zone (it is no longer Active). A client admitted before T-4 whose token matches gets `ZoneFullResponse(ZoneDoesNotExist)` and returns to login (`zone-instancing.md` CR-ZI-8 step 3, EC-ZI-1). The ghost's slot is released with its final save (CR-NET-6.5). The gateway stopped routing here on `ZoneDraining` (ADR-016), so the next login is routed to another instance. |
 
 *Notes: Zone capacity enforcement (10–50 players) applied on each join while Active. Full zones reject new joins with an overflow response. Teardown on any transition to `Closed` must complete any in-flight Beat resolution before stopping the tick loop (ADR-009 A1 Decision 3 step 1).*
 
