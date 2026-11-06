@@ -1,7 +1,7 @@
 # ADR-016: Gateway and Authentication Process
 
 ## Status
-Proposed
+Accepted (2026-11-06) — after `/architecture-review` 2026-11-06 (CONCERNS, A1–A3 and R1–R4 amended the same day; accepted by the user without re-review)
 
 ## Date
 2026-11-04
@@ -21,10 +21,10 @@ Proposed
 
 | Field | Value |
 |-------|-------|
-| **Depends On** | ADR-004 (NGO), ADR-006 (Persistence Layer), ADR-007 (Hosting Backend), ADR-009 (zone startup S10 = gateway registration), ADR-011 (tick-loop async rules), ADR-013 (`RandomNumberGenerator` for tokens) — all Accepted |
+| **Depends On** | ADR-004 (NGO), ADR-006 (Persistence Layer), ADR-007 (Hosting Backend), ADR-009 (zone startup S10 = gateway registration), ADR-011 (tick-loop async rules), ADR-012 (assembly boundary and shared allow-list, Decision 6), ADR-013 (`RandomNumberGenerator` for tokens), ADR-015 (the link thread copies `NpgsqlRelayListener`'s shape and its Editor teardown finding) — all Accepted |
 | **Enables** | Authentication epic stories; Zone Instancing routing ACs (AC-ZI-1, 2, 3, 16, 19, 20); a gateway epic; the session-epic wiring of logout and ghost TTL release in the zone |
 | **Blocks** | Authentication epic (every story); the gateway epic; Zone Instancing routing stories |
-| **Ordering Note** | Amends ADR-007 (gateway runtime, zone link transport, `LoginResult` delivery). Supersedes `design/gdd/auth-sidecar-ipc.md`. The GDD changes listed under Migration Plan go in one authoring session after this ADR is Accepted. |
+| **Ordering Note** | Amends ADR-007 (gateway runtime, zone link transport, `LoginResult` delivery). Supersedes `design/gdd/auth-sidecar-ipc.md`. The GDD changes listed under Migration Plan go in one authoring session after this ADR is Accepted. *Amended 2026-11-06 after `/architecture-review` (`architecture-review-2026-11-06-adr-016.md`): A1 shared code split in two folders (Decision 6), A2 zone process launch (Decision 3), A3 account → zone map rules (Decision 3), R1 `AdmitToken`, R2 timeouts raised, R3/R4 Migration Plan and Depends On.* |
 
 ## Context
 
@@ -64,7 +64,7 @@ Proposed
 - Body encoding follows `networking-wire-protocol.md` field rules (little-endian integers, length-prefixed UTF-8 strings). The schemas live in shared code (Decision 6) so that client and gateway use one codec.
 - `LoginResponse` is a single body carrying what `auth-wire-messages.md` sends as two messages: `success`, `errorCode`, then on success `sessionToken[16]`, `characterId`, `zoneId`, `zoneServerPort` (ADR-007's field). `AccountID` is not a field (CR-AUTH-2, AC-AUTH-30).
 - `RegistrationRequest` gains `classType: byte` and `characterName: string`. The character name is chosen separately and must not equal the username (`authentication.md` CR-AUTH-13): login names stay private, because public login names plus the no-decay lockout would let any player lock out any other. *(Amended 2026-11-04 after the authentication.md lean re-review; the first draft used the username as the character name.)*
-- The client uses `UnityWebRequest` with default certificate validation and an explicit `timeout` of `LOGIN_HTTP_TIMEOUT_SECONDS`. That value is above the worst-case login: hashing, plus `GATEWAY_EVICT_TIMEOUT_MS`, plus `GATEWAY_ZONE_REQUEST_TIMEOUT_MS`. No `CertificateHandler` that accepts every certificate may ship.
+- The client uses `UnityWebRequest` with default certificate validation and an explicit `timeout` of `LOGIN_HTTP_TIMEOUT_SECONDS`. That value is above the worst-case login: hashing, plus `GATEWAY_EVICT_TIMEOUT_MS`, plus 2 × `GATEWAY_ZONE_REQUEST_TIMEOUT_MS` (the first `Admit` and the one re-route). No `CertificateHandler` that accepts every certificate may ship.
 - Client builds never use plain HTTP. Local development runs Caddy with `tls internal`. If the Editor cannot trust that certificate, a dev-only certificate handler for it lives only in `IronGrind.DevHarness`. Player Settings keep HTTP downloads disallowed.
 
 ### 3. Gateway ↔ zone link: loopback TCP
@@ -89,6 +89,17 @@ Proposed
 
 - Link loss: the zone keeps its sessions, retries every `GATEWAY_LINK_RETRY_SECONDS` and sends `RegisterZone` again with its live accounts. The gateway marks a zone with no link unroutable. A pending `Admit` or `Reconnect` with no reply within `GATEWAY_ZONE_REQUEST_TIMEOUT_MS`, or an `Evict` with no reply within `GATEWAY_EVICT_TIMEOUT_MS`, fails the client's login with `ServerError`.
 - `ZoneID` comes from the zone's launch arguments as today (`ZoneStartupArgs`). The gateway allocates it with `nextval('zone_id_seq')` (Decision 5) when it starts the process, so an ID is never reused — not even after a gateway restart, when running zones keep theirs (`zone-instancing.md` CR-ZI-1, amended 2026-11-06). A `RegisterZone` for a ZoneID that already has a link replaces it: the gateway closes the older link and keeps the newer one. Rejecting it instead would lock a zone out after a leaked link, for example one left behind by an Editor Play-mode exit.
+- **Zone process launch (amended 2026-11-06, review A2):** the gateway starts zones through an `IZoneLauncher`, never as its own child processes.
+  - Production (Ubuntu): the gateway writes `/run/irongrind/zone-<zoneId>.env` (`ZONE_TEMPLATE`, `ZONE_PORT`), then runs `systemctl start irongrind-zone@<zoneId>.service`. The template unit `irongrind-zone@.service` reads `EnvironmentFile=/run/irongrind/zone-%i.env`, runs the zone with `-zoneId %i -zoneTemplate ${ZONE_TEMPLATE} -port ${ZONE_PORT} -serverConfig <path>`, and has `Restart=no`. Each zone is its own unit, outside the gateway's control group, so stopping or restarting the gateway does not stop zones. A polkit rule lets the `gateway` user start only `irongrind-zone@*` units.
+  - No automatic restart: a restart would reuse the ZoneID (CR-ZI-1). A crashed zone's players lose their link, return to login and are routed to a zone with a new ZoneID; the warm-spare rule below starts a replacement when needed.
+  - Dev (Windows): the launcher runs `Process.Start` on a configured zone build path, or is a no-op when zones are started by hand or from the Editor. Hand-started zones pass their own `-zoneId`; ZoneID uniqueness is not guaranteed in dev.
+- **Account → zone map (amended 2026-11-06, review A3).** One entry per account with a session in some zone: `AccountID → ZoneID`.
+  - **Added** when `AdmitResult(accepted)` arrives for a pending `Admit`.
+  - **Zone-matched removal:** a `SessionReleased` or `EvictResult` from zone Z removes the account's entry only if the entry points to Z. A late message from a zone the account has left changes nothing.
+  - **Link loss grace:** when a zone's link is lost, its entries stay for `GATEWAY_LINK_RETRY_SECONDS × 2`. During that time, a fresh login for one of those accounts gets `ServerError` at once (no `Evict` is sent to a zone with no link); the player retries. When the grace period ends with no re-registration, every entry that points to that zone is removed. A crashed zone therefore locks its players out for at most the grace period.
+  - **Registration:** a `RegisterZone` (first, reconnect, or one replacing an older link) replaces all entries pointing to that zone with its `liveAccounts`. A listed account that the map assigns to another zone is not added; the gateway sends `Evict` for it to the registering zone. The newer session wins, and the returning zone's progress since its last save is lost, as on a crash.
+  - **Late admission:** an `AdmitResult(accepted)` whose `requestId` is unknown or already timed out (the login was answered `ServerError`) is answered with `Evict` for that account to that zone, and no entry is added.
+  - **Gateway boot:** the map starts empty. Until the boot wait (`GATEWAY_LINK_RETRY_SECONDS × 2`) ends, logins get `ServerStarting`, so a login cannot be routed while the account's running zone has not re-registered yet.
 - **Warm spare (amended 2026-11-06, `zone-instancing.md` CR-ZI-6):** the gateway keeps one instance per template, Active or Loading, below `ZONE_OPEN_THRESHOLD` — started at gateway boot (after `GATEWAY_LINK_RETRY_SECONDS × 2` for running zones to re-register) and whenever a `PlayerCount`, `ZoneDraining` or lost link leaves none (an instance whose `PlayerCount` fell to 0 after being > 0 is idle-closing and does not count; rule 3 ties go to such an instance, then the lowest ZoneID); failed starts retried at most once per `ZONE_LOAD_TIMEOUT_SECONDS`. A login never waits for a zone process: with no routable zone the gateway replies `LoginResponse(ServerStarting)` and the client retries. A zone that has never held a player does not idle-close (T-7). `PlayerCount` reports occupied + admitted entries, and `Admit` is rejected when that reaches capacity.
 - This link replaces ADR-007's Unix domain socket. It is not used for zone-to-zone messages (ADR-015).
 
@@ -96,10 +107,10 @@ Proposed
 **Fresh login** (`tokenField` all zeros):
 1. Hash check, lockout, ban and failure counting as CR-AUTH-9 and CR-AUTH-10, against the accounts table (Decision 5).
 2. Resolve `CharacterID` from `character_records.account_id`. If it is `CharacterID(0)` or missing, fail with `ServerError` and log critical (EC-AUTH-5).
-3. If the gateway's account → zone map holds a live session for this account, send `Evict` to that zone and wait for `EvictResult` (EC-AUTH-6).
+3. If the gateway's account → zone map holds a live session for this account, send `Evict` to that zone and wait for `EvictResult` (EC-AUTH-6). If that zone's link is down, reply `ServerError` at once (Decision 3, link loss grace).
 4. Pick the zone by fill-first routing (CR-ZI-6). Rule 1 (party co-location) is skipped at MVP: the gateway has no party data (`zone-instancing.md` OQ-ZI-9). Rule 2 reads `character_records.last_zone_id`. No routable zone → reply `ServerStarting` (`AuthFailureReason` = 2) at once.
-5. Generate a 16-byte token with `RandomNumberGenerator` and send `Admit`. The zone calls `SessionTokenStore.IssueToken`, records the expected `(AccountID, CharacterID)` and starts the `CONNECTING_TIMEOUT_SECONDS` clock. If no `SessionHandshake` arrives in time, the zone drops the entry and sends `SessionReleased`.
-6. On `AdmitResult.accepted`, reply `LoginResponse` with token, CharacterID, ZoneID and port. On rejection, re-route once; otherwise reply `ServerError`. The gateway does not keep the token after replying.
+5. Generate a 16-byte token with `RandomNumberGenerator` and send `Admit`. The zone stores that token with a new `SessionTokenStore.AdmitToken(accountId, token, expiresAtTick)`, which rejects a token that is all zeros or not 16 bytes (`IssueToken(accountId, expiresAtTick)` generates its own token and is left unchanged). The zone also records the expected `(AccountID, CharacterID)` and starts the `CONNECTING_TIMEOUT_SECONDS` clock. If no `SessionHandshake` arrives in time, the zone drops the entry and sends `SessionReleased`.
+6. On `AdmitResult.accepted`, add the map entry and reply `LoginResponse` with token, CharacterID, ZoneID and port. On rejection, re-route once; otherwise reply `ServerError`. The gateway does not keep the token after replying.
 
 **Token path** (`tokenField` non-zero): the gateway resolves AccountID from the normalized username, and does not hash. If the account is unknown or banned (`is_banned`), or no zone holds a session for it, it returns `InvalidCredentials`. Otherwise it sends `Reconnect` to that zone; the zone runs `TryValidateAndRotate` and the `REAUTH_FAILURE_LIMIT` count, and the gateway relays the new token.
 
@@ -140,14 +151,14 @@ CREATE UNIQUE INDEX ux_character_records_name_lower ON character_records (lower(
 ### 6. Code placement and shared code
 - `gateway/IronGrind.Gateway/` (app), `gateway/IronGrind.Gateway.Tests/` (NUnit, `dotnet test`), `gateway/IronGrind.Gateway.sln`. The folder is outside `src/` and `Assets/`, so Unity never compiles it.
 - Auth rules (username normalization and validation, F-AUTH-1, the login and registration decision flow, the Argon2id wrapper, the account repository) live in the gateway only. Their tests live in `gateway/IronGrind.Gateway.Tests/` — the test-evidence path for gateway stories, in place of `tests/unit/`.
-- Shared source: files that both Unity and the gateway compile live in `src/Foundation/Shared/`, a new folder inside `IronGrind.Foundation` that holds no `.csproj`.
-  - `AccountID` and `ZoneID` (now in `src/Foundation/CharacterPersistence/`, namespace `IronGrind.CharacterPersistence`) and `CharacterID` (now in `src/Foundation/Currency/`, namespace `IronGrind.Currency`) move there with their `.meta` files. Their namespaces stay unchanged.
-  - The auth body schemas and codecs and the gateway-link message codec also live there.
-- `gateway/IronGrind.Shared/` is a small `netstandard2.1` project with `<LangVersion>9.0</LangVersion>`. It compiles those files through `<Compile Include="../../src/Foundation/Shared/**/*.cs" />`, and the gateway references it.
-  - That build enforces the rules for shared files: no `UnityEngine`/`Unity.*` reference, nothing above .NET Standard 2.1 (Unity's `apiCompatibilityLevel` 6), C# 9 at most.
+- Shared source (amended 2026-11-06, review A1): files that both Unity and the gateway compile live in two folders, split by ADR-012's boundary. Neither holds a `.csproj`.
+  - `src/Foundation/Shared/` (in `IronGrind.Foundation`, ships in the client): what the client uses — the client-facing auth body schemas and their codec, `ZoneID` (now in `src/Foundation/CharacterPersistence/`, namespace `IronGrind.CharacterPersistence`) and `CharacterID` (now in `src/Foundation/Currency/`, namespace `IronGrind.Currency`).
+  - `src/ServerLogic/Gateway/Shared/` (in `IronGrind.ServerLogic`, out of client builds): what only the zone and the gateway use — the gateway-link message codec and `AccountID`. No client code uses `AccountID` (checked 2026-11-06: only `src/ServerLogic/` and the EditMode test assembly, which references `IronGrind.ServerLogic`), and CR-AUTH-2 forbids sending it to a client, so it leaves `IronGrind.Foundation`. Its shared allow-list entry (`AssemblyBoundaryLists.cs`, "client login and session") is removed in the same change.
+  - Moved files keep their namespaces and take their `.meta` files with them.
+- `gateway/IronGrind.Shared/` is a small `netstandard2.1` project with `<LangVersion>9.0</LangVersion>`. It compiles both folders through `<Compile Include="../../src/Foundation/Shared/**/*.cs" />` and `<Compile Include="../../src/ServerLogic/Gateway/Shared/**/*.cs" />`, and the gateway references it.
+  - That build enforces the rules for shared files in both folders: no `UnityEngine`/`Unity.*` reference, nothing above .NET Standard 2.1 (Unity's `apiCompatibilityLevel` 6), C# 9 at most.
   - The gateway itself uses current C#.
-- `AccountID` is in Foundation, so the client can see the type. It must still never appear in a client-facing schema (CR-AUTH-2).
-- Zone side: `src/ServerLogic/Gateway/` — the link thread and inbox, the real `IGatewayRegistration`, the real `IZoneEntryTokenValidator`, and handlers for `Admit` / `Evict` / `Reconnect`.
+- Zone side: `src/ServerLogic/Gateway/` (outside its `Shared/` subfolder) — the link thread and inbox, the real `IGatewayRegistration`, the real `IZoneEntryTokenValidator`, and handlers for `Admit` / `Evict` / `Reconnect`.
 - Client side: `src/Client/Auth/` — the HTTPS login and registration client. Screens wait for the login and registration UX specs (`/ux-design`).
 
 ### 7. Libraries and tooling
@@ -199,9 +210,18 @@ public interface IZoneLink
     Task<ReconnectOutcome> ReconnectAsync(ZoneID zone, AccountID account, byte[] token, CancellationToken ct);
 }
 
+// gateway — zone process start (Decision 3, zone process launch)
+public interface IZoneLauncher
+{
+    Task StartAsync(ZoneID zone, string zoneTemplate, ushort port, CancellationToken ct); // systemctl start irongrind-zone@<id> | Process.Start | no-op
+}
+
 // zone — existing seams, now real
 IGatewayRegistration      // S10: opens the link, sends RegisterZone
 IZoneEntryTokenValidator  // bool IsValid(in ZoneEntryRequest) — local SessionTokenStore lookup
+
+// zone — new SessionTokenStore method (Admit handler)
+public bool AdmitToken(uint accountId, byte[] token, uint expiresAtTick); // false if token is null, not 16 bytes or all zeros
 ```
 
 `IAuthenticationService` (authentication.md) is the gateway's internal service over these interfaces; it is no longer a cross-process boundary.
@@ -259,10 +279,11 @@ IZoneEntryTokenValidator  // bool IsValid(in ZoneEntryRequest) — local Session
 - Several GDD texts change (see Migration Plan); `auth-sidecar-ipc.md` is superseded.
 
 ### Risks
-- **Gateway is a single point of failure for logins.** Mitigation: systemd restart (ADR-007); zones re-register with live accounts so the account → zone map is rebuilt; play in progress is unaffected.
+- **Gateway is a single point of failure for logins.** Mitigation: systemd restarts the gateway (ADR-007); zones run in their own units, so they keep running (Decision 3, zone process launch), and they re-register with live accounts so the account → zone map is rebuilt; play in progress is unaffected.
+- **A zone crashes.** Its players are disconnected and not restored; they log in again and get a zone with a new ZoneID. Their entries in the account → zone map block a fresh login for at most `GATEWAY_LINK_RETRY_SECONDS × 2`.
 - **Admit without arrival leaves a token in the zone.** Mitigation: the `CONNECTING_TIMEOUT_SECONDS` clock on the admitted entry, then `SessionReleased`.
-- **Evict stalls a login while the old zone saves.** Mitigation: `GATEWAY_EVICT_TIMEOUT_MS`, longer than the save's own timeout so a save that finishes in time is never cut off; on timeout the login fails with `ServerError` and the player retries.
-- **Shared-code drift** (a Unity-only API sneaks into `src/Foundation/Shared/`). Mitigation: the gateway build fails; CI runs it on every push.
+- **Evict stalls a login while the old zone saves.** Mitigation: `GATEWAY_EVICT_TIMEOUT_MS` (11 s) is longer than the steal save's worst case — pool open `Timeout=5` + `CommandTimeout=5` (ADR-007), capped by the tracked-task watchdog `PERSISTENCE_WATCHDOG_TICKS` = 200 (10 s) — so a save that finishes in time is never cut off; on timeout the login fails with `ServerError` and the player retries.
+- **Shared-code drift** (a Unity-only API sneaks into `src/Foundation/Shared/` or `src/ServerLogic/Gateway/Shared/`). Mitigation: the gateway build fails; CI runs it on every push.
 - **Link thread outlives the zone in the Editor** (Play-mode exit skips teardown; a blocking read ignores timeouts under Mono — ADR-015's finding). Mitigation: `Stop()` closes the socket from the calling thread; `OnDestroy` calls it; the gateway replaces a stale link on re-registration; Verification (2).
 - **A malformed or flooding peer.** Mitigation: `GATEWAY_LINK_MAX_FRAME_BYTES` and the bounded inbox.
 - **Konscious Argon2 performance on the VPS** differs from the ~300 ms estimate. Mitigation: benchmark at the first hashing story; re-derive `MAX_AUTH_PENDING` and the timeout margin (formula kept from `auth-sidecar-ipc.md`).
@@ -291,21 +312,24 @@ IZoneEntryTokenValidator  // bool IsValid(in ZoneEntryRequest) — local Session
 - **Network**: One HTTPS request per login or registration; no change to UDP gameplay traffic.
 
 ## Migration Plan
-1. Accept this ADR. Amend ADR-007 (gateway runtime .NET 10, HTTPS via Caddy, loopback TCP link, `LoginResponse`) with a pointer here.
-2. One GDD authoring session: `authentication.md` (CR-AUTH-4 rewritten; CR-AUTH-8 `classType` + separate `characterName` (CR-AUTH-13) + one transaction; CR-AUTH-11 step 5 at zone admission; EC-AUTH-10 / AC-AUTH-29 re-targeted to gateway → database or zone-link failure; `CHARACTER_NAME_MAX_LENGTH` ≤ 24 joint constraint — 26 at first, lowered to the `EntityState` wire cap by the lean re-review #2) — done 2026-11-04; `auth-wire-messages.md` (HTTPS bodies, `LoginResponse`, `classType`, then Approved); `auth-sidecar-ipc.md` → Superseded by ADR-016; `networking-session-token.md` CR-TOK-8 (filled by Admit); `zone-instancing.md` CR-ZI-6 (routing in the gateway).
-3. Install the .NET 10 SDK; add the gateway solution and CI job.
-4. Apply migration 004. Dev databases with character rows whose `account_id` has no account: insert matching account rows or truncate first; the FK will refuse otherwise.
-5. Move `AccountID`, `CharacterID`, `ZoneID` into `src/Foundation/Shared/` (namespaces unchanged; `.meta` files move with them).
-6. `/create-stories authentication`, then a gateway epic for routing and the zone link.
+1. Accept this ADR. Amend ADR-007 (gateway runtime .NET 10, HTTPS via Caddy, loopback TCP link, `LoginResponse`) with a pointer here; its zone process management paragraph was already amended with this ADR on 2026-11-06 (template unit, `Restart=no`). Add dated notes to ADR-006 (the `accounts` table, sequences, the `gateway` role and its own connection pool), ADR-009 (S10 is now a real gateway registration; teardown step 2a also stops the gateway link) and ADR-012 (Decision 6: `src/ServerLogic/Gateway/Shared/` is compiled by the gateway too; `AccountID` leaves `IronGrind.Foundation` and its allow-list entry).
+2. Revise stale architecture artefacts: `tr-registry.yaml` TR-auth-003 (now "authentication in the .NET gateway process, ADR-016", not "standalone .NET sidecar … named pipes"; ID kept); `production/epics/authentication/EPIC.md` (untraced-decision warning, TR-auth-003 row, Definition of Done line 40); `production/epics/zone-instancing/EPIC.md` gap 1 ("Gateway process has no ADR"); `docs/architecture/architecture.md` lines 89 and 141 ("Sidecar IPC"); `docs/architecture/control-manifest.md` line 161 (`irongrind-zone-{N}.service`, `Restart=always` → template unit, `Restart=no`).
+3. One GDD authoring session: `authentication.md` (CR-AUTH-4 rewritten; CR-AUTH-8 `classType` + separate `characterName` (CR-AUTH-13) + one transaction; CR-AUTH-11 step 5 at zone admission; EC-AUTH-10 / AC-AUTH-29 re-targeted to gateway → database or zone-link failure; `CHARACTER_NAME_MAX_LENGTH` ≤ 24 joint constraint — 26 at first, lowered to the `EntityState` wire cap by the lean re-review #2) — done 2026-11-04; `auth-wire-messages.md` (HTTPS bodies, `LoginResponse`, `classType`, then Approved); `auth-sidecar-ipc.md` → Superseded by ADR-016; `networking-session-token.md` CR-TOK-8 (filled by Admit); `zone-instancing.md` CR-ZI-6 (routing in the gateway).
+4. Install the .NET 10 SDK; add the gateway solution and CI job.
+5. Apply migration 004. Dev databases with character rows whose `account_id` has no account: insert matching account rows or truncate first; the FK will refuse otherwise.
+6. Move `CharacterID` and `ZoneID` into `src/Foundation/Shared/`, and `AccountID` into `src/ServerLogic/Gateway/Shared/` (namespaces unchanged; `.meta` files move with them); remove the `AccountID` entry from the shared allow-list in `tests/EditMode/Architecture/AssemblyBoundaryLists.cs`.
+7. `/create-stories authentication`, then a gateway epic for routing, the zone link and the zone launcher (systemd template unit `irongrind-zone@.service`, polkit rule).
 
 ## Validation Criteria
 - AC-AUTH-01, 04, 08, 12, 21, 25, 27, 31 pass against the gateway and a test database.
 - The verification items in Engine Compatibility pass on the Windows Editor, the IL2CPP Linux zone build and an iOS device.
 - A login → UDP zone entry → disconnect → token reconnect round trip works end to end on the VPS (ADR-007 smoke test step 6, extended).
-- The gateway build fails if a `src/Foundation/Shared/` file references Unity.
+- The gateway build fails if a file in `src/Foundation/Shared/` or `src/ServerLogic/Gateway/Shared/` references Unity.
+- Gateway tests cover the account → zone map rules (Decision 3): zone-matched removal, the link-loss grace, `Evict` on a conflicting `RegisterZone`, `Evict` after a late `AdmitResult`, and `ServerStarting` during the boot wait.
+- On the VPS, restarting the gateway service leaves running zone units up, and they re-register.
 
 ## Related Decisions
-- ADR-004 (NGO), ADR-006 (persistence; this ADR adds the accounts table), ADR-007 (amended), ADR-009 (S10 registration), ADR-011 (no blocking on the tick), ADR-013 (token randomness), ADR-015 (cross-zone relay stays separate)
+- ADR-004 (NGO), ADR-006 (persistence; this ADR adds the accounts table), ADR-007 (amended), ADR-009 (S10 registration), ADR-011 (no blocking on the tick), ADR-012 (shared code split across the boundary), ADR-013 (token randomness), ADR-015 (cross-zone relay stays separate; link thread shape)
 - `design/gdd/authentication.md`, `auth-wire-messages.md`, `auth-sidecar-ipc.md` (superseded), `networking-session-token.md`, `zone-instancing.md`
 
 ## Tuning Knobs Introduced
@@ -314,9 +338,9 @@ IZoneEntryTokenValidator  // bool IsValid(in ZoneEntryRequest) — local Session
 | `GATEWAY_HTTP_PORT` | 8080 | Loopback only |
 | `GATEWAY_ZONE_LINK_PORT` | 7900 | Loopback only |
 | `GATEWAY_ZONE_REQUEST_TIMEOUT_MS` | 2000 | Admit / Reconnect reply wait |
-| `GATEWAY_EVICT_TIMEOUT_MS` | 7000 | Evict reply wait; must exceed `PERSISTENCE_WRITE_TIMEOUT_SECONDS` (5 s), because the reply follows the old zone's save |
-| `GATEWAY_LINK_RETRY_SECONDS` | 2 | Zone reconnect interval |
+| `GATEWAY_EVICT_TIMEOUT_MS` | 11000 | Evict reply wait; the reply follows the old zone's save, so it must exceed the steal save's worst case: pool open `Timeout=5` + `CommandTimeout=5` (ADR-007), capped at 10 s by `PERSISTENCE_WATCHDOG_TICKS` = 200. Raised from 7000 on 2026-11-06 (review R2) |
+| `GATEWAY_LINK_RETRY_SECONDS` | 2 | Zone reconnect interval. × 2 is also the link-loss grace for the account → zone map and the gateway boot wait (Decision 3) |
 | `MAX_AUTH_PENDING` | 10 | Moved from `auth-sidecar-ipc.md` |
-| `LOGIN_HTTP_TIMEOUT_SECONDS` | 15 | Client `UnityWebRequest.timeout`; must exceed hashing + `GATEWAY_EVICT_TIMEOUT_MS` + `GATEWAY_ZONE_REQUEST_TIMEOUT_MS` (~9.5 s). Zone start time is not included: logins never wait for a zone (`ServerStarting`) |
+| `LOGIN_HTTP_TIMEOUT_SECONDS` | 20 | Client `UnityWebRequest.timeout`; must exceed hashing + `GATEWAY_EVICT_TIMEOUT_MS` + 2 × `GATEWAY_ZONE_REQUEST_TIMEOUT_MS` (first `Admit` + one re-route; ~15.4 s). Raised from 15 on 2026-11-06 (review R2). Zone start time is not included: logins never wait for a zone (`ServerStarting`) |
 | `GATEWAY_LINK_MAX_FRAME_BYTES` | 65536 | Larger frame closes the link |
 | `GATEWAY_LINK_INBOX_CAPACITY` | 1024 | Zone-side inbox bound; full inbox closes the link |

@@ -3,7 +3,7 @@
 ## Status
 Accepted (2026-06-27)
 
-> **Pending amendment (2026-11-04): ADR-016 (Gateway and Authentication Process, Proposed).** When ADR-016 is Accepted, it replaces three parts of this ADR. The gateway becomes .NET 10, not .NET 8. Clients reach it over HTTPS through Caddy on 443, and the gateway listens on loopback only. Zones register over a loopback TCP link, not a Unix domain socket. Login results go out as one `LoginResponse` HTTPS body that carries `zoneServerPort`. The gateway also does authentication; there is no separate sidecar.
+> **Pending amendment (2026-11-04): ADR-016 (Gateway and Authentication Process, Accepted 2026-11-06).** ADR-016 replaces three parts of this ADR. The gateway becomes .NET 10, not .NET 8. Clients reach it over HTTPS through Caddy on 443, and the gateway listens on loopback only. Zones register over a loopback TCP link, not a Unix domain socket. Login results go out as one `LoginResponse` HTTPS body that carries `zoneServerPort`. The gateway also does authentication; there is no separate sidecar.
 
 ## Date
 2026-06-27
@@ -122,7 +122,7 @@ One connection pool per zone process. All zone processes connect to the same Pos
 
 **Zone server process management (systemd)**
 
-Zone server processes are managed as systemd services. The gateway spawns and monitors child processes; systemd provides crash recovery (`Restart=always`). Unit name pattern: `irongrind-zone-{N}.service`.
+Zone server processes are managed as systemd services. *(Amended 2026-11-06 by ADR-016 Decision 3, zone process launch; the first text had the gateway spawn child processes with `Restart=always`, which would stop zones on a gateway restart and reuse ZoneIDs.)* Each zone is an instance of the template unit `irongrind-zone@.service`, started by the gateway with `systemctl start irongrind-zone@<zoneId>.service`; the template id and port come from `/run/irongrind/zone-<zoneId>.env`. Zones are not the gateway's child processes, so a gateway restart leaves them running. `Restart=no`: a crashed zone is not restarted (its ZoneID is never reused, `zone-instancing.md` CR-ZI-1); its players log in again and are routed to another zone.
 
 ### Decision Rationale
 
@@ -175,7 +175,7 @@ Zone server processes are managed as systemd services. The gateway spawns and mo
 | Risk | Severity | Mitigation |
 |------|----------|------------|
 | VPS hardware failure or DDoS | HIGH | Hetzner 99.9% uptime SLA; daily PostgreSQL backup to object storage; cold standby VPS provisionable in <10 minutes from backup |
-| Zone process memory leak → OOM kill | MEDIUM | systemd `Restart=always`; `MemoryMax` set per unit; Unity IL2CPP GC monitored via structured server logs |
+| Zone process memory leak → OOM kill | MEDIUM | `MemoryMax` set per unit; no automatic restart (`Restart=no`, ADR-016 Decision 3 — the killed zone's players log in again and get a new zone); Unity IL2CPP GC monitored via structured server logs |
 | PostgreSQL disk fills | MEDIUM | `character_records` rows are O(player count); `pending_purchases` rows cleaned on reconciliation; alert at 80% disk usage via `pg_stat_user_tables` |
 | Multi-VPS scale-out needed before gateway IPC is ready | LOW | Gateway → zone registry is in-process at MVP; multi-VPS refactor (Unix socket → Redis) is a discrete story completable in <1 sprint |
 | `NetworkTransform.Update` override breaks in NGO 6.3 | MEDIUM | NGO 6.3 breaking change: `NetworkTransform.Update()` can no longer be overridden; must use `NetworkTransform.OnUpdate()` instead. Any zone server code subclassing `NetworkTransform` must be audited before the first IL2CPP build. See Unity 6.3 upgrade guide. |

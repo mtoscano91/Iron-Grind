@@ -91,7 +91,7 @@ All usernames are stored and compared lowercase. The server normalizes to lowerc
 **CR-AUTH-11 — Session Establishment After Successful Login**
 All steps run in the gateway (ADR-016 Decision 4):
 1. Resolve `AccountID → CharacterID` from `character_records.account_id`. `CharacterID(0)` or no row: EC-AUTH-5.
-2. If the gateway's account → zone map holds a live session for this account, send `Evict` to that zone and wait for `EvictResult` (EC-AUTH-6).
+2. If the gateway's account → zone map holds a live session for this account, send `Evict` to that zone and wait for `EvictResult` (EC-AUTH-6). If that zone's link is down, reply `ServerError` at once; the client retries (map rules below).
 3. Pick the zone by fill-first routing (`zone-instancing.md` CR-ZI-6). If no zone is routable (the warm spare is still loading), reply `ServerStarting` at once — no `Admit`, no session change; the client retries (`auth-wire-messages.md`). The gateway never waits for a zone process to start.
 4. Generate a 16-byte session token per CR-TOK-1 and send `Admit { accountId, characterId, token }` to that zone. The zone stores the token in its own `ActiveSessionTokens` (CR-TOK-8) and starts the `CONNECTING_TIMEOUT_SECONDS` clock for the client's arrival.
 5. On `AdmitResult.accepted`: reply `LoginResponse { success:true, sessionToken, characterId, zoneId, zoneServerPort }` (`auth-wire-messages.md`). `AccountID` is never a field (CR-AUTH-2). The gateway does not keep the token after replying.
@@ -99,10 +99,13 @@ All steps run in the gateway (ADR-016 Decision 4):
 
 **Rollback:** If `Admit` is rejected (zone full or not Active), re-route once (step 3), excluding the zone that rejected; if that also fails, or no `AdmitResult` arrives within `GATEWAY_ZONE_REQUEST_TIMEOUT_MS`, reply `ServerError`. An admitted entry the client never uses is dropped by the zone after `CONNECTING_TIMEOUT_SECONDS`, which then sends `SessionReleased`. The gateway holds no token, so there is nothing to delete on its side.
 
-**Account → zone map (gateway, in memory):** one entry per account with a session in some zone, value = that zone's `ZoneID`.
-- **Added** when `AdmitResult.accepted` arrives (so an admitted client that has not arrived yet counts as a live session for EC-AUTH-6).
-- **Removed** when that zone sends `SessionReleased` for the account, when `EvictResult` arrives for it, or when the zone's link is replaced or lost with no re-registration listing the account.
-- **Rebuilt** from `RegisterZone.liveAccounts` after a gateway restart or a link reconnect (ADR-016 Decision 3). `liveAccounts` includes admitted-but-not-arrived entries.
+**Account → zone map (gateway, in memory):** one entry per account with a session in some zone, value = that zone's `ZoneID` (ADR-016 Decision 3, amended 2026-11-06).
+- **Added** when `AdmitResult.accepted` arrives for a pending `Admit` (so an admitted client that has not arrived yet counts as a live session for EC-AUTH-6).
+- **Removed** when the zone the entry points to sends `SessionReleased` or `EvictResult` for the account. A message from any other zone leaves the entry alone, so a late message from a zone the account has left cannot remove its current entry.
+- **Link lost:** the zone's entries stay for `GATEWAY_LINK_RETRY_SECONDS × 2` (4 s). During that time a fresh login for one of those accounts gets `ServerError` at once and the client retries. If the zone has not re-registered when the time is up, every entry pointing to it is removed. A crashed zone (never restarted, ADR-016 Decision 3) blocks its players' logins for at most that long.
+- **Rebuilt** on every `RegisterZone` (gateway restart, link reconnect, or a link that replaces an older one): the zone's entries are replaced by its `liveAccounts`, which include admitted-but-not-arrived entries. An account listed there that the map already assigns to another zone is not added; the gateway sends `Evict` for it to the registering zone, so the newer session wins (that zone's progress for the account since its last save is lost, as on a crash).
+- **Late admission:** an `AdmitResult.accepted` that arrives after its login was already answered (`GATEWAY_ZONE_REQUEST_TIMEOUT_MS` passed) gets an `Evict` for that account to that zone; no entry is added.
+- **Gateway boot:** the map starts empty, and logins get `ServerStarting` until `GATEWAY_LINK_RETRY_SECONDS × 2` has passed, so running zones re-register before any login is routed.
 
 **CR-AUTH-12 — 1:1 AccountID to CharacterID Mapping (MVP)**
 Each `AccountID` maps to exactly one `CharacterID`, established at registration (CR-AUTH-8 step 4) and immutable at MVP. Account and character are **separate DB records linked by FK** — never merged into a single row. This enables multi-character support post-MVP without schema migration. `CharacterID(0)` in the mapping is a persistence corruption error and must halt character load.
@@ -223,7 +226,7 @@ MapSizeBytes(N) = N × (sizeof(AccountID) + sizeof(CharacterID) + DictionaryOver
 
 **EC-AUTH-2 — Client aborts the request during `Auth_Pending` (Argon2id interrupted)**: The gateway completes the computation, sees the request was aborted, and discards the result before any write. No `loginFailureCount` change, no `Evict`, no `Admit` (CR-AUTH-9 "Abandoned auth"). No zone session exists yet, so nothing else is released. Rationale: completing and discarding is cheaper under attacker control than aborting mid-computation (no retry cost). `MAX_AUTH_PENDING` (gateway hashing semaphore, ADR-016) bounds concurrent in-flight computations and is the primary DoS mitigation against drop-cycling. *(See OQ-AUTH-1 re: network-layer rate limiting as a secondary layer.)*
 
-**EC-AUTH-3 — Client `LOGIN_HTTP_TIMEOUT_SECONDS` (15s) expires during `Auth_Pending`**: The client abandons the request and treats it as `ServerError`; the gateway sees the aborted request and discards the result as in EC-AUTH-2. No `loginFailureCount` change. Client must log in again from scratch. A 15s expiry during normal hashing implies gateway overload or configuration error — neither is a player credential issue.
+**EC-AUTH-3 — Client `LOGIN_HTTP_TIMEOUT_SECONDS` (20 s) expires during `Auth_Pending`**: The client abandons the request and treats it as `ServerError`; the gateway sees the aborted request and discards the result as in EC-AUTH-2. No `loginFailureCount` change. Client must log in again from scratch. A 15s expiry during normal hashing implies gateway overload or configuration error — neither is a player credential issue.
 
 **EC-AUTH-4 — Persistence write failure during registration**: Gateway returns `RegistrationResult { success:false, errorCode:ServerError=255 }`. The account and character stub are one transaction (CR-AUTH-8 step 4), so neither row exists — there is no orphan account. The `AccountID` and `CharacterID` sequence values are consumed even on rollback and never re-issued. Client must retry as a fresh registration.
 
@@ -285,7 +288,7 @@ MapSizeBytes(N) = N × (sizeof(AccountID) + sizeof(CharacterID) + DictionaryOver
 - Argon2id `iterations` and `memorySize` must be tuned together — re-derive performance benchmarks on target server hardware when changing either.
 - `CHARACTER_NAME_MAX_LENGTH` ≤ 24 (`EntityState.characterName` max 24 bytes, `networking-wire-protocol.md`; the `character_name VARCHAR(26)` column, ADR-006, is looser). `USERNAME_MAX_LENGTH` ≤ 32 (`accounts.username_lower VARCHAR(32)`, ADR-016). Both are tunable inside their ranges without a migration.
 - `CHARACTER_NAME_MIN_LENGTH` < `CHARACTER_NAME_MAX_LENGTH`.
-- `LOGIN_HTTP_TIMEOUT_SECONDS` (ADR-016) must exceed hashing + `GATEWAY_EVICT_TIMEOUT_MS` + `GATEWAY_ZONE_REQUEST_TIMEOUT_MS`.
+- `LOGIN_HTTP_TIMEOUT_SECONDS` (ADR-016, 20 s) must exceed hashing + `GATEWAY_EVICT_TIMEOUT_MS` (11 s) + 2 × `GATEWAY_ZONE_REQUEST_TIMEOUT_MS` (first `Admit` + one re-route; ~15.4 s).
 
 **Cross-system note:** `REAUTH_FAILURE_LIMIT` (value=3, owned by `networking-session.md`) governs the reconnect-token re-auth path. It must not be confused with `LOGIN_FAILURE_LIMIT`.
 
@@ -405,7 +408,7 @@ Authentication has no visual effects or audio events. The gateway is invisible t
 | ID | Question | Blocking? | Escalate To |
 |---|---|---|---|
 | OQ-AUTH-1 | Should per-IP rate limiting (e.g. in Caddy) be specified for login requests that are aborted during hashing? `loginFailureCount` does not change on abandoned auth — rapid abort cycling is unmitigated by the account lockout system; `MAX_AUTH_PENDING` only bounds it. | No | Architecture / Security review |
-| OQ-AUTH-2 | Should the gateway expose a server-side monitor alert when `Auth_Pending` duration exceeds 2s? Would surface Argon2id performance regression before it reaches the client's 15s `LOGIN_HTTP_TIMEOUT_SECONDS`. | No | Monitoring / observability ADR |
+| OQ-AUTH-2 | Should the gateway expose a server-side monitor alert when `Auth_Pending` duration exceeds 2s? Would surface Argon2id performance regression before it reaches the client's 20 s `LOGIN_HTTP_TIMEOUT_SECONDS`. | No | Monitoring / observability ADR |
 | OQ-AUTH-3 | `AccountID` counter advances on failed registration (non-contiguous IDs). Functionally harmless (AccountID is never client-visible). Confirm no admin or analytics requirement changes this. | No | User |
 | OQ-AUTH-4 | Should the gateway push a notification (over the zone link) to the zone holding the session when `isBanned` is set (enabling auto-kick), or is the two-step "ban + explicit kick" admin workflow acceptable for MVP? | No | Admin tooling design |
 | OQ-AUTH-5 | ~~Should the game server queue `ConnectionRequest` messages for ~5s during a transient sidecar outage and retry, or fail immediately?~~ | — | **RESOLVED 2026-11-04 (ADR-016)** — immediate `ServerError`; there is no sidecar, and the gateway's infrastructure failures are EC-AUTH-10. |
