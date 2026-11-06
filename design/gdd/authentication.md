@@ -2,7 +2,7 @@
 
 > **Status**: Approved 2026-11-04 (fixes from lean re-review #2 accepted without a verify pass). Revised 2026-11-04 for ADR-016 (gateway authentication); lean re-review #2 2026-11-04 NEEDS REVISION (1 blocking: `CHARACTER_NAME_MAX_LENGTH` ceiling 26 → 24, the `EntityState` wire cap) — fixed with 4 recommended items (name check order, token-path tradeoff note, OQ-AUTH-7, UI constant) and AC-AUTH-21(e). Lean re-review #1 the same day: NEEDS REVISION (3 blocking) — fixed (separate character name CR-AUTH-13, token-path ban check, Evict save failure, map lifecycle, ACs 35–38). Before: Approved (lean re-review, 2026-05-21)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-11-04
+> **Last Updated**: 2026-11-06 (propagated from the zone-instancing.md lean re-review: `AuthFailureReason.ServerStarting`, CR-AUTH-11 step 3, error display — no rule change to authentication itself). Previous: 2026-11-04
 > **Implements Pillar**: Pillar 1 — Earned Power (account identity is the permanent record of everything the player has earned)
 
 ## Overview
@@ -70,7 +70,7 @@ All usernames are stored and compared lowercase. The server normalizes to lowerc
 
 **Abandoned auth:** If the client aborts the HTTPS request or its `LOGIN_HTTP_TIMEOUT_SECONDS` expires during `Auth_Pending`, the gateway lets the hash finish, then checks whether the request was aborted **before writing anything**. If it was: no `loginFailureCount` change, no reset, no `Evict`, no `Admit` — the result is discarded. This is the only abort check. An abort after it (while waiting for `EvictResult` or `AdmitResult`) is not observed: the failure-count write stands, the login runs to completion, and the unused admission expires in the zone after `CONNECTING_TIMEOUT_SECONDS` (CR-AUTH-11 rollback). See EC-AUTH-2 and EC-AUTH-3.
 
-`AuthFailureReason : byte { None=0, InvalidCredentials=1, ServerError=255 }` — intentionally minimal.
+`AuthFailureReason : byte { None=0, InvalidCredentials=1, ServerStarting=2, ServerError=255 }` — intentionally minimal. `ServerStarting` is sent only after a successful credential check, when no zone is routable yet (`zone-instancing.md` CR-ZI-6 rule 4); it reveals nothing about the account (added 2026-11-06).
 
 **CR-AUTH-10 — Login Failure Lockout (Exponential Cooldown)**
 `LOGIN_FAILURE_LIMIT = 5`. Per-account lockout schedule:
@@ -92,7 +92,7 @@ All usernames are stored and compared lowercase. The server normalizes to lowerc
 All steps run in the gateway (ADR-016 Decision 4):
 1. Resolve `AccountID → CharacterID` from `character_records.account_id`. `CharacterID(0)` or no row: EC-AUTH-5.
 2. If the gateway's account → zone map holds a live session for this account, send `Evict` to that zone and wait for `EvictResult` (EC-AUTH-6).
-3. Pick the zone by fill-first routing (`zone-instancing.md` CR-ZI-6).
+3. Pick the zone by fill-first routing (`zone-instancing.md` CR-ZI-6). If no zone is routable (the warm spare is still loading), reply `ServerStarting` at once — no `Admit`, no session change; the client retries (`auth-wire-messages.md`). The gateway never waits for a zone process to start.
 4. Generate a 16-byte session token per CR-TOK-1 and send `Admit { accountId, characterId, token }` to that zone. The zone stores the token in its own `ActiveSessionTokens` (CR-TOK-8) and starts the `CONNECTING_TIMEOUT_SECONDS` clock for the client's arrival.
 5. On `AdmitResult.accepted`: reply `LoginResponse { success:true, sessionToken, characterId, zoneId, zoneServerPort }` (`auth-wire-messages.md`). `AccountID` is never a field (CR-AUTH-2). The gateway does not keep the token after replying.
 6. The client connects to the zone and sends `SessionHandshake`; the zone validates the token, loads the character (Character Persistence) and admits the player (`zone-instancing.md` CR-ZI-8 steps 2–3). Networking session `Connecting → Connected` (networking-session.md ST-NET-1) happens there, not in the gateway.
@@ -111,7 +111,7 @@ Each `AccountID` maps to exactly one `CharacterID`, established at registration 
 The login username is private: it is never shown to other players, never sent in any game message, and never used as a character name. The player picks a separate `characterName` at registration. It is what other players see (nameplates, party, chat — `party-chat.md` `CharacterName`). Rules:
 - Charset `[A-Za-z0-9_]` (ASCII only, so byte count = character count); case is preserved for display.
 - Length [`CHARACTER_NAME_MIN_LENGTH`, `CHARACTER_NAME_MAX_LENGTH`] characters; the maximum must stay ≤ 24, the tighter of two limits: `EntityState.characterName` carries at most 24 UTF-8 bytes (`networking-wire-protocol.md`), and the column is `character_name VARCHAR(26)` (ADR-006).
-- Unique case-insensitively across all characters (unique index on `lower(character_name)`, migration 003).
+- Unique case-insensitively across all characters (unique index on `lower(character_name)`, migration 004).
 - Must not equal the username case-insensitively, so the visible name does not reveal the login name. Otherwise `RegistrationError.CharacterNameMatchesUsername`.
 - Checks run in this order, returning the first failure: (1) length, counted in Unicode code points → `CharacterNameTooShort` / `CharacterNameTooLong`; (2) charset → `CharacterNameInvalidChars` (same non-ASCII handling as EC-AUTH-9); (3) `CharacterNameMatchesUsername`. `CharacterNameTaken` comes last, from the unique index at insert (CR-AUTH-8 step 5).
 - The name other players see — session registry `CharacterName`, `EntityState.characterName`, chat `senderName` — is always `character_records.character_name`, never the username.
@@ -248,11 +248,11 @@ MapSizeBytes(N) = N × (sizeof(AccountID) + sizeof(CharacterID) + DictionaryOver
 
 | Document | Type | Relationship |
 |---|---|---|
-| ADR-016 (`docs/architecture/ADR-016-gateway-and-authentication-process.md`) | **Architecture** (hard) | Places authentication in the gateway; defines HTTPS transport, the gateway↔zone link, the accounts table (migration 003) and token ownership by the zone. |
+| ADR-016 (`docs/architecture/ADR-016-gateway-and-authentication-process.md`) | **Architecture** (hard) | Places authentication in the gateway; defines HTTPS transport, the gateway↔zone link, the accounts table (migration 004) and token ownership by the zone. |
 | `networking-core.md` | **Upstream** (hard) | Networking Core defines the zone's connection-driven path. CR-NET-2's "authentication" step is now the zone's validation of a gateway-admitted token at `SessionHandshake`; credentials are never checked in the zone. `SESSION_TTL_SECONDS` (300s) and `CONNECTING_TIMEOUT_SECONDS` (30s, the Admit → handshake window) govern session expiry. |
 | `networking-session.md` | **Upstream** (hard) | Defines ST-NET-1 session state machine. `Connecting → Connected` fires in the zone when the `SessionHandshake` carrying the token from a gateway `Auth_Success` is accepted (CR-AUTH-11 step 6). `REAUTH_FAILURE_LIMIT` (value=3, reconnect-token path) is owned by this GDD and must not be redefined here — it is distinct from `LOGIN_FAILURE_LIMIT`. |
 | `networking-session-token.md` | **Upstream** (hard) | Defines session token generation, storage, validation, and rotation (CR-TOK-1 through CR-TOK-8). Authentication delegates all token logic here. Auth provides `AccountID` (the dictionary key) and the fresh token via `Admit`; the zone's store owns everything else. `F-TOK-2` documents token store memory overhead at MAX_PLAYERS_PER_ZONE. |
-| `character-persistence.md` | **Downstream** (hard, Approved) | Owns the full character record whose stub registration creates (`character_records`, FK `account_id` → `accounts`, migration 003). Loads character state at zone admission for the `CharacterID` the gateway admitted. |
+| `character-persistence.md` | **Downstream** (hard, Approved) | Owns the full character record whose stub registration creates (`character_records`, FK `account_id` → `accounts`, migration 004). Loads character state at zone admission for the `CharacterID` the gateway admitted. |
 | `zone-instancing.md` | **Downstream** (hard, Approved) | The gateway applies Zone Instancing's routing rules (CR-ZI-6) at login and sends `Admit` to the chosen zone; Zone Instancing admits the player at `SessionHandshake` (CR-ZI-8). |
 
 **Bidirectional consistency:**
@@ -299,7 +299,7 @@ Authentication has no visual effects or audio events. The gateway is invisible t
 
 **Registration screen**: Username input (same constraints as login; labelled as the private login name, with a note that other players never see it), password input (masked), confirm-password input (client-side match check before submit — do not send mismatched passwords to server), character name input (`[A-Za-z0-9_]`, max `CHARACTER_NAME_MAX_LENGTH`, case kept; note that this is the name other players see), class picker (one per playable class, `class-system.md`), register button, link to login screen.
 
-**Error display**: All credential failures (`InvalidCredentials`) show a single generic message "Invalid username or password." — no distinction between wrong password, unknown account, ban or lockout is transmitted to the client. `ServerError` and any transport failure (non-200, no response, `LOGIN_HTTP_TIMEOUT_SECONDS`) show "The server is unavailable. Please try again." Exact strings are owned by the login and registration UX specs.
+**Error display**: All credential failures (`InvalidCredentials`) show a single generic message "Invalid username or password." — no distinction between wrong password, unknown account, ban or lockout is transmitted to the client. `ServerError` and any transport failure (non-200, no response, `LOGIN_HTTP_TIMEOUT_SECONDS`) show "The server is unavailable. Please try again." `ServerStarting` shows a "server starting" status while the client retries automatically (`auth-wire-messages.md`), then the server-unavailable message if retries run out. Exact strings are owned by the login and registration UX specs.
 
 **Lockout feedback**: No lockout duration is transmitted to the client (by design — the response is always generic). The client shows "Please try again later." A local retry cooldown on the client is a UX decision outside this GDD's scope. **Design position (no-duration exposure):** intentional — lockout state and remaining duration are not exposed to the client. Client-side retry logic MUST NOT assume or infer server lockout state from response timing or message content.
 

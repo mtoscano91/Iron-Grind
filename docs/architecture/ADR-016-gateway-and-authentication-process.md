@@ -88,7 +88,8 @@ Proposed
 | Z → G | `ReconnectResult { requestId, accepted, newToken[16] }` | Zone validated and rotated (CR-TOK-4/5) |
 
 - Link loss: the zone keeps its sessions, retries every `GATEWAY_LINK_RETRY_SECONDS` and sends `RegisterZone` again with its live accounts. The gateway marks a zone with no link unroutable. A pending `Admit` or `Reconnect` with no reply within `GATEWAY_ZONE_REQUEST_TIMEOUT_MS`, or an `Evict` with no reply within `GATEWAY_EVICT_TIMEOUT_MS`, fails the client's login with `ServerError`.
-- `ZoneID` comes from the zone's launch arguments as today (`ZoneStartupArgs`). A `RegisterZone` for a ZoneID that already has a link replaces it: the gateway closes the older link and keeps the newer one. Rejecting it instead would lock a zone out after a leaked link, for example one left behind by an Editor Play-mode exit. Spawning a new instance at `ZONE_OPEN_THRESHOLD` stays as ADR-007 describes.
+- `ZoneID` comes from the zone's launch arguments as today (`ZoneStartupArgs`). The gateway allocates it with `nextval('zone_id_seq')` (Decision 5) when it starts the process, so an ID is never reused — not even after a gateway restart, when running zones keep theirs (`zone-instancing.md` CR-ZI-1, amended 2026-11-06). A `RegisterZone` for a ZoneID that already has a link replaces it: the gateway closes the older link and keeps the newer one. Rejecting it instead would lock a zone out after a leaked link, for example one left behind by an Editor Play-mode exit.
+- **Warm spare (amended 2026-11-06, `zone-instancing.md` CR-ZI-6):** the gateway keeps one instance per template, Active or Loading, below `ZONE_OPEN_THRESHOLD` — started at gateway boot (after `GATEWAY_LINK_RETRY_SECONDS × 2` for running zones to re-register) and whenever a `PlayerCount`, `ZoneDraining` or lost link leaves none; failed starts retried at most once per `ZONE_LOAD_TIMEOUT_SECONDS`. A login never waits for a zone process: with no routable zone the gateway replies `LoginResponse(ServerStarting)` and the client retries. A zone that has never held a player does not idle-close (T-7). `PlayerCount` reports occupied + admitted entries, and `Admit` is rejected when that reaches capacity.
 - This link replaces ADR-007's Unix domain socket. It is not used for zone-to-zone messages (ADR-015).
 
 ### 4. Session tokens are owned by the zone that holds the session
@@ -96,7 +97,7 @@ Proposed
 1. Hash check, lockout, ban and failure counting as CR-AUTH-9 and CR-AUTH-10, against the accounts table (Decision 5).
 2. Resolve `CharacterID` from `character_records.account_id`. If it is `CharacterID(0)` or missing, fail with `ServerError` and log critical (EC-AUTH-5).
 3. If the gateway's account → zone map holds a live session for this account, send `Evict` to that zone and wait for `EvictResult` (EC-AUTH-6).
-4. Pick the zone by fill-first routing (CR-ZI-6). Rule 1 (party co-location) is skipped at MVP: the gateway has no party data (`zone-instancing.md` OQ-ZI-9). Rule 2 reads `character_records.last_zone_id`.
+4. Pick the zone by fill-first routing (CR-ZI-6). Rule 1 (party co-location) is skipped at MVP: the gateway has no party data (`zone-instancing.md` OQ-ZI-9). Rule 2 reads `character_records.last_zone_id`. No routable zone → reply `ServerStarting` (`AuthFailureReason` = 2) at once.
 5. Generate a 16-byte token with `RandomNumberGenerator` and send `Admit`. The zone calls `SessionTokenStore.IssueToken`, records the expected `(AccountID, CharacterID)` and starts the `CONNECTING_TIMEOUT_SECONDS` clock. If no `SessionHandshake` arrives in time, the zone drops the entry and sends `SessionReleased`.
 6. On `AdmitResult.accepted`, reply `LoginResponse` with token, CharacterID, ZoneID and port. On rejection, re-route once; otherwise reply `ServerError`. The gateway does not keep the token after replying.
 
@@ -107,11 +108,12 @@ Proposed
 **Zone entry**: `SessionHandshake` carries CharacterID and the token, never AccountID. The real `IZoneEntryTokenValidator` looks up the admitted entry by CharacterID and compares the token with `CryptographicOperations.FixedTimeEquals` in the local store, without blocking. Character load stays in zone admission (Zone Instancing), so CR-AUTH-11 step 5 ("load character") runs in the zone, after the client arrives.
 
 ### 5. Account store
-New migration `tools/db/migrations/003_create_accounts.sql`:
+New migration `tools/db/migrations/004_create_accounts.sql`:
 
 ```sql
 CREATE SEQUENCE account_id_seq   AS BIGINT START 1 MINVALUE 1 MAXVALUE 4294967295 NO CYCLE;
 CREATE SEQUENCE character_id_seq AS BIGINT START 1 MINVALUE 1 MAXVALUE 4294967295 NO CYCLE;
+CREATE SEQUENCE zone_id_seq      AS BIGINT START 1 MINVALUE 1 MAXVALUE 4294967295 NO CYCLE;  -- amended 2026-11-06 (CR-ZI-1)
 
 CREATE TABLE accounts (
     account_id           BIGINT       PRIMARY KEY,
@@ -133,7 +135,7 @@ CREATE UNIQUE INDEX ux_character_records_name_lower ON character_records (lower(
 - `VARCHAR(32)` is the top of `USERNAME_MAX_LENGTH`'s safe range, so tuning the knob needs no migration. `CHARACTER_NAME_MAX_LENGTH` must stay ≤ 24: `EntityState.characterName` carries at most 24 bytes (`networking-wire-protocol.md`), tighter than `character_name VARCHAR(26)`. Dev databases whose existing character names collide case-insensitively must be cleaned before the unique index is created.
 - Registration is one transaction: `nextval` both sequences, `INSERT accounts`, `INSERT character_records (character_id, account_id, character_name, class_type)` (`character_name` = the request's `characterName`) with every other column taking its DDL default (the CR-CP-9 Level 1 values). Both rows commit or neither does; this is stronger than EC-AUTH-4's allowed orphan state. Sequence values are consumed even on rollback, which is the never-reissued rule (EC-AUTH-4, AC-AUTH-31 (b)). A unique violation (`23505`) on `username_lower` returns `UsernameTaken`; one on `ux_character_records_name_lower` returns `CharacterNameTaken` (told apart by the violated constraint's name; EC-AUTH-1, AC-AUTH-25, AC-AUTH-35).
 - Failure counting is one transaction: `SELECT … FOR UPDATE` on the account row, compute F-AUTH-1 in C#, `UPDATE`. Concurrent attempts on one account are serialized by the row lock (CR-AUTH-9 atomicity).
-- The gateway connects as its own role `gateway`: all rights on `accounts` and both sequences, `INSERT` and `SELECT (character_id, account_id, last_zone_id)` on `character_records`, nothing else. `last_zone_id` is read for CR-ZI-6 rule 2 (returning character). Zone roles get no rights on `accounts`.
+- The gateway connects as its own role `gateway`: all rights on `accounts` and the three sequences (`zone_id_seq`: `USAGE` only, for zone process starts), `INSERT` and `SELECT (character_id, account_id, last_zone_id)` on `character_records`, nothing else. `last_zone_id` is read for CR-ZI-6 rule 2 (returning character). Zone roles get no rights on `accounts`.
 
 ### 6. Code placement and shared code
 - `gateway/IronGrind.Gateway/` (app), `gateway/IronGrind.Gateway.Tests/` (NUnit, `dotnet test`), `gateway/IronGrind.Gateway.sln`. The folder is outside `src/` and `Assets/`, so Unity never compiles it.
@@ -292,7 +294,7 @@ IZoneEntryTokenValidator  // bool IsValid(in ZoneEntryRequest) — local Session
 1. Accept this ADR. Amend ADR-007 (gateway runtime .NET 10, HTTPS via Caddy, loopback TCP link, `LoginResponse`) with a pointer here.
 2. One GDD authoring session: `authentication.md` (CR-AUTH-4 rewritten; CR-AUTH-8 `classType` + separate `characterName` (CR-AUTH-13) + one transaction; CR-AUTH-11 step 5 at zone admission; EC-AUTH-10 / AC-AUTH-29 re-targeted to gateway → database or zone-link failure; `CHARACTER_NAME_MAX_LENGTH` ≤ 24 joint constraint — 26 at first, lowered to the `EntityState` wire cap by the lean re-review #2) — done 2026-11-04; `auth-wire-messages.md` (HTTPS bodies, `LoginResponse`, `classType`, then Approved); `auth-sidecar-ipc.md` → Superseded by ADR-016; `networking-session-token.md` CR-TOK-8 (filled by Admit); `zone-instancing.md` CR-ZI-6 (routing in the gateway).
 3. Install the .NET 10 SDK; add the gateway solution and CI job.
-4. Apply migration 003. Dev databases with character rows whose `account_id` has no account: insert matching account rows or truncate first; the FK will refuse otherwise.
+4. Apply migration 004. Dev databases with character rows whose `account_id` has no account: insert matching account rows or truncate first; the FK will refuse otherwise.
 5. Move `AccountID`, `CharacterID`, `ZoneID` into `src/Foundation/Shared/` (namespaces unchanged; `.meta` files move with them).
 6. `/create-stories authentication`, then a gateway epic for routing and the zone link.
 
@@ -315,6 +317,6 @@ IZoneEntryTokenValidator  // bool IsValid(in ZoneEntryRequest) — local Session
 | `GATEWAY_EVICT_TIMEOUT_MS` | 7000 | Evict reply wait; must exceed `PERSISTENCE_WRITE_TIMEOUT_SECONDS` (5 s), because the reply follows the old zone's save |
 | `GATEWAY_LINK_RETRY_SECONDS` | 2 | Zone reconnect interval |
 | `MAX_AUTH_PENDING` | 10 | Moved from `auth-sidecar-ipc.md` |
-| `LOGIN_HTTP_TIMEOUT_SECONDS` | 15 | Client `UnityWebRequest.timeout`; must exceed hashing + `GATEWAY_EVICT_TIMEOUT_MS` + `GATEWAY_ZONE_REQUEST_TIMEOUT_MS` (~9.5 s) |
+| `LOGIN_HTTP_TIMEOUT_SECONDS` | 15 | Client `UnityWebRequest.timeout`; must exceed hashing + `GATEWAY_EVICT_TIMEOUT_MS` + `GATEWAY_ZONE_REQUEST_TIMEOUT_MS` (~9.5 s). Zone start time is not included: logins never wait for a zone (`ServerStarting`) |
 | `GATEWAY_LINK_MAX_FRAME_BYTES` | 65536 | Larger frame closes the link |
 | `GATEWAY_LINK_INBOX_CAPACITY` | 1024 | Zone-side inbox bound; full inbox closes the link |

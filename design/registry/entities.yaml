@@ -37,7 +37,7 @@
 #   Each entry: name, status, source, referenced_by[], attributes{}, added, revised
 
 version: 1
-last_updated: "2026-11-02"  # SkillID note revised (SkillList is uint[], Skill System /create-epics). Prior (2026-10-30): F1_CycleTicks added (Auto-Attack Combat /create-epics). 2026-10-26: MergeResult added (Equipment Story 006 readiness: RejectedInvalidSources = 6). Same day, earlier: OQ-EQS-9 resolved (option a): EquipResult gains ItemLocked and ItemNotInInventory; wire mapping complete. Prior (2026-10-23): Zone Instancing lean re-review fixes: ZONE_ENTRY_STALL_TIMEOUT_SECONDS note (connection closed, session expired + token deleted, case (b) timing/scope); JoinRejectedReason note (Other on entry stall). Same day, earlier: ZoneEntryAck added (C->S, ends the zone-entry entering phase); ZONE_ENTRY_STALL_TIMEOUT_SECONDS revised (now the stall timer, CR-ZI-17). Prior (2026-10-22): Zone lifecycle reconciliation (zone-instancing.md CR-ZI-2 owns the lifecycle; networking-session.md ST-NET-2 becomes occupancy rules): ZONE_DRAIN_GRACE_SECONDS revised (only grace constant, referenced_by + note), ZONE_IDLE_CLOSE_SECONDS added; ZONE_CLOSE_GRACE_PERIOD_SECONDS retired (was never registered). Prior (2026-10-09): TD-046 revision: InventorySlotUpdate note (hold covers InventoryFullSync). Same day, earlier: TD-046 wire-protocol amendment: EnhancementResultCode (values fixed 0-9) and InventorySlotUpdate (with InventoryFullSync) added. Prior (2026-10-01): TD-045/043/044 design session: InventorySlotRecord + InventorySnapshot added (per-slot EnhancementLevel); EquipmentSlotEntry, EquipResult, MAX_ENHANCEMENT_LEVEL revised. Prior (2026-06-14): client-side-prediction.md designed: TICK_RATE_HZ referenced_by updated. Prior: npc-shop.md blockers applied.  # npc-shop.md design review blockers applied: CompensatingRefund=8 added to GoldTransactionReason; npc-shop.md added to referenced_by for GOLD_CAP, SESSION_TTL_SECONDS, INVENTORY_SLOT_COUNT, GoldTransactionReason. Prior: networking-wire-protocol.md Zone Instancing amendment: EntityState restructured as tagged union (EntityType, MobTypeID, isInDeadState, respawnTicksRemaining); EntityType + JoinRejectedReason enums added; ZoneFullResponse + ZoneSnapshotRequest messages added. OQ-ZI-1/2/3/7 resolved. Prior: zone-instancing.md design review: ZONE_OPEN_THRESHOLD, ZONE_DRAIN_GRACE_SECONDS, ZONE_LOAD_TIMEOUT_SECONDS, ZONE_ENTRY_STALL_TIMEOUT_SECONDS, ZoneSessionState added; EntityState characterName encoding clarified. Prior: skill-system.md Phase 5: SkillID, SkillEffectType, TargetConstraint, SkillCastRejectionCode, ISkillSystem, MANA_COST_MULTIPLIER, SKILL_READY_AUDIO_COOLDOWN_THRESHOLD_TICKS added.
+last_updated: "2026-11-06"  # Zone Instancing lean re-review: LOGIN_SERVER_STARTING_RETRY_SECONDS + LOGIN_SERVER_STARTING_MAX_RETRIES added; ZONE_IDLE_CLOSE_SECONDS, ZONE_LOAD_TIMEOUT_SECONDS, LoginResponse (ServerStarting=2) revised; migration 003 -> 004 for accounts. Prior (2026-11-02): SkillID note revised (SkillList is uint[], Skill System /create-epics). Prior (2026-10-30): F1_CycleTicks added (Auto-Attack Combat /create-epics). 2026-10-26: MergeResult added (Equipment Story 006 readiness: RejectedInvalidSources = 6). Same day, earlier: OQ-EQS-9 resolved (option a): EquipResult gains ItemLocked and ItemNotInInventory; wire mapping complete. Prior (2026-10-23): Zone Instancing lean re-review fixes: ZONE_ENTRY_STALL_TIMEOUT_SECONDS note (connection closed, session expired + token deleted, case (b) timing/scope); JoinRejectedReason note (Other on entry stall). Same day, earlier: ZoneEntryAck added (C->S, ends the zone-entry entering phase); ZONE_ENTRY_STALL_TIMEOUT_SECONDS revised (now the stall timer, CR-ZI-17). Prior (2026-10-22): Zone lifecycle reconciliation (zone-instancing.md CR-ZI-2 owns the lifecycle; networking-session.md ST-NET-2 becomes occupancy rules): ZONE_DRAIN_GRACE_SECONDS revised (only grace constant, referenced_by + note), ZONE_IDLE_CLOSE_SECONDS added; ZONE_CLOSE_GRACE_PERIOD_SECONDS retired (was never registered). Prior (2026-10-09): TD-046 revision: InventorySlotUpdate note (hold covers InventoryFullSync). Same day, earlier: TD-046 wire-protocol amendment: EnhancementResultCode (values fixed 0-9) and InventorySlotUpdate (with InventoryFullSync) added. Prior (2026-10-01): TD-045/043/044 design session: InventorySlotRecord + InventorySnapshot added (per-slot EnhancementLevel); EquipmentSlotEntry, EquipResult, MAX_ENHANCEMENT_LEVEL revised. Prior (2026-06-14): client-side-prediction.md designed: TICK_RATE_HZ referenced_by updated. Prior: npc-shop.md blockers applied.  # npc-shop.md design review blockers applied: CompensatingRefund=8 added to GoldTransactionReason; npc-shop.md added to referenced_by for GOLD_CAP, SESSION_TTL_SECONDS, INVENTORY_SLOT_COUNT, GoldTransactionReason. Prior: networking-wire-protocol.md Zone Instancing amendment: EntityState restructured as tagged union (EntityType, MobTypeID, isInDeadState, respawnTicksRemaining); EntityType + JoinRejectedReason enums added; ZoneFullResponse + ZoneSnapshotRequest messages added. OQ-ZI-1/2/3/7 resolved. Prior: zone-instancing.md design review: ZONE_OPEN_THRESHOLD, ZONE_DRAIN_GRACE_SECONDS, ZONE_LOAD_TIMEOUT_SECONDS, ZONE_ENTRY_STALL_TIMEOUT_SECONDS, ZoneSessionState added; EntityState characterName encoding clarified. Prior: skill-system.md Phase 5: SkillID, SkillEffectType, TargetConstraint, SkillCastRejectionCode, ISkillSystem, MANA_COST_MULTIPLIER, SKILL_READY_AUDIO_COOLDOWN_THRESHOLD_TICKS added.
 
 # ─── ENTITIES ────────────────────────────────────────────────────────────────
 # Named game-world objects: enemies, NPCs, characters, factions, bosses.
@@ -770,9 +770,9 @@ constants:
     type: "int constant (tuning knob)"
     value: 120
     unit: "seconds"
-    note: "Time an Active zone may hold zero player sessions (no Connected, no ghost, no entering slot) before T-7 Active -> Closed; the zone process then exits. Timer starts at T-2 with no slot allocated and whenever the occupied slot count drops to 0; any slot allocation cancels it. Must be > ZONE_ENTRY_STALL_TIMEOUT_SECONDS. Safe range: [60, 600]. See CR-ZI-2, zone-instancing.md; networking-session.md ST-NET-2."
+    note: "Time an Active zone may hold zero player sessions (no Connected, no ghost, no entering slot) before T-7 Active -> Closed; the zone process then exits. Timer starts whenever the occupied slot count drops to 0 after having been > 0 (never at T-2: a never-used warm spare does not idle-close — user decision 2026-11-06); any slot allocation cancels it. Must be > ZONE_ENTRY_STALL_TIMEOUT_SECONDS. Safe range: [60, 600]. See CR-ZI-2, zone-instancing.md; networking-session.md ST-NET-2."
     added: "2026-10-22"
-    revised: ""
+    revised: "2026-11-06"  # timer no longer starts at T-2 (warm spare, zone-instancing.md lean re-review)
 
   - name: ZONE_LOAD_TIMEOUT_SECONDS
     status: active
@@ -782,9 +782,9 @@ constants:
     type: "int constant (tuning knob)"
     value: 30
     unit: "seconds"
-    note: "Maximum time a zone instance may remain in Loading state before T-3 abort is triggered. Prevents the per-template loadingInProgress coalescing flag from deadlocking routing indefinitely on asset load failure (EC-ZI-9, CR-ZI-6). Safe range: [10, 120]."
+    note: "Maximum time a zone instance may remain in Loading state before T-3 abort is triggered. Prevents the per-template loadingInProgress flag from blocking the warm-spare rule indefinitely on asset load failure, and is the minimum interval between warm-spare start retries (CR-ZI-6, EC-ZI-8). Logins never wait on it (ServerStarting, 2026-11-06). Safe range: [10, 120]."
     added: "2026-05-29"
-    revised: ""
+    revised: "2026-11-06"
 
   - name: ZONE_ENTRY_STALL_TIMEOUT_SECONDS
     status: active
@@ -860,7 +860,7 @@ constants:
     type: "readonly struct wrapping uint"
     special_value: "AccountID(0) = AccountID.Invalid — reserved, must not be assigned to any account"
     il2cpp_note: "Requires IEqualityComparer<AccountID> for Dictionary use — nested AccountIDComparer class defined in source GDD. Consistent pattern with CharacterID (currency-system.md) and ItemID (item-database.md)."
-    note: "Server-allocated monotonically increasing counter; never visible to the client. Defined by Authentication as the identity key that precedes all session and character records. networking-session-token.md CR-TOK-7 uses AccountID as the dictionary key for ActiveSessionTokens[]. Character Persistence GDD and Zone Instancing GDD must add themselves to referenced_by when authored — both will reference AccountID as the join key between account, character, and zone records. The 1:1 AccountID:CharacterID mapping (MVP) is defined in authentication.md CR-AUTH-12 — CharacterID is the companion struct defined in currency-system.md. 2026-11-04 (ADR-016): allocated by PostgreSQL account_id_seq in the gateway; accounts table + FK from character_records (migration 003); type moves to src/Foundation/Shared/ (namespace unchanged) so the gateway compiles it — still never in a client-facing schema."
+    note: "Server-allocated monotonically increasing counter; never visible to the client. Defined by Authentication as the identity key that precedes all session and character records. networking-session-token.md CR-TOK-7 uses AccountID as the dictionary key for ActiveSessionTokens[]. Character Persistence GDD and Zone Instancing GDD must add themselves to referenced_by when authored — both will reference AccountID as the join key between account, character, and zone records. The 1:1 AccountID:CharacterID mapping (MVP) is defined in authentication.md CR-AUTH-12 — CharacterID is the companion struct defined in currency-system.md. 2026-11-04 (ADR-016): allocated by PostgreSQL account_id_seq in the gateway; accounts table + FK from character_records (migration 004); type moves to src/Foundation/Shared/ (namespace unchanged) so the gateway compiles it — still never in a client-facing schema."
     added: "2026-05-20"
     revised: "2026-11-04"
 
@@ -1501,9 +1501,9 @@ constants:
     type: "struct (HTTPS response body, gateway → client)"
     fields: "{success: bool, errorCode: AuthFailureReason(byte); on success only: sessionToken: byte[16], characterId: CharacterID(uint), zoneId: ZoneID(uint), zoneServerPort: ushort}"
     wire_size: "2-byte body on failure; 28-byte body on success (no message-type header — endpoint POST /v1/login identifies it)"
-    note: "Answers every POST /v1/login (fresh and token path, success and failure); always HTTP 200, non-200 = client-side ServerError. Replaces LoginResult + ConnectionAccepted (ADR-016 Decision 2). The target zone has accepted Admit (fresh) or rotated the token (Reconnect) before it is written. AccountID is never a field (CR-AUTH-2, AC-AUTH-30). Codec in src/Foundation/Shared/."
+    note: "Answers every POST /v1/login (fresh and token path, success and failure); always HTTP 200, non-200 = client-side ServerError. Replaces LoginResult + ConnectionAccepted (ADR-016 Decision 2). The target zone has accepted Admit (fresh) or rotated the token (Reconnect) before it is written. AuthFailureReason {None=0, InvalidCredentials=1, ServerStarting=2 (added 2026-11-06: no routable zone yet, client retries), ServerError=255}. AccountID is never a field (CR-AUTH-2, AC-AUTH-30). Codec in src/Foundation/Shared/."
     added: "2026-11-04"
-    revised: ""
+    revised: "2026-11-06"  # ServerStarting = 2
 
   - name: RegistrationRequest
     status: active
@@ -1540,9 +1540,35 @@ constants:
       - docs/architecture/ADR-016-gateway-and-authentication-process.md
     type: "int constant (tuning knob)"
     value: 16
-    note: "Max visible character name length, ASCII [A-Za-z0-9_] so chars = bytes. Safe range [12, 24]; hard ceiling 24 = EntityState.characterName wire cap (networking-wire-protocol.md, max 24 bytes UTF-8), tighter than character_name VARCHAR(26) (ADR-006, character-persistence.md CharacterName max 26 bytes). Checks in order: length (code points) -> charset -> MatchesUsername -> Taken (unique index). Companion CHARACTER_NAME_MIN_LENGTH = 3 [2, 4]. Unique case-insensitively (ux_character_records_name_lower, migration 003). Added 2026-11-04 (authentication.md CR-AUTH-13)."
+    note: "Max visible character name length, ASCII [A-Za-z0-9_] so chars = bytes. Safe range [12, 24]; hard ceiling 24 = EntityState.characterName wire cap (networking-wire-protocol.md, max 24 bytes UTF-8), tighter than character_name VARCHAR(26) (ADR-006, character-persistence.md CharacterName max 26 bytes). Checks in order: length (code points) -> charset -> MatchesUsername -> Taken (unique index). Companion CHARACTER_NAME_MIN_LENGTH = 3 [2, 4]. Unique case-insensitively (ux_character_records_name_lower, migration 004). Added 2026-11-04 (authentication.md CR-AUTH-13)."
     added: "2026-11-04"
     revised: "2026-11-04"  # ceiling 26 -> 24 (wire cap), authentication.md lean re-review #2
+
+  - name: LOGIN_SERVER_STARTING_RETRY_SECONDS
+    status: active
+    source: design/gdd/auth-wire-messages.md
+    referenced_by:
+      - design/gdd/auth-wire-messages.md
+      - design/gdd/authentication.md
+      - design/gdd/zone-instancing.md
+    type: "int constant (tuning knob, client)"
+    value: 5
+    unit: "seconds"
+    note: "Delay before the client resends the same ConnectionRequest after LoginResponse(ServerStarting) (no routable zone yet — zone-instancing.md CR-ZI-6 rule 4). Safe range [2, 10]. Joint constraint: LOGIN_SERVER_STARTING_RETRY_SECONDS x LOGIN_SERVER_STARTING_MAX_RETRIES > ZONE_LOAD_TIMEOUT_SECONDS."
+    added: "2026-11-06"
+    revised: ""
+
+  - name: LOGIN_SERVER_STARTING_MAX_RETRIES
+    status: active
+    source: design/gdd/auth-wire-messages.md
+    referenced_by:
+      - design/gdd/auth-wire-messages.md
+      - design/gdd/authentication.md
+    type: "int constant (tuning knob, client)"
+    value: 8
+    note: "Automatic retries after ServerStarting before the client shows the server-unavailable message. Safe range [4, 20]. Default 8 x 5 s = 40 s > ZONE_LOAD_TIMEOUT_SECONDS (30 s)."
+    added: "2026-11-06"
+    revised: ""
 
   - name: RoutingRedirectMessage
     status: deprecated

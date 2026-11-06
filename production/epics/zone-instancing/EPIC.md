@@ -16,7 +16,7 @@ Zone Instancing is the server-side runtime of one zone instance: it owns the ins
 **Zone process only.** The routing requirements and the gateway client are recorded in the table below and stay **Blocked** until a gateway ADR and a gateway epic exist (`/architecture-decision` for the gateway process and the zone → gateway registration IPC):
 
 - TR-zi-001 — `ZoneID` allocation (the zone process only reads its `ZoneID` from `-zoneId`, which Story 043 already parses; that part is not blocked)
-- TR-zi-005 — CR-ZI-6 fill-first routing, party co-location, coalescing (AC-ZI-1, 2, 3, 16, 19, 20)
+- TR-zi-005 — CR-ZI-6 fill-first routing, party co-location, warm spare, admission reservations (AC-ZI-1, 2, 3, 16, 19, 20, 32, 33, 34)
 - TR-zi-018 — the real `IGatewayRegistration` at S10
 
 ## Governing ADRs
@@ -43,7 +43,7 @@ Zone Instancing is the server-side runtime of one zone instance: it owns the ins
 | TR-zi-002 | CR-ZI-2 + States and Transitions — Loading → Active → Draining → Closed, T-1 to T-7 (T-7 idle close after `ZONE_IDLE_CLOSE_SECONDS`), `ZoneSessionState` enum; the only zone state machine (ST-NET-2 drives it, 2026-10-22) | ✅ ADR-009 A1 (S9 Active, teardown) + dated note 2026-10-22 (a quit request starts T-4; a second one is T-6) |
 | TR-zi-003 | CR-ZI-3 / CR-ZI-4 — `MAX_PLAYERS_PER_ZONE` = 50 counting all slot-holding states, capacity check atomic with allocation; player (`byte`) and mob (`ushort`) slot pools with free-lists and stable indices; OWL index offset for mobs | design rule (main-thread atomicity, GDD Runtime Model) |
 | TR-zi-004 | CR-ZI-5 + EC-ZI-12 — per-zone `EntityID` counter from 1, never 0; counter exhaustion → critical alert + T-6 | design rule |
-| TR-zi-005 | CR-ZI-6 — fill-first routing (rules 1–5), party co-location, per-template `loadingInProgress` coalescing bounded by `ZONE_LOAD_TIMEOUT_SECONDS` | ⚠️ ADR-007 (gateway holds the routing table); **Blocked** (gateway) |
+| TR-zi-005 | CR-ZI-6 — fill-first routing (rules 1–5), party co-location, warm spare + `ServerStarting` (no login waits for a zone; `loadingInProgress` bounds spare starts — revised 2026-11-06), admitted entries reserve capacity, ZoneID from `zone_id_seq` | ⚠️ ADR-007 (gateway holds the routing table); **Blocked** (gateway) |
 | TR-zi-006 | CR-ZI-7 — `ZoneFullResponse { zoneId, reason, retryAfterSeconds }`, no slot, no handshake response, no queue | ✅ ADR-004 |
 | TR-zi-007 | CR-ZI-8 steps 3–10 — token validation → `LoadCharacter` → capacity + slot → EntityID → snapshot → `SessionReady` → party notify → `PlayerJoinedZone` → tick loop | ✅ ADR-014, ADR-011, ADR-006 |
 | TR-zi-008 | CR-ZI-8 step 6 + F-ZI-1 — `ZoneStateSnapshot` as tagged EntityState entries (player / mob, dead-state fields), `F = max(1, ⌈(P·S_player + M·S_mob) / 504⌉)` fragments | ✅ ADR-004 |

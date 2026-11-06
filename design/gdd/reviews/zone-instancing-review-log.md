@@ -1,5 +1,12 @@
 # Zone Instancing — Design Review Log
 
+## Review — 2026-11-06 (lean, ADR-016 revision) — Verdict: NEEDS REVISION (fixed same session; lean verify pending)
+Scope signal: XL
+Specialists: None (lean mode)
+Blocking items: 3 | Recommended: 3
+Summary: Re-review of the 2026-11-04 gateway-routing revision. Blockers: (1) CR-ZI-1 had each zone process allocate its own ZoneID from a counter starting at 1, while ADR-007/009/016 pass `-zoneId` from the gateway — and a gateway restart with an in-memory counter would reuse a live zone's ID, whose `RegisterZone` replaces the live link → user decision: PostgreSQL `zone_id_seq`, never reused across runs (ADR-016 migration + grant amended); (2) rule 4 / coalescing held the login open for a zone start (`ZONE_LOAD_TIMEOUT_SECONDS` 30 s) beyond `LOGIN_HTTP_TIMEOUT_SECONDS` 15 s → user decision: gateway keeps a warm spare per template, overflow to the lowest Active instance while it loads, else `LoginResponse(ServerStarting=2)` with client retry knobs; T-7 idle timer only after the zone has held a player (user decision — Story 001 code follow-up); (3) the `Admit` capacity check ignored admitted-but-not-arrived entries, so fill-first would oversubscribe the fullest zone → admitted entries reserve capacity in `Admit` and `PlayerCount`, step 4 ZoneFull is the backstop. Recommended applied: step 3 → CR-TOK-9 (close on mismatch); F-ZI-1 range [16, 19] + AC-ZI-8 24-byte ceiling; CR-ZI-7 backstop wording. Nice-to-have: EC-ZI-1 reworded. Also found: ADR-016's accounts migration was numbered 003, already taken on disk → renumbered 004. New ACs 32–34; AC-ZI-1/3/16/19/21/22/25/26 revised. Propagated to auth-wire-messages.md, authentication.md, ADR-016, entities.yaml, Zone Instancing EPIC TR-zi-005.
+Prior verdict resolved: Yes — 2026-10-23 items unaffected; this pass covered the 2026-11-04 revision.
+
 ## Review — 2026-10-23 (lean verify of `7b2d65e`) — Verdict: NEEDS REVISION (fixed same session; marked Approved by user)
 Scope signal: S (this revision; GDD overall XL)
 Specialists: None (lean mode — single-session analysis)

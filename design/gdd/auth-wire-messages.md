@@ -2,7 +2,7 @@
 
 > **Status**: Approved 2026-11-04 (aligned with ADR-016: HTTPS bodies, `LoginResponse`, `classType`; `characterName` + character-name errors added after the authentication.md lean re-review the same day). Before: Draft (2026-05-29)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-11-04
+> **Last Updated**: 2026-11-06 (`AuthFailureReason.ServerStarting = 2` + client retry knobs — zone-instancing.md CR-ZI-6 warm spare). Previous: 2026-11-04
 > **Type**: Protocol primitive — referenced by authentication.md, networking-session-token.md and zone-instancing.md
 
 ## Purpose
@@ -87,7 +87,7 @@ LoginResponse {
 }
 ```
 
-`AuthFailureReason : byte { None=0, InvalidCredentials=1, ServerError=255 }`
+`AuthFailureReason : byte { None=0, InvalidCredentials=1, ServerStarting=2, ServerError=255 }`
 
 Body length: failure = 2 bytes; success = 2 + 16 + 4 + 4 + 2 = **28 bytes**.
 
@@ -97,8 +97,11 @@ Body length: failure = 2 bytes; success = 2 + 16 + 4 + 4 + 2 = **28 bytes**.
 | Token path success | Same fields; `sessionToken` is the rotated token (CR-TOK-5) | Replace the stored token; reconnect to that zone |
 | Credential failure (any cause in CR-AUTH-9) | `success=false, errorCode=InvalidCredentials` | Show the generic message; no hint about the cause |
 | Infrastructure failure (EC-AUTH-5, EC-AUTH-10, `MAX_AUTH_PENDING` full) | `success=false, errorCode=ServerError` | Show the server-error message |
+| No routable zone yet (zone-instancing.md CR-ZI-6 rule 4 — the warm spare is still loading) | `success=false, errorCode=ServerStarting` | Show a "server starting" status and resend the same `ConnectionRequest` after `LOGIN_SERVER_STARTING_RETRY_SECONDS`, up to `LOGIN_SERVER_STARTING_MAX_RETRIES` times; then show the server-error message |
 
-**Zone routing:** `zoneId` is chosen by fill-first routing (zone-instancing.md CR-ZI-6), run by the gateway, and the zone has accepted `Admit` for this token before the response is written. If routing fails (no zone accepts `Admit` after one re-route), the response is `ServerError`.
+`ServerStarting` is sent only after the credential check (or token-path lookup) has passed: no failure count changes, no `Admit` is sent and no session state changes, so a retry is the same request again. Client knobs: `LOGIN_SERVER_STARTING_RETRY_SECONDS` = 5 (safe range [2, 10]); `LOGIN_SERVER_STARTING_MAX_RETRIES` = 8 (safe range [4, 20]; `retry × max` must exceed `ZONE_LOAD_TIMEOUT_SECONDS` = 30 s so a normal zone start is waited out). *(Added 2026-11-06, zone-instancing.md lean re-review, user decision.)*
+
+**Zone routing:** `zoneId` is chosen by fill-first routing (zone-instancing.md CR-ZI-6), run by the gateway, and the zone has accepted `Admit` for this token before the response is written. The gateway never holds a request open while a zone process starts. If no zone is routable, the response is `ServerStarting`; if routing fails (no zone accepts `Admit` after one re-route), the response is `ServerError`.
 
 **Zone no longer Active at handshake (formerly `RoutingRedirectMessage`):** a zone that leaves Active rejects new `Admit`s and drops admitted entries whose client has not arrived, sending `SessionReleased` to the gateway. A `SessionHandshake` that arrives after that gets `ZoneFullResponse(ZoneDoesNotExist)` (zone-instancing.md EC-ZI-1), and the client returns to login. There is no server-initiated redirect.
 

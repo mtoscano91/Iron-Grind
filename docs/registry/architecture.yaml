@@ -98,7 +98,7 @@ state_ownership:
     status: active
     owner_system: IronGrind.Gateway
     adr: docs/architecture/ADR-016-gateway-and-authentication-process.md
-    interface: "accounts table + account_id_seq / character_id_seq (migration 003); gateway IAccountRepository; failure counting under SELECT ... FOR UPDATE"
+    interface: "accounts table + account_id_seq / character_id_seq (migration 004); gateway IAccountRepository; failure counting under SELECT ... FOR UPDATE"
     write_access: gateway-only (DB role gateway); zone roles have no rights on accounts
     referenced_by:
       - docs/architecture/ADR-016-gateway-and-authentication-process.md
