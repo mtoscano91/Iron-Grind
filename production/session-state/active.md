@@ -6268,3 +6268,18 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Decisions: link message types 0x01–0x07 Z→G, 0x81–0x83 G→Z (high bit = direction); field widths table in the story (RegisterZone 11+4n, PlayerCount u16, AdmitResult 6, ReconnectResult 21, Admit 28, Evict 8, Reconnect 24 …); wrong-direction / bad accepted flag / inconsistent reason = violation; tests as two files (Story 002 precedent); AdmitRejectReason moved to src/ServerLogic/Gateway/Shared/ keeping namespace; new code namespace IronGrind.ServerLogic.Gateway.Link; performance note
 - The story is the source of truth for the widths (ADR-016 lists names only). Not committed
 - Next: /dev-story production/epics/gateway/story-001-link-frame-codec.md
+
+## Session Extract — /dev-story 2026-11-09
+- Story: production/epics/gateway/story-001-link-frame-codec.md — Link frame codec
+- Files changed: src/ServerLogic/Gateway/Shared/AdmitRejectReason.cs (+.meta, git mv from src/ServerLogic/Gateway/), src/ServerLogic/Gateway/Shared/Link/{GatewayLinkMessageType,GatewayLinkFrameStatus,GatewayLinkMessages,GatewayLinkCodec}.cs (+ .meta, Link.meta), tests/EditMode/Gateway/GatewayLink_Codec_tests.cs (+ Gateway.meta), gateway/IronGrind.Gateway.Tests/GatewayLink_Codec_tests.cs
+- Test written: both files, 54 tests each. Unity EditMode 6598 passed / 0 failed / 129 skipped (codec 54/54, AssemblyBoundary 12/12); dotnet 390 passed / 0 failed / 45 skipped (DB)
+- Review note: gateway decoder accepts an undefined AdmitRejectReason byte (e.g. 9) on a rejected AdmitResult; raise at /code-review
+- Blockers: None
+- Next: /code-review src/ServerLogic/Gateway/Shared/Link/*.cs then /story-done production/epics/gateway/story-001-link-frame-codec.md
+- Code review 2026-11-09: CHANGES REQUIRED → fixes 1-6 applied (undefined AdmitRejectReason rejected on encode/decode, maxFrameBytes < 1 = violation, per-message decode helpers, 10 more tests, RegisterZone cap doc, test constants). 64 tests per file. Unity 6608 passed / 0 failed; dotnet 400 passed / 0 failed. Next: /story-done production/epics/gateway/story-001-link-frame-codec.md
+
+## Session Extract — /story-done 2026-11-09
+- Verdict: COMPLETE
+- Story: production/epics/gateway/story-001-link-frame-codec.md — Link frame codec (not committed)
+- Tech debt logged: None
+- Next recommended: /story-readiness production/epics/gateway/story-003-link-listener.md (002 and 010 also unblocked)

@@ -1,7 +1,7 @@
 # Story 001: Link frame codec
 
 > **Epic**: Gateway
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Logic
 > **Estimate**: 4 h
@@ -30,7 +30,7 @@
 
 ## Acceptance Criteria
 
-- [ ] `GatewayLinkMessageType` byte enum with exactly these 10 values (decided at readiness 2026-11-09; the high bit marks gateway → zone) and bodies (little-endian; `AccountID`, `CharacterID`, `ZoneID` as their raw `uint32`):
+- [x] `GatewayLinkMessageType` byte enum with exactly these 10 values (decided at readiness 2026-11-09; the high bit marks gateway → zone) and bodies (little-endian; `AccountID`, `CharacterID`, `ZoneID` as their raw `uint32`):
 
   | Type | Message | Body | Bytes |
   |---|---|---|---|
@@ -45,13 +45,13 @@
   | 0x82 | `Evict` | requestId u32, accountId u32 | 8 |
   | 0x83 | `Reconnect` | requestId u32, accountId u32, token[16] | 24 |
 
-- [ ] Each side decodes only the other side's messages: the zone decoder accepts 0x81–0x83, the gateway decoder 0x01–0x07; a type from the wrong direction, an `accepted` byte other than 0/1, `accepted = 1` with a reason other than `None` (or `0` with `None`), or a non-zero `newToken` on a rejected `ReconnectResult` is a protocol violation
-- [ ] Every message round-trips (encode → decode equal) for normal and boundary values (0, max, empty `liveAccounts`, max-length `liveAccounts` that still fits the frame cap)
-- [ ] `TryReadFrame` on a byte buffer: returns "need more bytes" for a partial header or body, one frame for an exact buffer, and leaves trailing bytes for the next frame
-- [ ] A declared length above `GATEWAY_LINK_MAX_FRAME_BYTES` (65 536, passed in, not hardcoded) or of 0 is reported as a protocol violation (caller closes the link); so is an unknown message type or a body whose length does not match its type
-- [ ] Decoding never throws on malformed input; tokens are always exactly 16 bytes
-- [ ] The same test cases pass in both runners, as two files (precedent: Authentication Story 002's `Authentication_BodyCodec_tests.cs` / `Auth_BodyCodec_tests.cs`): `tests/EditMode/Gateway/GatewayLink_Codec_tests.cs` (Unity) and `gateway/IronGrind.Gateway.Tests/GatewayLink_Codec_tests.cs`
-- [ ] `AdmitRejectReason` moved from `src/ServerLogic/Gateway/` to `src/ServerLogic/Gateway/Shared/` (with its `.meta`), namespace `IronGrind.ServerLogic.Gateway` and values `None=0, NotActive=1, Full=2, InvalidToken=3` unchanged; the assembly-boundary tests still pass
+- [x] Each side decodes only the other side's messages: the zone decoder accepts 0x81–0x83, the gateway decoder 0x01–0x07; a type from the wrong direction, an `accepted` byte other than 0/1, `accepted = 1` with a reason other than `None` (or `0` with `None`), or a non-zero `newToken` on a rejected `ReconnectResult` is a protocol violation
+- [x] Every message round-trips (encode → decode equal) for normal and boundary values (0, max, empty `liveAccounts`, max-length `liveAccounts` that still fits the frame cap)
+- [x] `TryReadFrame` on a byte buffer: returns "need more bytes" for a partial header or body, one frame for an exact buffer, and leaves trailing bytes for the next frame
+- [x] A declared length above `GATEWAY_LINK_MAX_FRAME_BYTES` (65 536, passed in, not hardcoded) or of 0 is reported as a protocol violation (caller closes the link); so is an unknown message type or a body whose length does not match its type
+- [x] Decoding never throws on malformed input; tokens are always exactly 16 bytes
+- [x] The same test cases pass in both runners, as two files (precedent: Authentication Story 002's `Authentication_BodyCodec_tests.cs` / `Auth_BodyCodec_tests.cs`): `tests/EditMode/Gateway/GatewayLink_Codec_tests.cs` (Unity) and `gateway/IronGrind.Gateway.Tests/GatewayLink_Codec_tests.cs`
+- [x] `AdmitRejectReason` moved from `src/ServerLogic/Gateway/` to `src/ServerLogic/Gateway/Shared/` (with its `.meta`), namespace `IronGrind.ServerLogic.Gateway` and values `None=0, NotActive=1, Full=2, InvalidToken=3` unchanged; the assembly-boundary tests still pass
 
 ---
 
@@ -104,7 +104,7 @@
 **Required evidence**:
 - `tests/EditMode/Gateway/GatewayLink_Codec_tests.cs` and `gateway/IronGrind.Gateway.Tests/GatewayLink_Codec_tests.cs` — must pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 64 tests per file, all passing (Unity and dotnet, 2026-11-09)
 
 ---
 
@@ -112,3 +112,12 @@
 
 - Depends on: None (Authentication Story 001's shared folders exist)
 - Unlocks: Story 003, Story 004, Story 010
+
+---
+
+## Completion Notes
+**Completed**: 2026-11-09
+**Criteria**: 8/8 passing (none deferred)
+**Deviations**: None
+**Test Evidence**: Logic: `tests/EditMode/Gateway/GatewayLink_Codec_tests.cs` and `gateway/IronGrind.Gateway.Tests/GatewayLink_Codec_tests.cs`, 64 cases each (identical apart from namespace and NUnit 4 assert aliases). Unity EditMode 6608 passed / 0 failed; dotnet 400 passed / 0 failed / 45 skipped (DB)
+**Code Review**: Complete — `/code-review` CHANGES REQUIRED, 6 fixes applied (undefined `AdmitRejectReason` rejected on encode and decode, `maxFrameBytes < 1` is a violation, per-message decode helpers, 10 more tests, RegisterZone cap doc, test constants)

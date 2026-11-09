@@ -51,7 +51,7 @@ This epic is complete when:
 
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
-| 001 | Link frame codec | Logic | Ready | ADR-016 |
+| 001 | Link frame codec | Logic | Complete | ADR-016 |
 | 002 | ZoneID allocator | Integration | Ready | ADR-016 |
 | 003 | Gateway link listener | Integration | Ready | ADR-016 |
 | 004 | Real `IZoneLink` — requests, replies and timeouts | Logic | Ready | ADR-016 |
@@ -68,4 +68,4 @@ Order: 001 first; gateway side 002–008 (002 and 006 can start in parallel with
 
 ## Next Step
 
-`/story-readiness production/epics/gateway/story-001-link-frame-codec.md`. Separately, a `/quick-design` session for the `SessionHandshake` body unblocks Story 012.
+Story 001 Complete 2026-11-09. Next: `/story-readiness production/epics/gateway/story-003-link-listener.md` (002 and 010 also unblocked). Separately, a `/quick-design` session for the `SessionHandshake` body unblocks Story 012.

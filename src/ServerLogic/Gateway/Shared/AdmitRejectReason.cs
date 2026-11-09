@@ -2,7 +2,7 @@ namespace IronGrind.ServerLogic.Gateway
 {
     /// <summary>
     /// Why the zone refused a gateway <c>Admit</c> (Authentication Story 013, ADR-016 Decision 4). Carried by
-    /// <c>AdmitResult { requestId, accepted, reason }</c> on the gateway link.
+    /// <c>AdmitResult { requestId, accepted, reason }</c> on the gateway link. Shared source (ADR-016 Decision 6): compiled by Unity and by the gateway.
     /// </summary>
     public enum AdmitRejectReason : byte
     {
