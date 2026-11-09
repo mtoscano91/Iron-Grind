@@ -56,7 +56,7 @@ Authentication is the server-side identity verification layer that gates all pla
 | 016 | Caddy TLS-only front | Integration | Complete | ADR-016, ADR-007 |
 | 017 | End-to-end login → zone entry | Integration | Ready | ADR-016 |
 
-Work in order; each story's `Depends on:` says what must be Done first. Story 017 also waits for the gateway epic's link, map and router stories (epic not yet created — ADR-016 Migration Plan step 7). AC-AUTH-24 (map memory, advisory) belongs to the gateway epic.
+Work in order; each story's `Depends on:` says what must be Done first. Story 017 also waits for the gateway epic's link, map and router stories (Gateway epic created 2026-11-09 — `production/epics/gateway/EPIC.md`, ADR-016 Migration Plan step 7). AC-AUTH-24 (map memory, advisory) belongs to the gateway epic.
 
 ## Definition of Done
 

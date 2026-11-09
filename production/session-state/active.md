@@ -6248,3 +6248,23 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: None
 - Open: `.gitattributes` (`*.sh text eol=lf`, `*.bin binary`) awaits user decision; untracked ProjectSettings/Packages/, SceneTemplateSettings.json, bash.exe.stackdump predate the session
 - Not committed. Next recommended: commit Story 016, then the gateway epic (ADR-016 step 7) via /create-epics → /create-stories gateway; Story 017 waits on it
+
+## Session Extract — /create-epics gateway 2026-11-09
+- Created production/epics/gateway/EPIC.md (Core; GDDs zone-instancing.md + authentication.md; ADR-016 D3 (+1/5/6), ADR-007, ADR-009 Amendment 1; engine risk HIGH via ADR-007/009, MEDIUM for the link thread). Lean — PR-EPIC skipped
+- Scope: real zone link (gateway listener + zone-side link thread, inbox, retry/re-register, teardown 2a/OnDestroy stop), account → zone map lifecycle, fill-first routing + party co-location + warm spare + ServerStarting, zone_id_seq allocation, IZoneLauncher (systemd template unit + polkit; dev Process.Start/no-op), replacing UnavailableZoneLink / NoZoneRouter / IGatewayRegistration stand-in / LoggingGatewayLinkOutbox. User decision: TD-095 (zone-side client entry path) included
+- Requirements: TR-zi-001/005/018 + TR-auth-003 (link part) traced to ADR-016; map/link/launcher rules have no TR-ID (trace to ADR-016 D3); takes over AC-ZI-1/2/3/16/19/20 and AC-AUTH-24
+- Propagated: epics index (Gateway row; Authentication row 001-016 Complete; Zone Instancing note; manifest 2026-11-06; Last Updated), zone-instancing EPIC (scope note + gap 1), authentication EPIC (Story 017 note), tech-debt-register TD-095 owner
+- Not committed. Next: /create-stories gateway
+
+## Session Extract — /create-stories gateway 2026-11-09
+- 12 stories in production/epics/gateway/ (5 Logic, 7 Integration), lean — QL-STORY-READY skipped, QA cases drafted from GDD ACs: 001 link frame codec (shared), 002 ZoneID allocator (zone_id_seq, AC-ZI-16), 003 link listener, 004 real IZoneLink (requestId, 2000/11000 ms timeouts, late Admit → Evict), 005 account → zone map (AC-AUTH-24), 006 routing table + fill-first router (AC-ZI-2/3/20/34), 007 warm spare + IZoneLauncher (AC-ZI-1/19/33), 008 launchers + tools/deploy (systemd template unit, polkit, tmpfiles), 009 gateway composition (stand-ins removed, fake-zone end-to-end), 010 zone link thread, 011 zone link wiring (S10, inbox drain, PlayerCount, ZoneDraining, teardown 2a/OnDestroy; AC-ZI-32/35 send side; ADR-016 Verification 2 evidence), 012 zone client entry path (TD-095)
+- User decision: Story 012 written Blocked until /quick-design fixes SessionHandshake C→S body (proposal characterId u32, targetZoneId u32, token[16] = 24 bytes, R-OD id 0xE0xx) in networking-wire-protocol.md
+- Open at readiness: 007 UDP port allocation (config range vs fixed ports); 010 outbound messages while the link is down (drop vs keep); 001 where AdmitRejectReason lives (move to shared)
+- EPIC.md Stories table + Next Step; index row. Not committed
+- Next: /story-readiness production/epics/gateway/story-001-link-frame-codec.md (and /quick-design SessionHandshake to unblock 012)
+
+## Session Extract — /story-readiness 2026-11-09 (Gateway Story 001)
+- Story: production/epics/gateway/story-001-link-frame-codec.md — verdict NEEDS WORK → user "yes" → all 4 applied, now READY (lean, QL-STORY-READY skipped)
+- Decisions: link message types 0x01–0x07 Z→G, 0x81–0x83 G→Z (high bit = direction); field widths table in the story (RegisterZone 11+4n, PlayerCount u16, AdmitResult 6, ReconnectResult 21, Admit 28, Evict 8, Reconnect 24 …); wrong-direction / bad accepted flag / inconsistent reason = violation; tests as two files (Story 002 precedent); AdmitRejectReason moved to src/ServerLogic/Gateway/Shared/ keeping namespace; new code namespace IronGrind.ServerLogic.Gateway.Link; performance note
+- The story is the source of truth for the widths (ADR-016 lists names only). Not committed
+- Next: /dev-story production/epics/gateway/story-001-link-frame-codec.md

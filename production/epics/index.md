@@ -1,8 +1,8 @@
 # Epics Index
 
-Last Updated: 2026-11-04
+Last Updated: 2026-11-09
 Engine: Unity 6.3 LTS (6000.3)
-Control Manifest Version: 2026-10-26
+Control Manifest Version: 2026-11-06
 
 | Epic | Layer | System | GDD | Stories | Status |
 |------|-------|--------|-----|---------|--------|
@@ -10,14 +10,15 @@ Control Manifest Version: 2026-10-26
 | [Item Database](item-database/EPIC.md) | Foundation | Item Database | design/gdd/item-database.md | 4 stories (001-004), all Complete | Complete |
 | [Currency System](currency-system/EPIC.md) | Foundation | Currency System | design/gdd/currency-system.md | 6 stories (001-006), all Complete | Complete |
 | [Networking Core](networking-core/EPIC.md) | Foundation | Networking Core (+ 10 sub-contracts) | design/gdd/networking-core.md | 45 stories (001-045), all Complete (045, the zone server host and local verification, 2026-10-22); the Linux IL2CPP headless-build engine-risk gate is still open | Stories Complete |
-| [Authentication](authentication/EPIC.md) | Core | Authentication | design/gdd/authentication.md | 17 (2026-11-06) | Ready |
+| [Authentication](authentication/EPIC.md) | Core | Authentication | design/gdd/authentication.md | 17 stories (001-016 Complete; 017 waits for the Gateway epic) | In Progress |
+| [Gateway](gateway/EPIC.md) | Core | Gateway process (routing, zone link, account map, zone launcher) | design/gdd/zone-instancing.md, design/gdd/authentication.md | 12 stories (2026-11-09): 11 Ready, 012 Blocked on the `SessionHandshake` schema | Ready |
 | [Damage Calculation](damage-calculation/EPIC.md) | Core | Damage Calculation | design/gdd/damage-calculation.md | 7 stories (001-006 Complete; 007 Blocked on the client build pipeline) | In Progress |
 | [Leveling System](leveling-system/EPIC.md) | Core | Leveling System | design/gdd/leveling-system.md | 16 stories (001-016 Complete) | Complete |
 | [Inventory System](inventory-system/EPIC.md) | Core | Inventory System | design/gdd/inventory-system.md | 12 stories (001-012 Complete) | Complete |
 | [Loot Table System](loot-table-system/EPIC.md) | Core | Loot Table System | design/gdd/loot-table-system.md | 15 stories (001-015 Complete) | Complete |
 | [Status Effects / Buffs](status-effects/EPIC.md) | Core | Status Effects | design/gdd/status-effects.md | 9 stories (001-009), all Complete (009 on 2026-10-29); TR-se-006 (client buff display) deferred | Complete |
 | [Equipment System](equipment-system/EPIC.md) | Core | Equipment System | design/gdd/equipment-system.md | 9 stories (001-009 written 2026-10-26): 9 Complete (001-008 on 2026-10-26, 009 on 2026-10-28) | Complete — unblocks Character Persistence Story 005 |
-| [Zone Instancing](zone-instancing/EPIC.md) | Core | Zone Instancing (zone-process side) | design/gdd/zone-instancing.md | 14 stories (001-014, written 2026-10-22), all Complete (2026-10-26) | Complete — routing ACs (AC-ZI-1, 2, 3, 16, 19, 20) move with the gateway work (needs a gateway ADR + epic) |
+| [Zone Instancing](zone-instancing/EPIC.md) | Core | Zone Instancing (zone-process side) | design/gdd/zone-instancing.md | 14 stories (001-014, written 2026-10-22), all Complete (2026-10-26) | Complete — routing ACs (AC-ZI-1, 2, 3, 16, 19, 20) move with the gateway work (Gateway epic, 2026-11-09) |
 | [Character Persistence](character-persistence/EPIC.md) | Core | Character Persistence | design/gdd/character-persistence.md | 20 stories (001-016 written 2026-10-12, 017 added 2026-10-16, 018-020 added 2026-11-04): 20 Complete (last 020 on 2026-11-04); DoD open: ADR-006 Verification 1–3, AC-CP-27/28/29 | In Progress |
 | [Movement System](movement-system/EPIC.md) | Core | Movement System | design/gdd/movement-system.md | 13 stories (001-013 written 2026-10-29; server 001-009, client 010-013): 13 Complete | Complete |
 | [Hit Detection](hit-detection/EPIC.md) | Core | Hit Detection | design/gdd/hit-detection.md | 4 stories (001-004), all Complete (2026-10-30) | Complete |
