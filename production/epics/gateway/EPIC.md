@@ -52,7 +52,7 @@ This epic is complete when:
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
 | 001 | Link frame codec | Logic | Complete | ADR-016 |
-| 002 | ZoneID allocator | Integration | Ready | ADR-016 |
+| 002 | ZoneID allocator | Integration | Complete | ADR-016 |
 | 003 | Gateway link listener | Integration | Ready | ADR-016 |
 | 004 | Real `IZoneLink` — requests, replies and timeouts | Logic | Ready | ADR-016 |
 | 005 | Account → zone map | Logic | Ready | ADR-016 |

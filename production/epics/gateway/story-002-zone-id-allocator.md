@@ -1,7 +1,7 @@
 # Story 002: ZoneID allocator
 
 > **Epic**: Gateway
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Integration
 > **Estimate**: 2 h
@@ -69,7 +69,7 @@
 **Required evidence**:
 - `gateway/IronGrind.Gateway.Tests/Gateway_ZoneIdAllocator_tests.cs` (`[Category("Database")]`) — must pass against the portable dev PostgreSQL
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 9 tests (2 Database + 7 non-Database), all passing (dotnet, 2026-11-09)
 
 ---
 
@@ -77,3 +77,12 @@
 
 - Depends on: None (migration 004 and the gateway role exist — Authentication Story 003)
 - Unlocks: Story 007, Story 009
+
+---
+
+## Completion Notes
+**Completed**: 2026-11-09
+**Criteria**: 4/4 passing (none deferred)
+**Deviations**: None. `GatewayHost` registration left to Story 009 as specified. Advisory: the out-of-range log line inside `AllocateAsync` is not reached by a test (PostgreSQL cannot return such a value from `zone_id_seq`); the range logic is covered through `TryToZoneId`.
+**Test Evidence**: Integration: `gateway/IronGrind.Gateway.Tests/Gateway_ZoneIdAllocator_tests.cs` — full dotnet suite with DB 454/454, CI filter 407/407
+**Code Review**: Complete — APPROVED WITH SUGGESTIONS; suggestion applied (`SetUp` re-grants `USAGE` so a killed REVOKE test cannot poison the test database)

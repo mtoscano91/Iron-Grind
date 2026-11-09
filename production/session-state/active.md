@@ -6283,3 +6283,19 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Story: production/epics/gateway/story-001-link-frame-codec.md — Link frame codec (not committed)
 - Tech debt logged: None
 - Next recommended: /story-readiness production/epics/gateway/story-003-link-listener.md (002 and 010 also unblocked)
+
+## Session Extract — /dev-story 2026-11-09
+- Story: production/epics/gateway/story-002-zone-id-allocator.md — ZoneID allocator
+- Files changed: gateway/IronGrind.Gateway/Routing/IZoneIdAllocator.cs, gateway/IronGrind.Gateway/Routing/NpgsqlZoneIdAllocator.cs (new `Routing/` folder, namespace `IronGrind.Gateway.Routing`)
+- Test written: gateway/IronGrind.Gateway.Tests/Gateway_ZoneIdAllocator_tests.cs — 2 Database cases (AC-ZI-16 100 + restart; REVOKE USAGE → 42501) + 7 non-Database cases (range check 0/-1/2^32/long.Max fail, 1/uint.Max convert; stopped server throws + logs). Full dotnet suite with DB vars: 454 passed; CI filter: 407 passed.
+- Not done (by design): `GatewayHost` registration is Story 009.
+- Blockers: None
+- Next: /code-review gateway/IronGrind.Gateway/Routing/*.cs gateway/IronGrind.Gateway.Tests/Gateway_ZoneIdAllocator_tests.cs then /story-done production/epics/gateway/story-002-zone-id-allocator.md
+
+## Session Extract — /story-done 2026-11-09
+- Verdict: COMPLETE
+- Story: production/epics/gateway/story-002-zone-id-allocator.md — ZoneID allocator
+- Code review: APPROVED WITH SUGGESTIONS; `SetUp` GRANT added. Suite 454/454 with DB.
+- Tech debt logged: None
+- Not committed.
+- Next recommended: /story-readiness production/epics/gateway/story-003-link-listener.md (006 and 010 can run in parallel)
