@@ -53,7 +53,7 @@ Authentication is the server-side identity verification layer that gates all pla
 | 013 | Zone admits a gateway token | Logic | Complete | ADR-016, ADR-011 |
 | 014 | Zone `Evict` and `Reconnect` handlers | Integration | Complete | ADR-016, ADR-011 |
 | 015 | Client HTTPS auth client | Integration | Complete | ADR-016 |
-| 016 | Caddy TLS-only front | Integration | Ready | ADR-016, ADR-007 |
+| 016 | Caddy TLS-only front | Integration | Complete | ADR-016, ADR-007 |
 | 017 | End-to-end login → zone entry | Integration | Ready | ADR-016 |
 
 Work in order; each story's `Depends on:` says what must be Done first. Story 017 also waits for the gateway epic's link, map and router stories (epic not yet created — ADR-016 Migration Plan step 7). AC-AUTH-24 (map memory, advisory) belongs to the gateway epic.
@@ -70,4 +70,4 @@ This epic is complete when:
 
 ## Next Step
 
-Stories 001–015 Complete (2026-11-06). Next: `/story-readiness production/epics/authentication/story-016-caddy-tls-front.md`. Story 017 needs 016, the iOS device check (moved from 015) and TD-095 (zone-side client entry wiring) to have an owner.
+Stories 001–015 Complete (2026-11-06), 016 Complete (2026-11-09). Next: create the gateway epic (ADR-016 Migration Plan step 7) — `/create-epics`, then `/create-stories gateway`. Story 017 needs 016, the iOS device check (moved from 015) and TD-095 (zone-side client entry wiring) to have an owner.

@@ -1,0 +1,31 @@
+# IronGrind production front (ADR-016 Decision 2; Authentication Story 016; AC-AUTH-08).
+#
+# Runs on the VPS (Story 017). Caddy is the only process on the public interface: it terminates TLS and
+# reverse-proxies to the gateway, which binds 127.0.0.1 only (GatewayHost.ConfigureKestrel).
+#
+# The domain comes from the environment, not from this file (placeholder until the VPS and DNS exist):
+#   IRONGRIND_DOMAIN=game.example.com
+#
+# Port 80 policy (nothing listens on 80):
+#   - "https://" scheme on the site address: the site is HTTPS-only, so Caddy creates no HTTP listener for it.
+#   - auto_https disable_redirects: no automatic HTTP -> HTTPS redirect server (the thing that would bind 80).
+#   - disable_http_challenge: ACME HTTP-01 needs port 80. Certificates come from TLS-ALPN-01 on 443 only.
+# Story 017's plaintext and port-80 checks prove this at runtime (tools/caddy/check-tls-only.sh).
+
+{
+	# No automatic HTTP -> HTTPS redirect, so no listener on port 80 (AC-AUTH-08).
+	auto_https disable_redirects
+}
+
+https://{$IRONGRIND_DOMAIN} {
+	# Let's Encrypt via TLS-ALPN-01 (port 443) only. HTTP-01 would require port 80 to be open.
+	tls {
+		issuer acme {
+			disable_http_challenge
+		}
+	}
+
+	# Gateway binds 127.0.0.1:GATEWAY_HTTP_PORT (8080 in gateway/IronGrind.Gateway/appsettings.json).
+	# Plain HTTP on loopback; TLS ends at Caddy. Request bodies are forwarded unchanged.
+	reverse_proxy 127.0.0.1:8080
+}

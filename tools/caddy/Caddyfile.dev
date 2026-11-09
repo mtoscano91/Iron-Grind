@@ -1,0 +1,21 @@
+# IronGrind dev front (ADR-016 Decision 2; Authentication Story 016). Local development only.
+#
+# Port 80 policy (same as Caddyfile.prod): the site address is an explicit :443 site, and
+# auto_https disable_redirects turns off the automatic HTTP -> HTTPS redirect server, which is the only
+# thing Caddy would otherwise bind on port 80 for a local site. No ACME challenge runs under tls internal.
+# The port-80 probe in check-tls-only.ps1 confirms this at runtime.
+#
+# tls internal issues certificates from Caddy's local CA. The CA root is in Caddy's data directory;
+# curl is given it with --cacert, and `caddy trust` (elevated shell) installs it for browsers. See README.md.
+
+{
+	auto_https disable_redirects
+}
+
+localhost:443 {
+	# Dev only: keep the dev front off the LAN interfaces.
+	bind 127.0.0.1
+	tls internal
+	# Gateway binds 127.0.0.1:8080 (appsettings.json GATEWAY_HTTP_PORT). Bodies are forwarded unchanged.
+	reverse_proxy 127.0.0.1:8080
+}

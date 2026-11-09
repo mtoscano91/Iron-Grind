@@ -6216,3 +6216,35 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - EPIC.md row 015 → Complete, Next Step updated
 - Tech debt logged: None
 - Next recommended: /story-readiness production/epics/authentication/story-016-caddy-tls-front.md
+
+## Session Extract — /story-readiness 2026-11-09 (Story 016)
+- Story: production/epics/authentication/story-016-caddy-tls-front.md — verdict NEEDS WORK → user "apply all" → all 6 applied, now READY (lean, QL-STORY-READY skipped)
+- Decisions: Caddy/Go's fixed plaintext 400 ("Client sent an HTTP request to an HTTPS server") passes AC-AUTH-08; "one round trip" → remote EOF within 2 s; gateway request log = Kestrel hosting diagnostics via env `Logging__LogLevel__Microsoft.AspNetCore.Hosting.Diagnostics=Information`, stdout to file, `-GatewayLog` param (no gateway code change); TLS check uses committed fixture `tools/caddy/fixtures/login-unknown-user.bin` → 200, body exactly `00 01` (InvalidCredentials; needs portable PG + migrations), fixture guarded by `gateway/IronGrind.Gateway.Tests/CaddyFixture_Decode_tests.cs`; register forwarding = body `00 FF FF` → gateway 400; `.sh` written here, first run Story 017
+- Estimate 4 h; performance note added; QA case AC-4 (register) added
+- GDD authentication.md: AC-AUTH-08 wording (TLS handshake fails, Caddy may write Go's 400 before closing); Last Updated note. Registry: no change
+- Env: Caddy not installed on dev machine; ports 80/443/8080 free
+- Not committed. Next: /dev-story production/epics/authentication/story-016-caddy-tls-front.md
+
+## Session Extract — /dev-story 2026-11-09 (Story 016)
+- Story: production/epics/authentication/story-016-caddy-tls-front.md — Caddy TLS-only front
+- Files: tools/caddy/Caddyfile.dev, Caddyfile.prod, README.md, check-tls-only.ps1, check-tls-only.sh, fixtures/login-unknown-user.bin (58 bytes); gateway/IronGrind.Gateway.Tests/CaddyFixture_Decode_tests.cs (2 tests); production/qa/evidence/caddy-tls-only-evidence.md (filled)
+- Caddy v2.11.9 installed (winget); local root trusted in Cert:\CurrentUser\Root (no elevation needed)
+- Gateway tests: 336/336 pass (TestCategory!=Database). caddy validate: both Valid. bash -n .sh OK
+- Dev run: all 5 checks PASS (plaintext → Go's 76-byte 400 + EOF; 0 gateway log lines during probe; port 80 refused; TLS login 200 00 01; register 400). Script bugs fixed during the run (PS 5.1 $PSScriptRoot in param defaults, one-element array splat, Format-Hex clash, 6 s connect timeout); Windows curl.exe needs --ssl-no-revoke vs Caddy local CA (README)
+- Agent (devops-engineer) stopped at its turn limit after writing all files; verification and the dev run done in the main session
+- Not committed. Next: /code-review tools/caddy/* gateway/IronGrind.Gateway.Tests/CaddyFixture_Decode_tests.cs then /story-done production/epics/authentication/story-016-caddy-tls-front.md
+
+## Session Extract — /code-review 2026-11-09 (Story 016)
+- Verdict CHANGES REQUIRED (1: check b could pass vacuously — README's PS 5.1 `>` writes a UTF-16 log) + 8 suggestions; qa-tester: TESTABLE, no blocking. User "yes" → required + suggestions 1–4, 6–8 applied; suggestion 5 (.gitattributes `*.sh text eol=lf`, `*.bin binary`) awaits user go-ahead
+- Both scripts: check b reported last with positive control (d/e must add Request starting lines), 200 ms log settle; write failure on the probe = closed with no bytes; .sh: trap '' PIPE, LC_ALL=C, "run with bash". README: gateway via Start-Process -RedirectStandardOutput, UTF-8 log note, bash note, port-80 drop note
+- Fixture test: length test → truncated-by-one rejected (control). Story 016 note nc → /dev/tcp. Story 017: VPS .sh re-verification with a deliberate negative; ufw drop vs reject for port 80
+- Gateway tests 336/336 (Database excluded). Dev run repeated: all 5 PASS (b: 0 during probe, 2 control lines). Negative control: b FAILS on a silent log. Evidence doc updated
+- Not committed. Next: /story-done production/epics/authentication/story-016-caddy-tls-front.md
+
+## Session Extract — /story-done 2026-11-09 (Story 016)
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/authentication/story-016-caddy-tls-front.md — Caddy TLS-only front
+- EPIC.md row 016 → Complete, Next Step updated
+- Tech debt logged: None
+- Open: `.gitattributes` (`*.sh text eol=lf`, `*.bin binary`) awaits user decision; untracked ProjectSettings/Packages/, SceneTemplateSettings.json, bash.exe.stackdump predate the session
+- Not committed. Next recommended: commit Story 016, then the gateway epic (ADR-016 step 7) via /create-epics → /create-stories gateway; Story 017 waits on it

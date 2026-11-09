@@ -46,6 +46,7 @@
 
 - This story wires and verifies; it should add little code beyond instrumentation and a scripted load driver (a small console tool or a gateway test that fires N logins).
 - The gateway epic provides the real `IZoneLink`, `IAccountZoneMap`, `IZoneRouter`, the zone's link thread, `IGatewayRegistration` and `IZoneLauncher`. If any of these is not Done, this story stays not started.
+- *(from the Story 016 code review, 2026-11-09)* VPS Caddy check: run `bash tools/caddy/check-tls-only.sh --gateway-log <path> --host <domain>` (first real run of the `.sh`; it has only had `bash -n`). Treat it as re-verification of checks a–e and include a deliberate negative (e.g. Caddy stopped, or a wrong host) to show each check can fail. Port 80: check c requires *refused*; ufw's default deny *drops* packets and makes check c time out (FAIL) — either `ufw reject 80/tcp` or record a decision that a timeout satisfies AC-AUTH-08.
 - The VPS parts (ADR-007 smoke test, Caddy prod) may be split into a later story if the VPS does not exist when the rest is ready — record the split rather than leaving ACs open silently.
 - AC-AUTH-16 end to end (Story 009 code review): the wrong-password path makes one `RecordFailureAsync` database write that the unknown-username path does not, so an end-to-end latency comparison includes it (a few ms locally, under the 20 ms threshold). Story 009's unit timing test uses `ARGON2_MEMORY_SIZE_KB = 65536`; the live-parameter 150 ms floor on the VPS belongs here with TD-093.
 

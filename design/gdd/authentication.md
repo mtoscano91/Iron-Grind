@@ -2,7 +2,7 @@
 
 > **Status**: Approved 2026-11-04 (fixes from lean re-review #2 accepted without a verify pass). Revised 2026-11-04 for ADR-016 (gateway authentication); lean re-review #2 2026-11-04 NEEDS REVISION (1 blocking: `CHARACTER_NAME_MAX_LENGTH` ceiling 26 → 24, the `EntityState` wire cap) — fixed with 4 recommended items (name check order, token-path tradeoff note, OQ-AUTH-7, UI constant) and AC-AUTH-21(e). Lean re-review #1 the same day: NEEDS REVISION (3 blocking) — fixed (separate character name CR-AUTH-13, token-path ban check, Evict save failure, map lifecycle, ACs 35–38). Before: Approved (lean re-review, 2026-05-21)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-11-06 (Story 015 readiness: two stale "15s" `LOGIN_HTTP_TIMEOUT_SECONDS` mentions → 20 s — States paragraph and EC-AUTH-3; no rule change). Previous: 2026-11-06 (propagated from the zone-instancing.md lean re-review: `AuthFailureReason.ServerStarting`, CR-AUTH-11 step 3, error display — no rule change to authentication itself). Previous: 2026-11-04
+> **Last Updated**: 2026-11-09 (Story 016 readiness: AC-AUTH-08 wording — Caddy/Go may write a fixed plaintext 400 before closing a plaintext connection to 443; no rule change, nothing reaches the gateway). Previous: 2026-11-06 (Story 015 readiness: two stale "15s" `LOGIN_HTTP_TIMEOUT_SECONDS` mentions → 20 s — States paragraph and EC-AUTH-3; no rule change). Previous: 2026-11-06 (propagated from the zone-instancing.md lean re-review: `AuthFailureReason.ServerStarting`, CR-AUTH-11 step 3, error display — no rule change to authentication itself). Previous: 2026-11-04
 > **Implements Pillar**: Pillar 1 — Earned Power (account identity is the permanent record of everything the player has earned)
 
 ## Overview
@@ -328,7 +328,7 @@ Authentication has no visual effects or audio events. The gateway is invisible t
 
 **AC-AUTH-07** [Logic] BLOCKING — Given a password is hashed and stored as a PHC string, when verified with the same plaintext, then returns `true`. With a different plaintext: returns `false`. Unit test round-trip.
 
-**AC-AUTH-08** [Security] BLOCKING — Given a client attempts a plaintext (non-TLS) connection to port 443, when Caddy evaluates it, then the connection is closed during the TLS handshake, no request reaches the gateway, and no `LoginResponse` or `RegistrationResult` is emitted; and nothing listens on port 80. Integration test: plaintext TCP to 443 → closed within one round-trip and the gateway request log is empty; TCP connect to 80 → refused.
+**AC-AUTH-08** [Security] BLOCKING — Given a client attempts a plaintext (non-TLS) connection to port 443, when Caddy evaluates it, then the TLS handshake fails and Caddy closes the connection (it may first write Go's fixed plaintext 400 "Client sent an HTTP request to an HTTPS server"), no request reaches the gateway, and no `LoginResponse` or `RegistrationResult` is emitted; and nothing listens on port 80. Integration test: plaintext TCP to 443 → closed within one round-trip and the gateway request log is empty; TCP connect to 80 → refused.
 
 **AC-AUTH-09** [Security] BLOCKING — Given a client sends `ConnectionRequest` with plaintext credentials over TLS, when the server processes it, then: (a) `account.passwordHashPHC` begins with `$argon2id$`, not the plaintext; (b) server logs contain no substring matching the submitted password. For (b): capture the gateway's log output during the test — GAP-6.
 
