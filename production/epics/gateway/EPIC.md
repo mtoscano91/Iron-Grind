@@ -56,7 +56,7 @@ This epic is complete when:
 | 003 | Gateway link listener | Integration | Complete | ADR-016 |
 | 004 | Real `IZoneLink` — requests, replies and timeouts | Logic | Complete | ADR-016 |
 | 005 | Account → zone map | Logic | Complete | ADR-016 |
-| 006 | Routing table and fill-first router | Logic | Ready | ADR-016 |
+| 006 | Routing table and fill-first router | Logic | Complete | ADR-016 |
 | 007 | Warm spare and `IZoneLauncher` | Logic | Ready | ADR-016 |
 | 008 | Zone launchers and deploy files | Integration | Ready | ADR-016, ADR-007 |
 | 009 | Gateway composition | Integration | Ready | ADR-016 |

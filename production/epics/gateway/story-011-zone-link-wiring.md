@@ -46,6 +46,7 @@
 - Composition: `ZoneServerComposition` + `ZoneInstancingWiring` own the wiring; read both first. `AdmittedEntries` (Story 013) already tracks admitted entries and their timeouts — read the count from it.
 - Find where the zone leaves Active (T-4 / T-6) in the zone state owner and add the `ZoneDraining` + `SessionReleased` sends there (or an observer the wiring subscribes); AC-ZI-35's client-facing half (late handshake → `ZoneDoesNotExist`) is already Zone Instancing / Authentication 013 scope — verify, don't duplicate.
 - `PlayerCount` change detection: compare against the last sent value at the end of the tick.
+- *(Added 2026-11-09, Story 006 code review S5.)* `RegisterZone` carries no lifecycle state, so the gateway's routing table marks every (re-)registered zone Active. A zone that is not Active when its link (re)connects must send `ZoneDraining` right after `RegisterZone`; otherwise the gateway routes logins to it until its `Admit` rejections force a re-route.
 - Verification 2 needs the real gateway (Story 009) running locally; if Story 009 is not Done yet, run against the gateway with stand-ins replaced as far as they are, and say so in the evidence.
 
 ---

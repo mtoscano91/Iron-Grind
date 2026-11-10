@@ -1,7 +1,7 @@
 # Story 006: Routing table and fill-first router
 
 > **Epic**: Gateway
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Logic
 > **Estimate**: 5 h
@@ -72,7 +72,7 @@
 **Required evidence**:
 - `gateway/IronGrind.Gateway.Tests/Gateway_Routing_tests.cs` — must pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 36 tests, all passing (dotnet, 2026-11-09)
 
 ---
 
@@ -80,3 +80,12 @@
 
 - Depends on: Story 003 (events; can start against fakes)
 - Unlocks: Story 007, Story 009
+
+---
+
+## Completion Notes
+**Completed**: 2026-11-09
+**Criteria**: 8/8 passing (none deferred; the "no zone start requested" clause of AC-ZI-20 and "spare Loading" of AC-ZI-34 become testable in Story 007)
+**Deviations**: Advisory only. `FillFirstRouter.STARTING_TEMPLATE = 0` (the gateway does not reference `ZoneTemplateID`). Hard cap = min(registered capacity, `MAX_PLAYERS_PER_ZONE`). New options `ZONE_OPEN_THRESHOLD` (35) / `MAX_PLAYERS_PER_ZONE` (50): cap [10, 100], threshold [20, 48], threshold ≤ cap − 2 — effective minimum cap 22. Re-registration returns a zone to Active (Story 011 note: a non-Active zone re-sends `ZoneDraining`) and keeps `HasHeldPlayers` (Story 007 note: reuse it for "emptied"). Rows are never removed (Story 007 note: prune link-down rows). `PlayerCount` / `ZoneDraining` from an unregistered zone ignored. `lastZone == excluded` skips rule 2. `TryGetPort` answers for any known zone, whatever its state. `GatewayHost` / `NoZoneRouter` untouched (Story 009).
+**Test Evidence**: Logic: `gateway/IronGrind.Gateway.Tests/Gateway_Routing_tests.cs` — 36 tests (incl. AC-ZI-34 through `SessionEstablishment` with a positive control); `Gateway_Options_tests.cs` +4; CI-filter suite 538/538; routing tests 3× repeat clean
+**Code Review**: Complete — CHANGES REQUIRED (R1 template filter untested; R2 no positive control on the AC-ZI-34 test; S1–S6) → fixed → re-review APPROVED

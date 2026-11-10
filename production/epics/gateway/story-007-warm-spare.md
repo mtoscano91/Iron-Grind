@@ -49,6 +49,8 @@
 - Port allocation: a config range (e.g. `ZONE_UDP_PORT_FIRST` / `ZONE_UDP_PORT_COUNT`) — new gateway options, validated; a port is free when no registered or Loading instance holds it. If the design wants fixed ports, note it at readiness.
 - Emptied-instance flag: set when a zone's `PlayerCount` goes from > 0 to 0; cleared when it rises again. Story 006's router reads it for the tie-break.
 - Gateway boot wait comes from Story 005 (`IsBootWaitOver`) or a shared clock helper — one source of truth.
+- *(Added 2026-11-09, Story 006 code review.)* Story 006's `RoutingTable` already records `ZoneRoute.HasHeldPlayers` (count has ever been > 0, kept across re-registration); "emptied" = `HasHeldPlayers && PlayerCount == 0`. Reuse it rather than adding a second flag. The rule 3 tie-break goes in `FillFirstRouter.TryPick` (comment marks the spot).
+- *(Added 2026-11-09, Story 006 code review S6.)* `RoutingTable` never removes a row; a closed zone stays as link-down forever, and ZoneIDs are never reused, so rows grow by one per closed instance. Prune a row whose link has stayed down past `GATEWAY_LINK_RETRY_SECONDS × 2` (the map's grace) once this story no longer needs it for the "lost link leaves none" check.
 
 ---
 

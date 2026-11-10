@@ -35,6 +35,8 @@ internal sealed class Gateway_Options_tests
         Assert.That(g.LinkRetrySeconds, Is.EqualTo(2));
         Assert.That(g.LinkMaxFrameBytes, Is.EqualTo(65536));
         Assert.That(g.MaxAuthPending, Is.EqualTo(10));
+        Assert.That(g.ZoneOpenThreshold, Is.EqualTo(35));
+        Assert.That(g.MaxPlayersPerZone, Is.EqualTo(50));
         Assert.That(a.LoginFailureLimit, Is.EqualTo(5));
         Assert.That(a.EffectiveLockoutTableSeconds, Is.EqualTo(DEFAULT_TABLE));
         Assert.That(a.Argon2Iterations, Is.EqualTo(2));
@@ -268,6 +270,44 @@ internal sealed class Gateway_Options_tests
         AssertFailsNaming(ValidateGateway(o => o.EvictTimeoutMs = -1), "GATEWAY_EVICT_TIMEOUT_MS");
         AssertFailsNaming(ValidateGateway(o => o.LinkRetrySeconds = -2), "GATEWAY_LINK_RETRY_SECONDS");
         AssertFailsNaming(ValidateGateway(o => o.MaxAuthPending = -10), "MAX_AUTH_PENDING");
+    }
+
+    // ------------------------------------------------- Zone routing knobs (Gateway Story 006)
+
+    [Test]
+    public void test_validate_zone_routing_defaults_and_boundaries()
+    {
+        Assert.That(ValidateGateway(_ => { }).Succeeded, Is.True);
+        Assert.That(ValidateGateway(o => { o.MaxPlayersPerZone = 10; o.ZoneOpenThreshold = 20; }).Succeeded, Is.False);
+        // The threshold floor (20) and threshold <= cap - 2 make 22 the lowest cap that validates.
+        Assert.That(ValidateGateway(o => { o.MaxPlayersPerZone = 21; o.ZoneOpenThreshold = 20; }).Succeeded, Is.False);
+        Assert.That(ValidateGateway(o => { o.MaxPlayersPerZone = 22; o.ZoneOpenThreshold = 20; }).Succeeded, Is.True);
+        Assert.That(ValidateGateway(o => { o.MaxPlayersPerZone = 100; o.ZoneOpenThreshold = 48; }).Succeeded, Is.True);
+    }
+
+    [Test]
+    public void test_validate_zone_routing_out_of_range_fails_naming_knob()
+    {
+        AssertFailsNaming(ValidateGateway(o => o.MaxPlayersPerZone = 9), "MAX_PLAYERS_PER_ZONE");
+        AssertFailsNaming(ValidateGateway(o => o.MaxPlayersPerZone = 101), "MAX_PLAYERS_PER_ZONE");
+        AssertFailsNaming(ValidateGateway(o => o.ZoneOpenThreshold = 19), "ZONE_OPEN_THRESHOLD");
+        AssertFailsNaming(ValidateGateway(o => { o.MaxPlayersPerZone = 100; o.ZoneOpenThreshold = 49; }), "ZONE_OPEN_THRESHOLD");
+    }
+
+    [Test]
+    public void test_validate_threshold_above_cap_minus_two_fails_naming_knob()
+    {
+        AssertFailsNaming(ValidateGateway(o => { o.MaxPlayersPerZone = 40; o.ZoneOpenThreshold = 39; }), "ZONE_OPEN_THRESHOLD");
+        Assert.That(ValidateGateway(o => { o.MaxPlayersPerZone = 40; o.ZoneOpenThreshold = 38; }).Succeeded, Is.True);
+    }
+
+    [Test]
+    public void test_bind_zone_routing_knobs_from_configuration()
+    {
+        (GatewayOptions g, _) = Bind(Build(("ZONE_OPEN_THRESHOLD", "30"), ("MAX_PLAYERS_PER_ZONE", "60")));
+
+        Assert.That(g.ZoneOpenThreshold, Is.EqualTo(30));
+        Assert.That(g.MaxPlayersPerZone, Is.EqualTo(60));
     }
 
     // ------------------------------------------------- Safe-range boundaries (GDD Tuning Knobs)

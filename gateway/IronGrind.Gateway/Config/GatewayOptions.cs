@@ -35,4 +35,12 @@ public sealed class GatewayOptions
     /// <summary>ADR-016 knob <c>MAX_AUTH_PENDING</c>: max concurrent hash operations. Must be &gt; 0.</summary>
     [ConfigurationKeyName("MAX_AUTH_PENDING")]
     public int MaxAuthPending { get; set; } = 10;
+
+    /// <summary>Registry knob <c>ZONE_OPEN_THRESHOLD</c> (CR-ZI-6 rule 3): below this player count a zone is an "open" fill-first target. Valid 20-48 and at most <c>MAX_PLAYERS_PER_ZONE</c> - 2.</summary>
+    [ConfigurationKeyName("ZONE_OPEN_THRESHOLD")]
+    public int ZoneOpenThreshold { get; set; } = 35;
+
+    /// <summary>Registry knob <c>MAX_PLAYERS_PER_ZONE</c>: sanity bound on a zone's hard cap (the hard cap is the lower of this and the zone's registered capacity). Valid 10-100; because <c>ZONE_OPEN_THRESHOLD</c> is at least 20 and at most this - 2, the lowest cap that validates is 22.</summary>
+    [ConfigurationKeyName("MAX_PLAYERS_PER_ZONE")]
+    public int MaxPlayersPerZone { get; set; } = 50;
 }

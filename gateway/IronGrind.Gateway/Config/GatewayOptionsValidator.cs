@@ -56,6 +56,22 @@ public sealed class GatewayOptionsValidator : IValidateOptions<GatewayOptions>
             failures.Add($"MAX_AUTH_PENDING must be greater than 0 (was {options.MaxAuthPending})");
         }
 
+        if (options.MaxPlayersPerZone < 10 || options.MaxPlayersPerZone > 100)
+        {
+            failures.Add($"MAX_PLAYERS_PER_ZONE must be between 10 and 100 (was {options.MaxPlayersPerZone})");
+        }
+
+        if (options.ZoneOpenThreshold < 20 || options.ZoneOpenThreshold > 48)
+        {
+            failures.Add($"ZONE_OPEN_THRESHOLD must be between 20 and 48 (was {options.ZoneOpenThreshold})");
+        }
+
+        if (options.ZoneOpenThreshold > options.MaxPlayersPerZone - 2)
+        {
+            failures.Add(
+                $"ZONE_OPEN_THRESHOLD must be at most MAX_PLAYERS_PER_ZONE - 2 (was {options.ZoneOpenThreshold} vs {options.MaxPlayersPerZone})");
+        }
+
         return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
     }
 }
