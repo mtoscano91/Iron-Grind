@@ -33,6 +33,7 @@ internal sealed class Gateway_Options_tests
         Assert.That(g.ZoneRequestTimeoutMs, Is.EqualTo(2000));
         Assert.That(g.EvictTimeoutMs, Is.EqualTo(11000));
         Assert.That(g.LinkRetrySeconds, Is.EqualTo(2));
+        Assert.That(g.LinkMaxFrameBytes, Is.EqualTo(65536));
         Assert.That(g.MaxAuthPending, Is.EqualTo(10));
         Assert.That(a.LoginFailureLimit, Is.EqualTo(5));
         Assert.That(a.EffectiveLockoutTableSeconds, Is.EqualTo(DEFAULT_TABLE));
@@ -262,6 +263,8 @@ internal sealed class Gateway_Options_tests
         AssertFailsNaming(ValidateGateway(o => o.ZoneRequestTimeoutMs = 0), "GATEWAY_ZONE_REQUEST_TIMEOUT_MS");
         AssertFailsNaming(ValidateGateway(o => o.LinkRetrySeconds = 0), "GATEWAY_LINK_RETRY_SECONDS");
         AssertFailsNaming(ValidateGateway(o => o.MaxAuthPending = 0), "MAX_AUTH_PENDING");
+        AssertFailsNaming(ValidateGateway(o => o.LinkMaxFrameBytes = 0), "GATEWAY_LINK_MAX_FRAME_BYTES");
+        AssertFailsNaming(ValidateGateway(o => o.LinkMaxFrameBytes = -1), "GATEWAY_LINK_MAX_FRAME_BYTES");
         AssertFailsNaming(ValidateGateway(o => o.EvictTimeoutMs = -1), "GATEWAY_EVICT_TIMEOUT_MS");
         AssertFailsNaming(ValidateGateway(o => o.LinkRetrySeconds = -2), "GATEWAY_LINK_RETRY_SECONDS");
         AssertFailsNaming(ValidateGateway(o => o.MaxAuthPending = -10), "MAX_AUTH_PENDING");

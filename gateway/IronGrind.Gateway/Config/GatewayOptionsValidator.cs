@@ -46,6 +46,11 @@ public sealed class GatewayOptionsValidator : IValidateOptions<GatewayOptions>
             failures.Add($"GATEWAY_LINK_RETRY_SECONDS must be greater than 0 (was {options.LinkRetrySeconds})");
         }
 
+        if (options.LinkMaxFrameBytes <= 0)
+        {
+            failures.Add($"GATEWAY_LINK_MAX_FRAME_BYTES must be greater than 0 (was {options.LinkMaxFrameBytes})");
+        }
+
         if (options.MaxAuthPending <= 0)
         {
             failures.Add($"MAX_AUTH_PENDING must be greater than 0 (was {options.MaxAuthPending})");

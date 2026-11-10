@@ -6299,3 +6299,31 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: None
 - Not committed.
 - Next recommended: /story-readiness production/epics/gateway/story-003-link-listener.md (006 and 010 can run in parallel)
+
+## Session Extract — /story-readiness 2026-11-09
+- Story: production/epics/gateway/story-003-link-listener.md — Gateway link listener
+- Verdict: NEEDS WORK -> fixed -> Ready (lean; QL-STORY-READY skipped). TR-zi-018 placeholder advisory (no TR-zi entries in tr-registry).
+- Fixes applied: AC-1 drops GATEWAY_LINK_INBOX_CAPACITY from gateway config (zone-side only, Story 010), MAX_FRAME_BYTES validated > 0; Performance note added; Out of Scope + first-frame timeout (revisit in Story 009).
+- Story 002 committed (c708018). Story 003 edits not committed.
+- Next: /dev-story production/epics/gateway/story-003-link-listener.md
+
+## Session Extract — /dev-story 2026-11-09
+- Story: production/epics/gateway/story-003-link-listener.md — Gateway link listener
+- Files changed: gateway/IronGrind.Gateway/ZoneLink/{IZoneLinkEvents,IZoneLinkSender,ZoneLinkListener}.cs (new), Config/GatewayOptions.cs + GatewayOptionsValidator.cs + appsettings.json (GATEWAY_LINK_MAX_FRAME_BYTES 65536, > 0), Gateway_Options_tests.cs
+- Test written: gateway/IronGrind.Gateway.Tests/Gateway_LinkListener_tests.cs — 19 tests; CI-filter suite 426 passed (3x repeat of new file clean)
+- Choices: TcpListener on loopback (not Kestrel); SendAsync takes encoded frame bytes; second RegisterZone on same link and ZoneID 0 = violations; StopAsync raises OnLinkLost per link (Story 006/009 may ignore during shutdown); not registered in GatewayHost (Story 009).
+- Review notes: narrow race — StopAsync's EndLink can run between Register's Closed check and _links insert (stop only, harmless).
+- Blockers: None
+- Next: /code-review gateway/IronGrind.Gateway/ZoneLink/*.cs gateway/IronGrind.Gateway.Tests/Gateway_LinkListener_tests.cs then /story-done production/epics/gateway/story-003-link-listener.md
+
+## Session Extract — /code-review 2026-11-09
+- Story 003 link listener: CHANGES REQUIRED (OnLinkLost raised off the read loop -> registered/lost ordering race on replacement) -> fixed: read loop is the single finalizer; Close() only records reason + closes socket; Register checks stop under lock; StopAsync idempotent, single-use listener, CTS disposed.
+- Tests added: ZoneID 0, throwing handler, cancel while waiting for write turn, write failure -> one lost, 50 x ~8 KB concurrent sends. 24 tests in file; suite 431/431 (CI filter).
+- Lean re-review: APPROVED. Not committed.
+- Next: /story-done production/epics/gateway/story-003-link-listener.md
+
+## Session Extract — /story-done 2026-11-09
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/gateway/story-003-link-listener.md — Gateway link listener
+- Tech debt logged: None (advisory notes in Completion Notes)
+- Next recommended: /story-readiness for Story 004 (IZoneLink requests/replies), 005 (account map) or 006 (routing table) — all unblocked by 003; 010 also ready

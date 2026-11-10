@@ -28,6 +28,10 @@ public sealed class GatewayOptions
     [ConfigurationKeyName("GATEWAY_LINK_RETRY_SECONDS")]
     public int LinkRetrySeconds { get; set; } = 2;
 
+    /// <summary>ADR-016 knob <c>GATEWAY_LINK_MAX_FRAME_BYTES</c>: largest accepted zone-link frame length field in bytes. Must be &gt; 0.</summary>
+    [ConfigurationKeyName("GATEWAY_LINK_MAX_FRAME_BYTES")]
+    public int LinkMaxFrameBytes { get; set; } = 65536;
+
     /// <summary>ADR-016 knob <c>MAX_AUTH_PENDING</c>: max concurrent hash operations. Must be &gt; 0.</summary>
     [ConfigurationKeyName("MAX_AUTH_PENDING")]
     public int MaxAuthPending { get; set; } = 10;

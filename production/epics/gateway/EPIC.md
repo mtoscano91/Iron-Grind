@@ -53,7 +53,7 @@ This epic is complete when:
 |---|-------|------|--------|-----|
 | 001 | Link frame codec | Logic | Complete | ADR-016 |
 | 002 | ZoneID allocator | Integration | Complete | ADR-016 |
-| 003 | Gateway link listener | Integration | Ready | ADR-016 |
+| 003 | Gateway link listener | Integration | Complete | ADR-016 |
 | 004 | Real `IZoneLink` — requests, replies and timeouts | Logic | Ready | ADR-016 |
 | 005 | Account → zone map | Logic | Ready | ADR-016 |
 | 006 | Routing table and fill-first router | Logic | Ready | ADR-016 |

@@ -1,7 +1,7 @@
 # Story 003: Gateway link listener
 
 > **Epic**: Gateway
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Integration
 > **Estimate**: 5 h
@@ -28,14 +28,14 @@
 
 ## Acceptance Criteria
 
-- [ ] A hosted service listens on `127.0.0.1:GATEWAY_ZONE_LINK_PORT` only (not `0.0.0.0`); `GATEWAY_LINK_MAX_FRAME_BYTES` and `GATEWAY_LINK_INBOX_CAPACITY` are added to `GatewayOptions` + `appsettings.json` and validated at startup
-- [ ] A connection's first frame must be `RegisterZone`; any other first frame closes it. After `RegisterZone` the connection is that zone's link and its messages are delivered to a registered handler (`IZoneLinkEvents`: registered, message received, link lost)
-- [ ] A second `RegisterZone` for a ZoneID that already has a live link closes the older connection and keeps the newer one; the older one's loss is not reported as the zone's link loss
-- [ ] Peer close, read error, oversized frame, zero-length frame, unknown type or malformed body closes that link and reports link lost for its ZoneID exactly once
-- [ ] Outbound: a thread-safe `SendAsync(zoneId, message)` writes whole frames (no interleaving between concurrent senders); sending to a zone with no link returns false without throwing
-- [ ] `IsLinkUp(zoneId)` is true only between `RegisterZone` and link loss
-- [ ] Stopping the host closes every link and the listener within 2 s
-- [ ] Tests use real loopback sockets with a fake zone client (no Unity)
+- [x] A hosted service listens on `127.0.0.1:GATEWAY_ZONE_LINK_PORT` only (not `0.0.0.0`); `GATEWAY_LINK_MAX_FRAME_BYTES` (65 536) is added to `GatewayOptions` + `appsettings.json` and validated at startup (> 0, else the host fails to start). `GATEWAY_LINK_INBOX_CAPACITY` is zone-side only (ADR-016 knob table) and is not added to the gateway config — Story 010
+- [x] A connection's first frame must be `RegisterZone`; any other first frame closes it. After `RegisterZone` the connection is that zone's link and its messages are delivered to a registered handler (`IZoneLinkEvents`: registered, message received, link lost)
+- [x] A second `RegisterZone` for a ZoneID that already has a live link closes the older connection and keeps the newer one; the older one's loss is not reported as the zone's link loss
+- [x] Peer close, read error, oversized frame, zero-length frame, unknown type or malformed body closes that link and reports link lost for its ZoneID exactly once
+- [x] Outbound: a thread-safe `SendAsync(zoneId, message)` writes whole frames (no interleaving between concurrent senders); sending to a zone with no link returns false without throwing
+- [x] `IsLinkUp(zoneId)` is true only between `RegisterZone` and link loss
+- [x] Stopping the host closes every link and the listener within 2 s
+- [x] Tests use real loopback sockets with a fake zone client (no Unity)
 
 ---
 
@@ -48,6 +48,8 @@
 - Log zone ID, remote endpoint and the reason on every link close; never log tokens.
 - The events interface is consumed by Story 004 (replies), Story 005 (map) and Story 006 (routing table). Keep it small.
 
+**Performance**: No frame-budget impact — the gateway is a separate .NET process, off the zone tick (ADR-011); link traffic is control-plane only (registration, admit/evict, player counts). Per-link memory is bounded by `GATEWAY_LINK_MAX_FRAME_BYTES`.
+
 ---
 
 ## Out of Scope
@@ -55,6 +57,7 @@
 - Story 004: request/reply correlation, timeouts
 - Story 005 / 006: what `RegisterZone`, `PlayerCount`, `ZoneDraining`, `SessionReleased` do to the map and routing table
 - Story 010: the zone-side client
+- A first-frame timeout for connections that never send `RegisterZone` (loopback-only, low risk) — revisit if Story 009 hardening needs it
 
 ---
 
@@ -86,7 +89,7 @@
 **Required evidence**:
 - `gateway/IronGrind.Gateway.Tests/Gateway_LinkListener_tests.cs` — must pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 24 tests, all passing (dotnet, 2026-11-09)
 
 ---
 
@@ -94,3 +97,12 @@
 
 - Depends on: Story 001
 - Unlocks: Story 004, Story 005, Story 006, Story 009
+
+---
+
+## Completion Notes
+**Completed**: 2026-11-09
+**Criteria**: 8/8 passing (none deferred)
+**Deviations**: Advisory only. `TcpListener` on loopback (not Kestrel). `SendAsync` takes encoded frames (`GatewayLinkCodec.Encode`); typed wrappers are Story 004's call. A second `RegisterZone` on the same link and `RegisterZone` with ZoneID 0 are protocol violations. `StopAsync` reports link-lost for each open link — Story 006/009 may ignore losses during shutdown. Listener is single use. `STOP_TIMEOUT` (2 s) is a constant taken from AC-7, not an ADR-016 knob. Not registered in `GatewayHost` (Story 009). Untested: cancel mid-write (not deterministic without timing); covered by inspection.
+**Test Evidence**: Integration: `gateway/IronGrind.Gateway.Tests/Gateway_LinkListener_tests.cs` — 24 tests; CI-filter suite 431/431
+**Code Review**: Complete — CHANGES REQUIRED (link-lost raised off the read loop) → fixed (read loop is the single finalizer) → lean re-review APPROVED
