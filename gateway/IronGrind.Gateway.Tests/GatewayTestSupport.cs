@@ -187,6 +187,7 @@ internal sealed class GwFakeZone : IZoneRouter, IZoneLink, IAccountZoneMap
     public Task<bool> AdmitAsync(ZoneID zone, AccountID account, CharacterID character, byte[] token, CancellationToken ct)
     {
         Interlocked.Increment(ref AdmitCalls);
+        SetSession(account, zone);
         return Task.FromResult(true);
     }
 
@@ -210,6 +211,8 @@ internal sealed class GwFakeZone : IZoneRouter, IZoneLink, IAccountZoneMap
     public void SetSession(AccountID account, ZoneID zone)
     {
     }
+
+    public bool Remove(AccountID account, ZoneID fromZone) => false;
 }
 
 /// <summary>Authentication service fake returning fixed results, or throwing.</summary>

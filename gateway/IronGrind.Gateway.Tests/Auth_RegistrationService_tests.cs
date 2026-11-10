@@ -390,6 +390,8 @@ internal sealed class Auth_RegistrationService_tests
         public bool IsLinkUp(ZoneID zone) => throw new NotSupportedException();
 
         public void SetSession(AccountID account, ZoneID zone) => throw new NotSupportedException();
+
+        public bool Remove(AccountID account, ZoneID fromZone) => throw new NotSupportedException();
     }
 
     private sealed class StrictZoneRouter : IZoneRouter

@@ -1,7 +1,7 @@
 # Story 005: Account → zone map
 
 > **Epic**: Gateway
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Logic
 > **Estimate**: 5 h
@@ -84,7 +84,7 @@
 **Required evidence**:
 - `gateway/IronGrind.Gateway.Tests/Gateway_AccountZoneMap_tests.cs` — must pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 33 tests, all passing (dotnet, 2026-11-09)
 
 ---
 
@@ -92,3 +92,12 @@
 
 - Depends on: Story 004 (evict sender; can start against a fake)
 - Unlocks: Story 009
+
+---
+
+## Completion Notes
+**Completed**: 2026-11-09
+**Criteria**: 7/7 passing (none deferred)
+**Deviations**: Advisory only. Readiness decision (user, 2026-11-09): `SessionEstablishment.Accept` no longer calls `SetSession`; `LinkZoneLink` is the only writer on accept, pinned by `Auth_SessionEstablishment_tests::RunAsync_Accepted_DoesNotWriteTheMapItself`. `LinkZoneLink.HandleEvictResult` performs the zone-matched `Remove` (the `EvictResult` body carries only `RequestId`). Expiry is lazy (purged on every map call) plus `Sweep()` — Story 009 must schedule `Sweep()` to free memory. `IsBootWaitOver` is on the class, not the interface. The constructor takes `GatewayOptions` (Story 009 passes `options.Value`). `ZoneLinkEvictSender` takes `Func<IZoneLink>` to break the DI cycle (link → map → sender → link). AC-AUTH-24 takes the median of 3 attempts per run (single attempts were flaky, one hit 12 920 B); measured 8 672 B in each of 3 runs. Unused `using IronGrind.Currency;` in `ZoneLinkEvictSender.cs`.
+**Test Evidence**: Logic: `gateway/IronGrind.Gateway.Tests/Gateway_AccountZoneMap_tests.cs` — 33 tests; CI-filter suite 498/498; map tests 3× repeat clean
+**Code Review**: Complete — CHANGES REQUIRED (R1: no test pinned the dropped `SetSession`; S1–S4) → fixed → re-review APPROVED WITH SUGGESTIONS

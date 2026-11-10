@@ -98,7 +98,7 @@ public sealed class SessionEstablishment
         byte[]? token = await AdmitAsync(zone, account, character).ConfigureAwait(false);
         if (token is not null)
         {
-            return Accept(account, character, token, zone, port);
+            return Accept(character, token, zone, port);
         }
 
         // Only an explicit rejection re-routes, once, excluding the rejecting zone.
@@ -108,12 +108,12 @@ public sealed class SessionEstablishment
         }
 
         token = await AdmitAsync(second, account, character).ConfigureAwait(false);
-        return token is not null ? Accept(account, character, token, second, secondPort) : SERVER_ERROR;
+        return token is not null ? Accept(character, token, second, secondPort) : SERVER_ERROR;
     }
 
-    private LoginResponse Accept(AccountID account, CharacterID character, byte[] token, ZoneID zone, ushort port)
+    private LoginResponse Accept(CharacterID character, byte[] token, ZoneID zone, ushort port)
     {
-        _map.SetSession(account, zone);
+        // The link already recorded the map entry when the zone accepted the Admit (ADR-016 Decision 3 "Added").
         return LoginResponse.ForSuccess(token, character, zone, port);
     }
 

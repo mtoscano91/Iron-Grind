@@ -216,7 +216,19 @@ public sealed class LinkZoneLink : IZoneLink, IZoneLinkEvents
         ReplyMatch match = TryTakeLive(reply.RequestId, zone, RequestKind.Evict, out Pending? pending);
         if (match == ReplyMatch.Taken)
         {
-            pending!.Tcs.TrySetResult(null);
+            try
+            {
+                // Zone-matched removal (ADR-016 Decision 3): the entry goes only if it points to the replying zone.
+                _map.Remove(pending!.Account, zone);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Removing the session for account {AccountId} in zone {ZoneId} failed.", pending!.Account, zone);
+                pending!.Tcs.TrySetException(ex);
+                return;
+            }
+
+            pending.Tcs.TrySetResult(null);
             return;
         }
 

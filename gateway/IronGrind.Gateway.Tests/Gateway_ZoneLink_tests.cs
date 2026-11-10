@@ -183,6 +183,33 @@ internal sealed class Gateway_ZoneLink_tests
     }
 
     [Test]
+    public async Task Evict_EvictResult_RemovesTheAccountsEntryForThatZone()
+    {
+        _map.SetSession(_account, _zone);
+        Task evict = _link.EvictAsync(_zone, _account, CancellationToken.None);
+
+        Reply(_zone, GatewayLinkCodec.Encode(new EvictResultMessage(Sent(0).Evict.RequestId)));
+
+        await Settled(evict);
+        Assert.That(evict.IsCompletedSuccessfully, Is.True);
+        Assert.That(_map.Removals, Is.EqualTo(new[] { (_account, _zone) }));
+        Assert.That(_map.Sessions, Is.Empty);
+    }
+
+    [Test]
+    public async Task Evict_EvictResult_MapRemoveThrows_FaultsTheTask()
+    {
+        _map.RemoveThrows = new InvalidOperationException("map broke");
+        Task evict = _link.EvictAsync(_zone, _account, CancellationToken.None);
+
+        Reply(_zone, GatewayLinkCodec.Encode(new EvictResultMessage(Sent(0).Evict.RequestId)));
+
+        await Settled(evict);
+        Assert.That(evict.IsFaulted, Is.True);
+        Assert.That(evict.Exception!.GetBaseException(), Is.SameAs(_map.RemoveThrows));
+    }
+
+    [Test]
     public void RequestIds_AcrossRequestTypes_AreNonZeroAndIncreasing()
     {
         _ = StartAdmit(_account);
@@ -613,6 +640,21 @@ internal sealed class Gateway_ZoneLink_tests
         {
             CompletedAtSetSession.Add(Watched?.IsCompleted ?? false);
             Sessions.Add((account, zone));
+        }
+
+        public List<(AccountID Account, ZoneID Zone)> Removals { get; } = new();
+
+        public Exception? RemoveThrows { get; set; }
+
+        public bool Remove(AccountID account, ZoneID fromZone)
+        {
+            if (RemoveThrows != null)
+            {
+                throw RemoveThrows;
+            }
+
+            Removals.Add((account, fromZone));
+            return Sessions.RemoveAll(s => s.Account.Equals(account) && s.Zone.Equals(fromZone)) > 0;
         }
     }
 

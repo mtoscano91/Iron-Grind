@@ -13,8 +13,7 @@ namespace IronGrind.Gateway.Auth;
 /// <item>Gateway boot: the map starts empty; until the boot wait ends the router answers "no routable zone" (<c>ServerStarting</c>).</item>
 /// </list>
 /// The real link (<c>LinkZoneLink</c>) calls <see cref="SetSession"/> when <c>AdmitResult(accepted)</c> arrives for a live
-/// <c>Admit</c>, before the caller's task completes (ADR-016 Decision 3 "Added").
-/// <see cref="SessionEstablishment"/> also calls it afterwards, which is a harmless upsert.
+/// <c>Admit</c>, before the caller's task completes (ADR-016 Decision 3 "Added"); it is the only caller of <see cref="SetSession"/>.
 /// </summary>
 public interface IAccountZoneMap
 {
@@ -33,4 +32,10 @@ public interface IAccountZoneMap
     /// <param name="account">The account.</param>
     /// <param name="zone">The zone that accepted the admission.</param>
     void SetSession(AccountID account, ZoneID zone);
+
+    /// <summary>Zone-matched removal: removes the account's entry only if it points to <paramref name="fromZone"/>.</summary>
+    /// <param name="account">The account.</param>
+    /// <param name="fromZone">The zone that reported the release or eviction.</param>
+    /// <returns>True when an entry was removed; false when there was none or it points to another zone.</returns>
+    bool Remove(AccountID account, ZoneID fromZone);
 }

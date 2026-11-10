@@ -35,7 +35,7 @@ internal sealed class Auth_SessionEstablishment_tests
         _map = new FakeMap();
         _router = new FakeRouter();
         _router.Picks.Add((5u, 7777));
-        _link = new FakeLink(_events);
+        _link = new FakeLink(_events) { Map = _map };
         _hasher = new FakeHasher();
         _logs = new RecordingLoggerFactory();
     }
@@ -132,6 +132,20 @@ internal sealed class Auth_SessionEstablishment_tests
         Assert.That(_link.Tokens[0], Is.EqualTo(response.SessionToken));
         Assert.That(_map.SetCalls, Is.EqualTo(new[] { (ACCOUNT, new ZoneID(5u)) }));
         Assert.That(_logs.Entries, Is.Empty);
+    }
+
+    [Test]
+    public async Task RunAsync_Accepted_DoesNotWriteTheMapItself()
+    {
+        // Gateway Story 005: the link records the entry on AdmitResult(accepted); SessionEstablishment must not, or a
+        // SessionReleased landing between the two writes would bring a removed entry back.
+        _link.Map = null;
+
+        LoginResponse response = await Within(Sessions().RunAsync(ACCOUNT));
+
+        Assert.That(response.Success, Is.True);
+        Assert.That(_map.SetCalls, Is.Empty);
+        Assert.That(_map.Entries, Is.Empty);
     }
 
     [Test]
@@ -554,6 +568,9 @@ internal sealed class Auth_SessionEstablishment_tests
             SetCalls.Add((account, zone));
             Entries[account] = zone;
         }
+
+        public bool Remove(AccountID account, ZoneID fromZone) =>
+            Entries.TryGetValue(account, out ZoneID current) && current.Equals(fromZone) && Entries.Remove(account);
     }
 
     private sealed class FakeRouter : IZoneRouter
@@ -623,8 +640,17 @@ internal sealed class Auth_SessionEstablishment_tests
                 return new TaskCompletionSource<bool>().Task;
             }
 
-            return Task.FromResult(!Rejecting.Contains(zone.RawValue));
+            bool accepted = !Rejecting.Contains(zone.RawValue);
+            if (accepted)
+            {
+                // The real link records the entry when the zone accepts (Story 004/005); SessionEstablishment does not.
+                Map?.SetSession(account, zone);
+            }
+
+            return Task.FromResult(accepted);
         }
+
+        public FakeMap? Map { get; set; }
 
         public ReconnectOutcome ReconnectResult { get; set; }
 

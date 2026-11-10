@@ -472,6 +472,8 @@ internal sealed class Auth_TokenPath_tests
         {
             SetCalls++;
         }
+
+        public bool Remove(AccountID account, ZoneID fromZone) => false;
     }
 
     private sealed class FakeRouter : IZoneRouter

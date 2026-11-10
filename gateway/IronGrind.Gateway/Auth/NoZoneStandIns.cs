@@ -24,6 +24,9 @@ public sealed class EmptyAccountZoneMap : IAccountZoneMap
     {
         // No zone ever admits a session before the gateway epic, so there is nothing to record.
     }
+
+    /// <inheritdoc/>
+    public bool Remove(AccountID account, ZoneID fromZone) => false;
 }
 
 /// <summary>
