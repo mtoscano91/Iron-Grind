@@ -1,7 +1,7 @@
 # Story 004: Real `IZoneLink` — requests, replies and timeouts
 
 > **Epic**: Gateway
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Logic
 > **Estimate**: 4 h
@@ -82,7 +82,7 @@
 **Required evidence**:
 - `gateway/IronGrind.Gateway.Tests/Gateway_ZoneLink_tests.cs` — must pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 31 tests, all passing (dotnet, 2026-11-09)
 
 ---
 
@@ -90,3 +90,12 @@
 
 - Depends on: Story 001, Story 003
 - Unlocks: Story 005, Story 009
+
+---
+
+## Completion Notes
+**Completed**: 2026-11-09
+**Criteria**: 7/7 passing (none deferred)
+**Deviations**: Advisory only. `LinkZoneLink` also implements `IZoneLinkEvents` (Story 009 fans listener events to it and the map). Caller cancellation surfaces as a faulted `OperationCanceledException`. A send that throws records the Admit as expired (the frame may have reached the zone); a false send does not. `MAX_EXPIRED_ENTRIES` (1024) is a constant, not an ADR knob. `IAccountZoneMap` doc comment updated (the link now adds the entry). `SessionEstablishment.Accept` still calls `SetSession` afterwards; the double add is noted in Story 005 for decision at readiness. The caller's token reaches `SendAsync`, so a mid-write cancel closes the zone link (Story 003 contract); callers cancel only at the timeout today. Untested: 1024 cap and uint wraparound (no seam); timeout landing mid-reply-processing (safe by Settle ordering).
+**Test Evidence**: Logic: `gateway/IronGrind.Gateway.Tests/Gateway_ZoneLink_tests.cs` — 31 tests; CI-filter suite 462/462; zone-link tests 5× repeat clean
+**Code Review**: Complete — CHANGES REQUIRED (late accept could miss `Evict` when racing the timeout; S1–S4) → fixed → re-review APPROVED WITH SUGGESTIONS

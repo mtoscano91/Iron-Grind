@@ -45,6 +45,7 @@
 - Grace timers: driven by the injected clock (a single periodic sweep is fine), not one `Timer` per zone in tests.
 - The `Evict` for a conflicting registration goes through the Story 004 link (`IZoneLink.EvictAsync`, fire-and-forget with logging) — inject a narrow sender seam so this story's tests need no link.
 - AC-AUTH-24 test: `[Category("Advisory")]` or similar if the project uses one; report the measured delta in the completion notes.
+- *(Added 2026-11-09, Story 004 code review S4.)* `LinkZoneLink` now calls `SetSession` on `AdmitResult(accepted)` before the login continues (ADR-016 "Added"). `SessionEstablishment.Accept` still calls `SetSession` afterwards. If the zone's `SessionReleased` lands between the two calls, the second call brings back a removed entry. Decide at readiness whether this story (or Story 009) drops the `SetSession` in `SessionEstablishment.Accept`, which needs `Auth_SessionEstablishment_tests` reworked so the fake link performs the add.
 
 ---
 

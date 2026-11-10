@@ -12,8 +12,9 @@ namespace IronGrind.Gateway.Auth;
 /// <item>Late admission: an <c>AdmitResult(accepted)</c> whose request is unknown or timed out is answered with <c>Evict</c> and no entry is added.</item>
 /// <item>Gateway boot: the map starts empty; until the boot wait ends the router answers "no routable zone" (<c>ServerStarting</c>).</item>
 /// </list>
-/// ADR-016 says the entry is "added when <c>AdmitResult(accepted)</c> arrives". In this design
-/// <see cref="SessionEstablishment"/> performs that add through <see cref="SetSession"/>, so the real link must not add it again.
+/// The real link (<c>LinkZoneLink</c>) calls <see cref="SetSession"/> when <c>AdmitResult(accepted)</c> arrives for a live
+/// <c>Admit</c>, before the caller's task completes (ADR-016 Decision 3 "Added").
+/// <see cref="SessionEstablishment"/> also calls it afterwards, which is a harmless upsert.
 /// </summary>
 public interface IAccountZoneMap
 {
