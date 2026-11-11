@@ -38,7 +38,6 @@ public sealed class WarmSpareKeeper : IZoneLinkEvents
     {
         public int Attempt;
         public ushort Port;
-        public DateTimeOffset StartedAt;
     }
 
     private readonly object _lock = new();
@@ -147,7 +146,18 @@ public sealed class WarmSpareKeeper : IZoneLinkEvents
                 _loadingZone = ZoneID.Invalid;
 
                 // Retry spacing applies to failed starts only; a spare that registered may be needed again at once.
-                _nextAttemptAt = DateTimeOffset.MinValue;
+                // A zone that registered without giving the template a spare (for example capacity 0) is not a spare:
+                // keep the spacing so the keeper does not start a zone on every event.
+                if (HasSpareLocked())
+                {
+                    _nextAttemptAt = DateTimeOffset.MinValue;
+                }
+                else
+                {
+                    _logger.LogCritical(
+                        "ZoneDefinitionLoadFailed: zone {ZoneId} registered but the template has no spare (capacity {Capacity}); the next start waits for the retry spacing.",
+                        zone, message.Capacity);
+                }
             }
 
             plan = EvaluateLocked();
@@ -202,7 +212,7 @@ public sealed class WarmSpareKeeper : IZoneLinkEvents
         _loadingZone = ZoneID.Invalid;
         _loadingPort = port;
         _loadingStart = now;
-        return new StartPlan { Attempt = _attempt, Port = port, StartedAt = now };
+        return new StartPlan { Attempt = _attempt, Port = port };
     }
 
     // Caller holds _lock.

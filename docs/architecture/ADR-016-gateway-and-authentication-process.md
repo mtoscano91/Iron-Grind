@@ -339,8 +339,9 @@ public bool AdmitToken(uint accountId, byte[] token, uint expiresAtTick); // fal
 | `GATEWAY_ZONE_LINK_PORT` | 7900 | Loopback only |
 | `GATEWAY_ZONE_REQUEST_TIMEOUT_MS` | 2000 | Admit / Reconnect reply wait |
 | `GATEWAY_EVICT_TIMEOUT_MS` | 11000 | Evict reply wait; the reply follows the old zone's save, so it must exceed the steal save's worst case: pool open `Timeout=5` + `CommandTimeout=5` (ADR-007), capped at 10 s by `PERSISTENCE_WATCHDOG_TICKS` = 200. Raised from 7000 on 2026-11-06 (review R2) |
-| `GATEWAY_LINK_RETRY_SECONDS` | 2 | Zone reconnect interval. × 2 is also the link-loss grace for the account → zone map and the gateway boot wait (Decision 3) |
+| `GATEWAY_LINK_RETRY_SECONDS` | 2 | Zone reconnect interval. × 2 is also the link-loss grace for the account → zone map and the gateway boot wait (Decision 3). The boot wait is measured from the moment the zone-link listener has bound (Gateway Story 009 code review, 2026-11-11) |
 | `MAX_AUTH_PENDING` | 10 | Moved from `auth-sidecar-ipc.md` |
 | `LOGIN_HTTP_TIMEOUT_SECONDS` | 20 | Client `UnityWebRequest.timeout`; must exceed hashing + `GATEWAY_EVICT_TIMEOUT_MS` + 2 × `GATEWAY_ZONE_REQUEST_TIMEOUT_MS` (first `Admit` + one re-route; ~15.4 s). Raised from 15 on 2026-11-06 (review R2). Zone start time is not included: logins never wait for a zone (`ServerStarting`) |
 | `GATEWAY_LINK_MAX_FRAME_BYTES` | 65536 | Larger frame closes the link |
 | `GATEWAY_LINK_INBOX_CAPACITY` | 1024 | Zone-side inbox bound; full inbox closes the link |
+| `GATEWAY_MAINTENANCE_INTERVAL_MS` | 1000 | Period of the one gateway timer that runs the warm-spare tick and the routing-table and account-map sweeps; must be > 0. Added 2026-11-11 (Gateway Story 009) |

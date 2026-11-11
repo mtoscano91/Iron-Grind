@@ -1,9 +1,13 @@
 using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
 using System.Net.Http.Headers;
 using IronGrind.Authentication;
 using IronGrind.CharacterPersistence;
 using IronGrind.Currency;
 using IronGrind.Gateway.Auth;
+using IronGrind.Gateway.Config;
+using IronGrind.Gateway.Routing;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -384,7 +388,8 @@ internal sealed class GwTestHost : IDisposable
     /// <summary>False keeps the real Npgsql repository and its data source (startup validation tests).</summary>
     public bool ReplaceRepository { get; set; } = true;
 
-    public Dictionary<string, string?> Settings { get; } = new();
+    /// <summary>Settings; the zone-link port defaults to a free port so hosts never share the default 7900.</summary>
+    public Dictionary<string, string?> Settings { get; } = new() { ["GATEWAY_ZONE_LINK_PORT"] = GwPorts.Free().ToString(System.Globalization.CultureInfo.InvariantCulture) };
 
     private WebApplicationFactory<Program>? _factory;
 
@@ -419,6 +424,9 @@ internal sealed class GwTestHost : IDisposable
             services.AddSingleton<IAccountRepository>(Repo);
         }
 
+        services.RemoveAll<IZoneIdAllocator>();
+        services.AddSingleton<IZoneIdAllocator>(new GwFakeAllocator());
+
         if (FakeHasher)
         {
             services.RemoveAll<IPasswordHasher>();
@@ -433,6 +441,17 @@ internal sealed class GwTestHost : IDisposable
             services.AddSingleton<IZoneRouter>(Zone);
             services.AddSingleton<IZoneLink>(Zone);
             services.AddSingleton<IAccountZoneMap>(Zone);
+
+            // The fake zone is routable at once, so these hosts run without the boot wait (Gateway Story 009 covers it).
+            services.RemoveAll<SessionEstablishment>();
+            services.AddSingleton(sp => new SessionEstablishment(
+                sp.GetRequiredService<IAccountRepository>(),
+                sp.GetRequiredService<IAccountZoneMap>(),
+                sp.GetRequiredService<IZoneRouter>(),
+                sp.GetRequiredService<IZoneLink>(),
+                sp.GetRequiredService<GatewayOptions>(),
+                sp.GetRequiredService<TimeProvider>(),
+                sp.GetRequiredService<ILoggerFactory>()));
         }
 
         if (Service is not null)
@@ -448,4 +467,32 @@ internal sealed class GwTestHost : IDisposable
     public IServiceProvider Services() => _factory!.Services;
 
     public void Dispose() => _factory?.Dispose();
+}
+
+/// <summary>Free loopback TCP ports for tests that start a real zone-link listener.</summary>
+internal static class GwPorts
+{
+    public static int Free()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        try
+        {
+            return ((IPEndPoint)listener.LocalEndpoint).Port;
+        }
+        finally
+        {
+            listener.Stop();
+        }
+    }
+}
+
+/// <summary>Zone id allocator that never touches a database: hands out 100, 101, ...</summary>
+internal sealed class GwFakeAllocator : IZoneIdAllocator
+{
+    private int _next = 99;
+
+    public int Calls => Volatile.Read(ref _next) - 99;
+
+    public Task<ZoneID> AllocateAsync(CancellationToken ct) => Task.FromResult(new ZoneID((uint)Interlocked.Increment(ref _next)));
 }

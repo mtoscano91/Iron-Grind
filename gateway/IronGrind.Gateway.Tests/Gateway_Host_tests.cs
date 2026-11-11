@@ -15,7 +15,7 @@ using NUnit.Framework;
 namespace IronGrind.Gateway.Tests;
 
 /// <summary>
-/// Authentication Story 012 AC-7: host wiring, startup validation, no-zone stand-ins and loopback binding.
+/// Authentication Story 012 AC-7 and Gateway Story 009 AC-7: host wiring, startup validation and loopback binding.
 /// Non-parallelizable: these tests set and restore the process environment variable <c>IRONGRIND_GATEWAY_DB</c>,
 /// which the Database tests also read.
 /// </summary>
@@ -60,10 +60,10 @@ internal sealed class Gateway_Host_tests
         return null;
     }
 
-    // Wiring with the no-zone stand-ins
+    // Wiring: the real router answers ServerStarting while no zone is routable
 
     [Test]
-    public async Task CorrectLogin_WithNoZoneStandIns_Is200ServerStarting()
+    public async Task CorrectLogin_WithNoZoneRegistered_Is200ServerStarting()
     {
         _client = _host.CreateClient();
 
@@ -81,25 +81,6 @@ internal sealed class Gateway_Host_tests
 
         Assert.That(_host.HashCallsAtStartup, Is.EqualTo(1), "the dummy hash is computed once, at host start");
         Assert.That(_host.Services().GetRequiredService<DummyHash>().Phc, Does.StartWith("$argon2id$"));
-    }
-
-    [Test]
-    public void NoZoneStandIns_BehaveAsDocumented()
-    {
-        var map = new EmptyAccountZoneMap();
-        var router = new NoZoneRouter();
-        var link = new UnavailableZoneLink();
-
-        Assert.That(map.TryGetZone(new AccountID(1u), out ZoneID mapped), Is.False);
-        Assert.That(mapped, Is.EqualTo(ZoneID.Invalid));
-        Assert.That(map.IsLinkUp(new ZoneID(5u)), Is.False);
-        Assert.That(router.TryPick(ZoneID.Invalid, ZoneID.Invalid, out _, out _), Is.False);
-        Assert.That(router.TryGetPort(new ZoneID(5u), out _), Is.False);
-        Assert.ThrowsAsync<InvalidOperationException>(() =>
-            link.AdmitAsync(new ZoneID(5u), new AccountID(1u), new CharacterID(1u), new byte[16], CancellationToken.None));
-        Assert.ThrowsAsync<InvalidOperationException>(() => link.EvictAsync(new ZoneID(5u), new AccountID(1u), CancellationToken.None));
-        Assert.ThrowsAsync<InvalidOperationException>(() =>
-            link.ReconnectAsync(new ZoneID(5u), new AccountID(1u), new byte[16], CancellationToken.None));
     }
 
     // Startup validation
@@ -173,7 +154,7 @@ internal sealed class Gateway_Host_tests
     {
         int port = FreeTcpPort();
         Environment.SetEnvironmentVariable(DB_VAR, VALID_CONNECTION);
-        WebApplication app = GatewayHost.CreateApp(new[] { $"--GATEWAY_HTTP_PORT={port}" });
+        WebApplication app = GatewayHost.CreateApp(new[] { $"--GATEWAY_HTTP_PORT={port}", $"--GATEWAY_ZONE_LINK_PORT={FreeTcpPort()}" });
         try
         {
             await app.StartAsync();

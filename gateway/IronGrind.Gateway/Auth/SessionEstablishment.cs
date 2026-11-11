@@ -22,8 +22,9 @@ public sealed class SessionEstablishment
     private readonly GatewayOptions _options;
     private readonly TimeProvider _time;
     private readonly ILogger _log;
+    private readonly GatewayBootWait? _bootWait;
 
-    /// <summary>Creates the service.</summary>
+    /// <summary>Creates the service with no boot wait (internal: unit tests and fixed-clock callers only; production always passes the shared boot wait).</summary>
     /// <param name="accounts">Account persistence (character and last zone).</param>
     /// <param name="map">Account to zone map.</param>
     /// <param name="router">Zone router.</param>
@@ -31,7 +32,7 @@ public sealed class SessionEstablishment
     /// <param name="options">Source of the Admit and Evict timeouts.</param>
     /// <param name="time">Clock for the corrupt-mapping log entry.</param>
     /// <param name="loggerFactory">Source of the infrastructure logger.</param>
-    public SessionEstablishment(
+    internal SessionEstablishment(
         IAccountRepository accounts,
         IAccountZoneMap map,
         IZoneRouter router,
@@ -39,7 +40,30 @@ public sealed class SessionEstablishment
         GatewayOptions options,
         TimeProvider time,
         ILoggerFactory loggerFactory)
+        : this(accounts, map, router, link, options, time, loggerFactory, null)
     {
+    }
+
+    /// <summary>Creates the service. While the shared boot wait runs, every login answers <c>ServerStarting</c> (ADR-016 Decision 3).</summary>
+    /// <param name="accounts">Account persistence (character and last zone).</param>
+    /// <param name="map">Account to zone map.</param>
+    /// <param name="router">Zone router.</param>
+    /// <param name="link">Zone link.</param>
+    /// <param name="options">Source of the Admit and Evict timeouts.</param>
+    /// <param name="time">Clock for the corrupt-mapping log entry.</param>
+    /// <param name="loggerFactory">Source of the infrastructure logger.</param>
+    /// <param name="bootWait">The shared boot wait; null means none.</param>
+    public SessionEstablishment(
+        IAccountRepository accounts,
+        IAccountZoneMap map,
+        IZoneRouter router,
+        IZoneLink link,
+        GatewayOptions options,
+        TimeProvider time,
+        ILoggerFactory loggerFactory,
+        GatewayBootWait? bootWait)
+    {
+        _bootWait = bootWait;
         _accounts = accounts ?? throw new ArgumentNullException(nameof(accounts));
         _map = map ?? throw new ArgumentNullException(nameof(map));
         _router = router ?? throw new ArgumentNullException(nameof(router));
@@ -68,6 +92,12 @@ public sealed class SessionEstablishment
 
     private async Task<LoginResponse> RunCoreAsync(AccountID account)
     {
+        if (_bootWait is { IsOver: false })
+        {
+            // Zones that were running may still be reconnecting; no map, Evict or route work until the wait ends.
+            return LoginResponse.ForFailure(AuthFailureReason.ServerStarting);
+        }
+
         CharacterID character = await _accounts.GetCharacterIDAsync(account, CancellationToken.None).ConfigureAwait(false);
         if (character == CharacterID.Invalid)
         {

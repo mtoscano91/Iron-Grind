@@ -795,6 +795,28 @@ internal sealed class Gateway_WarmSpare_tests
             () => new WarmSpareKeeper(_table, _allocator, _launcher, _options, null!, _clock, _loggerFactory));
     }
 
+    // ---------------------------------------------------------------- Story 007 follow-up S1
+
+    [Test]
+    public void StartedZone_RegistersWithCapacityZero_KeepsRetrySpacing_AndLogsCritical()
+    {
+        EndBootWait();
+        _keeper.Tick();
+        Assert.That(_launcher.Calls, Has.Count.EqualTo(1));
+
+        Register(100, 0, port: 7777, capacity: 0);
+
+        Assert.That(_keeper.IsLoading, Is.False);
+        Assert.That(CriticalLogs("registered but the template has no spare"), Is.EqualTo(1));
+        _clock.Advance(_loadTimeout - _ms);
+        _keeper.Tick();
+        Assert.That(_launcher.Calls, Has.Count.EqualTo(1), "no new start before the retry spacing has elapsed");
+
+        _clock.Advance(_ms);
+        _keeper.Tick();
+        Assert.That(_launcher.Calls, Has.Count.EqualTo(2), "the next start runs once the spacing has elapsed");
+    }
+
     // ---------------------------------------------------------------- fakes
 
     private sealed class FakeClock : TimeProvider

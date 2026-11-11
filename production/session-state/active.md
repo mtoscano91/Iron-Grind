@@ -6415,3 +6415,18 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Story: production/epics/gateway/story-008-zone-launchers-and-deploy-files.md — Zone launchers and deploy files
 - Tech debt logged: None (advisories in Completion Notes: polkit 0.105 on Ubuntu 22.04 decision, secrets-file ADR-016 note, unverified install paths; Story 007 S1/S2 carried to Story 009)
 - Next recommended: production/epics/gateway/story-009-gateway-composition.md (also Ready: 010, 011). Not committed yet.
+
+## Session Extract — /dev-story 2026-11-11
+- Story: production/epics/gateway/story-009-gateway-composition.md — Gateway composition
+- Files changed: gateway/IronGrind.Gateway/Hosting/{GatewayHost.cs, GatewayStartupCheck.cs, ZoneLinkEventFanOut.cs (new), GatewayMaintenanceTimer.cs (new)}, Auth/SessionEstablishment.cs (boot wait -> ServerStarting, new 8-arg ctor), Auth/NoZoneStandIns.cs (deleted), Config/GatewayOptions.cs + GatewayOptionsValidator.cs (GATEWAY_MAINTENANCE_INTERVAL_MS, default 1000, > 0), Routing/WarmSpareKeeper.cs (Story 007 S1 + S2), Program.cs comment; tests GatewayTestSupport.cs, Gateway_Host_tests.cs, Gateway_WarmSpare_tests.cs (S1 test)
+- Test written: gateway/IronGrind.Gateway.Tests/Gateway_Composition_tests.cs (20 non-Database + 4 Database end-to-end). Non-Database suite 642 passed / 1 skipped; Database suite 51/51 against irongrind_auth_test (dev PG started via PowerShell Start-Process; quote the data-dir path, it contains a space)
+- Gap found and fixed: nothing made logins return ServerStarting during the boot wait (ADR-016 line 102); now checked at the start of SessionEstablishment.RunCoreAsync
+- Open: GATEWAY_MAINTENANCE_INTERVAL_MS not yet added to the ADR-016 knob table; AC-7 "exits non-zero" covered by host-start exceptions, not a spawned process; spare start in AC-3 comes from the timer Tick, not the login
+- Next: /code-review then /story-done production/epics/gateway/story-009-gateway-composition.md
+- Code review 2026-11-11 (CHANGES REQUIRED → "fix all" applied, 12 items): boot wait now created NotStarted and started by ZoneLinkListener.StartAsync after the bind (GatewayBootWait.NotStarted/Start/IsStarted); real throwing-step timer test via internal Action ctor; AC-3 success test with accepting stub link; AC-5 asserts login_failure_count unchanged; AccountZoneMap.StoredEntryCount (internal) proves the timer's Sweep; fan-out error log asserted; SessionEstablishment 7-arg ctor internal (+InternalsVisibleTo IronGrind.Gateway.Tests); timer stopping flag; FakeZoneClient 10 s cancellation + [CancelAfter(60000)] on e2e; reflection test for deleted stand-ins; ADR-016 knob table + GATEWAY_MAINTENANCE_INTERVAL_MS row and boot-wait note; story AC-7 note. Suites: non-Database 648 passed / 1 skipped, Database 51/51. Next: /story-done story-009.
+
+## Session Extract — /story-done 2026-11-11
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/gateway/story-009-gateway-composition.md — Gateway composition
+- Tech debt logged: None (advisories in Completion Notes)
+- Next recommended: production/epics/gateway/story-010-zone-link-thread.md (Ready; then 011). Committed.

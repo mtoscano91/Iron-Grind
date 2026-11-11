@@ -1,7 +1,7 @@
 # Story 009: Gateway composition
 
 > **Epic**: Gateway
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Integration
 > **Estimate**: 5 h
@@ -33,7 +33,7 @@
 - [ ] End-to-end gateway test (`WebApplicationFactory<Program>` or the Kestrel host, `ZONE_LAUNCHER=none`, test database): a fake zone client connects over loopback and sends `RegisterZone(zone 5, port 7801, capacity 50, [])`; a registered account logs in; the fake zone receives `Admit` with the account, character and a 16-byte token and replies `AdmitResult(accepted)`; the HTTP response is `LoginResponse(success, token, characterId, zoneId 5, port 7801)` with the same token; the map holds account → 5
 - [ ] Same setup, fake zone replies `AdmitResult(rejected)` and no other zone exists → `ServerError` (one re-route attempt, nothing to pick)
 - [ ] Same setup, fake zone sends `SessionReleased(account)` → map entry gone; a second login sends no `Evict`
-- [ ] Startup check fails (and the process exits non-zero) for invalid new options; existing `Gateway_Host_tests` still pass
+- [ ] Startup check fails (and the process exits non-zero) for invalid new options; existing `Gateway_Host_tests` still pass *(code review 2026-11-11: "exits non-zero" is verified by the startup exception from host start — an unhandled `StartAsync` exception ends the process non-zero; no child-process test)*
 
 ---
 
@@ -70,7 +70,7 @@
 **Required evidence**:
 - `gateway/IronGrind.Gateway.Tests/Gateway_Composition_tests.cs` (`[Category("Database")]` for the end-to-end cases) — must pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — `Gateway_Composition_tests.cs` (non-Database + 4 Database end-to-end), all passing (dotnet, 2026-11-11)
 
 ---
 
@@ -78,3 +78,21 @@
 
 - Depends on: Stories 002–008
 - Unlocks: Story 011 (real zone against the real gateway), Authentication Story 017
+
+---
+
+## Completion Notes
+**Completed**: 2026-11-11
+**Criteria**: 7/7 passing (all automated; AC-4/5/6 by Database end-to-end tests against `irongrind_auth_test`)
+**Deviations** (advisory):
+- Boot-wait gap closed: ADR-016 line 102 required `ServerStarting` during the boot wait but nothing enforced it; now checked first in `SessionEstablishment.RunCoreAsync`.
+- Boot wait starts when the zone-link listener has bound (`GatewayBootWait.NotStarted` + `Start()` from `ZoneLinkListener.StartAsync`), not at construction — code review; noted in the ADR-016 knob table.
+- New knob `GATEWAY_MAINTENANCE_INTERVAL_MS` (default 1000, > 0) for the one maintenance timer; added to the ADR-016 knob table.
+- AC-3 spare start comes from the timer's `WarmSpareKeeper.Tick`, not from the login itself.
+- End-to-end tests use `WebApplicationFactory` (story allows either); the fake zone uses a real loopback socket and the real codec.
+- AC-7 "exits non-zero" verified by the host-start exception, not a child process (AC annotated).
+- Story 007 follow-ups S1/S2 applied here (`WarmSpareKeeper`).
+- TR-zi-005 / TR-zi-018 have no `tr-registry.yaml` entries (as TR-zi-001).
+- `ZoneLinkListener` 3-arg and `SessionEstablishment` 8-arg ctors still accept "no boot wait"; production always passes it.
+**Test Evidence**: Integration — `gateway/IronGrind.Gateway.Tests/Gateway_Composition_tests.cs`; gateway suite 648 passed / 1 skipped (non-Database; Unix file-mode test on Windows), Database 51/51
+**Code Review**: Complete — CHANGES REQUIRED (boot wait started before the listener bound; hollow throwing-step test; weak AC-3 success test; AC-5 failure count unasserted) → fix all 12 applied (2026-11-11)

@@ -2,6 +2,9 @@ using System.Net;
 using IronGrind.Gateway.Auth;
 using IronGrind.Gateway.Config;
 using IronGrind.Gateway.Http;
+using IronGrind.Gateway.Launch;
+using IronGrind.Gateway.Routing;
+using IronGrind.Gateway.ZoneLink;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -45,7 +48,7 @@ public static class GatewayHost
         options.Listen(IPAddress.Loopback, httpPort);
     }
 
-    /// <summary>Registers the authentication services (Stories 004-011) with the no-zone stand-ins.</summary>
+    /// <summary>Registers the authentication services and the gateway composition (Stories 004-011 and Gateway Story 009).</summary>
     /// <param name="services">Service collection.</param>
     /// <param name="configuration">Configuration root.</param>
     /// <returns>The same service collection.</returns>
@@ -68,15 +71,75 @@ public static class GatewayHost
 
         services.AddSingleton<RegistrationValidator>();
         services.AddSingleton<CredentialCheck>();
-        services.AddSingleton<SessionEstablishment>();
         services.AddSingleton<TokenPath>();
-        services.AddSingleton<IAccountZoneMap, EmptyAccountZoneMap>();
-        services.AddSingleton<IZoneRouter, NoZoneRouter>();
-        services.AddSingleton<IZoneLink, UnavailableZoneLink>();
+        AddZoneComposition(services);
+        services.AddSingleton(sp => new SessionEstablishment(
+            sp.GetRequiredService<IAccountRepository>(),
+            sp.GetRequiredService<IAccountZoneMap>(),
+            sp.GetRequiredService<IZoneRouter>(),
+            sp.GetRequiredService<IZoneLink>(),
+            sp.GetRequiredService<GatewayOptions>(),
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<ILoggerFactory>(),
+            sp.GetRequiredService<GatewayBootWait>()));
         services.AddSingleton<IAuthenticationService, AuthenticationService>();
 
+        // Hosted services start in this order: the check first (a bad option or database string fails before the port binds), then the link listener, then the timer.
         services.AddHostedService<GatewayStartupCheck>();
+        services.AddHostedService(sp => sp.GetRequiredService<ZoneLinkListener>());
+        services.AddHostedService<GatewayMaintenanceTimer>();
         return services;
+    }
+
+    /// <summary>
+    /// Registers the zone side (Gateway Story 009): each of the listener, link, map, routing table and warm-spare keeper is one
+    /// singleton under its concrete type, and the interfaces resolve to that same instance. The two cycles (listener, events,
+    /// link, listener and map, evict sender, link, map) are broken by <see cref="ZoneLinkEventFanOut"/>'s lazy handler list and by
+    /// the evict sender's <c>Func&lt;IZoneLink&gt;</c>.
+    /// </summary>
+    private static void AddZoneComposition(IServiceCollection services)
+    {
+        // Not started here: the zone-link listener starts it once it has bound (the window opens when zones can reconnect).
+        services.AddSingleton(sp => GatewayBootWait.NotStarted(sp.GetRequiredService<GatewayOptions>(), sp.GetRequiredService<TimeProvider>()));
+        services.AddSingleton<RoutingTable>();
+        services.AddSingleton<FillFirstRouter>();
+        services.AddSingleton<IZoneRouter>(sp => sp.GetRequiredService<FillFirstRouter>());
+        services.AddSingleton<IZoneEvictSender>(sp => new ZoneLinkEvictSender(
+            () => sp.GetRequiredService<IZoneLink>(), sp.GetRequiredService<ILoggerFactory>()));
+        services.AddSingleton(sp => new AccountZoneMap(
+            sp.GetRequiredService<GatewayOptions>(),
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<IZoneEvictSender>(),
+            sp.GetRequiredService<ILoggerFactory>(),
+            sp.GetRequiredService<GatewayBootWait>()));
+        services.AddSingleton<IAccountZoneMap>(sp => sp.GetRequiredService<AccountZoneMap>());
+        services.AddSingleton<LinkZoneLink>();
+        services.AddSingleton<IZoneLink>(sp => sp.GetRequiredService<LinkZoneLink>());
+        services.AddSingleton<IProcessRunner, SystemProcessRunner>();
+        services.AddSingleton<IFileWriter, SystemFileWriter>();
+        services.AddSingleton(sp => ZoneLauncherFactory.Create(
+            sp.GetRequiredService<GatewayOptions>(),
+            sp.GetRequiredService<IProcessRunner>(),
+            sp.GetRequiredService<IFileWriter>(),
+            sp.GetRequiredService<ILoggerFactory>()));
+        services.AddSingleton<IZoneIdAllocator, NpgsqlZoneIdAllocator>();
+        services.AddSingleton<WarmSpareKeeper>();
+        services.AddSingleton(sp => new ZoneLinkEventFanOut(
+            () => new IZoneLinkEvents[]
+            {
+                sp.GetRequiredService<RoutingTable>(),
+                sp.GetRequiredService<AccountZoneMap>(),
+                sp.GetRequiredService<LinkZoneLink>(),
+                sp.GetRequiredService<WarmSpareKeeper>(),
+            },
+            sp.GetRequiredService<ILoggerFactory>()));
+        services.AddSingleton<IZoneLinkEvents>(sp => sp.GetRequiredService<ZoneLinkEventFanOut>());
+        services.AddSingleton(sp => new ZoneLinkListener(
+            sp.GetRequiredService<IOptions<GatewayOptions>>(),
+            sp.GetRequiredService<IZoneLinkEvents>(),
+            sp.GetRequiredService<ILogger<ZoneLinkListener>>(),
+            sp.GetRequiredService<GatewayBootWait>()));
+        services.AddSingleton<IZoneLinkSender>(sp => sp.GetRequiredService<ZoneLinkListener>());
     }
 
     /// <summary>

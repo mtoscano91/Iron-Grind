@@ -71,4 +71,8 @@ public sealed class GatewayOptions
     /// <summary>Knob <c>ZONE_SERVER_CONFIG</c> (Gateway Story 008): <c>-serverConfig</c> path passed by <c>ZONE_LAUNCHER=process</c>. Required (non-blank) only then; the systemd unit names its own path.</summary>
     [ConfigurationKeyName("ZONE_SERVER_CONFIG")]
     public string ZoneServerConfig { get; set; } = string.Empty;
+
+    /// <summary>Knob <c>GATEWAY_MAINTENANCE_INTERVAL_MS</c> (Gateway Story 009): period of the one maintenance timer that runs the warm-spare tick and both sweeps. Must be &gt; 0.</summary>
+    [ConfigurationKeyName("GATEWAY_MAINTENANCE_INTERVAL_MS")]
+    public int MaintenanceIntervalMs { get; set; } = 1000;
 }

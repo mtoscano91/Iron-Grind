@@ -123,6 +123,11 @@ public sealed class GatewayOptionsValidator : IValidateOptions<GatewayOptions>
             }
         }
 
+        if (options.MaintenanceIntervalMs <= 0)
+        {
+            failures.Add($"GATEWAY_MAINTENANCE_INTERVAL_MS must be greater than 0 (was {options.MaintenanceIntervalMs})");
+        }
+
         return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
     }
 

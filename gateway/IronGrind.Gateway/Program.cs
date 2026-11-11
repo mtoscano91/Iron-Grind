@@ -1,5 +1,5 @@
 // IronGrind gateway entry point (ADR-016). All wiring lives in GatewayHost so tests can build the same app
-// on Kestrel without WebApplicationFactory. The zone-link listener comes from the gateway epic.
+// on Kestrel without WebApplicationFactory. The zone-link listener, routing, map, warm spare and launcher are composed there too.
 
 using IronGrind.Gateway.Hosting;
 

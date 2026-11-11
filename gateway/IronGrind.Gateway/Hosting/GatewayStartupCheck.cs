@@ -1,11 +1,16 @@
 using IronGrind.Gateway.Auth;
+using IronGrind.Gateway.Config;
+using IronGrind.Gateway.Routing;
+using IronGrind.Gateway.ZoneLink;
 
 namespace IronGrind.Gateway.Hosting;
 
 /// <summary>
-/// Resolves the account repository and the dummy hash when the host starts, so a missing or unsafe database connection
-/// string fails startup and the dummy hash is computed before the first request (CR-AUTH-9 step 4). Tests that
-/// replace <see cref="IAccountRepository"/> and the hasher skip the database and the Argon2 cost.
+/// Resolves the account repository, the dummy hash and the zone composition when the host starts, so a missing or unsafe
+/// database connection string or a bad option fails startup, the shared boot wait starts with the host, and the dummy hash
+/// is computed before the first request (CR-AUTH-9 step 4). The composition part builds the event fan-out with all its
+/// handlers, the link listener, the zone launcher and the keeper. Tests that replace <see cref="IAccountRepository"/>
+/// and the hasher skip the database and the Argon2 cost.
 /// </summary>
 public sealed class GatewayStartupCheck : IHostedService
 {
@@ -23,6 +28,11 @@ public sealed class GatewayStartupCheck : IHostedService
     {
         _ = _services.GetRequiredService<IAccountRepository>();
         _ = _services.GetRequiredService<DummyHash>();
+        _ = _services.GetRequiredService<GatewayBootWait>();
+        _ = _services.GetRequiredService<ZoneLinkEventFanOut>().Handlers;
+        _ = _services.GetRequiredService<ZoneLinkListener>();
+        _ = _services.GetRequiredService<IZoneLauncher>();
+        _ = _services.GetRequiredService<WarmSpareKeeper>();
         return Task.CompletedTask;
     }
 

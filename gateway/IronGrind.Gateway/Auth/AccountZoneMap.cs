@@ -109,6 +109,18 @@ public sealed class AccountZoneMap : IAccountZoneMap, IZoneLinkEvents
         }
     }
 
+    /// <summary>Number of stored entries, read without purging expired ones (tests: shows what only <see cref="Sweep"/> removes).</summary>
+    internal int StoredEntryCount
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _entries.Count;
+            }
+        }
+    }
+
     /// <summary>Removes the entries of every zone whose link-loss grace has expired, to free memory.</summary>
     public void Sweep()
     {

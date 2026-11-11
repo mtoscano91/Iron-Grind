@@ -37,13 +37,25 @@ public sealed class ZoneLinkListener : IHostedService, IZoneLinkSender
     private Task _acceptLoop = Task.CompletedTask;
     private int _started;
     private int _stopped;
+    private readonly GatewayBootWait? _bootWait;
 
     /// <summary>Creates the listener. The port comes from <see cref="GatewayOptions.ZoneLinkPort"/> (0 = any free port; tests only, the validator rejects 0).</summary>
     /// <param name="options">Gateway knobs (zone-link port, max frame bytes).</param>
     /// <param name="events">Receives registrations, messages and link loss.</param>
     /// <param name="logger">Logger.</param>
     public ZoneLinkListener(IOptions<GatewayOptions> options, IZoneLinkEvents events, ILogger<ZoneLinkListener> logger)
+        : this(options, events, logger, null)
     {
+    }
+
+    /// <summary>Creates the listener and gives it the boot wait to start once the port is bound (Gateway Story 009).</summary>
+    /// <param name="options">Gateway knobs (zone-link port, max frame bytes).</param>
+    /// <param name="events">Receives registrations, messages and link loss.</param>
+    /// <param name="logger">Logger.</param>
+    /// <param name="bootWait">Started at the end of <see cref="StartAsync"/>, after the bind; null means none.</param>
+    public ZoneLinkListener(IOptions<GatewayOptions> options, IZoneLinkEvents events, ILogger<ZoneLinkListener> logger, GatewayBootWait? bootWait)
+    {
+        _bootWait = bootWait;
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _events = events ?? throw new ArgumentNullException(nameof(events));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -66,6 +78,7 @@ public sealed class ZoneLinkListener : IHostedService, IZoneLinkSender
         _listener = listener;
         _acceptLoop = Task.Run(() => AcceptLoopAsync(listener));
         _logger.LogInformation("Zone link listening on {Endpoint}", listener.LocalEndpoint);
+        _bootWait?.Start();
         return Task.CompletedTask;
     }
 
