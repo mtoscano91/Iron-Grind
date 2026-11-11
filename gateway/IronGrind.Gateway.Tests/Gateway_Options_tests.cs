@@ -37,6 +37,9 @@ internal sealed class Gateway_Options_tests
         Assert.That(g.MaxAuthPending, Is.EqualTo(10));
         Assert.That(g.ZoneOpenThreshold, Is.EqualTo(35));
         Assert.That(g.MaxPlayersPerZone, Is.EqualTo(50));
+        Assert.That(g.ZoneUdpPortFirst, Is.EqualTo(7777));
+        Assert.That(g.ZoneUdpPortCount, Is.EqualTo(16));
+        Assert.That(g.ZoneLoadTimeoutSeconds, Is.EqualTo(30));
         Assert.That(a.LoginFailureLimit, Is.EqualTo(5));
         Assert.That(a.EffectiveLockoutTableSeconds, Is.EqualTo(DEFAULT_TABLE));
         Assert.That(a.Argon2Iterations, Is.EqualTo(2));
@@ -308,6 +311,66 @@ internal sealed class Gateway_Options_tests
 
         Assert.That(g.ZoneOpenThreshold, Is.EqualTo(30));
         Assert.That(g.MaxPlayersPerZone, Is.EqualTo(60));
+    }
+
+    // ------------------------------------------------- Zone launch knobs (Gateway Story 007)
+
+    [Test]
+    public void test_validate_zone_port_count_boundaries()
+    {
+        AssertFailsNaming(ValidateGateway(o => o.ZoneUdpPortCount = 0), "ZONE_UDP_PORT_COUNT");
+        AssertFailsNaming(ValidateGateway(o => o.ZoneUdpPortCount = 257), "ZONE_UDP_PORT_COUNT");
+        Assert.That(ValidateGateway(o => o.ZoneUdpPortCount = 1).Succeeded, Is.True);
+        // 256 ports from the default first port would swallow the link port 7900, so move the range.
+        Assert.That(ValidateGateway(o => { o.ZoneUdpPortFirst = 1024; o.ZoneUdpPortCount = 256; }).Succeeded, Is.True);
+    }
+
+    [Test]
+    public void test_validate_zone_port_first_boundaries()
+    {
+        AssertFailsNaming(ValidateGateway(o => o.ZoneUdpPortFirst = 1023), "ZONE_UDP_PORT_FIRST");
+        AssertFailsNaming(ValidateGateway(o => o.ZoneUdpPortFirst = 65536), "ZONE_UDP_PORT_FIRST");
+        Assert.That(ValidateGateway(o => { o.ZoneUdpPortFirst = 1024; o.ZoneUdpPortCount = 16; }).Succeeded, Is.True);
+        Assert.That(ValidateGateway(o => { o.ZoneUdpPortFirst = 65535; o.ZoneUdpPortCount = 1; }).Succeeded, Is.True);
+    }
+
+    [Test]
+    public void test_validate_zone_port_range_past_65535_fails()
+    {
+        AssertFailsNaming(ValidateGateway(o => { o.ZoneUdpPortFirst = 65535; o.ZoneUdpPortCount = 2; }), "ZONE_UDP_PORT_FIRST");
+        Assert.That(ValidateGateway(o => { o.ZoneUdpPortFirst = 65520; o.ZoneUdpPortCount = 16; }).Succeeded, Is.True);
+        AssertFailsNaming(ValidateGateway(o => { o.ZoneUdpPortFirst = 65520; o.ZoneUdpPortCount = 17; }), "ZONE_UDP_PORT_FIRST");
+    }
+
+    [Test]
+    public void test_validate_zone_port_range_containing_http_or_link_port_fails()
+    {
+        // Defaults: the range 7777-7792 clears HTTP 8080 and link 7900.
+        AssertFailsNaming(ValidateGateway(o => { o.ZoneUdpPortFirst = 8075; o.ZoneUdpPortCount = 16; }), "GATEWAY_HTTP_PORT");
+        AssertFailsNaming(ValidateGateway(o => { o.ZoneUdpPortFirst = 7900; o.ZoneUdpPortCount = 1; }), "GATEWAY_ZONE_LINK_PORT");
+        AssertFailsNaming(ValidateGateway(o => { o.ZoneUdpPortFirst = 7890; o.ZoneUdpPortCount = 11; }), "GATEWAY_ZONE_LINK_PORT");
+        Assert.That(ValidateGateway(o => { o.ZoneUdpPortFirst = 7890; o.ZoneUdpPortCount = 10; }).Succeeded, Is.True);
+        Assert.That(ValidateGateway(o => { o.ZoneUdpPortFirst = 7901; o.ZoneUdpPortCount = 16; }).Succeeded, Is.True);
+    }
+
+    [Test]
+    public void test_validate_zone_load_timeout_boundaries()
+    {
+        AssertFailsNaming(ValidateGateway(o => o.ZoneLoadTimeoutSeconds = 9), "ZONE_LOAD_TIMEOUT_SECONDS");
+        AssertFailsNaming(ValidateGateway(o => o.ZoneLoadTimeoutSeconds = 121), "ZONE_LOAD_TIMEOUT_SECONDS");
+        Assert.That(ValidateGateway(o => o.ZoneLoadTimeoutSeconds = 10).Succeeded, Is.True);
+        Assert.That(ValidateGateway(o => o.ZoneLoadTimeoutSeconds = 120).Succeeded, Is.True);
+    }
+
+    [Test]
+    public void test_bind_zone_launch_knobs_from_configuration()
+    {
+        (GatewayOptions g, _) = Bind(Build(
+            ("ZONE_UDP_PORT_FIRST", "9000"), ("ZONE_UDP_PORT_COUNT", "4"), ("ZONE_LOAD_TIMEOUT_SECONDS", "45")));
+
+        Assert.That(g.ZoneUdpPortFirst, Is.EqualTo(9000));
+        Assert.That(g.ZoneUdpPortCount, Is.EqualTo(4));
+        Assert.That(g.ZoneLoadTimeoutSeconds, Is.EqualTo(45));
     }
 
     // ------------------------------------------------- Safe-range boundaries (GDD Tuning Knobs)

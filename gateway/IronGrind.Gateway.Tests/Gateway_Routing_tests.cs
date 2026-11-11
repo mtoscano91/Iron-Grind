@@ -32,7 +32,7 @@ internal sealed class Gateway_Routing_tests
 
     private void Rebuild()
     {
-        _table = new RoutingTable(_options, NullLoggerFactory.Instance);
+        _table = new RoutingTable(_options, TimeProvider.System, NullLoggerFactory.Instance);
         _router = new FillFirstRouter(_table, _options);
     }
 

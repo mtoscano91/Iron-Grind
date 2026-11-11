@@ -6327,3 +6327,77 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Story: production/epics/gateway/story-003-link-listener.md — Gateway link listener
 - Tech debt logged: None (advisory notes in Completion Notes)
 - Next recommended: /story-readiness for Story 004 (IZoneLink requests/replies), 005 (account map) or 006 (routing table) — all unblocked by 003; 010 also ready
+
+## Session Extract — /dev-story 2026-11-09
+- Story: production/epics/gateway/story-004-zone-link-requests.md — Real IZoneLink (requests, replies, timeouts)
+- Files changed: gateway/IronGrind.Gateway/ZoneLink/LinkZoneLink.cs (new), gateway/IronGrind.Gateway/ZoneLink/ZoneLinkDownException.cs (new), gateway/IronGrind.Gateway/Auth/IAccountZoneMap.cs (doc comment: link now calls SetSession on accepted Admit before completing — ADR-016 "Added"; SessionEstablishment's later SetSession is a harmless upsert)
+- Test written: gateway/IronGrind.Gateway.Tests/Gateway_ZoneLink_tests.cs — 28 tests; gateway suite 459/459 passed (Release, TestCategory!=Database)
+- Notes: LinkZoneLink implements IZoneLinkEvents (Story 009 fans listener events to it + the map); caller cancel → faulted OperationCanceledException; SendAsync throw records an expired Admit (frame may have reached the zone); 1024 expired cap and uint wrap untested (no seam)
+- Blockers: None
+- Next: /code-review then /story-done production/epics/gateway/story-004-zone-link-requests.md
+- Code review 2026-11-09: CHANGES REQUIRED → "fix all" applied: R1 (late-accept/timeout race: Settle records expired before removing pending, one settle per entry, reply falling through to expired check), S1 (timeout armed at registration; send not awaited), S2 (send errors reach the caller via the pending task), S3 (methods split), S4 (note added to Story 005 Implementation Notes). +3 tests (31 in file); gateway suite 462/462; zone-link tests 5× repeat clean.
+- Next: /code-review gateway/IronGrind.Gateway/ZoneLink/LinkZoneLink.cs (re-review), then /story-done
+
+## Session Extract — /story-done 2026-11-09
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/gateway/story-004-zone-link-requests.md — Real IZoneLink (requests, replies, timeouts)
+- Tech debt logged: None
+- Next recommended: Story 005 (account → zone map; carries the SessionEstablishment double-SetSession decision), or 006 / 007 / 010 in parallel
+
+## Session Extract — /dev-story 2026-11-09
+- Story: production/epics/gateway/story-005-account-zone-map.md — Account → zone map
+- Files changed: gateway/IronGrind.Gateway/Auth/AccountZoneMap.cs (new; also IZoneLinkEvents), Auth/IZoneEvictSender.cs (new), ZoneLink/ZoneLinkEvictSender.cs (new; Func<IZoneLink> breaks the DI cycle), Auth/IAccountZoneMap.cs (+Remove), Auth/NoZoneStandIns.cs, Auth/SessionEstablishment.cs (Accept no longer calls SetSession — user decision 2026-11-09), ZoneLink/LinkZoneLink.cs (matched EvictResult → zone-matched Remove); test fakes in 5 test files
+- Test written: gateway/IronGrind.Gateway.Tests/Gateway_AccountZoneMap_tests.cs — 27 tests; gateway suite 491/491 (Release, TestCategory!=Database)
+- Notes: expiry is lazy (purge on every call) + Sweep() for Story 009 to schedule; IsBootWaitOver on the class only; AC-AUTH-24 uses median of 3 attempts per run (single attempts flaky, one hit 12 920) — measured 8 672 B; ctor takes GatewayOptions (009 passes options.Value); DI registration left to Story 009
+- Blockers: None
+- Next: /code-review then /story-done production/epics/gateway/story-005-account-zone-map.md
+- Code review 2026-11-09: CHANGES REQUIRED (R1) → "fix all" applied: R1 (Auth_SessionEstablishment_tests `RunAsync_Accepted_DoesNotWriteTheMapItself` pins the dropped SetSession), S1 (empty liveAccounts), S2 (parallel test rewritten: disjoint accounts/zones, exact final state asserted), S3 (`AddLiveAccountsLocked` extracted from OnZoneRegistered), S4 (SessionReleased in grace, SetSession onto zone in grace / unknown zone, conflict with zone in grace / expired zone). Map tests 33 (3× repeat clean); gateway suite 498/498.
+- Next: /code-review (re-review) then /story-done production/epics/gateway/story-005-account-zone-map.md
+- Re-review 2026-11-09: APPROVED WITH SUGGESTIONS (only: unused `using IronGrind.Currency;` in ZoneLinkEvictSender.cs). Next: /story-done production/epics/gateway/story-005-account-zone-map.md
+
+## Session Extract — /story-done 2026-11-09
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/gateway/story-005-account-zone-map.md — Account → zone map
+- Tech debt logged: None (Story 009 must schedule AccountZoneMap.Sweep() and pass options.Value)
+- Next recommended: Story 006 (routing table + router) or 010 (zone link thread) — both unblocked; 007 needs 006, 008 needs 007, 009 needs 006–008
+
+## Session Extract — /dev-story 2026-11-09
+- Story: production/epics/gateway/story-006-routing-table-and-router.md — Routing table and fill-first router
+- Files changed: gateway/IronGrind.Gateway/Routing/RoutingTable.cs (new; RoutingTable : IZoneLinkEvents, ZoneRouteState, ZoneRoute), Routing/FillFirstRouter.cs (new; STARTING_TEMPLATE = 0 — gateway cannot see ZoneTemplateID), Config/GatewayOptions.cs + GatewayOptionsValidator.cs + appsettings.json (ZONE_OPEN_THRESHOLD 35, MAX_PLAYERS_PER_ZONE 50; cap [10,100], threshold [20,48], threshold ≤ cap − 2), Gateway_Options_tests.cs (+4)
+- Test written: gateway/IronGrind.Gateway.Tests/Gateway_Routing_tests.cs — 29 tests (incl. AC-ZI-34 through SessionEstablishment with the real router); gateway suite 531/531 (non-Database); routing tests 3× repeat clean
+- Notes: hard cap = min(capacity, MAX_PLAYERS_PER_ZONE); link-lost rows kept (down); re-registration resets Draining → Active and recomputes HasHeldPlayers from liveAccounts (Story 007 may want it carried over); PlayerCount/ZoneDraining from an unregistered zone ignored; lastZone == excluded skips rule 2; TryGetPort answers for any known zone. GatewayHost / NoZoneRouter untouched (Story 009)
+- Blockers: None
+- Next: /code-review then /story-done production/epics/gateway/story-006-routing-table-and-router.md
+- Code review 2026-11-09: CHANGES REQUIRED (R1 template filter untested; R2 AC-ZI-34 SessionEstablishment test had no positive control) → "fix all" applied: R1, R2, S1 (misnamed :143 test renamed + rule 4 single-zone-at-threshold test), S2 (lastZone == excluded, excluded falls to rule 4, rule 2 at 49, capacity below threshold), S3 (RoutingTable keeps HasHeldPlayers across re-registration — behaviour change, + test), S4 (effective minimum cap 22 documented + validator test), S5 (story-011 note: non-Active zone re-sends ZoneDraining after RegisterZone), S6 (story-007 notes: prune link-down rows; reuse HasHeldPlayers for "emptied"). Routing tests 36; gateway suite 538/538.
+- Next: /code-review (re-review) then /story-done production/epics/gateway/story-006-routing-table-and-router.md
+- Re-review 2026-11-09: APPROVED (lean, inline). Next: /story-done production/epics/gateway/story-006-routing-table-and-router.md
+
+## Session Extract — /story-done 2026-11-09
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/gateway/story-006-routing-table-and-router.md — Routing table and fill-first router
+- Tech debt logged: None (follow-ups recorded in Story 007 and Story 011 Implementation Notes)
+- Next recommended: Story 007 (warm spare; now unblocked) or Story 010 (zone link thread)
+
+## Session Extract — /story-readiness 2026-11-09
+- Story: production/epics/gateway/story-007-warm-spare.md — Verdict NEEDS WORK (lean; QL-STORY-READY skipped) → user "apply" → Ready. TR-zi-001/005 placeholders (no TR-zi entries in tr-registry; advisory).
+- Fixes: ports from ZONE_UDP_PORT_FIRST 7777 / ZONE_UDP_PORT_COUNT 16 (lowest free; held by Loading + every RoutingTable row until pruned; none free → ZonePortsExhausted, retry per ZONE_LOAD_TIMEOUT_SECONDS); ZONE_LOAD_TIMEOUT_SECONDS 30 [10,120]; STARTING_TEMPLATE_NAME "StartingZone"; keeper implements IZoneLinkEvents (after RoutingTable) + Tick(); shared boot-wait helper with AccountZoneMap; RoutingTable.Sweep() prunes link-down rows (in scope); late RegisterZone = ordinary. +3 ACs, +2 QA cases, estimate 5 → 6 h. Story 009 note: event fan-out order + one timer for Tick/Sweeps.
+- Next: /dev-story production/epics/gateway/story-007-warm-spare.md
+
+## Session Extract — /dev-story 2026-11-09
+- Story: production/epics/gateway/story-007-warm-spare.md — Warm spare and IZoneLauncher
+- Files changed: Routing/IZoneLauncher.cs (new), Routing/WarmSpareKeeper.cs (new; IZoneLinkEvents + Tick()), Config/GatewayBootWait.cs (new; shared boot end), Auth/AccountZoneMap.cs (ctor overload taking GatewayBootWait), Config/GatewayOptions.cs + GatewayOptionsValidator.cs + appsettings.json (ZONE_UDP_PORT_FIRST 7777, ZONE_UDP_PORT_COUNT 16, ZONE_LOAD_TIMEOUT_SECONDS 30), Routing/FillFirstRouter.cs (STARTING_TEMPLATE_NAME, emptied tie-break), Routing/RoutingTable.cs (ctor + TimeProvider, DownSince, Sweep(), GetAllRoutes()); tests: Gateway_Options_tests.cs (+6), Gateway_Routing_tests.cs (ctor call)
+- Test written: gateway/IronGrind.Gateway.Tests/Gateway_WarmSpare_tests.cs — 33 tests (3× repeat clean); gateway suite 577/577 (non-Database), confirmed locally
+- Notes: allocator/launcher get CancellationToken.None (hung start recovered by Tick's load timeout); attempt counter ignores stale failures; repeated OnLinkLost keeps the first DownSince; ZonePortsExhausted counts as an attempt (retry spacing) without ZoneDefinitionLoadFailed. Story 009: RoutingTable ctor now needs TimeProvider; one GatewayBootWait shared by map + keeper; RoutingTable before keeper; one timer for Tick + both Sweeps.
+- Blockers: None
+- Next: /code-review then /story-done production/epics/gateway/story-007-warm-spare.md
+- Code review 2026-11-09: CHANGES REQUIRED (tests only, no production defects; not applied — user stopped). R1: no test for the stale-attempt guard (pending launcher → timeout → retry → first launcher faults: retry stays Loading, no extra critical log; allocator pending past timeout then answers: launcher not called). R2: boot-wait test never creates "no spare" — zone at 34, PlayerCount 35 at boot−1 ms → no start; Tick at boot end → one start. Suggestions: S1 dead `if (_loading) held.Add(_loadingPort)` in TryPickPortLocked (remove or comment); S2 drain of the only Active zone while spare Loading → still one start, and draining registered spare → new start, fresh ZoneID + other port; S3 late launcher fault after RegisterZone → no log/no restart; S4 Sweep frees port + event before +30 s → no start; S5 WarmSpare_tests:381 TimeProvider.System → manual clock; S6 FailLocked template param → two message constants.
+- Next: "fix all" (R1–R2, S1–S6) → re-review → /story-done production/epics/gateway/story-007-warm-spare.md
+- "fix all" applied 2026-11-11: R1 (StaleAttempt_FirstLauncherFaultsAfterRetry…, StaleAttempt_AllocatorAnswersAfterTimeout…), R2 (BootWait_SpareLostBeforeItEnds…), S1 (dead Loading-port check removed, comment), S2 (Draining_OnlyActiveZoneWhileSpareLoading… — exposed a defect: successful starts also imposed 30 s retry spacing → OnZoneRegistered of the Loading zone now clears _nextAttemptAt; doc comment updated), S3 (LateLauncherFault_AfterRegisterZone…), S4 (event before +30 s after Sweep → no start, in Ports_SweepOfLongDownRow…), S5 (_clock instead of TimeProvider.System), S6 (LOAD_TIMEOUT_MESSAGE / START_FAILED_MESSAGE constants). Fakes gained PendingCalls queues. Warm-spare tests 38 (3× repeat clean); gateway suite 582/582 (non-Database).
+- Next: /code-review (re-review) then /story-done production/epics/gateway/story-007-warm-spare.md
+- Re-review 2026-11-11: APPROVED WITH SUGGESTIONS (S1 clear spacing only if the registered zone is a spare; S2 unused StartPlan.StartedAt) — recorded as follow-ups in the story's Completion Notes, not in the tech-debt register (user decision).
+
+## Session Extract — /story-done 2026-11-11
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/gateway/story-007-warm-spare.md — Warm spare and IZoneLauncher
+- Tech debt logged: None (S1/S2 in Completion Notes; pick up in Story 008 or 009)
+- Next recommended: Story 008 (zone launchers + deploy files; now unblocked) or Story 010 (zone link thread); 009 needs 008

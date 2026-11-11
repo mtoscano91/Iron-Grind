@@ -13,6 +13,9 @@ public sealed class FillFirstRouter : IZoneRouter
     /// <summary>Template id of the MVP starting zone; mirrors <c>ZoneTemplateID.StartingZone</c> (the gateway does not reference ServerLogic).</summary>
     public const byte STARTING_TEMPLATE = 0;
 
+    /// <summary>Launch name of the starting template, passed to <c>IZoneLauncher.StartAsync</c> (Gateway Story 007; one template at MVP).</summary>
+    public const string STARTING_TEMPLATE_NAME = "StartingZone";
+
     private readonly RoutingTable _table;
     private readonly int _openThreshold;
 
@@ -57,9 +60,14 @@ public sealed class FillFirstRouter : IZoneRouter
                 continue;
             }
 
-            // Rule 3: highest count below the open threshold. Story 007 adds the emptied-instance tie-break
-            // (HasHeldPlayers) ahead of the lower-ZoneID tie-break.
-            if (route.PlayerCount < _openThreshold && (!haveOpen || route.PlayerCount > open.PlayerCount))
+            // Rule 3: highest count below the open threshold. Ties go to the emptied instance (HasHeldPlayers and count 0,
+            // idle-closing: ADR-016 Decision 3), then to the lower ZoneID (strict comparisons keep the earlier route).
+            // Only two zones at count 0 can differ in "emptied"; at any other equal count both flags are false.
+            bool emptied = route.HasHeldPlayers && route.PlayerCount == 0;
+            if (route.PlayerCount < _openThreshold
+                && (!haveOpen
+                    || route.PlayerCount > open.PlayerCount
+                    || (route.PlayerCount == open.PlayerCount && emptied && !(open.HasHeldPlayers && open.PlayerCount == 0))))
             {
                 open = route;
                 haveOpen = true;

@@ -44,6 +44,7 @@
 - Follow the existing `GatewayHost.ConfigureServices` pattern and `GatewayStartupCheck`.
 - The end-to-end test is `[Category("Database")]` (login reads `accounts`); reuse `AuthTestDatabase`.
 - Keep the HTTP endpoints untouched (Authentication Story 012); only the service graph changes.
+- *(Added 2026-11-09, Story 007 readiness.)* Fan `IZoneLinkEvents` to `RoutingTable` **before** `WarmSpareKeeper` (the keeper reads updated counts). Schedule `WarmSpareKeeper.Tick()`, `RoutingTable.Sweep()` and `AccountZoneMap.Sweep()` on one timer; pass `options.Value` to `AccountZoneMap`.
 
 ---
 

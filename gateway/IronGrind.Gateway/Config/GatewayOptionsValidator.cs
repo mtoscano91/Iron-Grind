@@ -72,6 +72,40 @@ public sealed class GatewayOptionsValidator : IValidateOptions<GatewayOptions>
                 $"ZONE_OPEN_THRESHOLD must be at most MAX_PLAYERS_PER_ZONE - 2 (was {options.ZoneOpenThreshold} vs {options.MaxPlayersPerZone})");
         }
 
+        if (options.ZoneUdpPortFirst < 1024 || options.ZoneUdpPortFirst > 65535)
+        {
+            failures.Add($"ZONE_UDP_PORT_FIRST must be between 1024 and 65535 (was {options.ZoneUdpPortFirst})");
+        }
+
+        if (options.ZoneUdpPortCount < 1 || options.ZoneUdpPortCount > 256)
+        {
+            failures.Add($"ZONE_UDP_PORT_COUNT must be between 1 and 256 (was {options.ZoneUdpPortCount})");
+        }
+
+        long rangeEnd = (long)options.ZoneUdpPortFirst + options.ZoneUdpPortCount - 1;
+        if (rangeEnd > 65535)
+        {
+            failures.Add(
+                $"ZONE_UDP_PORT_FIRST + ZONE_UDP_PORT_COUNT - 1 must be at most 65535 (was {options.ZoneUdpPortFirst} + {options.ZoneUdpPortCount} - 1)");
+        }
+
+        if (options.ZoneUdpPortCount >= 1 && InRange(options.HttpPort, options.ZoneUdpPortFirst, rangeEnd))
+        {
+            failures.Add($"The zone port range (ZONE_UDP_PORT_FIRST, ZONE_UDP_PORT_COUNT) must not contain GATEWAY_HTTP_PORT ({options.HttpPort})");
+        }
+
+        if (options.ZoneUdpPortCount >= 1 && InRange(options.ZoneLinkPort, options.ZoneUdpPortFirst, rangeEnd))
+        {
+            failures.Add($"The zone port range (ZONE_UDP_PORT_FIRST, ZONE_UDP_PORT_COUNT) must not contain GATEWAY_ZONE_LINK_PORT ({options.ZoneLinkPort})");
+        }
+
+        if (options.ZoneLoadTimeoutSeconds < 10 || options.ZoneLoadTimeoutSeconds > 120)
+        {
+            failures.Add($"ZONE_LOAD_TIMEOUT_SECONDS must be between 10 and 120 (was {options.ZoneLoadTimeoutSeconds})");
+        }
+
         return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
     }
+
+    private static bool InRange(int port, int first, long last) => port >= first && port <= last;
 }

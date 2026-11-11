@@ -46,7 +46,8 @@ public readonly record struct ZoneRoute(
 /// <summary>
 /// The gateway's view of every zone instance (CR-ZI-6, ADR-016 Decision 3), built from the zone-link events:
 /// <c>RegisterZone</c>, <c>PlayerCount</c> and <c>ZoneDraining</c>. Thread-safe: one lock guards all rows; queries return copies.
-/// A lost link keeps the row (marked down) because Story 007 needs it.
+/// A lost link keeps the row (marked down) so the warm-spare keeper can count it and its port stays reserved;
+/// <see cref="Sweep"/> prunes a row whose link stayed down for <c>GATEWAY_LINK_RETRY_SECONDS x 2</c> (Gateway Story 007).
 /// </summary>
 public sealed class RoutingTable : IZoneLinkEvents
 {
@@ -59,20 +60,26 @@ public sealed class RoutingTable : IZoneLinkEvents
         public ZoneRouteState State;
         public bool LinkUp;
         public bool HasHeldPlayers;
+        public DateTimeOffset DownSince;
     }
 
     private readonly object _lock = new();
     private readonly Dictionary<ZoneID, Row> _rows = new();
     private readonly int _maxPlayersPerZone;
+    private readonly TimeProvider _time;
+    private readonly TimeSpan _pruneAfter;
     private readonly ILogger _logger;
 
     /// <summary>Creates an empty table.</summary>
-    /// <param name="options">Source of <c>MAX_PLAYERS_PER_ZONE</c>.</param>
+    /// <param name="options">Source of <c>MAX_PLAYERS_PER_ZONE</c> and <c>GATEWAY_LINK_RETRY_SECONDS</c>.</param>
+    /// <param name="time">Clock for the link-down pruning.</param>
     /// <param name="loggerFactory">Source of the logger.</param>
-    public RoutingTable(GatewayOptions options, ILoggerFactory loggerFactory)
+    public RoutingTable(GatewayOptions options, TimeProvider time, ILoggerFactory loggerFactory)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(loggerFactory);
+        _time = time ?? throw new ArgumentNullException(nameof(time));
+        _pruneAfter = TimeSpan.FromSeconds(2.0 * options.LinkRetrySeconds);
         _maxPlayersPerZone = options.MaxPlayersPerZone;
         _logger = loggerFactory.CreateLogger<RoutingTable>();
     }
@@ -184,11 +191,60 @@ public sealed class RoutingTable : IZoneLinkEvents
     {
         lock (_lock)
         {
-            if (_rows.TryGetValue(zone, out Row? row))
+            if (_rows.TryGetValue(zone, out Row? row) && row.LinkUp)
             {
                 row.LinkUp = false;
+                row.DownSince = _time.GetUtcNow();
             }
         }
+    }
+
+    /// <summary>
+    /// Removes every row whose link has stayed down for <c>GATEWAY_LINK_RETRY_SECONDS x 2</c> (inclusive); its UDP port
+    /// becomes free for the warm-spare keeper. A row that registered again is not removed. Story 009 schedules this next to
+    /// <c>AccountZoneMap.Sweep()</c>.
+    /// </summary>
+    public void Sweep()
+    {
+        lock (_lock)
+        {
+            DateTimeOffset now = _time.GetUtcNow();
+            List<ZoneID>? expired = null;
+            foreach (KeyValuePair<ZoneID, Row> entry in _rows)
+            {
+                if (!entry.Value.LinkUp && now - entry.Value.DownSince >= _pruneAfter)
+                {
+                    (expired ??= new List<ZoneID>()).Add(entry.Key);
+                }
+            }
+
+            if (expired is null)
+            {
+                return;
+            }
+
+            foreach (ZoneID zone in expired)
+            {
+                _rows.Remove(zone);
+            }
+        }
+    }
+
+    /// <summary>Copies the rows of every template (link-down rows included), in ascending ZoneID order.</summary>
+    /// <returns>A snapshot; later events do not change it.</returns>
+    public IReadOnlyList<ZoneRoute> GetAllRoutes()
+    {
+        var result = new List<ZoneRoute>();
+        lock (_lock)
+        {
+            foreach (KeyValuePair<ZoneID, Row> entry in _rows)
+            {
+                result.Add(ToRoute(entry.Key, entry.Value));
+            }
+        }
+
+        result.Sort((a, b) => a.Zone.RawValue.CompareTo(b.Zone.RawValue));
+        return result;
     }
 
     // Caller holds _lock.

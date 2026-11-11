@@ -21,26 +21,41 @@ public sealed class AccountZoneMap : IAccountZoneMap, IZoneLinkEvents
     private readonly TimeProvider _time;
     private readonly IZoneEvictSender _evictSender;
     private readonly ILogger _logger;
-    private readonly DateTimeOffset _bootEnd;
+    private readonly GatewayBootWait _bootWait;
 
-    /// <summary>Creates an empty map; the boot wait starts now.</summary>
+    /// <summary>Creates an empty map with its own boot wait, starting now.</summary>
     /// <param name="options">Source of <c>GATEWAY_LINK_RETRY_SECONDS</c>.</param>
     /// <param name="time">Clock.</param>
     /// <param name="evictSender">Sends the Evict for a registration conflict.</param>
     /// <param name="loggerFactory">Source of the logger.</param>
     public AccountZoneMap(GatewayOptions options, TimeProvider time, IZoneEvictSender evictSender, ILoggerFactory loggerFactory)
+        : this(options, time, evictSender, loggerFactory, CreateBootWait(options, time))
+    {
+    }
+
+    /// <summary>Creates an empty map that shares a boot wait with other components (Gateway Story 007).</summary>
+    /// <param name="options">Source of <c>GATEWAY_LINK_RETRY_SECONDS</c>.</param>
+    /// <param name="time">Clock.</param>
+    /// <param name="evictSender">Sends the Evict for a registration conflict.</param>
+    /// <param name="loggerFactory">Source of the logger.</param>
+    /// <param name="bootWait">The shared boot wait.</param>
+    public AccountZoneMap(
+        GatewayOptions options, TimeProvider time, IZoneEvictSender evictSender, ILoggerFactory loggerFactory, GatewayBootWait bootWait)
     {
         _time = time ?? throw new ArgumentNullException(nameof(time));
         _evictSender = evictSender ?? throw new ArgumentNullException(nameof(evictSender));
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(loggerFactory);
+        _bootWait = bootWait ?? throw new ArgumentNullException(nameof(bootWait));
         _logger = loggerFactory.CreateLogger<AccountZoneMap>();
         _grace = TimeSpan.FromSeconds(2.0 * options.LinkRetrySeconds);
-        _bootEnd = _time.GetUtcNow() + _grace;
     }
 
-    /// <summary>True once <c>GATEWAY_LINK_RETRY_SECONDS x 2</c> have passed since construction (inclusive).</summary>
-    public bool IsBootWaitOver => _time.GetUtcNow() >= _bootEnd;
+    /// <summary>True once <c>GATEWAY_LINK_RETRY_SECONDS x 2</c> have passed since the shared boot wait started (inclusive).</summary>
+    public bool IsBootWaitOver => _bootWait.IsOver;
+
+    // Keeps the argument checks of the original constructor (null options or clock throw ArgumentNullException).
+    private static GatewayBootWait CreateBootWait(GatewayOptions options, TimeProvider time) => new(options, time);
 
     /// <inheritdoc/>
     public bool TryGetZone(AccountID account, out ZoneID zone)
