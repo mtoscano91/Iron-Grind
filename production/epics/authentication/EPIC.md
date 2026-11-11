@@ -56,8 +56,9 @@ Authentication is the server-side identity verification layer that gates all pla
 | 016 | Caddy TLS-only front | Integration | Complete | ADR-016, ADR-007 |
 | 017 | End-to-end login → zone entry | Integration | Ready | ADR-016 |
 | 018 | Client zone entry (login → connect → handshake → ack → token reconnect) | Integration | Complete | ADR-016, ADR-004 |
+| 019 | VPS, iOS device and Linux zone build verification | Integration | Blocked | ADR-016, ADR-007 |
 
-Work in order; each story's `Depends on:` says what must be Done first. The gateway epic is Complete (2026-11-11); Story 018 (client zone entry, added 2026-11-11 at Story 017 readiness — no client could connect to a zone) is Complete (2026-11-11), so Story 017 is unblocked. AC-AUTH-24 (map memory, advisory) belongs to the gateway epic.
+Work in order; each story's `Depends on:` says what must be Done first. The gateway epic is Complete (2026-11-11); Story 018 (client zone entry, added 2026-11-11 at Story 017 readiness — no client could connect to a zone) is Complete (2026-11-11), so Story 017 is unblocked. Story 019 was split from 017 at its second readiness check (2026-11-11): everything that needs the VPS, an iOS device or a Linux zone build (ADR-016 Verification 1, 3, 4; Caddy prod; VPS round trip; AC-AUTH-16 end to end; Konscious VPS timing). It is Blocked until the VPS exists, the Linux build module is installed and the server scripting backend is decided. AC-AUTH-24 (map memory, advisory) belongs to the gateway epic.
 
 ## Definition of Done
 
@@ -67,8 +68,8 @@ This epic is complete when:
 - Logic stories (AccountID type, credential validation) have passing test files in `tests/EditMode/Authentication/`
 - Gateway stories have passing tests in `gateway/IronGrind.Gateway.Tests/` (ADR-016 Decision 6)
 - Integration stories (client → Caddy → gateway → zone) have tests or documented playtest evidence in `production/qa/evidence/`
-- ADR-016's Validation Criteria and Engine Compatibility verification items pass (resolved 2026-11-06: the sidecar/IPC decision is ADR-016)
+- ADR-016's Validation Criteria and Engine Compatibility verification items pass (resolved 2026-11-06: the sidecar/IPC decision is ADR-016) — item 2 in Story 017, items 1, 3, 4 in Story 019
 
 ## Next Step
 
-Stories 001–015 Complete (2026-11-06), 016 Complete (2026-11-09). Next: create the gateway epic (ADR-016 Migration Plan step 7) — `/create-epics`, then `/create-stories gateway`. Story 017 needs 016, the iOS device check (moved from 015) and TD-095 (zone-side client entry wiring) to have an owner.
+Stories 001–016 and 018 Complete. Next: `/dev-story` Story 017 (Editor end-to-end run; Ready, 8 h). Story 019 (VPS / iOS / Linux build) waits on the VPS, the Linux build module and the server scripting backend decision.

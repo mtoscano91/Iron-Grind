@@ -1,9 +1,10 @@
 # Story 017: End-to-end login → zone entry
 
 > **Epic**: Authentication
-> **Status**: Ready — cannot start until Story 018 (client zone entry) is Done (see Dependencies)
+> **Status**: Ready
 > **Layer**: Core
 > **Type**: Integration
+> **Estimate**: 8 h
 > **Manifest Version**: 2026-11-06
 
 ## Context
@@ -12,31 +13,33 @@
 **Requirement**: `TR-auth-001`, `TR-auth-003`
 *(Requirement text lives in `docs/architecture/tr-registry.yaml` — read fresh at review time)*
 
-**ADR Governing Implementation**: ADR-016: Gateway and Authentication Process (Validation Criteria, Engine Compatibility verification items 1–2)
-**ADR Decision Summary**: The epic closes when AC-AUTH-01, 04, 08, 12, 21, 25, 27, 31 pass against the gateway and a test database; the verification items pass on the Windows Editor, the Linux zone build and an iOS device; and a login → UDP zone entry → disconnect → token reconnect round trip works end to end.
+**ADR Governing Implementation**: ADR-016: Gateway and Authentication Process (Validation Criteria, Engine Compatibility verification item 2)
+**ADR Decision Summary**: The epic closes when AC-AUTH-01, 04, 08, 12, 21, 25, 27, 31 pass against the gateway and a test database; the verification items pass on the Windows Editor, the Linux zone build and an iOS device; and a login → UDP zone entry → disconnect → token reconnect round trip works end to end. The VPS, iOS device and Linux zone build checks moved to Story 019 (split 2026-11-11, at Story 017 readiness).
 
-**Engine**: Unity 6.3 LTS + .NET 10 | **Risk**: MEDIUM — the zone's link thread under the server build's scripting backend (Verification 1) and Play-mode exit in the Editor (Verification 2)
-**Engine Notes**: Verification 1: Linux zone build connects to `127.0.0.1:GATEWAY_ZONE_LINK_PORT` and reads on its background thread. Verification 2: Windows Editor zone ↔ local gateway; exiting Play mode stops the link thread, entering again re-registers the same ZoneID.
+**Engine**: Unity 6.3 LTS + .NET 10 | **Risk**: MEDIUM — Play-mode exit in the Editor (Verification 2)
+**Engine Notes**: Verification 2: Windows Editor zone ↔ local gateway; exiting Play mode stops the link thread, entering again re-registers the same ZoneID. Verification 1 (Linux zone build) → Story 019.
 
 **Control Manifest Rules (this layer)**:
 - Required: S10 `Gateway.RegisterZone(zoneId, port)` opens the link and sends `RegisterZone` — ADR-009 Amendment 1, ADR-016
 - Guardrail: zone tick within its 50 ms budget while logins are processed — AC-AUTH-05a
-- Guardrail: engine behaviour verification-pending items 1–4 — ADR-016 Engine Compatibility
+- Guardrail: engine behaviour verification-pending items 1–4 — ADR-016 Engine Compatibility (item 2 here; 1, 3, 4 in Story 019)
 
 ---
 
 ## Acceptance Criteria
 
+- [ ] Harness assets: scene `Assets/Scenes/DevHarness/ZoneEntryHarness.unity` holding the `ZoneEntryDevHarness`, and config asset `Assets/Scenes/DevHarness/ZoneEntryHarnessConfig.asset`, pointed at the local gateway (Caddy dev) and the Editor zone
+- [ ] Story 018 AC-9 closed: a harness run against the local gateway and the Editor zone logs the entry steps in order (login → connect → handshake → snapshot complete → ack → entered); log recorded in the evidence doc
+- [ ] Story 018 AC-10 closed: a load driver run against the local gateway logs N login latencies; recorded in the evidence doc
 - [ ] AC-AUTH-01 (real link): a correct login through the gateway, with an Editor zone registered over the real link, returns a non-zero token, valid `CharacterID`, non-zero `zoneId` and the zone's port; the zone received `Admit` with that token before the response (gateway + zone logs with timestamps)
-- [ ] AC-AUTH-21 (all parts) end to end: the client connects to the zone with the token, the session is `Connected`, `LoadCharacter` ran once in the zone, the visible name is the character name
+- [ ] AC-AUTH-21 (all parts) end to end: the client connects to the zone with the token, the session is `Connected`, `LoadCharacter` ran once in the zone (zone log), and the harness log line `snapshot player name=<n>` — decoded with `EntityStateCodec` from the player's entry in the reassembled snapshot — equals the registered `characterName`
 - [ ] AC-AUTH-27 end to end: client A in the zone, client B logs in to the same account → A is evicted (saved, closed, no reconnect), B enters
-- [ ] AC-AUTH-05b: tick timestamp instrumentation captured per frame on the zone (reuse an existing tick-timing log if one exists; otherwise add a dev-build-only per-tick timestamp log)
-- [ ] AC-AUTH-05a: with players connected and `MAX_AUTH_PENDING` logins in flight (scripted), the zone's tick log shows no gap > 50 ms correlated with login events
+- [ ] AC-AUTH-05b: a dev-build-only per-tick timestamp log on the zone (one line per tick: tick number + monotonic timestamp in ms). `ServerTickLoop` only records `actualTickDurationSeconds` (a duration), so this log is new. It has its own EditMode test.
+- [ ] AC-AUTH-05a: with ≥ 2 clients connected and the load driver holding ≥ `MAX_AUTH_PENDING` (10, `GatewayOptions.MaxAuthPending`) concurrent logins in flight for 60 s, the tick log shows no inter-tick gap > 50 ms in that window
 - [ ] AC-AUTH-29 (d): with the gateway stopped, the zone keeps ticking and serving its connected players (tick log + a client still moving)
-- [ ] Round trip: login → UDP zone entry → disconnect → token reconnect works (Editor; and on the VPS when it exists — ADR-007 smoke test step 6)
-- [ ] ADR-016 Verification 1 and 2 pass and are recorded
-- [ ] *(moved from Story 015, 2026-11-06)* ADR-016 Verification 3: an iOS device build logs in through Caddy on the VPS over TLS with default certificate validation (Let's Encrypt, or another publicly trusted certificate) and App Transport Security on — `LoginResponse.success = true` logged on the device, no ATS error in the Xcode console; recorded in `production/qa/evidence/auth-client-ios-ats-evidence.md`
-- [ ] Evidence in `production/qa/evidence/auth-end-to-end-evidence.md`; Konscious hash timing on the VPS recorded there when the VPS exists (re-derive `MAX_AUTH_PENDING` if it differs from ~300 ms)
+- [ ] Round trip (Editor): login → UDP zone entry → transport drop (no logout message exists, TD-103) → token reconnect → `Connected` again with the same character; the evidence notes the session went to `Disconnected_SessionActive` and was rebound by the reconnect
+- [ ] ADR-016 Verification 2 passes and is recorded
+- [ ] Evidence in `production/qa/evidence/auth-end-to-end-evidence.md` (Story 019 appends its VPS section to the same file)
 
 ---
 
@@ -44,12 +47,11 @@
 
 *Derived from ADR-016 Validation Criteria:*
 
-- This story wires and verifies; it should add little code beyond instrumentation and a scripted load driver (a small console tool or a gateway test that fires N logins).
-- The gateway epic provides the real `IZoneLink`, `IAccountZoneMap`, `IZoneRouter`, the zone's link thread, `IGatewayRegistration` and `IZoneLauncher`. If any of these is not Done, this story stays not started.
-- *(from the Story 016 code review, 2026-11-09)* VPS Caddy check: run `bash tools/caddy/check-tls-only.sh --gateway-log <path> --host <domain>` (first real run of the `.sh`; it has only had `bash -n`). Treat it as re-verification of checks a–e and include a deliberate negative (e.g. Caddy stopped, or a wrong host) to show each check can fail. Port 80: check c requires *refused*; ufw's default deny *drops* packets and makes check c time out (FAIL) — either `ufw reject 80/tcp` or record a decision that a timeout satisfies AC-AUTH-08.
-- The VPS parts (ADR-007 smoke test, Caddy prod) may be split into a later story if the VPS does not exist when the rest is ready — record the split rather than leaving ACs open silently.
-- AC-AUTH-16 end to end (Story 009 code review): the wrong-password path makes one `RecordFailureAsync` database write that the unknown-username path does not, so an end-to-end latency comparison includes it (a few ms locally, under the 20 ms threshold). Story 009's unit timing test uses `ARGON2_MEMORY_SIZE_KB = 65536`; the live-parameter 150 ms floor on the VPS belongs here with TD-093.
-- *(from the Story 018 code review, 2026-11-11)* Zone host as a domain name: the client derives the zone host from the gateway URL, so on the VPS `UnityTransport.SetConnectionData` gets a hostname, not an IPv4 string. Whether UTP 2.6.0 resolves a hostname there is unverified. Verify it in the VPS run; if it does not, resolve the host first (`System.Net.Dns`) or set `ZoneHostOverride` to the IP.
+- This story wires and verifies; it adds little code: the harness scene and config asset, the snapshot event below, the name logging, and the per-tick timestamp log. The load driver (`LoginLoadDriver`) and the harness (`ZoneEntryDevHarness`) exist from Story 018.
+- The gateway epic provides the real `IZoneLink`, `IAccountZoneMap`, `IZoneRouter`, the zone's link thread, `IGatewayRegistration` and `IZoneLauncher` (all Done).
+- Snapshot to harness *(readiness 2026-11-11)*: `ClientZoneSession` gets one new event (e.g. `SnapshotAssembled`, carrying the reassembled snapshot bytes), raised before the ack is sent. The harness decodes it with `EntityStateCodec.TryReadBody` and logs `snapshot player name=<n>` for each player entry. One EditMode test for the event (raised once, before the ack, with the reassembled bytes), one for the harness's decode-and-log helper.
+- Round trip disconnect: there is no logout message (TD-103), so "disconnect" means a transport drop (stop the harness's transport, or kill the client). The zone keeps the character as a ghost in `Disconnected_SessionActive` until the token reconnect rebinds the slot.
+- AC-AUTH-16 end to end, the VPS Caddy check (`check-tls-only.sh`), the hostname note on `SetConnectionData` and the Konscious VPS timing moved to Story 019.
 
 ---
 
@@ -57,29 +59,34 @@
 
 - Login and registration screens (UX specs)
 - AC-AUTH-24 (gateway map memory, advisory) — gateway epic
+- Everything that needs the VPS, an iOS device or a Linux zone build — Story 019 (ADR-016 Verification 1, 3, 4; Caddy prod; round trip on the VPS; AC-AUTH-16 end to end; Konscious VPS timing; zone host as a hostname)
 
 ---
 
 ## QA Test Cases
 
 - **AC-1 (AC-AUTH-01, 21)**: Real login to zone entry
-  - Setup: dev PostgreSQL, gateway, Caddy dev, Editor zone in Play mode, DevHarness client
+  - Setup: dev PostgreSQL, gateway, Caddy dev, Editor zone in Play mode, `ZoneEntryHarness` scene
   - Verify: register, log in, enter the zone
-  - Pass condition: player spawned with the character name; gateway log `Admit` timestamp < response timestamp; zone log `LoadCharacter` once
+  - Pass condition: harness log `snapshot player name` = registered character name; entry steps logged in order; gateway log `Admit` timestamp < response timestamp; zone log `LoadCharacter` once
 - **AC-2 (AC-AUTH-27)**: Session steal across clients
   - Setup: client A in zone
   - Verify: client B logs in to the same account
   - Pass condition: A disconnected with no reconnect; character saved (DB `updated_at` or equivalent advanced); B in zone
 - **AC-3 (AC-AUTH-05a/b)**: Tick budget under login load
-  - Setup: 2+ clients connected; load driver sends 10 concurrent logins for 60 s
-  - Verify: zone tick log
-  - Pass condition: max inter-tick gap ≤ 50 ms during the load window
+  - Setup: 2+ clients connected; load driver holds ≥ 10 (`MAX_AUTH_PENDING`) concurrent logins for 60 s
+  - Verify: zone tick timestamp log
+  - Pass condition: max inter-tick gap ≤ 50 ms during the load window; load driver latencies logged
 - **AC-4 (AC-AUTH-29 d)**: Gateway down
   - Verify: stop the gateway process with a client connected
   - Pass condition: client keeps moving for 30 s; zone tick log continuous
 - **AC-5 (Verification 2)**: Editor Play-mode exit
   - Verify: exit Play mode, re-enter
   - Pass condition: gateway log shows the old link closed and a `RegisterZone` with the same ZoneID; no orphan link thread (thread list / log)
+- **AC-6 (round trip)**: Transport drop and token reconnect
+  - Setup: client in zone
+  - Verify: stop the harness's transport (not a logout), let the client reconnect with its token
+  - Pass condition: zone log shows `Disconnected_SessionActive`, then the reconnect rebinds the slot and the session is `Connected` with the same `CharacterID`
 
 ---
 
@@ -87,9 +94,8 @@
 
 **Story Type**: Integration
 **Required evidence**:
-- `production/qa/evidence/auth-end-to-end-evidence.md` (manual runs + logs)
-- `production/qa/evidence/auth-client-ios-ats-evidence.md` (iOS device run, ADR-016 Verification 3)
-- Any instrumentation added has its own EditMode test
+- `production/qa/evidence/auth-end-to-end-evidence.md` (manual runs + logs; also closes Story 018 AC-9/10)
+- EditMode tests for the new code: the per-tick timestamp log, `ClientZoneSession`'s snapshot event, the harness's decode-and-log helper (paths fixed at `/dev-story`)
 
 **Status**: [ ] Not yet created
 
@@ -97,6 +103,5 @@
 
 ## Dependencies
 
-- Depends on: **Story 018** (client zone entry — the client that logs in, connects, handshakes, acks and reconnects; also the dev harness and login load driver this story's evidence uses). Not started as of 2026-11-11.
-- Done (2026-11-11): Stories 012–016; the gateway epic, all 12 stories (zone link both sides, account → zone map, router, `IGatewayRegistration`; Gateway Story 012 is the zone-side `SessionHandshake` decode → `ZoneEntryAdmission.BeginEntry`, the shared `SessionTokenStore` and the `Connected` transition — TD-095 resolved); Zone Instancing Stories 015 (entity state source, TD-100) and 016 (session end inputs, TD-101).
-- Unlocks: Authentication epic Definition of Done
+- Depends on: None open. Story 018 (client zone entry) Complete 2026-11-11; Stories 012–016 Complete; the gateway epic Complete (all 12 stories — zone link both sides, account → zone map, router, `IGatewayRegistration`; Gateway Story 012 is the zone-side `SessionHandshake` decode → `ZoneEntryAdmission.BeginEntry`, the shared `SessionTokenStore` and the `Connected` transition — TD-095 resolved); Zone Instancing Stories 015 (entity state source, TD-100) and 016 (session end inputs, TD-101).
+- Unlocks: Story 019 (uses this story's harness, load driver and evidence doc); Authentication epic Definition of Done together with Story 019.
