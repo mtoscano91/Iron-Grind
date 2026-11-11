@@ -29,6 +29,9 @@ namespace IronGrind.Tests.EditMode.Architecture
         private const string NETCODE_RUNTIME = "Unity.Netcode.Runtime";
         // Client and DevHarness read touches through EnhancedTouch (ADR-012 note 2026-10-29; Movement Story 013).
         private const string INPUT_SYSTEM = "Unity.InputSystem";
+        // The client NGO adapter assembly; DevHarness drives it for zone entry (Authentication Story 018).
+        private const string CLIENT_SESSION_UNITY = "IronGrind.Client.Session.Unity";
+        private const string NETWORKING_TRANSPORT = "Unity.Networking.Transport";
         private const string SERVER_CONSTRAINT = "UNITY_SERVER || UNITY_EDITOR";
         private const string CLIENT_CONSTRAINT = "!UNITY_SERVER || UNITY_EDITOR";
         private const BindingFlags ALL_DECLARED = BindingFlags.Public | BindingFlags.NonPublic
@@ -173,8 +176,10 @@ namespace IronGrind.Tests.EditMode.Architecture
             Assert.AreEqual(DEV_HARNESS, harness.name);
             CollectionAssert.AreEqual(new[] { "UNITY_EDITOR" }, Safe(harness.defineConstraints), "DevHarness constraint");
             Assert.IsFalse(harness.autoReferenced, "DevHarness autoReferenced");
-            CollectionAssert.AreEquivalent(new[] { FOUNDATION, SERVER_LOGIC, CLIENT, INPUT_SYSTEM }, Safe(harness.references), "DevHarness references");
-            foreach (string name in new[] { FOUNDATION, SERVER_LOGIC, CLIENT })
+            CollectionAssert.AreEquivalent(
+                new[] { FOUNDATION, SERVER_LOGIC, CLIENT, CLIENT_SESSION_UNITY, NETCODE_RUNTIME, NETWORKING_TRANSPORT, INPUT_SYSTEM },
+                Safe(harness.references), "DevHarness references");
+            foreach (string name in new[] { FOUNDATION, SERVER_LOGIC, CLIENT, CLIENT_SESSION_UNITY })
             {
                 CollectionAssert.DoesNotContain(Safe(LoadAsmdef(name).references), DEV_HARNESS, name + " must not reference DevHarness");
             }

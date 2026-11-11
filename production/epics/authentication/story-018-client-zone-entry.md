@@ -1,7 +1,7 @@
 # Story 018: Client zone entry — login → connect → handshake → ack → token reconnect
 
 > **Epic**: Authentication
-> **Status**: Ready — `/story-readiness` 2026-11-11: NEEDS WORK (reassembly owner, heartbeat knob, zone host, assemblies/envelopes, retransmit identity) → fixed → Ready (Decision B)
+> **Status**: Complete — `/story-done` 2026-11-11: COMPLETE WITH NOTES (AC-9/10 manual run deferred to Story 017)
 > **Layer**: Core (client)
 > **Type**: Integration
 > **Estimate**: 10 h
@@ -30,6 +30,7 @@
 
 - **A — Entry gate is snapshot-only for now (user decision 2026-11-11).** The GDD gate is `SessionReady` received **and** snapshot reassembled. `SessionReady` has no codec and the zone does not send it (`LoggingZoneEntryResponder` logs "SessionReady not implemented"; schema open, OQ-NC-SER-2). The client acks when the snapshot is reassembled. Deviation tracked as TD-104; restore the two-part gate when `SessionReady` exists.
 - **B — No snapshot retransmit for now (user decision 2026-11-11).** The zone ignores a `ZoneSnapshotRequest` unless its 14-byte envelope carries the sender's own player EntityID (`ZoneSnapshotRequestService`). The client learns that ID only from `SessionReady`, which does not exist yet (TD-104). When the snapshot times out, the client therefore skips the request and runs the token reconnect, which gets a fresh snapshot. This departs from the GDD's "retry `MAX_SNAPSHOT_RETRANSMIT_ATTEMPTS` times, then reconnect". Tracked in TD-104; add the retransmit back when `SessionReady` carries the EntityID.
+- **C — Connect timeout (code review 2026-11-11).** If the transport has not connected `ConnectTimeoutSeconds` (config, default 10, > 0) after it was started (first connection or reconnect), the client stops it and reports `EntryFailed(ConnectTimeout)`, then `SessionEnded`. The timeout does not use the reconnect allowance. The networking-session GDD has no such knob; this guards against the transport retrying for about 60 s by default, or never reporting a failed connect.
 
 ---
 
@@ -56,7 +57,7 @@
 ## Implementation Notes
 
 - Pure C# core `ClientZoneSession` in `src/Client/Session/` behind seams: `IZoneClientTransport` (start / stop / send / on-message / on-disconnect), the existing `AuthClient`, and a clock seam. States: `Idle → LoggingIn → Connecting → AwaitingEntry → Entered`, `Entered → Reconnecting → Connecting …`, any → `Ended`. EditMode tests drive it with a fake transport and fake clock.
-- NGO adapter `NgoZoneClientTransport` in `src/Client/Session/Unity/`: registers named handlers for the server → client entry messages and decodes them with the existing Foundation codecs (`ZoneStateSnapshotFragmentCodec`, `ZoneFullResponseCodec`, `ZoneSessionEndedCodec`).
+- NGO adapter `NgoZoneClientTransport` in `src/Client/Session/Unity/`: registers one unnamed-message handler (`OnUnnamedMessage`, ADR-004 Amendment 1) and routes the server → client entry messages by envelope id, decoding them with the existing Foundation codecs (`ZoneStateSnapshotFragmentCodec`, `ZoneFullResponseCodec`, `ZoneSessionEndedCodec`).
 - New assembly `IronGrind.Client.Session.Unity` (`src/Client/Session/Unity/`). It references `IronGrind.Client`, `IronGrind.Foundation`, `Unity.Netcode.Runtime` and `Unity.Networking.Transport`, with the same define constraint as `IronGrind.Client`. `ClientZoneSession` stays in `IronGrind.Client`, which gets **no** NGO reference. `IronGrind.DevHarness` adds the new assembly. The PlayMode test assembly adds it plus the NGO assemblies.
 - Client → server envelopes match the server registrations: `SessionHandshake`, `ZoneEntryAck` and `Heartbeat` use the 10-byte envelope (`MessageEnvelopeCodec.Write(…, ServerMessageEnvelope)`), with no sender id. `ServerTickNumber` is the tick from the last envelope received, or 0 before any. `ZoneSnapshotRequest` (14-byte envelope) is not sent; Decision B.
 - Snapshot reassembly: the client owns the fragment buffer (`SnapshotFragmentCollector`, `src/Client/Session/`). `ZoneSnapshotReassemblyTracker` is not used: it counts retransmit attempts the client does not make (Decision B). The client keeps its own deadline: handshake send time + `FRAGMENT_REASSEMBLY_TIMEOUT_SECONDS` (config, default 10, from `networking-session.md`; no code constant exists), measured on the clock seam.
@@ -99,7 +100,7 @@
 - `tests/PlayMode/Client/NgoZoneClientTransport_ngo_run_tests.cs` (adapter connect / send / receive on loopback)
 - Harness and load-driver manual run noted in `production/qa/evidence/auth-end-to-end-evidence.md` (shared with Story 017)
 
-**Status**: [ ] Not yet created
+**Status**: [x] EditMode and PlayMode tests created and passing; the manual harness run is deferred to Story 017 (shared evidence doc not yet created)
 
 ---
 
@@ -107,3 +108,16 @@
 
 - Depends on: Authentication Story 015 (`AuthClient`, Complete); Gateway Story 012 (zone-side handshake intake, Complete); Zone Instancing Stories 015–016 (entity state source, heartbeat timeout, Complete)
 - Unlocks: Authentication Story 017
+
+---
+
+## Completion Notes
+**Completed**: 2026-11-11
+**Criteria**: 8/10 verified by automated tests. AC-9 (dev harness) and AC-10 (load driver live run) are deferred to Story 017's first real run (user decision 2026-11-11). The load driver's logic is unit-tested; no harness scene or config asset exists yet, so Story 017 creates them.
+**Deviations** (advisory):
+- Decisions A and B (snapshot-only gate, no retransmit): TD-104.
+- Decision C (connect timeout) adds a client knob the GDD does not list.
+- Behaviour not spelled out in the ACs: the reconnect allowance is restored when an ack is sent, so a later drop may reconnect once again; `ZoneSessionEnded` is treated as a transport close; heartbeat ticks are `floor(Now × 20)`.
+- Unverified: whether NGO raises `OnClientDisconnectCallback` for a failed connect (Decision C covers either case), and whether `UnityTransport.SetConnectionData` accepts a hostname (noted in Story 017 for the VPS run).
+**Test Evidence**: `tests/EditMode/Client/ClientZoneSession_tests.cs` (60), `tests/PlayMode/Client/NgoZoneClientTransport_ngo_run_tests.cs` (6), `tests/EditMode/DevHarness/LoginLoadDriver_tests.cs` (8). EditMode 6974 / 6845 / 0 failed / 129 skipped; PlayMode 33 / 33.
+**Code Review**: Complete. `/code-review` gave CHANGES REQUIRED (connect timeout); user "fix all" applied the timeout, 12 edge-case tests, the load-driver fixture, `ForceSamePrefabs = false` and the Story 017 hostname note.

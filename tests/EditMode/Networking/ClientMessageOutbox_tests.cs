@@ -212,6 +212,9 @@ namespace IronGrind.Tests.EditMode.Networking
 
         private static readonly string[] SenderOnlyNames = { "SendUnnamedMessage", "FastBufferWriter" };
 
+        // The client's single NGO boundary (Authentication Story 018); exempt from the server-sender guard.
+        private const string ClientAdapterPath = "src/Client/Session/Unity/NgoZoneClientTransport.cs";
+
         private OutboxRecordingSendSeam _sink;
         private OutboxRecordingDisconnectRequester _requester;
         private ClientMessageOutbox _outbox;
@@ -1369,7 +1372,8 @@ namespace IronGrind.Tests.EditMode.Networking
 
             foreach (string path in Directory.GetFiles(srcRoot, "*.cs", SearchOption.AllDirectories))
             {
-                if (string.Equals(Path.GetFullPath(path), senderPath, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(Path.GetFullPath(path), senderPath, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(Path.GetFullPath(path), Path.GetFullPath(Path.Combine(OutboxRepoRoot(), ClientAdapterPath)), StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }

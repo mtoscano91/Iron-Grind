@@ -5,6 +5,8 @@
         "UnityEngine.TestRunner",
         "IronGrind.Foundation",
         "IronGrind.ServerLogic",
+        "IronGrind.Client",
+        "IronGrind.Client.Session.Unity",
         "Unity.Netcode.Runtime",
         "Unity.Networking.Transport",
         "Unity.Collections"

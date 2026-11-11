@@ -54,10 +54,10 @@ Authentication is the server-side identity verification layer that gates all pla
 | 014 | Zone `Evict` and `Reconnect` handlers | Integration | Complete | ADR-016, ADR-011 |
 | 015 | Client HTTPS auth client | Integration | Complete | ADR-016 |
 | 016 | Caddy TLS-only front | Integration | Complete | ADR-016, ADR-007 |
-| 017 | End-to-end login → zone entry | Integration | Ready — waits for 018 | ADR-016 |
-| 018 | Client zone entry (login → connect → handshake → ack → token reconnect) | Integration | Ready | ADR-016, ADR-004 |
+| 017 | End-to-end login → zone entry | Integration | Ready | ADR-016 |
+| 018 | Client zone entry (login → connect → handshake → ack → token reconnect) | Integration | Complete | ADR-016, ADR-004 |
 
-Work in order; each story's `Depends on:` says what must be Done first. The gateway epic is Complete (2026-11-11); Story 017 now waits only for Story 018 (client zone entry, added 2026-11-11 at Story 017 readiness — no client could connect to a zone). AC-AUTH-24 (map memory, advisory) belongs to the gateway epic.
+Work in order; each story's `Depends on:` says what must be Done first. The gateway epic is Complete (2026-11-11); Story 018 (client zone entry, added 2026-11-11 at Story 017 readiness — no client could connect to a zone) is Complete (2026-11-11), so Story 017 is unblocked. AC-AUTH-24 (map memory, advisory) belongs to the gateway epic.
 
 ## Definition of Done
 

@@ -1,0 +1,22 @@
+{
+    "name": "IronGrind.Client.Session.Unity",
+    "rootNamespace": "",
+    "references": [
+        "IronGrind.Client",
+        "IronGrind.Foundation",
+        "Unity.Netcode.Runtime",
+        "Unity.Networking.Transport",
+        "Unity.Collections"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "!UNITY_SERVER || UNITY_EDITOR"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

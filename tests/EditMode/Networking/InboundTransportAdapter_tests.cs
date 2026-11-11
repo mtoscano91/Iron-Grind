@@ -165,6 +165,9 @@ namespace IronGrind.Tests.EditMode.Networking
         private const string TransportFolder = "src/ServerLogic/Networking/Transport/";
         private const string CoreFile = "InboundTransportAdapter.cs";
         private const string ShellFile = "NgoInboundTransportShell.cs";
+
+        // The client's single NGO boundary (Authentication Story 018); exempt from the server-shell guard.
+        private const string ClientAdapterPath = "src/Client/Session/Unity/NgoZoneClientTransport.cs";
         private const string SourceRoot = "src";
 
         private static readonly string[] ForbiddenNames =
@@ -645,7 +648,8 @@ namespace IronGrind.Tests.EditMode.Networking
 
             foreach (string path in Directory.GetFiles(srcRoot, "*.cs", SearchOption.AllDirectories))
             {
-                if (string.Equals(Path.GetFullPath(path), shellPath, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(Path.GetFullPath(path), shellPath, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(Path.GetFullPath(path), Path.GetFullPath(Path.Combine(RepoRoot(), ClientAdapterPath)), StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }
