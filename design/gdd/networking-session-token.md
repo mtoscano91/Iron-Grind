@@ -117,7 +117,7 @@ If the client's request fails after the zone rotates the token (CR-TOK-5) but be
 | Document | Relationship |
 |----------|-------------|
 | `networking-session.md` | Parent — ST-NET-1 `Reconnecting` state uses CR-TOK-4 for token validation; CR-NET-6.4 re-auth step references this spec |
-| `networking-wire-protocol.md` | **Propagation required** — `SessionHandshake` schema must carry the 16-byte token field (schema pending OQ-NC-SER-2). (`ConnectionRequest` is an HTTPS body defined in `auth-wire-messages.md` since ADR-016, not a wire-protocol message.) |
+| `networking-wire-protocol.md` | **Propagated 2026-11-11** — `SessionHandshake` carries the 16-byte `sessionToken` (24-byte body with `characterId` and `targetZoneId`, `0xE136`). (`ConnectionRequest` is an HTTPS body defined in `auth-wire-messages.md` since ADR-016, not a wire-protocol message.) |
 | `auth-wire-messages.md` | Defines `ConnectionRequest.tokenField` (CR-TOK-3) and `LoginResponse.sessionToken` (CR-TOK-2, CR-TOK-5) |
 | `authentication.md` | Gateway login flow: fresh-login token issue (CR-AUTH-11 → CR-TOK-1), token path ban check (CR-TOK-4), accepted username-knower tradeoff on `REAUTH_FAILURE_LIMIT` |
 | `zone-instancing.md` | CR-ZI-8 step 3 is the zone entry check of CR-TOK-9; CR-ZI-17 entering-slot reclamation is an invalidation condition (CR-TOK-6) |
