@@ -2,7 +2,7 @@
 
 > **Status**: In Review (Pass 9 lean re-review 2026-05-11 — 5 minor revisions applied; revised 2026-10-22: ST-NET-2 reconciled with `zone-instancing.md` CR-ZI-2)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-10-23 (`ZoneEntryAck`: B-NP-7 entering-slot exception, B-NP-8 ack sentence, ST-NET-1 heartbeat-timeout row exception — propagated from `zone-instancing.md` CR-ZI-17; same day, after the zone-instancing lean re-review: new ST-NET-1 row `Connected → Disconnected_SessionExpired` on entering-slot reclamation — no write, token deleted, fresh connect). Previous: 2026-10-22
+> **Last Updated**: 2026-11-11 (OQ-NET-1 resolved: `HEARTBEAT_TIMEOUT_SECONDS` = 10 — ST-NET-1 row, constants table, Tuning Knobs; a closed transport adds no transition; quick spec `zone-session-end-inputs-2026-11-11.md`). Previous: 2026-10-23 (`ZoneEntryAck`: B-NP-7 entering-slot exception, B-NP-8 ack sentence, ST-NET-1 heartbeat-timeout row exception — propagated from `zone-instancing.md` CR-ZI-17; same day, after the zone-instancing lean re-review: new ST-NET-1 row `Connected → Disconnected_SessionExpired` on entering-slot reclamation — no write, token deleted, fresh connect). Previous: 2026-10-22
 > **Parent**: networking-core.md
 
 ## Overview
@@ -80,7 +80,7 @@ Equipment state, active buff list, and full inventory are included in a follow-u
 | — | `Connecting` | Client initiates transport connection to the zone the gateway admitted it to | Allocate pending session slot; validate the admitted token from `SessionHandshake` (ADR-016; `authentication.md` CR-AUTH-11 step 6) |
 | `Connecting` | `Connected` | Token validates, character loads, zone slot allocated | Emit session handshake; load entity into zone; begin tick delivery |
 | `Connecting` | `Disconnected_SessionExpired` | Auth fails, zone full, client drops during handshake, or `CONNECTING_TIMEOUT_SECONDS` elapses without auth completion | Release session slot; log failure reason; no TTL started |
-| `Connected` | `Disconnected_SessionActive` | Heartbeat timeout — no packet from client for >N seconds (OQ-NET-1) | Freeze client output; begin 5-minute TTL; continue processing entity; reset `_skillUsedThisCycle` to `false`. **Not taken for an entering slot** (no `ZoneEntryAck` yet): the slot is reclaimed instead, with no ghost, and the session goes `Connected → Disconnected_SessionExpired` (row below) (`zone-instancing.md` CR-ZI-17 case (c), added 2026-10-23) |
+| `Connected` | `Disconnected_SessionActive` | Heartbeat timeout — no packet from client for >`HEARTBEAT_TIMEOUT_SECONDS` (10 s; OQ-NET-1 resolved 2026-11-11); a closed transport adds no transition — the client stops producing activity | Freeze client output; begin 5-minute TTL; continue processing entity; reset `_skillUsedThisCycle` to `false`. **Not taken for an entering slot** (no `ZoneEntryAck` yet): the slot is reclaimed instead, with no ghost, and the session goes `Connected → Disconnected_SessionExpired` (row below) (`zone-instancing.md` CR-ZI-17 case (c), added 2026-10-23) |
 | `Connected` | `Disconnected_SessionExpired` | Entering slot reclaimed (`zone-instancing.md` CR-ZI-17: stall timeout, duplicate handshake on the same zone instance — the B-NP-7 entering-slot exception to the session-stealing row below, or transport drop / heartbeat timeout before `ZoneEntryAck`) | **No persistence write**, no TTL; release the session. Token (CR-TOK-6): stall timeout or drop — delete `ActiveSessionTokens[AccountID]` only if its `sessionId` is this session's; duplicate handshake — leave it (it already holds the new connection's token). Stall timeout: the server closes the connection after `ZoneFullResponse(Other)`. The client's retry is a fresh connect (EC-TOK-1). Added 2026-10-23 |
 | `Connected` | `Disconnected_SessionExpired` | Client sends explicit disconnect | Skip TTL; write final state to persistence immediately; release entity and session |
 | `Connected` | `Disconnected_SessionExpired` | New authenticated connection for same account arrives (session-stealing) | Invalidate prior session; write final state; release resources; new connection starts at `Connecting` |
@@ -164,7 +164,7 @@ The second constraint (`< GHOST_COMBAT_TTL_MINUTES × 60`) ensures that the hear
 |-----------|-------|-------|
 | `SESSION_TTL_SECONDS` | 300 (5 minutes) | CR-NET-6.1 |
 | `GHOST_COMBAT_TTL_MINUTES` | 1 (60 seconds) | EC-NET-1; must be > `HEARTBEAT_TIMEOUT_SECONDS` |
-| `HEARTBEAT_TIMEOUT_SECONDS` | N — see OQ-NET-1 (recommended 8–12s) | Transition: `Connected` → `Disconnected_SessionActive` |
+| `HEARTBEAT_TIMEOUT_SECONDS` | 10 s (OQ-NET-1 resolved 2026-11-11) | Transition: `Connected` → `Disconnected_SessionActive` |
 | `HeartbeatTimeout_ticks` | N × 20 | At N = 10s, a dropped client is detected after 200 ticks of silence |
 
 *Constraint violation: if `HEARTBEAT_TIMEOUT_SECONDS ≥ GHOST_COMBAT_TTL_MINUTES × 60`, the ghost entity disengages before the heartbeat can even detect the disconnect — the entity stands idle with no auto-attack from the moment of disconnect. This is unintentional and must be caught by configuration validation on startup.*
@@ -306,7 +306,7 @@ Zone crash recovery for replacement instance routing is a Zone Instancing GDD co
 | Knob | Default | Safe Range | Gameplay Impact |
 |------|---------|------------|-----------------|
 | `SESSION_TTL_SECONDS` | 300 (5 min) | [60, 600] | How long the server holds a disconnected player's session. Below 60s: players on flaky connections experience frequent reload cycles. Above 600s: server holds session memory and entity slots for abandoned sessions too long. |
-| `HEARTBEAT_TIMEOUT_SECONDS` | TBD — OQ-NET-1 (recommended 8–12) | [3, 30] | Seconds of silence before `Connected` → `Disconnected_SessionActive`. Must satisfy F-NET-5 constraints (strict `<` GHOST_COMBAT_TTL_MINUTES × 60). **Cross-knob note:** At minimum `GHOST_COMBAT_TTL_MINUTES` (0.5 min = 30s), the F-NET-5 strict inequality reduces the effective upper bound to 29s — 30s would violate the constraint. Too low: false positives on normal mobile jitter. Too high: crashed clients occupy the zone as ghost entities longer before the TTL starts. |
+| `HEARTBEAT_TIMEOUT_SECONDS` | 10 (OQ-NET-1 resolved 2026-11-11, quick spec `zone-session-end-inputs-2026-11-11.md`) | [3, 30] | Seconds of silence before `Connected` → `Disconnected_SessionActive`. Must satisfy F-NET-5 constraints (strict `<` GHOST_COMBAT_TTL_MINUTES × 60). **Cross-knob note:** At minimum `GHOST_COMBAT_TTL_MINUTES` (0.5 min = 30s), the F-NET-5 strict inequality reduces the effective upper bound to 29s — 30s would violate the constraint. Too low: false positives on normal mobile jitter. Too high: crashed clients occupy the zone as ghost entities longer before the TTL starts. |
 | `GHOST_COMBAT_TTL_MINUTES` | 1 | [0.5, min(SESSION_TTL_SECONDS/60, 10)] | Minutes of auto-attack combat a ghost entity continues before disengaging. Upper bound is the lower of `SESSION_TTL_SECONDS/60` and 10 minutes — exceeding `SESSION_TTL_SECONDS/60` produces a combat TTL that outlasts the session (EC-GH-6 in `networking-ghost-session.md`). At 1 minute: ~20 mob hits of ghost combat with no reward to the disconnected player. |
 | `CONNECTING_TIMEOUT_SECONDS` | 30 | [10, 120] | Seconds a session may remain in `Connecting` before the server abandons it and releases the session slot. Prevents abandoned auth attempts from holding pending session slots indefinitely. Below 10s: slow auth backends may produce false timeouts. |
 | `REAUTH_FAILURE_LIMIT` | 3 | [1, 10] | Maximum failed re-authentication attempts before the server expires the session. Below 2: a single transient failure strands the player. Above 5: extends the window for brute-force session token attempts. |
@@ -371,7 +371,8 @@ Given a connected player with `heldFreePoints = 1`, When the server processes th
 
 ## Open Questions
 
-**OQ-NET-1 — BLOCKING (implementation) — Heartbeat timeout value**
+**OQ-NET-1 — RESOLVED 2026-11-11 — Heartbeat timeout value**
+**Resolution:** `HEARTBEAT_TIMEOUT_SECONDS` = 10 (user decision, quick spec `design/quick-specs/zone-session-end-inputs-2026-11-11.md`): middle of the recommended band, tolerates three missed 3 s heartbeats, satisfies F-NET-5 (10 < 60 and 10 < 300). Any accepted inbound message counts as activity. Original text kept below for history.
 The `Connected` → `Disconnected_SessionActive` transition fires after N seconds of no packets. Setting too low (2–3s) produces false disconnects on normal mobile jitter; too high (30s) means a crashed client's entity stays in `Connected` state and receives combat targeting too long. Recommended range: 8–12 seconds. The Networking ADR must specify the exact value based on the chosen library's keep-alive mechanism and mobile latency measurement data. Note: the heartbeat message schema (GAP-1) is defined in `networking-wire-protocol.md`.
 
 **OQ-NET-2 — Zone-level persistence on teardown**
