@@ -1,7 +1,7 @@
 # Story 017: End-to-end login → zone entry
 
 > **Epic**: Authentication
-> **Status**: Ready — cannot start until the gateway epic's link stories are Done (see Dependencies)
+> **Status**: Ready — cannot start until Story 018 (client zone entry) is Done (see Dependencies)
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-11-06
@@ -96,6 +96,6 @@
 
 ## Dependencies
 
-- Depends on: Stories 012–016; the gateway epic's zone link (both sides), account → zone map, router and `IGatewayRegistration` stories (epic not yet created — ADR-016 Migration Plan step 7)
-- Also depends on (no owner yet, found at Story 013 readiness 2026-11-06): the zone-side `SessionHandshake` decode → `ZoneEntryAdmission.BeginEntry`, the zone process's `SessionTokenStore` instance, and the networking `Connected` transition on entry. Assign to the gateway epic or a networking-core story before this story starts.
+- Depends on: **Story 018** (client zone entry — the client that logs in, connects, handshakes, acks and reconnects; also the dev harness and login load driver this story's evidence uses). Not started as of 2026-11-11.
+- Done (2026-11-11): Stories 012–016; the gateway epic, all 12 stories (zone link both sides, account → zone map, router, `IGatewayRegistration`; Gateway Story 012 is the zone-side `SessionHandshake` decode → `ZoneEntryAdmission.BeginEntry`, the shared `SessionTokenStore` and the `Connected` transition — TD-095 resolved); Zone Instancing Stories 015 (entity state source, TD-100) and 016 (session end inputs, TD-101).
 - Unlocks: Authentication epic Definition of Done
