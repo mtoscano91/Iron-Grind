@@ -367,7 +367,8 @@ namespace IronGrind.Tests.EditMode.MovementSystem
         // The composition passes the outbox to the transport as its client listener.
         private static ClientMessageOutbox OutboxOf(WiRig rig)
         {
-            return (ClientMessageOutbox)rig.Net.ClientListener;
+            // Gateway Story 012: the transport's listener is a fan-out whose first listener is the outbox.
+            return (ClientMessageOutbox)((ClientConnectionListenerFanOut)rig.Net.ClientListener).Listeners[0];
         }
 
         private static List<ushort> MessageTypesTo(WiRig rig, uint clientId)

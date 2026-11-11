@@ -477,7 +477,7 @@ namespace IronGrind.Tests.EditMode.Networking
         }
 
         [Test]
-        public void test_s5_passes_the_dispatcher_as_intake_and_dispatcher_and_the_outbox_as_listener()
+        public void test_s5_passes_the_dispatcher_as_intake_and_dispatcher_and_a_fan_out_of_outbox_admission_and_handshake_intake_as_listener()
         {
             var rig = new WiRig();
 
@@ -486,7 +486,13 @@ namespace IronGrind.Tests.EditMode.Networking
             Assert.IsNotNull(rig.Net.Intake);
             Assert.AreSame(rig.Net.Intake, rig.Net.Dispatcher);
             Assert.IsInstanceOf<InboundRequestDispatcher>(rig.Net.Dispatcher);
-            Assert.IsInstanceOf<ClientMessageOutbox>(rig.Net.ClientListener);
+            // Gateway Story 012: outbox first, then admission (drops pending loads), then the handshake intake.
+            Assert.IsInstanceOf<ClientConnectionListenerFanOut>(rig.Net.ClientListener);
+            IReadOnlyList<IClientConnectionListener> listeners = ((ClientConnectionListenerFanOut)rig.Net.ClientListener).Listeners;
+            Assert.AreEqual(3, listeners.Count);
+            Assert.IsInstanceOf<ClientMessageOutbox>(listeners[0]);
+            Assert.AreSame(rig.Comp.ZoneInstancing.Admission, listeners[1]);
+            Assert.AreSame(rig.Comp.ZoneInstancing.HandshakeIntake, listeners[2]);
             CollectionAssert.Contains(rig.Log, "S8:ShellStart");
             CollectionAssert.DoesNotContain(rig.Log, "S8:OutboundStart");
         }

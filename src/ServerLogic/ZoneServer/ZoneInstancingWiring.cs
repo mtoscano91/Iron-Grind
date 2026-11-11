@@ -186,9 +186,16 @@ namespace IronGrind.ServerLogic.ZoneServer
     /// <c>ZoneDraining</c> (sent here when the zone leaves Active, before the reservations are released).
     /// </para>
     /// <para>
-    /// <b>Not wired here.</b> The <c>SessionHandshake</c> decode that calls <see cref="ZoneEntryAdmission.BeginEntry"/>, the
-    /// <see cref="IClientConnectionListener"/> registration of <see cref="Admission"/>, the transport-disconnect and
-    /// logout inputs of <see cref="SessionEnds"/> belong to the session epic.
+    /// <b>Client entry (Gateway Story 012).</b> <see cref="HandshakeIntake"/> is registered here as the connection-level sink
+    /// of <c>SessionHandshake</c> (0xE136); <see cref="Run"/> drains it right after the entry reclamation, so each
+    /// recorded handshake reaches <see cref="ZoneEntryAdmission.BeginEntry"/> on the tick. Admission reports the
+    /// <see cref="Sessions"/> transitions (Connecting after the token validates, Connected on admission, failed
+    /// connecting when the entry is rejected). The composition passes a fan-out of the outbox, <see cref="Admission"/>
+    /// and <see cref="HandshakeIntake"/> to the transport as its <see cref="IClientConnectionListener"/>.
+    /// </para>
+    /// <para>
+    /// <b>Not wired here.</b> The transport-disconnect and logout inputs of <see cref="SessionEnds"/> belong to the
+    /// session epic.
     /// </para>
     /// </remarks>
     /// <example>
@@ -205,6 +212,58 @@ namespace IronGrind.ServerLogic.ZoneServer
     {
         private const string LOG_PREFIX = "[ZoneInstancingWiring]";
 
+        /// <summary>Handshake intake queue size per player slot (a client may resend while the first is still queued).</summary>
+        private const int HANDSHAKE_QUEUE_PER_PLAYER = 2;
+
+        /// <summary>
+        /// Moves the networking session of an entering account: Connecting when the token validated, Connected when the
+        /// player is admitted, failed connecting otherwise (Gateway Story 012). Only touches sessions it created: an
+        /// account that already has a registered session (token-path / ghost reconnect, out of scope) is left alone
+        /// with one warning.
+        /// </summary>
+        private sealed class SessionSinkAdapter : IZoneEntrySessionSink
+        {
+            private readonly ConnectionStateMachine _machine;
+            private readonly HashSet<uint> _owned = new HashSet<uint>();
+
+            public SessionSinkAdapter(ConnectionStateMachine machine)
+            {
+                _machine = machine;
+            }
+
+            public void OnTokenAccepted(AccountID account, uint clientId, uint tick)
+            {
+                uint raw = account.RawValue;
+                if (_machine.IsAccountRegistered(raw))
+                {
+                    Debug.LogWarning($"{LOG_PREFIX} SessionAlreadyRegistered: account {raw} already has a session; client {clientId} enters without changing it.");
+                    return;
+                }
+
+                _machine.EnterConnecting(raw, tick);
+                _owned.Add(raw);
+            }
+
+            public void OnEntryAdmitted(AccountID account, CharacterID character, uint tick)
+            {
+                uint raw = account.RawValue;
+                if (_owned.Remove(raw) && _machine.TryGetSessionState(raw, out SessionState state) && state == SessionState.Connecting)
+                {
+                    _machine.CompleteAuthSuccess(raw, character.RawValue, tick);
+                }
+            }
+
+            public void OnEntryFailed(AccountID account, string trigger)
+            {
+                uint raw = account.RawValue;
+                if (_owned.Remove(raw) && _machine.TryGetSessionState(raw, out SessionState state) && state == SessionState.Connecting)
+                {
+                    _machine.FailConnecting(raw, trigger);
+                }
+            }
+        }
+
+        private readonly SessionHandshakeIntake _handshakeIntake;
         private readonly ZoneID _zone;
         private readonly IServerTickSource _ticks;
         private readonly IClientMessageOutbox _outbox;
@@ -320,8 +379,13 @@ namespace IronGrind.ServerLogic.ZoneServer
                 options.Responder ?? new LoggingZoneEntryResponder(), party, state, outbox, _roster);
             _admission = new ZoneEntryAdmission(zone, _pool, _lifecycle, persistence, applier, queue,
                 options.Validator ?? new GatewayZoneEntryTokenValidator(_admitted, _tokenStore), disconnector, outbox,
-                _completion, _directory, reclamation: _reclamation, ticks: ticks);
+                _completion, _directory, reclamation: _reclamation, ticks: ticks,
+                sessionSink: new SessionSinkAdapter(_sessions));
             _admission.SetReservationSink(_admitted);
+
+            // Gateway Story 012: the client's SessionHandshake (0xE136) is recorded in the receive callback and drained on the tick.
+            _handshakeIntake = new SessionHandshakeIntake(_admission, disconnector, options.MaxPlayers * HANDSHAKE_QUEUE_PER_PLAYER);
+            SessionHandshakeIntake.Register(dispatcher, _handshakeIntake);
 
             _notifiedAtDrain = new HashSet<uint>(options.MaxPlayers);
             _drainBodySize = ZoneSessionEndedCodec.WriteBody(_drainBody,
@@ -378,8 +442,11 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// <summary>The entry reclamation service.</summary>
         public ZoneEntryReclamation Reclamation => _reclamation;
 
-        /// <summary>Admission; the session epic feeds it the decoded handshakes and registers it as a connection listener.</summary>
+        /// <summary>Admission; <see cref="HandshakeIntake"/> feeds it the decoded handshakes and the composition registers it as a connection listener.</summary>
         public ZoneEntryAdmission Admission => _admission;
+
+        /// <summary>The <c>SessionHandshake</c> intake (Gateway Story 012); also a connection listener (drops a removed client's record).</summary>
+        public SessionHandshakeIntake HandshakeIntake => _handshakeIntake;
 
         /// <summary>
         /// The <c>Admit</c> handler. The gateway link (gateway epic) feeds it decoded <c>Admit</c> messages on the tick
@@ -489,6 +556,7 @@ namespace IronGrind.ServerLogic.ZoneServer
 
             _roster.ActivatePending(currentTick);
             _reclamation.OnTick(currentTick);
+            _handshakeIntake.Drain(currentTick); // Gateway Story 012: recorded SessionHandshakes start their entries.
 
             int ghostCount = _ghosts.Count;
             for (int i = 0; i < ghostCount; i++)

@@ -451,11 +451,12 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
         // ----- construction and slot pool -> lifecycle --------------------------------------------
 
         [Test]
-        public void test_wiring_construction_registers_ack_and_snapshot_sinks_unsealed()
+        public void test_wiring_construction_registers_ack_snapshot_and_handshake_sinks_unsealed()
         {
             Build();
 
-            Assert.AreEqual(2, _dispatcher.ConnectionLevelCount);
+            // ZoneEntryAck, ZoneSnapshotRequest and (Gateway Story 012) SessionHandshake.
+            Assert.AreEqual(3, _dispatcher.ConnectionLevelCount);
             Assert.IsFalse(_dispatcher.Sealed, "the composition seals, not the wiring");
         }
 

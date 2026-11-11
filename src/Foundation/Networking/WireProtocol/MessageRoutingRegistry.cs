@@ -315,6 +315,10 @@ namespace IronGrind.Networking
                 MessageDirection.ClientToServer, "Client's acknowledgement that the zone snapshot dual gate opened (CR-ZI-8 step 11); a lost ack lets the stall timer reclaim the slot (CR-ZI-17). Provisional id (TD-011).");
             AddPriority(PlayerLeftZone.MessageTypeId, nameof(PlayerLeftZone), DesignPillar.SocialSignals,
                 MessageDirection.ServerToAllZoneClients, "One-time social signal that a player left the zone (CR-ZI-17 point 2); audience is the zone's other connected clients. Provisional id (TD-011).");
+            // Gateway Story 012 (quick spec session-handshake-schema-2026-11-11): the client's zone entry handshake, connection-level (ADR-014).
+            AddPriority(SessionHandshake.MessageTypeId, nameof(SessionHandshake), DesignPillar.Infrastructure,
+                MessageDirection.ClientToServer, "Zone entry handshake (CR-ZI-8 steps 2-3): characterId, targetZoneId, 16-byte token; never an AccountID (ADR-016 Decision 4). " +
+                "A lost handshake leaves the client waiting at the zone gate. Connection-level: not session-ready gated, never held.");
             AddPriority(ZoneStateSnapshotFragment.MessageTypeId, nameof(ZoneStateSnapshotFragment), DesignPillar.Infrastructure,
                 MessageDirection.ServerToOwningClient, "Bulk snapshot fragment (bulk range 0xF000-0xFFFF); the snapshot must arrive complete and ordered. Cap-exempt via isCapExempt at enqueue; " +
                 "transport fragmentation of the reliable send is the sender's concern. Provisional id (TD-011).");

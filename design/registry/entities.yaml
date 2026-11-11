@@ -1489,7 +1489,7 @@ constants:
     type: "struct (network message)"
     fields: "{characterId: CharacterID(uint), targetZoneId: ZoneID(uint), sessionToken: byte[16]}"
     wire_size: "24-byte body; 34 bytes standalone (R-OD, C→S, no SenderEntityID)"
-    note: "MessageTypeID 0xE136. Client's zone entry request (zone-instancing.md CR-ZI-8 step 2). Connection-level (ADR-014): not session-ready gated, never held or queued. Never carries AccountID (ADR-016 Decision 4). Body length != 24, characterId 0, all-zero token, or targetZoneId other than this zone's -> connection closed with no message (CR-TOK-9). Otherwise CR-ZI-8 step 3 validates the token. Server->client session state belongs to SessionReady (CCR-2), not this message. Added 2026-11-11 (quick spec, OQ-NC-SER-2 handshake half)."
+    note: "MessageTypeID 0xE136. Client's zone entry request (zone-instancing.md CR-ZI-8 step 2). Connection-level (ADR-014): not session-ready gated, never held or queued. Never carries AccountID (ADR-016 Decision 4). Body length != 24, characterId 0 or all-zero token -> connection closed with no message (CR-TOK-9); targetZoneId other than this zone's -> ZoneFullResponse(ZoneDoesNotExist) from zone admission, before the token check (decided 2026-11-11, Gateway Story 012). Otherwise CR-ZI-8 step 3 validates the token. Server->client session state belongs to SessionReady (CCR-2), not this message. Added 2026-11-11 (quick spec, OQ-NC-SER-2 handshake half)."
     added: "2026-11-11"
     revised: ""
 

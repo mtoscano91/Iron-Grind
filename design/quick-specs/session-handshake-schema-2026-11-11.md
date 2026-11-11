@@ -42,8 +42,8 @@ SessionHandshake {
 - **Connection-level message** (ADR-014 Decision 1): not guarded by the session-ready gate, never held, never enters the inbox. 10-byte envelope only — **no `SenderEntityID`** (the client has no entity yet). **Never carries `AccountID`** (ADR-016 Decision 4, CR-AUTH-2).
 - **Decode rules** (zone side, before CR-ZI-8 step 3):
   1. Body length ≠ 24, `characterId == 0`, or `sessionToken` all zeros → malformed: close the connection with no message (CR-TOK-9). No `BeginEntry`.
-  2. `targetZoneId` ≠ this zone's `ZoneID` → close the connection with no message, same as "no record" (covers a stale port reused by a new zone process). No `BeginEntry`. *New rule (user decision 2026-11-11).*
-  3. Otherwise → `ZoneEntryAdmission.BeginEntry(ZoneEntryRequest(clientId, characterId, targetZoneId, token))`; CR-ZI-8 step 3 applies unchanged (record lookup, `FixedTimeEquals`, `ZoneDoesNotExist` when the zone is not Active, then `LoadCharacter`).
+  2. Otherwise → `ZoneEntryAdmission.BeginEntry(ZoneEntryRequest(clientId, characterId, targetZoneId, token))`. Admission answers a `targetZoneId` other than this zone's with `ZoneFullResponse(ZoneDoesNotExist)` before the token check (existing Zone Instancing Story 009 behaviour; the client returns to login — covers a stale port reused by a new zone process). Then CR-ZI-8 step 3 applies unchanged (record lookup, `FixedTimeEquals`, `ZoneDoesNotExist` when the zone is not Active, then `LoadCharacter`).
+  - *Revised 2026-11-11 at Gateway Story 012 `/dev-story` (user decision): the first draft closed a wrong-zone handshake silently in the decoder; it now keeps admission's existing `ZoneDoesNotExist` reply, so the zone check has one owner.*
 - A handshake reaching a zone still in Loading keeps its existing rule (`ZoneFullResponse(ZoneDoesNotExist)`, `zone-instancing.md` EC-ZI-1 area); unchanged by this spec.
 
 ## Affected Systems
@@ -60,8 +60,8 @@ SessionHandshake {
 
 - [ ] An encoded 24-byte body reaches `BeginEntry` with the same `characterId`, `targetZoneId` and token
 - [ ] A 23- or 25-byte body, `characterId = 0`, or an all-zero token closes the connection with no message and no `BeginEntry`
-- [ ] A `targetZoneId` other than this zone's closes the connection with no message and no `BeginEntry`
-- [ ] `0xE136` has a `MessageRoutingRegistry` row and a connection-level descriptor (`maxBodyBytes 24`, `carriesSenderEntityId false`)
+- [ ] A `targetZoneId` other than this zone's gets `ZoneFullResponse(ZoneDoesNotExist)` carrying the sent zone id, with no token check and no `LoadCharacter`
+- [ ] `0xE136` has a `MessageRoutingRegistry` row and a connection-level descriptor (`carriesSenderEntityId false`; body bound above 24 so a wrong-length body reaches the decoder and is closed — the dispatcher only drops bodies above the bound)
 - [ ] No regression: `ZoneEntryAck` (0xE134) and `ZoneSnapshotRequest` (0xE131) keep their ids and behaviour
 
 ## Out of Scope (stays under OQ-NC-SER-2)

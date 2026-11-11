@@ -4,9 +4,9 @@ using IronGrind.Currency;
 namespace IronGrind.ServerLogic.ZoneInstancing
 {
     /// <summary>
-    /// An already-decoded <c>SessionHandshake</c> for zone entry (Zone Instancing Story 009). The wire codec is not
-    /// part of the story (schema pending OQ-NC-SER-2); the caller decodes and hands this to
-    /// <see cref="ZoneEntryAdmission.BeginEntry"/> on the tick thread. It carries no account: the client never sends
+    /// An already-decoded <c>SessionHandshake</c> for zone entry (Zone Instancing Story 009). The wire format is fixed
+    /// (0xE136, 24-byte body, Gateway Story 012); <see cref="SessionHandshakeIntake"/> decodes it in the receive
+    /// callback and hands this to <see cref="ZoneEntryAdmission.BeginEntry"/> on the tick thread. It carries no account: the client never sends
     /// one (CR-TOK-8), <see cref="IZoneEntryTokenValidator.TryValidate"/> resolves it.
     /// </summary>
     public readonly struct ZoneEntryRequest

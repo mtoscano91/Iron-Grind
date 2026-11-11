@@ -63,6 +63,33 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         /// <summary>Default retry hint sent with <c>ZoneFull</c>.</summary>
         public const byte ZONE_FULL_RETRY_AFTER_SECONDS = 30;
 
+        /// <summary>Session failure trigger: <c>LoadCharacter</c> or <c>Track</c> threw while starting the load.</summary>
+        public const string TRIGGER_LOAD_START_FAILED = "LoadStartFailed";
+
+        /// <summary>Session failure trigger: a later handshake for the same character replaced the in-flight entry.</summary>
+        public const string TRIGGER_SUPERSEDED = "Superseded";
+
+        /// <summary>Session failure trigger: the gateway evicted the character while its load was in flight.</summary>
+        public const string TRIGGER_EVICTED = "Evicted";
+
+        /// <summary>Session failure trigger: the connection was removed while its load was in flight.</summary>
+        public const string TRIGGER_CLIENT_DROPPED = "ClientDropped";
+
+        /// <summary>Session failure trigger: the load failed or returned no record.</summary>
+        public const string TRIGGER_LOAD_FAILED = "LoadFailed";
+
+        /// <summary>Session failure trigger: the zone no longer accepted the player when the load completed.</summary>
+        public const string TRIGGER_RECHECK_REFUSED = "RecheckRefused";
+
+        /// <summary>Session failure trigger: no slot could be allocated below the cap.</summary>
+        public const string TRIGGER_SLOT_ALLOCATION_FAILED = "SlotAllocationFailed";
+
+        /// <summary>Session failure trigger: <c>ApplyLoadedRecord</c> threw.</summary>
+        public const string TRIGGER_APPLY_THREW = "ApplyThrew";
+
+        /// <summary>Session failure trigger: <c>ApplyLoadedRecord</c> returned a failure code.</summary>
+        public const string TRIGGER_APPLY_FAILED = "ApplyFailed";
+
         private const string LOG_PREFIX = "[ZoneEntryAdmission]";
 
         private sealed class PendingEntry
@@ -71,6 +98,8 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             public uint ClientId;
             public CharacterID Character;
             public CancellationTokenSource Cts;
+            public AccountID Account;
+            public bool SessionTracked;
         }
 
         private readonly ZoneID _zone;
@@ -92,6 +121,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         private readonly ZoneEntryReclamation _reclamation;
         private readonly IServerTickSource _ticks;
         private IZoneEntryReservationSink _reservationSink;
+        private readonly IZoneEntrySessionSink _sessionSink;
         private readonly HashSet<uint> _inZoneWarned = new HashSet<uint>();
         private readonly Dictionary<CharacterID, PendingEntry> _pendingByCharacter = new Dictionary<CharacterID, PendingEntry>();
 
@@ -110,15 +140,17 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         /// <param name="retryAfterSeconds">Retry hint of <c>ZoneFull</c>.</param>
         /// <param name="reclamation">Story 011: entering-slot tracking and stale slot reclamation; null disables cases (b) and (c) and the entering registration.</param>
         /// <param name="ticks">Optional tick source; stamps the <see cref="IZoneEntryReservationSink"/> call (0 when null).</param>
+        /// <param name="sessionSink">Optional (Gateway Story 012): told when the token validated (Connecting), when the player is admitted (Connected) and when an accepted entry fails; null makes no calls.</param>
         /// <exception cref="ArgumentNullException">A reference argument is null.</exception>
         /// <exception cref="ArgumentException"><paramref name="zone"/> is invalid.</exception>
         public ZoneEntryAdmission(ZoneID zone, ZoneSlotPool pool, ZoneLifecycle lifecycle, ICharacterPersistence persistence,
             ILoadedRecordApplier applier, ITickCompletionQueue queue, IZoneEntryTokenValidator validator,
             IInboundTransportDisconnector disconnector, IClientMessageOutbox outbox, IZoneEntryContinuation continuation, IConnectionCharacterDirectory directory,
             byte retryAfterSeconds = ZONE_FULL_RETRY_AFTER_SECONDS, ZoneEntryReclamation reclamation = null,
-            IServerTickSource ticks = null)
+            IServerTickSource ticks = null, IZoneEntrySessionSink sessionSink = null)
         {
             _reclamation = reclamation;
+            _sessionSink = sessionSink;
             _ticks = ticks;
             if (zone == ZoneID.Invalid)
             {
@@ -178,7 +210,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             }
 
             uint clientId = entry.ClientId;
-            DropPending(entry);
+            DropPending(entry, TRIGGER_EVICTED);
             CancelLoad(entry);
             _reclamation?.CloseConnection(clientId);
             return true;
@@ -193,6 +225,11 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         /// <summary>
         /// Starts one entry. Tick thread only. See the class remarks for the order of checks.
         /// </summary>
+        /// <remarks>
+        /// Admission reports to the optional <see cref="IZoneEntrySessionSink"/>: Connecting before the load starts,
+        /// Connected on admission, and a failed entry with a trigger otherwise; the load-start catch paths report
+        /// <see cref="TRIGGER_LOAD_START_FAILED"/> before rethrowing.
+        /// </remarks>
         /// <param name="request">The decoded handshake.</param>
         /// <exception cref="ArgumentNullException">Thrown by <see cref="ITickCompletionQueue.Track{T}"/> for a null argument; also any exception
         /// <c>LoadCharacter</c> throws synchronously. The pending entry is cleaned up first and the client gets no reply.</exception>
@@ -255,16 +292,17 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             if (_pendingByCharacter.TryGetValue(request.Character, out PendingEntry earlier))
             {
                 uint earlierClient = earlier.ClientId;
-                DropPending(earlier);
+                DropPending(earlier, TRIGGER_SUPERSEDED);
                 CancelLoad(earlier);
                 Debug.LogWarning($"{LOG_PREFIX} EntryHandshakeSupersededInFlight: character {request.Character} has a load in flight on client {earlierClient}; that entry is dropped and the connection closed in favour of client {clientId}.");
                 _reclamation?.CloseConnection(earlierClient);
             }
 
             var cts = new CancellationTokenSource();
-            var entry = new PendingEntry { ClientId = clientId, Character = request.Character, Cts = cts };
+            var entry = new PendingEntry { ClientId = clientId, Character = request.Character, Cts = cts, Account = account };
             _pending[clientId] = entry;
             _pendingByCharacter[request.Character] = entry;
+            ReportTokenAccepted(entry);
             ZoneID targetZone = request.TargetZone;
             var character = request.Character;
 
@@ -276,6 +314,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             catch (Exception)
             {
                 RemovePending(entry);
+                ReportFailed(entry, TRIGGER_LOAD_START_FAILED);
                 cts.Dispose();
                 throw;
             }
@@ -288,6 +327,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             catch (Exception)
             {
                 RemovePending(entry);
+                ReportFailed(entry, TRIGGER_LOAD_START_FAILED);
                 // Cancelled, not disposed: the running task holds the token. The task is orphaned on purpose; a
                 // failing Track is a programming error.
                 cts.Cancel();
@@ -310,7 +350,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             _reclamation?.NoteConnectionRemoved(clientId); // Story 011 case (c): recorded here, reclaimed on the next tick.
             if (_pending.TryGetValue(clientId, out PendingEntry entry))
             {
-                DropPending(entry);
+                DropPending(entry, TRIGGER_CLIENT_DROPPED);
             }
         }
 
@@ -327,11 +367,67 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         }
 
         // Marks the entry dropped and removes both of its keys (only if they still point at this entry).
-        private void DropPending(PendingEntry entry)
+        private void DropPending(PendingEntry entry, string sessionTrigger)
         {
             entry.Dropped = true;
             RemovePending(entry);
             _duplicateWarned.Remove(entry.ClientId);
+            ReportFailed(entry, sessionTrigger);
+        }
+
+        // Gateway Story 012: the session sink hears about an accepted entry once (Connecting), then once more (Connected or failed).
+        private void ReportTokenAccepted(PendingEntry entry)
+        {
+            if (_sessionSink == null)
+            {
+                return;
+            }
+
+            try
+            {
+                _sessionSink.OnTokenAccepted(entry.Account, entry.ClientId, _ticks?.ServerTickNumber ?? 0u);
+                entry.SessionTracked = true;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"{LOG_PREFIX} session sink OnTokenAccepted threw for client {entry.ClientId}.\n{ex}");
+            }
+        }
+
+        private void ReportFailed(PendingEntry entry, string trigger)
+        {
+            if (_sessionSink == null || !entry.SessionTracked)
+            {
+                return;
+            }
+
+            entry.SessionTracked = false;
+            try
+            {
+                _sessionSink.OnEntryFailed(entry.Account, trigger);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"{LOG_PREFIX} session sink OnEntryFailed threw for client {entry.ClientId}.\n{ex}");
+            }
+        }
+
+        private void ReportAdmitted(PendingEntry entry, CharacterID character)
+        {
+            if (_sessionSink == null || !entry.SessionTracked)
+            {
+                return;
+            }
+
+            entry.SessionTracked = false;
+            try
+            {
+                _sessionSink.OnEntryAdmitted(entry.Account, character, _ticks?.ServerTickNumber ?? 0u);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"{LOG_PREFIX} session sink OnEntryAdmitted threw for client {entry.ClientId}.\n{ex}");
+            }
         }
 
         // Removes the entry from both maps, never an entry that replaced it under the same key.
@@ -393,6 +489,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
                     ? result.Status.ToString()
                     : result.Value.Code == CharacterLoadCode.Success ? "NullRecord" : result.Value.Code.ToString();
                 Debug.LogWarning($"{LOG_PREFIX} LoadCharacter failed for client {clientId} ({why}); entry rejected.");
+                ReportFailed(entry, TRIGGER_LOAD_FAILED);
                 Reply(clientId, targetZone, JoinRejectedReason.LoadCharacterFailed, 0);
                 return;
             }
@@ -400,12 +497,14 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             // Re-check (EC-ZI-1, AC-ZI-27, EC-ZI-4): the loaded record is discarded on any refusal.
             if (!TryPreCheck(clientId, targetZone))
             {
+                ReportFailed(entry, TRIGGER_RECHECK_REFUSED);
                 return;
             }
 
             if (!_pool.TryAllocatePlayer(_zone, character, account, clientId, out byte slot, out EntityID entityId))
             {
                 Debug.LogError($"{LOG_PREFIX} TryAllocatePlayer failed below the cap for client {clientId} in {_zone} (EntityID counter exhausted?).");
+                ReportFailed(entry, TRIGGER_SLOT_ALLOCATION_FAILED);
                 Reply(clientId, targetZone, JoinRejectedReason.Other, 0);
                 return;
             }
@@ -421,6 +520,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             {
                 _pool.ReleasePlayer(entityId);
                 Debug.LogError($"{LOG_PREFIX} ApplyLoadedRecord threw for client {clientId}; slot released.\n{ex}");
+                ReportFailed(entry, TRIGGER_APPLY_THREW);
                 Reply(clientId, targetZone, JoinRejectedReason.LoadCharacterFailed, 0);
                 return;
             }
@@ -434,11 +534,13 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             {
                 Debug.LogWarning($"{LOG_PREFIX} ApplyLoadedRecord returned {applied} for client {clientId}; slot released.");
                 _pool.ReleasePlayer(entityId);
+                ReportFailed(entry, TRIGGER_APPLY_FAILED);
                 Reply(clientId, targetZone, JoinRejectedReason.LoadCharacterFailed, 0);
                 return;
             }
 
             _reclamation?.RegisterEntering(clientId, entityId); // Story 011: the slot is entering until its ZoneEntryAck.
+            ReportAdmitted(entry, character); // Gateway Story 012: the session is Connected once the slot exists.
             _continuation.OnPlayerAdmitted(clientId, slot, entityId);
         }
 

@@ -10,8 +10,8 @@ Control Manifest Version: 2026-11-06
 | [Item Database](item-database/EPIC.md) | Foundation | Item Database | design/gdd/item-database.md | 4 stories (001-004), all Complete | Complete |
 | [Currency System](currency-system/EPIC.md) | Foundation | Currency System | design/gdd/currency-system.md | 6 stories (001-006), all Complete | Complete |
 | [Networking Core](networking-core/EPIC.md) | Foundation | Networking Core (+ 10 sub-contracts) | design/gdd/networking-core.md | 45 stories (001-045), all Complete (045, the zone server host and local verification, 2026-10-22); the Linux IL2CPP headless-build engine-risk gate is still open | Stories Complete |
-| [Authentication](authentication/EPIC.md) | Core | Authentication | design/gdd/authentication.md | 17 stories (001-016 Complete; 017 waits for the Gateway epic) | In Progress |
-| [Gateway](gateway/EPIC.md) | Core | Gateway process (routing, zone link, account map, zone launcher) | design/gdd/zone-instancing.md, design/gdd/authentication.md | 12 stories (2026-11-09): 11 Ready, 012 Blocked on the `SessionHandshake` schema | Ready |
+| [Authentication](authentication/EPIC.md) | Core | Authentication | design/gdd/authentication.md | 17 stories (001-016 Complete; 017 waits for TD-100 and TD-101) | In Progress |
+| [Gateway](gateway/EPIC.md) | Core | Gateway process (routing, zone link, account map, zone launcher) | design/gdd/zone-instancing.md, design/gdd/authentication.md | 12 stories (2026-11-09), all Complete (2026-11-11) | Complete — TD-100, TD-101 open before Authentication Story 017 |
 | [Damage Calculation](damage-calculation/EPIC.md) | Core | Damage Calculation | design/gdd/damage-calculation.md | 7 stories (001-006 Complete; 007 Blocked on the client build pipeline) | In Progress |
 | [Leveling System](leveling-system/EPIC.md) | Core | Leveling System | design/gdd/leveling-system.md | 16 stories (001-016 Complete) | Complete |
 | [Inventory System](inventory-system/EPIC.md) | Core | Inventory System | design/gdd/inventory-system.md | 12 stories (001-012 Complete) | Complete |

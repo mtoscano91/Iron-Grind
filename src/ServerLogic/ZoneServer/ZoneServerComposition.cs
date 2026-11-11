@@ -1751,7 +1751,9 @@ namespace IronGrind.ServerLogic.ZoneServer
                 Observe("Seal");
                 _tickLoop.RegisterTickDriven(pipeline.Tick);
                 Observe("RegisterTickDriven");
-                IZoneInboundTransport transport = _owner._network.CreateInboundTransport(dispatcher, dispatcher, outbox);
+                IZoneInboundTransport transport = _owner._network.CreateInboundTransport(dispatcher, dispatcher,
+                    // Gateway Story 012: outbox first, then admission (drops pending loads), then the handshake intake.
+                    new ClientConnectionListenerFanOut(outbox, wiring.Admission, wiring.HandshakeIntake));
                 Observe("CreateInboundTransport");
 
                 // The NGO shell implements the disconnect seam but only exists after the dispatcher is sealed.

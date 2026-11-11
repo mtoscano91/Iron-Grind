@@ -4,7 +4,7 @@
 > **GDD**: design/gdd/zone-instancing.md (CR-ZI-1, CR-ZI-6, CR-ZI-8, EC-ZI-1); design/gdd/authentication.md (account → zone map, AC-AUTH-24)
 > **Architecture Module**: Gateway process (.NET 10, `gateway/IronGrind.Gateway/`): routing table, zone link, zone launch; zone-side link client in `src/ServerLogic/Gateway/`
 > **Status**: Ready
-> **Stories**: 12 (2026-11-09) — 001–011 Complete, 012 Ready (2026-11-11)
+> **Stories**: 12 (2026-11-09) — 12/12 Complete (2026-11-11)
 > **Created**: 2026-11-09 (`/create-epics gateway`, lean — PR-EPIC skipped). ADR-016 Migration Plan step 7.
 
 ## Overview
@@ -62,10 +62,10 @@ This epic is complete when:
 | 009 | Gateway composition | Integration | Complete | ADR-016 |
 | 010 | Zone link thread | Integration | Complete | ADR-016, ADR-015 |
 | 011 | Zone link wiring | Integration | Complete | ADR-016, ADR-009 |
-| 012 | Zone-side client entry path (TD-095) | Integration | Ready (2026-11-11) | ADR-016 |
+| 012 | Zone-side client entry path (TD-095) | Integration | Complete (2026-11-11) | ADR-016 |
 
 Order: 001 first; gateway side 002–008 (002 and 006 can start in parallel with 003), zone side 010 in parallel; then 009 and 011; 012 after its schema spec. Each story's `Depends on:` says what must be Done first.
 
 ## Next Step
 
-Stories 001–011 Complete (011 on 2026-11-11, ADR-016 Verification 2 PASS in the Editor). Story 012 Ready (2026-11-11): the `SessionHandshake` body is fixed by `design/quick-specs/session-handshake-schema-2026-11-11.md` (24 bytes, `0xE136`). Next: `/dev-story production/epics/gateway/story-012-zone-client-entry-path.md`. Authentication Story 017 (end-to-end) waits for 012.
+All 12 stories Complete (012 on 2026-11-11: zone-side `SessionHandshake` entry path, TD-095 closed; COMPLETE WITH NOTES — TD-100 production entity state source, TD-101 zone-side session end inputs). Next: Authentication Story 017 (end-to-end), which needs TD-100 and TD-101 first, per their rows in `docs/tech-debt-register.md`.
