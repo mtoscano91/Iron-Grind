@@ -430,6 +430,9 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// <summary>The slot pool.</summary>
         public ZoneSlotPool Pool => _pool;
 
+        /// <summary>The mob roster over <see cref="Pool"/>; the composition reads it for the production entity state source (Story 015).</summary>
+        internal ZoneMobRoster MobRoster => _mobs;
+
         /// <summary>The entry completion; the composition registers Movement as its entry listener (Movement Story 009).</summary>
         internal ZoneEntryCompletion EntryCompletion => _completion;
 

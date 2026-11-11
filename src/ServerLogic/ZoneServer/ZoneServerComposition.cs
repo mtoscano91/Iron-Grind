@@ -386,9 +386,12 @@ namespace IronGrind.ServerLogic.ZoneServer
 
         /// <summary>
         /// Test seam (like <see cref="RespawnProviderOverride"/>): the inner entity-state source under the Movement
-        /// state source. Null keeps <c>LoggingZoneEntityStateSource</c>. Set before the run starts.
+        /// state source. Null: a <c>ForwardingZoneEntityStateSource</c> is bound to the production <c>ZoneEntityStateSource</c> after Auto-Attack Combat is built (Story 015). Set before the run starts.
         /// </summary>
         internal IZoneEntityStateSource EntityStateSourceOverride;
+
+        /// <summary>The Movement-decorated entity state source the snapshot builder and Combat read (Story 015); set while the pipeline is built. Test accessor.</summary>
+        internal IZoneEntityStateSource EntityStateSource { get; private set; }
 
         /// <summary>
         /// Test seam / production hook (Skill System Story 011): the class registry shared by Leveling and the Skill
@@ -1700,7 +1703,12 @@ namespace IronGrind.ServerLogic.ZoneServer
                 var outbox = new ClientMessageOutbox(sendSeam);
                 Observe(nameof(ClientMessageOutbox));
                 // Movement Story 009: the snapshot builder is built inside the wiring, before Movement exists.
-                var stateSource = new MovementZoneEntityStateSource(_owner.EntityStateSourceOverride ?? new LoggingZoneEntityStateSource());
+                // Story 015 (TD-100): with no override the inner source is a late-bound forwarder; the production
+                // ZoneEntityStateSource is bound right after BuildAutoAttackCombat. Remark: the Movement-decorated source is
+                // also Combat's position source, so a player whose name lookup is not yet true (AC-2) has no position for Combat either.
+                var entityStateForwarder = _owner.EntityStateSourceOverride == null ? new ForwardingZoneEntityStateSource() : null;
+                var stateSource = new MovementZoneEntityStateSource(_owner.EntityStateSourceOverride ?? entityStateForwarder);
+                _owner.EntityStateSource = stateSource;
                 // Skill System Story 011: ZoneEntryCompletion takes its responder once, before Skill exists.
                 _owner.EntryResponder = new ForwardingZoneEntryResponder();
                 ZoneInstancingWiring wiring = BuildZoneInstancing(dispatcher, outbox, stateSource);
@@ -1712,6 +1720,9 @@ namespace IronGrind.ServerLogic.ZoneServer
                 _owner.HitResultEmitter = new HitResultEmitter(wiring.Pool, ruBatch, _tickLoop);
                 Observe(nameof(HitResultEmitter));
                 BuildAutoAttackCombat(dispatcher, wiring, stateSource, statusEffects, movement, outbox, ruBatch);
+                entityStateForwarder?.Bind(new ZoneEntityStateSource(wiring.Pool, wiring.MobRoster,
+                    new CharacterStatsZoneEntityStatReader(_owner.ZoneCharacterStats), _owner.PersistenceService,
+                    _owner.ZoneEquipment, new AutoAttackZoneEntityCombatReader(_owner.AutoAttackCombat)));
                 SkillSystemService skill = BuildSkillSystem(dispatcher, wiring, stateSource, statusEffects, outbox, ruBatch);
                 // Gateway Story 011: the link pump drains the inbox at step 1b and sends PlayerCount at the END of phase 3
                 // (added last, after the Skill cast step), so it sees every session-count change of the tick.

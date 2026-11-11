@@ -9,6 +9,7 @@ using IronGrind.EquipmentSystem;
 using IronGrind.InventorySystem;
 using IronGrind.ItemDatabase;
 using IronGrind.LevelingSystem;
+using IronGrind.LootTableSystem;
 using IronGrind.Networking;
 using IronGrind.ServerLogic.Gateway;
 using IronGrind.ServerLogic.ZoneInstancing;
@@ -108,8 +109,63 @@ namespace IronGrind.Tests.EditMode.Networking
             Assert.IsTrue(names.TryGetCharacterName(new CharacterID(CHARACTER), out string name));
             Assert.AreEqual(NAME, name);
 
-            // The EntityState.characterName half of AC-AUTH-21 (e) is TD-100: production has no IZoneEntityStateSource,
-            // only LoggingZoneEntityStateSource, so the snapshot source cannot be asserted here.
+            // AC-AUTH-21 (e), TD-100 closed by Story 015: the production state source serves the entered player's name,
+            // and the LoggingZoneEntityStateSource stand-in is no longer in the chain (it always returns false, so a true
+            // read here proves it was replaced).
+            Assert.IsTrue(wiring.Pool.TryGetPlayerAtSlot(0, out EntityID entity, out _));
+            Assert.IsTrue(rig.Comp.EntityStateSource.TryGetPlayerState(entity, out ZonePlayerStateView view));
+            Assert.AreEqual(NAME, view.CharacterName);
+        }
+
+        private sealed class StubStateSource : IZoneEntityStateSource
+        {
+            public bool TryGetPlayerState(EntityID id, out ZonePlayerStateView view)
+            {
+                view = new ZonePlayerStateView(0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, false, 0, 0, "stub", 0u);
+                return true;
+            }
+
+            public bool TryGetMobState(EntityID id, out ZoneMobStateView view)
+            {
+                view = default;
+                return false;
+            }
+        }
+
+        [Test]
+        public void test_composition_entity_state_source_override_replaces_the_inner_source()
+        {
+            // Arrange
+            var rig = new WiRig();
+            rig.Comp.EntityStateSourceOverride = new StubStateSource();
+
+            // Act
+            SuRig.Drive(rig.Comp.Start(SuRig.ARGS));
+
+            // Assert: the override is read (no production source was bound over it).
+            Assert.IsTrue(rig.Comp.EntityStateSource.TryGetPlayerState(new EntityID(1u), out ZonePlayerStateView view));
+            Assert.AreEqual("stub", view.CharacterName);
+            Assert.IsFalse(rig.Comp.EntityStateSource.TryGetMobState(new EntityID(1u), out _));
+        }
+
+        [Test]
+        public void test_composition_entity_state_source_serves_a_roster_mob_after_startup()
+        {
+            // Arrange: the production source is bound at startup; a mob is added to the wiring's roster.
+            var rig = new WiRig();
+            SuRig.Drive(rig.Comp.Start(SuRig.ARGS));
+            ZoneInstancingWiring wiring = rig.Comp.ZoneInstancing;
+            EntityID mob = wiring.MobRoster.TryAddMob(wiring.Pool.Zone, new MobTypeID(5u), Vector3.zero);
+            Assert.AreNotEqual(EntityID.Invalid, mob);
+
+            // Act
+            bool found = rig.Comp.EntityStateSource.TryGetMobState(mob, out ZoneMobStateView view);
+
+            // Assert: real Character Stats and Auto-Attack adapters answer without throwing; with no mob stats source
+            // and player-only combat, the mob reads 0 HP and Idle (TD-102).
+            Assert.IsTrue(found);
+            Assert.AreEqual(0, view.CurrentHp);
+            Assert.IsFalse(view.IsInCombat);
         }
     }
 }

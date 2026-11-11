@@ -1,7 +1,7 @@
 # Story 015: Production Zone Entity State Source (TD-100)
 
 > **Epic**: Zone Instancing
-> **Status**: Ready — written 2026-11-11 from quick spec `design/quick-specs/zone-entity-state-source-2026-11-11.md`; `/story-readiness` 2026-11-11: NEEDS WORK (6 gaps) → fixed → Ready
+> **Status**: Complete (2026-11-11, `/story-done` COMPLETE WITH NOTES) — written 2026-11-11 from quick spec `design/quick-specs/zone-entity-state-source-2026-11-11.md`; `/story-readiness` 2026-11-11: NEEDS WORK (6 gaps) → fixed → Ready
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-11-06
@@ -37,15 +37,15 @@ Today neither step carries real data: the composition's stand-in source returns 
 
 ## Acceptance Criteria
 
-- [ ] **New source** (location decided at readiness 2026-11-11): `ZoneEntityStateSource : IZoneEntityStateSource` in `src/ServerLogic/ZoneServer/ZoneEntityStateSource.cs` — it reads from Character Stats, Equipment, Persistence and Auto-Attack, so it is a composition adapter, not core Zone Instancing (`ZoneInstancing/` stays free of combat dependencies; one assembly, so no asmdef change). Constructor-injected with `ZoneSlotPool`, `ZoneMobRoster`, Character Stats, `ICharacterNameLookup`, `IEquipmentService` and `AutoAttackCombatSystem` (or narrow interfaces over them); a null dependency → `ArgumentNullException` (rule 10). Main thread only.
-- [ ] **AC-1 (players)**: the rules — the `EntityID` must be an occupied player slot (gives the `CharacterID`); `CurrentHp` / `CurrentMp` = `GetCurrentHP` / `GetCurrentMP` rounded **down** to `int`; `MaxHp`, `MaxMp`, `Level` = `GetEffectiveStat(entity, StatID.MaxHP / MaxMP / Level)`; `CharacterName` = `ICharacterNameLookup.TryGetCharacterName(CharacterID)`; `EquipmentAppearanceFlags` = `IEquipmentService.GetAppearanceFlags(CharacterID)`; position / rotation / facing left zero for `MovementZoneEntityStateSource` to overwrite. Test: an entered player "Brakka" with level 7, 80 / 100 HP and 30 / 40 MP appears in the joining client's snapshot with exactly those values and its appearance flags, and other clients receive `PlayerJoinedZone` with name "Brakka", level 7 and the player's position (Movement decorator).
-- [ ] **AC-2 (never send a nameless player)**: when the name lookup returns false (record not applied yet, or released), `TryGetPlayerState` returns false; the builder skips the entry with its one existing warning, and no entry with an empty name is sent.
-- [ ] **AC-3 (`isInCombat`)**: true when `AutoAttackCombatSystem.GetState(entity)` is `CombatActive` or `OutOfRange`; false for `Idle` and `Prohibited` — one test case per state, for players and for mobs.
-- [ ] **AC-4 (rounding, cycle timer, respawn)**: current HP 79.6 is sent as 79 (`Mathf.FloorToInt`; no float in authoritative wire state, CR-NET-7.2); `CycleTimer` equals `CycleTimerBroadcastStep.NormalizeCycleTimer(GetActionTimer(entity), GetCycleTicks(entity))` for the same tick (the value `CycleTimerBroadcast` sends); `RespawnTick` is 0 (Death & Respawn does not exist yet).
-- [ ] **AC-5 (mobs)**: the `EntityID` must be in `ZoneMobRoster` (`TryGetMob`); `CurrentHp` / `MaxHp`, `IsInCombat` and `CycleTimer` follow AC-1, AC-3, AC-4. Test: a roster mob appears in the snapshot with its current and max HP; an `EntityID` that is neither an occupied player slot nor a roster mob returns false from both methods.
-- [ ] **AC-6 (composition, TD-100)**: `ZoneServerComposition` no longer constructs `LoggingZoneEntityStateSource` (its stand-in log line does not appear in a composition test); `ZoneServer_CompositionHandshake_tests.cs` also asserts `EntityState.characterName == "Brakka"` for the entered player, closing AC-AUTH-21 (e). `EntityStateSourceOverride` still replaces the inner source for tests. TD-100 marked RESOLVED in `docs/tech-debt-register.md`.
-- [ ] **AC-7 (no regression, rule 10)**: existing `ZoneSnapshotBuilder`, `ZoneEntryCompletion` and Movement state-source tests pass; `TryGetPlayerState` / `TryGetMobState` allocate nothing per call (the suite's existing zero-allocation assertion).
-- [ ] **GDD note**: `design/gdd/zone-instancing.md` CR-ZI-8 step 6 `EntityState` notes state rule 6 (`isInCombat`), matching `networking-wire-protocol.md` line ~1423.
+- [x] **New source** (location decided at readiness 2026-11-11): `ZoneEntityStateSource : IZoneEntityStateSource` in `src/ServerLogic/ZoneServer/ZoneEntityStateSource.cs` — it reads from Character Stats, Equipment, Persistence and Auto-Attack, so it is a composition adapter, not core Zone Instancing (`ZoneInstancing/` stays free of combat dependencies; one assembly, so no asmdef change). Constructor-injected with `ZoneSlotPool`, `ZoneMobRoster`, Character Stats, `ICharacterNameLookup`, `IEquipmentService` and `AutoAttackCombatSystem` (or narrow interfaces over them); a null dependency → `ArgumentNullException` (rule 10). Main thread only.
+- [x] **AC-1 (players)**: the rules — the `EntityID` must be an occupied player slot (gives the `CharacterID`); `CurrentHp` / `CurrentMp` = `GetCurrentHP` / `GetCurrentMP` rounded **down** to `int`; `MaxHp`, `MaxMp`, `Level` = `GetEffectiveStat(entity, StatID.MaxHP / MaxMP / Level)`; `CharacterName` = `ICharacterNameLookup.TryGetCharacterName(CharacterID)`; `EquipmentAppearanceFlags` = `IEquipmentService.GetAppearanceFlags(CharacterID)`; position / rotation / facing left zero for `MovementZoneEntityStateSource` to overwrite. Test: an entered player "Brakka" with level 7, 80 / 100 HP and 30 / 40 MP appears in the joining client's snapshot with exactly those values and its appearance flags, and other clients receive `PlayerJoinedZone` with name "Brakka", level 7 and the player's position (Movement decorator).
+- [x] **AC-2 (never send a nameless player)**: when the name lookup returns false (record not applied yet, or released), `TryGetPlayerState` returns false; the builder skips the entry with its one existing warning, and no entry with an empty name is sent.
+- [x] **AC-3 (`isInCombat`)**: true when `AutoAttackCombatSystem.GetState(entity)` is `CombatActive` or `OutOfRange`; false for `Idle` and `Prohibited` — one test case per state, for players and for mobs.
+- [x] **AC-4 (rounding, cycle timer, respawn)**: current HP 79.6 is sent as 79 (`Mathf.FloorToInt`; no float in authoritative wire state, CR-NET-7.2); `CycleTimer` equals `CycleTimerBroadcastStep.NormalizeCycleTimer(GetActionTimer(entity), GetCycleTicks(entity))` for the same tick (the value `CycleTimerBroadcast` sends); `RespawnTick` is 0 (Death & Respawn does not exist yet).
+- [x] **AC-5 (mobs)**: the `EntityID` must be in `ZoneMobRoster` (`TryGetMob`); `CurrentHp` / `MaxHp`, `IsInCombat` and `CycleTimer` follow AC-1, AC-3, AC-4. Test: a roster mob appears in the snapshot with its current and max HP; an `EntityID` that is neither an occupied player slot nor a roster mob returns false from both methods.
+- [x] **AC-6 (composition, TD-100)**: `ZoneServerComposition` no longer constructs `LoggingZoneEntityStateSource` (its stand-in log line does not appear in a composition test); `ZoneServer_CompositionHandshake_tests.cs` also asserts `EntityState.characterName == "Brakka"` for the entered player, closing AC-AUTH-21 (e). `EntityStateSourceOverride` still replaces the inner source for tests. TD-100 marked RESOLVED in `docs/tech-debt-register.md`.
+- [x] **AC-7 (no regression, rule 10)**: existing `ZoneSnapshotBuilder`, `ZoneEntryCompletion` and Movement state-source tests pass; `TryGetPlayerState` / `TryGetMobState` allocate nothing per call (the suite's existing zero-allocation assertion).
+- [x] **GDD note**: `design/gdd/zone-instancing.md` CR-ZI-8 step 6 `EntityState` notes state rule 6 (`isInCombat`), matching `networking-wire-protocol.md` line ~1423.
 
 ---
 
@@ -84,7 +84,7 @@ Today neither step carries real data: the composition's stand-in source returns 
 - `tests/EditMode/ZoneInstancing/ZoneEntityStateSource_tests.cs` (new) — AC-1..AC-5, AC-7, plus the forwarding source (false until bound, binds once)
 - `tests/EditMode/Networking/ZoneServer_CompositionHandshake_tests.cs` — AC-6 name assertion
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — ZoneEntityStateSource 29, CompositionHandshake 3 (2026-11-11)
 
 ---
 
@@ -92,3 +92,20 @@ Today neither step carries real data: the composition's stand-in source returns 
 
 - Depends on: Stories 007, 010, 014 (Complete); Gateway Story 012 (Complete); Character Stats, Equipment, Auto-Attack Combat, Movement (in the composition)
 - Unlocks: Authentication Story 017 (with TD-101)
+
+---
+
+## Completion Notes
+**Completed**: 2026-11-11
+**Criteria**: 9/9 passing (all test-covered)
+**Deviations** (advisory, accepted):
+(1) AC-1 verified at source and Movement-decorator level, not end to end through the `ZoneStateSnapshotFragment` / `PlayerJoinedZone` wire (the existing builder and completion tests are unchanged and pass).
+(2) AC-6 reads the name through a new internal test accessor `ZoneServerComposition.EntityStateSource` — the handshake rig cannot reach the snapshot.
+(3) Mobs read 0 / 0 HP and Idle in production: nothing seeds mob stats and `AutoAttackCombatSystem` resolves player slots only; AC-3 / AC-4 mob cases use a fake combat reader. Logged as **TD-102** (P2, with mob spawning); no effect until mobs spawn.
+(4) A player whose name lookup is not yet true has no position for Combat or Skill (same Movement-decorated source); both treat false as "skip / retry".
+(5) Narrow read interfaces `IZoneEntityStatReader` / `IZoneEntityCombatReader` with adapters (allowed by the story).
+(6) TR-zi-007 / TR-zi-008 not in `tr-registry.yaml` (TD-098).
+(7) Side effect: `ZoneSkillTargetSource` now sees players as alive (with the stand-in every player read as dead) — a fix.
+**Scope**: also touched `ZoneInstancingWiring.cs` (one line: `internal MobRoster`, approved at /dev-story).
+**Test Evidence**: Integration — `tests/EditMode/ZoneInstancing/ZoneEntityStateSource_tests.cs` (29), `tests/EditMode/Networking/ZoneServer_CompositionHandshake_tests.cs` (3); EditMode batch 6878 total, 6749 passed, 0 failed, 129 skipped (DB).
+**Code Review**: Complete — `/code-review` 2026-11-11 APPROVED WITH SUGGESTIONS (unity-specialist; qa-tester GAPS, none blocking) → fix all.
