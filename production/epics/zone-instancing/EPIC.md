@@ -91,6 +91,7 @@ Zone Instancing is the server-side runtime of one zone instance: it owns the ins
 | 012 | [Teardown close steps](story-012-teardown-close-steps.md) | Integration | Complete (2026-10-23) | ADR-009 A1, ADR-006, ADR-011, ADR-010 |
 | 013 | [Player exit and slot release](story-013-player-exit-and-slot-release.md) | Integration | Complete (2026-10-23) | ADR-010, ADR-011 |
 | 014 | [Composition wiring, quit-request drain](story-014-composition-wiring-and-drain.md) | Integration | Complete (2026-10-26) | ADR-009 A1 |
+| 015 | [Production zone entity state source (TD-100)](story-015-zone-entity-state-source.md) | Integration | Ready (2026-11-11) | ADR-009 A1, ADR-004 |
 
 ## Definition of Done
 
