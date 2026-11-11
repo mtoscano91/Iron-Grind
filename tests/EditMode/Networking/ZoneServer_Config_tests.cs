@@ -224,6 +224,65 @@ namespace IronGrind.Tests.EditMode.Networking
             AssertNoValueIn(error, value);
         }
 
+        // ---------------------------------------------------------------- Gateway link knobs (Gateway Story 010)
+
+        [Test]
+        public void test_config_gateway_link_knobs_default_when_absent()
+        {
+            bool ok = ZoneServerConfig.TryLoad(Json(), out ZoneServerConfig c, out string error);
+
+            Assert.IsTrue(ok, error);
+            Assert.AreEqual(7900, c.GatewayZoneLinkPort);
+            Assert.AreEqual(2, c.GatewayLinkRetrySeconds);
+            Assert.AreEqual(65536, c.GatewayLinkMaxFrameBytes);
+            Assert.AreEqual(1024, c.GatewayLinkInboxCapacity);
+        }
+
+        [Test]
+        public void test_config_gateway_link_knobs_parse_from_json()
+        {
+            bool ok = ZoneServerConfig.TryLoad(
+                Json(extra: "\"GatewayZoneLinkPort\":7911,\"GatewayLinkRetrySeconds\":9,\"GatewayLinkMaxFrameBytes\":2048,\"GatewayLinkInboxCapacity\":16"),
+                out ZoneServerConfig c,
+                out string error);
+
+            Assert.IsTrue(ok, error);
+            Assert.AreEqual(7911, c.GatewayZoneLinkPort);
+            Assert.AreEqual(9, c.GatewayLinkRetrySeconds);
+            Assert.AreEqual(2048, c.GatewayLinkMaxFrameBytes);
+            Assert.AreEqual(16, c.GatewayLinkInboxCapacity);
+        }
+
+        [TestCase("GatewayZoneLinkPort", "0")]
+        [TestCase("GatewayZoneLinkPort", "65536")]
+        [TestCase("GatewayZoneLinkPort", "-12345")]
+        [TestCase("GatewayLinkRetrySeconds", "0")]
+        [TestCase("GatewayLinkRetrySeconds", "-6")]
+        [TestCase("GatewayLinkMaxFrameBytes", "0")]
+        [TestCase("GatewayLinkMaxFrameBytes", "-77")]
+        [TestCase("GatewayLinkMaxFrameBytes", "28")]
+        [TestCase("GatewayLinkInboxCapacity", "0")]
+        [TestCase("GatewayLinkInboxCapacity", "-88")]
+        public void test_config_gateway_link_invalid_value_fails_naming_the_field_not_the_value(string field, string value)
+        {
+            bool ok = ZoneServerConfig.TryLoad(Json(extra: "\"" + field + "\":" + value), out ZoneServerConfig c, out string error);
+
+            Assert.IsFalse(ok);
+            Assert.IsNull(c);
+            StringAssert.Contains(field, error);
+            AssertNoValueIn(error, value);
+        }
+
+        [Test]
+        public void test_config_gateway_link_max_frame_bytes_at_largest_gateway_frame_is_accepted()
+        {
+            // Boundary: 1 type byte + the 28-byte Admit body.
+            bool ok = ZoneServerConfig.TryLoad(Json(extra: "\"GatewayLinkMaxFrameBytes\":29"), out ZoneServerConfig c, out string error);
+
+            Assert.IsTrue(ok, error);
+            Assert.AreEqual(ZoneServerConfig.MIN_GATEWAY_LINK_MAX_FRAME_BYTES, c.GatewayLinkMaxFrameBytes);
+        }
+
         [Test]
         public void test_config_min_pool_equal_to_max_pool_is_valid()
         {

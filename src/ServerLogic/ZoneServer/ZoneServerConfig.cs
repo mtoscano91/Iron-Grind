@@ -1,5 +1,6 @@
 using System;
 using System.Text.RegularExpressions;
+using IronGrind.ServerLogic.Gateway.Link;
 using UnityEngine;
 
 namespace IronGrind.ServerLogic.ZoneServer
@@ -65,6 +66,37 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// <summary>NGO_SHUTDOWN_WAIT_FRAMES (default 100).</summary>
         public int NgoShutdownWaitFrames = DEFAULT_NGO_SHUTDOWN_WAIT_FRAMES;
 
+        /// <summary>Default GATEWAY_ZONE_LINK_PORT.</summary>
+        public const int DEFAULT_GATEWAY_ZONE_LINK_PORT = 7900;
+
+        /// <summary>Default GATEWAY_LINK_RETRY_SECONDS.</summary>
+        public const int DEFAULT_GATEWAY_LINK_RETRY_SECONDS = 2;
+
+        /// <summary>Default GATEWAY_LINK_MAX_FRAME_BYTES.</summary>
+        public const int DEFAULT_GATEWAY_LINK_MAX_FRAME_BYTES = 65536;
+
+        /// <summary>
+        /// Smallest accepted GATEWAY_LINK_MAX_FRAME_BYTES: the length field of the largest gateway-to-zone frame
+        /// (type byte + <c>Admit</c> body). A smaller cap would make every <c>Admit</c> a violation and the link
+        /// would reconnect forever.
+        /// </summary>
+        public const int MIN_GATEWAY_LINK_MAX_FRAME_BYTES = 1 + GatewayLinkCodec.ADMIT_BODY_BYTES;
+
+        /// <summary>Default GATEWAY_LINK_INBOX_CAPACITY.</summary>
+        public const int DEFAULT_GATEWAY_LINK_INBOX_CAPACITY = 1024;
+
+        /// <summary>GATEWAY_ZONE_LINK_PORT (default 7900): the gateway's loopback port the zone link connects to.</summary>
+        public int GatewayZoneLinkPort = DEFAULT_GATEWAY_ZONE_LINK_PORT;
+
+        /// <summary>GATEWAY_LINK_RETRY_SECONDS (default 2): wait between zone link connect attempts.</summary>
+        public int GatewayLinkRetrySeconds = DEFAULT_GATEWAY_LINK_RETRY_SECONDS;
+
+        /// <summary>GATEWAY_LINK_MAX_FRAME_BYTES (default 65536): largest accepted link frame length field.</summary>
+        public int GatewayLinkMaxFrameBytes = DEFAULT_GATEWAY_LINK_MAX_FRAME_BYTES;
+
+        /// <summary>GATEWAY_LINK_INBOX_CAPACITY (default 1024): messages the zone link inbox holds before the link is closed.</summary>
+        public int GatewayLinkInboxCapacity = DEFAULT_GATEWAY_LINK_INBOX_CAPACITY;
+
         /// <summary>Parses and validates a config JSON text. Never throws.</summary>
         /// <param name="json">The file text.</param>
         /// <param name="config">The parsed config, or null on failure.</param>
@@ -129,6 +161,10 @@ namespace IronGrind.ServerLogic.ZoneServer
             if (MaxPoolSize < 1) { return "MaxPoolSize must be positive"; }
             if (MinPoolSize < 0) { return "MinPoolSize must not be negative"; }
             if (MinPoolSize > MaxPoolSize) { return "MinPoolSize must not exceed MaxPoolSize"; }
+            if (GatewayZoneLinkPort < 1 || GatewayZoneLinkPort > MAX_PORT) { return "GatewayZoneLinkPort is out of range"; }
+            if (GatewayLinkRetrySeconds <= 0) { return "GatewayLinkRetrySeconds must be positive"; }
+            if (GatewayLinkMaxFrameBytes < MIN_GATEWAY_LINK_MAX_FRAME_BYTES) { return "GatewayLinkMaxFrameBytes is below the largest gateway-to-zone frame"; }
+            if (GatewayLinkInboxCapacity <= 0) { return "GatewayLinkInboxCapacity must be positive"; }
             return string.Empty;
         }
     }

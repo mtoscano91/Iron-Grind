@@ -1,7 +1,7 @@
 # Story 010: Zone link thread
 
 > **Epic**: Gateway
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Integration
 > **Estimate**: 5 h
@@ -74,7 +74,7 @@
 **Required evidence**:
 - `tests/EditMode/Gateway/GatewayLinkClient_tests.cs` — must pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 30 cases in `GatewayLinkClient_tests.cs` + 12 in `ZoneServer_Config_tests.cs`, all passing (Unity EditMode, 2026-11-11)
 
 ---
 
@@ -82,3 +82,13 @@
 
 - Depends on: Story 001
 - Unlocks: Story 011
+
+---
+
+## Completion Notes
+**Completed**: 2026-11-11
+**Criteria**: 8/8 passing
+**Deviations**: (advisory) TR-zi-018 not in `tr-registry.yaml` (zone-instancing TR-IDs live in its EPIC.md only); outbound frames queued while the link is down are DROPPED, counted in `DroppedOutboundCount` and summarised at the next LinkUp (readiness choice resolved: drop); `Enqueue` takes an encoded `byte[]` — Story 011 adapts `IGatewayLinkOutbox` onto it; `ZoneServerConfig` rejects `GatewayLinkMaxFrameBytes` below `1 + ADMIT_BODY_BYTES` (29) — added at code review. Untested: log-once-per-event (no `LogAssert`), `Stop()` during a blocked `Connect` (loopback connect cannot be made to block), the uncounted-drop race at re-registration.
+**For Story 011**: the registration callback runs ON THE LINK THREAD — pass a thread-safe snapshot touching no Unity objects; call `Stop()` from teardown 2a and `OnDestroy` (Editor: also on Play-mode exit / domain reload); a refused loopback connect takes 1–2 s on Windows, inside the 2 s join timeout.
+**Test Evidence**: Integration — `tests/EditMode/Gateway/GatewayLinkClient_tests.cs` (30 cases) + `tests/EditMode/Networking/ZoneServer_Config_tests.cs` (12 gateway cases); full EditMode 6779 / 0 failed / 129 skipped
+**Code Review**: Complete — /code-review 2026-11-11 (unity-specialist + qa-tester), APPROVED WITH SUGGESTIONS, all 7 applied

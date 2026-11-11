@@ -60,7 +60,7 @@ This epic is complete when:
 | 007 | Warm spare and `IZoneLauncher` | Logic | Complete | ADR-016 |
 | 008 | Zone launchers and deploy files | Integration | Complete | ADR-016, ADR-007 |
 | 009 | Gateway composition | Integration | Complete | ADR-016 |
-| 010 | Zone link thread | Integration | Ready | ADR-016, ADR-015 |
+| 010 | Zone link thread | Integration | Complete | ADR-016, ADR-015 |
 | 011 | Zone link wiring | Integration | Ready | ADR-016, ADR-009 |
 | 012 | Zone-side client entry path (TD-095) | Integration | Blocked (`SessionHandshake` schema) | ADR-016 |
 

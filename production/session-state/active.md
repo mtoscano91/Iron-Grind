@@ -6430,3 +6430,18 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Story: production/epics/gateway/story-009-gateway-composition.md — Gateway composition
 - Tech debt logged: None (advisories in Completion Notes)
 - Next recommended: production/epics/gateway/story-010-zone-link-thread.md (Ready; then 011). Committed.
+
+## Session Extract — /dev-story 2026-11-11
+- Story: production/epics/gateway/story-010-zone-link-thread.md — Zone link thread
+- Files changed: src/ServerLogic/Gateway/GatewayLinkClient.cs (new), src/ServerLogic/ZoneServer/ZoneServerConfig.cs (4 GATEWAY_* knobs + validation), tests/EditMode/Gateway/GatewayLinkClient_tests.cs (new), tests/EditMode/Networking/ZoneServer_Config_tests.cs (+11 cases)
+- Test written: tests/EditMode/Gateway/GatewayLinkClient_tests.cs — EditMode batch run 2026-11-11: 6773 total, 6644 passed, 0 failed, 129 skipped
+- Decisions: outbound frames dropped while link down (counted, summary logged at next LinkUp); single link thread polls (5 ms) between read and write; registration callback runs on the link thread — Story 011 must pass a thread-safe snapshot
+- Blockers: None. Not committed.
+- Next: /code-review then /story-done production/epics/gateway/story-010-zone-link-thread.md
+- /code-review 2026-11-11 (unity-specialist + qa-tester): APPROVED WITH SUGGESTIONS; "fix all" applied — early-stop socket close, MemoryBarrier pair (OpenSocket/Stop), config floor MIN_GATEWAY_LINK_MAX_FRAME_BYTES = 1 + ADMIT_BODY_BYTES, drops at re-register counted, clean stop logs Info, SendTimeout 5000 ms, RunLoop/ParseFrames split; +4 link tests (split frame, multi+partial tail, exact cap, unknown type) +2 config cases. Rerun: 6779 total, 6650 passed, 0 failed, 129 skipped. Next: /story-done.
+
+## Session Extract — /story-done 2026-11-11
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/gateway/story-010-zone-link-thread.md — Zone link thread
+- Tech debt logged: None
+- Next recommended: production/epics/gateway/story-011-zone-link-wiring.md (Ready) — commit Story 010 first
