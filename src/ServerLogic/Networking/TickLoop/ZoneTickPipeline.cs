@@ -6,8 +6,9 @@ namespace IronGrind.Networking
     /// <summary>
     /// The order of one server tick (ADR-014 Decision 6, Networking Core Story 037). Its
     /// <see cref="Tick"/> is the one tick-driven delegate of <see cref="ServerTickLoop"/>. It runs
-    /// five steps in a fixed order: (1) completion, <see cref="ITickCompletionQueue.Drain"/>;
-    /// (1a) relay, <see cref="ICrossZoneRelayInbox.Drain"/> (ADR-015 Decision 7); (2) requests,
+    /// five steps (plus the inbox drains 1a and 1b) in a fixed order: (1) completion, <see cref="ITickCompletionQueue.Drain"/>;
+    /// (1a) relay, <see cref="ICrossZoneRelayInbox.Drain"/> (ADR-015 Decision 7); (1b) gateway link,
+    /// <see cref="IZoneGatewayLinkStep.Drain"/> (Gateway Story 011); (2) requests,
     /// <see cref="IInboundRequestDispatcher.DispatchTick"/>; (3) simulation,
     /// <see cref="IZoneSimulationStep.Run"/>; (4) outbound, <see cref="IZoneOutboundStep.Flush"/>.
     /// </summary>
@@ -23,7 +24,7 @@ namespace IronGrind.Networking
     /// </para>
     /// <para>
     /// <b>One tick number:</b> the tick is read from the <see cref="IServerTickSource"/> once, before
-    /// the first step, and the same value goes to all five steps.
+    /// the first step, and the same value goes to every step.
     /// </para>
     /// <para>
     /// <b>Allocation:</b> none per tick when no step throws. The error message is built only inside
@@ -44,6 +45,7 @@ namespace IronGrind.Networking
     {
         private const string STEP_COMPLETION = "Completion";
         private const string STEP_RELAY = "Relay";
+        private const string STEP_GATEWAY_LINK = "GatewayLink";
         private const string STEP_REQUESTS = "Requests";
         private const string STEP_SIMULATION = "Simulation";
         private const string STEP_OUTBOUND = "Outbound";
@@ -66,9 +68,21 @@ namespace IronGrind.Networking
             }
         }
 
+        /// <summary>Step 1b for the constructors without a gateway link (tests, pre-Story 011 callers): drains nothing.</summary>
+        private sealed class NoOpGatewayLinkStep : IZoneGatewayLinkStep
+        {
+            public static readonly NoOpGatewayLinkStep Instance = new NoOpGatewayLinkStep();
+
+            /// <inheritdoc/>
+            public void Drain(uint currentTick)
+            {
+            }
+        }
+
         private readonly ITickCompletionQueue _completionQueue;
         private readonly ICrossZoneRelayInbox _relayInbox;
         private readonly ICrossZoneRelayHandler _relayHandler;
+        private readonly IZoneGatewayLinkStep _gatewayLink;
         private readonly IInboundRequestDispatcher _dispatcher;
         private readonly IZoneSimulationStep _simulation;
         private readonly IZoneOutboundStep _outbound;
@@ -121,10 +135,37 @@ namespace IronGrind.Networking
             IZoneSimulationStep simulation,
             IZoneOutboundStep outbound,
             IServerTickSource tickSource)
+            : this(completionQueue, relayInbox, relayHandler, NoOpGatewayLinkStep.Instance, dispatcher, simulation, outbound, tickSource)
+        {
+        }
+
+        /// <summary>
+        /// Creates the pipeline with the cross-zone relay step (1a) and the gateway link step (1b, Gateway Story 011). The
+        /// seven-argument constructor forwards a step that does nothing. No argument may be null.
+        /// </summary>
+        /// <param name="completionQueue">Step 1: drained first.</param>
+        /// <param name="relayInbox">Step 1a: drained right after step 1.</param>
+        /// <param name="relayHandler">Receives each relayed entry in step 1a.</param>
+        /// <param name="gatewayLink">Step 1b: drains the gateway link inbox into the Admit / Evict / Reconnect handlers.</param>
+        /// <param name="dispatcher">Step 2: Pass A and Pass B.</param>
+        /// <param name="simulation">Step 3: ADR-002 phases 1 to 4.</param>
+        /// <param name="outbound">Step 4: the per-connection writers.</param>
+        /// <param name="tickSource">Where the tick number is read.</param>
+        /// <exception cref="ArgumentNullException">An argument is null; the exception names the parameter.</exception>
+        public ZoneTickPipeline(
+            ITickCompletionQueue completionQueue,
+            ICrossZoneRelayInbox relayInbox,
+            ICrossZoneRelayHandler relayHandler,
+            IZoneGatewayLinkStep gatewayLink,
+            IInboundRequestDispatcher dispatcher,
+            IZoneSimulationStep simulation,
+            IZoneOutboundStep outbound,
+            IServerTickSource tickSource)
         {
             _completionQueue = completionQueue ?? throw new ArgumentNullException(nameof(completionQueue));
             _relayInbox = relayInbox ?? throw new ArgumentNullException(nameof(relayInbox));
             _relayHandler = relayHandler ?? throw new ArgumentNullException(nameof(relayHandler));
+            _gatewayLink = gatewayLink ?? throw new ArgumentNullException(nameof(gatewayLink));
             _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
             _simulation = simulation ?? throw new ArgumentNullException(nameof(simulation));
             _outbound = outbound ?? throw new ArgumentNullException(nameof(outbound));
@@ -164,6 +205,15 @@ namespace IronGrind.Networking
             catch (Exception ex)
             {
                 LogStepFailed(STEP_RELAY, currentTick, ex);
+            }
+
+            try
+            {
+                _gatewayLink.Drain(currentTick);
+            }
+            catch (Exception ex)
+            {
+                LogStepFailed(STEP_GATEWAY_LINK, currentTick, ex);
             }
 
             try

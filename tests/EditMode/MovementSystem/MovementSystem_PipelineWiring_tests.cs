@@ -272,7 +272,8 @@ namespace IronGrind.Tests.EditMode.MovementSystem
 
             IList<IZoneSimulationStep> steps = rig.Comp.SimulationSteps;
 
-            Assert.AreEqual(5, steps.Count, "Combat is the fourth step (Auto-Attack Story 006), Skill the fifth (Skill System Story 011)");
+            Assert.AreEqual(6, steps.Count, "Combat is the fourth step (Auto-Attack Story 006), Skill the fifth (Skill System Story 011), the gateway link pump last (Gateway Story 011)");
+            Assert.IsInstanceOf<IronGrind.ServerLogic.Gateway.GatewayLinkPump>(steps[5]);
             Assert.AreSame(rig.Comp.SkillStep, steps[4]);
             Assert.AreSame(rig.Comp.ZoneInstancing, steps[0]);
             Assert.AreSame(rig.Comp.StatusEffects, steps[1]);

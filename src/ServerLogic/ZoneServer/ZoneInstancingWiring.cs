@@ -180,8 +180,13 @@ namespace IronGrind.ServerLogic.ZoneServer
     /// serves the recorded snapshot requests. It allocates nothing in steady state.
     /// </para>
     /// <para>
-    /// <b>Not wired here.</b> The gateway link that decodes <c>Admit</c> and calls <see cref="GatewayAdmit"/> (gateway
-    /// epic), and the drain of <see cref="ZoneInstancingWiringOptions.GatewayOutbox"/>. The <c>SessionHandshake</c> decode that calls <see cref="ZoneEntryAdmission.BeginEntry"/>, the
+    /// <b>Gateway link.</b> The composition's <c>GatewayLinkPump</c> (Gateway Story 011) drains the link inbox into
+    /// <see cref="GatewayAdmit"/>, <see cref="GatewayEvict"/> and <see cref="GatewayReconnect"/> at tick start, and
+    /// <see cref="ZoneInstancingWiringOptions.GatewayOutbox"/> carries the replies, <c>SessionReleased</c> and
+    /// <c>ZoneDraining</c> (sent here when the zone leaves Active, before the reservations are released).
+    /// </para>
+    /// <para>
+    /// <b>Not wired here.</b> The <c>SessionHandshake</c> decode that calls <see cref="ZoneEntryAdmission.BeginEntry"/>, the
     /// <see cref="IClientConnectionListener"/> registration of <see cref="Admission"/>, the transport-disconnect and
     /// logout inputs of <see cref="SessionEnds"/> belong to the session epic.
     /// </para>
@@ -228,8 +233,10 @@ namespace IronGrind.ServerLogic.ZoneServer
         private readonly byte[] _drainBody = new byte[ZoneSessionEnded.BodySize];
         private readonly int _drainBodySize;
         private readonly bool _logTransitions;
+        private readonly IGatewayLinkOutbox _gatewayOutbox;
         private int _pendingQuits;
         private bool _fatalRecorded;
+        private bool _zoneDrainingSent;
 
         /// <summary>Builds every Zone Instancing system for <paramref name="zone"/> and registers their dispatcher sinks.</summary>
         /// <param name="zone">The zone this process hosts (S0); not <see cref="ZoneID.Invalid"/>.</param>
@@ -284,6 +291,7 @@ namespace IronGrind.ServerLogic.ZoneServer
 
             _tokenStore = options.TokenStore ?? new SessionTokenStore();
             IGatewayLinkOutbox gatewayOutbox = options.GatewayOutbox ?? new LoggingGatewayLinkOutbox();
+            _gatewayOutbox = gatewayOutbox;
             _admitted = new AdmittedEntries(_tokenStore, gatewayOutbox,
                 options.ConnectingTimeoutSeconds * options.TickRateHz, OnReservedCountChanged,
                 character => _admission != null && _admission.IsLoadPending(character));
@@ -502,6 +510,7 @@ namespace IronGrind.ServerLogic.ZoneServer
             try
             {
                 LogTransition("Draining", serverTick);
+                SendZoneDrainingOnce();
                 try
                 {
                     _admitted.OnLeftActive(serverTick); // T-4: reservations end, tokens are kept (AC-ZI-35)
@@ -548,6 +557,9 @@ namespace IronGrind.ServerLogic.ZoneServer
                     return; // S-fail already requested StartupFailed
                 }
 
+                // Active -> Closed (fatal, idle close) skips OnDraining; the gateway still has to stop routing here.
+                SendZoneDrainingOnce();
+
                 ZoneExitCode code = transition == ZoneCloseTransition.Emergency && _fatalRecorded
                     ? ZoneExitCode.Fatal
                     : ZoneExitCode.Clean;
@@ -556,6 +568,25 @@ namespace IronGrind.ServerLogic.ZoneServer
             catch (Exception ex)
             {
                 Debug.LogError($"{LOG_PREFIX} OnClosed({transition}) teardown request failed ({ex.GetType().Name}).\n{ex}");
+            }
+        }
+
+        // Gateway Story 011: ZoneDraining goes out once, when the zone first leaves Active (never throws).
+        private void SendZoneDrainingOnce()
+        {
+            if (_zoneDrainingSent)
+            {
+                return;
+            }
+
+            _zoneDrainingSent = true;
+            try
+            {
+                _gatewayOutbox.EnqueueZoneDraining();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"{LOG_PREFIX} ZoneDraining send failed ({ex.GetType().Name}).\n{ex}");
             }
         }
 

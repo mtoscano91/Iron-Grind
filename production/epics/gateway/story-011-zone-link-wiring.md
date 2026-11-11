@@ -1,7 +1,7 @@
 # Story 011: Zone link wiring
 
 > **Epic**: Gateway
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Integration
 > **Estimate**: 6 h
@@ -28,14 +28,14 @@
 
 ## Acceptance Criteria
 
-- [ ] Real `IGatewayRegistration` at S10 starts `GatewayLinkClient` (Story 010) with a registration callback built from the zone's ID, template, UDP port, `MAX_PLAYERS_PER_ZONE` and its live accounts (occupied sessions + admitted entries); the `IGatewayRegistration` stand-in is removed from the composition
-- [ ] Real `IGatewayLinkOutbox` enqueues onto the link; `LoggingGatewayLinkOutbox` is removed from the composition (kept for tests only if useful)
-- [ ] At tick start the inbox is drained: `Admit` → `GatewayAdmitHandler.Handle`, `Evict` → `GatewayEvictHandler`, `Reconnect` → `GatewayReconnectHandler` (Authentication Stories 013/014), with the current server tick
-- [ ] `PlayerCount { occupied + admitted }` is sent whenever that number changes (at most once per tick), and once right after each (re-)registration
-- [ ] AC-ZI-32 (send side): 48 occupied, three `Admit`s → two accepted, one rejected (full); `PlayerCount` 50 sent; one admitted entry times out → `PlayerCount` 49 and a new `Admit` accepted; a handshake that turns an admitted entry into a slot leaves `PlayerCount` unchanged (no send)
-- [ ] AC-ZI-35 (send side): an Active zone with one admitted entry moves to Draining (T-4) → `ZoneDraining` and one `SessionReleased` for that account are sent and `PlayerCount` no longer counts the entry; further `Admit`s are rejected
-- [ ] Teardown step 2a calls the link's `Stop()` (after `NpgsqlRelayListener.Stop()`); `ZoneServerHost.OnDestroy` stops it too; teardown order tests updated
-- [ ] ADR-016 Verification 2 (manual, recorded in `production/qa/evidence/gateway-zone-link-editor-evidence.md`): Windows Editor zone in Play mode ↔ local gateway on loopback — the gateway logs `RegisterZone`; exiting Play mode stops the link thread (gateway logs link lost, no thread left running); entering Play mode again re-registers the same ZoneID
+- [x] Real `IGatewayRegistration` at S10 starts `GatewayLinkClient` (Story 010) with a registration callback built from the zone's ID, template, UDP port, `MAX_PLAYERS_PER_ZONE` and its live accounts (occupied sessions + admitted entries); the `IGatewayRegistration` stand-in is removed from the composition
+- [x] Real `IGatewayLinkOutbox` enqueues onto the link; `LoggingGatewayLinkOutbox` is removed from the composition (kept for tests only if useful)
+- [x] At tick start the inbox is drained: `Admit` → `GatewayAdmitHandler.Handle`, `Evict` → `GatewayEvictHandler`, `Reconnect` → `GatewayReconnectHandler` (Authentication Stories 013/014), with the current server tick
+- [x] `PlayerCount { occupied + admitted }` is sent whenever that number changes (at most once per tick), and once right after each (re-)registration
+- [x] AC-ZI-32 (send side): 48 occupied, three `Admit`s → two accepted, one rejected (full); `PlayerCount` 50 sent; one admitted entry times out → `PlayerCount` 49 and a new `Admit` accepted; a handshake that turns an admitted entry into a slot leaves `PlayerCount` unchanged (no send)
+- [x] AC-ZI-35 (send side): an Active zone with one admitted entry moves to Draining (T-4) → `ZoneDraining` and one `SessionReleased` for that account are sent and `PlayerCount` no longer counts the entry; further `Admit`s are rejected
+- [x] Teardown step 2a calls the link's `Stop()` (after `NpgsqlRelayListener.Stop()`); `ZoneServerHost.OnDestroy` stops it too; teardown order tests updated
+- [x] ADR-016 Verification 2 (manual, recorded in `production/qa/evidence/gateway-zone-link-editor-evidence.md`): Windows Editor zone in Play mode ↔ local gateway on loopback — the gateway logs `RegisterZone`; exiting Play mode stops the link thread (gateway logs link lost, no thread left running); entering Play mode again re-registers the same ZoneID
 
 ---
 
@@ -76,7 +76,7 @@
 - `tests/EditMode/Gateway/GatewayLink_ZoneWiring_tests.cs` — must pass
 - `production/qa/evidence/gateway-zone-link-editor-evidence.md` (ADR-016 Verification 2)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 26 tests in `GatewayLink_ZoneWiring_tests.cs` + 3 in `tests/EditMode/Networking/TickLoop_ZoneTickPipeline_tests.cs`, all passing (Unity EditMode, 2026-11-11); `gateway-zone-link-editor-evidence.md` PASS (2026-11-11)
 
 ---
 
@@ -84,3 +84,13 @@
 
 - Depends on: Story 010; Story 009 for the manual Verification 2 run
 - Unlocks: Story 012, Authentication Story 017
+
+---
+
+## Completion Notes
+**Completed**: 2026-11-11
+**Criteria**: 8/8 passing (AC-8 manual: ADR-016 Verification 2 PASS in the Editor, two Play-mode cycles, step 2a 148 / 98 ms)
+**Deviations**: (advisory) TR-zi-018 not in `tr-registry.yaml` (TD-098); `IGatewayLinkOutbox` gained `EnqueuePlayerCount` / `EnqueueZoneDraining` (two Authentication test fakes updated); `AdmittedEntries.CopyReservedAccounts` added (outside the brief's file list, read-only helper); new pipeline step 1b (`IZoneGatewayLinkStep`, 8-argument `ZoneTickPipeline` constructor; the older constructors forward a no-op); link frames queued just before a stop are best-effort (documented; the gateway treats the lost link as the zone gone); the AC-5 handshake-conversion test uses the direct slot path (TD-099, Story 012); the composition test can only assert template id 0 (its rig loads no definition). Observed during Verification 2: warm spare in `ZONE_LAUNCHER=none` burns a ZoneID and a `crit` line every 30 s (TD-096). Flaky pre-existing wall-clock test seen once in the full run (TD-097).
+**For Story 012**: the handshake decode should feed `ZoneEntryAdmission.BeginEntry`; add the real-handshake "no PlayerCount on conversion" test (TD-099).
+**Test Evidence**: Integration — `tests/EditMode/Gateway/GatewayLink_ZoneWiring_tests.cs` (26), `tests/EditMode/Networking/TickLoop_ZoneTickPipeline_tests.cs` (+3), step-count updates in the MovementSystem / StatusEffects PipelineWiring tests; `production/qa/evidence/gateway-zone-link-editor-evidence.md` PASS. Full EditMode 6808 / 6678 passed / 1 failed (TD-097, passed on rerun) / 129 skipped.
+**Code Review**: Complete — /code-review 2026-11-11 (unity-specialist + qa-tester), APPROVED WITH SUGGESTIONS, all 9 applied

@@ -69,6 +69,10 @@ namespace IronGrind.Tests.EditMode.Authentication
             public void EnqueueEvictResult(uint requestId) { }
 
             public void EnqueueReconnectResult(uint requestId, bool accepted, byte[] newToken) { }
+
+            public void EnqueuePlayerCount(ushort count) { }
+
+            public void EnqueueZoneDraining() { }
         }
 
         private sealed class FakeTicks : IServerTickSource

@@ -392,6 +392,64 @@ namespace IronGrind.Tests.EditMode.Networking
             LogAssert.NoUnexpectedReceived();
         }
 
+        // =========================================================================================
+        // Step 1b: gateway link (Gateway Story 011)
+        // =========================================================================================
+
+        private ZoneTickPipeline CreateLinkPipeline(IZoneGatewayLinkStep gatewayLink) =>
+            new ZoneTickPipeline(_completion, new ZoneTickPipelineRecordingRelayInbox(_log),
+                new ZoneTickPipelineNoOpRelayHandler(), gatewayLink, _dispatcher, _simulation, _outbound, _tickSource);
+
+        private static string[] ExpectedLinkTick(uint tick, float deltaTime) =>
+            new[]
+            {
+                DrainEntry(tick), $"RelayDrain({tick})", $"GatewayLinkDrain({tick})",
+                DispatchEntry(tick), RunEntry(tick, deltaTime), FlushEntry(tick),
+            };
+
+        [Test]
+        public void Tick_EightArgumentConstructor_RunsCompletionRelayGatewayLinkRequestsSimulationOutboundInOrder()
+        {
+            // Arrange
+            ZoneTickPipeline pipeline = CreateLinkPipeline(new ZoneTickPipelineRecordingGatewayLink(_log));
+
+            // Act
+            pipeline.Tick(DELTA_TIME);
+
+            // Assert
+            CollectionAssert.AreEqual(ExpectedLinkTick(TICK_SEVEN, DELTA_TIME), _log);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void Tick_GatewayLinkStepThrows_LogsStepFailedAndRequestsSimulationOutboundStillRun()
+        {
+            // Arrange
+            var gatewayLink = new ZoneTickPipelineRecordingGatewayLink(_log) { ThrowWhen = tick => true };
+            ZoneTickPipeline pipeline = CreateLinkPipeline(gatewayLink);
+            LogAssert.Expect(LogType.Error, StepFailedRegex("GatewayLink", TICK_SEVEN));
+
+            // Act
+            Assert.DoesNotThrow(() => pipeline.Tick(DELTA_TIME));
+
+            // Assert
+            CollectionAssert.AreEqual(ExpectedLinkTick(TICK_SEVEN, DELTA_TIME), _log,
+                "Requests, Simulation and Outbound run after a failed gateway link step.");
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void Constructor_EightArgumentGatewayLinkNull_ThrowsArgumentNullExceptionNamingGatewayLink()
+        {
+            // Act
+            ArgumentNullException thrown = Assert.Throws<ArgumentNullException>(() => new ZoneTickPipeline(
+                _completion, new ZoneTickPipelineRecordingRelayInbox(_log), new ZoneTickPipelineNoOpRelayHandler(), null,
+                _dispatcher, _simulation, _outbound, _tickSource));
+
+            // Assert
+            Assert.AreEqual("gatewayLink", thrown.ParamName);
+        }
+
         private static string HandlerEntry(ushort messageTypeId, bool wasHeld) =>
             $"Handler(0x{messageTypeId:X4}, WasHeld={wasHeld})";
 
@@ -404,6 +462,51 @@ namespace IronGrind.Tests.EditMode.Networking
             if (throwWhen != null && throwWhen(tick))
             {
                 throw exceptionToThrow ?? new InvalidOperationException(BOOM);
+            }
+        }
+
+        /// <summary>Records step 1b (the gateway link drain); optionally throws.</summary>
+        private sealed class ZoneTickPipelineRecordingGatewayLink : IZoneGatewayLinkStep
+        {
+            private readonly List<string> _entries;
+
+            public Func<uint, bool> ThrowWhen;
+
+            public ZoneTickPipelineRecordingGatewayLink(List<string> entries)
+            {
+                _entries = entries;
+            }
+
+            public void Drain(uint currentTick)
+            {
+                _entries.Add($"GatewayLinkDrain({currentTick})");
+                ThrowIfDue(ThrowWhen, currentTick);
+            }
+        }
+
+        /// <summary>Records step 1a (the relay drain).</summary>
+        private sealed class ZoneTickPipelineRecordingRelayInbox : ICrossZoneRelayInbox
+        {
+            private readonly List<string> _entries;
+
+            public ZoneTickPipelineRecordingRelayInbox(List<string> entries)
+            {
+                _entries = entries;
+            }
+
+            public bool TryAdd(ushort messageTypeId, ReadOnlySpan<byte> body) => false;
+
+            public int Drain(uint currentTick, ICrossZoneRelayHandler handler)
+            {
+                _entries.Add($"RelayDrain({currentTick})");
+                return 0;
+            }
+        }
+
+        private sealed class ZoneTickPipelineNoOpRelayHandler : ICrossZoneRelayHandler
+        {
+            public void OnRelayed(ushort messageTypeId, ReadOnlySpan<byte> body)
+            {
             }
         }
 

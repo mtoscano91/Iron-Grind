@@ -4,7 +4,8 @@ namespace IronGrind.ServerLogic.ZoneServer
 {
     /// <summary>
     /// Registers the zone with the gateway as the last startup step (S10, ADR-009 Amendment 1).
-    /// <see cref="StandInGatewayRegistration"/> until the gateway client exists.
+    /// The running zone uses the real <c>GatewayLinkRegistration</c> (Gateway Story 011), which starts the gateway link;
+    /// <see cref="StandInGatewayRegistration"/> is for tests only.
     /// </summary>
     /// <example>
     /// <code>

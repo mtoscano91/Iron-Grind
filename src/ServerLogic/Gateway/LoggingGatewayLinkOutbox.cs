@@ -4,8 +4,9 @@ using UnityEngine;
 namespace IronGrind.ServerLogic.Gateway
 {
     /// <summary>
-    /// Default <see cref="IGatewayLinkOutbox"/> until the gateway epic supplies the real link: logs each message in the
-    /// Editor and development builds, does nothing otherwise.
+    /// <see cref="IGatewayLinkOutbox"/> for tests only (and the wiring's fallback when no outbox is injected): logs each
+    /// message in the Editor and development builds, does nothing otherwise. The running zone composition passes the
+    /// real <c>GatewayLinkOutbox</c> (Gateway Story 011).
     /// </summary>
     public sealed class LoggingGatewayLinkOutbox : IGatewayLinkOutbox
     {
@@ -40,6 +41,22 @@ namespace IronGrind.ServerLogic.Gateway
         {
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
             Debug.Log($"{LOG_PREFIX} ReconnectResult(requestId={requestId}, accepted={accepted}) not sent: gateway link not implemented.");
+#endif
+        }
+
+        /// <inheritdoc/>
+        public void EnqueuePlayerCount(ushort count)
+        {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            Debug.Log($"{LOG_PREFIX} PlayerCount({count}) not sent: logging outbox.");
+#endif
+        }
+
+        /// <inheritdoc/>
+        public void EnqueueZoneDraining()
+        {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            Debug.Log($"{LOG_PREFIX} ZoneDraining not sent: logging outbox.");
 #endif
         }
     }

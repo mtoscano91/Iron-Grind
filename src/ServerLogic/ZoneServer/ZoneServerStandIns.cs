@@ -131,7 +131,8 @@ namespace IronGrind.ServerLogic.ZoneServer
     }
 
     /// <summary>
-    /// Stand-in for <see cref="IGatewayRegistration"/>: logs "[ZoneServer] gateway registration not implemented" once.
+    /// Stand-in for <see cref="IGatewayRegistration"/>, TESTS ONLY (Gateway Story 011: the running composition uses the
+    /// real <c>GatewayLinkRegistration</c>): logs "[ZoneServer] gateway registration not implemented" once.
     /// </summary>
     /// <example>
     /// <code>

@@ -11,6 +11,7 @@ using IronGrind.LevelingSystem;
 using IronGrind.MovementSystem;
 using IronGrind.Networking;
 using IronGrind.Randomness;
+using IronGrind.ServerLogic.Gateway;
 using IronGrind.ServerLogic.ZoneInstancing;
 using IronGrind.SkillSystem;
 using IronGrind.StatusEffects;
@@ -158,6 +159,10 @@ namespace IronGrind.ServerLogic.ZoneServer
         private bool _tickFailureReported;
         private ZoneInstancingWiring _wiring;
         private ZoneDefinitionSlot _definitionSlot;
+        private IGatewayLinkChannel _linkChannel;
+        private IGatewayRegistration _linkRegistration;
+        private GatewayLinkOutbox _linkOutbox;
+        private int _gatewayLinkPort;
         private uint _lastLoadingTick;
         private double _lastTickSeconds;
         private double _quitStallStartSeconds = double.NaN;
@@ -312,6 +317,24 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// thread, which EditMode tests must not do). Receives the connection string and the receiver. Null in production.
         /// </summary>
         internal Func<string, CrossZoneRelayReceiver, IStartableZoneRelayListener> ListenerFactoryOverride;
+
+        /// <summary>
+        /// Test seam (Gateway Story 011): replaces <c>GatewayLinkClient.FromConfig</c> at S5 when set, so EditMode tests
+        /// never open a socket. Receives the loaded config. Null in production.
+        /// </summary>
+        internal Func<ZoneServerConfig, IGatewayLinkChannel> GatewayLinkChannelFactoryOverride;
+
+        /// <summary>The gateway link channel built at S5 (or attached by a test), or null.</summary>
+        internal IGatewayLinkChannel LinkChannel => _linkChannel;
+
+        /// <summary>
+        /// Test seam: sets the link channel teardown step 2a stops, for compositions built without S5 (teardown tests).
+        /// </summary>
+        /// <param name="channel">The channel to stop at step 2a.</param>
+        internal void AttachLinkChannel(IGatewayLinkChannel channel)
+        {
+            _linkChannel = channel;
+        }
 
         /// <summary>
         /// When true, Editor and development builds log <c>[ZoneServer] teardown step &lt;n&gt; done in &lt;ms&gt; ms</c>
@@ -1042,7 +1065,10 @@ namespace IronGrind.ServerLogic.ZoneServer
                 case 9:
                     return StartupSubscribeTick();
                 default:
-                    _gateway.RegisterZone(_zoneId, _args.Port);
+                    // The injected registration (tests) wins; otherwise the real link registration built at S5.
+                    IGatewayRegistration registration = _gateway ?? _linkRegistration
+                        ?? throw new InvalidOperationException("No gateway registration: none injected and S5 did not build the link.");
+                    registration.RegisterZone(_zoneId, _args.Port);
                     return true;
             }
         }
@@ -1183,7 +1209,17 @@ namespace IronGrind.ServerLogic.ZoneServer
                     UnsubscribeTick();
                     break;
                 case 2:
-                    _listener?.Stop();
+                    // Step 2a: the relay listener, then the gateway link (Gateway Story 011); the link stops even if the
+                    // listener's Stop throws. Stop is idempotent, so the OnDestroy path is harmless after a teardown.
+                    try
+                    {
+                        _listener?.Stop();
+                    }
+                    finally
+                    {
+                        _linkChannel?.Stop();
+                    }
+
                     break;
                 case 3:
                     if (_navigationInitialized)
@@ -1677,6 +1713,16 @@ namespace IronGrind.ServerLogic.ZoneServer
                 Observe(nameof(HitResultEmitter));
                 BuildAutoAttackCombat(dispatcher, wiring, stateSource, statusEffects, movement, outbox, ruBatch);
                 SkillSystemService skill = BuildSkillSystem(dispatcher, wiring, stateSource, statusEffects, outbox, ruBatch);
+                // Gateway Story 011: the link pump drains the inbox at step 1b and sends PlayerCount at the END of phase 3
+                // (added last, after the Skill cast step), so it sees every session-count change of the tick.
+                var linkPump = new GatewayLinkPump(_owner._linkChannel, _owner._linkOutbox, wiring);
+                _owner._simulationSteps.Add(linkPump);
+                _owner._linkRegistration = new GatewayLinkRegistration(_owner._linkChannel, linkPump, _owner._gatewayLinkPort,
+                    () =>
+                    {
+                        ZoneDefinition definition = _owner._definitionSlot?.Current;
+                        return definition != null ? (byte)definition.TemplateId : (byte)0;
+                    });
                 // Once, after both builds (the pool and the entry completion each take one listener). Order: Movement
                 // first on entry; Combat last on release so BeforeRelease still finds the player's slot.
                 wiring.EntryCompletion.SetEntryListener(new CompositeZonePlayerEntryListener(
@@ -1698,7 +1744,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                 Observe(nameof(ZoneClientRelayHandler));
                 var simulation = new ZoneSimulationStep(_owner._simulationSteps);
                 Observe(nameof(ZoneSimulationStep));
-                var pipeline = new ZoneTickPipeline(_queue, _inbox, relayHandler, dispatcher, simulation, outboundStep, _tickLoop);
+                var pipeline = new ZoneTickPipeline(_queue, _inbox, relayHandler, linkPump, dispatcher, simulation, outboundStep, _tickLoop);
                 Observe(nameof(ZoneTickPipeline));
 
                 dispatcher.Seal();
@@ -1720,6 +1766,21 @@ namespace IronGrind.ServerLogic.ZoneServer
             private ZoneInstancingWiring BuildZoneInstancing(InboundRequestDispatcher dispatcher, ClientMessageOutbox outbox,
                 IZoneEntityStateSource entityState)
             {
+                // Gateway Story 011: the link client is created here (no thread until S10); the real outbox encodes onto it.
+                ZoneServerConfig linkConfig = _owner._config;
+                if (linkConfig == null)
+                {
+                    // Only reachable when S5 runs without S0 (EditMode rigs); a real startup always has the config.
+                    Debug.LogWarning("[ZoneServer] S5: no server config loaded; the gateway link uses the default settings.");
+                    linkConfig = new ZoneServerConfig();
+                }
+
+                Func<ZoneServerConfig, IGatewayLinkChannel> channelFactory = _owner.GatewayLinkChannelFactoryOverride;
+                IGatewayLinkChannel channel = channelFactory != null ? channelFactory(linkConfig) : GatewayLinkClient.FromConfig(linkConfig);
+                _owner._linkChannel = channel;
+                var linkOutbox = new GatewayLinkOutbox(channel);
+                _owner._linkOutbox = linkOutbox;
+                _owner._gatewayLinkPort = linkConfig.GatewayZoneLinkPort;
                 var wiring = new ZoneInstancingWiring(_owner._zoneId, _tickLoop, _queue, dispatcher, outbox,
                     _owner.PersistenceService, _owner.PersistenceService, _owner.PersistenceService, _gate,
                     _owner.ZoneInventory, _disconnector, _owner.RequestTeardown,
@@ -1731,7 +1792,8 @@ namespace IronGrind.ServerLogic.ZoneServer
                         Responder = _owner.EntryResponder,
                         // Stories 018 / 019: the same Equipment Persistence restores into, so session end unregisters what load registered.
                         Equipment = _owner.ZoneEquipment,
-                        Validator = _owner.EntryTokenValidatorOverride
+                        Validator = _owner.EntryTokenValidatorOverride,
+                        GatewayOutbox = linkOutbox
                     });
                 Observe(nameof(ZoneInstancingWiring));
                 _owner._simulationSteps.Add(wiring);

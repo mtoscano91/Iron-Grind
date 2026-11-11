@@ -50,7 +50,7 @@ namespace IronGrind.ServerLogic.Gateway
     /// preserving in <c>link.xml</c> (ADR-016 Verification 1).
     /// </para>
     /// </remarks>
-    public sealed class GatewayLinkClient
+    public sealed class GatewayLinkClient : IGatewayLinkChannel
     {
         /// <summary>Default longest join in <see cref="Stop"/>, milliseconds (GATEWAY_LINK_STOP_TIMEOUT_MS).</summary>
         public const int GATEWAY_LINK_STOP_TIMEOUT_MS = 2000;
@@ -260,7 +260,8 @@ namespace IronGrind.ServerLogic.Gateway
         /// <summary>
         /// Requests the end of the loop, closes the current socket from the calling thread (unblocking a connect, poll
         /// or receive), and joins the link thread for at most the stop timeout. Idempotent, safe before
-        /// <see cref="Start"/>, safe from any thread, never throws. A join timeout is logged once.
+        /// <see cref="Start"/>, safe from any thread, never throws. A join timeout is logged once. Queued outbound frames
+        /// are not flushed: messages sent just before a stop are best-effort (the gateway handles the lost link).
         /// </summary>
         public void Stop()
         {

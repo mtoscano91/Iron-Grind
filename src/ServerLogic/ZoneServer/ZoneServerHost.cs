@@ -70,7 +70,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                     new ZoneClassSkillDataLoader(_skillDatabase, _classDatabase,
                         new ZoneItemDataLoader(_items, new StandInZoneStaticDataLoader())),
                     null, // zone state owner: the Zone Instancing wiring built at S5 (Story 014)
-                    new StandInGatewayRegistration(),
+                    null, // gateway registration: the composition builds the real link registration at S5 (Gateway Story 011)
                     new FileZoneConfigSource(),
                     new ProcessZoneEnvironment(),
                     null,

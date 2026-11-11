@@ -139,6 +139,22 @@ namespace IronGrind.ServerLogic.Gateway
             NotifyIfChanged(before, serverTick);
         }
 
+        /// <summary>
+        /// Appends the account of every entry that still holds a reservation to <paramref name="target"/> (Gateway
+        /// Story 011: the admitted-but-not-arrived accounts of the <c>RegisterZone</c> snapshot). Tick thread; no allocation.
+        /// </summary>
+        /// <param name="target">The list to append to; not null.</param>
+        public void CopyReservedAccounts(List<AccountID> target)
+        {
+            foreach (KeyValuePair<AccountID, Entry> pair in _byAccount)
+            {
+                if (pair.Value.Reserved)
+                {
+                    target.Add(pair.Key);
+                }
+            }
+        }
+
         /// <summary>Looks up the entry for <paramref name="character"/>, reserved or kept. No allocation.</summary>
         /// <param name="character">The character presented in the handshake.</param>
         /// <param name="account">The admitted account when found; <see cref="AccountID.Invalid"/> otherwise.</param>
