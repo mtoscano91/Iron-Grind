@@ -58,7 +58,7 @@ This epic is complete when:
 | 005 | Account → zone map | Logic | Complete | ADR-016 |
 | 006 | Routing table and fill-first router | Logic | Complete | ADR-016 |
 | 007 | Warm spare and `IZoneLauncher` | Logic | Complete | ADR-016 |
-| 008 | Zone launchers and deploy files | Integration | Ready | ADR-016, ADR-007 |
+| 008 | Zone launchers and deploy files | Integration | Complete | ADR-016, ADR-007 |
 | 009 | Gateway composition | Integration | Ready | ADR-016 |
 | 010 | Zone link thread | Integration | Ready | ADR-016, ADR-015 |
 | 011 | Zone link wiring | Integration | Ready | ADR-016, ADR-009 |

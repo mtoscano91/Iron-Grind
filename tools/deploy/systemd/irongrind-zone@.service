@@ -1,0 +1,33 @@
+# IronGrind zone server, one instance per ZoneID (ADR-016 Decision 3, ADR-007; Gateway Story 008).
+# Started only by the gateway:  systemctl start irongrind-zone@<zoneId>.service
+# The gateway writes /run/irongrind/zone-<zoneId>.env (ZONE_TEMPLATE, ZONE_PORT) before the start.
+# Install: /etc/systemd/system/irongrind-zone@.service, then `systemctl daemon-reload`. Do not `enable` it.
+
+[Unit]
+Description=IronGrind zone server %i
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=irongrind-zone
+Group=irongrind-zone
+WorkingDirectory=/opt/irongrind/zone
+
+# Secrets (IRONGRIND_PG_PASSWORD), root:root 0600, read by systemd before it drops to User=.
+EnvironmentFile=/etc/irongrind/zone-secrets.env
+# Per-zone values from the gateway. Listed last, so these keys win.
+EnvironmentFile=/run/irongrind/zone-%i.env
+
+ExecStart=/opt/irongrind/zone/IronGrind.x86_64 -batchmode -nographics -logFile - -zoneId %i -zoneTemplate ${ZONE_TEMPLATE} -port ${ZONE_PORT} -serverConfig /etc/irongrind/zone-server.json
+
+# A crashed zone is never restarted: its ZoneID is not reused (zone-instancing.md CR-ZI-1). Players log in again and
+# are routed to another zone.
+Restart=no
+# Unload stopped and crashed instances, so they do not pile up as "failed" units.
+CollectMode=inactive-or-failed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Further sandboxing (ProtectSystem=, ProtectHome=) waits for the VPS run: the Unity player may write under $HOME.
+NoNewPrivileges=yes

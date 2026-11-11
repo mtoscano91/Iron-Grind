@@ -6401,3 +6401,17 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Story: production/epics/gateway/story-007-warm-spare.md — Warm spare and IZoneLauncher
 - Tech debt logged: None (S1/S2 in Completion Notes; pick up in Story 008 or 009)
 - Next recommended: Story 008 (zone launchers + deploy files; now unblocked) or Story 010 (zone link thread); 009 needs 008
+
+## Session Extract — /dev-story 2026-11-11
+- Story: production/epics/gateway/story-008-zone-launchers-and-deploy-files.md — Zone launchers and deploy files
+- Files changed: gateway/IronGrind.Gateway/Launch/ (IProcessRunner, IFileWriter, SystemProcessRunner, SystemFileWriter, ZoneLaunchArguments, SystemdZoneLauncher, ProcessZoneLauncher, NoOpZoneLauncher, ZoneLauncherFactory), Config/GatewayOptions.cs (+ZONE_LAUNCHER default none, ZONE_PROCESS_PATH, ZONE_SERVER_CONFIG), Config/GatewayOptionsValidator.cs; tools/deploy/ (systemd/irongrind-zone@.service, polkit/49-irongrind-gateway.rules, tmpfiles/irongrind.conf, README.md)
+- Test written: gateway/IronGrind.Gateway.Tests/Gateway_ZoneLauncher_tests.cs (30 tests); full non-Database suite 612/612
+- Blockers: none. Open: Ubuntu 22.04 (ADR-007) ships polkit 0.105, which ignores JS .rules — decide 24.04 vs sudoers wrapper before the VPS story (README "Check the polkit version first"). Launcher not yet registered in DI (Story 009).
+- Next: /code-review then /story-done production/epics/gateway/story-008-zone-launchers-and-deploy-files.md
+- Code review 2026-11-11 ("fix all" applied): process launcher drops IRONGRIND_GATEWAY_DB from the zone's environment; systemctl gets --no-ask-password and a 10 s kill timeout (IProcessRunner.RunAsync now takes a timeout, Start takes removeEnvironment); SystemFileWriter creates with UnixCreateMode; unit gets CollectMode=inactive-or-failed; new Gateway_LaunchOsSeams_tests.cs (9 tests). Suite 622 passed / 1 skipped (Unix-mode test on Windows). Next: /story-done story-008.
+
+## Session Extract — /story-done 2026-11-11
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/gateway/story-008-zone-launchers-and-deploy-files.md — Zone launchers and deploy files
+- Tech debt logged: None (advisories in Completion Notes: polkit 0.105 on Ubuntu 22.04 decision, secrets-file ADR-016 note, unverified install paths; Story 007 S1/S2 carried to Story 009)
+- Next recommended: production/epics/gateway/story-009-gateway-composition.md (also Ready: 010, 011). Not committed yet.

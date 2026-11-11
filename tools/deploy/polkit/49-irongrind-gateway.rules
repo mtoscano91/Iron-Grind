@@ -1,0 +1,20 @@
+// Lets the `gateway` user start zone instances, and nothing else (ADR-016 Decision 3; Gateway Story 008).
+// Install: /etc/polkit-1/rules.d/49-irongrind-gateway.rules (root:root 0644). polkitd reloads rules on change.
+// Needs polkit 0.106 or later (JavaScript rules). See tools/deploy/README.md for the Ubuntu version check.
+//
+// Allowed:  systemctl start irongrind-zone@<digits>.service   as user gateway
+// Denied:   any other verb (stop, restart, ...), any other unit, any other user (falls through to the default policy).
+polkit.addRule(function (action, subject) {
+    if (action.id !== "org.freedesktop.systemd1.manage-units") {
+        return polkit.Result.NOT_HANDLED;
+    }
+    if (subject.user !== "gateway") {
+        return polkit.Result.NOT_HANDLED;
+    }
+    var unit = action.lookup("unit");
+    var verb = action.lookup("verb");
+    if (verb === "start" && typeof unit === "string" && /^irongrind-zone@[0-9]+\.service$/.test(unit)) {
+        return polkit.Result.YES;
+    }
+    return polkit.Result.NOT_HANDLED;
+});

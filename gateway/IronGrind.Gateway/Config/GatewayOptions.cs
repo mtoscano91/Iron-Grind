@@ -55,4 +55,20 @@ public sealed class GatewayOptions
     /// <summary>Registry knob <c>ZONE_LOAD_TIMEOUT_SECONDS</c> (zone-instancing.md Tuning Knobs, Gateway Story 007): how long a started zone may take to register, and the minimum spacing between start attempts. Valid 10-120.</summary>
     [ConfigurationKeyName("ZONE_LOAD_TIMEOUT_SECONDS")]
     public int ZoneLoadTimeoutSeconds { get; set; } = 30;
+
+    /// <summary>
+    /// Knob <c>ZONE_LAUNCHER</c> (ADR-016 Decision 3, Gateway Story 008): how zones are started — <c>systemd</c> (production,
+    /// <c>SystemdZoneLauncher</c>), <c>process</c> (dev, <c>ProcessZoneLauncher</c>) or <c>none</c> (dev, zones started by hand).
+    /// Exact lower-case value. Default <c>none</c>; the VPS gateway environment sets <c>systemd</c> (<c>tools/deploy/README.md</c>).
+    /// </summary>
+    [ConfigurationKeyName("ZONE_LAUNCHER")]
+    public string ZoneLauncher { get; set; } = "none";
+
+    /// <summary>Knob <c>ZONE_PROCESS_PATH</c> (Gateway Story 008): zone build executable for <c>ZONE_LAUNCHER=process</c>. Required (non-blank) only then.</summary>
+    [ConfigurationKeyName("ZONE_PROCESS_PATH")]
+    public string ZoneProcessPath { get; set; } = string.Empty;
+
+    /// <summary>Knob <c>ZONE_SERVER_CONFIG</c> (Gateway Story 008): <c>-serverConfig</c> path passed by <c>ZONE_LAUNCHER=process</c>. Required (non-blank) only then; the systemd unit names its own path.</summary>
+    [ConfigurationKeyName("ZONE_SERVER_CONFIG")]
+    public string ZoneServerConfig { get; set; } = string.Empty;
 }

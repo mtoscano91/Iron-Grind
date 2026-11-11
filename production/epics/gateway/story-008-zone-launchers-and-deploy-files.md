@@ -1,7 +1,7 @@
 # Story 008: Zone launchers and deploy files
 
 > **Epic**: Gateway
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Integration
 > **Estimate**: 4 h
@@ -59,7 +59,7 @@
 - **AC-1**: Systemd launcher
   - Given: fake file writer and process runner returning exit 0
   - When: `StartAsync(ZoneID 12, "StartingZone", 7801)`
-  - Then: file `/run/irongrind/zone-12.env` with exactly `ZONE_TEMPLATE=StartingZone\nZONE_PORT=7801\n`; command `systemctl start irongrind-zone@12.service`
+  - Then: file `/run/irongrind/zone-12.env` with exactly `ZONE_TEMPLATE=StartingZone\nZONE_PORT=7801\n`; command `systemctl start irongrind-zone@12.service` *(code review 2026-11-11: now `systemctl --no-ask-password start …`, killed after 10 s)*
   - Edge cases: runner exit 1 with stderr "Access denied" → exception containing both; file write throws → no `systemctl` call
 - **AC-2**: Process launcher → command line contains `-zoneId 12 -zoneTemplate StartingZone -port 7801 -serverConfig <cfg>`; no-op launcher → one log line, no runner call
 - **AC-3**: Bad `ZONE_LAUNCHER` value → startup check fails
@@ -74,7 +74,7 @@
 - `gateway/IronGrind.Gateway.Tests/Gateway_ZoneLauncher_tests.cs` — must pass
 - `tools/deploy/` files committed
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 32 tests in `Gateway_ZoneLauncher_tests.cs` + 9 in `Gateway_LaunchOsSeams_tests.cs` (real process runner and file writer), all passing (dotnet, 2026-11-11; the Unix file-mode test is skipped on Windows and runs in Linux CI); `tools/deploy/` files written
 
 ---
 
@@ -82,3 +82,19 @@
 
 - Depends on: Story 007 (`IZoneLauncher` interface)
 - Unlocks: Story 009
+
+---
+
+## Completion Notes
+**Completed**: 2026-11-11
+**Criteria**: 6/6 passing (AC-1–AC-4 automated; AC-5/AC-6 deploy files reviewed in code review against ADR-016 Decision 3)
+**Deviations** (advisory):
+- `systemctl --no-ask-password start …`, killed after 10 s (`SystemdZoneLauncher.SYSTEMCTL_TIMEOUT`) — code review; QA case annotated.
+- Unit also reads `/etc/irongrind/zone-secrets.env` (`IRONGRIND_PG_PASSWORD`, root 0600) — not named in ADR-016; add an ADR-016 note with the VPS story.
+- Install paths (`/opt/irongrind/zone/IronGrind.x86_64`, `/etc/irongrind/zone-server.json`) and user `irongrind-zone` are proposals, unverified (README "confirm on the VPS").
+- Ubuntu 22.04 (ADR-007) ships polkit 0.105, which ignores JS `.rules` files — decide Ubuntu 24.04 vs a sudoers wrapper before the VPS story (README "Check the polkit version first").
+- `ZONE_LAUNCHER` defaults to `none`; the VPS gateway environment must set `systemd`.
+- TR-zi-001 has no `tr-registry.yaml` entry (known since Story 007).
+- Story 007 follow-ups S1/S2 not picked up here — carry to Story 009.
+**Test Evidence**: Integration — `gateway/IronGrind.Gateway.Tests/Gateway_ZoneLauncher_tests.cs` (32 tests) + `Gateway_LaunchOsSeams_tests.cs` (9 tests, real process runner and file writer); gateway suite 622 passed / 1 skipped (Unix file-mode test on Windows; runs in Linux CI), non-Database; `tools/deploy/` committed with the story
+**Code Review**: Complete — CHANGES REQUIRED (zone inherited `IRONGRIND_GATEWAY_DB`) → fix all applied (2026-11-11)

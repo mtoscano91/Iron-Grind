@@ -1,3 +1,4 @@
+using IronGrind.Gateway.Launch;
 using Microsoft.Extensions.Options;
 
 namespace IronGrind.Gateway.Config;
@@ -102,6 +103,24 @@ public sealed class GatewayOptionsValidator : IValidateOptions<GatewayOptions>
         if (options.ZoneLoadTimeoutSeconds < 10 || options.ZoneLoadTimeoutSeconds > 120)
         {
             failures.Add($"ZONE_LOAD_TIMEOUT_SECONDS must be between 10 and 120 (was {options.ZoneLoadTimeoutSeconds})");
+        }
+
+        if (!ZoneLauncherFactory.Names.Contains(options.ZoneLauncher, StringComparer.Ordinal))
+        {
+            failures.Add($"ZONE_LAUNCHER must be one of {string.Join(", ", ZoneLauncherFactory.Names)} (was \"{options.ZoneLauncher}\")");
+        }
+
+        if (options.ZoneLauncher == ZoneLauncherFactory.PROCESS)
+        {
+            if (string.IsNullOrWhiteSpace(options.ZoneProcessPath))
+            {
+                failures.Add("ZONE_PROCESS_PATH must be set when ZONE_LAUNCHER is process");
+            }
+
+            if (string.IsNullOrWhiteSpace(options.ZoneServerConfig))
+            {
+                failures.Add("ZONE_SERVER_CONFIG must be set when ZONE_LAUNCHER is process");
+            }
         }
 
         return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
