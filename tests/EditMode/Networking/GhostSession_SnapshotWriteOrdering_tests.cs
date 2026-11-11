@@ -368,7 +368,7 @@ namespace IronGrind.Tests.EditMode.Networking
             currencySystem.RegisterCharacter(new CharacterID(GhostCharacterId), 0u);
 
             Assert.Throws<InvalidOperationException>(() =>
-                stateMachine.CompleteReAuthSuccess(AccountId, currencySystem,
+                stateMachine.CompleteReAuthSuccess(AccountId, 0u, currencySystem,
                     queryGoldDebitedPurchases: _ => Array.Empty<PendingPurchaseRecord>(),
                     markPurchaseRefunded: _ => Assert.Fail("Must not reach reconciliation — the reconnect ACK must be rejected before this runs (CGS-6)."),
                     queryRespecReservationStatus: _ => RespecReservationStatus.NoActiveReservation,
@@ -408,7 +408,7 @@ namespace IronGrind.Tests.EditMode.Networking
             currencySystem.RegisterCharacter(new CharacterID(GhostCharacterId), 0u);
 
             // Act — the reconnect ACK is processed first and succeeds.
-            stateMachine.CompleteReAuthSuccess(AccountId, currencySystem,
+            stateMachine.CompleteReAuthSuccess(AccountId, 0u, currencySystem,
                 queryGoldDebitedPurchases: _ => Array.Empty<PendingPurchaseRecord>(),
                 markPurchaseRefunded: _ => { },
                 queryRespecReservationStatus: _ => RespecReservationStatus.NoActiveReservation,

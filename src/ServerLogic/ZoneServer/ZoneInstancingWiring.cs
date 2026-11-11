@@ -13,11 +13,14 @@ namespace IronGrind.ServerLogic.ZoneServer
 {
     /// <summary>
     /// Source of the disconnected-session (ghost) accounts whose session TTL the wiring evaluates every tick
-    /// (Zone Instancing Story 014). The session epic supplies the real enumeration; the composition default is
+    /// (Zone Instancing Story 014). The composition supplies <see cref="SessionMachineGhostSource"/> (Story 016); when none is passed (tests) the default is
     /// <see cref="LoggingZoneGhostSessionSource"/>, which is empty. Tick thread only; implementations must not allocate.
     /// </summary>
     internal interface IZoneGhostSessionSource
     {
+        /// <summary>Re-reads the ghosts once per tick, before the TTL loop; <see cref="Count"/> and <see cref="Get"/> then read that snapshot.</summary>
+        void Refresh();
+
         /// <summary>Number of ghost accounts to evaluate this tick.</summary>
         int Count { get; }
 
@@ -28,10 +31,13 @@ namespace IronGrind.ServerLogic.ZoneServer
         void Get(int index, out uint accountId, out uint sessionExpiryTick);
     }
 
-    /// <summary>Stand-in <see cref="IZoneGhostSessionSource"/>: no ghosts, logs once that TTL enumeration is not implemented.</summary>
+    /// <summary>Test and default stand-in <see cref="IZoneGhostSessionSource"/> used when no source is passed: no ghosts, logs once that TTL enumeration is not implemented. The composition does not use it.</summary>
     internal sealed class LoggingZoneGhostSessionSource : IZoneGhostSessionSource
     {
         private readonly StandInLogOnce _log = new StandInLogOnce("ghost session TTL enumeration");
+
+        /// <inheritdoc/>
+        public void Refresh() { }
 
         /// <inheritdoc/>
         public int Count
@@ -85,7 +91,7 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// </summary>
         public ZoneConnectionCharacterDirectory Directory;
 
-        /// <summary>The session state machine. Null: the wiring creates one (nothing else in <c>src/</c> constructs it yet).</summary>
+        /// <summary>The session state machine. The composition constructs it and passes it here (Story 016). Null: the wiring creates a new one.</summary>
         public ConnectionStateMachine Sessions;
 
         /// <summary>
@@ -126,6 +132,16 @@ namespace IronGrind.ServerLogic.ZoneServer
 
         /// <summary>Ghost TTL enumeration. Null: <see cref="LoggingZoneGhostSessionSource"/> (empty).</summary>
         public IZoneGhostSessionSource Ghosts;
+
+        /// <summary>
+        /// The recording activity sink the dispatcher reports to (Story 016). The composition builds it before the
+        /// dispatcher and passes the same instance here; <see cref="ZoneInstancingWiring.Run"/> drains it each tick.
+        /// Null: no activity drain (tests that drive <c>RecordInboundActivity</c> directly).
+        /// </summary>
+        public RecordingConnectionActivitySink ActivitySink;
+
+        /// <summary><c>HEARTBEAT_TIMEOUT_SECONDS</c>; ticks = seconds x <see cref="TickRateHz"/>.</summary>
+        public int HeartbeatTimeoutSeconds = ConnectionStateMachine.HEARTBEAT_TIMEOUT_SECONDS;
 
         /// <summary>Leveling's <c>UnregisterPlayerEntity</c>. Null: no-op.</summary>
         public Action<EntityID> UnregisterPlayerEntity;
@@ -194,8 +210,10 @@ namespace IronGrind.ServerLogic.ZoneServer
     /// and <see cref="HandshakeIntake"/> to the transport as its <see cref="IClientConnectionListener"/>.
     /// </para>
     /// <para>
-    /// <b>Not wired here.</b> The transport-disconnect and logout inputs of <see cref="SessionEnds"/> belong to the
-    /// session epic.
+    /// <b>Session end inputs.</b> Story 016 wires the TTL input (the ghost loop in <see cref="Run"/>), the heartbeat timeout
+    /// (<see cref="ConnectionStateMachine.EvaluateTimeouts"/> every tick) and transport close as silence (a closed transport
+    /// stops producing activity, so the heartbeat timeout ghosts the session). Only the clean logout input of
+    /// <see cref="SessionEnds"/> is not wired (TD-103).
     /// </para>
     /// </remarks>
     /// <example>
@@ -293,6 +311,9 @@ namespace IronGrind.ServerLogic.ZoneServer
         private readonly int _drainBodySize;
         private readonly bool _logTransitions;
         private readonly IGatewayLinkOutbox _gatewayOutbox;
+        private readonly RecordingConnectionActivitySink _activitySink;
+        private readonly uint _heartbeatTimeoutTicks;
+        private readonly uint _connectingTimeoutTicks;
         private int _pendingQuits;
         private bool _fatalRecorded;
         private bool _zoneDrainingSent;
@@ -347,6 +368,9 @@ namespace IronGrind.ServerLogic.ZoneServer
             _ghosts = options.Ghosts ?? new LoggingZoneGhostSessionSource();
             _directory = options.Directory ?? new ZoneConnectionCharacterDirectory();
             _sessions = options.Sessions ?? new ConnectionStateMachine();
+            _activitySink = options.ActivitySink;
+            _heartbeatTimeoutTicks = (uint)(options.HeartbeatTimeoutSeconds * options.TickRateHz);
+            _connectingTimeoutTicks = (uint)(options.ConnectingTimeoutSeconds * options.TickRateHz);
 
             _tokenStore = options.TokenStore ?? new SessionTokenStore();
             IGatewayLinkOutbox gatewayOutbox = options.GatewayOutbox ?? new LoggingGatewayLinkOutbox();
@@ -484,11 +508,17 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// <summary>The player exit service.</summary>
         public ZonePlayerExit PlayerExit => _playerExit;
 
-        /// <summary>The session state machine (owned here until the session epic constructs it).</summary>
+        /// <summary>The session state machine: the composition constructs it and passes it through <see cref="ZoneInstancingWiringOptions.Sessions"/>; the default is a new machine.</summary>
         public ConnectionStateMachine Sessions => _sessions;
 
-        /// <summary>The session end coordinator: logout and TTL inputs come from the session epic.</summary>
+        /// <summary>The session end coordinator: the TTL input comes from the ghost loop in <see cref="Run"/> (Story 016); the clean logout input is deferred (TD-103).</summary>
         public SessionEndCoordinator SessionEnds => _sessionEnds;
+
+        /// <summary>The activity sink this wiring drains each tick (the composition's, shared with the dispatcher); null when none was passed.</summary>
+        internal RecordingConnectionActivitySink ActivitySink => _activitySink;
+
+        /// <summary>The ghost source the TTL loop reads each tick.</summary>
+        internal IZoneGhostSessionSource GhostSource => _ghosts;
 
         /// <summary>Number of quit requests recorded and not yet applied by a tick.</summary>
         public int PendingQuitCount => _pendingQuits;
@@ -561,6 +591,13 @@ namespace IronGrind.ServerLogic.ZoneServer
             _reclamation.OnTick(currentTick);
             _handshakeIntake.Drain(currentTick); // Gateway Story 012: recorded SessionHandshakes start their entries.
 
+            DrainActivity();
+
+            // Story 016 (AC-6): heartbeat timeout and connecting timeout, after the activity drain so a packet received
+            // this tick prevents a timeout evaluated this tick (AC-8).
+            _sessions.EvaluateTimeouts(currentTick, _heartbeatTimeoutTicks, _connectingTimeoutTicks);
+
+            _ghosts.Refresh();
             int ghostCount = _ghosts.Count;
             for (int i = 0; i < ghostCount; i++)
             {
@@ -571,6 +608,32 @@ namespace IronGrind.ServerLogic.ZoneServer
             _admitted.OnTick(currentTick);
             _lifecycle.OnTick(currentTick);
             _snapshotRequests.ServePending(currentTick);
+        }
+
+        // Story 016 (AC-1): moves the activity the receive callback recorded into the session machine. Scans the player
+        // slots (at most MAX_PLAYERS_PER_ZONE) for each client's account; a client without a slot is ignored. No allocation.
+        private void DrainActivity()
+        {
+            if (_activitySink == null)
+            {
+                return;
+            }
+
+            if (_activitySink.Count > 0)
+            {
+                int capacity = _pool.MaxPlayers;
+                for (int i = 0; i < capacity; i++)
+                {
+                    if (_pool.TryGetPlayerAtSlot(i, out EntityID id, out uint clientId)
+                        && _activitySink.TryTake(clientId, out uint tick)
+                        && _pool.TryGetPlayer(id, out ZonePlayerSlot slot))
+                    {
+                        _sessions.RecordInboundActivity(slot.Account.RawValue, tick);
+                    }
+                }
+            }
+
+            _activitySink.Clear();
         }
 
         // ----- IZoneLifecycleListener ---------------------------------------------------------------

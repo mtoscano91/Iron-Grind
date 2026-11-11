@@ -231,7 +231,7 @@ namespace IronGrind.Tests.EditMode.Networking
 
             // Act -- the real Reconnecting -> Connected transition + handshake emission (Story 013,
             // unmodified signature).
-            stateMachine.CompleteReAuthSuccess(AccountId, currencySystem,
+            stateMachine.CompleteReAuthSuccess(AccountId, 0u, currencySystem,
                 queryGoldDebitedPurchases: _ => Array.Empty<PendingPurchaseRecord>(),
                 markPurchaseRefunded: _ => Assert.Fail("No pending purchases in this scenario."),
                 queryRespecReservationStatus: _ => RespecReservationStatus.NoActiveReservation,

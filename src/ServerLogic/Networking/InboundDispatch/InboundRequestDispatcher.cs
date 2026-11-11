@@ -423,6 +423,9 @@ namespace IronGrind.Networking
             return false;
         }
 
+        /// <summary>The activity sink the dispatcher reports inbound activity to (test accessor).</summary>
+        internal IConnectionActivitySink ActivitySink => _activitySink;
+
         // ------------------------------------------------------------------ connections (Decision 4)
 
         /// <inheritdoc/>

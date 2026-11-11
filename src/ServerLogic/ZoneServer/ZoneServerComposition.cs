@@ -431,6 +431,18 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// </summary>
         internal IZoneEntryTokenValidator EntryTokenValidatorOverride;
 
+        /// <summary>Test seam (Story 016 AC-7): <c>CONNECTING_TIMEOUT_SECONDS</c> override; 0 keeps <see cref="AdmittedEntries.CONNECTING_TIMEOUT_SECONDS"/>. Read once at S5 (the startup check and the wiring options); setting it later has no effect.</summary>
+        internal int ConnectingTimeoutSecondsOverride;
+
+        internal int EffectiveConnectingTimeoutSeconds =>
+            ConnectingTimeoutSecondsOverride > 0 ? ConnectingTimeoutSecondsOverride : AdmittedEntries.CONNECTING_TIMEOUT_SECONDS;
+
+        /// <summary>Heartbeat sink that does nothing: the heartbeat counts as activity before decoding (Story 016).</summary>
+        private sealed class NoOpHeartbeatSink : IConnectionMessageSink
+        {
+            public void OnConnectionMessage(uint clientId, ushort messageTypeId, IronGrind.CharacterStats.EntityID senderEntityId, ReadOnlySpan<byte> body) { }
+        }
+
         /// <summary>The zone's Currency, built at S5 (Character Persistence Story 018: receives the gold restore on load); null before S5.</summary>
         internal ZoneCurrencySystem ZoneCurrency { get; private set; }
 
@@ -1028,6 +1040,21 @@ namespace IronGrind.ServerLogic.ZoneServer
             }
         }
 
+        // Story 016 AC-7: the connecting timeout must exceed the longest character load (the persistence watchdog), or a
+        // player could be admitted after the session was already dropped. S-fail otherwise.
+        private bool CheckSessionTimeoutInvariant()
+        {
+            long connectingTicks = (long)EffectiveConnectingTimeoutSeconds * ServerTickLoop.TICK_RATE_HZ;
+            if (connectingTicks > TickCompletionConstants.PERSISTENCE_WATCHDOG_TICKS)
+            {
+                return true;
+            }
+
+            Debug.LogError(LOG_PREFIX + " S5: connecting timeout (" + connectingTicks + " ticks) must exceed the persistence load watchdog ("
+                + TickCompletionConstants.PERSISTENCE_WATCHDOG_TICKS + " ticks)");
+            return false;
+        }
+
         private static void LogStartupFailure(int n, string typeName)
         {
             Debug.LogError(LOG_PREFIX + " startup failed at S" + n + ": " + typeName);
@@ -1058,7 +1085,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                 case 4:
                     return _backend.OpenDatabase();
                 case 5:
-                    return _backend.ConstructObjects();
+                    return CheckSessionTimeoutInvariant() && _backend.ConstructObjects();
                 case SCENE_STEP:
                     return part == 1 ? StartupBeginSceneLoad() : StartupFinishScene();
                 case 7:
@@ -1462,6 +1489,8 @@ namespace IronGrind.ServerLogic.ZoneServer
             private NpgsqlRelayPublisher _publisher;
             private CharacterMutationGate _gate;
             private ZoneConnectionCharacterDirectory _directory;
+            private RecordingConnectionActivitySink _activitySink;
+            private ConnectionStateMachine _sessionMachine;
             private readonly DeferredTransportDisconnector _disconnector = new DeferredTransportDisconnector();
 
             public RealBackend(ZoneServerComposition owner, IZoneEnvironment environment)
@@ -1690,8 +1719,12 @@ namespace IronGrind.ServerLogic.ZoneServer
                 Observe(nameof(CharacterMutationGate));
                 // One directory, shared by the dispatcher and the Zone Instancing wiring (Story 014).
                 _directory = new ZoneConnectionCharacterDirectory();
+                // Story 016: the recording activity sink exists before the dispatcher and is drained by the wiring; the session machine
+                // is built here so the ghost source can read it.
+                _activitySink = new RecordingConnectionActivitySink(ZoneSlotPool.MAX_PLAYERS_PER_ZONE);
+                _sessionMachine = new ConnectionStateMachine();
                 var dispatcher = new InboundRequestDispatcher(
-                    guardChain, _gate, _directory, new StandInConnectionActivitySink(),
+                    guardChain, _gate, _directory, _activitySink,
                     _tickLoop, MessageRoutingRegistry.TryGetEntry, BuildConfiguration.IsDevelopmentBuild);
                 Observe(nameof(InboundRequestDispatcher));
                 return dispatcher;
@@ -1800,6 +1833,10 @@ namespace IronGrind.ServerLogic.ZoneServer
                     new ZoneInstancingWiringOptions
                     {
                         Directory = _directory,
+                        Sessions = _sessionMachine,
+                        ActivitySink = _activitySink,
+                        Ghosts = new SessionMachineGhostSource(_sessionMachine, ZoneSlotPool.MAX_PLAYERS_PER_ZONE),
+                        ConnectingTimeoutSeconds = _owner.EffectiveConnectingTimeoutSeconds,
                         LogTransitions = _owner.LogTeardownSteps,
                         EntityState = entityState,
                         Responder = _owner.EntryResponder,
@@ -1914,6 +1951,8 @@ namespace IronGrind.ServerLogic.ZoneServer
                 _owner.TargetSlotTracker = tracker;
                 _owner.AutoAttackDamageApplier = damageApplier;
                 NetworkingCoreInboundRegistration.RegisterCombatInput(dispatcher, setTarget, new SetAutoAttackRequestHandler(combat));
+                // Story 016: heartbeats are connection-level, no-op sink; the dispatcher already reported them as activity.
+                NetworkingCoreInboundRegistration.RegisterHeartbeat(dispatcher, new NoOpHeartbeatSink());
 
                 _owner.AutoAttackCombat = combat;
                 _owner._simulationSteps.Add(combat);

@@ -1374,7 +1374,7 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             _gate.Close(CHAR_A);
             Assert.IsTrue(_ends.EvaluateSessionTTL(ACCOUNT, EXPIRY_TICK, EXPIRY_TICK));
             _sm.EnterReconnecting(ACCOUNT, EXPIRY_TICK);
-            _sm.CompleteReAuthSuccess(ACCOUNT, _rig.CurrencySystem,
+            _sm.CompleteReAuthSuccess(ACCOUNT, 0u, _rig.CurrencySystem,
                 queryGoldDebitedPurchases: accountId => Array.Empty<IronGrind.Networking.PendingPurchaseRecord>(),
                 markPurchaseRefunded: purchase => Assert.Fail("No pending purchases in this scenario."),
                 queryRespecReservationStatus: accountId => RespecReservationStatus.NoActiveReservation,

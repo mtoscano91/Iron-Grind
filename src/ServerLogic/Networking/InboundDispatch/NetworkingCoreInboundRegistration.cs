@@ -42,6 +42,24 @@ namespace IronGrind.Networking
         }
 
         /// <summary>
+        /// Registers only <see cref="HeartbeatMessage"/> as a connection-level message (body 0, no <c>SenderEntityID</c>)
+        /// with the descriptor <see cref="Register"/> uses. The zone composition calls it next to
+        /// <see cref="RegisterCombatInput"/>: the heartbeat itself has no effect, its arrival is activity the dispatcher
+        /// already reported before decoding (Zone Instancing Story 016, ADR-014). Does not call <c>Seal()</c>.
+        /// </summary>
+        /// <param name="dispatcher">The dispatcher to register on.</param>
+        /// <param name="heartbeatSink">The sink that receives heartbeats (may be a no-op).</param>
+        public static void RegisterHeartbeat(IInboundRequestDispatcher dispatcher, IConnectionMessageSink heartbeatSink)
+        {
+            if (dispatcher == null) throw new ArgumentNullException(nameof(dispatcher));
+            if (heartbeatSink == null) throw new ArgumentNullException(nameof(heartbeatSink));
+
+            dispatcher.RegisterConnectionLevel(
+                new ConnectionMessageDescriptor(HeartbeatMessage.MessageTypeId, maxBodyBytes: 0, carriesSenderEntityId: false),
+                heartbeatSink);
+        }
+
+        /// <summary>
         /// Registers the two Combat input requests (Auto-Attack Combat Story 006, ADR-014 Decision 1):
         /// <see cref="SetTarget"/> (tag <see cref="RpcTypeTag.SetTarget"/>, body 4) and <see cref="SetAutoAttack"/>
         /// (tag <see cref="RpcTypeTag.SetAutoAttack"/>, body 1), both not held and without a rate limit. Use it

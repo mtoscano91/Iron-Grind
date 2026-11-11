@@ -168,9 +168,10 @@ namespace IronGrind.Networking
     /// <see cref="EvaluateTimeouts"/> takes <c>heartbeatTimeoutTicks</c> and
     /// <c>connectingTimeoutTicks</c> as parameters, exactly matching
     /// <see cref="HeartbeatActivityTracker.IsHeartbeatDue"/>'s <c>intervalTicks</c> pattern.
-    /// <c>HEARTBEAT_TIMEOUT_SECONDS</c>'s production default is OQ-NET-1, still BLOCKING/undetermined
-    /// — this class must not hardcode one. <c>CONNECTING_TIMEOUT_SECONDS</c> has a GDD default (30)
-    /// but this story's own tests use 10; declaring either as a compile-time constant on this class
+    /// <c>HEARTBEAT_TIMEOUT_SECONDS</c> (OQ-NET-1, resolved 2026-11-11 at 10 s) is exposed as
+    /// <see cref="HEARTBEAT_TIMEOUT_SECONDS"/> and passed in by the zone wiring, not applied inside this class.
+    /// <c>CONNECTING_TIMEOUT_SECONDS</c> has a GDD default (30)
+    /// but this story's own tests use 10; declaring the connecting timeout as a compile-time constant on this class
     /// was judged unnecessary scope (unlike <see cref="CommitBeforeBroadcastSequencer.SESSION_TTL_SECONDS"/>,
     /// which that story's own AC text required as a concrete value passed to a delegate).
     /// </para>
@@ -227,7 +228,7 @@ namespace IronGrind.Networking
     ///
     /// // (Story 013) The client reconnects within the TTL:
     /// stateMachine.EnterReconnecting(accountId: 7, sessionExpiryTick: 6100u, observer);
-    /// stateMachine.CompleteReAuthSuccess(accountId: 7, currencySystem,
+    /// stateMachine.CompleteReAuthSuccess(accountId: 7, currentTick: 6200u, currencySystem,
     ///     queryGoldDebitedPurchases: charId => pendingPurchaseStore.QueryGoldDebited(charId),
     ///     markPurchaseRefunded: record => pendingPurchaseStore.MarkRefundedAndDelete(record),
     ///     queryRespecReservationStatus: charId => respecReservations.QueryStatus(charId),
@@ -293,6 +294,37 @@ namespace IronGrind.Networking
         // Reused scratch buffer for EvaluateTimeouts' deferred-removal pass (see class remarks) —
         // cleared at the start of every call, so no steady-state allocation once warmed up.
         private readonly List<uint> _connectingTimeoutScratch = new();
+
+        /// <summary>
+        /// <c>HEARTBEAT_TIMEOUT_SECONDS</c> (networking-session GDD ST-NET-1, OQ-NET-1 resolved 2026-11-11): a Connected
+        /// client silent for longer than this moves to Disconnected_SessionActive. The zone passes it through
+        /// <c>ZoneInstancingWiringOptions</c>; ticks = seconds x <c>ServerTickLoop.TICK_RATE_HZ</c>.
+        /// </summary>
+        public const int HEARTBEAT_TIMEOUT_SECONDS = 10;
+
+        /// <summary>
+        /// Snapshots every <see cref="SessionState.Disconnected_SessionActive"/> session (ghost) into two caller-owned
+        /// lists (Zone Instancing Story 016): both lists are cleared, then each ghost's account and
+        /// <c>SessionExpiryTick</c> are appended at the same index. Allocation-free once the lists have capacity.
+        /// </summary>
+        /// <param name="accountIds">Receives the ghost accounts.</param>
+        /// <param name="expiryTicks">Receives each ghost's absolute TTL expiry tick.</param>
+        public void CollectSessionActiveGhosts(List<uint> accountIds, List<uint> expiryTicks)
+        {
+            if (accountIds == null) throw new ArgumentNullException(nameof(accountIds));
+            if (expiryTicks == null) throw new ArgumentNullException(nameof(expiryTicks));
+
+            accountIds.Clear();
+            expiryTicks.Clear();
+            foreach (KeyValuePair<uint, AccountSessionRecord> entry in _sessions)
+            {
+                if (entry.Value.State == SessionState.Disconnected_SessionActive)
+                {
+                    accountIds.Add(entry.Key);
+                    expiryTicks.Add(entry.Value.SessionExpiryTick);
+                }
+            }
+        }
 
         /// <summary>
         /// Registers <paramref name="accountId"/> as a brand-new pending connection (ST-NET-1 row 1,
@@ -448,7 +480,7 @@ namespace IronGrind.Networking
         /// <param name="currentTick">The current server tick.</param>
         /// <param name="heartbeatTimeoutTicks">
         /// <c>HEARTBEAT_TIMEOUT_SECONDS × TICK_RATE_HZ</c> — caller-supplied, never hardcoded here
-        /// (OQ-NET-1 is still undetermined; see class remarks).
+        /// (OQ-NET-1 resolved 2026-11-11 at 10 s, exposed as <see cref="HEARTBEAT_TIMEOUT_SECONDS"/>; see class remarks).
         /// </param>
         /// <param name="connectingTimeoutTicks"><c>CONNECTING_TIMEOUT_SECONDS × TICK_RATE_HZ</c> — caller-supplied.</param>
         /// <param name="observer">Optional test/dev-build observer.</param>
@@ -492,6 +524,7 @@ namespace IronGrind.Networking
                             // In-place mutation of an existing entry's value — safe mid-enumeration,
                             // no structural dictionary change (see class remarks).
                             record.State = SessionState.Disconnected_SessionActive;
+                            record.SessionExpiryTick = currentTick + (uint)(CommitBeforeBroadcastSequencer.SESSION_TTL_SECONDS * ServerTickLoop.TICK_RATE_HZ); // CR-NET-6.1
 
 #if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
                             observer?.OnSessionStateTransitioned(entry.Key, SessionState.Connected,
@@ -503,7 +536,8 @@ namespace IronGrind.Networking
                     }
 
                     default:
-                        // Disconnected_SessionActive TTL expiry via elapsed tick time (Story 015) is
+                        // Disconnected_SessionActive TTL expiry via elapsed tick time is evaluated by the zone's ghost TTL loop
+                        // (ZoneInstancingWiring.Run -> SessionEndCoordinator.EvaluateSessionTTL, Zone Instancing Story 016), and is
                         // out of scope for this class. Reconnecting is NOT out of scope as of Story
                         // 013 in general (see EnterReconnecting, CompleteReAuthSuccess,
                         // RecordFailedReAuthAttempt, HandleReconnectSessionSteal) — but this sweep
@@ -837,6 +871,11 @@ namespace IronGrind.Networking
         /// </para>
         /// </remarks>
         /// <param name="accountId">The account completing re-authentication.</param>
+        /// <param name="currentTick">
+        /// The current server tick. Stored as the session's <c>LastActivityTick</c> (the heartbeat baseline) when it becomes
+        /// <see cref="SessionState.Connected"/>, so the per-tick <see cref="EvaluateTimeouts"/> does not immediately ghost the
+        /// reconnected client again.
+        /// </param>
         /// <param name="currencyService">
         /// The real, already-implemented Currency System (Currency System Stories 001–006) — called
         /// directly, not through a delegate seam (see class remarks). Must not be <see langword="null"/>.
@@ -886,7 +925,7 @@ namespace IronGrind.Networking
         /// </exception>
         /// <example>
         /// <code>
-        /// stateMachine.CompleteReAuthSuccess(accountId: 7, currencySystem,
+        /// stateMachine.CompleteReAuthSuccess(accountId: 7, currentTick: 6200u, currencySystem,
         ///     queryGoldDebitedPurchases: charId =&gt; pendingPurchaseStore.QueryGoldDebited(charId),
         ///     markPurchaseRefunded: record =&gt; pendingPurchaseStore.MarkRefundedAndDelete(record),
         ///     queryRespecReservationStatus: charId =&gt; respecReservations.QueryStatus(charId),
@@ -899,6 +938,7 @@ namespace IronGrind.Networking
         /// </example>
         public void CompleteReAuthSuccess(
             uint accountId,
+            uint currentTick,
             ICurrencyService currencyService,
             Func<uint, IReadOnlyList<PendingPurchaseRecord>> queryGoldDebitedPurchases,
             Action<PendingPurchaseRecord> markPurchaseRefunded,
@@ -945,6 +985,7 @@ namespace IronGrind.Networking
             uint characterId = record.CharacterId;
 
             record.State = SessionState.Connected;
+            record.LastActivityTick = currentTick; // heartbeat baseline restarts at reconnect; otherwise the next EvaluateTimeouts re-ghosts it
 
 #if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
             observer?.OnSessionStateTransitioned(accountId, SessionState.Reconnecting, SessionState.Connected, "ReAuthSuccess");

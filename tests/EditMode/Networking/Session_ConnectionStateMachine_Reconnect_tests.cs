@@ -122,7 +122,7 @@ namespace IronGrind.Tests.EditMode.Networking
             var stateMachine = CreateReconnectingStateMachine(observer);
 
             // Act
-            stateMachine.CompleteReAuthSuccess(AccountA, currencySystem,
+            stateMachine.CompleteReAuthSuccess(AccountA, 0u, currencySystem,
                 queryGoldDebitedPurchases: _ => Array.Empty<PendingPurchaseRecord>(),
                 markPurchaseRefunded: _ => Assert.Fail("No pending purchases in this scenario."),
                 queryRespecReservationStatus: _ => RespecReservationStatus.NoActiveReservation,
@@ -163,7 +163,7 @@ namespace IronGrind.Tests.EditMode.Networking
             bool releaseCalled = false;
 
             // Act
-            stateMachine.CompleteReAuthSuccess(AccountA, currencySystem,
+            stateMachine.CompleteReAuthSuccess(AccountA, 0u, currencySystem,
                 queryGoldDebitedPurchases: _ => Array.Empty<PendingPurchaseRecord>(),
                 markPurchaseRefunded: _ => { },
                 queryRespecReservationStatus: _ => RespecReservationStatus.TtlValid,
@@ -188,7 +188,7 @@ namespace IronGrind.Tests.EditMode.Networking
             bool phase2Called = false;
 
             // Act
-            stateMachine.CompleteReAuthSuccess(AccountA, currencySystem,
+            stateMachine.CompleteReAuthSuccess(AccountA, 0u, currencySystem,
                 queryGoldDebitedPurchases: _ => Array.Empty<PendingPurchaseRecord>(),
                 markPurchaseRefunded: _ => { },
                 queryRespecReservationStatus: _ => RespecReservationStatus.TtlExpired,
@@ -214,7 +214,7 @@ namespace IronGrind.Tests.EditMode.Networking
             bool releaseCalled = false;
 
             // Act
-            stateMachine.CompleteReAuthSuccess(AccountA, currencySystem,
+            stateMachine.CompleteReAuthSuccess(AccountA, 0u, currencySystem,
                 queryGoldDebitedPurchases: _ => Array.Empty<PendingPurchaseRecord>(),
                 markPurchaseRefunded: _ => { },
                 queryRespecReservationStatus: _ => RespecReservationStatus.NoActiveReservation,
@@ -244,7 +244,7 @@ namespace IronGrind.Tests.EditMode.Networking
             var refundedRecords = new List<PendingPurchaseRecord>();
 
             // Act
-            stateMachine.CompleteReAuthSuccess(AccountA, currencySystem,
+            stateMachine.CompleteReAuthSuccess(AccountA, 0u, currencySystem,
                 queryGoldDebitedPurchases: charId =>
                 {
                     Assert.AreEqual(CharacterA, charId);
@@ -289,7 +289,7 @@ namespace IronGrind.Tests.EditMode.Networking
             var refundedRecords = new List<PendingPurchaseRecord>();
 
             // Act
-            stateMachine.CompleteReAuthSuccess(AccountA, currencySystem,
+            stateMachine.CompleteReAuthSuccess(AccountA, 0u, currencySystem,
                 queryGoldDebitedPurchases: _ => new List<PendingPurchaseRecord> { purchase1, purchase2 },
                 markPurchaseRefunded: record =>
                 {
@@ -328,7 +328,7 @@ namespace IronGrind.Tests.EditMode.Networking
             LogAssert.Expect(LogType.Log, new Regex("PendingPurchaseReconciled.*requestId=42"));
 
             // Act
-            stateMachine.CompleteReAuthSuccess(AccountA, currencySystem,
+            stateMachine.CompleteReAuthSuccess(AccountA, 0u, currencySystem,
                 queryGoldDebitedPurchases: _ => new List<PendingPurchaseRecord> { purchase },
                 markPurchaseRefunded: _ => { },
                 queryRespecReservationStatus: _ => RespecReservationStatus.NoActiveReservation,
@@ -347,7 +347,7 @@ namespace IronGrind.Tests.EditMode.Networking
             var stateMachine = CreateReconnectingStateMachine(observer);
 
             Assert.Throws<ArgumentNullException>(() =>
-                stateMachine.CompleteReAuthSuccess(AccountA, currencyService: null,
+                stateMachine.CompleteReAuthSuccess(AccountA, 0u, currencyService: null,
                     queryGoldDebitedPurchases: _ => Array.Empty<PendingPurchaseRecord>(),
                     markPurchaseRefunded: _ => { },
                     queryRespecReservationStatus: _ => RespecReservationStatus.NoActiveReservation,
@@ -365,7 +365,7 @@ namespace IronGrind.Tests.EditMode.Networking
             var stateMachine = CreateReconnectingStateMachine(observer);
 
             Assert.Throws<ArgumentNullException>(() =>
-                stateMachine.CompleteReAuthSuccess(AccountA, currencySystem,
+                stateMachine.CompleteReAuthSuccess(AccountA, 0u, currencySystem,
                     queryGoldDebitedPurchases: null,
                     markPurchaseRefunded: _ => { },
                     queryRespecReservationStatus: _ => RespecReservationStatus.NoActiveReservation,
@@ -383,7 +383,7 @@ namespace IronGrind.Tests.EditMode.Networking
             var stateMachine = CreateReconnectingStateMachine(observer);
 
             Assert.Throws<ArgumentNullException>(() =>
-                stateMachine.CompleteReAuthSuccess(AccountA, currencySystem,
+                stateMachine.CompleteReAuthSuccess(AccountA, 0u, currencySystem,
                     queryGoldDebitedPurchases: _ => Array.Empty<PendingPurchaseRecord>(),
                     markPurchaseRefunded: null,
                     queryRespecReservationStatus: _ => RespecReservationStatus.NoActiveReservation,
@@ -401,7 +401,7 @@ namespace IronGrind.Tests.EditMode.Networking
             var stateMachine = CreateReconnectingStateMachine(observer);
 
             Assert.Throws<ArgumentNullException>(() =>
-                stateMachine.CompleteReAuthSuccess(AccountA, currencySystem,
+                stateMachine.CompleteReAuthSuccess(AccountA, 0u, currencySystem,
                     queryGoldDebitedPurchases: _ => Array.Empty<PendingPurchaseRecord>(),
                     markPurchaseRefunded: _ => { },
                     queryRespecReservationStatus: null,
@@ -419,7 +419,7 @@ namespace IronGrind.Tests.EditMode.Networking
             var stateMachine = CreateReconnectingStateMachine(observer);
 
             Assert.Throws<ArgumentNullException>(() =>
-                stateMachine.CompleteReAuthSuccess(AccountA, currencySystem,
+                stateMachine.CompleteReAuthSuccess(AccountA, 0u, currencySystem,
                     queryGoldDebitedPurchases: _ => Array.Empty<PendingPurchaseRecord>(),
                     markPurchaseRefunded: _ => { },
                     queryRespecReservationStatus: _ => RespecReservationStatus.NoActiveReservation,
@@ -437,7 +437,7 @@ namespace IronGrind.Tests.EditMode.Networking
             var stateMachine = CreateReconnectingStateMachine(observer);
 
             Assert.Throws<ArgumentNullException>(() =>
-                stateMachine.CompleteReAuthSuccess(AccountA, currencySystem,
+                stateMachine.CompleteReAuthSuccess(AccountA, 0u, currencySystem,
                     queryGoldDebitedPurchases: _ => Array.Empty<PendingPurchaseRecord>(),
                     markPurchaseRefunded: _ => { },
                     queryRespecReservationStatus: _ => RespecReservationStatus.NoActiveReservation,
@@ -456,7 +456,7 @@ namespace IronGrind.Tests.EditMode.Networking
             var stateMachine = CreateDisconnectedSessionActiveStateMachine(observer);
 
             Assert.Throws<InvalidOperationException>(() =>
-                stateMachine.CompleteReAuthSuccess(AccountA, currencySystem,
+                stateMachine.CompleteReAuthSuccess(AccountA, 0u, currencySystem,
                     queryGoldDebitedPurchases: _ => Array.Empty<PendingPurchaseRecord>(),
                     markPurchaseRefunded: _ => { },
                     queryRespecReservationStatus: _ => RespecReservationStatus.NoActiveReservation,

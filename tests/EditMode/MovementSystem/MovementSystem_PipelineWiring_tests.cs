@@ -355,7 +355,6 @@ namespace IronGrind.Tests.EditMode.MovementSystem
             EntityID id = AllocCompositionPlayer(pool, 1u, 11u, out byte slot);
             rig.Comp.Movement.SeedForTesting(slot, id, Vector3.zero, 0);
             rig.Comp.Movement.InjectFacingOverride(id, Vector3.right);
-            LogAssert.Expect(LogType.Log, "[ZoneServer] ghost session TTL enumeration not implemented");
             LogAssert.Expect(LogType.Error, new Regex(@"\[Movement\] NavMesh unavailable"));
 
             rig.Net.FireTick();
@@ -396,7 +395,6 @@ namespace IronGrind.Tests.EditMode.MovementSystem
             rig.Net.ClientListener.AddClient(12u);
             OutboxOf(rig).Enqueue(11u, SelfDamageEvent.MessageTypeId, new byte[4], isCapExempt: false);
             rig.Comp.RUBatch.Enqueue(11u, RUBatchCategory.HitCheckResult, HitCheckResult.MessageTypeId, new byte[HitCheckResult.BodySize]);
-            LogAssert.Expect(LogType.Log, "[ZoneServer] ghost session TTL enumeration not implemented");
             LogAssert.Expect(LogType.Error, new Regex(@"\[Movement\] NavMesh unavailable"));
 
             rig.Net.FireTick();
@@ -439,7 +437,6 @@ namespace IronGrind.Tests.EditMode.MovementSystem
             rig.Net.ClientListener.AddClient(11u);
             Assert.IsNotNull(rig.Comp.HitResultEmitter);
             rig.Comp.HitResultEmitter.Emit(player, mob, HitResult.Hit);
-            LogAssert.Expect(LogType.Log, "[ZoneServer] ghost session TTL enumeration not implemented");
             LogAssert.Expect(LogType.Error, new Regex(@"\[Movement\] NavMesh unavailable"));
 
             rig.Net.FireTick();
@@ -482,7 +479,6 @@ namespace IronGrind.Tests.EditMode.MovementSystem
             rig.Comp.Movement.SeedForTesting(slot2, p2, new Vector3(-3f, 0f, 0.004f), 0);
             rig.Net.ClientListener.AddClient(11u);
             rig.Net.ClientListener.AddClient(12u);
-            LogAssert.Expect(LogType.Log, "[ZoneServer] ghost session TTL enumeration not implemented");
             // The scene fake hands S6 a default (invalid) NavMesh instance, so Movement is unavailable: seeded
             // positions hold and are still broadcast.
             LogAssert.Expect(LogType.Error, new Regex(@"\[Movement\] NavMesh unavailable"));

@@ -507,8 +507,6 @@ namespace IronGrind.Tests.EditMode.Networking
             SuRig.Drive(rig.Comp.Start(SuRig.ARGS));
 
             rig.Now = 10.05;
-            // The Zone Instancing wiring's tick step reads the stand-in ghost source (Story 014), which logs once.
-            LogAssert.Expect(LogType.Log, "[ZoneServer] ghost session TTL enumeration not implemented");
             rig.Net.FireTick();
 
             Assert.AreEqual(1u, rig.Comp.TickLoop.ServerTickNumber);
@@ -532,7 +530,6 @@ namespace IronGrind.Tests.EditMode.Networking
             rig.Comp.RequestQuit();
             Assert.AreEqual(1, wiring.PendingQuitCount);
             rig.Now = 10.05;
-            LogAssert.Expect(LogType.Log, "[ZoneServer] ghost session TTL enumeration not implemented");
             rig.Net.FireTick();
 
             Assert.AreEqual(0, wiring.PendingQuitCount, "the pipeline ran the wiring, which applied the quit");

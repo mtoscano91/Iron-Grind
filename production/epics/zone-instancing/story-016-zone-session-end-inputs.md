@@ -1,7 +1,7 @@
 # Story 016: Zone-Side Session End Inputs (TD-101)
 
 > **Epic**: Zone Instancing
-> **Status**: Ready — written 2026-11-11 from quick spec `design/quick-specs/zone-session-end-inputs-2026-11-11.md`; `/story-readiness` 2026-11-11: READY after the four readiness decisions below
+> **Status**: Complete (2026-11-11) — written 2026-11-11 from quick spec `design/quick-specs/zone-session-end-inputs-2026-11-11.md`; `/story-readiness` 2026-11-11: READY after the four readiness decisions below
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-11-06
@@ -94,7 +94,7 @@ Today none of this runs in the zone: nothing calls `RecordInboundActivity` or `E
 - `tests/EditMode/Integration/ZoneInstancing/ZoneInstancing_SessionEndInputs_tests.cs` (new) — AC-1..AC-9
 - `tests/EditMode/Networking/ZoneServer_CompositionWiring_tests.cs` or a new composition test — AC-7, AC-10
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — `ZoneInstancing_SessionEndInputs_tests.cs` (25 tests), `tests/EditMode/Networking/ZoneServer_CompositionSessionEnd_tests.cs` (3 tests); EditMode 6906 / 6777 passed / 0 failed / 129 skipped (2026-11-11)
 
 ---
 
@@ -102,3 +102,17 @@ Today none of this runs in the zone: nothing calls `RecordInboundActivity` or `E
 
 - Depends on: Stories 009–014 (Complete), 015 (Complete); Gateway Story 012 (Complete)
 - Unlocks: Authentication Story 017 (end-to-end)
+
+---
+
+## Completion Notes
+**Completed**: 2026-11-11
+**Criteria**: 10/10 passing (all automated; none deferred)
+**Deviations** (advisory):
+- AC-6: `test_a_character_load_taking_the_watchdog_duration_is_admitted_with_a_connected_session` drives `ConnectionStateMachine.CompleteAuthSuccess` directly at the watchdog tick; it does not go through `AdmittedEntries` / `SessionSinkAdapter`, so "SessionSinkAdapter does not skip" is implied by the session being Connecting at tick 200, not exercised end to end.
+- Code-review fix outside the story's file list: `ConnectionStateMachine.CompleteReAuthSuccess` gained a `uint currentTick` parameter and now refreshes `LastActivityTick` (a reconnected ghost was otherwise re-ghosted on the next tick now that `EvaluateTimeouts` runs every tick); all 20 test callers pass `0u`, existing assertions unchanged; regression test `test_reconnected_ghost_is_connected_for_the_full_heartbeat_window_and_ghosted_again_without_activity`.
+- Extra files: internal test accessors (`InboundRequestDispatcher.ActivitySink`, `ZoneInstancingWiring.ActivitySink` / `GhostSource`); stand-in log expectations removed from `ZoneServer_CompositionWiring_tests.cs` and `MovementSystem_PipelineWiring_tests.cs`; composition tests live in `tests/EditMode/Networking/` with the sibling composition rigs.
+**Implementation**: `RecordingConnectionActivitySink` (built before the dispatcher, drained in `ZoneInstancingWiring.Run`), `SessionMachineGhostSource` + `IZoneGhostSessionSource.Refresh`, `ConnectionStateMachine.CollectSessionActiveGhosts` / `HEARTBEAT_TIMEOUT_SECONDS` / expiry tick on heartbeat-timeout ghosting, `NetworkingCoreInboundRegistration.RegisterHeartbeat` (no-op sink), S5 connecting-timeout > load-watchdog check.
+**Tech debt**: TD-101 RESOLVED; TD-103 added (clean logout deferred; ghost with a live transport resuming activity is not recovered).
+**Test Evidence**: Integration — `tests/EditMode/Integration/ZoneInstancing/ZoneInstancing_SessionEndInputs_tests.cs` (25), `tests/EditMode/Networking/ZoneServer_CompositionSessionEnd_tests.cs` (3)
+**Code Review**: Complete — `/code-review` 2026-11-11 APPROVED WITH SUGGESTIONS (unity-specialist APPROVED WITH SUGGESTIONS, qa-tester GAPS non-blocking); user "fix all", all applied

@@ -224,6 +224,8 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             public readonly List<(uint Account, uint Expiry)> Items = new List<(uint, uint)>();
             public Action OnEnumerate;
 
+            public void Refresh() { }
+
             public int Count
             {
                 get
