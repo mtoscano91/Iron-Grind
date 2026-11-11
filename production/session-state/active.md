@@ -1,3 +1,7 @@
+> **`/quick-design` TD-100 done 2026-11-11 (not committed).** New `design/quick-specs/zone-entity-state-source-2026-11-11.md` (Addition, ~5 h): production `ZoneEntityStateSource` for players + mobs (HP/MP floor to int, MaxHP/MaxMP/Level via GetEffectiveStat, name via ICharacterNameLookup — no name → false, appearance via Equipment, cycle timer = NormalizeCycleTimer, RespawnTick 0 until Death & Respawn, position from the Movement decorator); replaces `LoggingZoneEntityStateSource` in the composition. User decision: `isInCombat` = auto-attack state CombatActive or OutOfRange. TD-100 widened (stand-in also drops every mob and every PlayerJoinedZone — empty zone on entry). `networking-wire-protocol.md` isInCombat comment + Last Updated. **Next:** commit, then a story for it (Zone Instancing epic, or a tech-debt story) → `/story-readiness` → `/dev-story`; then TD-101.
+
+> *Previous:*
+
 > **`/story-done` Gateway Story 012 2026-11-11: COMPLETE WITH NOTES (committed).** Story Status Complete + Completion Notes; Gateway EPIC.md 12/12 Complete; epics index rows (Gateway Complete, Authentication 017 waits for TD-100/TD-101); tech debt TD-100 (no production `IZoneEntityStateSource` — EntityState name/level/HP never filled; P1) and TD-101 (zone-side session end inputs not wired, `EvaluateTimeouts` has no zone caller; P2). EditMode 6847 / 6718 passed / 0 failed / 129 skipped. **Next:** TD-100 and TD-101 (need stories or quick specs), then Authentication Story 017 (end-to-end).
 
 > *Previous:*
