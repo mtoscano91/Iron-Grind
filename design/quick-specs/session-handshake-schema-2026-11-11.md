@@ -38,7 +38,7 @@ SessionHandshake {
 
 ## New Rules / Values
 
-- **MessageTypeID `0xE136`** — next free id in the zone-entry block (`0xE130`–`0xE135`, after `ZoneSnapshotRequest` 0xE135); inside the R-OD priority range `0xE000`–`0xEFFF`.
+- **MessageTypeID `0xE136`** — next free id in the zone-entry block (`0xE130`–`0xE135`, after `PlayerLeftZone` 0xE135); inside the R-OD priority range `0xE000`–`0xEFFF`.
 - **Connection-level message** (ADR-014 Decision 1): not guarded by the session-ready gate, never held, never enters the inbox. 10-byte envelope only — **no `SenderEntityID`** (the client has no entity yet). **Never carries `AccountID`** (ADR-016 Decision 4, CR-AUTH-2).
 - **Decode rules** (zone side, before CR-ZI-8 step 3):
   1. Body length ≠ 24, `characterId == 0`, or `sessionToken` all zeros → malformed: close the connection with no message (CR-TOK-9). No `BeginEntry`.
@@ -62,7 +62,7 @@ SessionHandshake {
 - [ ] A 23- or 25-byte body, `characterId = 0`, or an all-zero token closes the connection with no message and no `BeginEntry`
 - [ ] A `targetZoneId` other than this zone's closes the connection with no message and no `BeginEntry`
 - [ ] `0xE136` has a `MessageRoutingRegistry` row and a connection-level descriptor (`maxBodyBytes 24`, `carriesSenderEntityId false`)
-- [ ] No regression: `ZoneEntryAck` (0xE134) and `ZoneSnapshotRequest` (0xE135) keep their ids and behaviour
+- [ ] No regression: `ZoneEntryAck` (0xE134) and `ZoneSnapshotRequest` (0xE131) keep their ids and behaviour
 
 ## Out of Scope (stays under OQ-NC-SER-2)
 

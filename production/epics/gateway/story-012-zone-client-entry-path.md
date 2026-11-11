@@ -1,7 +1,7 @@
 # Story 012: Zone-side client entry path (TD-095)
 
 > **Epic**: Gateway
-> **Status**: Blocked — `SessionHandshake` client→server wire format not specified (OQ-NC-SER-2, no MessageTypeId). Unblock with a `/quick-design` session that fixes the body and updates `networking-wire-protocol.md` (+ `networking-channel-contract.md`, entities registry), then `/story-readiness`.
+> **Status**: Ready (`/story-readiness` 2026-11-11 — `SessionHandshake` format fixed by quick spec `design/quick-specs/session-handshake-schema-2026-11-11.md`)
 > **Layer**: Core
 > **Type**: Integration
 > **Estimate**: 6 h
@@ -9,11 +9,12 @@
 
 ## Context
 
-**GDD**: `design/gdd/zone-instancing.md` — CR-ZI-8 (entry sequence); `design/gdd/authentication.md` — AC-AUTH-21 (e); `design/gdd/networking-session-token.md` — CR-TOK-8/9
-**Requirement**: `TR-zi-018` (entry after registration); TD-095
-*(Requirement text lives in `docs/architecture/tr-registry.yaml` — read fresh at review time)*
+**GDD**: `design/gdd/zone-instancing.md` — CR-ZI-8 steps 2–3 (entry sequence); `design/gdd/authentication.md` — AC-AUTH-21 (e); `design/gdd/networking-session-token.md` — CR-TOK-8/9; `design/gdd/networking-wire-protocol.md` — `SessionHandshake` schema
+**Quick Spec**: `design/quick-specs/session-handshake-schema-2026-11-11.md`
+**Requirement**: `TR-zi-007` (CR-ZI-8 steps 3–10 — token validation → `LoadCharacter` → capacity + slot → …); TD-095
+*(TR-zi-* IDs live in `production/epics/zone-instancing/EPIC.md`, not yet in `docs/architecture/tr-registry.yaml` — TD-098. Earlier drafts cited TR-zi-018, which is the S10 registration of Story 011.)*
 
-**ADR Governing Implementation**: ADR-016: Gateway and Authentication Process (Decision 4 — tokens owned by the zone), with ADR-011 (dispatch on the tick)
+**ADR Governing Implementation**: ADR-016: Gateway and Authentication Process (Decision 4 — tokens owned by the zone), with ADR-014 (connection-level messages) and ADR-011 (dispatch on the tick)
 **ADR Decision Summary**: The client's `SessionHandshake` carries `CharacterID` and the token, never `AccountID`. The real `IZoneEntryTokenValidator` looks up the admitted entry by `CharacterID` and compares with `CryptographicOperations.FixedTimeEquals` in the zone's local `SessionTokenStore`, without blocking. Character load stays in zone admission.
 
 **Engine**: Unity 6.3 LTS (server build) | **Risk**: LOW
@@ -21,65 +22,77 @@
 
 **Control Manifest Rules (this layer)**:
 - Required: "Zone entry" bullet of the manifest's ADR-016 block
-- Required: R-OD message ids in 0xE000–0xEFFF (check at readiness against the delivery class)
+- Required: R-OD message ids in 0xE000–0xEFFF — `0xE136` is inside the range (checked at readiness 2026-11-11)
+- Required: every client→server type gets its `MessageRoutingRegistry` row, its ADR-014 Decision 1 classification and its registration in the same story (manifest, ADR-014 block)
 
 ---
 
-## Blocker
+## Wire Format (decided 2026-11-11)
 
-`networking-wire-protocol.md` still has `SessionHandshake` as a stub ("schema pending OQ-NC-SER-2"), and `MessageRoutingRegistry` has no id for it. Proposal agreed at `/create-stories` (2026-11-09), to be written into the GDD by a `/quick-design` session:
+From `networking-wire-protocol.md` and the quick spec:
 
 ```
-SessionHandshake (C→S, R-OD)
-  characterId   : uint32  (CharacterID)
-  targetZoneId  : uint32  (ZoneID)
+SessionHandshake (R-OD, client → server, 24-byte body; 34 bytes standalone)
+  characterId   : uint32 LE (CharacterID, never 0)
+  targetZoneId  : uint32 LE (ZoneID from LoginResponse)
   sessionToken  : byte[16]
-  = 24-byte body + 10-byte envelope
-  no SenderEntityID, never AccountID
-  MessageTypeId: 0xE0xx (R-OD range)
+  MessageTypeID : 0xE136
+  10-byte envelope only — no SenderEntityID; never AccountID
+  connection-level (ADR-014): not session-ready gated, never held, never in the inbox
 ```
 
-The rest of OQ-NC-SER-2 (the `SessionReady` S→C fields) is not part of this story.
+Decode rules, before CR-ZI-8 step 3:
+1. Body length ≠ 24, `characterId == 0`, or an all-zero `sessionToken` → connection closed with no message; no `BeginEntry`.
+2. `targetZoneId` ≠ this zone's `ZoneID` → connection closed with no message; no `BeginEntry`.
+3. Otherwise → `ZoneEntryAdmission.BeginEntry(ZoneEntryRequest(clientId, characterId, targetZoneId, token))`; CR-ZI-8 step 3 unchanged.
 
 ---
 
 ## Acceptance Criteria
 
-*Final wording to be confirmed at readiness, after the schema is in the GDD:*
-
-- [ ] `SessionHandshake` is decoded by the zone's inbound dispatch into `ZoneEntryRequest(clientId, characterId, targetZoneId, token)` and handed to `ZoneEntryAdmission.BeginEntry`; a malformed body or wrong length closes the connection with no message (CR-TOK-9)
-- [ ] The zone process builds one `SessionTokenStore`, shared by the `Admit` handler (`AdmitToken`) and the `GatewayZoneEntryTokenValidator`; the wiring default is replaced
-- [ ] On successful entry the networking session moves to `Connected` (`ConnectionStateMachine`) and the session registry holds the character name
-- [ ] AC-AUTH-21 (e): after entry, the session registry `CharacterName` and the player's `EntityState.characterName` equal the registered character name (the Story 013 check on the loaded record is replaced)
-- [ ] A handshake with a wrong token closes the connection with no message; a valid one for an admitted entry proceeds to `LoadCharacter`
-- [ ] TD-095 closed in `docs/tech-debt-register.md`
+- [ ] **AC-1 Registration**: `SessionHandshake` has a `MessageRoutingRegistry` row at `0xE136` (R-OD, client→server) and a connection-level descriptor with `MaxBodyBytes = 24` and `CarriesSenderEntityId = false`; `ZoneEntryAck` (0xE134) and `ZoneSnapshotRequest` (0xE131) keep their ids and behaviour.
+- [ ] **AC-2 Decode**: a 24-byte body is decoded into `ZoneEntryRequest(clientId, characterId, targetZoneId, token)` with the same values and handed to `ZoneEntryAdmission.BeginEntry` exactly once.
+- [ ] **AC-3 Malformed / wrong zone**: a body of 23 or 25 bytes, `characterId = 0`, an all-zero token, or a `targetZoneId` other than this zone's closes the connection with no message sent to the client, and `BeginEntry` is not called (CR-TOK-9).
+- [ ] **AC-4 Shared token store**: the zone process builds one `SessionTokenStore`, used by both the `Admit` handler (`AdmitToken`) and the `GatewayZoneEntryTokenValidator`; the composition no longer uses the wiring default validator (TD-095).
+- [ ] **AC-5 Token check**: for an admitted entry, a handshake with a wrong token (one byte changed) closes the connection with no message and `LoadCharacter` is not called; the same handshake with the admitted token calls `LoadCharacter` once for that `CharacterID`.
+- [ ] **AC-6 Connected**: after a successful entry, the networking session for that client is `Connected` (`ConnectionStateMachine`), and the session registry `CharacterName` and the player's `EntityState.characterName` both equal the registered character name (AC-AUTH-21 (e); replaces the Story 013 check on the loaded record).
+- [ ] **AC-7 Tech debt**: TD-095 marked resolved in `docs/tech-debt-register.md`; TD-099 (Story 011 AC-5 tested through the direct slot path) re-checked — closed if the admitted-entry → slot conversion is now tested through a real handshake.
 
 ---
 
 ## Implementation Notes
 
-*Derived from ADR-016 Decision 4 and TD-095:*
+*Derived from ADR-016 Decision 4, ADR-014 and TD-095:*
 
 - TD-095 files: `src/ServerLogic/ZoneServer/ZoneInstancingWiring.cs`, `ZoneServerComposition.cs`, `src/ServerLogic/Networking/ConnectionStateMachine/`.
+- New message type: `src/Foundation/Networking/WireProtocol/SessionHandshake.cs` (+ codec), following `ZoneEntryAck` / `ZoneSnapshotRequest` (connection-level, recorded in the receive callback).
 - `ConnectionMessageDescriptor` already notes `SessionHandshake` has no `SenderEntityID` after the envelope.
+- The zone's own `ZoneID` for the `targetZoneId` check comes from the composition (the id given at launch), not from the message.
+- Token comparison stays in `SessionTokenStore` with `CryptographicOperations.FixedTimeEquals`; the decode step never compares tokens.
 - Client-side sending of `SessionHandshake` is Authentication Story 017 / client work — this story is the zone side only; tests feed encoded bytes into the dispatch.
+
+**Performance**: no frame-budget impact expected — one 24-byte connection-level message per zone entry, decoded in the receive callback; `LoadCharacter` is already asynchronous (ADR-011).
 
 ---
 
 ## Out of Scope
 
-- `SessionReady` schema (rest of OQ-NC-SER-2)
+- `SessionReady` schema and id (rest of OQ-NC-SER-2)
+- Renaming the server→client "session handshake" wording in `networking-session.md` / `consumable-use-system.md` / `OnSessionHandshakeEmitted` (part of the `SessionReady` design)
 - Client sending the handshake (Authentication Story 017)
+- Token-path reconnect through a ghost session (`Reconnect` → `SessionHandshake` → `Reconnecting`) beyond what the existing validator already does
 
 ---
 
 ## QA Test Cases
 
-*To be completed at readiness once the schema is fixed. Minimum:*
-
-- **AC-1**: encoded 24-byte body → `BeginEntry` called with the same character, zone, token; 23-byte body → connection closed, no `BeginEntry`
-- **AC-4 (AC-AUTH-21e)**: registered character "Brakka" → after entry, registry name and `EntityState.characterName` = "Brakka"
-- **AC-5**: wrong token → closed, no message, no `LoadCharacter`
+- **AC-1**: registry lookup of `0xE136` → row with R-OD, client→server; descriptor `MaxBodyBytes 24`, `CarriesSenderEntityId false`; lookups of `0xE131` and `0xE134` unchanged.
+- **AC-2**: encode `(characterId 501, targetZoneId = this zone, token 0x01..0x10)` → `BeginEntry` called once with the same three values and the sending `clientId`.
+- **AC-3** (one case each): 23-byte body; 25-byte body; `characterId = 0`; all-zero token; `targetZoneId = this zone + 1` → connection closed, nothing sent to the client, `BeginEntry` call count 0.
+- **AC-4**: composition test — the `Admit` handler's `AdmitToken` and the entry validator see the same store (a token admitted through `Admit` validates through the validator); the default validator type is not in the built graph.
+- **AC-5**: `Admit(account, character 501, token T)`; handshake with T with byte 7 flipped → closed, no message, `LoadCharacter` count 0; handshake with T → `LoadCharacter` count 1 for character 501.
+- **AC-6**: registered character "Brakka" admitted and entered → session state `Connected`; registry `CharacterName == "Brakka"`; `EntityState.characterName == "Brakka"`.
+- **AC-7**: tech-debt register rows TD-095 (and TD-099 if covered) updated.
 
 ---
 
@@ -95,5 +108,5 @@ The rest of OQ-NC-SER-2 (the `SessionReady` S→C fields) is not part of this st
 
 ## Dependencies
 
-- Depends on: the `SessionHandshake` schema spec (`/quick-design`); Story 011
+- Depends on: Story 011 (Complete, 2026-11-11); `SessionHandshake` quick spec (written 2026-11-11, commit `600be7f`)
 - Unlocks: Authentication Story 017
