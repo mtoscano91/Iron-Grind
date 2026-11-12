@@ -4,7 +4,7 @@ namespace IronGrind.ServerLogic.ZoneServer
 {
     /// <summary>
     /// The command-line arguments of a zone process: <c>-zoneTemplate</c>, <c>-zoneId</c>, <c>-port</c> and
-    /// <c>-serverConfig</c> (startup S0, ADR-009 Amendment 1). Unknown flags (Unity's <c>-batchmode</c>,
+    /// <c>-serverConfig</c> (plus the optional <c>-tickLogPath</c>) (startup S0, ADR-009 Amendment 1). Unknown flags (Unity's <c>-batchmode</c>,
     /// <c>-logFile</c>, ...) are ignored. A value that starts with <c>-</c> counts as missing, so a flag is
     /// never taken as another flag's value. Parsing never throws and error text names the flag, never the value.
     /// </summary>
@@ -20,6 +20,7 @@ namespace IronGrind.ServerLogic.ZoneServer
         private const string FLAG_ZONE_ID = "-zoneId";
         private const string FLAG_PORT = "-port";
         private const string FLAG_SERVER_CONFIG = "-serverConfig";
+        private const string FLAG_TICK_LOG_PATH = "-tickLogPath";
 
         /// <summary>Zone template (scene) name.</summary>
         public string ZoneTemplate { get; private set; }
@@ -32,6 +33,9 @@ namespace IronGrind.ServerLogic.ZoneServer
 
         /// <summary>Path of the server config file.</summary>
         public string ServerConfigPath { get; private set; }
+
+        /// <summary>Optional <c>-tickLogPath</c> value: where the dev tick timestamp log is written; null when the flag is absent.</summary>
+        public string TickLogPath { get; private set; }
 
         /// <summary>Parses the command line.</summary>
         /// <param name="args">The raw arguments; null fails.</param>
@@ -51,6 +55,7 @@ namespace IronGrind.ServerLogic.ZoneServer
             string zoneIdText = null;
             string portText = null;
             string configPath = null;
+            string tickLogPath = null;
 
             for (int i = 0; i < args.Length; i++)
             {
@@ -69,6 +74,9 @@ namespace IronGrind.ServerLogic.ZoneServer
                     case FLAG_SERVER_CONFIG:
                         taken = TryTakeValue(args, ref i, ref configPath, out error);
                         break;
+                    case FLAG_TICK_LOG_PATH:
+                        taken = TryTakeValue(args, ref i, ref tickLogPath, out error);
+                        break;
                     default:
                         continue;
                 }
@@ -79,7 +87,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                 }
             }
 
-            return TryBuild(template, zoneIdText, portText, configPath, out result, out error);
+            return TryBuild(template, zoneIdText, portText, configPath, tickLogPath, out result, out error);
         }
 
         // Takes the value after the flag at args[i] into slot and advances i past it. Fails when the flag was
@@ -105,7 +113,7 @@ namespace IronGrind.ServerLogic.ZoneServer
         }
 
         private static bool TryBuild(
-            string template, string zoneIdText, string portText, string configPath,
+            string template, string zoneIdText, string portText, string configPath, string tickLogPath,
             out ZoneStartupArgs result, out string error)
         {
             result = null;
@@ -132,7 +140,8 @@ namespace IronGrind.ServerLogic.ZoneServer
                 ZoneTemplate = template,
                 ZoneId = zoneId,
                 Port = port,
-                ServerConfigPath = configPath
+                ServerConfigPath = configPath,
+                TickLogPath = tickLogPath
             };
             return true;
         }

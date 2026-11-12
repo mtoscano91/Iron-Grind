@@ -149,3 +149,7 @@ $RECYCLE.BIN/
 *.msm
 *.msp
 *.lnk
+
+# Local dev harness config (holds a dev account password) — Authentication Story 017
+/Assets/Scenes/DevHarness/ZoneEntryHarnessConfig.asset
+/Assets/Scenes/DevHarness/ZoneEntryHarnessConfig.asset.meta

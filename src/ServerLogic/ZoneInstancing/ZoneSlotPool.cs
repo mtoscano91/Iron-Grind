@@ -296,6 +296,77 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             return true;
         }
 
+        /// <summary>
+        /// Finds the player slot that plays <paramref name="character"/> (token-path reconnect). A linear scan over the roster
+        /// (at most <see cref="MaxPlayers"/>), no allocation.
+        /// </summary>
+        /// <param name="character">The character.</param>
+        /// <param name="id">The player's EntityID, or <see cref="EntityID.Invalid"/>.</param>
+        /// <returns>True when a slot holds the character.</returns>
+        public bool TryFindPlayerByCharacter(CharacterID character, out EntityID id)
+        {
+            for (int i = 0; i < _rosterList.Count; i++)
+            {
+                EntityID candidate = _rosterList[i];
+                if (_playerIndex.TryGetValue(candidate, out int index) && _playerCharacter[index] == character)
+                {
+                    id = candidate;
+                    return true;
+                }
+            }
+
+            id = EntityID.Invalid;
+            return false;
+        }
+
+        /// <summary>
+        /// Points an occupied slot at a new connection (token-path reconnect: the ghost's slot and EntityID stay). A slot in
+        /// <see cref="ZoneSessionState.Disconnected_SessionActive"/> becomes <see cref="ZoneSessionState.Connected"/>; any other
+        /// state is kept. Occupancy does not change and the listener is not notified.
+        /// </summary>
+        /// <param name="id">The player's EntityID.</param>
+        /// <param name="newClientId">The new connection id.</param>
+        /// <returns>False for an unknown EntityID.</returns>
+        public bool RebindClient(EntityID id, uint newClientId)
+        {
+            if (!_playerIndex.TryGetValue(id, out int index))
+            {
+                return false;
+            }
+
+            _playerClient[index] = newClientId;
+            if (_playerState[index] == ZoneSessionState.Disconnected_SessionActive)
+            {
+                _playerState[index] = ZoneSessionState.Connected;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Undoes <see cref="RebindClient"/> after a reconnect that did not finish: the slot points at <paramref name="ghostClientId"/>
+        /// again and a <see cref="ZoneSessionState.Connected"/> slot goes back to <see cref="ZoneSessionState.Disconnected_SessionActive"/>.
+        /// Idempotent. Occupancy does not change and the listener is not notified.
+        /// </summary>
+        /// <param name="id">The player's EntityID.</param>
+        /// <param name="ghostClientId">The ghost's previous connection id.</param>
+        /// <returns>False for an unknown EntityID.</returns>
+        public bool RevertToGhost(EntityID id, uint ghostClientId)
+        {
+            if (!_playerIndex.TryGetValue(id, out int index))
+            {
+                return false;
+            }
+
+            _playerClient[index] = ghostClientId;
+            if (_playerState[index] == ZoneSessionState.Connected)
+            {
+                _playerState[index] = ZoneSessionState.Disconnected_SessionActive;
+            }
+
+            return true;
+        }
+
         /// <summary>Looks up the slot index of an occupied player.</summary>
         /// <param name="id">The player's EntityID.</param>
         /// <param name="slot">The slot index, or 0 when unknown.</param>

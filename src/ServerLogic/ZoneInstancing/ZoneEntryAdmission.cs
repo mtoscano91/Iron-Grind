@@ -92,6 +92,9 @@ namespace IronGrind.ServerLogic.ZoneInstancing
 
         private const string LOG_PREFIX = "[ZoneEntryAdmission]";
 
+        // Upper bound of the removed-connection record; a ghost that never reconnects leaves its id behind, so it is cleared when reached.
+        private const int MAX_TRACKED_REMOVED_CLIENTS = 1024;
+
         private sealed class PendingEntry
         {
             public bool Dropped;
@@ -121,6 +124,11 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         private readonly ZoneEntryReclamation _reclamation;
         private readonly IServerTickSource _ticks;
         private IZoneEntryReservationSink _reservationSink;
+        private IZoneReconnectSessionSink _reconnectSession;
+        private IZoneReconnectContinuation _reconnectContinuation;
+        private readonly HashSet<uint> _rejectedWarned = new HashSet<uint>();
+        // Connections the transport already removed that held a character (reconnect liveness; see RemoveClient).
+        private readonly HashSet<uint> _removedClients = new HashSet<uint>();
         private readonly IZoneEntrySessionSink _sessionSink;
         private readonly HashSet<uint> _inZoneWarned = new HashSet<uint>();
         private readonly Dictionary<CharacterID, PendingEntry> _pendingByCharacter = new Dictionary<CharacterID, PendingEntry>();
@@ -186,6 +194,28 @@ namespace IronGrind.ServerLogic.ZoneInstancing
                 throw new InvalidOperationException($"{LOG_PREFIX} the reservation sink is already set.");
 
             _reservationSink = sink;
+        }
+
+        /// <summary>
+        /// Registers the token-path reconnect seams (CR-TOK-9, CR-ZI-8 token path). Set once at construction time; without them a
+        /// reconnect handshake is closed silently like any rejected token.
+        /// </summary>
+        /// <param name="session">The session transitions (Reconnecting, CR-NET-6.4, Connected).</param>
+        /// <param name="continuation">Sends the snapshot and <c>SessionReady</c> to the reconnecting client.</param>
+        /// <exception cref="ArgumentNullException">An argument is null.</exception>
+        /// <exception cref="InvalidOperationException">The seams are already set.</exception>
+        public void SetReconnectSeams(IZoneReconnectSessionSink session, IZoneReconnectContinuation continuation)
+        {
+            if (session == null)
+                throw new ArgumentNullException(nameof(session));
+            if (continuation == null)
+                throw new ArgumentNullException(nameof(continuation));
+            if (_reconnectSession != null)
+                throw new InvalidOperationException($"{LOG_PREFIX} the reconnect seams are already set.");
+
+            _reconnectSession = session;
+            _reconnectContinuation = continuation;
+            _reclamation?.SetReconnectSessionSink(session);
         }
 
         /// <summary>
@@ -265,7 +295,24 @@ namespace IronGrind.ServerLogic.ZoneInstancing
 
             if (!_validator.TryValidate(in request, out AccountID account))
             {
-                // CR-ZI-8 step 3: silent close, no reply and no state change.
+                // CR-TOK-9 token path: a ghost session of the character with a matching token reconnects (no load).
+                if (_reconnectSession != null && _reconnectContinuation != null
+                    && _validator is IZoneReconnectTokenValidator reconnectValidator
+                    && reconnectValidator.TryValidateReconnect(in request, out AccountID ghostAccount))
+                {
+                    BeginReconnect(in request, ghostAccount);
+                    return;
+                }
+
+                // CR-ZI-8 step 3 / CR-TOK-9: silent close, no reply, no state change, not counted. The warning is dev-only and logged
+                // once per connection (the set is bounded by connection removal), so bad handshakes cannot flood the log.
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                if (_rejectedWarned.Add(clientId))
+                {
+                    Debug.LogWarning($"{LOG_PREFIX} EntryTokenRejected: client {clientId} presented no valid token for {request.Character}; connection closed.");
+                }
+#endif
+
                 _disconnector.DisconnectClient(clientId);
                 return;
             }
@@ -307,6 +354,12 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             var character = request.Character;
 
             Task<CharacterLoadResult> load;
+            // Dev evidence (Authentication Story 017, AC-AUTH-21): one line per LoadCharacter started.
+            if (IronGrind.ServerLogic.ZoneServer.DevEvidenceLog.Enabled)
+            {
+                IronGrind.ServerLogic.ZoneServer.DevEvidenceLog.Write(LOG_PREFIX, $"LoadCharacter start client {clientId} {character}");
+            }
+
             try
             {
                 load = _persistence.LoadCharacter(character, account, cts.Token);
@@ -338,6 +391,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         /// <inheritdoc/>
         public void AddClient(uint clientId)
         {
+            _removedClients.Remove(clientId); // a reused connection id is live again
             // Nothing to prepare: a handshake after AddClient is a fresh entry because RemoveClient cleared the table.
         }
 
@@ -347,10 +401,137 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             _duplicateWarned.Remove(clientId);
             _admittedWarned.Remove(clientId);
             _inZoneWarned.Remove(clientId);
+            _rejectedWarned.Remove(clientId);
+            if (_directory.TryGetCharacterId(clientId, out _))
+            {
+                // A connection that played a character may be a ghost's old connection later: remember that it is gone.
+                if (_removedClients.Count >= MAX_TRACKED_REMOVED_CLIENTS)
+                {
+                    _removedClients.Clear();
+                }
+
+                _removedClients.Add(clientId);
+            }
+
             _reclamation?.NoteConnectionRemoved(clientId); // Story 011 case (c): recorded here, reclaimed on the next tick.
             if (_pending.TryGetValue(clientId, out PendingEntry entry))
             {
                 DropPending(entry, TRIGGER_CLIENT_DROPPED);
+            }
+        }
+
+        // Token-path reconnect (CR-TOK-9, CR-ZI-8 token path): no LoadCharacter; the ghost's slot and EntityID are reused.
+        private void BeginReconnect(in ZoneEntryRequest request, AccountID account)
+        {
+            uint clientId = request.ClientId;
+            if (!TryLocateGhostSlot(in request, account, out EntityID entity, out byte slotIndex, out uint oldClient))
+            {
+                return;
+            }
+
+            uint tick = _ticks?.ServerTickNumber ?? 0u;
+            if (!_reconnectSession.TryBeginReconnect(account, tick))
+            {
+                CloseClient(clientId); // session end in flight or no longer a ghost: nothing changed
+                return;
+            }
+
+            // From here the session is Reconnecting, which has no TTL: every failure must put it back to the ghost.
+            bool completed = false;
+            try
+            {
+                completed = RebindAndComplete(in request, account, entity, slotIndex, oldClient, tick);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"{LOG_PREFIX} ReconnectFailed: reconnect of {request.Character} on client {clientId} threw ({ex.GetType().Name}: {ex.Message}); reverting to ghost.");
+            }
+
+            if (!completed)
+            {
+                RevertReconnect(account, entity, oldClient, clientId);
+            }
+        }
+
+        // Lifecycle check and slot lookup. Replies and closes the new connection itself when the reconnect cannot start.
+        private bool TryLocateGhostSlot(in ZoneEntryRequest request, AccountID account, out EntityID entity, out byte slotIndex, out uint oldClient)
+        {
+            uint clientId = request.ClientId;
+            slotIndex = 0;
+            oldClient = 0u;
+            if (!_lifecycle.AcceptsPlayers)
+            {
+                // Step 3: a match while the zone is not Active -> ZoneDoesNotExist, then close.
+                Reply(clientId, request.TargetZone, JoinRejectedReason.ZoneDoesNotExist, 0);
+                CloseClient(clientId);
+                entity = EntityID.Invalid;
+                return false;
+            }
+
+            if (!_pool.TryFindPlayerByCharacter(request.Character, out entity)
+                || !_pool.TryGetPlayer(entity, out ZonePlayerSlot slot) || !(slot.Account == account)
+                || !_pool.TryGetPlayerSlot(entity, out slotIndex))
+            {
+                Debug.LogWarning($"{LOG_PREFIX} ReconnectWithoutSlot: ghost session of {request.Character} holds no matching slot; client {clientId} closed.");
+                CloseClient(clientId);
+                return false;
+            }
+
+            oldClient = slot.ClientId;
+            return true;
+        }
+
+        // Re-keys everything the old connection owned, completes the session and hands over to the continuation. False = failed.
+        // Order: CompleteReconnect (Reconnecting -> Connected) runs BEFORE the continuation so SessionReady never precedes Connected.
+        // A continuation failure after Connected is undone by RevertReconnect (the session machine reverts Connected -> ghost too).
+        private bool RebindAndComplete(in ZoneEntryRequest request, AccountID account, EntityID entity, byte slotIndex, uint oldClient, uint tick)
+        {
+            uint clientId = request.ClientId;
+            // The old transport connection is closed only while it is still live; one the transport already removed is skipped
+            // (DisconnectClient on a gone id logs an error and can leave a pending-disconnect entry).
+            if (oldClient != clientId && !_removedClients.Remove(oldClient))
+            {
+                CloseClient(oldClient);
+            }
+
+            _pool.RebindClient(entity, clientId);
+            _reclamation?.RebindClient(oldClient, clientId, entity);
+            if (IronGrind.ServerLogic.ZoneServer.DevEvidenceLog.Enabled)
+            {
+                IronGrind.ServerLogic.ZoneServer.DevEvidenceLog.Write(LOG_PREFIX, $"Reconnect client {clientId} {request.Character} -> {entity} (was client {oldClient})");
+            }
+
+            _reconnectSession.CompleteReconnect(account, request.Character, entity, tick);
+            return _reconnectContinuation.OnPlayerReconnected(clientId, slotIndex, entity);
+        }
+
+        // Puts the ghost back as it was (slot, tracking, session with its original expiry) and closes the new connection.
+        private void RevertReconnect(AccountID account, EntityID entity, uint oldClient, uint newClient)
+        {
+            try
+            {
+                _reclamation?.ForgetEntering(entity);
+                _pool.RevertToGhost(entity, oldClient);
+                _reconnectSession.RevertToGhost(account);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"{LOG_PREFIX} reverting the failed reconnect of {entity} to ghost failed ({ex.GetType().Name}: {ex.Message}).");
+            }
+
+            CloseClient(newClient);
+        }
+
+        // Closes a transport connection; a shut-down transport throws and is logged, not rethrown.
+        private void CloseClient(uint clientId)
+        {
+            try
+            {
+                _disconnector.DisconnectClient(clientId);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"{LOG_PREFIX} closing client {clientId} failed ({ex.GetType().Name}: {ex.Message}).");
             }
         }
 
@@ -540,6 +721,11 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             }
 
             _reclamation?.RegisterEntering(clientId, entityId); // Story 011: the slot is entering until its ZoneEntryAck.
+            if (IronGrind.ServerLogic.ZoneServer.DevEvidenceLog.Enabled)
+            {
+                IronGrind.ServerLogic.ZoneServer.DevEvidenceLog.Write(LOG_PREFIX, $"LoadCharacter ok client {clientId} {character} -> {entityId}");
+            }
+
             ReportAdmitted(entry, character); // Gateway Story 012: the session is Connected once the slot exists.
             _continuation.OnPlayerAdmitted(clientId, slot, entityId);
         }

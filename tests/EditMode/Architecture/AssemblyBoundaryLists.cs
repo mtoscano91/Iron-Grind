@@ -25,6 +25,7 @@ namespace IronGrind.Tests.EditMode.Architecture
             "IronGrind.Currency.CharacterID",      // consumer (planned): client session and gold display (wire id)
             "IronGrind.CharacterPersistence.ZoneID",    // consumer (planned): client session and zone transition messages (wire id)
             "IronGrind.Currency.GoldTransactionReason", // consumer (planned): gold sync event display (wire enum)
+            "IronGrind.Networking.NgoSharedSettings",   // consumer: ZoneEntryDevHarness client NetworkConfig (must equal the zone's; Story 017)
 
             // Authentication HTTPS bodies and their codec (src/Foundation/Shared/Auth/, ADR-016 Decision 2 and 6;
             // Authentication Story 002). Consumer of every entry below (planned): client auth client, Story 015.

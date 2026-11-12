@@ -824,6 +824,40 @@ namespace IronGrind.Networking
         }
 
         /// <summary>
+        /// Returns a session whose zone-side reconnect did not finish (or whose rebound slot never acked) to
+        /// <see cref="SessionState.Disconnected_SessionActive"/> (token-path reconnect failure, Authentication Story 017). Accepts
+        /// <see cref="SessionState.Reconnecting"/> and <see cref="SessionState.Connected"/> (the latter when the failure happened after
+        /// <see cref="CompleteReAuthSuccess"/>). In-place mutation: <c>SessionExpiryTick</c> (written by <see cref="EnterReconnecting"/>
+        /// from the original TTL) and <c>ReauthFailureCount</c> are untouched, so the normal TTL / session-end path still ends the
+        /// session. Not a failed re-auth attempt: the failure counter is not incremented.
+        /// </summary>
+        /// <param name="accountId">The account to revert.</param>
+        /// <param name="observer">Optional test/dev-build observer.</param>
+        /// <returns>False when the account is unknown or in any other state; nothing changed.</returns>
+        public bool RevertToGhost(uint accountId
+#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
+            , INetworkTestObserver observer = null
+#endif
+            )
+        {
+            if (!_sessions.TryGetValue(accountId, out AccountSessionRecord record)
+                || (record.State != SessionState.Reconnecting && record.State != SessionState.Connected))
+            {
+                return false;
+            }
+
+#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
+            SessionState from = record.State;
+#endif
+            record.State = SessionState.Disconnected_SessionActive;
+
+#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
+            observer?.OnSessionStateTransitioned(accountId, from, SessionState.Disconnected_SessionActive, "ReconnectReverted");
+#endif
+            return true;
+        }
+
+        /// <summary>
         /// Completes a successful reconnect (ST-NET-1, <c>Reconnecting → Connected</c>): runs the full
         /// CR-NET-6.4 reconnect sequence steps 2–4 (step 1, re-authentication, is assumed to have
         /// already succeeded by the time this is called — the caller-driven-external-event pattern
@@ -1306,6 +1340,33 @@ namespace IronGrind.Networking
             }
 
             characterId = default;
+            return false;
+        }
+
+        /// <summary>
+        /// Reverse of <see cref="TryGetCharacterId"/>: finds the registered account whose session plays
+        /// <paramref name="characterId"/> (token-path reconnect, <c>networking-session-token.md</c> CR-TOK-9: the zone resolves the
+        /// account from the ghost session). Read-only, no allocation; a linear scan over the zone's few sessions. A character id of
+        /// 0 (a <see cref="SessionState.Connecting"/> session, not yet known) never matches.
+        /// </summary>
+        /// <param name="characterId">The character to look up; 0 never matches.</param>
+        /// <param name="accountId">The owning account, or 0 when none.</param>
+        /// <returns><see langword="true"/> when a registered session holds <paramref name="characterId"/>.</returns>
+        public bool TryGetAccountByCharacter(uint characterId, out uint accountId)
+        {
+            if (characterId != 0u)
+            {
+                foreach (KeyValuePair<uint, AccountSessionRecord> pair in _sessions)
+                {
+                    if (pair.Value.CharacterId == characterId)
+                    {
+                        accountId = pair.Key;
+                        return true;
+                    }
+                }
+            }
+
+            accountId = 0u;
             return false;
         }
 

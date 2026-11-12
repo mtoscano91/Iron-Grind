@@ -88,6 +88,8 @@ namespace IronGrind.ServerLogic.ZoneServer
 
 #if DEVELOPMENT_BUILD || UNITY_EDITOR
             _composition.LogTeardownSteps = true;
+            _composition.TickLogWriterFactory = ZoneServerComposition.OpenTickLogFile;
+            DevEvidenceLog.Enabled = true; // Story 017 Admit / LoadCharacter evidence lines; reset in OnDestroy
 #endif
         }
 
@@ -142,6 +144,7 @@ namespace IronGrind.ServerLogic.ZoneServer
             Debug.Log("[ZoneServer] host OnDestroy: NetworkManager alive=" + (_network != null && _network.IsAlive));
 #endif
             _composition?.TeardownNow();
+            DevEvidenceLog.Enabled = false;
         }
 
 #if DEVELOPMENT_BUILD || UNITY_EDITOR

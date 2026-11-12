@@ -327,6 +327,12 @@ namespace IronGrind.Tests.EditMode.Networking
     [TestFixture]
     public sealed class ZoneServerCompositionStartupTests
     {
+        [SetUp]
+        public void GuardDevEvidenceLogDisabled()
+        {
+            DevEvidenceLog_Tests.AssertDisabled();
+        }
+
         private static readonly string[] FULL_STARTUP =
         {
             "S0:ReadConfig", "S1:SubscribeQuit", "S1:KeepAcrossSceneLoads", "S1:PrepareObject", "S2:StaticData",

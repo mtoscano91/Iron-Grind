@@ -73,12 +73,16 @@ namespace IronGrind.ServerLogic.ZoneServer
             {
                 _manager = _object.AddComponent<NetworkManager>();
                 var transport = _object.AddComponent<UnityTransport>();
+                // Hash-relevant fields come from NgoSharedSettings so the zone and the client cannot drift (Story 017).
+                // The tick rate is applied again by Configure from the same constant.
                 _manager.NetworkConfig = new NetworkConfig
                 {
                     NetworkTransport = transport,
                     PlayerPrefab = null,
-                    ConnectionApproval = false,
-                    EnableSceneManagement = false,
+                    ConnectionApproval = NgoSharedSettings.CONNECTION_APPROVAL,
+                    EnableSceneManagement = NgoSharedSettings.ENABLE_SCENE_MANAGEMENT,
+                    TickRate = NgoSharedSettings.TICK_RATE,
+                    ForceSamePrefabs = NgoSharedSettings.FORCE_SAME_PREFABS,
                 };
             }
             catch

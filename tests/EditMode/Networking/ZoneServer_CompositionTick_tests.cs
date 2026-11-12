@@ -16,6 +16,12 @@ namespace IronGrind.Tests.EditMode.Networking
     [TestFixture]
     public sealed class ZoneServerCompositionTickTests
     {
+        [SetUp]
+        public void GuardDevEvidenceLogDisabled()
+        {
+            DevEvidenceLog_Tests.AssertDisabled();
+        }
+
         private static string HostPath()
         {
             return Path.Combine(Directory.GetParent(Application.dataPath).FullName,

@@ -130,6 +130,38 @@ namespace IronGrind.Tests.EditMode.Networking
         }
 
         [Test]
+        public void test_args_parse_tick_log_path_absent_is_null()
+        {
+            bool ok = ZoneStartupArgs.Parse(VALID_ARGS, out ZoneStartupArgs args, out string error);
+
+            Assert.IsTrue(ok, error);
+            Assert.IsNull(args.TickLogPath);
+        }
+
+        [Test]
+        public void test_args_parse_tick_log_path_is_read()
+        {
+            var list = new System.Collections.Generic.List<string>(VALID_ARGS) { "-tickLogPath", "ticks.csv" };
+
+            bool ok = ZoneStartupArgs.Parse(list.ToArray(), out ZoneStartupArgs args, out string error);
+
+            Assert.IsTrue(ok, error);
+            Assert.AreEqual("ticks.csv", args.TickLogPath);
+        }
+
+        [Test]
+        public void test_args_parse_tick_log_path_without_value_fails_naming_the_flag()
+        {
+            var list = new System.Collections.Generic.List<string>(VALID_ARGS) { "-tickLogPath" };
+
+            bool ok = ZoneStartupArgs.Parse(list.ToArray(), out ZoneStartupArgs args, out string error);
+
+            Assert.IsFalse(ok);
+            Assert.IsNull(args);
+            StringAssert.Contains("-tickLogPath", error);
+        }
+
+        [Test]
         public void test_args_parse_null_or_empty_fails_without_throwing()
         {
             Assert.IsFalse(ZoneStartupArgs.Parse(null, out _, out string nullError));

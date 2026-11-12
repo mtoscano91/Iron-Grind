@@ -4,6 +4,7 @@ using System.Text;
 using IronGrind.Authentication;
 using IronGrind.Client.Auth;
 using IronGrind.Client.Session;
+using IronGrind.Networking;
 using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
 using UnityEngine;
@@ -23,13 +24,9 @@ namespace IronGrind.DevHarness.Session
     /// </remarks>
     public sealed class ZoneEntryDevHarness : MonoBehaviour
     {
-        private const string ARG_USER = "-zeUser";
-        private const string ARG_PASSWORD = "-zePassword";
-        private const string ARG_CHARACTER = "-zeCharacter";
-        private const string ARG_GATEWAY = "-zeGateway";
-        private const string ARG_ZONE_HOST = "-zeZoneHost";
-        private const string ARG_LOAD_DRIVER = "-zeLoadDriver";
         private const string LOG_PREFIX = "[ZoneEntry] ";
+        // 30 fps: enough to drive Update (heartbeat 3 s, NGO at 20 Hz) while leaving CPU to the zone on one machine.
+        private const int HARNESS_FRAME_RATE = 30;
         private const string TIMESTAMP_FORMAT = "yyyy-MM-ddTHH:mm:ss.fffZ";
         private const int LETTER_COUNT = 26;
         private const char FIRST_LETTER = 'a';
@@ -61,6 +58,74 @@ namespace IronGrind.DevHarness.Session
         private ClientZoneSession _session;
         private LoginLoadDriver _driver;
         private GameObject _networkGo;
+        private readonly System.Collections.Generic.List<string> _nameLines = new System.Collections.Generic.List<string>();
+
+        private bool _overridesApplied;
+        private bool _previousRunInBackground;
+        private int _previousVSyncCount;
+        private int _previousTargetFrameRate;
+
+        /// <summary>
+        /// The client <c>NetworkConfig</c>: built only from <see cref="NgoSharedSettings"/> (plus the transport and the
+        /// scene-less, prefab-less shape), so it matches the zone's config hash. Public for the parity test.
+        /// </summary>
+        /// <param name="transport">The transport the manager uses (null in a test that only reads the values).</param>
+        /// <returns>The config.</returns>
+        public static NetworkConfig CreateNetworkConfig(NetworkTransport transport)
+        {
+            return new NetworkConfig
+            {
+                NetworkTransport = transport,
+                PlayerPrefab = null,
+                ConnectionApproval = NgoSharedSettings.CONNECTION_APPROVAL,
+                EnableSceneManagement = NgoSharedSettings.ENABLE_SCENE_MANAGEMENT,
+                TickRate = NgoSharedSettings.TICK_RATE,
+                // ForceSamePrefabs is part of the config hash: setting it on one side alone fails every connect.
+                ForceSamePrefabs = NgoSharedSettings.FORCE_SAME_PREFABS,
+            };
+        }
+
+        private void OnEnable()
+        {
+            ApplyOverrides();
+        }
+
+        private void OnDisable()
+        {
+            RestoreOverrides();
+        }
+
+        // Several harness windows run at once (Story 017): an unfocused player must keep running (heartbeats, load
+        // driver) instead of pausing, and an uncapped frame rate per window starves the zone of CPU on the same machine.
+        // The previous values come back on disable/destroy, so the Editor is not left in the harness's state.
+        private void ApplyOverrides()
+        {
+            if (_overridesApplied)
+            {
+                return;
+            }
+
+            _previousRunInBackground = Application.runInBackground;
+            _previousVSyncCount = QualitySettings.vSyncCount;
+            _previousTargetFrameRate = Application.targetFrameRate;
+            _overridesApplied = true;
+            Application.runInBackground = true;
+            QualitySettings.vSyncCount = 0;
+            Application.targetFrameRate = HARNESS_FRAME_RATE;
+        }
+
+        private void RestoreOverrides()
+        {
+            if (!_overridesApplied)
+            {
+                return;
+            }
+
+            _overridesApplied = false;
+            Application.runInBackground = _previousRunInBackground;
+            QualitySettings.vSyncCount = _previousVSyncCount;
+            Application.targetFrameRate = _previousTargetFrameRate;
+        }
 
         private void Start()
         {
@@ -110,22 +175,51 @@ namespace IronGrind.DevHarness.Session
 
         private void OnDestroy()
         {
-            _session?.Leave();
+            if (_session != null)
+            {
+                // Unsubscribe first: Leave raises SessionEnded and the harness is going away.
+                _session.EntryFailed -= OnEntryFailed;
+                _session.SnapshotAssembled -= OnSnapshotAssembled;
+                _session.Entered -= OnEntered;
+                _session.SessionEnded -= OnSessionEnded;
+                _session.Leave();
+                _session = null;
+            }
+
             if (_networkGo != null)
             {
                 Destroy(_networkGo);
             }
+
+            RestoreOverrides();
+        }
+
+        private void OnEntryFailed(ZoneEntryFailureReason reason)
+        {
+            Milestone("entry failed reason=" + reason);
+        }
+
+        private void OnEntered()
+        {
+            Milestone("entered");
+        }
+
+        private void OnSessionEnded()
+        {
+            Milestone("session ended");
         }
 
         private void ResolveSettings()
         {
-            string[] args = Environment.GetCommandLineArgs();
-            _username = GetArg(args, ARG_USER) ?? _config.Username;
-            _password = GetArg(args, ARG_PASSWORD) ?? _config.Password;
-            _characterName = GetArg(args, ARG_CHARACTER) ?? _config.CharacterName;
-            _gatewayUrl = GetArg(args, ARG_GATEWAY) ?? _config.GatewayBaseUrl;
-            _zoneHostOverride = GetArg(args, ARG_ZONE_HOST) ?? _config.ZoneHostOverride;
-            _loadDriver = _loadDriverMode || Array.IndexOf(args, ARG_LOAD_DRIVER) >= 0;
+            ZoneEntryHarnessSettings settings = ZoneEntryHarnessSettings.Resolve(
+                Environment.GetCommandLineArgs(), _config.Username, _config.Password, _config.CharacterName,
+                _config.GatewayBaseUrl, _config.ZoneHostOverride, _loadDriverMode);
+            _username = settings.Username;
+            _password = settings.Password;
+            _characterName = settings.CharacterName;
+            _gatewayUrl = settings.GatewayUrl;
+            _zoneHostOverride = settings.ZoneHostOverride;
+            _loadDriver = settings.LoadDriver;
         }
 
         private void BuildAuth()
@@ -188,14 +282,25 @@ namespace IronGrind.DevHarness.Session
 
                 NgoZoneClientTransport transport = CreateNetworkObjects();
                 _session = new ClientZoneSession(sessionConfig, _login, transport, _clock, Milestone);
-                _session.EntryFailed += reason => Milestone("entry failed reason=" + reason);
-                _session.Entered += () => Milestone("entered");
-                _session.SessionEnded += () => Milestone("session ended");
+                _session.EntryFailed += OnEntryFailed;
+                _session.SnapshotAssembled += OnSnapshotAssembled;
+                _session.Entered += OnEntered;
+                _session.SessionEnded += OnSessionEnded;
                 _session.Begin(_username, _password);
             }
             catch (Exception e)
             {
                 Milestone("session setup failed: " + e.GetType().Name + ": " + e.Message);
+            }
+        }
+
+        private void OnSnapshotAssembled(byte[] buffer, int length)
+        {
+            _nameLines.Clear();
+            SnapshotNameLog.FormatPlayerNames(new ReadOnlySpan<byte>(buffer, 0, length), _nameLines);
+            for (int i = 0; i < _nameLines.Count; i++)
+            {
+                Milestone(_nameLines[i]);
             }
         }
 
@@ -213,17 +318,8 @@ namespace IronGrind.DevHarness.Session
             _networkGo.SetActive(false);
             var manager = _networkGo.AddComponent<NetworkManager>();
             var unityTransport = _networkGo.AddComponent<UnityTransport>();
-            manager.NetworkConfig = new NetworkConfig
-            {
-                NetworkTransport = unityTransport,
-                PlayerPrefab = null,
-                ConnectionApproval = false,
-                EnableSceneManagement = false,
-                // Must equal the zone server's NetworkConfig (NgoZoneNetwork): NGO compares a config hash on connect.
-                TickRate = (uint)IronGrind.Networking.ServerTickLoop.TICK_RATE_HZ,
-                // No prefabs are spawned; keep prefab lists out of the config hash comparison (insurance only).
-                ForceSamePrefabs = false,
-            };
+            // Must equal the zone server's NetworkConfig (NgoZoneNetwork): NGO compares a config hash on connect.
+            manager.NetworkConfig = CreateNetworkConfig(unityTransport);
             var transport = _networkGo.AddComponent<NgoZoneClientTransport>();
             _networkGo.SetActive(true);
             transport.Init(manager, unityTransport);
@@ -235,18 +331,6 @@ namespace IronGrind.DevHarness.Session
             Debug.Log(LOG_PREFIX + DateTime.UtcNow.ToString(TIMESTAMP_FORMAT, CultureInfo.InvariantCulture) + " " + line);
         }
 
-        private static string GetArg(string[] args, string name)
-        {
-            for (int i = 0; i < args.Length - 1; i++)
-            {
-                if (args[i] == name)
-                {
-                    return args[i + 1];
-                }
-            }
-
-            return null;
-        }
 
         /// <summary>Letters only (a, b ... z, ba ...) so the character name stays free of digits.</summary>
         private static string LettersFor(int index)

@@ -725,5 +725,82 @@ namespace IronGrind.Tests.EditMode.Networking
                 stateMachine.RecordFailedReAuthAttempt(AccountA, reauthFailureLimit: 3,
                     persistFinalCharacterState: _ => { }, observer));
         }
+
+        // =========================================================================================
+        // RevertToGhost (token-path reconnect failure) and TryGetAccountByCharacter.
+        // =========================================================================================
+
+        [Test]
+        public void RevertToGhost_ReconnectingAccount_ReturnsToGhostKeepingExpiryAndFailureCount()
+        {
+            var observer = new NetworkTestObserver();
+            ConnectionStateMachine stateMachine = CreateReconnectingStateMachine(observer);
+            stateMachine.TryGetReauthFailureCount(AccountA, out int failuresBefore);
+
+            bool reverted = stateMachine.RevertToGhost(AccountA);
+
+            Assert.IsTrue(reverted);
+            Assert.IsTrue(stateMachine.TryGetSessionState(AccountA, out SessionState state));
+            Assert.AreEqual(SessionState.Disconnected_SessionActive, state);
+            Assert.IsTrue(stateMachine.TryGetSessionExpiryTick(AccountA, out uint expiry));
+            Assert.AreEqual(SessionExpiryTick, expiry);
+            stateMachine.TryGetReauthFailureCount(AccountA, out int failuresAfter);
+            Assert.AreEqual(failuresBefore, failuresAfter, "a reverted reconnect is not a failed re-auth attempt");
+        }
+
+        [Test]
+        public void RevertToGhost_ConnectedAfterReAuthSuccess_ReturnsToGhostKeepingExpiry()
+        {
+            var observer = new NetworkTestObserver();
+            ConnectionStateMachine stateMachine = CreateReconnectingStateMachine(observer);
+            stateMachine.CompleteReAuthSuccess(AccountA, 5u, CreateCurrencySystemWithBalance(10u),
+                queryGoldDebitedPurchases: _ => Array.Empty<PendingPurchaseRecord>(),
+                markPurchaseRefunded: _ => { },
+                queryRespecReservationStatus: _ => RespecReservationStatus.NoActiveReservation,
+                representRespecPhase2: _ => { },
+                releaseRespecReservationAndNotify: _ => { },
+                handshakeData: DefaultHandshakeData,
+                observer);
+
+            Assert.IsTrue(stateMachine.RevertToGhost(AccountA));
+
+            Assert.IsTrue(stateMachine.TryGetSessionState(AccountA, out SessionState state));
+            Assert.AreEqual(SessionState.Disconnected_SessionActive, state);
+            Assert.IsTrue(stateMachine.TryGetSessionExpiryTick(AccountA, out uint expiry));
+            Assert.AreEqual(SessionExpiryTick, expiry);
+        }
+
+        [Test]
+        public void RevertToGhost_AlreadyGhostOrUnknownAccount_ReturnsFalseAndChangesNothing()
+        {
+            var observer = new NetworkTestObserver();
+            ConnectionStateMachine stateMachine = CreateDisconnectedSessionActiveStateMachine(observer);
+
+            Assert.IsFalse(stateMachine.RevertToGhost(AccountA));
+            Assert.IsFalse(stateMachine.RevertToGhost(AccountA + 100u));
+            Assert.IsTrue(stateMachine.TryGetSessionState(AccountA, out SessionState state));
+            Assert.AreEqual(SessionState.Disconnected_SessionActive, state);
+        }
+
+        [Test]
+        public void TryGetAccountByCharacter_RegisteredCharacter_ReturnsItsAccount()
+        {
+            var observer = new NetworkTestObserver();
+            ConnectionStateMachine stateMachine = CreateDisconnectedSessionActiveStateMachine(observer);
+
+            Assert.IsTrue(stateMachine.TryGetAccountByCharacter(CharacterA, out uint account));
+            Assert.AreEqual(AccountA, account);
+        }
+
+        [Test]
+        public void TryGetAccountByCharacter_UnknownOrZeroCharacter_ReturnsFalse()
+        {
+            var observer = new NetworkTestObserver();
+            ConnectionStateMachine stateMachine = CreateDisconnectedSessionActiveStateMachine(observer);
+
+            Assert.IsFalse(stateMachine.TryGetAccountByCharacter(CharacterA + 1u, out uint unknownAccount));
+            Assert.AreEqual(0u, unknownAccount);
+            Assert.IsFalse(stateMachine.TryGetAccountByCharacter(0u, out _));
+        }
     }
 }

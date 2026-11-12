@@ -992,5 +992,98 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
 
             Assert.AreEqual(1u, a.RawValue);
         }
+
+        // ----- Token-path reconnect: find by character, rebind, revert (Authentication Story 017) ------
+
+        private const uint GHOST_CLIENT = 41u;
+        private const uint NEW_CLIENT = 42u;
+
+        private EntityID AllocForClient(ZoneSlotPool pool, uint character, uint client)
+        {
+            Assert.IsTrue(pool.TryAllocatePlayer(Zone, new CharacterID(character), new AccountID(character + 5000u), client, out _, out EntityID id));
+            return id;
+        }
+
+        [Test]
+        public void TryFindPlayerByCharacter_KnownCharacter_ReturnsItsEntity()
+        {
+            ZoneSlotPool pool = Create();
+            AllocForClient(pool, 1u, 10u);
+            EntityID second = AllocForClient(pool, 2u, 11u);
+
+            Assert.IsTrue(pool.TryFindPlayerByCharacter(new CharacterID(2u), out EntityID found));
+            Assert.AreEqual(second, found);
+        }
+
+        [Test]
+        public void TryFindPlayerByCharacter_UnknownCharacter_ReturnsFalseAndInvalid()
+        {
+            ZoneSlotPool pool = Create();
+            AllocForClient(pool, 1u, 10u);
+
+            Assert.IsFalse(pool.TryFindPlayerByCharacter(new CharacterID(99u), out EntityID found));
+            Assert.AreEqual(EntityID.Invalid, found);
+        }
+
+        [Test]
+        public void RebindClient_PointsTheSlotAtTheNewConnectionWithoutChangingOccupancy()
+        {
+            ZoneSlotPool pool = Create();
+            EntityID id = AllocForClient(pool, 1u, GHOST_CLIENT);
+            int changes = _listener.Changes.Count;
+
+            Assert.IsTrue(pool.RebindClient(id, NEW_CLIENT));
+
+            Assert.IsTrue(pool.TryGetPlayer(id, out ZonePlayerSlot slot));
+            Assert.AreEqual(NEW_CLIENT, slot.ClientId);
+            Assert.AreEqual(1, pool.OccupiedPlayerCount);
+            Assert.AreEqual(changes, _listener.Changes.Count, "the listener is not notified");
+        }
+
+        [Test]
+        public void RebindClient_GhostSlotBecomesConnected()
+        {
+            ZoneSlotPool pool = Create();
+            EntityID id = AllocForClient(pool, 1u, GHOST_CLIENT);
+            pool.SetSessionState(id, ZoneSessionState.Disconnected_SessionActive);
+
+            pool.RebindClient(id, NEW_CLIENT);
+
+            Assert.IsTrue(pool.TryGetPlayer(id, out ZonePlayerSlot slot));
+            Assert.AreEqual(ZoneSessionState.Connected, slot.State);
+        }
+
+        [Test]
+        public void RebindClient_UnknownEntity_ReturnsFalse()
+        {
+            ZoneSlotPool pool = Create();
+
+            Assert.IsFalse(pool.RebindClient(new EntityID(999u), NEW_CLIENT));
+        }
+
+        [Test]
+        public void RevertToGhost_AfterRebind_RestoresTheGhostConnectionAndState()
+        {
+            ZoneSlotPool pool = Create();
+            EntityID id = AllocForClient(pool, 1u, GHOST_CLIENT);
+            pool.SetSessionState(id, ZoneSessionState.Disconnected_SessionActive);
+            pool.RebindClient(id, NEW_CLIENT);
+
+            Assert.IsTrue(pool.RevertToGhost(id, GHOST_CLIENT));
+            Assert.IsTrue(pool.RevertToGhost(id, GHOST_CLIENT), "idempotent");
+
+            Assert.IsTrue(pool.TryGetPlayer(id, out ZonePlayerSlot slot));
+            Assert.AreEqual(GHOST_CLIENT, slot.ClientId);
+            Assert.AreEqual(ZoneSessionState.Disconnected_SessionActive, slot.State);
+            Assert.AreEqual(1, pool.OccupiedPlayerCount);
+        }
+
+        [Test]
+        public void RevertToGhost_UnknownEntity_ReturnsFalse()
+        {
+            ZoneSlotPool pool = Create();
+
+            Assert.IsFalse(pool.RevertToGhost(new EntityID(999u), GHOST_CLIENT));
+        }
     }
 }

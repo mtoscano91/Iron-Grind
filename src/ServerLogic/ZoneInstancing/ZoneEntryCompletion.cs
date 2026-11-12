@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using IronGrind.CharacterPersistence;
 using IronGrind.CharacterStats;
+using IronGrind.Currency;
 using IronGrind.LootTableSystem;
 using IronGrind.Networking;
 using UnityEngine;
@@ -33,7 +34,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
     /// behavior is unchanged.
     /// </para>
     /// </remarks>
-    public sealed class ZoneEntryCompletion : IZoneEntryContinuation
+    public sealed class ZoneEntryCompletion : IZoneEntryContinuation, IZoneReconnectContinuation
     {
         private const string LOG_PREFIX = "[ZoneEntryCompletion]";
 
@@ -131,6 +132,60 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             catch (Exception ex)
             {
                 Debug.LogError($"{LOG_PREFIX} entry of client {clientId} ({entityId}) failed; remaining steps skipped.\n{ex}");
+            }
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>
+        /// Token-path reconnect (CR-ZI-8 steps 6-7 only): the directory maps the new connection to the character (the old
+        /// connection's mapping is removed first), then the snapshot, <c>SessionReady</c> and the cooldown snapshot go to the new
+        /// client. The entity never left the roster, so there is no entry listener call, no party notice, no <c>PlayerJoinedZone</c> and no
+        /// roster add. Never throws: an exception is logged, the directory is restored and false is returned (the caller reverts the ghost).
+        /// </remarks>
+        public bool OnPlayerReconnected(uint clientId, byte slot, EntityID entityId)
+        {
+            bool remapped = false;
+            bool hadOldMapping = false;
+            uint oldClient = 0u;
+            CharacterID character = CharacterID.Invalid;
+            try
+            {
+                if (!_pool.TryGetPlayer(entityId, out ZonePlayerSlot player))
+                {
+                    Debug.LogError($"{LOG_PREFIX} reconnecting player {entityId} (client {clientId}) holds no slot in {_zone}; reconnect steps skipped.");
+                    return false;
+                }
+
+                character = player.Character;
+                hadOldMapping = _directory.TryGetClientId(character, out oldClient) && oldClient != clientId;
+                if (hadOldMapping)
+                {
+                    _directory.Remove(oldClient);
+                }
+
+                _directory.Add(clientId, character);
+                remapped = true;
+
+                _snapshot.SendSnapshot(clientId);
+
+                _responder.SendSessionReady(clientId);
+                _responder.SendSkillCooldownSnapshot(clientId, entityId);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"{LOG_PREFIX} reconnect of client {clientId} ({entityId}) failed ({ex.GetType().Name}); remaining steps skipped, directory restored.\n{ex}");
+                if (remapped)
+                {
+                    // Leave the directory as found so the caller's revert to ghost is complete.
+                    _directory.Remove(clientId);
+                    if (hadOldMapping)
+                    {
+                        _directory.Add(oldClient, character);
+                    }
+                }
+
+                return false;
             }
         }
 

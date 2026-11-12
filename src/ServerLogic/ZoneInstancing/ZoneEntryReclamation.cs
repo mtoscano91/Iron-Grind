@@ -80,6 +80,12 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             public EntityID Entity;
             public CharacterID Character;
             public uint AllocTick;
+
+            /// <summary>Entered through a token-path reconnect: the character was already in the world.</summary>
+            public bool Rebound;
+
+            /// <summary>For a rebound entry, the ghost's previous connection id (restored on revert).</summary>
+            public uint GhostClientId;
         }
 
         private struct RecordedAck
@@ -98,6 +104,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         private readonly IInboundTransportDisconnector _disconnector;
         private readonly IZoneEntryReclaimSessionSink _sessionSink;
         private readonly IServerTickSource _ticks;
+        private IZoneReconnectSessionSink _reconnectSession;
         private readonly uint _stallTicks;
         private readonly List<Entering> _entering;
         private readonly Dictionary<uint, EntityID> _acked;
@@ -223,6 +230,49 @@ namespace IronGrind.ServerLogic.ZoneInstancing
 
             _acked.Remove(clientId);
             _entering.Add(new Entering { ClientId = clientId, Entity = entityId, Character = slot.Character, AllocTick = _ticks.ServerTickNumber });
+        }
+
+        /// <summary>
+        /// Token-path reconnect: moves the ghost's tracking from <paramref name="oldClientId"/> to <paramref name="newClientId"/>.
+        /// The old acked / entering record is dropped and the slot is entering again under the new connection until its
+        /// <c>ZoneEntryAck</c> (CR-ZI-8 step 11). The slot itself must already be rebound in the pool.
+        /// </summary>
+        /// <param name="oldClientId">The ghost's previous connection.</param>
+        /// <param name="newClientId">The reconnecting connection.</param>
+        /// <param name="entityId">The ghost's EntityID.</param>
+        public void RebindClient(uint oldClientId, uint newClientId, EntityID entityId)
+        {
+            _acked.Remove(oldClientId);
+            RemoveTracking(entityId);
+            RegisterEntering(newClientId, entityId);
+            int index = FindEntering(newClientId);
+            if (index >= 0)
+            {
+                Entering entry = _entering[index];
+                entry.Rebound = true;
+                entry.GhostClientId = oldClientId;
+                _entering[index] = entry;
+            }
+        }
+
+        /// <summary>
+        /// Registers the session seam used to put a rebound slot's session back to <c>Disconnected_SessionActive</c> when its entry is
+        /// reclaimed before the ack (<see cref="ZoneEntryAdmission.SetReconnectSeams"/> calls this). Without it only the slot reverts.
+        /// </summary>
+        /// <param name="session">The reconnect session seam.</param>
+        public void SetReconnectSessionSink(IZoneReconnectSessionSink session)
+        {
+            _reconnectSession = session;
+        }
+
+        /// <summary>
+        /// Drops the entering tracking of a slot whose reconnect failed and was reverted by <see cref="ZoneEntryAdmission"/>. No slot or
+        /// directory change.
+        /// </summary>
+        /// <param name="entityId">The ghost's EntityID.</param>
+        public void ForgetEntering(EntityID entityId)
+        {
+            RemoveTracking(entityId);
         }
 
         /// <summary>Records a removed connection for the next <see cref="OnTick"/> (case c). Never mutates a slot.</summary>
@@ -433,7 +483,19 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         {
             Entering entry = _entering[index];
             RemoveEnteringAt(index);
-            LeaveZone(entry.Entity, DisconnectType.Timeout);
+
+            // A slot entered through a token-path reconnect holds a character that was already in the world. LeaveZone would remove it
+            // WITHOUT the save a session end performs, so a stall or a transport drop reverts it to the ghost instead: the normal TTL /
+            // session-end path (with its save) still ends it. Eviction and a duplicate handshake keep the leave path (the session ends there).
+            bool revertToGhost = entry.Rebound && (cause == Cause.Stall || cause == Cause.TransportDrop);
+            if (revertToGhost)
+            {
+                RevertReboundToGhost(in entry);
+            }
+            else
+            {
+                LeaveZone(entry.Entity, DisconnectType.Timeout);
+            }
 
             if (cause == Cause.Stall)
             {
@@ -456,7 +518,36 @@ namespace IronGrind.ServerLogic.ZoneInstancing
                 }
             }
 
-            _sessionSink.ExpireEnteringSession(entry.ClientId, deleteTokenIfOwned: cause != Cause.DuplicateHandshake);
+            if (!revertToGhost)
+            {
+                _sessionSink.ExpireEnteringSession(entry.ClientId, deleteTokenIfOwned: cause != Cause.DuplicateHandshake);
+            }
+        }
+
+        // Slot back to the ghost's connection and state, directory back to the ghost's connection, session back to
+        // Disconnected_SessionActive with its original expiry. The entity stays in the roster and the pool.
+        private void RevertReboundToGhost(in Entering entry)
+        {
+            if (!_pool.TryGetPlayer(entry.Entity, out ZonePlayerSlot slot))
+            {
+                return;
+            }
+
+            _pool.RevertToGhost(entry.Entity, entry.GhostClientId);
+            if (_directory.TryGetCharacterId(entry.ClientId, out CharacterID mapped) && mapped == slot.Character)
+            {
+                _directory.Remove(entry.ClientId);
+                _directory.Add(entry.GhostClientId, slot.Character);
+            }
+
+            try
+            {
+                _reconnectSession?.RevertToGhost(slot.Account);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"{LOG_PREFIX} reverting the session of {entry.Entity} to ghost failed ({ex.GetType().Name}).\n{ex}");
+            }
         }
 
         private void SendPlayerLeftZone(EntityID leaving, uint leavingClient, DisconnectType disconnectType)

@@ -6,6 +6,7 @@
         "IronGrind.ServerLogic",
         "IronGrind.Client",
         "IronGrind.DevHarness",
+        "IronGrind.DevHarness.Session",
         "Unity.Netcode.Runtime",
         "Unity.InputSystem"
     ],

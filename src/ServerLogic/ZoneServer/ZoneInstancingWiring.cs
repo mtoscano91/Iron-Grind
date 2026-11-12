@@ -143,6 +143,9 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// <summary><c>HEARTBEAT_TIMEOUT_SECONDS</c>; ticks = seconds x <see cref="TickRateHz"/>.</summary>
         public int HeartbeatTimeoutSeconds = ConnectionStateMachine.HEARTBEAT_TIMEOUT_SECONDS;
 
+        /// <summary>Currency service the token-path reconnect reads its post-reconciliation gold balance from (CR-NET-6.4). Null: a new empty <see cref="CurrencySystem"/> (tests).</summary>
+        public ICurrencyService Currency;
+
         /// <summary>Leveling's <c>UnregisterPlayerEntity</c>. Null: no-op.</summary>
         public Action<EntityID> UnregisterPlayerEntity;
 
@@ -236,8 +239,8 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// <summary>
         /// Moves the networking session of an entering account: Connecting when the token validated, Connected when the
         /// player is admitted, failed connecting otherwise (Gateway Story 012). Only touches sessions it created: an
-        /// account that already has a registered session (token-path / ghost reconnect, out of scope) is left alone
-        /// with one warning.
+        /// account that already has a registered session (a second entry for a live account) is left alone with one warning.
+        /// The token-path reconnect of a ghost session does not come through here: <see cref="ReconnectSessionAdapter"/> handles it.
         /// </summary>
         private sealed class SessionSinkAdapter : IZoneEntrySessionSink
         {
@@ -279,6 +282,72 @@ namespace IronGrind.ServerLogic.ZoneServer
                     _machine.FailConnecting(raw, trigger);
                 }
             }
+        }
+
+        /// <summary>
+        /// Session side of the token-path reconnect (CR-TOK-9): <c>Disconnected_SessionActive -&gt; Reconnecting</c>, then
+        /// <see cref="ConnectionStateMachine.CompleteReAuthSuccess"/> (CR-NET-6.4). Pending purchases and respec reservations have no real store yet,
+        /// so their seams are stand-ins until the Shop and Respec systems own a store (no purchases, no reservation); the handshake data carries level and HP from the entity state source
+        /// and zero for gold version, MP, free points and class (they only reach the dev observer today).
+        /// </summary>
+        private sealed class ReconnectSessionAdapter : IZoneReconnectSessionSink
+        {
+            private static readonly IReadOnlyList<IronGrind.Networking.PendingPurchaseRecord> NO_PURCHASES =
+                Array.Empty<IronGrind.Networking.PendingPurchaseRecord>();
+
+            private readonly ConnectionStateMachine _machine;
+            private readonly Func<uint, bool> _isEndInFlight;
+            private readonly ICurrencyService _currency;
+            private readonly IZoneEntityStateSource _state;
+
+            public ReconnectSessionAdapter(ConnectionStateMachine machine, Func<uint, bool> isEndInFlight, ICurrencyService currency,
+                IZoneEntityStateSource state)
+            {
+                _machine = machine;
+                _isEndInFlight = isEndInFlight;
+                _currency = currency;
+                _state = state;
+            }
+
+            public bool TryBeginReconnect(AccountID account, uint tick)
+            {
+                uint raw = account.RawValue;
+                if (!_machine.TryGetSessionState(raw, out SessionState state) || state != SessionState.Disconnected_SessionActive
+                    || !_machine.TryGetSessionExpiryTick(raw, out uint expiry) || _isEndInFlight(raw))
+                {
+                    return false;
+                }
+
+                _machine.EnterReconnecting(raw, expiry);
+                return true;
+            }
+
+            public void CompleteReconnect(AccountID account, CharacterID character, EntityID entityId, uint tick)
+            {
+                int level = 0;
+                int hp = 0;
+                int mp = 0;
+                if (_state.TryGetPlayerState(entityId, out ZonePlayerStateView view))
+                {
+                    level = view.Level;
+                    hp = view.CurrentHp;
+                    mp = view.CurrentMp;
+                }
+
+                _machine.CompleteReAuthSuccess(account.RawValue, tick, _currency, QueryNoPurchases, MarkNoPurchase,
+                    QueryNoRespec, NoOpCharacter, NoOpCharacter,
+                    new SessionHandshakeData(false, 0u, level, hp, mp, 0, 0));
+            }
+
+            public bool RevertToGhost(AccountID account) => _machine.RevertToGhost(account.RawValue);
+
+            private static IReadOnlyList<IronGrind.Networking.PendingPurchaseRecord> QueryNoPurchases(uint characterId) => NO_PURCHASES;
+
+            private static void MarkNoPurchase(IronGrind.Networking.PendingPurchaseRecord record) { }
+
+            private static RespecReservationStatus QueryNoRespec(uint characterId) => RespecReservationStatus.NoActiveReservation;
+
+            private static void NoOpCharacter(uint characterId) { }
         }
 
         private readonly SessionHandshakeIntake _handshakeIntake;
@@ -402,7 +471,7 @@ namespace IronGrind.ServerLogic.ZoneServer
             _completion = new ZoneEntryCompletion(zone, _pool, _directory, _snapshotBuilder,
                 options.Responder ?? new LoggingZoneEntryResponder(), party, state, outbox, _roster);
             _admission = new ZoneEntryAdmission(zone, _pool, _lifecycle, persistence, applier, queue,
-                options.Validator ?? new GatewayZoneEntryTokenValidator(_admitted, _tokenStore), disconnector, outbox,
+                options.Validator ?? new GatewayZoneEntryTokenValidator(_admitted, _tokenStore, _sessions), disconnector, outbox,
                 _completion, _directory, reclamation: _reclamation, ticks: ticks,
                 sessionSink: new SessionSinkAdapter(_sessions));
             _admission.SetReservationSink(_admitted);
@@ -426,6 +495,11 @@ namespace IronGrind.ServerLogic.ZoneServer
                 CloseClientOfAccount);
             _gatewayEvict = new GatewayEvictHandler(_admitted, _tokenStore, gatewayOutbox, _admission, _reclamation, _sessions, _sessionEnds);
             _gatewayReconnect = new GatewayReconnectHandler(_sessions, _tokenStore, _sessionEnds, gatewayOutbox, options.ReauthFailureLimit);
+
+            // Token-path reconnect (Authentication Story 017 AC-6): the ghost's slot is reused, no LoadCharacter.
+            _admission.SetReconnectSeams(
+                new ReconnectSessionAdapter(_sessions, _sessionEnds.IsEndInFlight, options.Currency ?? new CurrencySystem(), state),
+                _completion);
         }
 
         // Closes the transport connection of the account's slot, if it holds one (gateway eviction, Story 014).

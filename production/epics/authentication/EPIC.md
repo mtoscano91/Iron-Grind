@@ -54,7 +54,7 @@ Authentication is the server-side identity verification layer that gates all pla
 | 014 | Zone `Evict` and `Reconnect` handlers | Integration | Complete | ADR-016, ADR-011 |
 | 015 | Client HTTPS auth client | Integration | Complete | ADR-016 |
 | 016 | Caddy TLS-only front | Integration | Complete | ADR-016, ADR-007 |
-| 017 | End-to-end login → zone entry | Integration | Ready | ADR-016 |
+| 017 | End-to-end login → zone entry | Integration | Complete | ADR-016 |
 | 018 | Client zone entry (login → connect → handshake → ack → token reconnect) | Integration | Complete | ADR-016, ADR-004 |
 | 019 | VPS, iOS device and Linux zone build verification | Integration | Blocked | ADR-016, ADR-007 |
 
@@ -72,4 +72,4 @@ This epic is complete when:
 
 ## Next Step
 
-Stories 001–016 and 018 Complete. Next: `/dev-story` Story 017 (Editor end-to-end run; Ready, 8 h). Story 019 (VPS / iOS / Linux build) waits on the VPS, the Linux build module and the server scripting backend decision.
+Stories 001–018 Complete (017 on 2026-11-12, TD-105 / TD-106 logged). Only Story 019 (VPS / iOS / Linux build) remains; it waits on the VPS, the Linux build module and the server scripting backend decision.

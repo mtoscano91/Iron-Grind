@@ -311,12 +311,20 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             LogAssert.NoUnexpectedReceived();
         }
 
+        // CR-TOK-9: a rejected handshake is logged once per connection (Authentication Story 017).
+        private static void ExpectTokenRejected(uint clientId)
+        {
+            LogAssert.Expect(LogType.Warning, new Regex("EntryTokenRejected: client " + clientId + " "));
+        }
+
         [Test]
         public void test_rejecting_validator_closes_silently_starts_no_load_and_logs_once_per_instance()
         {
             var rejecting = new RejectingZoneEntryTokenValidator();
             var svc = new ZoneEntryAdmission(Zone, _pool, _lifecycle, _persistence, _applier, _queue, rejecting, _disconnector, _outbox, _continuation, _directory);
             LogAssert.Expect(LogType.Warning, RejectingZoneEntryTokenValidator.NOT_IMPLEMENTED_MESSAGE);
+            ExpectTokenRejected(CLIENT_A);
+            ExpectTokenRejected(CLIENT_B);
             var first = Request(CLIENT_A);
             var second = Request(CLIENT_B);
 
@@ -333,6 +341,7 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
         public void test_rejected_token_closes_silently_and_keeps_zone_state_untouched()
         {
             _validator.Accept = false;
+            ExpectTokenRejected(CLIENT_A);
             var request = Request(CLIENT_A);
 
             _svc.BeginEntry(in request);
@@ -421,6 +430,7 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             _validator.Accept = false;
             _lifecycle = new ZoneLifecycle(Zone, new FakeLifecycleListener(), 0u);
             _svc = Build(_pool);
+            ExpectTokenRejected(CLIENT_A);
             var request = Request(CLIENT_A);
 
             _svc.BeginEntry(in request);
@@ -436,6 +446,7 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
         {
             _validator.Accept = false;
             FillTo(ZoneSlotPool.MAX_PLAYERS_PER_ZONE);
+            ExpectTokenRejected(CLIENT_A);
             var request = Request(CLIENT_A);
 
             _svc.BeginEntry(in request);

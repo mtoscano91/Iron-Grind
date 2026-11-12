@@ -99,6 +99,11 @@ namespace IronGrind.ServerLogic.Gateway
         /// <param name="serverTick">The admit tick; the timeout counts from here.</param>
         public void Admit(AccountID account, CharacterID character, uint serverTick)
         {
+            // Dev evidence (Authentication Story 017, AC-AUTH-01): time of the Admit vs the client's "login ok". Never the token.
+            if (IronGrind.ServerLogic.ZoneServer.DevEvidenceLog.Enabled)
+            {
+                IronGrind.ServerLogic.ZoneServer.DevEvidenceLog.Write(LOG_PREFIX, $"Admit {account} {character} at tick {serverTick}");
+            }
             int before = _reserved;
 
             // Another account's entry for the same character is released: a character belongs to one account.

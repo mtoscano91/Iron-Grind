@@ -207,6 +207,138 @@ namespace IronGrind.Tests.EditMode.Client.Session
             return collector.Accept(header, payload);
         }
 
+        // ---------- snapshot assembled event (Story 017) ----------
+
+        private static byte[] FragmentWithPayload(uint version, ushort total, ushort index, byte[] payload)
+        {
+            var message = new byte[ENVELOPE + ZoneStateSnapshotFragment.HeaderSize + payload.Length];
+            MessageEnvelopeCodec.Write(message, new ServerMessageEnvelope(ZoneStateSnapshotFragment.MessageTypeId, 1u, 0u));
+            ZoneStateSnapshotFragmentCodec.WriteBody(
+                message.AsSpan(ENVELOPE), new ZoneStateSnapshotFragment(version, total, index), payload);
+            return message;
+        }
+
+        private static byte[] PatternBytes(int length, byte seed)
+        {
+            var bytes = new byte[length];
+            for (int i = 0; i < length; i++)
+            {
+                bytes[i] = (byte)(seed + i);
+            }
+
+            return bytes;
+        }
+
+        [Test]
+        public void test_snapshot_assembled_raised_once_per_completed_snapshot()
+        {
+            int raised = 0;
+            _session.SnapshotAssembled += (buffer, length) => raised++;
+            BeginAndConnect();
+
+            FeedFullSnapshot(SNAPSHOT_VERSION);
+
+            Assert.AreEqual(1, raised);
+            Assert.AreEqual(1, _enteredCount);
+        }
+
+        [Test]
+        public void test_snapshot_assembled_not_raised_for_partial_snapshot()
+        {
+            int raised = 0;
+            _session.SnapshotAssembled += (buffer, length) => raised++;
+            BeginAndConnect();
+
+            Feed(Fragment(SNAPSHOT_VERSION, 2, 0));
+
+            Assert.AreEqual(0, raised);
+        }
+
+        [Test]
+        public void test_snapshot_assembled_raised_before_ack_is_transmitted()
+        {
+            int acksAtCallback = -1;
+            int sentAtCallback = -1;
+            _session.SnapshotAssembled += (buffer, length) =>
+            {
+                acksAtCallback = SentOfType(ZoneEntryAck.MessageTypeId).Count;
+                sentAtCallback = _transport.Sent.Count;
+            };
+            BeginAndConnect();
+            int sentBefore = _transport.Sent.Count;
+
+            FeedFullSnapshot(SNAPSHOT_VERSION);
+
+            Assert.AreEqual(0, acksAtCallback);
+            Assert.AreEqual(sentBefore, sentAtCallback);
+            Assert.AreEqual(1, SentOfType(ZoneEntryAck.MessageTypeId).Count);
+        }
+
+        [Test]
+        public void test_snapshot_assembled_multi_fragment_bytes_and_length_match_payloads()
+        {
+            int tailLength = 10;
+            byte[] first = PatternBytes(ZoneStateSnapshotFragment.MaxPayloadBytes, 1);
+            byte[] second = PatternBytes(tailLength, 77);
+            byte[] received = null;
+            int receivedLength = -1;
+            _session.SnapshotAssembled += (buffer, length) =>
+            {
+                receivedLength = length;
+                received = new byte[length];
+                Array.Copy(buffer, received, length);
+            };
+            BeginAndConnect();
+
+            Feed(FragmentWithPayload(SNAPSHOT_VERSION, 2, 0, first));
+            Feed(FragmentWithPayload(SNAPSHOT_VERSION, 2, 1, second));
+
+            Assert.AreEqual(first.Length + tailLength, receivedLength);
+            CollectionAssert.AreEqual(first.Concat(second).ToArray(), received);
+        }
+
+        [Test]
+        public void test_snapshot_assembled_empty_single_fragment_has_length_zero()
+        {
+            int receivedLength = -1;
+            _session.SnapshotAssembled += (buffer, length) => receivedLength = length;
+            BeginAndConnect();
+
+            Feed(FragmentWithPayload(SNAPSHOT_VERSION, 1, 0, new byte[0]));
+
+            Assert.AreEqual(0, receivedLength);
+            Assert.AreEqual(1, _enteredCount);
+        }
+
+        [Test]
+        public void test_snapshot_assembled_throwing_subscriber_still_acks_and_enters()
+        {
+            _session.SnapshotAssembled += (buffer, length) => throw new InvalidOperationException("boom");
+            BeginAndConnect();
+
+            FeedFullSnapshot(SNAPSHOT_VERSION);
+
+            Assert.AreEqual(1, SentOfType(ZoneEntryAck.MessageTypeId).Count);
+            Assert.AreEqual(ClientZoneSessionState.Entered, _session.State);
+            Assert.AreEqual(1, _enteredCount);
+            Assert.IsTrue(_logs.Any(l => l.Contains("InvalidOperationException")));
+        }
+
+        [Test]
+        public void test_collector_completed_length_is_full_fragments_plus_last_and_reset_clears_it()
+        {
+            var collector = new SnapshotFragmentCollector(4);
+            collector.Accept(new ZoneStateSnapshotFragment(SNAPSHOT_VERSION, 2, 0), PatternBytes(ZoneStateSnapshotFragment.MaxPayloadBytes, 1));
+            Assert.AreEqual(0, collector.CompletedLength);
+
+            SnapshotFragmentResult result = collector.Accept(new ZoneStateSnapshotFragment(SNAPSHOT_VERSION, 2, 1), PatternBytes(10, 5));
+
+            Assert.AreEqual(SnapshotFragmentResult.Completed, result);
+            Assert.AreEqual(ZoneStateSnapshotFragment.MaxPayloadBytes + 10, collector.CompletedLength);
+            collector.Reset();
+            Assert.AreEqual(0, collector.CompletedLength);
+        }
+
         // ---------- config ----------
 
         [Test]

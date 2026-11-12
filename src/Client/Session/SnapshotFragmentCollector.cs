@@ -34,6 +34,7 @@ namespace IronGrind.Client.Session
         private int _receivedCount;
         private bool _active;
         private bool _completed;
+        private int _lastFragmentLength;
 
         /// <summary>Creates a collector.</summary>
         /// <param name="maxFragments">Largest accepted <c>totalFragments</c> (at least 1).</param>
@@ -53,6 +54,12 @@ namespace IronGrind.Client.Session
 
         /// <summary>The version of the completed snapshot; meaningful only when <see cref="IsComplete"/> is true.</summary>
         public uint CompletedVersion { get; private set; }
+
+        /// <summary>
+        /// The reassembled byte count of the completed snapshot:
+        /// <c>(total - 1) * MaxPayloadBytes + lastFragmentPayloadLength</c>. Meaningful only when <see cref="IsComplete"/> is true.
+        /// </summary>
+        public int CompletedLength { get; private set; }
 
         /// <summary>Number of distinct fragments stored for the current snapshot.</summary>
         public int ReceivedCount => _receivedCount;
@@ -110,6 +117,11 @@ namespace IronGrind.Client.Session
             payload.CopyTo(new Span<byte>(_buffer, header.FragmentIndex * ZoneStateSnapshotFragment.MaxPayloadBytes, payload.Length));
             _received[header.FragmentIndex] = true;
             _receivedCount++;
+            if (header.FragmentIndex == _total - 1)
+            {
+                _lastFragmentLength = payload.Length;
+            }
+
             if (_receivedCount < _total)
             {
                 return SnapshotFragmentResult.Accepted;
@@ -117,6 +129,7 @@ namespace IronGrind.Client.Session
 
             _completed = true;
             CompletedVersion = _version;
+            CompletedLength = (_total - 1) * ZoneStateSnapshotFragment.MaxPayloadBytes + _lastFragmentLength;
             return SnapshotFragmentResult.Completed;
         }
 
@@ -131,6 +144,8 @@ namespace IronGrind.Client.Session
             _active = false;
             _completed = false;
             CompletedVersion = 0;
+            CompletedLength = 0;
+            _lastFragmentLength = 0;
         }
 
         private void Start(in ZoneStateSnapshotFragment header)
@@ -139,6 +154,7 @@ namespace IronGrind.Client.Session
             _version = header.SnapshotVersion;
             _total = header.TotalFragments;
             _receivedCount = 0;
+            _lastFragmentLength = 0;
             _buffer = new byte[_total * ZoneStateSnapshotFragment.MaxPayloadBytes];
             _received = new bool[_total];
         }

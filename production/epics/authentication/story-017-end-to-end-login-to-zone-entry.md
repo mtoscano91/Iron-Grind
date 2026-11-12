@@ -1,7 +1,7 @@
 # Story 017: End-to-end login → zone entry
 
 > **Epic**: Authentication
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Integration
 > **Estimate**: 8 h
@@ -28,18 +28,18 @@
 
 ## Acceptance Criteria
 
-- [ ] Harness assets: scene `Assets/Scenes/DevHarness/ZoneEntryHarness.unity` holding the `ZoneEntryDevHarness`, and config asset `Assets/Scenes/DevHarness/ZoneEntryHarnessConfig.asset`, pointed at the local gateway (Caddy dev) and the Editor zone
-- [ ] Story 018 AC-9 closed: a harness run against the local gateway and the Editor zone logs the entry steps in order (login → connect → handshake → snapshot complete → ack → entered); log recorded in the evidence doc
-- [ ] Story 018 AC-10 closed: a load driver run against the local gateway logs N login latencies; recorded in the evidence doc
-- [ ] AC-AUTH-01 (real link): a correct login through the gateway, with an Editor zone registered over the real link, returns a non-zero token, valid `CharacterID`, non-zero `zoneId` and the zone's port; the zone received `Admit` with that token before the response (gateway + zone logs with timestamps)
-- [ ] AC-AUTH-21 (all parts) end to end: the client connects to the zone with the token, the session is `Connected`, `LoadCharacter` ran once in the zone (zone log), and the harness log line `snapshot player name=<n>` — decoded with `EntityStateCodec` from the player's entry in the reassembled snapshot — equals the registered `characterName`
-- [ ] AC-AUTH-27 end to end: client A in the zone, client B logs in to the same account → A is evicted (saved, closed, no reconnect), B enters
-- [ ] AC-AUTH-05b: a dev-build-only per-tick timestamp log on the zone (one line per tick: tick number + monotonic timestamp in ms). `ServerTickLoop` only records `actualTickDurationSeconds` (a duration), so this log is new. It has its own EditMode test.
-- [ ] AC-AUTH-05a: with ≥ 2 clients connected and the load driver holding ≥ `MAX_AUTH_PENDING` (10, `GatewayOptions.MaxAuthPending`) concurrent logins in flight for 60 s, the tick log shows no inter-tick gap > 50 ms in that window
-- [ ] AC-AUTH-29 (d): with the gateway stopped, the zone keeps ticking and serving its connected players (tick log + a client still moving)
-- [ ] Round trip (Editor): login → UDP zone entry → transport drop (no logout message exists, TD-103) → token reconnect → `Connected` again with the same character; the evidence notes the session went to `Disconnected_SessionActive` and was rebound by the reconnect
-- [ ] ADR-016 Verification 2 passes and is recorded
-- [ ] Evidence in `production/qa/evidence/auth-end-to-end-evidence.md` (Story 019 appends its VPS section to the same file)
+- [x] Harness assets: scene `Assets/Scenes/DevHarness/ZoneEntryHarness.unity` holding the `ZoneEntryDevHarness`, and config asset `Assets/Scenes/DevHarness/ZoneEntryHarnessConfig.asset`, pointed at the local gateway (Caddy dev) and the Editor zone
+- [x] Story 018 AC-9 closed: a harness run against the local gateway and the Editor zone logs the entry steps in order (login → connect → handshake → snapshot complete → ack → entered); log recorded in the evidence doc
+- [x] Story 018 AC-10 closed: a load driver run against the local gateway logs N login latencies; recorded in the evidence doc
+- [x] AC-AUTH-01 (real link): a correct login through the gateway, with an Editor zone registered over the real link, returns a non-zero token, valid `CharacterID`, non-zero `zoneId` and the zone's port; the zone received `Admit` with that token before the response (gateway + zone logs with timestamps)
+- [x] AC-AUTH-21 (all parts) end to end: the client connects to the zone with the token, the session is `Connected`, `LoadCharacter` ran once in the zone (zone log), and the harness log line `snapshot player name=<n>` — decoded with `EntityStateCodec` from the player's entry in the reassembled snapshot — equals the registered `characterName`
+- [x] AC-AUTH-27 end to end: client A in the zone, client B logs in to the same account → A is evicted (saved, closed, no reconnect), B enters
+- [x] AC-AUTH-05b: a dev-build-only per-tick timestamp log on the zone (one line per tick: tick number + monotonic timestamp in ms). `ServerTickLoop` only records `actualTickDurationSeconds` (a duration), so this log is new. It has its own EditMode test.
+- [x] AC-AUTH-05a: with ≥ 2 clients connected and the load driver holding ≥ `MAX_AUTH_PENDING` (10, `GatewayOptions.MaxAuthPending`) concurrent logins in flight for 60 s, the tick log shows no inter-tick gap > 50 ms in that window
+- [x] AC-AUTH-29 (d): with the gateway stopped, the zone keeps ticking and serving its connected players (tick log + a client still moving)
+- [x] Round trip (Editor): login → UDP zone entry → transport drop (no logout message exists, TD-103) → token reconnect → `Connected` again with the same character; the evidence notes the session went to `Disconnected_SessionActive` and was rebound by the reconnect
+- [x] ADR-016 Verification 2 passes and is recorded
+- [x] Evidence in `production/qa/evidence/auth-end-to-end-evidence.md` (Story 019 appends its VPS section to the same file)
 
 ---
 
@@ -97,7 +97,7 @@
 - `production/qa/evidence/auth-end-to-end-evidence.md` (manual runs + logs; also closes Story 018 AC-9/10)
 - EditMode tests for the new code: the per-tick timestamp log, `ClientZoneSession`'s snapshot event, the harness's decode-and-log helper (paths fixed at `/dev-story`)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — `production/qa/evidence/auth-end-to-end-evidence.md` (signed off 2026-11-12); EditMode tests listed in Completion Notes
 
 ---
 
@@ -105,3 +105,21 @@
 
 - Depends on: None open. Story 018 (client zone entry) Complete 2026-11-11; Stories 012–016 Complete; the gateway epic Complete (all 12 stories — zone link both sides, account → zone map, router, `IGatewayRegistration`; Gateway Story 012 is the zone-side `SessionHandshake` decode → `ZoneEntryAdmission.BeginEntry`, the shared `SessionTokenStore` and the `Connected` transition — TD-095 resolved); Zone Instancing Stories 015 (entity state source, TD-100) and 016 (session end inputs, TD-101).
 - Unlocks: Story 019 (uses this story's harness, load driver and evidence doc); Authentication epic Definition of Done together with Story 019.
+
+---
+
+## Completion Notes
+
+**Completed**: 2026-11-12
+**Criteria**: 12/12 passing (AC-AUTH-05a PASS with note — user decision 2026-11-12: max tick 9.5 ms; two Editor frame stalls of 110.7 / 104.5 ms accepted, rechecked on the VPS in Story 019)
+**Deviations** (advisory, accepted):
+- AC-AUTH-05a: judged on tick duration ≤ 50 ms (tick log warns on duration > 50 ms or gap ≥ 100 ms; nominal 20 Hz gap is 50 ms) instead of "no inter-tick gap > 50 ms"; Editor frame stalls are not tick work.
+- AC-AUTH-29 (d): "a client still moving" → "client stays Entered and Connected for 30 s+" (the harness has no movement input).
+- Harness moved to its own assembly `IronGrind.DevHarness.Session` (`UNITY_EDITOR || DEVELOPMENT_BUILD`, client references only); ADR-012 Decision 7 note.
+- Round-trip transport drop done by suspending the client process (not a firewall rule).
+- Decision: an unrotated token presented directly on a ghost handshake is accepted (CR-TOK-9 allows it; the token is not rotated again on reconnect).
+**Scope additions**: defect 7 fixed in this story (user "fix it now"): zone token-path reconnect (CR-TOK-9) — `IZoneReconnect.cs`, `ZoneEntryAdmission.BeginReconnect`, `ZoneSlotPool.RebindClient` / `RevertToGhost` / `TryFindPlayerByCharacter`, `ZoneEntryReclamation.RebindClient` (rebound slot reverts to ghost on stall / drop), `ConnectionStateMachine.TryGetAccountByCharacter` / `RevertToGhost`, `GatewayZoneEntryTokenValidator` (`IZoneReconnectTokenValidator`), `ZoneInstancingWiring.ReconnectSessionAdapter`. Run fixes: `DevEvidenceLog`, `NgoSharedSettings` (one source for the NGO config fields both sides hash), harness `runInBackground` / frame cap (restored on disable), harness settings trim (`ZoneEntryHarnessSettings`).
+**Test Evidence**: `production/qa/evidence/auth-end-to-end-evidence.md` (6 manual cases, signed off 2026-11-12); EditMode: `tests/EditMode/Networking/TickTimestampLog_tests.cs`, `ZoneServer_CompositionTickLog_tests.cs`, `DevEvidenceLog_tests.cs`, `NgoSharedSettings_tests.cs`, `tests/EditMode/Client/ClientZoneSession_tests.cs` (snapshot event), `tests/EditMode/DevHarness/SnapshotNameLog_tests.cs`, `ZoneEntryHarnessSettings_tests.cs`, `tests/EditMode/Gateway/ZoneTokenPathReconnect_tests.cs` (20), plus slot pool / session machine reconnect unit tests. Full EditMode 7055 / 6926 passed / 0 failed / 129 skipped.
+**Code Review**: Complete — `/code-review` CHANGES REQUIRED → user "fix all" (1–11) applied 2026-11-12.
+**Tech debt logged**: TD-105 (pool slot ghost state not set on heartbeat ghosting; removed-client record consumed by a failed reconnect), TD-106 (CR-NET-6.4 stand-ins on token-path reconnect).
+**Story 018**: AC-9 and AC-10 closed by this story's AC-1 and AC-3 runs.

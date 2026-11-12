@@ -25,6 +25,8 @@ namespace IronGrind.Tests.EditMode.Architecture
         private const string SERVER_LOGIC = "IronGrind.ServerLogic";
         private const string CLIENT = "IronGrind.Client";
         private const string DEV_HARNESS = "IronGrind.DevHarness";
+        // Zone-entry harness, runs in development client builds (ADR-012 note 2026-11-11; Authentication Story 017).
+        private const string DEV_HARNESS_SESSION = "IronGrind.DevHarness.Session";
         // ServerLogic declares NGO types (ADR-012 Decision 1; Networking Core Story 038).
         private const string NETCODE_RUNTIME = "Unity.Netcode.Runtime";
         // Client and DevHarness read touches through EnhancedTouch (ADR-012 note 2026-10-29; Movement Story 013).
@@ -182,6 +184,31 @@ namespace IronGrind.Tests.EditMode.Architecture
             foreach (string name in new[] { FOUNDATION, SERVER_LOGIC, CLIENT, CLIENT_SESSION_UNITY })
             {
                 CollectionAssert.DoesNotContain(Safe(LoadAsmdef(name).references), DEV_HARNESS, name + " must not reference DevHarness");
+            }
+        }
+
+        /// <summary>
+        /// The zone-entry harness assembly (ADR-012 note 2026-11-11, Authentication Story 017) runs in development
+        /// client builds: constraints exactly "UNITY_EDITOR || DEVELOPMENT_BUILD" and the client constraint, not
+        /// auto-referenced, client-side references only (no ServerLogic), and no project assembly references it.
+        /// </summary>
+        [Test]
+        public void test_dev_harness_session_asmdef_is_dev_client_only_and_unreferenced()
+        {
+            AsmdefData harness = LoadAsmdef(DEV_HARNESS_SESSION);
+
+            Assert.AreEqual(DEV_HARNESS_SESSION, harness.name);
+            CollectionAssert.AreEqual(
+                new[] { "UNITY_EDITOR || DEVELOPMENT_BUILD", CLIENT_CONSTRAINT },
+                Safe(harness.defineConstraints), "DevHarness.Session constraints");
+            Assert.IsFalse(harness.autoReferenced, "DevHarness.Session autoReferenced");
+            CollectionAssert.AreEquivalent(
+                new[] { FOUNDATION, CLIENT, CLIENT_SESSION_UNITY, NETCODE_RUNTIME, NETWORKING_TRANSPORT },
+                Safe(harness.references), "DevHarness.Session references");
+            foreach (string name in new[] { FOUNDATION, SERVER_LOGIC, CLIENT, CLIENT_SESSION_UNITY, DEV_HARNESS })
+            {
+                CollectionAssert.DoesNotContain(
+                    Safe(LoadAsmdef(name).references), DEV_HARNESS_SESSION, name + " must not reference DevHarness.Session");
             }
         }
 

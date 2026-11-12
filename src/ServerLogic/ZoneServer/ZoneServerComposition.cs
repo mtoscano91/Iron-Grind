@@ -144,6 +144,7 @@ namespace IronGrind.ServerLogic.ZoneServer
         private ServerTickLoop _tickLoop;
         private Func<uint> _currentTick;
         private Action _tickHandler;
+        private TickTimestampLog _tickTimestampLog;
 
         private bool _teardownRequested;
         private bool _beginConsumed;
@@ -311,6 +312,14 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// with <c>Task.Run</c> and waited for <c>DbWarmupTimeoutMs</c>; the token is cancelled on a timeout.
         /// </summary>
         internal Func<CancellationToken, Task> WarmUpOverride;
+
+        /// <summary>
+        /// Dev seam (Authentication Story 017, AC-AUTH-05b): opens the per-tick timestamp log writer at S9 from the parsed
+        /// arguments. Null (the default, so tests create no file) disables the log; the host sets it in the Editor and
+        /// development builds. A null result or a throwing factory runs the zone without the log. The composition
+        /// disposes the returned writer at teardown.
+        /// </summary>
+        internal Func<ZoneStartupArgs, System.IO.TextWriter> TickLogWriterFactory;
 
         /// <summary>
         /// Test seam: replaces the creation of the relay listener at S7 when set (the real one connects from its own
@@ -1002,7 +1011,29 @@ namespace IronGrind.ServerLogic.ZoneServer
                 }
             }
 
+            // The dev log records every tick, also one that threw (its duration is the evidence for a slow failing tick),
+            // and sits outside the tick try so a log failure can neither be taken for a tick failure (Fatal) nor hide one.
+            RecordTickLog(now);
             _lastTickSeconds = now;
+        }
+
+        // TickTimestampLog swallows writer I/O errors itself; this guard covers a throwing warning sink or a bug.
+        private void RecordTickLog(double startSeconds)
+        {
+            if (_tickTimestampLog == null)
+            {
+                return;
+            }
+
+            try
+            {
+                _tickTimestampLog.Record(_tickLoop.ServerTickNumber, startSeconds, _clock() - startSeconds);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning(LOG_PREFIX + " tick log disabled: " + ex.GetType().Name);
+                _tickTimestampLog = null;
+            }
         }
 
         // Reads the scene seam's IsDone; an exception becomes S-fail at S6 and ends the wait.
@@ -1154,7 +1185,8 @@ namespace IronGrind.ServerLogic.ZoneServer
 
         private bool StartupStartNetwork()
         {
-            _network.Configure((uint)ServerTickLoop.TICK_RATE_HZ, ServerTickLoop.TICK_RATE_HZ, 0, _args.Port);
+            // The NGO tick rate comes from the shared settings the client applies too (one config hash).
+            _network.Configure(NgoSharedSettings.TICK_RATE, ServerTickLoop.TICK_RATE_HZ, 0, _args.Port);
             if (!_network.StartServer())
             {
                 return false;
@@ -1176,10 +1208,77 @@ namespace IronGrind.ServerLogic.ZoneServer
             StateOwner.MarkActive(_zoneId);
             _previousTickSeconds = _clock();
             _lastTickSeconds = _previousTickSeconds;
+            OpenTickLog();
             _network.SubscribeTick(_networkTickHandler);
             _tickHandler = _networkTickHandler;
             MarkTickStarted();
             return true;
+        }
+
+        // Dev tick timestamp log (Story 017, AC-AUTH-05b). Never fails startup: any problem runs the zone without it.
+        private void OpenTickLog()
+        {
+            if (TickLogWriterFactory == null)
+            {
+                return;
+            }
+
+            System.IO.TextWriter writer = null;
+            try
+            {
+                writer = TickLogWriterFactory(_args);
+                if (writer == null)
+                {
+                    return;
+                }
+
+                _tickTimestampLog = new TickTimestampLog(writer, WriteTickLogLine);
+                _disposables.Add(writer);
+            }
+            catch (Exception ex)
+            {
+                _tickTimestampLog = null;
+                writer?.Dispose();
+                Debug.LogWarning(LOG_PREFIX + " tick log disabled: " + ex.GetType().Name);
+            }
+        }
+
+        private static void WriteTickLogLine(string line)
+        {
+            if (line.StartsWith(TickTimestampLog.GAP_WARNING_PREFIX, StringComparison.Ordinal)
+                || line.StartsWith(TickTimestampLog.DURATION_WARNING_PREFIX, StringComparison.Ordinal))
+            {
+                Debug.LogWarning(LOG_PREFIX + " " + line);
+            }
+            else
+            {
+                Debug.Log(LOG_PREFIX + " " + line);
+            }
+        }
+
+        /// <summary>
+        /// Opens the dev tick timestamp log file: <c>-tickLogPath</c> when given, else
+        /// <c>persistentDataPath/tick-log-zone&lt;zoneId&gt;.csv</c>. Logs the path once. Returns null (with a warning)
+        /// when the file cannot be opened, so the zone runs without the log. The host assigns this to
+        /// <see cref="TickLogWriterFactory"/> in the Editor and development builds only.
+        /// </summary>
+        /// <param name="args">The parsed startup arguments.</param>
+        /// <returns>An unflushed-by-default writer, or null.</returns>
+        internal static System.IO.TextWriter OpenTickLogFile(ZoneStartupArgs args)
+        {
+            try
+            {
+                string path = args.TickLogPath ?? System.IO.Path.Combine(
+                    Application.persistentDataPath, "tick-log-zone" + args.ZoneId.ToString(System.Globalization.CultureInfo.InvariantCulture) + ".csv");
+                var writer = new System.IO.StreamWriter(path, false) { AutoFlush = false };
+                Debug.Log(LOG_PREFIX + " tick log: " + path);
+                return writer;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning(LOG_PREFIX + " tick log file not opened: " + ex.GetType().Name);
+                return null;
+            }
         }
 
         // ------------------------------------------------------------------ teardown
@@ -1843,6 +1942,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                         // Stories 018 / 019: the same Equipment Persistence restores into, so session end unregisters what load registered.
                         Equipment = _owner.ZoneEquipment,
                         Validator = _owner.EntryTokenValidatorOverride,
+                        Currency = _owner.ZoneCurrency,
                         GatewayOutbox = linkOutbox
                     });
                 Observe(nameof(ZoneInstancingWiring));

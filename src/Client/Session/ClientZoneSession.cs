@@ -31,6 +31,11 @@ namespace IronGrind.Client.Session
         Ended
     }
 
+    /// <summary>Callback for a completely reassembled zone snapshot.</summary>
+    /// <param name="buffer">The reassembly buffer; only valid during the callback (copy what you need). May be longer than <paramref name="length"/>.</param>
+    /// <param name="length">The number of valid snapshot bytes at the start of <paramref name="buffer"/>.</param>
+    public delegate void SnapshotAssembledHandler(byte[] buffer, int length);
+
     /// <summary>
     /// Pure C# client zone entry (Authentication Story 018): login, connect, <c>SessionHandshake</c>, snapshot reassembly,
     /// <c>ZoneEntryAck</c>, heartbeat and one token reconnect. Drive it with <see cref="Update"/> every frame and route
@@ -119,6 +124,12 @@ namespace IronGrind.Client.Session
 
         /// <summary>Raised once when an entry attempt fails (before <see cref="SessionEnded"/>).</summary>
         public event Action<ZoneEntryFailureReason> EntryFailed;
+
+        /// <summary>
+        /// Raised once per completed snapshot, before the ack is sent. The buffer is only valid during the callback.
+        /// A subscriber exception is logged (type name only) and does not affect the entry.
+        /// </summary>
+        public event SnapshotAssembledHandler SnapshotAssembled;
 
         /// <summary>Raised each time an entry completes (the ack was sent).</summary>
         public event Action Entered;
@@ -286,6 +297,19 @@ namespace IronGrind.Client.Session
         {
             uint version = _collector.CompletedVersion;
             Log("snapshot v=" + version);
+            SnapshotAssembledHandler assembled = SnapshotAssembled;
+            if (assembled != null)
+            {
+                try
+                {
+                    assembled(_collector.Buffer, _collector.CompletedLength);
+                }
+                catch (Exception ex)
+                {
+                    Log("snapshot subscriber threw " + ex.GetType().Name);
+                }
+            }
+
             SendAck(version);
             Log("ack sent");
             _collector.Reset();
