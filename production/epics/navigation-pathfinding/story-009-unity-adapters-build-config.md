@@ -29,6 +29,7 @@
 ## Acceptance Criteria
 
 - [ ] `UnityNavAgent : INavAgent` wraps a `NavMeshAgent` 1:1; `UnityNavAgentFactory : INavAgentFactory` creates a `GameObject` with a `NavMeshAgent` under the pool root (no `Instantiate` of a prefab needed); `UnityNavMeshQuery : INavMeshQuery` wraps `NavMesh.SamplePosition`. Files in `src/ServerLogic/Navigation/Unity/`.
+- [ ] `UnityNavMeshInstanceOps : INavMeshInstanceOps` (Story 002 seam): `IsValid` returns `instance.valid`, `Remove` calls `instance.Remove()`. The PlayMode test checks a real instance from the Story 008 bake reads valid before `Teardown` and invalid after it (Story 002 carry, 2026-11-12).
 - [ ] **PlayMode test with the Story 008 mesh**: create the service with the real adapters, claim an agent, `SetDestination` across the floor, drain, step frames → within a few ticks `pathPending` clears, `GetCurrentVelocity` points toward the destination on XZ with magnitude ≈ speed; `Stop` → velocity zero; `Resume` → velocity restored without a new `SetDestination` (ADR-003 Decision 1 on the real agent).
 - [ ] The same test checks: `Warp` off the mesh returns false; `SamplePosition` hits on the floor and misses outside it; every service call runs on the main thread (AC-NAV-03: record `ManagedThreadId`).
 - [ ] `Assets/link.xml` gains `<assembly fullname="UnityEngine.AIModule"><namespace fullname="UnityEngine.AI" preserve="all"/></assembly>`.

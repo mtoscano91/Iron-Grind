@@ -44,6 +44,7 @@
 
 - **Handlers**: private named methods `HandleMobSpawned(MobSpawnedArgs)` / `HandleMobDied(MobDiedArgs)`. Ignore events for another `ZoneID` with a warning (one zone per process, so it signals a wiring bug).
 - **Order inside claim** (ADR-003 Decision 6 transition "Pool → Registered"): Dequeue → `enabled = true` → `Warp` → `speed` → `isStopped = true` → register. Speed is set directly on the agent here (CR-NAV-5 step 5), not through the clamped `SetSpeed` path — but clamp it the same way if the source returns an out-of-range value, and log (consistent with CR-NAV-8).
+- **Story 002 carries (2026-11-12)**: the post-teardown guard reads the service's `internal bool IsAcceptingSpawns` (false before a successful `Initialize` and after `Teardown`). Add the teardown order test with a claimed agent: claim one, `Teardown` → recorder shows [claimed agent `Enabled = false`, collections cleared, `Remove()`], `AvailableCount` back to 150.
 - **Release** removes the entity from every per-entity collection the service owns. Stories 005–006 add counters; each of them must extend `HandleMobDied` and the release test.
 - **Pool**: a `Stack` or `Queue` of `INavAgent` pre-sized at 150; no allocation per claim.
 

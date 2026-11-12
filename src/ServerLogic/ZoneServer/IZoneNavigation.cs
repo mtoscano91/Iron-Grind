@@ -17,7 +17,9 @@ namespace IronGrind.ServerLogic.ZoneServer
     {
         /// <summary>
         /// Initialises navigation for a zone with its loaded NavMesh data. Takes ownership of
-        /// <paramref name="instance"/> as soon as it is called, even if it throws.
+        /// <paramref name="instance"/> as soon as it is called, even if it throws. Only the first call is accepted:
+        /// a later call (a retry after a failure, or a call after <see cref="Teardown"/>) logs an error and is
+        /// ignored, and the instance it carried stays with the caller.
         /// </summary>
         /// <param name="zone">The zone being started.</param>
         /// <param name="instance">The added NavMesh data instance.</param>
