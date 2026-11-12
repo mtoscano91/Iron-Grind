@@ -14,7 +14,8 @@ namespace IronGrind.ServerLogic.Navigation
     /// Zone navigation service: owns the zone's NavMesh data instance and the fixed agent pool
     /// (CR-NAV-1 to CR-NAV-4) and claims and releases agents on the <see cref="MobEventBus"/> (CR-NAV-5, CR-NAV-6):
     /// <see cref="Initialize"/>, <see cref="Teardown"/>, the torn-down guards, and the spawn and death handlers.
-    /// The tick and sync bodies are Story 005. Implements <see cref="INavigationProvider"/> (Story 004).
+    /// Implements <see cref="INavigationProvider"/> and runs navigation phases 1 and 2 through <see cref="Tick"/> and
+    /// <see cref="SyncAgentPositions(IReadOnlyDictionary{EntityID, Vector3})"/>, called from <see cref="NavigationPhaseStep"/>.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -67,7 +68,7 @@ namespace IronGrind.ServerLogic.Navigation
         private readonly Dictionary<EntityID, Vector3> _latestRequests;
         private readonly Dictionary<EntityID, int> _failureCounts;
 
-        // _queuedEntities: entities with a slot in _pendingRequests (the drain, Story 005, removes on dequeue).
+        // _queuedEntities: entities with a slot in _pendingRequests (the drain in Tick removes on dequeue).
         // _destinationRequested: entities for which SetDestination was called since the claim (IsPathStale "never set").
         private readonly HashSet<EntityID> _queuedEntities;
         private readonly HashSet<EntityID> _destinationRequested;
@@ -217,32 +218,116 @@ namespace IronGrind.ServerLogic.Navigation
         }
 
         /// <summary>
-        /// Per-tick work. Returns immediately after <see cref="Teardown"/>. The body is a stub until Story 005.
+        /// Phase 2: drains the path request queue (CR-NAV-14, ADR-003 Decision 4). Returns immediately after
+        /// <see cref="Teardown"/>. Call only from <see cref="NavigationPhaseStep"/>.
         /// </summary>
+        /// <remarks>
+        /// Issues at most MAX_PATH_UPDATES_PER_TICK agent calls; skipped entries do not count. Every dequeue, issued or
+        /// skipped, removes the entity from the queued set. A throwing agent propagates out of the tick.
+        /// </remarks>
         public void Tick()
         {
             if (_tornDown)
             {
                 return;
             }
+
+            int issued = 0;
+            while (issued < _config.MaxPathUpdatesPerTick && _pendingRequests.Count > 0)
+            {
+                EntityID entity = _pendingRequests.Dequeue();
+                _queuedEntities.Remove(entity);
+                if (TryIssue(entity))
+                {
+                    issued++;
+                }
+            }
+        }
+
+        // Issues the agent call for one dequeued entity. Skips (false): not registered, off the mesh (the latest
+        // request is kept so Enemy AI re-requests), no latest request (stopped or released). The latest request is
+        // removed before the agent call (a deliberate order change from the story text, so a throwing agent leaves
+        // consistent state); isStopped is cleared first. A false return logs one warning and still counts (true);
+        // a throw propagates. Never reads velocity.
+        private bool TryIssue(EntityID entity)
+        {
+            if (!_activeAgents.TryGetValue(entity, out INavAgent agent))
+            {
+                return false;
+            }
+
+            if (!agent.IsOnNavMesh)
+            {
+                return false;
+            }
+
+            if (!_latestRequests.TryGetValue(entity, out Vector3 destination))
+            {
+                return false;
+            }
+
+            _latestRequests.Remove(entity);
+            agent.IsStopped = false;
+            if (!agent.SetDestination(destination))
+            {
+                Debug.LogWarning(LOG_PREFIX + "SetDestination rejected by the agent for " + entity + " target "
+                    + destination + ".");
+            }
+
+            // Story 006: rate-limit the rejected-SetDestination warning with the failure counter (warn on 0 -> 1 only);
+            // an agent that keeps rejecting warns every tick today. Also reset the partial-path counter for this
+            // entity here (CR-NAV-15).
+            return true;
         }
 
         /// <summary>
-        /// Syncs agent positions to the committed positions. Returns immediately after <see cref="Teardown"/>. The
-        /// body is a stub until Story 005.
+        /// Phase 1: sets each registered, on-mesh agent's nextPosition to its committed position (CR-NAV-12). Never
+        /// warps; unknown and off-mesh entities are skipped silently. Returns immediately after
+        /// <see cref="Teardown"/>. Call only from <see cref="NavigationPhaseStep"/>.
         /// </summary>
+        /// <remarks>
+        /// This overload enumerates through the interface, which boxes the enumerator; the phase step uses the
+        /// internal Dictionary overload. A null argument is a no-op.
+        /// </remarks>
         /// <param name="committedPositions">Committed world positions per entity.</param>
         public void SyncAgentPositions(IReadOnlyDictionary<EntityID, Vector3> committedPositions)
         {
-            if (_tornDown)
+            if (_tornDown || committedPositions == null)
             {
                 return;
+            }
+
+            foreach (KeyValuePair<EntityID, Vector3> pair in committedPositions)
+            {
+                SyncOne(pair.Key, pair.Value);
+            }
+        }
+
+        /// <summary>Allocation-free sync over the concrete dictionary the phase step reuses.</summary>
+        internal void SyncAgentPositions(Dictionary<EntityID, Vector3> committedPositions)
+        {
+            if (_tornDown || committedPositions == null)
+            {
+                return;
+            }
+
+            foreach (KeyValuePair<EntityID, Vector3> pair in committedPositions)
+            {
+                SyncOne(pair.Key, pair.Value);
+            }
+        }
+
+        private void SyncOne(EntityID entity, Vector3 position)
+        {
+            if (_activeAgents.TryGetValue(entity, out INavAgent agent) && agent.IsOnNavMesh)
+            {
+                agent.NextPosition = position;
             }
         }
 
         /// <inheritdoc/>
         /// <remarks>
-        /// Only queues: stores the latest target (latest wins) and one queue slot per entity; the drain (Story 005)
+        /// Only queues: stores the latest target (latest wins) and one queue slot per entity; the drain in Tick
         /// issues the real agent call. Unregistered entity or non-finite target: one warning, nothing queued.
         /// </remarks>
         public void SetDestination(EntityID agent, Vector3 target)
@@ -493,7 +578,7 @@ namespace IronGrind.ServerLogic.Navigation
         }
 
         // Release (CR-NAV-6). Unknown or already released entities are a warning and a no-op. _pendingRequests is a
-        // queue and is not searched; Story 005's drain skips entries for entities no longer active. The entity
+        // queue and is not searched; the drain in Tick skips entries for entities no longer active. The entity
         // leaves every collection first, and the agent always returns to the pool, even if an agent call throws
         // (the exception propagates and the bus logs it).
         private void HandleMobDied(MobDiedArgs args)

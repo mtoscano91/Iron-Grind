@@ -590,7 +590,6 @@ namespace IronGrind.Tests.EditMode.Navigation
             _service.SetDestination(E1, TARGET_A);
 
             _bus.RaiseMobDied(new MobDiedArgs(ZONE, E1));
-            _service.Tick();
 
             Assert.That(_service.HasLatestRequest(E1, out _), Is.False);
             Assert.That(_service.HasRequestedDestination(E1), Is.False);

@@ -49,8 +49,24 @@ namespace IronGrind.Tests.EditMode.Navigation
         public bool PathPending { get; set; }
         public NavMeshPathStatus PathStatus { get; set; } = NavMeshPathStatus.PathComplete;
         public bool IsPathStale { get; set; }
-        public Vector3 DesiredVelocity { get; set; }
-        public Vector3 NextPosition { get; set; }
+        public int DesiredVelocityReads;
+        private Vector3 _desiredVelocity;
+        public Vector3 DesiredVelocity
+        {
+            get { DesiredVelocityReads++; return _desiredVelocity; }
+            set { _desiredVelocity = value; }
+        }
+        public int NextPositionSets;
+        private Vector3 _nextPosition;
+        public Vector3 NextPosition
+        {
+            get => _nextPosition;
+            set { _nextPosition = value; NextPositionSets++; Record(Name + ".NextPosition"); }
+        }
+
+        public Vector3 LastDestination;
+        public bool SetDestinationResult = true;
+        public bool ThrowOnSetDestination;
 
         public bool Enabled
         {
@@ -110,8 +126,14 @@ namespace IronGrind.Tests.EditMode.Navigation
         public bool SetDestination(Vector3 target)
         {
             SetDestinationCalls++;
+            LastDestination = target;
             Record(Name + ".SetDestination");
-            return true;
+            if (ThrowOnSetDestination)
+            {
+                throw new InvalidOperationException(Name + " setdestination exploded");
+            }
+
+            return SetDestinationResult;
         }
 
         public void ResetPath()

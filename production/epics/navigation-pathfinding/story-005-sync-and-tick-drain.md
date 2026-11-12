@@ -1,7 +1,7 @@
 # Story 005: `SyncAgentPositions` and the `Tick` Drain
 
 > **Epic**: Navigation / Pathfinding
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-11-06
@@ -28,14 +28,14 @@
 
 ## Acceptance Criteria
 
-- [ ] **SyncAgentPositions** (CR-NAV-12, AC-NAV-16): for each committed position whose entity is registered and on the mesh, sets `nextPosition`; never calls `Warp`; skips off-mesh agents and unknown entities silently.
-- [ ] **Drain** (CR-NAV-14, AC-NAV-14): one `Tick` issues at most `MAX_PATH_UPDATES_PER_TICK` agent `SetDestination` calls; the rest stay queued; each issued call uses `_latestRequests[e]`, sets `isStopped = false` first, then removes the entry.
-- [ ] **Drain skips** (ADR-003 Decision 4): unregistered entities, off-mesh agents, and entities missing from `_latestRequests` (stopped or released) are dequeued without a call and without throwing; skipped entries do not count toward the per-tick limit. Every dequeue, issued or skipped, removes the entity from `_queuedEntities`. An off-mesh skip keeps the entity's `_latestRequests` entry (the ADR-003 code); `IsPathStale` is true off the mesh, so Enemy AI re-requests and the entity is queued again (recovery is Story 006).
-- [ ] **Drain failure paths**: the entry is dequeued and removed from `_queuedEntities` before the agent call. Agent `SetDestination` returns false → one warning, the `_latestRequests` entry is removed, and the call counts toward the limit. Agent `SetDestination` throws → the exception propagates (`ZoneTickPipeline` logs it); queue and sets are already consistent, and the rest of the queue drains next tick.
-- [ ] **F-NAV-1 / AC-NAV-18**: 150 unique queued destinations at R = 20 → queue non-empty after 7 ticks, empty after exactly 8, 150 calls in total.
-- [ ] **Order** (AC-NAV-15, EC-NAV-7): within a tick, `SyncAgentPositions` runs before the first drained `SetDestination`; `Tick` never calls `GetCurrentVelocity`. The one entry point is `NavigationPhaseStep : IZoneSimulationStep` (`src/ServerLogic/Navigation/NavigationPhaseStep.cs`): `Run(currentTick, deltaTime)` clears its buffer, fills it from the source, calls `SyncAgentPositions`, then `Tick()`. It holds the concrete `ZoneNavigationService`.
-- [ ] **Committed positions input**: the step reads committed mob positions through `IMobCommittedPositionSource` (new, `src/ServerLogic/Navigation/`) with `void CopyCommittedPositions(Dictionary<EntityID, Vector3> into)` (the caller owns and clears the buffer), because Enemy AI owns mob position integration (phase 4). This story also adds `EmptyMobCommittedPositionSource` (copies nothing), the stand-in Story 010 wires until Enemy AI exists.
-- [ ] **Performance**: sync is O(committed positions), the drain O(entries dequeued); neither allocates on the success path (one buffer owned by the step, no boxed enumerators); strings only on log paths.
+- [x] **SyncAgentPositions** (CR-NAV-12, AC-NAV-16): for each committed position whose entity is registered and on the mesh, sets `nextPosition`; never calls `Warp`; skips off-mesh agents and unknown entities silently.
+- [x] **Drain** (CR-NAV-14, AC-NAV-14): one `Tick` issues at most `MAX_PATH_UPDATES_PER_TICK` agent `SetDestination` calls; the rest stay queued; each issued call uses `_latestRequests[e]`, sets `isStopped = false` first, then removes the entry.
+- [x] **Drain skips** (ADR-003 Decision 4): unregistered entities, off-mesh agents, and entities missing from `_latestRequests` (stopped or released) are dequeued without a call and without throwing; skipped entries do not count toward the per-tick limit. Every dequeue, issued or skipped, removes the entity from `_queuedEntities`. An off-mesh skip keeps the entity's `_latestRequests` entry (the ADR-003 code); `IsPathStale` is true off the mesh, so Enemy AI re-requests and the entity is queued again (recovery is Story 006).
+- [x] **Drain failure paths**: the entry is dequeued and removed from `_queuedEntities` before the agent call. Agent `SetDestination` returns false → one warning, the `_latestRequests` entry is removed, and the call counts toward the limit. Agent `SetDestination` throws → the exception propagates (`ZoneTickPipeline` logs it); queue and sets are already consistent, and the rest of the queue drains next tick.
+- [x] **F-NAV-1 / AC-NAV-18**: 150 unique queued destinations at R = 20 → queue non-empty after 7 ticks, empty after exactly 8, 150 calls in total.
+- [x] **Order** (AC-NAV-15, EC-NAV-7): within a tick, `SyncAgentPositions` runs before the first drained `SetDestination`; `Tick` never calls `GetCurrentVelocity`. The one entry point is `NavigationPhaseStep : IZoneSimulationStep` (`src/ServerLogic/Navigation/NavigationPhaseStep.cs`): `Run(currentTick, deltaTime)` clears its buffer, fills it from the source, calls `SyncAgentPositions`, then `Tick()`. It holds the concrete `ZoneNavigationService`.
+- [x] **Committed positions input**: the step reads committed mob positions through `IMobCommittedPositionSource` (new, `src/ServerLogic/Navigation/`) with `void CopyCommittedPositions(Dictionary<EntityID, Vector3> into)` (the caller owns and clears the buffer), because Enemy AI owns mob position integration (phase 4). This story also adds `EmptyMobCommittedPositionSource` (copies nothing), the stand-in Story 010 wires until Enemy AI exists.
+- [x] **Performance**: sync is O(committed positions), the drain O(entries dequeued); neither allocates on the success path (one buffer owned by the step, no boxed enumerators); strings only on log paths.
 
 ---
 
@@ -49,6 +49,7 @@
 - **Story 003 carry (2026-11-12)**: release (`HandleMobDied`) removes the entity from `_activeAgents`, `_latestRequests` and `_failureCounts` but does not search `_pendingRequests` (a queue). The drain must dequeue and skip any entry whose entity is not in `_activeAgents` or has no `_latestRequests` entry (the "released e2" skip case), and a released-then-respawned `EntityID` must not be issued a stale destination. Until the drain empties the queue, `TrackedStateCount` can be non-zero after a release; the release test asserts it only when nothing was queued.
 - **Story 004 carry (2026-11-12)**: Story 004 adds `HashSet<EntityID> _queuedEntities` ("already queued", O(1)); `SetDestination` enqueues only when the entity is not in it. The drain removes the entity from `_queuedEntities` on every dequeue, issued or skipped, so a later request re-enqueues. Release does not touch the set; the stale slot is skipped here. The post-drain halves of AC-NAV-11 (Stop after queued `SetDestination` → no call, `isStopped` stays true) and AC-NAV-22 (MobDied after queued `SetDestination` → no call) are asserted by the "Skips" test (stopped e1, released e2); cite them there.
 - No same-tick path: tests must not assert a path or non-zero velocity on the drain tick (ADR-002 Decision 2).
+- **Story 006 carry (code review 2026-11-12)**: a rejected agent `SetDestination` logs one warning per drain; an agent that keeps rejecting while Enemy AI re-requests warns every tick (20 Hz). Rate-limit it with the failure counter Story 006 adds at the drain hook (for example, warn on the 0 → 1 transition only). Also verify EC-NAV-9 (nextPosition during pathPending) on a real agent in Story 009 PlayMode.
 
 ---
 
@@ -83,7 +84,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/Navigation/Navigation_TickDrain_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing (25 cases, 2026-11-12)
 
 ---
 
@@ -91,3 +92,13 @@
 
 - Depends on: Story 004
 - Unlocks: Story 006
+
+---
+
+## Completion Notes
+**Completed**: 2026-11-12
+**Criteria**: 8/8 passing (performance AC verified by code review, not an automated test)
+**Deviations** (advisory): the drain removes `_latestRequests[e]` before the agent call (story text: after) so a throwing agent leaves consistent state; skip counting follows ADR-003 Decision 4, CR-NAV-14 wording to fix at the next GDD pass.
+**Carries**: Story 006 — rate-limit the rejected-`SetDestination` warning with the failure counter; Story 009 — verify EC-NAV-9 on a real agent (PlayMode).
+**Test Evidence**: Logic — `tests/EditMode/Navigation/Navigation_TickDrain_tests.cs` (23 [Test] + 2 [TestCase] = 25); EditMode 7247 / 7118 / 0 failed / 129 skipped
+**Code Review**: Complete (unity-specialist ISSUES + qa-tester GAPS, no blockers; fixes 1–12 applied)
