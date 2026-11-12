@@ -24,10 +24,10 @@ Navigation/Pathfinding executes within `IronGrind.ServerLogic` (`defineConstrain
 ---
 
 **CR-NAV-2: NavMesh Asset Lifecycle — Load**
-`ZoneNavigationService.Initialize(ZoneID zoneId, NavMeshData data)` is called by Zone Instancing during the zone `Loading` phase, before the zone transitions to `Active` and before any `MobEventBus.MobSpawned` events are raised.
+`ZoneNavigationService.Initialize(ZoneID zoneId, NavMeshDataInstance instance)` is called by the zone server composition at startup step S6, after the zone scene loaded, before the zone transitions to `Active` and before any `MobEventBus.MobSpawned` events are raised. *(Updated 2026-11-12, Navigation `/create-stories`: ADR-009 Amendment 1 moved `NavMesh.AddNavMeshData` into the scene loader — `IZoneScene.AddNavMeshData` adds `ZoneDefinition.BakedNavMesh` — so the service receives the instance through `IZoneNavigation.Initialize` and owns it from that call, even if it throws.)*
 
-1. Call `NavMesh.AddNavMeshData(data)` and store the returned `NavMeshDataInstance` as `_navMeshInstance`.
-2. If `_navMeshInstance.valid == false`: log error with `ZoneID`; report load failure to Zone Instancing; zone initialization is aborted. No mobs spawn in a zone without a valid NavMesh.
+1. Store the received instance as `_navMeshInstance`.
+2. If `_navMeshInstance.valid == false`: log error with `ZoneID` and throw, so S6 fails and zone initialization is aborted. No mobs spawn in a zone without a valid NavMesh.
 3. After confirming `_navMeshInstance.valid`, run the spawn-point assertion (CR-NAV-13).
 
 Runtime baking is prohibited. All `NavMeshData` assets are baked in the Unity Editor prior to build (iOS performance constraint; Movement System CR-MOV-7). Asset naming convention: `Assets/NavMesh/{ZoneTemplateID}.asset` — must be included in the server build.

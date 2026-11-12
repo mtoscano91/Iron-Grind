@@ -25,7 +25,7 @@
 # STATUS VALUES: active | deprecated | superseded-by: TR-[system]-NNN
 
 version: 2
-last_updated: "2026-11-06"  # 2026-11-06: TR-auth-006 added (Authentication Story 005 /story-readiness).2026-11-02: TR-sk-001..011 added (Skill System EPIC.md table, /create-epics). Same day, earlier: TR-aa-001..009 added (Auto-Attack Combat EPIC.md table, by hand at user request). 2026-10-15: 107 TR-IDs registered from the 13 EPIC.md tables (/architecture-review, docs/architecture/architecture-review-2026-10-15-tr-registry.md); 7 carry a revised date
+last_updated: "2026-11-12"  # 2026-11-12: TR-nav-001..009 added (Navigation / Pathfinding EPIC.md table, /create-epics). 2026-11-06: TR-auth-006 added (Authentication Story 005 /story-readiness).2026-11-02: TR-sk-001..011 added (Skill System EPIC.md table, /create-epics). Same day, earlier: TR-aa-001..009 added (Auto-Attack Combat EPIC.md table, by hand at user request). 2026-10-15: 107 TR-IDs registered from the 13 EPIC.md tables (/architecture-review, docs/architecture/architecture-review-2026-10-15-tr-registry.md); 7 carry a revised date
 
 requirements:
   # --- auth: design/gdd/authentication.md (production/epics/authentication/EPIC.md) ---
@@ -949,5 +949,70 @@ requirements:
     gdd: design/gdd/skill-system.md
     requirement: "The 20-skill MVP roster (10 Warrior, 10 Healer) is authored as `SkillDatabase` data within the class cost and unlock constraints, with BuffIDs and BuffDefinitions for the 10 buff and debuff skills (Skill Roster, CR-SK-14, 15, 22, AC-SK-36 to 38, OQ-SK-6)"
     created: 2026-11-02
+    revised: ""
+    status: active
+
+  # --- nav: design/gdd/navigation-pathfinding.md (production/epics/navigation-pathfinding/EPIC.md) ---
+  - id: TR-nav-001
+    system: nav
+    gdd: design/gdd/navigation-pathfinding.md
+    requirement: "`IZoneNavigation` lifecycle: `Initialize(ZoneID, NavMeshDataInstance)` takes the instance the scene loader added (ADR-009 A1) and aborts zone initialisation if it is invalid; `Teardown` disables agents, clears dictionaries, then removes the NavMesh data; `_tornDown` guard; main thread only; one zone per process (CR-NAV-1 to 3, EC-NAV-4, EC-NAV-6, AC-NAV-01 to 03)"
+    created: 2026-11-12
+    revised: ""
+    status: active
+  - id: TR-nav-002
+    system: nav
+    gdd: design/gdd/navigation-pathfinding.md
+    requirement: "A pool of `MAX_AGENT_POOL_SIZE` (150) `NavMeshAgent` objects is filled at `Initialize` with `updatePosition`, `updateRotation` and `autoBraking` false, no obstacle avoidance, and disabled; no `Instantiate` or `Destroy` during gameplay (CR-NAV-4, AC-NAV-04)"
+    created: 2026-11-12
+    revised: ""
+    status: active
+  - id: TR-nav-003
+    system: nav
+    gdd: design/gdd/navigation-pathfinding.md
+    requirement: "An agent is claimed on `MobEventBus.MobSpawned` (Warp to spawn, speed from `IMobDefinitionRegistry`, stopped) and released on `MobEventBus.MobDied` (ResetPath, disable, return to pool); a double claim and pool exhaustion log an error without throwing (CR-NAV-5, CR-NAV-6, EC-NAV-2, EC-NAV-3, AC-NAV-05 to 07, 22)"
+    created: 2026-11-12
+    revised: ""
+    status: active
+  - id: TR-nav-004
+    system: nav
+    gdd: design/gdd/navigation-pathfinding.md
+    requirement: "`INavigationProvider`: `SetDestination` queues with latest-wins, `SetSpeed` clamps to [0.1, 20], `Stop` keeps the path and drops the queued request, `Resume` clears isStopped only, `IsPathStale` is O(1), `GetCurrentVelocity` returns `desiredVelocity` on XZ (CR-NAV-7 to 11, CR-NAV-16, EC-NAV-1, AC-NAV-08 to 13, 24)"
+    created: 2026-11-12
+    revised: ""
+    status: active
+  - id: TR-nav-005
+    system: nav
+    gdd: design/gdd/navigation-pathfinding.md
+    requirement: "`SyncAgentPositions` (phase 1, sets `nextPosition`) and the `Tick` drain of at most `MAX_PATH_UPDATES_PER_TICK` requests (phase 2) run in the ADR-002 Decision 1 order; no code assumes a path on the tick it was requested (CR-NAV-12, CR-NAV-14, EC-NAV-7, EC-NAV-9, F-NAV-1, AC-NAV-14 to 16, 18)"
+    created: 2026-11-12
+    revised: ""
+    status: active
+  - id: TR-nav-006
+    system: nav
+    gdd: design/gdd/navigation-pathfinding.md
+    requirement: "Partial-path timeout after `PARTIAL_PATH_TIMEOUT_TICKS`, off-mesh recovery Warp after `NAV_OFF_MESH_RECOVERY_TICKS`, stuck re-route warning after `NAV_STUCK_REROUTE_DETECTION_TICKS` (CR-NAV-15, F-NAV-2, EC-NAV-8, EC-NAV-10, AC-NAV-17, 19, 23)"
+    created: 2026-11-12
+    revised: ""
+    status: active
+  - id: TR-nav-007
+    system: nav
+    gdd: design/gdd/navigation-pathfinding.md
+    requirement: "At zone load every spawn point is checked with `NavMesh.SamplePosition`; off-mesh points are excluded and logged, and zone initialisation aborts below `MIN_VALID_SPAWN_FRACTION` (CR-NAV-13, EC-NAV-5, AC-NAV-21)"
+    created: 2026-11-12
+    revised: ""
+    status: active
+  - id: TR-nav-008
+    system: nav
+    gdd: design/gdd/navigation-pathfinding.md
+    requirement: "Server build configuration: `Assets/link.xml` preserves `UnityEngine.AI`; the frame-rate pin is confirmed to drive `NavMeshAgent` simulation in a `UNITY_SERVER` build, else the ADR-002 Decision 5a fallback applies (ADR-002 Decision 5)"
+    created: 2026-11-12
+    revised: ""
+    status: active
+  - id: TR-nav-009
+    system: nav
+    gdd: design/gdd/navigation-pathfinding.md
+    requirement: "The starting zone's NavMesh is baked in the Editor and set as `ZoneDefinition.BakedNavMesh`; a 150-agent fixture verifies F-NAV-3 (AC-NAV-20, OQ-NAV-2)"
+    created: 2026-11-12
     revised: ""
     status: active
