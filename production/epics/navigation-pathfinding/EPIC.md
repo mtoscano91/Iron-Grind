@@ -86,7 +86,7 @@ Taken for all four combat-loop epics (Navigation, Enemy AI, Mob Spawning, Death 
 | 003 | [Agent claim and release on the bus](story-003-agent-claim-release.md) | Logic | Complete | ADR-003 |
 | 004 | [`INavigationProvider` calls](story-004-navigation-provider-calls.md) | Logic | Complete | ADR-003, ADR-002 |
 | 005 | [`SyncAgentPositions` and the `Tick` drain](story-005-sync-and-tick-drain.md) | Logic | Complete | ADR-002, ADR-003 |
-| 006 | [Path health](story-006-path-health.md) | Logic | Ready | ADR-002, ADR-003 |
+| 006 | [Path health](story-006-path-health.md) | Logic | Complete | ADR-002, ADR-003 |
 | 007 | [Spawn-point validator](story-007-spawn-point-validator.md) | Logic | Ready | ADR-002 |
 | 008 | [Starting-zone floor and NavMesh bake](story-008-starting-zone-navmesh-bake.md) | Config/Data | Ready | ADR-009, ADR-002 |
 | 009 | [Unity adapters and server build config](story-009-unity-adapters-build-config.md) | Integration | Ready | ADR-002, ADR-012 |

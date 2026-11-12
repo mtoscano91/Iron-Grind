@@ -73,6 +73,25 @@ namespace IronGrind.ServerLogic.Navigation
         private readonly HashSet<EntityID> _queuedEntities;
         private readonly HashSet<EntityID> _destinationRequested;
 
+        // Per-entity path-health state (Story 006), one entry per registered agent: created at claim, removed at release
+        // and Teardown. One dictionary of a private struct keeps TrackedStateCount simple. The health pass iterates
+        // _activeAgents and writes here (a different dictionary), so no collection is modified while enumerated.
+        private struct PathHealthState
+        {
+            public int PartialCount;
+            public int OffMeshCount;
+            public bool OffMeshWarned;
+            public bool OffMeshErrorLogged;
+            public Vector3 LastCommittedPosition;
+            public bool HasTarget;
+            public Vector3 LastTarget;
+            public bool LastCallAccepted;
+            public int StuckStreak;
+            public bool StuckLogged;
+        }
+
+        private readonly Dictionary<EntityID, PathHealthState> _health;
+
         private NavMeshDataInstance _instance;
         private ZoneID _zone;
         private bool _initializeAttempted;
@@ -113,6 +132,7 @@ namespace IronGrind.ServerLogic.Navigation
             _failureCounts = new Dictionary<EntityID, int>(_config.MaxAgentPoolSize);
             _queuedEntities = new HashSet<EntityID>(_config.MaxAgentPoolSize);
             _destinationRequested = new HashSet<EntityID>(_config.MaxAgentPoolSize);
+            _health = new Dictionary<EntityID, PathHealthState>(_config.MaxAgentPoolSize);
         }
 
         /// <summary>Number of agents sitting in the pool (enabled false).</summary>
@@ -127,10 +147,13 @@ namespace IronGrind.ServerLogic.Navigation
         /// </summary>
         internal bool IsAcceptingSpawns => _initialized && !_tornDown;
 
-        /// <summary>Total entries across the active, pending, latest-request, counter, queued and requested collections.</summary>
+        /// <summary>
+        /// Total entries across the active, pending, latest-request, failure-counter, queued, requested and
+        /// path-health (one entry per registered agent) collections.
+        /// </summary>
         internal int TrackedStateCount =>
             _activeAgents.Count + _pendingRequests.Count + _latestRequests.Count + _failureCounts.Count
-            + _queuedEntities.Count + _destinationRequested.Count;
+            + _queuedEntities.Count + _destinationRequested.Count + _health.Count;
 
         /// <summary>The stored NavMesh data instance; <c>default</c> after <see cref="Teardown"/>.</summary>
         internal NavMeshDataInstance StoredInstance => _instance;
@@ -203,6 +226,7 @@ namespace IronGrind.ServerLogic.Navigation
                 _failureCounts.Clear();
                 _queuedEntities.Clear();
                 _destinationRequested.Clear();
+                _health.Clear();
                 _pool.Clear();
                 _createdAgents.Clear();
             }
@@ -218,10 +242,14 @@ namespace IronGrind.ServerLogic.Navigation
         }
 
         /// <summary>
-        /// Phase 2: drains the path request queue (CR-NAV-14, ADR-003 Decision 4). Returns immediately after
-        /// <see cref="Teardown"/>. Call only from <see cref="NavigationPhaseStep"/>.
+        /// Phase 2: runs the path-health pass (CR-NAV-15, EC-NAV-8, EC-NAV-10), then drains the path request queue
+        /// (CR-NAV-14, ADR-003 Decision 4). Returns immediately after <see cref="Teardown"/>. Call only from
+        /// <see cref="NavigationPhaseStep"/>.
         /// </summary>
         /// <remarks>
+        /// Phase ownership: phase 1 (<see cref="SyncAgentPositions(Dictionary{EntityID, Vector3})"/>) only records the
+        /// last committed position; phase 2 (this method) owns the health counters and every <c>Warp</c> after claim:
+        /// health pass first, then the drain, so an agent issued this tick ends the tick with a partial count of 0.
         /// Issues at most MAX_PATH_UPDATES_PER_TICK agent calls; skipped entries do not count. Every dequeue, issued or
         /// skipped, removes the entity from the queued set. A throwing agent propagates out of the tick.
         /// </remarks>
@@ -231,6 +259,8 @@ namespace IronGrind.ServerLogic.Navigation
             {
                 return;
             }
+
+            RunHealthPass();
 
             int issued = 0;
             while (issued < _config.MaxPathUpdatesPerTick && _pendingRequests.Count > 0)
@@ -268,16 +298,176 @@ namespace IronGrind.ServerLogic.Navigation
 
             _latestRequests.Remove(entity);
             agent.IsStopped = false;
-            if (!agent.SetDestination(destination))
+            bool accepted = agent.SetDestination(destination);
+
+            // Failure counter: consecutive rejected calls. Warn only on the 0 -> 1 transition; an accepted call removes
+            // the entry (absent == 0).
+            if (accepted)
             {
-                Debug.LogWarning(LOG_PREFIX + "SetDestination rejected by the agent for " + entity + " target "
-                    + destination + ".");
+                _failureCounts.Remove(entity);
+            }
+            else
+            {
+                _failureCounts.TryGetValue(entity, out int failures);
+                _failureCounts[entity] = failures + 1;
+                if (failures == 0)
+                {
+                    Debug.LogWarning(LOG_PREFIX + "SetDestination rejected by the agent for " + entity + " target "
+                        + destination + ".");
+                }
             }
 
-            // Story 006: rate-limit the rejected-SetDestination warning with the failure counter (warn on 0 -> 1 only);
-            // an agent that keeps rejecting warns every tick today. Also reset the partial-path counter for this
-            // entity here (CR-NAV-15).
+            // Health hook (CR-NAV-15, EC-NAV-8): any issued call resets the partial count; a different target resets the
+            // stuck streak; remember the target and whether the call was accepted.
+            if (_health.TryGetValue(entity, out PathHealthState state))
+            {
+                state.PartialCount = 0;
+                // Exact component equality on purpose: Vector3 operator != has a ~1e-5 tolerance and would treat a
+                // slightly different target as unchanged.
+                if (!state.HasTarget || !state.LastTarget.Equals(destination))
+                {
+                    state.StuckStreak = 0;
+                    state.StuckLogged = false;
+                }
+
+                state.HasTarget = true;
+                state.LastTarget = destination;
+                state.LastCallAccepted = accepted;
+                _health[entity] = state;
+            }
+
             return true;
+        }
+
+        // Health pass (phase 2, before the drain). Iterates _activeAgents and writes only to _health (and removes from
+        // _destinationRequested, a different collection, after a successful recovery Warp).
+        // Off-mesh (TryRecoverOffMesh): count consecutive off-mesh ticks; at NavOffMeshRecoveryTicks Warp to the last
+        // committed position and restart the count (retry every N ticks); one warning per streak, one error per streak
+        // when Warp returns false; a throwing Warp propagates. Off-mesh ticks do no partial / stuck counting, and
+        // neither do pending ticks (UpdatePathCounters).
+        private void RunHealthPass()
+        {
+            foreach (KeyValuePair<EntityID, INavAgent> pair in _activeAgents)
+            {
+                EntityID entity = pair.Key;
+                INavAgent agent = pair.Value;
+                if (!_health.TryGetValue(entity, out PathHealthState state))
+                {
+                    continue;
+                }
+
+                if (!agent.IsOnNavMesh)
+                {
+                    TryRecoverOffMesh(entity, agent, ref state);
+                    continue;
+                }
+
+                state.OffMeshCount = 0;
+                state.OffMeshWarned = false;
+                state.OffMeshErrorLogged = false;
+
+                if (!agent.PathPending)
+                {
+                    UpdatePathCounters(entity, agent, ref state);
+                }
+
+                _health[entity] = state;
+            }
+        }
+
+        // One off-mesh tick. Returns true only when a recovery Warp was made and succeeded. Always stores the state.
+        private bool TryRecoverOffMesh(EntityID entity, INavAgent agent, ref PathHealthState state)
+        {
+            state.OffMeshCount++;
+            if (state.OffMeshCount < _config.NavOffMeshRecoveryTicks)
+            {
+                _health[entity] = state;
+                return false;
+            }
+
+            state.OffMeshCount = 0;
+            bool firstOfStreak = !state.OffMeshWarned;
+            state.OffMeshWarned = true;
+            Vector3 warpTo = state.LastCommittedPosition;
+            _health[entity] = state; // stored before Warp, which may throw
+            if (firstOfStreak)
+            {
+                Debug.LogWarning(LOG_PREFIX + "Agent for " + _zone + " " + entity
+                    + " off the NavMesh; warping to last committed position " + warpTo + " (EC-NAV-10).");
+            }
+
+            if (agent.Warp(warpTo))
+            {
+                ResetAfterRecoveryWarp(entity, ref state);
+                return true;
+            }
+
+            if (!state.OffMeshErrorLogged)
+            {
+                state.OffMeshErrorLogged = true; // one error per off-mesh streak, cleared when back on the mesh
+                _health[entity] = state;
+                Debug.LogError(LOG_PREFIX + "Off-mesh recovery Warp failed for " + _zone + " " + entity + " at "
+                    + warpTo + ".");
+            }
+
+            return false;
+        }
+
+        // A real NavMeshAgent.Warp clears the path (verified in Story 009), so the old request is gone: report "never
+        // set" (IsPathStale true) and let Enemy AI re-request. Counters restart with the new position.
+        private void ResetAfterRecoveryWarp(EntityID entity, ref PathHealthState state)
+        {
+            _destinationRequested.Remove(entity);
+            state.PartialCount = 0;
+            state.StuckStreak = 0;
+            state.StuckLogged = false;
+            state.HasTarget = false;
+            _health[entity] = state;
+        }
+
+        // Partial and stuck counters for an on-mesh, non-pending agent.
+        // Partial: PathPartial and not stopped -> +1; PathComplete -> 0; PathInvalid leaves the count unchanged
+        // (IsPathStale is already true through the PathInvalid row).
+        // Stuck rule: the entity has an issued target, is not stopped, and (its last issued call was rejected OR
+        // PathStatus is PathInvalid) -> streak +1 (target changes reset it in TryIssue); a valid path with an accepted
+        // call resets it. A stopped agent is deliberately idle: streak reset, no counting (Stop also clears the target).
+        // One error per streak at NavStuckRerouteDetectionTicks; no other action.
+        private void UpdatePathCounters(EntityID entity, INavAgent agent, ref PathHealthState state)
+        {
+            NavMeshPathStatus status = agent.PathStatus;
+            bool stopped = agent.IsStopped;
+            if (status == NavMeshPathStatus.PathPartial)
+            {
+                if (!stopped)
+                {
+                    state.PartialCount++;
+                }
+            }
+            else if (status == NavMeshPathStatus.PathComplete)
+            {
+                state.PartialCount = 0;
+            }
+
+            if (!state.HasTarget)
+            {
+                return;
+            }
+
+            // Reset: stopped (deliberately idle), or a valid path with an accepted call. Otherwise the streak grows.
+            if (stopped || (state.LastCallAccepted && status != NavMeshPathStatus.PathInvalid))
+            {
+                state.StuckStreak = 0;
+                state.StuckLogged = false;
+                return;
+            }
+
+            state.StuckStreak++;
+            if (state.StuckStreak >= _config.NavStuckRerouteDetectionTicks && !state.StuckLogged)
+            {
+                state.StuckLogged = true;
+                Debug.LogError(LOG_PREFIX + "Agent for " + _zone + " " + entity + " stuck: no valid path to "
+                    + state.LastTarget + " for " + state.StuckStreak + " ticks (EC-NAV-8).");
+            }
         }
 
         /// <summary>
@@ -322,6 +512,11 @@ namespace IronGrind.ServerLogic.Navigation
             if (_activeAgents.TryGetValue(entity, out INavAgent agent) && agent.IsOnNavMesh)
             {
                 agent.NextPosition = position;
+                if (_health.TryGetValue(entity, out PathHealthState state))
+                {
+                    state.LastCommittedPosition = position;
+                    _health[entity] = state;
+                }
             }
         }
 
@@ -390,6 +585,15 @@ namespace IronGrind.ServerLogic.Navigation
 
             nav.IsStopped = true;
             _latestRequests.Remove(agent);
+
+            // Forget the issued target so a rejected last call cannot keep growing the stuck streak while stopped.
+            if (_health.TryGetValue(agent, out PathHealthState state))
+            {
+                state.HasTarget = false;
+                state.StuckStreak = 0;
+                state.StuckLogged = false;
+                _health[agent] = state;
+            }
         }
 
         /// <inheritdoc/>
@@ -415,7 +619,7 @@ namespace IronGrind.ServerLogic.Navigation
 
             // Precedence (CR-NAV-10): not registered (above) -> true; off the mesh -> true; a pending path -> false
             // (wins over invalid / never set); PathInvalid, the agent's own stale flag, or never requested -> true;
-            // partial -> false (Story 006 adds the counter-at-timeout row here); otherwise false.
+            // partial with count >= PartialPathTimeoutTicks -> true (F-NAV-2); otherwise false.
             // Between SetDestination and the drain the agent has not seen the request yet, so this reports the old
             // path's status (async by design, ADR-002 Decision 2).
             if (!nav.IsOnNavMesh)
@@ -428,9 +632,31 @@ namespace IronGrind.ServerLogic.Navigation
                 return false;
             }
 
-            return nav.PathStatus == NavMeshPathStatus.PathInvalid || nav.IsPathStale
-                || !_destinationRequested.Contains(agent);
+            NavMeshPathStatus status = nav.PathStatus;
+            if (status == NavMeshPathStatus.PathInvalid || nav.IsPathStale || !_destinationRequested.Contains(agent))
+            {
+                return true;
+            }
+
+            return status == NavMeshPathStatus.PathPartial && _health.TryGetValue(agent, out PathHealthState state)
+                && state.PartialCount >= _config.PartialPathTimeoutTicks;
         }
+
+        /// <summary>Consecutive partial-path health ticks for the entity; 0 when unregistered (test accessor).</summary>
+        internal int PartialPathTickCount(EntityID agent) => _health.TryGetValue(agent, out PathHealthState s) ? s.PartialCount : 0;
+
+        /// <summary>Consecutive off-mesh health ticks since the last warp or on-mesh tick; 0 when unregistered (test accessor).</summary>
+        internal int OffMeshTickCount(EntityID agent) => _health.TryGetValue(agent, out PathHealthState s) ? s.OffMeshCount : 0;
+
+        /// <summary>Current stuck re-route streak; 0 when unregistered (test accessor).</summary>
+        internal int StuckStreak(EntityID agent) => _health.TryGetValue(agent, out PathHealthState s) ? s.StuckStreak : 0;
+
+        /// <summary>Last committed position (spawn position until the first on-mesh sync); zero when unregistered (test accessor).</summary>
+        internal Vector3 LastKnownCommittedPosition(EntityID agent) =>
+            _health.TryGetValue(agent, out PathHealthState s) ? s.LastCommittedPosition : Vector3.zero;
+
+        /// <summary>Consecutive rejected drain calls for the entity; 0 when none (test accessor).</summary>
+        internal int FailureCount(EntityID agent) => _failureCounts.TryGetValue(agent, out int n) ? n : 0;
 
         /// <summary>
         /// The agent's desired velocity on the XZ plane (CR-NAV-11); never the smoothed <c>velocity</c>. The real agent
@@ -558,6 +784,7 @@ namespace IronGrind.ServerLogic.Navigation
                     agent.Speed = speed;
                     agent.IsStopped = true;
                     _activeAgents[args.Entity] = agent;
+                    _health[args.Entity] = new PathHealthState { LastCommittedPosition = args.SpawnPosition };
                 }
             }
             catch
@@ -565,6 +792,7 @@ namespace IronGrind.ServerLogic.Navigation
                 TryDisable(agent);
                 _pool.Push(agent);
                 _activeAgents.Remove(args.Entity);
+                _health.Remove(args.Entity);
                 throw;
             }
 
@@ -598,6 +826,7 @@ namespace IronGrind.ServerLogic.Navigation
             _activeAgents.Remove(args.Entity);
             _latestRequests.Remove(args.Entity);
             _failureCounts.Remove(args.Entity);
+            _health.Remove(args.Entity);
             _destinationRequested.Remove(args.Entity); // _queuedEntities stays: the drain skips the stale slot
             try
             {

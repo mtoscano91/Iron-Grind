@@ -480,7 +480,7 @@ namespace IronGrind.Tests.EditMode.Navigation
             var requested = Field<HashSet<EntityID>>("_destinationRequested");
             requested.Add(E1);
             requested.Add(other);
-            Assert.That(_service.TrackedStateCount, Is.EqualTo(8));
+            Assert.That(_service.TrackedStateCount, Is.EqualTo(10)); // + one path-health entry per agent (Story 006)
 
             Die(E1);
 
@@ -490,7 +490,7 @@ namespace IronGrind.Tests.EditMode.Navigation
             Assert.That(failures.ContainsKey(other), Is.True);
             Assert.That(requested.Contains(E1), Is.False);
             Assert.That(requested.Contains(other), Is.True);
-            Assert.That(_service.TrackedStateCount, Is.EqualTo(4));
+            Assert.That(_service.TrackedStateCount, Is.EqualTo(5));
 
             Die(other);
 

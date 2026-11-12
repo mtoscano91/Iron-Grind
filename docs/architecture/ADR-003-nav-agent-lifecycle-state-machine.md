@@ -373,6 +373,8 @@ public interface INavigationProvider {
 | `design/gdd/enemy-ai.md` | Add `Resume()` call on Pursuing re-entry; add SetSpeed(RETURN_SPEED_CAP) on Returning entry and restore on exit; correct Dormant state table `enabled` entry |
 | `design/registry/entities.yaml` | Register `RETURN_SPEED_CAP: 6.0 m/s, source: navigation-pathfinding.md` |
 
+> **Implementation note (Navigation Story 006, 2026-11-12):** besides the claim-time `Warp` in the table above, phase 2 (`Tick`, health pass before the drain) owns the EC-NAV-10 off-mesh recovery `Warp(lastKnownCommittedPos)`. Phase 1 (`SyncAgentPositions`) never warps (CR-NAV-12). After a successful recovery `Warp` the entity's "destination requested" mark and path-health counters are cleared, so `IsPathStale` reports true and Enemy AI re-requests (a real `Warp` clears the path — verified in Story 009).
+
 ---
 
 ## Related
