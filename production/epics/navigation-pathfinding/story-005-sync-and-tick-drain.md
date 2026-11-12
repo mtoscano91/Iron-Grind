@@ -5,7 +5,7 @@
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-11-06
-> **Estimate**: 2–3 hours
+> **Estimate**: 4 hours
 
 ## Context
 
@@ -30,16 +30,20 @@
 
 - [ ] **SyncAgentPositions** (CR-NAV-12, AC-NAV-16): for each committed position whose entity is registered and on the mesh, sets `nextPosition`; never calls `Warp`; skips off-mesh agents and unknown entities silently.
 - [ ] **Drain** (CR-NAV-14, AC-NAV-14): one `Tick` issues at most `MAX_PATH_UPDATES_PER_TICK` agent `SetDestination` calls; the rest stay queued; each issued call uses `_latestRequests[e]`, sets `isStopped = false` first, then removes the entry.
-- [ ] **Drain skips** (ADR-003 Decision 4): unregistered entities, off-mesh agents, and entities missing from `_latestRequests` (stopped or released) are dequeued without a call and without throwing; skipped entries do not count toward the per-tick limit.
+- [ ] **Drain skips** (ADR-003 Decision 4): unregistered entities, off-mesh agents, and entities missing from `_latestRequests` (stopped or released) are dequeued without a call and without throwing; skipped entries do not count toward the per-tick limit. Every dequeue, issued or skipped, removes the entity from `_queuedEntities`. An off-mesh skip keeps the entity's `_latestRequests` entry (the ADR-003 code); `IsPathStale` is true off the mesh, so Enemy AI re-requests and the entity is queued again (recovery is Story 006).
+- [ ] **Drain failure paths**: the entry is dequeued and removed from `_queuedEntities` before the agent call. Agent `SetDestination` returns false → one warning, the `_latestRequests` entry is removed, and the call counts toward the limit. Agent `SetDestination` throws → the exception propagates (`ZoneTickPipeline` logs it); queue and sets are already consistent, and the rest of the queue drains next tick.
 - [ ] **F-NAV-1 / AC-NAV-18**: 150 unique queued destinations at R = 20 → queue non-empty after 7 ticks, empty after exactly 8, 150 calls in total.
-- [ ] **Order** (AC-NAV-15, EC-NAV-7): within a tick, `SyncAgentPositions` runs before the first drained `SetDestination`; `Tick` never calls `GetCurrentVelocity`. Expose one entry point the composition calls for phases 1–2 (for example `RunNavigationPhases(committed)`, or a step class), so the order is in one place.
-- [ ] **Committed positions input**: the phase-1 entry point reads committed mob positions through a seam (`IMobCommittedPositionSource`), because Enemy AI owns mob position integration (phase 4). Until Enemy AI exists the source is empty.
+- [ ] **Order** (AC-NAV-15, EC-NAV-7): within a tick, `SyncAgentPositions` runs before the first drained `SetDestination`; `Tick` never calls `GetCurrentVelocity`. The one entry point is `NavigationPhaseStep : IZoneSimulationStep` (`src/ServerLogic/Navigation/NavigationPhaseStep.cs`): `Run(currentTick, deltaTime)` clears its buffer, fills it from the source, calls `SyncAgentPositions`, then `Tick()`. It holds the concrete `ZoneNavigationService`.
+- [ ] **Committed positions input**: the step reads committed mob positions through `IMobCommittedPositionSource` (new, `src/ServerLogic/Navigation/`) with `void CopyCommittedPositions(Dictionary<EntityID, Vector3> into)` (the caller owns and clears the buffer), because Enemy AI owns mob position integration (phase 4). This story also adds `EmptyMobCommittedPositionSource` (copies nothing), the stand-in Story 010 wires until Enemy AI exists.
+- [ ] **Performance**: sync is O(committed positions), the drain O(entries dequeued); neither allocates on the success path (one buffer owned by the step, no boxed enumerators); strings only on log paths.
 
 ---
 
 ## Implementation Notes
 
-- **Signature**: the GDD has `SyncAgentPositions(IReadOnlyDictionary<EntityID, Vector3>)`. Keep it, but have the step pull from `IMobCommittedPositionSource` so no dictionary is allocated per tick (reuse one buffer). CR-NAV-12 leaves "extract `INavigationPositionSync`" to the lead programmer: decide at `/story-readiness` and record it (recommended: a `NavigationPhaseStep` class owning phases 1–2 that the composition adds to `_simulationSteps`; the service keeps the two methods).
+- **Signature**: the GDD has `SyncAgentPositions(IReadOnlyDictionary<EntityID, Vector3>)`. Keep it public, and add an `internal SyncAgentPositions(Dictionary<EntityID, Vector3>)` overload that holds the loop: `foreach` over the interface boxes the enumerator every tick, the concrete `Dictionary` does not. The public method forwards (its own enumeration may allocate; only tests and future callers use it). The step calls the overload with its reused buffer.
+- **`INavigationPositionSync` decision (lead programmer, `/story-readiness` 2026-11-12)**: not extracted. `NavigationPhaseStep` owns phases 1–2 and holds the concrete service; the order test uses a call recorder over the fake agents (`NextPosition` set, `IsStopped` set, `SetDestination`), so no extra interface is needed. The service keeps `SyncAgentPositions` and `Tick`; Story 010 adds the step to `_simulationSteps`.
+- **Skip counting**: CR-NAV-14 pseudocode reads "for up to MAX dequeued entries"; ADR-003 Decision 4 code increments `drained` only on an issued call. The ADR governs (skips are cheap; the queue holds at most one slot per entity through `_queuedEntities`). Fix the CR-NAV-14 wording at the next GDD pass.
 - **Re-queue on the same tick**: a `SetDestination` called again for an entity already in the queue only overwrites `_latestRequests` (Story 004). If a queued entry was drained and the entity calls again later, it is re-enqueued. Test that an entity drained on tick N and re-requested on N is issued on N+1.
 - **Partial counter reset** on a processed `SetDestination` (CR-NAV-15) belongs to Story 006; leave a clear hook.
 - **Story 003 carry (2026-11-12)**: release (`HandleMobDied`) removes the entity from `_activeAgents`, `_latestRequests` and `_failureCounts` but does not search `_pendingRequests` (a queue). The drain must dequeue and skip any entry whose entity is not in `_activeAgents` or has no `_latestRequests` entry (the "released e2" skip case), and a released-then-respawned `EntityID` must not be issued a stale destination. Until the drain empties the queue, `TrackedStateCount` can be non-zero after a release; the release test asserts it only when nothing was queued.
@@ -51,7 +55,7 @@
 ## Out of Scope
 
 - Story 006: partial-path counting, off-mesh recovery (both tick inside `Tick` / sync; add them there)
-- Story 010: adding the phase step to the composition before the phase-3 systems
+- Story 010: adding the phase step (with `EmptyMobCommittedPositionSource`) to the composition before the phase-3 systems
 - Enemy AI epic: the real committed-position source and phase 4 integration
 
 ---
@@ -67,7 +71,10 @@
 - **isStopped before SetDestination**: recorder shows `isStopped = false` then `SetDestination`.
 - **Re-request after drain**: drained on tick N, requested again on N → issued on N+1.
 - **Respawn with a stale slot** (Story 004 code-review carry): `SetDestination(e, A)` → `MobDied(e)` → `MobSpawned(e)` → `SetDestination(e, B)` → one queue slot; `Tick` issues B exactly once on the new agent (decided from live `_activeAgents` / `_latestRequests`, not slot age); `_queuedEntities` lacks e afterwards; a later `SetDestination` re-enqueues.
-- **Empty source**: no committed positions and nothing queued → no agent calls.
+- **Empty source**: `EmptyMobCommittedPositionSource`, nothing queued → `Run` makes no agent calls.
+- **SetDestination returns false**: agent scripted to return false → one warning; `_latestRequests` lacks e; `_queuedEntities` lacks e; the call counts toward R (R = 1, two queued → second stays queued).
+- **SetDestination throws**: agent scripted to throw → exception propagates out of `Tick`; e no longer queued and not in `_queuedEntities`; the next `Tick` issues the remaining entries.
+- **Off-mesh skip keeps the request**: off-mesh e3 dequeued → `HasLatestRequest(e3)` still true, `IsQueued(e3)` false; a later `SetDestination(e3, …)` re-enqueues.
 
 ---
 
