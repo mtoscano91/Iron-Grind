@@ -43,6 +43,7 @@
 - **Re-queue on the same tick**: a `SetDestination` called again for an entity already in the queue only overwrites `_latestRequests` (Story 004). If a queued entry was drained and the entity calls again later, it is re-enqueued. Test that an entity drained on tick N and re-requested on N is issued on N+1.
 - **Partial counter reset** on a processed `SetDestination` (CR-NAV-15) belongs to Story 006; leave a clear hook.
 - **Story 003 carry (2026-11-12)**: release (`HandleMobDied`) removes the entity from `_activeAgents`, `_latestRequests` and `_failureCounts` but does not search `_pendingRequests` (a queue). The drain must dequeue and skip any entry whose entity is not in `_activeAgents` or has no `_latestRequests` entry (the "released e2" skip case), and a released-then-respawned `EntityID` must not be issued a stale destination. Until the drain empties the queue, `TrackedStateCount` can be non-zero after a release; the release test asserts it only when nothing was queued.
+- **Story 004 carry (2026-11-12)**: Story 004 adds `HashSet<EntityID> _queuedEntities` ("already queued", O(1)); `SetDestination` enqueues only when the entity is not in it. The drain removes the entity from `_queuedEntities` on every dequeue, issued or skipped, so a later request re-enqueues. Release does not touch the set; the stale slot is skipped here. The post-drain halves of AC-NAV-11 (Stop after queued `SetDestination` → no call, `isStopped` stays true) and AC-NAV-22 (MobDied after queued `SetDestination` → no call) are asserted by the "Skips" test (stopped e1, released e2); cite them there.
 - No same-tick path: tests must not assert a path or non-zero velocity on the drain tick (ADR-002 Decision 2).
 
 ---
@@ -60,11 +61,12 @@
 - **Sync**: two registered agents on mesh, one off mesh, one unknown id → `nextPosition` set on the two; untouched on the off-mesh agent; no throw for the unknown id; `Warp` count 0.
 - **Drain 20**: 150 queued → after one `Tick`, 20 calls, 130 queued; each call's destination equals the entity's latest.
 - **Latest wins across the queue**: `SetDestination(e, A)`, then `(e, B)` before its turn → the drain issues B once.
-- **Skips**: queue [stopped e1, released e2, off-mesh e3, valid e4..e23] with R = 20 → no throw; calls go to e4..e23 (20 calls); e1–e3 dequeued.
+- **Skips** (also AC-NAV-11, AC-NAV-22 post-drain): queue [stopped e1, released e2, off-mesh e3, valid e4..e23] with R = 20 → no throw; calls go to e4..e23 (20 calls); e1–e3 dequeued; e1 `isStopped` still true; `_queuedEntities` lacks all 23.
 - **F-NAV-1**: 150 queued → non-empty after 7 ticks; empty after 8; total 150.
 - **Order**: recorder over the phase entry point → `nextPosition` writes precede the first `SetDestination`; `GetCurrentVelocity` not called.
 - **isStopped before SetDestination**: recorder shows `isStopped = false` then `SetDestination`.
 - **Re-request after drain**: drained on tick N, requested again on N → issued on N+1.
+- **Respawn with a stale slot** (Story 004 code-review carry): `SetDestination(e, A)` → `MobDied(e)` → `MobSpawned(e)` → `SetDestination(e, B)` → one queue slot; `Tick` issues B exactly once on the new agent (decided from live `_activeAgents` / `_latestRequests`, not slot age); `_queuedEntities` lacks e afterwards; a later `SetDestination` re-enqueues.
 - **Empty source**: no committed positions and nothing queued → no agent calls.
 
 ---

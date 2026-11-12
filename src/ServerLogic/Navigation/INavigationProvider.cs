@@ -29,7 +29,10 @@ namespace IronGrind.ServerLogic.Navigation
         /// <param name="speed">Speed in m/s.</param>
         void SetSpeed(EntityID agent, float speed);
 
-        /// <summary>Stops the agent in place, keeping its destination. Tick phase 3 only.</summary>
+        /// <summary>
+        /// Stops the agent in place, keeping its current path for <see cref="Resume"/>. A destination requested but not
+        /// yet issued is discarded. Tick phase 3 only.
+        /// </summary>
         /// <param name="agent">The mob's entity id.</param>
         void Stop(EntityID agent);
 

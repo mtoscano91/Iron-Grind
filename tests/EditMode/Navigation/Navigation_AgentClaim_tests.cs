@@ -32,206 +32,6 @@ namespace IronGrind.Tests.EditMode.Navigation
         private const int POOL_SIZE = NavigationConfigValues.MAX_AGENT_POOL_SIZE_DEFAULT;
         private const float TYPE_A_SPEED = 3.7f;
 
-        // ---- Fakes ----
-
-        private sealed class FakeNavAgent : INavAgent
-        {
-            private readonly List<string> _recorder;
-            private readonly int _id;
-
-            public FakeNavAgent(int id, List<string> recorder)
-            {
-                _id = id;
-                _recorder = recorder;
-            }
-
-            public string Name => "agent" + _id;
-
-            public bool EnabledValue = true;
-            public bool UpdatePositionValue = true;
-            public bool UpdateRotationValue = true;
-            public bool AutoBrakingValue = true;
-            public bool ObstacleAvoidanceDisabled;
-            public bool IsStoppedValue;
-            public float SpeedValue;
-
-            // Scripted Warp result and what Warp saw.
-            public bool WarpResult = true;
-
-            // Throw switches for the exception-safety tests.
-            public bool ThrowOnWarp;
-            public bool ThrowOnResetPath;
-            public int WarpCalls;
-            public Vector3 LastWarpPosition;
-            public int ResetPathCalls;
-
-            public bool Enabled
-            {
-                get => EnabledValue;
-                set { EnabledValue = value; _recorder.Add(Name + ".Enabled=" + value); }
-            }
-
-            public bool UpdatePosition
-            {
-                get => UpdatePositionValue;
-                set { UpdatePositionValue = value; _recorder.Add(Name + ".UpdatePosition=" + value); }
-            }
-
-            public bool UpdateRotation
-            {
-                get => UpdateRotationValue;
-                set { UpdateRotationValue = value; _recorder.Add(Name + ".UpdateRotation=" + value); }
-            }
-
-            public bool AutoBraking
-            {
-                get => AutoBrakingValue;
-                set { AutoBrakingValue = value; _recorder.Add(Name + ".AutoBraking=" + value); }
-            }
-
-            public void DisableObstacleAvoidance()
-            {
-                ObstacleAvoidanceDisabled = true;
-                _recorder.Add(Name + ".ObstacleAvoidance=off");
-            }
-
-            public bool IsStopped
-            {
-                get => IsStoppedValue;
-                set { IsStoppedValue = value; _recorder.Add(Name + ".IsStopped=" + value); }
-            }
-
-            public float Speed
-            {
-                get => SpeedValue;
-                set { SpeedValue = value; _recorder.Add(Name + ".Speed"); }
-            }
-
-            public bool IsOnNavMesh => true;
-            public bool PathPending => false;
-            public NavMeshPathStatus PathStatus => NavMeshPathStatus.PathComplete;
-            public bool IsPathStale => false;
-            public Vector3 DesiredVelocity => Vector3.zero;
-            public Vector3 NextPosition { get; set; }
-
-            public bool Warp(Vector3 position)
-            {
-                WarpCalls++;
-                LastWarpPosition = position;
-                _recorder.Add(Name + ".Warp");
-                if (ThrowOnWarp)
-                {
-                    throw new InvalidOperationException(Name + " warp exploded");
-                }
-
-                return WarpResult;
-            }
-
-            public bool SetDestination(Vector3 target)
-            {
-                _recorder.Add(Name + ".SetDestination");
-                return true;
-            }
-
-            public void ResetPath()
-            {
-                ResetPathCalls++;
-                _recorder.Add(Name + ".ResetPath");
-                if (ThrowOnResetPath)
-                {
-                    throw new InvalidOperationException(Name + " resetpath exploded");
-                }
-            }
-        }
-
-        private sealed class FakeNavAgentFactory : INavAgentFactory
-        {
-            private readonly List<string> _recorder;
-
-            public readonly List<FakeNavAgent> Created = new List<FakeNavAgent>();
-            public int CreateCalls;
-
-            public FakeNavAgentFactory(List<string> recorder)
-            {
-                _recorder = recorder;
-            }
-
-            public INavAgent Create(string poolRootName)
-            {
-                CreateCalls++;
-                var agent = new FakeNavAgent(CreateCalls, _recorder);
-                Created.Add(agent);
-                return agent;
-            }
-        }
-
-        private sealed class FakeNavMeshInstanceOps : INavMeshInstanceOps
-        {
-            private readonly List<string> _recorder;
-            private readonly HashSet<NavMeshDataInstance> _added = new HashSet<NavMeshDataInstance>();
-
-            public int RemoveCalls;
-            public Func<string> OnRemoveSnapshot;
-
-            public FakeNavMeshInstanceOps(List<string> recorder)
-            {
-                _recorder = recorder;
-            }
-
-            public void Add(NavMeshDataInstance instance)
-            {
-                _added.Add(instance);
-            }
-
-            public bool IsValid(NavMeshDataInstance instance) => _added.Contains(instance);
-
-            public void Remove(NavMeshDataInstance instance)
-            {
-                _added.Remove(instance);
-                RemoveCalls++;
-                _recorder.Add(OnRemoveSnapshot != null ? OnRemoveSnapshot() : "Remove");
-            }
-        }
-
-        // Per-type speeds; any type not added is unknown.
-        private sealed class FakeSpeedSource : INavMobSpeedSource
-        {
-            public readonly Dictionary<MobTypeID, float> Speeds = new Dictionary<MobTypeID, float>();
-
-            public bool TryGetMoveSpeed(MobTypeID mobType, out float speed)
-            {
-                return Speeds.TryGetValue(mobType, out speed);
-            }
-        }
-
-        private sealed class FakeMeshQuery : INavMeshQuery
-        {
-            public bool SamplePosition(Vector3 position, float maxDistance, int areaMask, out Vector3 hitPosition)
-            {
-                hitPosition = position;
-                return true;
-            }
-        }
-
-        private static NavMeshDataInstance MakeInstance(int id)
-        {
-            FieldInfo field = null;
-            foreach (FieldInfo f in typeof(NavMeshDataInstance).GetFields(BindingFlags.Instance | BindingFlags.NonPublic
-                         | BindingFlags.Public))
-            {
-                if (f.FieldType == typeof(int))
-                {
-                    field = f;
-                    break;
-                }
-            }
-
-            Assert.That(field, Is.Not.Null, "NavMeshDataInstance has no int field to set; update MakeInstance");
-            object boxed = default(NavMeshDataInstance);
-            field.SetValue(boxed, id);
-            return (NavMeshDataInstance)boxed;
-        }
-
         // ---- Fixture state ----
 
         private NavigationConfig _config;
@@ -249,7 +49,7 @@ namespace IronGrind.Tests.EditMode.Navigation
             _config = ScriptableObject.CreateInstance<NavigationConfig>();
             _recorder = new List<string>();
             _ops = new FakeNavMeshInstanceOps(_recorder);
-            _instanceA = MakeInstance(1);
+            _instanceA = NavigationTestSupport.MakeInstance(1);
             _speeds = new FakeSpeedSource();
             _speeds.Speeds[TYPE_A] = TYPE_A_SPEED;
             _bus = new MobEventBus();
@@ -677,7 +477,10 @@ namespace IronGrind.Tests.EditMode.Navigation
             latest[other] = Vector3.one;
             failures[E1] = 2;
             failures[other] = 1;
-            Assert.That(_service.TrackedStateCount, Is.EqualTo(6));
+            var requested = Field<HashSet<EntityID>>("_destinationRequested");
+            requested.Add(E1);
+            requested.Add(other);
+            Assert.That(_service.TrackedStateCount, Is.EqualTo(8));
 
             Die(E1);
 
@@ -685,7 +488,9 @@ namespace IronGrind.Tests.EditMode.Navigation
             Assert.That(failures.ContainsKey(E1), Is.False);
             Assert.That(latest.ContainsKey(other), Is.True);
             Assert.That(failures.ContainsKey(other), Is.True);
-            Assert.That(_service.TrackedStateCount, Is.EqualTo(3));
+            Assert.That(requested.Contains(E1), Is.False);
+            Assert.That(requested.Contains(other), Is.True);
+            Assert.That(_service.TrackedStateCount, Is.EqualTo(4));
 
             Die(other);
 

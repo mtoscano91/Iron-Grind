@@ -14,7 +14,7 @@ namespace IronGrind.ServerLogic.Navigation
     /// Zone navigation service: owns the zone's NavMesh data instance and the fixed agent pool
     /// (CR-NAV-1 to CR-NAV-4) and claims and releases agents on the <see cref="MobEventBus"/> (CR-NAV-5, CR-NAV-6):
     /// <see cref="Initialize"/>, <see cref="Teardown"/>, the torn-down guards, and the spawn and death handlers.
-    /// The tick and sync bodies are Story 005, and <c>INavigationProvider</c> is implemented in Story 004.
+    /// The tick and sync bodies are Story 005. Implements <see cref="INavigationProvider"/> (Story 004).
     /// </summary>
     /// <remarks>
     /// <para>
@@ -44,7 +44,7 @@ namespace IronGrind.ServerLogic.Navigation
     /// service.Teardown();                 // teardown step 3
     /// </code>
     /// </example>
-    public sealed class ZoneNavigationService : IZoneNavigation
+    public sealed class ZoneNavigationService : IZoneNavigation, INavigationProvider
     {
         private const string LOG_PREFIX = "[Navigation] ";
         private const string POOL_ROOT_PREFIX = "NavigationPool_";
@@ -66,6 +66,11 @@ namespace IronGrind.ServerLogic.Navigation
         private readonly Queue<EntityID> _pendingRequests = new Queue<EntityID>();
         private readonly Dictionary<EntityID, Vector3> _latestRequests;
         private readonly Dictionary<EntityID, int> _failureCounts;
+
+        // _queuedEntities: entities with a slot in _pendingRequests (the drain, Story 005, removes on dequeue).
+        // _destinationRequested: entities for which SetDestination was called since the claim (IsPathStale "never set").
+        private readonly HashSet<EntityID> _queuedEntities;
+        private readonly HashSet<EntityID> _destinationRequested;
 
         private NavMeshDataInstance _instance;
         private ZoneID _zone;
@@ -105,6 +110,8 @@ namespace IronGrind.ServerLogic.Navigation
             _activeAgents = new Dictionary<EntityID, INavAgent>(_config.MaxAgentPoolSize);
             _latestRequests = new Dictionary<EntityID, Vector3>(_config.MaxAgentPoolSize);
             _failureCounts = new Dictionary<EntityID, int>(_config.MaxAgentPoolSize);
+            _queuedEntities = new HashSet<EntityID>(_config.MaxAgentPoolSize);
+            _destinationRequested = new HashSet<EntityID>(_config.MaxAgentPoolSize);
         }
 
         /// <summary>Number of agents sitting in the pool (enabled false).</summary>
@@ -119,9 +126,10 @@ namespace IronGrind.ServerLogic.Navigation
         /// </summary>
         internal bool IsAcceptingSpawns => _initialized && !_tornDown;
 
-        /// <summary>Total entries across the active, pending, latest-request and counter collections.</summary>
+        /// <summary>Total entries across the active, pending, latest-request, counter, queued and requested collections.</summary>
         internal int TrackedStateCount =>
-            _activeAgents.Count + _pendingRequests.Count + _latestRequests.Count + _failureCounts.Count;
+            _activeAgents.Count + _pendingRequests.Count + _latestRequests.Count + _failureCounts.Count
+            + _queuedEntities.Count + _destinationRequested.Count;
 
         /// <summary>The stored NavMesh data instance; <c>default</c> after <see cref="Teardown"/>.</summary>
         internal NavMeshDataInstance StoredInstance => _instance;
@@ -192,6 +200,8 @@ namespace IronGrind.ServerLogic.Navigation
                 _pendingRequests.Clear();
                 _latestRequests.Clear();
                 _failureCounts.Clear();
+                _queuedEntities.Clear();
+                _destinationRequested.Clear();
                 _pool.Clear();
                 _createdAgents.Clear();
             }
@@ -230,20 +240,160 @@ namespace IronGrind.ServerLogic.Navigation
             }
         }
 
+        /// <inheritdoc/>
+        /// <remarks>
+        /// Only queues: stores the latest target (latest wins) and one queue slot per entity; the drain (Story 005)
+        /// issues the real agent call. Unregistered entity or non-finite target: one warning, nothing queued.
+        /// </remarks>
+        public void SetDestination(EntityID agent, Vector3 target)
+        {
+            if (_tornDown || !TryGetAgent(agent, nameof(SetDestination), out _))
+            {
+                return;
+            }
+
+            if (!IsFinite(target))
+            {
+                Debug.LogWarning(LOG_PREFIX + "SetDestination for " + agent + " ignored: non-finite target " + target + ".");
+                return;
+            }
+
+            _latestRequests[agent] = target;
+            _destinationRequested.Add(agent);
+            if (_queuedEntities.Add(agent))
+            {
+                _pendingRequests.Enqueue(agent);
+            }
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>Clamps to the CR-NAV-8 range with one warning when clamped; a non-finite speed leaves the speed unchanged.</remarks>
+        public void SetSpeed(EntityID agent, float speed)
+        {
+            if (_tornDown || !TryGetAgent(agent, nameof(SetSpeed), out INavAgent nav))
+            {
+                return;
+            }
+
+            if (float.IsNaN(speed) || float.IsInfinity(speed))
+            {
+                Debug.LogWarning(LOG_PREFIX + "SetSpeed for " + agent + " ignored: non-finite speed " + speed + ".");
+                return;
+            }
+
+            float clamped = Mathf.Clamp(speed, NavigationConfigValues.AGENT_SPEED_MIN, NavigationConfigValues.AGENT_SPEED_MAX);
+            if (clamped != speed)
+            {
+                Debug.LogWarning(LOG_PREFIX + "SetSpeed " + speed + " for " + agent + " clamped to " + clamped + " (CR-NAV-8).");
+            }
+
+            nav.Speed = clamped;
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>
+        /// Sets isStopped and keeps the current path (no ResetPath). A request not yet drained is discarded: the latest
+        /// request is dropped (CR-NAV-9, EC-NAV-1) and <see cref="Resume"/> does not bring it back. A queue slot stays;
+        /// the drain skips it.
+        /// </remarks>
+        public void Stop(EntityID agent)
+        {
+            if (_tornDown || !TryGetAgent(agent, nameof(Stop), out INavAgent nav))
+            {
+                return;
+            }
+
+            nav.IsStopped = true;
+            _latestRequests.Remove(agent);
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>Clears isStopped only; the preserved path is used, nothing is queued (CR-NAV-16).</remarks>
+        public void Resume(EntityID agent)
+        {
+            if (_tornDown || !TryGetAgent(agent, nameof(Resume), out INavAgent nav))
+            {
+                return;
+            }
+
+            nav.IsStopped = false;
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>O(1), property reads only. Unregistered or torn down: true.</remarks>
+        public bool IsPathStale(EntityID agent)
+        {
+            if (_tornDown || !TryGetAgent(agent, nameof(IsPathStale), out INavAgent nav))
+            {
+                return true;
+            }
+
+            // Precedence (CR-NAV-10): not registered (above) -> true; off the mesh -> true; a pending path -> false
+            // (wins over invalid / never set); PathInvalid, the agent's own stale flag, or never requested -> true;
+            // partial -> false (Story 006 adds the counter-at-timeout row here); otherwise false.
+            // Between SetDestination and the drain the agent has not seen the request yet, so this reports the old
+            // path's status (async by design, ADR-002 Decision 2).
+            if (!nav.IsOnNavMesh)
+            {
+                return true;
+            }
+
+            if (nav.PathPending)
+            {
+                return false;
+            }
+
+            return nav.PathStatus == NavMeshPathStatus.PathInvalid || nav.IsPathStale
+                || !_destinationRequested.Contains(agent);
+        }
+
         /// <summary>
-        /// The agent's current velocity. Returns <see cref="Vector3.zero"/> after <see cref="Teardown"/>. The live
-        /// value is wired in Story 005 (provider contract in Story 004).
+        /// The agent's desired velocity on the XZ plane (CR-NAV-11); never the smoothed <c>velocity</c>. The real agent
+        /// zeroes <c>desiredVelocity</c> while stopped, so there is no stopped branch. Zero when the entity is not
+        /// registered (one warning) or after <see cref="Teardown"/>.
         /// </summary>
         /// <param name="agent">The mob entity.</param>
-        /// <returns>The velocity, or zero.</returns>
+        /// <returns>The velocity with Y set to zero, or zero.</returns>
         public Vector3 GetCurrentVelocity(EntityID agent)
         {
-            if (_tornDown)
+            if (_tornDown || !TryGetAgent(agent, nameof(GetCurrentVelocity), out INavAgent nav))
             {
                 return Vector3.zero;
             }
 
-            return Vector3.zero; // Story 005 replaces this with the agent's desired velocity.
+            Vector3 v = nav.DesiredVelocity;
+            return new Vector3(v.x, 0f, v.z);
+        }
+
+        /// <summary>Number of queue slots waiting for the drain (test accessor).</summary>
+        internal int PendingRequestCount => _pendingRequests.Count;
+
+        /// <summary>Reads the latest stored request (test accessor).</summary>
+        internal bool HasLatestRequest(EntityID agent, out Vector3 target) => _latestRequests.TryGetValue(agent, out target);
+
+        /// <summary>Whether SetDestination was accepted for the entity since its claim (test accessor).</summary>
+        internal bool HasRequestedDestination(EntityID agent) => _destinationRequested.Contains(agent);
+
+        /// <summary>Whether the entity holds a queue slot (test accessor).</summary>
+        internal bool IsQueued(EntityID agent) => _queuedEntities.Contains(agent);
+
+        // One dictionary lookup per call. One warning per call for an unregistered entity (CR-NAV-7 to 11, 16); the
+        // string is built only on failure.
+        private bool TryGetAgent(EntityID agent, string method, out INavAgent nav)
+        {
+            if (_activeAgents.TryGetValue(agent, out nav))
+            {
+                return true;
+            }
+
+            Debug.LogWarning(LOG_PREFIX + method + " for unregistered " + agent + "; safe default returned.");
+            return false;
+        }
+
+        private static bool IsFinite(Vector3 v)
+        {
+            return !(float.IsNaN(v.x) || float.IsInfinity(v.x) || float.IsNaN(v.y) || float.IsInfinity(v.y)
+                || float.IsNaN(v.z) || float.IsInfinity(v.z));
         }
 
         // Claim (CR-NAV-5, ADR-003 Decisions 3, 5, 6). Check order is fixed by the story; the speed lookup runs
@@ -363,6 +513,7 @@ namespace IronGrind.ServerLogic.Navigation
             _activeAgents.Remove(args.Entity);
             _latestRequests.Remove(args.Entity);
             _failureCounts.Remove(args.Entity);
+            _destinationRequested.Remove(args.Entity); // _queuedEntities stays: the drain skips the stale slot
             try
             {
                 agent.IsStopped = true;
