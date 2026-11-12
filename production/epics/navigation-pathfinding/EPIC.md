@@ -74,7 +74,7 @@ Taken for all four combat-loop epics (Navigation, Enemy AI, Mob Spawning, Death 
 4. **`MobEventBus` is built here** (Story 001), in `src/ServerLogic/ZoneInstancing/`, with `OnMobSpawned` / `OnMobDied` and `readonly struct` args in `IronGrind.Events` (manifest event rules); the composition creates one per zone (Story 010).
 5. **Seams for missing systems**: `INavMobSpeedSource` (stand-in until Enemy AI's `IMobDefinitionRegistry`), `IMobCommittedPositionSource` (empty until Enemy AI integrates mob positions), `INavAgent` / `INavAgentFactory` / `INavMeshQuery` so Logic stories run in EditMode; Unity adapters and engine checks in Story 009 (PlayMode).
 6. **Invalid NavMesh fails S6** (`Initialize` throws). The bake (Story 008) lands before the composition swap (Story 010), so the live zone keeps starting.
-7. **Spawn-point validator is standalone** (Story 007); the Mob Spawning epic calls it at zone T-1.
+7. **Spawn-point validator is standalone** (Story 007); the Mob Spawning epic calls it at zone T-1. **Hand-off (Story 007 readiness, 2026-11-12)**: Mob Spawning builds `SpawnPointInput` entries from `ZoneSpawnTable` (`SpawnPointID: uint`, authored position), calls `SpawnPointValidator.Validate` after Navigation's `Initialize`, spawns only from `validOut`, and aborts zone initialisation (with Zone Instancing) when `ShouldAbort` is true — the validator only computes the flag. Copy this into the Mob Spawning epic when it is created.
 8. **Placeholder floor**: the starting zone scene is empty; Story 008 adds a flat floor over the ±50 m walkable bounds and bakes it with `NavMeshSurface` (AI Navigation 2.0.10).
 
 ## Stories
@@ -87,7 +87,7 @@ Taken for all four combat-loop epics (Navigation, Enemy AI, Mob Spawning, Death 
 | 004 | [`INavigationProvider` calls](story-004-navigation-provider-calls.md) | Logic | Complete | ADR-003, ADR-002 |
 | 005 | [`SyncAgentPositions` and the `Tick` drain](story-005-sync-and-tick-drain.md) | Logic | Complete | ADR-002, ADR-003 |
 | 006 | [Path health](story-006-path-health.md) | Logic | Complete | ADR-002, ADR-003 |
-| 007 | [Spawn-point validator](story-007-spawn-point-validator.md) | Logic | Ready | ADR-002 |
+| 007 | [Spawn-point validator](story-007-spawn-point-validator.md) | Logic | Complete | ADR-002 |
 | 008 | [Starting-zone floor and NavMesh bake](story-008-starting-zone-navmesh-bake.md) | Config/Data | Ready | ADR-009, ADR-002 |
 | 009 | [Unity adapters and server build config](story-009-unity-adapters-build-config.md) | Integration | Ready | ADR-002, ADR-012 |
 | 010 | [Composition wiring](story-010-composition-wiring.md) | Integration | Ready | ADR-002, ADR-014 |

@@ -216,13 +216,31 @@ namespace IronGrind.Tests.EditMode.Navigation
         }
     }
 
-    /// <summary>Shared fake mesh query: every position samples onto the mesh unchanged.</summary>
+    /// <summary>
+    /// Shared fake mesh query: every position samples onto the mesh unchanged unless <see cref="Hits"/> says
+    /// otherwise. Records every call.
+    /// </summary>
     internal sealed class FakeMeshQuery : INavMeshQuery
     {
+        public readonly List<Vector3> CalledPositions = new List<Vector3>();
+        public readonly List<float> CalledRadii = new List<float>();
+        public readonly List<int> CalledAreaMasks = new List<int>();
+
+        /// <summary>Decides whether a position hits; null means always.</summary>
+        public Func<Vector3, bool> Hits;
+
+        /// <summary>Added to the position to form the hit position.</summary>
+        public Vector3 HitOffset;
+
+        public int CallCount => CalledPositions.Count;
+
         public bool SamplePosition(Vector3 position, float maxDistance, int areaMask, out Vector3 hitPosition)
         {
-            hitPosition = position;
-            return true;
+            CalledPositions.Add(position);
+            CalledRadii.Add(maxDistance);
+            CalledAreaMasks.Add(areaMask);
+            hitPosition = position + HitOffset;
+            return Hits == null || Hits(position);
         }
     }
 
