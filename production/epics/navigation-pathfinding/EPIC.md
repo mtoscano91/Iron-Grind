@@ -83,7 +83,7 @@ Taken for all four combat-loop epics (Navigation, Enemy AI, Mob Spawning, Death 
 |---|-------|------|--------|-----|
 | 001 | [Navigation seams, config and `MobEventBus`](story-001-seams-config-mob-event-bus.md) | Logic | Complete | ADR-003, ADR-010 |
 | 002 | [Service lifecycle and agent pool](story-002-service-lifecycle-agent-pool.md) | Logic | Complete | ADR-002, ADR-003, ADR-009 |
-| 003 | [Agent claim and release on the bus](story-003-agent-claim-release.md) | Logic | Ready | ADR-003 |
+| 003 | [Agent claim and release on the bus](story-003-agent-claim-release.md) | Logic | Complete | ADR-003 |
 | 004 | [`INavigationProvider` calls](story-004-navigation-provider-calls.md) | Logic | Ready | ADR-003, ADR-002 |
 | 005 | [`SyncAgentPositions` and the `Tick` drain](story-005-sync-and-tick-drain.md) | Logic | Ready | ADR-002, ADR-003 |
 | 006 | [Path health](story-006-path-health.md) | Logic | Ready | ADR-002, ADR-003 |

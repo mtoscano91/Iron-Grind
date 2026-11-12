@@ -83,6 +83,18 @@ namespace IronGrind.ServerLogic.Navigation
         /// <summary>STAND_IN_MOB_MOVE_SPEED safe range maximum.</summary>
         public const float STAND_IN_MOB_MOVE_SPEED_MAX = 20.0f;
 
+        /// <summary>
+        /// Lowest agent speed in m/s (CR-NAV-8 clamp range). A plain constant, not a tunable knob; the claim path
+        /// (Story 003) and <c>SetSpeed</c> (Story 004) both use it.
+        /// </summary>
+        public const float AGENT_SPEED_MIN = 0.1f;
+
+        /// <summary>
+        /// Highest agent speed in m/s (CR-NAV-8 clamp range). A plain constant, not a tunable knob; the claim path
+        /// (Story 003) and <c>SetSpeed</c> (Story 004) both use it.
+        /// </summary>
+        public const float AGENT_SPEED_MAX = 20.0f;
+
         /// <summary>The defaults of every knob.</summary>
         public static NavigationConfigValues Defaults => new NavigationConfigValues(
             MAX_AGENT_POOL_SIZE_DEFAULT, MAX_PATH_UPDATES_PER_TICK_DEFAULT, PARTIAL_PATH_TIMEOUT_TICKS_DEFAULT,

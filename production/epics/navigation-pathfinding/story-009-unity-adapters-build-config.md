@@ -41,6 +41,7 @@
 ## Implementation Notes
 
 - **Story 001 carries (2026-11-12)**: `UnityNavMeshQuery.SamplePosition` sets `hitPosition = default` when the call returns false; `UnityNavAgent.DisableObstacleAvoidance()` sets `obstacleAvoidanceType = ObstacleAvoidanceType.NoObstacleAvoidance` (write-only seam member — EditMode fakes count the call).
+- **Story 003 carry (2026-11-12)**: the claim enables a pooled agent before `Warp` (ADR-003 order). A real `NavMeshAgent` enabled while its transform is off the mesh logs "Failed to create agent because it is not close enough to the NavMesh" before `Warp` places it. Either have `UnityNavAgentFactory` park pooled agents at a known on-mesh point, or document the log as expected; the PlayMode claim test asserts which. `isStopped` / `ResetPath` on a disabled or off-mesh agent log an error, so the release order (stop, reset, then disable) must stay, and the failed-Warp path never calls them.
 - PlayMode tests live under `tests/PlayMode/Navigation/` (existing `PlayModeTests.asmdef`; check it references `IronGrind.ServerLogic` — Editor runs define `UNITY_EDITOR`, so ServerLogic compiles).
 - Load the baked mesh in the test with `NavMesh.AddNavMeshData(asset)` (load the asset by path through `AssetDatabase` in Editor-only test code, or a `Resources` copy) and remove it in teardown.
 - A Linux server build is blocked (Authentication Story 019); use the Windows Dedicated Server build for the frame-rate check, and mind `project_server_build_side_effects` (revert the dedicated-server package / settings changes after the build).

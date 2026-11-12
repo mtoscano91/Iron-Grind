@@ -1,7 +1,7 @@
 # Story 003: Agent Claim and Release on the Bus
 
 > **Epic**: Navigation / Pathfinding
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Logic
 > **Manifest Version**: 2026-11-06
@@ -28,16 +28,16 @@
 
 ## Acceptance Criteria
 
-- [ ] The service subscribes named handlers to `MobEventBus.OnMobSpawned` and `OnMobDied` once, at the end of a successful `Initialize` (after the pool fill; a throwing `Initialize` subscribes nothing), and `Teardown` always unsubscribes both (removing a handler that was never added is a no-op on the bus).
-- [ ] **Claim** (CR-NAV-5, AC-NAV-05): `AvailableCount` drops by 1; the agent is enabled, then `Warp(spawnPosition)` is called before any `SetDestination` or `Tick`; `speed` equals `INavMobSpeedSource` speed exactly; `isStopped == true`; the agent is in `_activeAgents`.
-- [ ] **Warp fails**: agent disabled and returned to the pool; error logged with `ZoneID`, `EntityID`, position; entity not registered.
-- [ ] **Unknown mob type** (speed source returns false) **or non-finite speed** (NaN / ±Infinity): error logged with the id and type; no agent is dequeued or touched (the speed lookup runs before the claim); entity not registered (decision recorded here: the GDD says only "callers must null-check").
-- [ ] **Speed clamp** (CR-NAV-8 range): a finite source speed outside `[0.1f, 20.0f]` is clamped into it and a warning is logged; an in-range speed is set exactly, with no log.
-- [ ] **EC-NAV-2 / AC-NAV-07**: a second `OnMobSpawned` for a registered `EntityID` logs an error with the id and claims nothing (`AvailableCount` drops by 1 in total; same agent instance).
-- [ ] **AC-NAV-04 / ADR-003 Decision 5**: the 151st claim throws nothing, logs one error containing "pool exhausted" and the entity id, `_activeAgents.Count` stays 150, and that entity later gets `IsPathStale == true` and `GetCurrentVelocity == Vector3.zero` (assert once Story 004 lands; until then assert it is not registered).
-- [ ] **EC-NAV-4**: a `MobSpawned` that reaches the handler after `Teardown` logs `"post-teardown MobSpawned"` and claims nothing. Since `Teardown` unsubscribes, this is reachable only through the bus snapshot: `Teardown` runs inside an earlier subscriber's handler during the same raise.
-- [ ] **Release** (CR-NAV-6, AC-NAV-06): `isStopped = true`, `ResetPath()` once, disabled, back in the pool (`AvailableCount` +1); entity removed from `_activeAgents`, `_latestRequests` (EC-NAV-3) and `_failureCounts`. `_pendingRequests` is a queue and is not searched on release; Story 005's drain skips entries for entities no longer active.
-- [ ] `OnMobDied` for an unknown entity logs a warning and returns. This includes an entity already released: a handler removed from `MobEventBus` during a raise still receives that raise (Story 001 bus semantics), so a late `OnMobDied` after `Teardown` or a second release must be a no-op (Story 001 carry, 2026-11-12).
+- [x] The service subscribes named handlers to `MobEventBus.OnMobSpawned` and `OnMobDied` once, at the end of a successful `Initialize` (after the pool fill; a throwing `Initialize` subscribes nothing), and `Teardown` always unsubscribes both (removing a handler that was never added is a no-op on the bus).
+- [x] **Claim** (CR-NAV-5, AC-NAV-05): `AvailableCount` drops by 1; the agent is enabled, then `Warp(spawnPosition)` is called before any `SetDestination` or `Tick`; `speed` equals `INavMobSpeedSource` speed exactly; `isStopped == true`; the agent is in `_activeAgents`.
+- [x] **Warp fails**: agent disabled and returned to the pool; error logged with `ZoneID`, `EntityID`, position; entity not registered.
+- [x] **Unknown mob type** (speed source returns false) **or non-finite speed** (NaN / ±Infinity): error logged with the id and type; no agent is dequeued or touched (the speed lookup runs before the claim); entity not registered (decision recorded here: the GDD says only "callers must null-check").
+- [x] **Speed clamp** (CR-NAV-8 range): a finite source speed outside `[0.1f, 20.0f]` is clamped into it and a warning is logged; an in-range speed is set exactly, with no log.
+- [x] **EC-NAV-2 / AC-NAV-07**: a second `OnMobSpawned` for a registered `EntityID` logs an error with the id and claims nothing (`AvailableCount` drops by 1 in total; same agent instance).
+- [x] **AC-NAV-04 / ADR-003 Decision 5**: the 151st claim throws nothing, logs one error containing "pool exhausted" and the entity id, `_activeAgents.Count` stays 150, and that entity later gets `IsPathStale == true` and `GetCurrentVelocity == Vector3.zero` (assert once Story 004 lands; until then assert it is not registered).
+- [x] **EC-NAV-4**: a `MobSpawned` that reaches the handler after `Teardown` logs `"post-teardown MobSpawned"` and claims nothing. Since `Teardown` unsubscribes, this is reachable only through the bus snapshot: `Teardown` runs inside an earlier subscriber's handler during the same raise.
+- [x] **Release** (CR-NAV-6, AC-NAV-06): `isStopped = true`, `ResetPath()` once, disabled, back in the pool (`AvailableCount` +1); entity removed from `_activeAgents`, `_latestRequests` (EC-NAV-3) and `_failureCounts`. `_pendingRequests` is a queue and is not searched on release; Story 005's drain skips entries for entities no longer active.
+- [x] `OnMobDied` for an unknown entity logs a warning and returns. This includes an entity already released: a handler removed from `MobEventBus` during a raise still receives that raise (Story 001 bus semantics), so a late `OnMobDied` after `Teardown` or a second release must be a no-op (Story 001 carry, 2026-11-12).
 
 ---
 
@@ -84,7 +84,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/Navigation/Navigation_AgentClaim_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing (31 cases)
 
 ---
 
@@ -92,3 +92,12 @@
 
 - Depends on: Story 002
 - Unlocks: Story 004
+
+---
+
+## Completion Notes
+**Completed**: 2026-11-12
+**Criteria**: 10/10 passing (AC-NAV-04's `IsPathStale` / `GetCurrentVelocity` follow-up asserts in Story 004, as the AC allows)
+**Deviations** (advisory): exception safety beyond the story — a throwing agent mid-claim is disabled and re-pooled and the exception propagates to the bus; release removes the entity from every collection first and always re-pools the disabled agent. Log wording for open cases chosen in implementation ("Duplicate MobSpawned", "No valid move speed", "clamped to", "Warp failed", "MobDied for unknown or already released"). Speed clamp bounds are `NavigationConfigValues.AGENT_SPEED_MIN` / `AGENT_SPEED_MAX` (plain constants, shared with Story 004).
+**Test Evidence**: Logic — `tests/EditMode/Navigation/Navigation_AgentClaim_tests.cs` (22 [Test] + 9 [TestCase], all pass; EditMode 7170 / 7041 / 0 failed / 129 skipped)
+**Code Review**: Complete — unity-specialist ISSUES + qa-tester GAPS (no blockers), "fix all 1–11" applied (item 11 → Story 009 carry)

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using IronGrind.CharacterPersistence;
 using IronGrind.CharacterStats;
+using IronGrind.Events;
 using IronGrind.ServerLogic.ZoneInstancing;
 using IronGrind.ServerLogic.ZoneServer;
 using UnityEngine;
@@ -11,9 +12,9 @@ namespace IronGrind.ServerLogic.Navigation
 {
     /// <summary>
     /// Zone navigation service: owns the zone's NavMesh data instance and the fixed agent pool
-    /// (CR-NAV-1 to CR-NAV-4). This story covers the lifecycle only: <see cref="Initialize"/>, <see cref="Teardown"/>
-    /// and the torn-down guards. Claiming agents is Story 003, the tick and sync bodies are Story 005, and
-    /// <c>INavigationProvider</c> is implemented in Story 004.
+    /// (CR-NAV-1 to CR-NAV-4) and claims and releases agents on the <see cref="MobEventBus"/> (CR-NAV-5, CR-NAV-6):
+    /// <see cref="Initialize"/>, <see cref="Teardown"/>, the torn-down guards, and the spawn and death handlers.
+    /// The tick and sync bodies are Story 005, and <c>INavigationProvider</c> is implemented in Story 004.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -25,6 +26,15 @@ namespace IronGrind.ServerLogic.Navigation
     /// <para>
     /// Main thread only, and one zone per process (ADR-002 Decision 4): neither is checked here. The main-thread
     /// check is the Story 009 PlayMode test; the composition owns one zone per process.
+    /// </para>
+    /// <para>
+    /// The bus handlers are subscribed once, at the end of a successful <see cref="Initialize"/>, and removed first
+    /// thing in <see cref="Teardown"/>. The bus raises over a snapshot, so a handler can still run once after
+    /// <see cref="Teardown"/>: a spawn then logs an error and claims nothing, a death is an unknown-entity warning.
+    /// </para>
+    /// <para>
+    /// A throwing agent never leaks from the pool: a failed claim disables the agent and returns it, and a release
+    /// always returns it. The exception still propagates to the bus, which logs it.
     /// </para>
     /// </remarks>
     /// <example>
@@ -50,11 +60,12 @@ namespace IronGrind.ServerLogic.Navigation
         private readonly List<INavAgent> _createdAgents;
         private readonly Stack<INavAgent> _pool;
 
-        // Filled by later stories (003 claims, 005 requests, 006 failure handling).
-        private readonly Dictionary<EntityID, INavAgent> _activeAgents = new Dictionary<EntityID, INavAgent>();
+        // Per-entity state, pre-sized to the pool in the constructor. _activeAgents is filled by claims (Story 003);
+        // requests and failure counters are filled by Stories 005 and 006.
+        private readonly Dictionary<EntityID, INavAgent> _activeAgents;
         private readonly Queue<EntityID> _pendingRequests = new Queue<EntityID>();
-        private readonly Dictionary<EntityID, Vector3> _latestRequests = new Dictionary<EntityID, Vector3>();
-        private readonly Dictionary<EntityID, int> _failureCounts = new Dictionary<EntityID, int>();
+        private readonly Dictionary<EntityID, Vector3> _latestRequests;
+        private readonly Dictionary<EntityID, int> _failureCounts;
 
         private NavMeshDataInstance _instance;
         private ZoneID _zone;
@@ -65,10 +76,10 @@ namespace IronGrind.ServerLogic.Navigation
         /// <summary>Creates the service. Nothing is created or subscribed until <see cref="Initialize"/>.</summary>
         /// <param name="config">The navigation config asset.</param>
         /// <param name="agentFactory">Creates the pooled agents.</param>
-        /// <param name="speedSource">Mob move speed source (used by later stories).</param>
+        /// <param name="speedSource">Mob move speed source, read on every claim.</param>
         /// <param name="meshQuery">NavMesh sampling seam (used by later stories).</param>
         /// <param name="instanceOps">Validity check and removal of the NavMesh data instance.</param>
-        /// <param name="eventBus">Per-zone mob event bus (subscribed in Story 003).</param>
+        /// <param name="eventBus">Per-zone mob event bus; the handlers subscribe at the end of <see cref="Initialize"/>.</param>
         /// <exception cref="ArgumentNullException">Any argument is null.</exception>
         public ZoneNavigationService(
             NavigationConfig config,
@@ -91,6 +102,9 @@ namespace IronGrind.ServerLogic.Navigation
             _config = NavigationConfigValues.FromAsset(config);
             _createdAgents = new List<INavAgent>(_config.MaxAgentPoolSize);
             _pool = new Stack<INavAgent>(_config.MaxAgentPoolSize);
+            _activeAgents = new Dictionary<EntityID, INavAgent>(_config.MaxAgentPoolSize);
+            _latestRequests = new Dictionary<EntityID, Vector3>(_config.MaxAgentPoolSize);
+            _failureCounts = new Dictionary<EntityID, int>(_config.MaxAgentPoolSize);
         }
 
         /// <summary>Number of agents sitting in the pool (enabled false).</summary>
@@ -145,6 +159,10 @@ namespace IronGrind.ServerLogic.Navigation
 
             FillPool(POOL_ROOT_PREFIX + zone.RawValue);
             _initialized = true;
+
+            // Last step: a throwing Initialize subscribes nothing. Named methods, subscribed once.
+            _eventBus.OnMobSpawned += HandleMobSpawned;
+            _eventBus.OnMobDied += HandleMobDied;
         }
 
         /// <inheritdoc/>
@@ -162,6 +180,11 @@ namespace IronGrind.ServerLogic.Navigation
             }
 
             _tornDown = true;
+
+            // Removing a handler that was never added is a no-op on the bus.
+            _eventBus.OnMobSpawned -= HandleMobSpawned;
+            _eventBus.OnMobDied -= HandleMobDied;
+
             try
             {
                 DisableAllAgents();
@@ -223,6 +246,148 @@ namespace IronGrind.ServerLogic.Navigation
             return Vector3.zero; // Story 005 replaces this with the agent's desired velocity.
         }
 
+        // Claim (CR-NAV-5, ADR-003 Decisions 3, 5, 6). Check order is fixed by the story; the speed lookup runs
+        // before any agent is touched. The success path builds no strings and allocates nothing.
+        private void HandleMobSpawned(MobSpawnedArgs args)
+        {
+            if (args.Zone != _zone)
+            {
+                Debug.LogWarning(LOG_PREFIX + "MobSpawned for " + args.Zone + " ignored; this service serves " + _zone);
+                return;
+            }
+
+            if (!IsAcceptingSpawns)
+            {
+                Debug.LogError(LOG_PREFIX + "post-teardown MobSpawned for " + args.Entity + " ignored; nothing claimed.");
+                return;
+            }
+
+            if (_activeAgents.ContainsKey(args.Entity))
+            {
+                Debug.LogError(LOG_PREFIX + "Duplicate MobSpawned for " + args.Entity
+                    + "; already registered, nothing claimed (EC-NAV-2).");
+                return;
+            }
+
+            if (!TryResolveSpeed(args, out float speed))
+            {
+                return;
+            }
+
+            if (_pool.Count == 0)
+            {
+                Debug.LogError(LOG_PREFIX + "Agent pool exhausted: no agent for " + args.Entity
+                    + "; the mob gets safe defaults (ADR-003 Decision 5).");
+                return;
+            }
+
+            TryClaimAgent(args, speed);
+        }
+
+        // Speed lookup, finiteness check (before Mathf.Clamp, which passes NaN through) and CR-NAV-8 clamp. Touches
+        // no agent. Returns false after logging an error when the type is unknown or the speed is not finite.
+        private bool TryResolveSpeed(MobSpawnedArgs args, out float clampedSpeed)
+        {
+            if (!_speedSource.TryGetMoveSpeed(args.MobType, out float speed) || float.IsNaN(speed)
+                || float.IsInfinity(speed))
+            {
+                Debug.LogError(LOG_PREFIX + "No valid move speed for " + args.Entity + " of type " + args.MobType
+                    + "; mob not registered.");
+                clampedSpeed = 0f;
+                return false;
+            }
+
+            clampedSpeed = Mathf.Clamp(speed, NavigationConfigValues.AGENT_SPEED_MIN, NavigationConfigValues.AGENT_SPEED_MAX);
+            if (clampedSpeed != speed)
+            {
+                Debug.LogWarning(LOG_PREFIX + "Move speed " + speed + " of " + args.MobType + " for " + args.Entity
+                    + " clamped to " + clampedSpeed + " (CR-NAV-8).");
+            }
+
+            return true;
+        }
+
+        // Pool -> Registered (ADR-003 Decision 6). The pool is known to be non-empty. If any agent call throws, the
+        // agent is disabled and returned to the pool and the exception propagates (the bus logs it); a false Warp
+        // is a failed claim with an error log. Nothing is registered unless every step succeeded.
+        private void TryClaimAgent(MobSpawnedArgs args, float speed)
+        {
+            INavAgent agent = _pool.Pop();
+            bool warped;
+            try
+            {
+                agent.Enabled = true;
+                warped = agent.Warp(args.SpawnPosition);
+                if (warped)
+                {
+                    agent.Speed = speed;
+                    agent.IsStopped = true;
+                    _activeAgents[args.Entity] = agent;
+                }
+            }
+            catch
+            {
+                TryDisable(agent);
+                _pool.Push(agent);
+                _activeAgents.Remove(args.Entity);
+                throw;
+            }
+
+            if (!warped)
+            {
+                TryDisable(agent);
+                _pool.Push(agent);
+                Debug.LogError(LOG_PREFIX + "Warp failed for " + _zone + " " + args.Entity + " at "
+                    + args.SpawnPosition + "; mob not registered.");
+            }
+        }
+
+        // Release (CR-NAV-6). Unknown or already released entities are a warning and a no-op. _pendingRequests is a
+        // queue and is not searched; Story 005's drain skips entries for entities no longer active. The entity
+        // leaves every collection first, and the agent always returns to the pool, even if an agent call throws
+        // (the exception propagates and the bus logs it).
+        private void HandleMobDied(MobDiedArgs args)
+        {
+            if (args.Zone != _zone)
+            {
+                Debug.LogWarning(LOG_PREFIX + "MobDied for " + args.Zone + " ignored; this service serves " + _zone);
+                return;
+            }
+
+            if (!_activeAgents.TryGetValue(args.Entity, out INavAgent agent))
+            {
+                Debug.LogWarning(LOG_PREFIX + "MobDied for unknown or already released " + args.Entity + "; ignored.");
+                return;
+            }
+
+            _activeAgents.Remove(args.Entity);
+            _latestRequests.Remove(args.Entity);
+            _failureCounts.Remove(args.Entity);
+            try
+            {
+                agent.IsStopped = true;
+                agent.ResetPath();
+            }
+            finally
+            {
+                TryDisable(agent);
+                _pool.Push(agent);
+            }
+        }
+
+        // Disables an agent; a throwing agent is logged, never propagated, so cleanup always completes.
+        private static void TryDisable(INavAgent agent)
+        {
+            try
+            {
+                agent.Enabled = false;
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e);
+            }
+        }
+
         private void FillPool(string rootName)
         {
             int size = _config.MaxAgentPoolSize;
@@ -244,14 +409,7 @@ namespace IronGrind.ServerLogic.Navigation
         {
             for (int i = 0; i < _createdAgents.Count; i++)
             {
-                try
-                {
-                    _createdAgents[i].Enabled = false;
-                }
-                catch (Exception e)
-                {
-                    Debug.LogException(e);
-                }
+                TryDisable(_createdAgents[i]);
             }
         }
     }
