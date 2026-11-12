@@ -28,14 +28,15 @@
 
 ## Acceptance Criteria
 
-- [ ] The service subscribes named handlers to `MobEventBus.OnMobSpawned` and `OnMobDied` once, and unsubscribes in `Teardown`.
+- [ ] The service subscribes named handlers to `MobEventBus.OnMobSpawned` and `OnMobDied` once, at the end of a successful `Initialize` (after the pool fill; a throwing `Initialize` subscribes nothing), and `Teardown` always unsubscribes both (removing a handler that was never added is a no-op on the bus).
 - [ ] **Claim** (CR-NAV-5, AC-NAV-05): `AvailableCount` drops by 1; the agent is enabled, then `Warp(spawnPosition)` is called before any `SetDestination` or `Tick`; `speed` equals `INavMobSpeedSource` speed exactly; `isStopped == true`; the agent is in `_activeAgents`.
 - [ ] **Warp fails**: agent disabled and returned to the pool; error logged with `ZoneID`, `EntityID`, position; entity not registered.
-- [ ] **Unknown mob type** (speed source returns false): error logged; agent returned; entity not registered (decision recorded here: the GDD says only "callers must null-check").
+- [ ] **Unknown mob type** (speed source returns false) **or non-finite speed** (NaN / ±Infinity): error logged with the id and type; no agent is dequeued or touched (the speed lookup runs before the claim); entity not registered (decision recorded here: the GDD says only "callers must null-check").
+- [ ] **Speed clamp** (CR-NAV-8 range): a finite source speed outside `[0.1f, 20.0f]` is clamped into it and a warning is logged; an in-range speed is set exactly, with no log.
 - [ ] **EC-NAV-2 / AC-NAV-07**: a second `OnMobSpawned` for a registered `EntityID` logs an error with the id and claims nothing (`AvailableCount` drops by 1 in total; same agent instance).
 - [ ] **AC-NAV-04 / ADR-003 Decision 5**: the 151st claim throws nothing, logs one error containing "pool exhausted" and the entity id, `_activeAgents.Count` stays 150, and that entity later gets `IsPathStale == true` and `GetCurrentVelocity == Vector3.zero` (assert once Story 004 lands; until then assert it is not registered).
-- [ ] **EC-NAV-4**: `OnMobSpawned` after `Teardown` logs `"post-teardown MobSpawned"` and claims nothing.
-- [ ] **Release** (CR-NAV-6, AC-NAV-06): `isStopped = true`, `ResetPath()` once, disabled, back in the pool (`AvailableCount` +1); entity removed from `_activeAgents`, `_latestRequests` (EC-NAV-3), the partial-path and off-mesh counters.
+- [ ] **EC-NAV-4**: a `MobSpawned` that reaches the handler after `Teardown` logs `"post-teardown MobSpawned"` and claims nothing. Since `Teardown` unsubscribes, this is reachable only through the bus snapshot: `Teardown` runs inside an earlier subscriber's handler during the same raise.
+- [ ] **Release** (CR-NAV-6, AC-NAV-06): `isStopped = true`, `ResetPath()` once, disabled, back in the pool (`AvailableCount` +1); entity removed from `_activeAgents`, `_latestRequests` (EC-NAV-3) and `_failureCounts`. `_pendingRequests` is a queue and is not searched on release; Story 005's drain skips entries for entities no longer active.
 - [ ] `OnMobDied` for an unknown entity logs a warning and returns. This includes an entity already released: a handler removed from `MobEventBus` during a raise still receives that raise (Story 001 bus semantics), so a late `OnMobDied` after `Teardown` or a second release must be a no-op (Story 001 carry, 2026-11-12).
 
 ---
@@ -43,9 +44,10 @@
 ## Implementation Notes
 
 - **Handlers**: private named methods `HandleMobSpawned(MobSpawnedArgs)` / `HandleMobDied(MobDiedArgs)`. Ignore events for another `ZoneID` with a warning (one zone per process, so it signals a wiring bug).
-- **Order inside claim** (ADR-003 Decision 6 transition "Pool → Registered"): Dequeue → `enabled = true` → `Warp` → `speed` → `isStopped = true` → register. Speed is set directly on the agent here (CR-NAV-5 step 5), not through the clamped `SetSpeed` path — but clamp it the same way if the source returns an out-of-range value, and log (consistent with CR-NAV-8).
-- **Story 002 carries (2026-11-12)**: the post-teardown guard reads the service's `internal bool IsAcceptingSpawns` (false before a successful `Initialize` and after `Teardown`). Add the teardown order test with a claimed agent: claim one, `Teardown` → recorder shows [claimed agent `Enabled = false`, collections cleared, `Remove()`], `AvailableCount` back to 150.
-- **Release** removes the entity from every per-entity collection the service owns. Stories 005–006 add counters; each of them must extend `HandleMobDied` and the release test.
+- **Order of checks in `HandleMobSpawned`** (fixed, 2026-11-12 readiness): zone mismatch (warning) → `!IsAcceptingSpawns` (error, "post-teardown MobSpawned") → entity already active (EC-NAV-2 error) → speed lookup (unknown type or non-finite → error) → clamp (warning if clamped) → pool empty ("pool exhausted" error) → claim. Looking up the speed before the claim means an unknown type never touches an agent; the agent-side order below is unchanged.
+- **Order inside claim** (ADR-003 Decision 6 transition "Pool → Registered"): Dequeue → `enabled = true` → `Warp` → `speed` → `isStopped = true` → register. Speed is set directly on the agent here (CR-NAV-5 step 5), not through the `SetSpeed` path (Story 004), but with the same CR-NAV-8 clamp `[0.1f, 20.0f]` (`Mathf.Clamp` passes NaN through, so the finiteness check comes first). Put the two bounds in one place both stories use (constants on `NavigationConfigValues`, not tunable knobs).
+- **Story 002 carries (2026-11-12)**: the post-teardown guard reads the service's `internal bool IsAcceptingSpawns` (false before a successful `Initialize` and after `Teardown`). Add the teardown order test with a claimed agent: claim one, `Teardown` → recorder shows [claimed agent `Enabled = false`, collections cleared, `Remove()`]; afterwards `AvailableCount == 0` (Teardown clears the pool, as the Story 002 tests assert), `ActiveCount == 0`, `TrackedStateCount == 0`.
+- **Release** removes the entity from `_activeAgents`, `_latestRequests` and `_failureCounts`. Stories 005–006 that add per-entity collections must extend `HandleMobDied` and the release test.
 - **Pool**: a `Stack` or `Queue` of `INavAgent` pre-sized at 150; no allocation per claim.
 
 ---
@@ -62,15 +64,18 @@
 
 - **Claim**: raise `OnMobSpawned(zone, e1, typeA, p)` → `AvailableCount` 149; fake agent records [enabled=true, Warp(p)], `speed == source speed` (exact float), `isStopped == true`.
 - **Warp false**: fake `Warp` returns false → agent `enabled == false`, `AvailableCount` 150, error log contains zone, entity and position.
-- **Unknown type**: speed source false → error; `AvailableCount` 150; entity not active.
-- **Out-of-range speed** from the source (25) → agent speed 20, warning logged.
+- **Unknown type**: speed source false → error; `AvailableCount` 150; entity not active; no agent call recorded.
+- **Non-finite speed** `[TestCase]` NaN, +Inf, −Inf → error; `AvailableCount` 150; entity not active; no agent call recorded.
+- **Out-of-range speed** `[TestCase]` 25 → 20, 0 → 0.1, −3 → 0.1: agent speed clamped, one warning each. Boundaries 0.1 and 20 → set exactly, no warning.
 - **Double spawn**: same entity twice → `AvailableCount` 149; one error containing the id; registered agent reference unchanged.
 - **151 spawns**: 150 registered; 151st → no exception, exactly one error containing "pool exhausted" and the id, `ActiveCount == 150`, factory call count still 150.
-- **Post-teardown spawn**: after `Teardown`, raise `OnMobSpawned` → error contains "post-teardown MobSpawned"; nothing claimed.
-- **Release**: claim then `OnMobDied` → recorded [isStopped=true, ResetPath, enabled=false]; `ResetPath` count 1; `AvailableCount` back to 150; entity absent from every collection (assert through internal accessors or reflection, as earlier epics did).
+- **Post-teardown spawn (snapshot)**: subscribe a test handler that calls `service.Teardown()` to `OnMobSpawned` *before* `Initialize`; raise `OnMobSpawned` once → the service handler still runs for that raise, logs an error containing "post-teardown MobSpawned", claims nothing (no agent call recorded).
+- **Initialize failure subscribes nothing**: invalid instance → `Initialize` throws; raise `OnMobSpawned` → no service log, factory count 0.
+- **Teardown with a claimed agent**: claim one, `Teardown` → recorder order [claimed agent `Enabled = false`, collections cleared, `Remove()`]; `AvailableCount == 0`, `ActiveCount == 0`, `TrackedStateCount == 0`.
+- **Release**: claim then `OnMobDied` → recorded [isStopped=true, ResetPath, enabled=false]; `ResetPath` count 1; `AvailableCount` back to 150; `TrackedStateCount == 0` and the entity is absent from `_activeAgents`, `_latestRequests`, `_failureCounts` (seed the last two through reflection, as earlier epics did, so the removal is observable).
 - **Release unknown**: `OnMobDied(unknown)` → one warning, no throw, counts unchanged.
 - **Other zone id**: event for another zone → warning, ignored.
-- **Unsubscribe**: after `Teardown`, raising either event reaches no service handler (no log).
+- **Unsubscribe**: after `Teardown` (called outside a raise), raising either event reaches no service handler (no log).
 
 ---
 
