@@ -25,7 +25,7 @@
 # STATUS VALUES: active | deprecated | superseded-by: TR-[system]-NNN
 
 version: 2
-last_updated: "2026-11-12"  # 2026-11-12: TR-nav-001..009 added (Navigation / Pathfinding EPIC.md table, /create-epics). 2026-11-06: TR-auth-006 added (Authentication Story 005 /story-readiness).2026-11-02: TR-sk-001..011 added (Skill System EPIC.md table, /create-epics). Same day, earlier: TR-aa-001..009 added (Auto-Attack Combat EPIC.md table, by hand at user request). 2026-10-15: 107 TR-IDs registered from the 13 EPIC.md tables (/architecture-review, docs/architecture/architecture-review-2026-10-15-tr-registry.md); 7 carry a revised date
+last_updated: "2026-11-13"  # 2026-11-13: TR-ai-001..010 added (Enemy AI EPIC.md table, /create-epics). 2026-11-12: TR-nav-001..009 added (Navigation / Pathfinding EPIC.md table, /create-epics). 2026-11-06: TR-auth-006 added (Authentication Story 005 /story-readiness).2026-11-02: TR-sk-001..011 added (Skill System EPIC.md table, /create-epics). Same day, earlier: TR-aa-001..009 added (Auto-Attack Combat EPIC.md table, by hand at user request). 2026-10-15: 107 TR-IDs registered from the 13 EPIC.md tables (/architecture-review, docs/architecture/architecture-review-2026-10-15-tr-registry.md); 7 carry a revised date
 
 requirements:
   # --- auth: design/gdd/authentication.md (production/epics/authentication/EPIC.md) ---
@@ -1014,5 +1014,75 @@ requirements:
     gdd: design/gdd/navigation-pathfinding.md
     requirement: "The starting zone's NavMesh is baked in the Editor and set as `ZoneDefinition.BakedNavMesh`; a 150-agent fixture verifies F-NAV-3 (AC-NAV-20, OQ-NAV-2)"
     created: 2026-11-12
+    revised: ""
+    status: active
+  - id: TR-ai-001
+    system: ai
+    gdd: design/gdd/enemy-ai.md
+    requirement: "`MobDefinition` (sealed class) and `IMobDefinitionRegistry`; startup checks `AttackWindUpTicks ≥ MIN_WIND_UP_TICKS`, `MoveSpeed > 0`, `AggroRange > 0`, `LeashRange ≥ AggroRange + 2`, `AttackRange ≥ ATTACK_RANGE_MIN`, no NaN; a failing type is logged and refused (CR-AI-7, EC-AI-4, EC-AI-12, AC-AI-7, AC-AI-8)"
+    created: 2026-11-13
+    revised: ""
+    status: active
+  - id: TR-ai-002
+    system: ai
+    gdd: design/gdd/enemy-ai.md
+    requirement: "`MobController` state machine: Dormant, Pursuing, WindingUp, single-tick AttackExecution, Recovering (Recovery = 0 valid), Returning (arrival within `RETURN_ARRIVAL_THRESHOLD`), Dead; `pendingReturn` lifecycle (CR-AI-9, CR-AI-14, EC-AI-5, EC-AI-8, AC-AI-6, AC-AI-9, AC-AI-11)"
+    created: 2026-11-13
+    revised: ""
+    status: active
+  - id: TR-ai-003
+    system: ai
+    gdd: design/gdd/enemy-ai.md
+    requirement: "Dormant aggro scan every `AGGRO_SCAN_INTERVAL_TICKS`, XZ squared distance, first player in entity list order wins, aggro never transfers (CR-AI-3, F-AI-2, EC-AI-3, AC-AI-1, AC-AI-2, AC-AI-22)"
+    created: 2026-11-13
+    revised: ""
+    status: active
+  - id: TR-ai-004
+    system: ai
+    gdd: design/gdd/enemy-ai.md
+    requirement: "`FacingAngle` written every Pursuing tick as `short` ×10 (0–3599, validated); `capturedForward` locked on WindingUp entry (F-AI-3) and passed unmodified to `CheckHit` on AttackExecution (CR-AI-4, CR-AI-5, AC-AI-4, AC-AI-5, AC-AI-16)"
+    created: 2026-11-13
+    revised: ""
+    status: active
+  - id: TR-ai-005
+    system: ai
+    gdd: design/gdd/enemy-ai.md
+    requirement: "Attack cadence: `hasAttackedOnce` + `lastAttackExecutionTick` cooldown gate; effective interval F-AI-1 (CR-AI-6, AC-AI-3, AC-AI-20a, AC-AI-20b, AC-AI-25)"
+    created: 2026-11-13
+    revised: ""
+    status: active
+  - id: TR-ai-006
+    system: ai
+    gdd: design/gdd/enemy-ai.md
+    requirement: "Leash (F-AI-4) and target invalidation: immediate Returning outside the attack cycle, `pendingReturn` inside it, re-scan on target death, `CheckHit` skipped for an invalid target (CR-AI-9, CR-AI-10, EC-AI-2, AC-AI-9, AC-AI-10, AC-AI-12b, AC-AI-23, AC-AI-26)"
+    created: 2026-11-13
+    revised: ""
+    status: active
+  - id: TR-ai-007
+    system: ai
+    gdd: design/gdd/enemy-ai.md
+    requirement: "Navigation delegation: `SetDestination` only past `PURSUIT_REPOSITION_THRESHOLD` or when `IsPathStale`; `Stop` on WindingUp entry; `Resume` on Pursuing re-entry after WindingUp/Recovering; `SetDestination(spawn)` once on Returning; `SetSpeed` per ADR-003 (CR-AI-11, AC-AI-17, AC-AI-18, AC-AI-24)"
+    created: 2026-11-13
+    revised: ""
+    status: active
+  - id: TR-ai-008
+    system: ai
+    gdd: design/gdd/enemy-ai.md
+    requirement: "Enraged spawn roll `NextDouble() < EnragedChance` on the injected process-level `IRandomProvider` (ADR-013); success applies F-AI-E-1 through `SetBaseStat` (not a buff) and sets HP to the new MaxHP (CR-AI-12, F-AI-E-1, AC-AI-13, AC-AI-14, AC-AI-15)"
+    created: 2026-11-13
+    revised: ""
+    status: active
+  - id: TR-ai-009
+    system: ai
+    gdd: design/gdd/enemy-ai.md
+    requirement: "Dead: HP ≤ 0 check at tick start (CR-AI-13); Combat's `OnMobDied` bridged to `ResolveMobDrop(mob, IsEnraged ? EnragedLootQualityBonusTier : 0)` then `MobEventBus.MobDied`, idempotent; `DEATH_LINGER_TICKS` then despawn; no XP from Enemy AI (EC-AI-1, EC-AI-11, AC-AI-12a, AC-AI-19)"
+    created: 2026-11-13
+    revised: ""
+    status: active
+  - id: TR-ai-010
+    system: ai
+    gdd: design/gdd/enemy-ai.md
+    requirement: "Zone wiring: `MobController` created on `MobEventBus.MobSpawned`; phase 3 order Status Effects → Enemy AI → Auto-Attack in the composition root; the registry replaces `StandInNavMobSpeedSource`; MVP mob roster data; assembly isolation (CR-AI-1, CR-AI-2, AC-AI-21)"
+    created: 2026-11-13
     revised: ""
     status: active

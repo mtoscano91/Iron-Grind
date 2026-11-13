@@ -1,6 +1,6 @@
 # Enemy AI
 
-> **Status**: In Review
+> **Status**: Approved (Pass 3 lean, 2026-05-25 — systems-index; header corrected 2026-11-13, /create-epics)
 > **Author**: Manuel Toscano + Claude Code agents
 > **Last Updated**: 2026-10-30 (Hit Detection `/create-stories`: facing convention aligned with Movement — 0° = +Z, clockwise, no conversion from `eulerAngles.y`; `FacingAngle` stored as `short` ×10; `CheckHit` call matches CR-HD-1; `MIN_WIND_UP_TICKS` owned here)
 > **Implements Pillar**: Rhythm Mastery (primary), Earned Power (secondary)
@@ -260,6 +260,8 @@ sealed class MobDefinition {
 ```
 
 All `float` fields must be validated against NaN (`float.IsNaN`) at load time. NaN in any field causes server startup to refuse loading that mob type.
+
+> **Note (2026-11-13, Enemy AI Story 001 readiness, user decision):** `LootTableRef`, `GoldMin` and `GoldMax` are not fields of the implemented `MobDefinition`. The Loot Table System owns them: `LootTableRegistry` is keyed by `MobTypeID` (the join key) and `LootTableDefinition` holds `GoldMin` / `GoldMax`. One source of truth per value. The implemented validator also refuses Enraged multipliers outside the F-AI-E-1 ranges and refuses a duplicate `MobTypeID`. AC-AI-8's "`AggroRange + 0.01f` succeeds" contradicts CR-AI-7's 2.0 m gap; CR-AI-7 wins (`AggroRange + 2.0` is the smallest accepted value).
 
 ### IMobDefinitionRegistry Interface
 

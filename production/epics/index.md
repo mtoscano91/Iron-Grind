@@ -1,6 +1,6 @@
 # Epics Index
 
-Last Updated: 2026-11-12
+Last Updated: 2026-11-13
 Engine: Unity 6.3 LTS (6000.3)
 Control Manifest Version: 2026-11-06
 
@@ -24,8 +24,9 @@ Control Manifest Version: 2026-11-06
 | [Hit Detection](hit-detection/EPIC.md) | Core | Hit Detection | design/gdd/hit-detection.md | 4 stories (001-004), all Complete (2026-10-30) | Complete |
 | [Auto-Attack Combat](auto-attack-combat/EPIC.md) | Core | Auto-Attack Combat | design/gdd/auto-attack-combat.md | 9 stories (001-009 written 2026-10-30): 9 Complete | Complete |
 | [Skill System](skill-system/EPIC.md) | Core | Skill System | design/gdd/skill-system.md | 13 stories (001-012 written 2026-11-02, 013 added): 13 Complete (last 013 on 2026-11-04) | Complete |
-| [Navigation / Pathfinding](navigation-pathfinding/EPIC.md) | Core | Navigation / Pathfinding | design/gdd/navigation-pathfinding.md | 11 stories (001-011 written 2026-11-12): 1 Complete (001) | In Progress |
+| [Navigation / Pathfinding](navigation-pathfinding/EPIC.md) | Core | Navigation / Pathfinding | design/gdd/navigation-pathfinding.md | 11 stories (001-011 written 2026-11-12), all Complete (2026-11-13) | Complete |
 | [Enhancement System](enhancement-system/EPIC.md) | Feature | Enhancement System | design/gdd/enhancement-system.md | 16 stories (001-016 Complete); DoD open: AC-ENH-2 and the other deferred criteria | In Progress |
+| [Enemy AI](enemy-ai/EPIC.md) | Feature | Enemy AI | design/gdd/enemy-ai.md | 14 stories (001-014 written 2026-11-13): 1 Complete (001) | In Progress |
 
 ## Notes
 
@@ -41,6 +42,6 @@ Control Manifest Version: 2026-11-06
 | Layer | Epics Created | Remaining |
 |-------|--------------|-----------|
 | Foundation | 4 / 4 (all Complete) | — |
-| Core | 14 created (Equipment added 2026-10-07, Character Persistence 2026-10-12, Movement 2026-10-29, Hit Detection 2026-10-30, Auto-Attack Combat 2026-10-30, Skill System 2026-11-02, Navigation / Pathfinding 2026-11-12) | Navigation stories not yet written; combat-loop Gameplay epics (Enemy AI, Mob Spawning, Death & Respawn) decided 2026-11-12 (see Navigation EPIC.md Decisions), not yet created |
-| Feature | 1 (Enhancement, created 2026-10-07 ahead of its two gates) | Run `/create-epics layer: feature` for the rest after Core is nearly complete |
+| Core | 14 created (Equipment added 2026-10-07, Character Persistence 2026-10-12, Movement 2026-10-29, Hit Detection 2026-10-30, Auto-Attack Combat 2026-10-30, Skill System 2026-11-02, Navigation / Pathfinding 2026-11-12) | Combat-loop Gameplay epics decided 2026-11-12 (see Navigation EPIC.md Decisions): Enemy AI created 2026-11-13 (Feature row); Mob Spawning, Death & Respawn not yet created |
+| Feature | 2 (Enhancement, created 2026-10-07 ahead of its two gates; Enemy AI 2026-11-13) | Run `/create-epics layer: feature` for the rest after Core is nearly complete |
 | Presentation | 0 | Run `/create-epics layer: presentation` after Feature is nearly complete |
