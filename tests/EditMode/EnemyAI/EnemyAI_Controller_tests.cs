@@ -55,7 +55,13 @@ namespace IronGrind.Tests.EditMode.EnemyAI
             _nav = new FakeNav();
             _stats = new FakeStats();
             _mob = new MobController(new EntityID(7u), Definition(), Vector3.zero, _nav, _stats,
-                new HitDetector(HitDetectionConfig.Default));
+                new HitDetector(HitDetectionConfig.Default), EnemyAIConfigValues.Defaults, new FakeCandidates());
+        }
+
+        private sealed class FakeCandidates : IAggroCandidateSource
+        {
+            public void CopyPlayers(System.Collections.Generic.List<(EntityID Id, Vector3 Position)> into) { }
+            public bool TryGetPlayerPosition(EntityID id, out Vector3 position) { position = Vector3.zero; return false; }
         }
 
         [Test]

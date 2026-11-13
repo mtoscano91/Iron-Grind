@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using IronGrind.CharacterStats;
 using IronGrind.HitDetection;
 using IronGrind.Networking;
@@ -23,6 +24,11 @@ namespace IronGrind.ServerLogic.EnemyAI
         private readonly INavigationProvider _navigation;
         private readonly IZoneEntityStatReader _stats;
         private readonly HitDetector _hitDetector;
+        private readonly EnemyAIConfigValues _config;
+        private readonly IAggroCandidateSource _candidates;
+        private readonly List<(EntityID Id, Vector3 Position)> _scanBuffer = new List<(EntityID Id, Vector3 Position)>();
+        private int _ticksUntilScan;
+        private Vector3 _lastIssuedDestination;
 
         /// <summary>Creates a controller for one mob. It starts Dormant.</summary>
         /// <param name="entityID">The mob's entity id.</param>
@@ -31,18 +37,35 @@ namespace IronGrind.ServerLogic.EnemyAI
         /// <param name="navigation">Navigation seam. Must not be null.</param>
         /// <param name="stats">Stat reader (HP for CR-AI-13). Must not be null.</param>
         /// <param name="hitDetector">Hit detector, used by the attack cycle (Story 005). Must not be null.</param>
+        /// <param name="config">Enemy AI knobs (scan interval, reposition threshold). A struct: build it with
+        /// <see cref="EnemyAIConfigValues.Defaults"/>, <see cref="EnemyAIConfigValues.Create"/> or
+        /// <see cref="EnemyAIConfigValues.FromAsset"/>; <c>default(EnemyAIConfigValues)</c> is rejected.</param>
+        /// <param name="candidates">Player seam for the aggro scan and pursuit. Must not be null.</param>
         /// <exception cref="ArgumentNullException">A reference argument is null.</exception>
+        /// <exception cref="ArgumentOutOfRangeException">The scan interval is below 1 or the reposition threshold is not greater than 0 (or is NaN).</exception>
         public MobController(
             EntityID entityID,
             MobDefinition definition,
             Vector3 spawnPoint,
             INavigationProvider navigation,
             IZoneEntityStatReader stats,
-            HitDetector hitDetector)
+            HitDetector hitDetector,
+            EnemyAIConfigValues config,
+            IAggroCandidateSource candidates)
         {
             EntityID = entityID;
             Definition = definition ?? throw new ArgumentNullException(nameof(definition));
             SpawnPoint = spawnPoint;
+            Position = spawnPoint;
+            _config = config;
+            if (config.AggroScanIntervalTicks < 1 || !(config.PursuitRepositionThreshold > 0f))
+            {
+                throw new ArgumentOutOfRangeException(nameof(config),
+                    "Invalid EnemyAIConfigValues (scan interval < 1 or reposition threshold not > 0); "
+                    + "build it via EnemyAIConfigValues.Defaults, Create or FromAsset.");
+            }
+
+            _candidates = candidates ?? throw new ArgumentNullException(nameof(candidates));
             _navigation = navigation ?? throw new ArgumentNullException(nameof(navigation));
             _stats = stats ?? throw new ArgumentNullException(nameof(stats));
             _hitDetector = hitDetector ?? throw new ArgumentNullException(nameof(hitDetector));
@@ -58,6 +81,9 @@ namespace IronGrind.ServerLogic.EnemyAI
 
         /// <summary>World-space spawn point.</summary>
         public Vector3 SpawnPoint { get; }
+
+        /// <summary>Mob world position; starts at <see cref="SpawnPoint"/>. Story 009 integrates movement into it.</summary>
+        public Vector3 Position { get; internal set; }
 
         /// <summary>Current behaviour state.</summary>
         internal MobState State { get; private set; }
@@ -150,6 +176,7 @@ namespace IronGrind.ServerLogic.EnemyAI
             if (state == MobState.Dormant)
             {
                 PendingReturn = false;
+                _ticksUntilScan = _config.AggroScanIntervalTicks;
             }
             else if (state == MobState.Dead)
             {
@@ -211,9 +238,98 @@ namespace IronGrind.ServerLogic.EnemyAI
             return MovementIntentMessageCodec.NormalizeFacing((short)raw);
         }
 
-        private void TickDormant(uint currentTick) { }
+        /// <summary>
+        /// CR-AI-3: counts down and scans for a target every AGGRO_SCAN_INTERVAL_TICKS Dormant ticks.
+        /// F-AI-2: XZ squared distance, inclusive; the first player in list order wins (AC-AI-2); HP at or below 0 or NaN is skipped.
+        /// Players with a non-finite position are skipped. HP is read only for in-range candidates.
+        /// On a hit the mob enters Pursuing, writes facing toward the target on that same tick (CR-AI-5) and issues
+        /// one SetDestination (never Resume, ADR-003).
+        /// </summary>
+        private void TickDormant(uint currentTick)
+        {
+            _ticksUntilScan--;
+            if (_ticksUntilScan > 0)
+            {
+                return;
+            }
 
-        private void TickPursuing(uint currentTick) { }
+            _ticksUntilScan = _config.AggroScanIntervalTicks;
+            _scanBuffer.Clear();
+            _candidates.CopyPlayers(_scanBuffer);
+            float range = Definition.AggroRange;
+            float rangeSqr = range * range;
+            for (int i = 0; i < _scanBuffer.Count; i++)
+            {
+                (EntityID id, Vector3 pos) = _scanBuffer[i];
+                if (!IsFiniteXZ(pos))
+                {
+                    continue;
+                }
+
+                float dx = pos.x - Position.x;
+                float dz = pos.z - Position.z;
+                if (!(dx * dx + dz * dz <= rangeSqr))
+                {
+                    continue;
+                }
+
+                float hp = _stats.GetCurrentHP(id);
+                if (hp <= 0f || float.IsNaN(hp))
+                {
+                    continue;
+                }
+
+                TargetEntityID = id;
+                EnterState(MobState.Pursuing, currentTick);
+                WriteFacing(BearingToFacing(Position, pos, FacingAngle));
+                IssueDestination(pos);
+                return;
+            }
+        }
+
+        /// <summary>
+        /// All SetDestination calls go through here so the reposition basis is never stale. Story 005/006 must use it.
+        /// </summary>
+        /// <param name="destination">World-space destination.</param>
+        private void IssueDestination(Vector3 destination)
+        {
+            _navigation.SetDestination(EntityID, destination);
+            _lastIssuedDestination = destination;
+        }
+
+        private static bool IsFiniteXZ(Vector3 v)
+        {
+            return !(float.IsNaN(v.x) || float.IsInfinity(v.x) || float.IsNaN(v.z) || float.IsInfinity(v.z));
+        }
+
+        /// <summary>
+        /// CR-AI-5 / CR-AI-11 (Pursuing): writes facing toward the target every tick, then re-issues SetDestination when
+        /// the path is stale or the target moved more than PURSUIT_REPOSITION_THRESHOLD from the last issued destination (AC-AI-17, AC-AI-24).
+        /// A target position that cannot be read, or is non-finite on X or Z, makes the tick a no-op (exit handled by Story 006).
+        /// </summary>
+        private void TickPursuing(uint currentTick)
+        {
+            if (!TargetEntityID.HasValue
+                || !_candidates.TryGetPlayerPosition(TargetEntityID.Value, out Vector3 target))
+            {
+                return;
+            }
+
+            if (!IsFiniteXZ(target))
+            {
+                return;
+            }
+
+            WriteFacing(BearingToFacing(Position, target, FacingAngle));
+            bool stale = _navigation.IsPathStale(EntityID);
+            float dx = target.x - _lastIssuedDestination.x;
+            float dz = target.z - _lastIssuedDestination.z;
+            float threshold = _config.PursuitRepositionThreshold;
+            if (stale || dx * dx + dz * dz > threshold * threshold)
+            {
+                IssueDestination(target);
+            }
+        }
 
         private void TickWindingUp(uint currentTick) { }
 

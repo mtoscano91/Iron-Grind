@@ -41,6 +41,12 @@
 ## Implementation Notes
 
 - "Disconnected" in the GDD = the target entity is no longer in the zone's player list (slot released); a ghost-session player still in the zone remains a valid target (Ghost Session GDD) — confirm at readiness.
+- *(Carried from Story 004 code review, 2026-11-13.)*
+  - Story 004 checks target HP only at the scan, so a target whose HP reaches 0 while being pursued is still pursued until this story adds the CR-AI-9 re-scan-or-return.
+  - In Story 004, `TryGetPlayerPosition` returning false, or a non-finite position, makes Pursuing a no-op. This story turns it into the exit.
+  - Pursuing with a null `TargetEntityID` is a no-op today.
+  - Clear `TargetEntityID` on Dormant / Returning entry as the GDD requires.
+  - Returning → Pursuing re-aggro must issue `SetDestination` through `MobController.IssueDestination`, so the reposition basis is the new target and not the spawn point.
 
 ---
 

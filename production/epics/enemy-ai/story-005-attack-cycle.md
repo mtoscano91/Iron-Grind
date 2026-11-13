@@ -43,6 +43,10 @@
 
 - The hit and damage seams are interfaces owned by Enemy AI (e.g. `IMobAttackResolver`); Story 010 implements them over `HitDetector` + `DamageCalculator`.
 - `HitDetector.CheckHit(Vector3 attackerPos, Vector3 targetPos, float attackRange, Vector3 capturedForward)` exists in `src/ServerLogic/HitDetection/HitDetector.cs`.
+- *(Carried from Story 004 code review, 2026-11-13.)*
+  - Every `SetDestination` goes through `MobController.IssueDestination`, which keeps `_lastIssuedDestination` current.
+  - Re-entering Pursuing from WindingUp or Recovering uses `Resume` (CR-AI-11), so the stored reposition basis is the destination from before WindingUp. The target may have moved past the threshold during the attack cycle. Add a test: after Recovering → Pursuing, the first Pursuing tick re-paths if the target is more than `PURSUIT_REPOSITION_THRESHOLD` from that stored destination.
+  - EC-AI-3 (WindingUp on the same tick as aggro): Story 004 writes facing on the aggro tick, so `capturedForward` on that tick is the real bearing to the target.
 
 ---
 
