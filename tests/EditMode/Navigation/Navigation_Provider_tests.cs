@@ -534,7 +534,35 @@ namespace IronGrind.Tests.EditMode.Navigation
         public void test_provider_get_current_velocity_returns_desired_velocity_xz_with_y_zero()
         {
             FakeNavAgent agent = Claim(E1);
+            agent.IsStoppedValue = false; // the claim stops the agent; the drain clears it on the first SetDestination
             agent.DesiredVelocity = new Vector3(3f, 5f, -2f);
+
+            Assert.That(_service.GetCurrentVelocity(E1), Is.EqualTo(new Vector3(3f, 0f, -2f)));
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_provider_get_current_velocity_stopped_agent_is_zero_even_with_stale_desired_velocity()
+        {
+            // A real agent still reports its old desiredVelocity in the frame isStopped is set (Story 009).
+            FakeNavAgent agent = Claim(E1);
+            agent.DesiredVelocity = new Vector3(3f, 0f, -2f);
+
+            _service.Stop(E1);
+
+            Assert.That(_service.GetCurrentVelocity(E1), Is.EqualTo(Vector3.zero));
+            Assert.That(agent.DesiredVelocityReads, Is.EqualTo(0));
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_provider_get_current_velocity_after_resume_returns_desired_velocity()
+        {
+            FakeNavAgent agent = Claim(E1);
+            agent.DesiredVelocity = new Vector3(3f, 0f, -2f);
+            _service.Stop(E1);
+
+            _service.Resume(E1);
 
             Assert.That(_service.GetCurrentVelocity(E1), Is.EqualTo(new Vector3(3f, 0f, -2f)));
             LogAssert.NoUnexpectedReceived();

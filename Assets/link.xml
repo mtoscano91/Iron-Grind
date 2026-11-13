@@ -20,4 +20,14 @@
     <type fullname="IronGrind.CharacterPersistence.NpgsqlCharacterRecordStore/BeginPurchaseParameters" preserve="all" />
     <type fullname="IronGrind.CharacterPersistence.NpgsqlCharacterRecordStore/PurchaseKeyParameters" preserve="all" />
   </assembly>
+  <!--
+    Navigation (ADR-002 Decision 5b): keep UnityEngine.AI so IL2CPP does not strip NavMeshAgent / NavMesh.
+    Scene loading (ADR-009 step 6, control manifest): keep UnityEngine.SceneManagement.
+  -->
+  <assembly fullname="UnityEngine.AIModule">
+    <namespace fullname="UnityEngine.AI" preserve="all"/>
+  </assembly>
+  <assembly fullname="UnityEngine.CoreModule">
+    <namespace fullname="UnityEngine.SceneManagement" preserve="all"/>
+  </assembly>
 </linker>

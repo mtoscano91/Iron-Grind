@@ -17,6 +17,7 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
     {
         private const string REGISTRY_PATH = "Assets/data/Zones/ZoneSceneRegistry.asset";
         private const string SERVER_SCENE_PATH = "Assets/Scenes/Server/ZoneServer.unity";
+        private const string STARTING_ZONE_NAV_MESH_PATH = "Assets/NavMesh/Zone0_StartingZone.asset";
 
         [Test]
         public void test_registry_asset_exists()
@@ -37,7 +38,7 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
         }
 
         [Test]
-        public void test_starting_zone_definition_asset_has_valid_plus_minus_50_bounds_and_no_nav_mesh()
+        public void test_starting_zone_definition_asset_has_valid_plus_minus_50_bounds_and_story_008_nav_mesh()
         {
             var registry = AssetDatabase.LoadAssetAtPath<ZoneSceneRegistry>(REGISTRY_PATH);
             Assert.IsNotNull(registry);
@@ -49,7 +50,9 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
             Assert.IsTrue(ZoneDefinitionBoundsValidator.AreBoundsValid(
                 definition.WalkableBoundsMin, definition.WalkableBoundsMax, out string failure), failure);
             Assert.IsFalse(definition.TownRespawnPointAuthored);
-            Assert.IsTrue(definition.BakedNavMesh == null);
+            // Navigation Story 008 baked the starting-zone NavMesh and assigned it to the definition.
+            Assert.IsTrue(definition.BakedNavMesh != null);
+            Assert.AreEqual(STARTING_ZONE_NAV_MESH_PATH, AssetDatabase.GetAssetPath(definition.BakedNavMesh));
         }
 
         [Test]

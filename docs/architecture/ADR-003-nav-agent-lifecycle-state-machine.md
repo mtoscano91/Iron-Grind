@@ -375,6 +375,8 @@ public interface INavigationProvider {
 
 > **Implementation note (Navigation Story 006, 2026-11-12):** besides the claim-time `Warp` in the table above, phase 2 (`Tick`, health pass before the drain) owns the EC-NAV-10 off-mesh recovery `Warp(lastKnownCommittedPos)`. Phase 1 (`SyncAgentPositions`) never warps (CR-NAV-12). After a successful recovery `Warp` the entity's "destination requested" mark and path-health counters are cleared, so `IsPathStale` reports true and Enemy AI re-requests (a real `Warp` clears the path — verified in Story 009).
 
+> **Implementation note (Navigation Story 009, 2026-11-13, Unity 6.3 verification):** Decision 1 holds on a real `NavMeshAgent`: the path survives an `isStopped` toggle (`hasPath` true, `desiredVelocity` back to speed after `isStopped = false`, no new `SetDestination`). But `isStopped = true` does not zero `desiredVelocity` until the next frame; read in the same frame it still returns the old value. `GetCurrentVelocity` therefore returns zero while `isStopped` is true, so `Stop()` followed by a read in the same tick gives zero. The reverse lag (one tick of zero after `Resume()`) is accepted. Also verified: `Warp` with `updatePosition = false` returns true and clears the path without changing `isStopped`; `SetDestination` to an off-mesh point returns false and leaves `pathStatus` unchanged; `ResetPath` clears the path; `pathPending` clears on the next frame.
+
 ---
 
 ## Related

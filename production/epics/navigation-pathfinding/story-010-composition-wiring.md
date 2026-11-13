@@ -5,19 +5,19 @@
 > **Layer**: Core
 > **Type**: Integration
 > **Manifest Version**: 2026-11-06
-> **Estimate**: 3 hours
+> **Estimate**: 4–5 hours (frame-rate build check added 2026-11-13)
 
 ## Context
 
 **GDD**: `design/gdd/navigation-pathfinding.md` — CR-NAV-2, CR-NAV-3, CR-NAV-12, CR-NAV-14, EC-NAV-7, Interactions table
-**Requirement**: `TR-nav-001`, `TR-nav-005`
+**Requirement**: `TR-nav-001`, `TR-nav-005`, `TR-nav-008` (frame-rate build check only, moved from Story 009 on 2026-11-13)
 *(Requirement text lives in `docs/architecture/tr-registry.yaml` — read fresh at review time)*
 
 **ADR Governing Implementation**: ADR-002 (Decisions 1, 3); ADR-014: Inbound Request Dispatch and Tick Order; ADR-009 Amendment 1
 **ADR Decision Summary**: The simulation step runs ADR-002 phases 1–4; phase-3 systems run in the order the composition lists. Navigation phases 1–2 come before every phase-3 system. Teardown halts the tick before navigation teardown (step 3).
 
-**Engine**: Unity 6.3 LTS | **Risk**: MEDIUM (wiring only; engine behaviour verified in Story 009)
-**Engine Notes**: none.
+**Engine**: Unity 6.3 LTS | **Risk**: MEDIUM (wiring; agent behaviour verified in Story 009 PlayMode; the server-build frame-rate check lands here)
+**Engine Notes**: ADR-002 5a: verify `Application.targetFrameRate = TICK_RATE_HZ` actually drives `NavMeshAgent` simulation in a `UNITY_SERVER` build; fallback `Time.fixedDeltaTime` (moved from Story 009, 2026-11-13).
 
 **Control Manifest Rules (this layer)**:
 - Required: the tick order is code in one class; one failing step does not stop the tick
@@ -36,6 +36,7 @@
 - [ ] Teardown step 3 calls the real `Teardown` after the tick is halted; `NavMeshDataInstance` is removed once (no stand-in "removal belongs to the Navigation epic" path left in `UnitySceneLoader` comments).
 - [ ] The composed service is reachable as `INavigationProvider` for the Enemy AI epic (a property or the composition's existing service registry).
 - [ ] Wiring test by type (the Auto-Attack Story 009 / Skill Story 011 precedent) and step-order test; the full EditMode suite still passes; the Story 008 smoke (zone start + login) still passes.
+- [ ] **Frame-rate pin in a server build** (TR-nav-008, moved from Story 009 2026-11-13): in a Windows Dedicated Server build with the real adapters wired, record whether agent simulation follows `Application.targetFrameRate = TICK_RATE_HZ` (one claimed agent at a known speed: position advance per real second, or agent updates per second). If it does not, apply the ADR-002 5a fallback and record which. Result in Completion Notes; an ADR-002 note if it contradicts the ADR.
 
 ---
 
@@ -46,6 +47,7 @@
 - **Step position**: `_simulationSteps` today is (link pump?), Zone Instancing wiring, Status Effects, Movement, Combat, Skill cast (`ZoneServerComposition.cs` ~1862–2128). Insert the navigation step right after the Zone Instancing wiring step and before Status Effects; add a comment citing ADR-002 Decision 1 and CR-AI-2 (Status Effects → Enemy AI → Auto-Attack follows in the Enemy AI epic). Check where the link pump sits relative to "phase 3" before inserting.
 - **Observe**: call `Observe(nameof(ZoneNavigationService))` like the other builds.
 - **Existing tests** that count steps or assert `Observe` order will need updating (Skill Story 011 precedent: three wiring tests updated).
+- **Frame-rate check**: no mob spawns yet (Mob Spawning epic), so the build needs a way to claim one agent: a dev-only command-line flag or the existing dev harness raising `OnMobSpawned` on the composed bus, then a timed `SetDestination` with a per-second position log. A Linux build is blocked (Authentication Story 019): use the Windows Dedicated Server build and mind `project_server_build_side_effects` (revert the dedicated-server package / settings changes after the build).
 - **Bus lifetime**: Zone Instancing destroys the bus when the zone closes (CR-MS-5); at minimum unsubscribe navigation in `Teardown` (Story 003) and drop the reference at composition dispose.
 
 ---
@@ -67,13 +69,14 @@
 - **Teardown order**: tick halted before `Teardown` (recorder across the composition's teardown steps).
 - **INavigationProvider exposed**: the composition returns the same instance as `INavigationProvider`.
 - **Regression**: full EditMode suite passes; smoke from Story 008 passes.
+- **Manual check — frame-rate pin**: Setup: Windows Dedicated Server build, one claimed agent moving at a known speed. Verify: per-second position log or Profiler. Pass: ≈ 20 agent updates per second (advance ≈ speed per second), or the fallback applied and recorded.
 
 ---
 
 ## Test Evidence
 
 **Story Type**: Integration
-**Required evidence**: `tests/EditMode/Navigation/Navigation_Composition_tests.cs` — must exist and pass
+**Required evidence**: `tests/EditMode/Navigation/Navigation_Composition_tests.cs` — must exist and pass; the server-build frame-rate result recorded in Completion Notes
 
 **Status**: [ ] Not yet created
 

@@ -659,15 +659,22 @@ namespace IronGrind.ServerLogic.Navigation
         internal int FailureCount(EntityID agent) => _failureCounts.TryGetValue(agent, out int n) ? n : 0;
 
         /// <summary>
-        /// The agent's desired velocity on the XZ plane (CR-NAV-11); never the smoothed <c>velocity</c>. The real agent
-        /// zeroes <c>desiredVelocity</c> while stopped, so there is no stopped branch. Zero when the entity is not
-        /// registered (one warning) or after <see cref="Teardown"/>.
+        /// The agent's desired velocity on the XZ plane (CR-NAV-11); never the smoothed <c>velocity</c>. Zero while the
+        /// agent is stopped: a real agent keeps its old <c>desiredVelocity</c> until the next frame after
+        /// <c>isStopped = true</c> (verified in Story 009), so a <see cref="Stop"/> and a read in the same tick would
+        /// otherwise move the mob one more tick. Zero when the entity is not registered (one warning) or after
+        /// <see cref="Teardown"/>.
         /// </summary>
         /// <param name="agent">The mob entity.</param>
         /// <returns>The velocity with Y set to zero, or zero.</returns>
         public Vector3 GetCurrentVelocity(EntityID agent)
         {
             if (_tornDown || !TryGetAgent(agent, nameof(GetCurrentVelocity), out INavAgent nav))
+            {
+                return Vector3.zero;
+            }
+
+            if (nav.IsStopped)
             {
                 return Vector3.zero;
             }
