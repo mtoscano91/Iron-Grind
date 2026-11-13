@@ -1708,6 +1708,18 @@ constants:
     added: "2026-06-11"
     revised: ""
 
+  - name: MVP_MOB_ROSTER
+    status: provisional
+    source: production/epics/enemy-ai/story-002-config-and-mob-roster.md
+    referenced_by:
+      - design/gdd/enemy-ai.md
+      - design/gdd/mob-spawning.md
+    type: "MobRoster asset (Assets/data/Mobs/MobRoster.asset)"
+    values: "{1=Bandicoot (Common), 2=Wild Bandicoot (Uncommon), 3=Bandicoot Scavenger (Rare), 4=Giant Bandicoot (Elite)}"
+    note: "Provisional placeholder stats (Enemy AI Story 002 readiness, user decision 2026-11-13); the full per-mob table lives in the story. Derived from a level-1 player (AP 30, Def 20, MaxHP 400, BASE_MOVE_SPEED 5.0, XpThreshold[2] 200) and F-DC-1: Bandicoot 55 HP / 28 AP / 2 Def / 20 KillXP dies in 2 level-1 hits; 10 kills = L1 -> L2. Enraged fields use GDD defaults. Tune at Mob Spawning or a balance pass. Loot tables for these MobTypeIDs: TD-107."
+    added: "2026-11-13"
+    revised: ""
+
   - name: RESPAWN_DELAY_COMMON_TICKS
     status: active
     source: design/gdd/mob-spawning.md

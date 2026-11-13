@@ -26,7 +26,8 @@ namespace IronGrind.ServerLogic.ZoneServer
     /// <remarks>
     /// <see cref="IronGrind.ItemDatabase.ItemDatabase.Initialize"/> keeps the last of two records with the same id without
     /// a word, so it is only called when the batch has no blocking issue. Non-blocking issues are logged as warnings.
-    /// The records are owned by the scene; the loader never destroys them.
+    /// The records are owned by the scene; the loader never destroys them. A loader placed outside this one in the chain
+    /// must forward <see cref="IZoneItemData"/> (as <c>ZoneMobDataLoader</c> does), or the composition will not find it.
     /// </remarks>
     /// <example>
     /// <code>

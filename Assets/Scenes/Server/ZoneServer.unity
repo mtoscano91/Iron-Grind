@@ -151,6 +151,7 @@ MonoBehaviour:
   _registry: {fileID: 11400000, guid: dba248cf38834aa18e266de44f4f018a, type: 2}
   _skillDatabase: {fileID: 11400000, guid: 9079c13f333444afb29425db756473c8, type: 2}
   _classDatabase: {fileID: 11400000, guid: 8ef0df099ca147e4bc0862ca706e2980, type: 2}
+  _mobRoster: {fileID: 11400000, guid: 2376d451b4a74baaacec08be13ed0b01, type: 2}
   _items:
   - {fileID: 11400000, guid: c45d9f7bc8637e64e967dc0d70adaa02, type: 2}
   - {fileID: 11400000, guid: 4d888c6266a58ea4da4eec87990697f3, type: 2}

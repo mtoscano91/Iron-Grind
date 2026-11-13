@@ -1,0 +1,91 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6489b8ecfe2241eeafe377912b9af4f9, type: 3}
+  m_Name: MobRoster
+  m_EditorClassIdentifier: IronGrind.ServerLogic::IronGrind.ServerLogic.EnemyAI.MobRoster
+  _entries:
+  - MobTypeId: 1
+    DisplayName: Bandicoot
+    MobTier: 0
+    BaseMaxHP: 55
+    BaseAttackPower: 28
+    BaseDefense: 2
+    AttackRange: 1.5
+    MoveSpeed: 3.5
+    AggroRange: 6
+    LeashRange: 12
+    AttackWindUpTicks: 12
+    AttackRecoveryTicks: 6
+    AttackCooldownTicks: 10
+    KillXP: 20
+    EnragedChance: 0.07
+    EnragedMaxHPMultiplier: 1.5
+    EnragedAttackPowerMultiplier: 1.3
+    EnragedXPMultiplier: 1.5
+    EnragedLootQualityBonusTier: 1
+  - MobTypeId: 2
+    DisplayName: Wild Bandicoot
+    MobTier: 1
+    BaseMaxHP: 120
+    BaseAttackPower: 40
+    BaseDefense: 6
+    AttackRange: 1.5
+    MoveSpeed: 3.8
+    AggroRange: 7
+    LeashRange: 14
+    AttackWindUpTicks: 14
+    AttackRecoveryTicks: 6
+    AttackCooldownTicks: 12
+    KillXP: 45
+    EnragedChance: 0.07
+    EnragedMaxHPMultiplier: 1.5
+    EnragedAttackPowerMultiplier: 1.3
+    EnragedXPMultiplier: 1.5
+    EnragedLootQualityBonusTier: 1
+  - MobTypeId: 3
+    DisplayName: Bandicoot Scavenger
+    MobTier: 2
+    BaseMaxHP: 260
+    BaseAttackPower: 60
+    BaseDefense: 12
+    AttackRange: 1.8
+    MoveSpeed: 4
+    AggroRange: 8
+    LeashRange: 16
+    AttackWindUpTicks: 16
+    AttackRecoveryTicks: 8
+    AttackCooldownTicks: 14
+    KillXP: 100
+    EnragedChance: 0.07
+    EnragedMaxHPMultiplier: 1.5
+    EnragedAttackPowerMultiplier: 1.3
+    EnragedXPMultiplier: 1.5
+    EnragedLootQualityBonusTier: 1
+  - MobTypeId: 4
+    DisplayName: Giant Bandicoot
+    MobTier: 3
+    BaseMaxHP: 600
+    BaseAttackPower: 95
+    BaseDefense: 20
+    AttackRange: 2.5
+    MoveSpeed: 3.6
+    AggroRange: 9
+    LeashRange: 18
+    AttackWindUpTicks: 18
+    AttackRecoveryTicks: 10
+    AttackCooldownTicks: 16
+    KillXP: 250
+    EnragedChance: 0.07
+    EnragedMaxHPMultiplier: 1.5
+    EnragedAttackPowerMultiplier: 1.3
+    EnragedXPMultiplier: 1.5
+    EnragedLootQualityBonusTier: 1

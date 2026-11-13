@@ -33,7 +33,8 @@ namespace IronGrind.ServerLogic.ZoneServer
     /// earlier one in the registry): no duplicate <see cref="ClassType"/>, a defined <see cref="ClassType"/> member,
     /// each auto-allocation in [0, 2], the four auto-allocations plus free points equal 5; and every id in a class's
     /// skill list resolves in the skill database, with exactly 10 distinct skills per class (skill-system.md Skill Roster).
-    /// The assets are owned by the scene; the loader never destroys them.
+    /// The assets are owned by the scene; the loader never destroys them. A loader placed outside this one in the chain
+    /// must forward <see cref="IZoneClassSkillData"/> and <see cref="IZoneItemData"/> (as <c>ZoneMobDataLoader</c> does).
     /// </remarks>
     /// <example>
     /// <code>

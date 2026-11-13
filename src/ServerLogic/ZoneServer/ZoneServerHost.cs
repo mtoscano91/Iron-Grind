@@ -2,6 +2,7 @@ using System;
 using System.Globalization;
 using IronGrind.ItemDatabase;
 using IronGrind.LevelingSystem;
+using IronGrind.ServerLogic.EnemyAI;
 using IronGrind.ServerLogic.Navigation;
 using IronGrind.ServerLogic.ZoneInstancing;
 using IronGrind.SkillSystem;
@@ -46,6 +47,10 @@ namespace IronGrind.ServerLogic.ZoneServer
         // invalid list fails S2. Holds every ItemDefinition asset under Assets/data/items/.
         [SerializeField] private ItemDefinition[] _items;
 
+        // Enemy AI Story 002: the mob roster, validated at S2 by ZoneMobDataLoader; a missing, empty or fully invalid
+        // roster fails S2.
+        [SerializeField] private MobRoster _mobRoster;
+
         private ZoneServerComposition _composition;
         private NgoZoneNetwork _network;
         private NavFrameRateProbe _probe;
@@ -69,8 +74,9 @@ namespace IronGrind.ServerLogic.ZoneServer
                     null, // close steps: the Zone Instancing wiring built at S5 (Story 014)
                     new UnitySceneLoader(gameObject, _registry, slot),
                     new ZoneDefinitionBoundsValidator(slot),
-                    new ZoneClassSkillDataLoader(_skillDatabase, _classDatabase,
-                        new ZoneItemDataLoader(_items, new StandInZoneStaticDataLoader())),
+                    new ZoneMobDataLoader(_mobRoster,
+                        new ZoneClassSkillDataLoader(_skillDatabase, _classDatabase,
+                            new ZoneItemDataLoader(_items, new StandInZoneStaticDataLoader()))),
                     null, // zone state owner: the Zone Instancing wiring built at S5 (Story 014)
                     null, // gateway registration: the composition builds the real link registration at S5 (Gateway Story 011)
                     new FileZoneConfigSource(),
