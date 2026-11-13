@@ -3,7 +3,7 @@
 > **Layer**: Core
 > **GDD**: design/gdd/navigation-pathfinding.md
 > **Architecture Module**: Navigation (`architecture.md` module table, ADR-002/003): `ZoneNavigationService`, `src/ServerLogic/`
-> **Status**: Ready
+> **Status**: Complete
 > **Stories**: 11 created 2026-11-12 — see Stories
 > **Manifest Version**: 2026-11-06
 
@@ -91,7 +91,7 @@ Taken for all four combat-loop epics (Navigation, Enemy AI, Mob Spawning, Death 
 | 008 | [Starting-zone floor and NavMesh bake](story-008-starting-zone-navmesh-bake.md) | Config/Data | Complete | ADR-009, ADR-002 |
 | 009 | [Unity adapters and server build config](story-009-unity-adapters-build-config.md) | Integration | Complete | ADR-002, ADR-012 |
 | 010 | [Composition wiring](story-010-composition-wiring.md) | Integration | Complete | ADR-002, ADR-014 |
-| 011 | [150-agent drain fixture (AC-NAV-20)](story-011-drain-fixture-150-agents.md) | Integration | Ready | ADR-002 |
+| 011 | [150-agent drain fixture (AC-NAV-20)](story-011-drain-fixture-150-agents.md) | Integration | Complete | ADR-002 |
 
 Order: 001 → 002 → 003 → 004 → 005 → 006; 007 after 001; 008 any time (early); 009 after 002, 004, 008; 010 after 006, 008, 009; 011 after 008, 009.
 
