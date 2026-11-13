@@ -30,7 +30,7 @@ Navigation/Pathfinding executes within `IronGrind.ServerLogic` (`defineConstrain
 2. If `_navMeshInstance.valid == false`: log error with `ZoneID` and throw, so S6 fails and zone initialization is aborted. No mobs spawn in a zone without a valid NavMesh.
 3. After confirming `_navMeshInstance.valid`, run the spawn-point assertion (CR-NAV-13).
 
-Runtime baking is prohibited. All `NavMeshData` assets are baked in the Unity Editor prior to build (iOS performance constraint; Movement System CR-MOV-7). Asset naming convention: `Assets/NavMesh/{ZoneTemplateID}.asset` — must be included in the server build.
+Runtime baking is prohibited. All `NavMeshData` assets are baked in the Unity Editor prior to build (iOS performance constraint; Movement System CR-MOV-7). Asset naming convention: `Assets/NavMesh/Zone{ZoneTemplateID}_{Name}.asset` (for example `Zone0_StartingZone.asset`; readable name added 2026-11-12, Navigation Story 008 readiness) — must be included in the server build. The scene's `NavMeshSurface` is left disabled after baking so only the scene loader adds the data.
 
 ---
 
@@ -438,7 +438,7 @@ Tuning Knobs.)*
 | **Zone Instancing** | Calls `ZoneNavigationService.Initialize(ZoneID, NavMeshData)` during zone `Loading` phase and `Teardown()` on zone `Closed` entry. Passes the pre-baked `NavMeshData` asset and manages the service's lifecycle. | Approved |
 | **Mob Spawning (MobEventBus)** | Navigation subscribes to `MobEventBus.MobSpawned` (claim agent, CR-NAV-5) and `MobEventBus.MobDied` (release agent, CR-NAV-6). Bus lifetime managed by Zone Instancing; navigation never holds a direct reference to Mob Spawning. | Approved |
 | **Enemy AI (`IMobDefinitionRegistry`)** | Navigation calls `IMobDefinitionRegistry.GetDefinition(MobTypeID)` at spawn to read `MoveSpeed` for `NavMeshAgent.speed` (CR-NAV-5). Interface owned and implemented by Enemy AI. Returns null for unknown IDs; callers must null-check. | Approved |
-| **Movement System** | Pre-baked `NavMeshData` assets (one per zone template) are the shared spatial contract. Movement System uses `NavMesh.SamplePosition` for player position validation; Navigation loads the same asset for mob guidance. The asset is never baked at runtime (CR-MOV-7). Asset naming: `Assets/NavMesh/{ZoneTemplateID}.asset`. | Approved |
+| **Movement System** | Pre-baked `NavMeshData` assets (one per zone template) are the shared spatial contract. Movement System uses `NavMesh.SamplePosition` for player position validation; Navigation loads the same asset for mob guidance. The asset is never baked at runtime (CR-MOV-7). Asset naming: `Assets/NavMesh/Zone{ZoneTemplateID}_{Name}.asset` (CR-NAV-2). | Approved |
 
 ### Downstream Dependents
 
