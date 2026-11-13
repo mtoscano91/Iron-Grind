@@ -4,8 +4,9 @@ using UnityEngine.AI;
 namespace IronGrind.ServerLogic.ZoneServer
 {
     /// <summary>
-    /// Zone navigation as the composition sees it (ADR-009 Amendment 1 Key Interfaces). The real service
-    /// belongs to the Navigation epic; until then <see cref="StandInZoneNavigation"/> is passed.
+    /// Zone navigation as the composition sees it (ADR-009 Amendment 1 Key Interfaces). The real
+    /// <c>ZoneNavigationService</c> is built by the composition at S5 when the host passes null (Navigation Story 010);
+    /// <see cref="StandInZoneNavigation"/> remains only for tests that pass a seam.
     /// </summary>
     /// <example>
     /// <code>

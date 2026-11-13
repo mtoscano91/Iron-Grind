@@ -19,7 +19,7 @@ namespace IronGrind.ServerLogic.ZoneServer
     /// In the Editor and development builds it logs the instance ids of the host object and of the
     /// <c>NetworkManager</c> object before the load starts and once the load completed
     /// (<c>[ZoneServer] A1-3 before load</c> / <c>after load</c>), so a run can show both survived the Single-mode load
-    /// (Story 045 AC-7). Removing the NavMesh instance at teardown belongs to the real navigation (Navigation epic).
+    /// (Story 045 AC-7). The NavMesh instance is removed at teardown step 3 by <c>ZoneNavigationService.Teardown</c> (Navigation Story 010).
     /// </remarks>
     /// <example>
     /// <code>

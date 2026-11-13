@@ -90,7 +90,7 @@ Taken for all four combat-loop epics (Navigation, Enemy AI, Mob Spawning, Death 
 | 007 | [Spawn-point validator](story-007-spawn-point-validator.md) | Logic | Complete | ADR-002 |
 | 008 | [Starting-zone floor and NavMesh bake](story-008-starting-zone-navmesh-bake.md) | Config/Data | Complete | ADR-009, ADR-002 |
 | 009 | [Unity adapters and server build config](story-009-unity-adapters-build-config.md) | Integration | Complete | ADR-002, ADR-012 |
-| 010 | [Composition wiring](story-010-composition-wiring.md) | Integration | Ready | ADR-002, ADR-014 |
+| 010 | [Composition wiring](story-010-composition-wiring.md) | Integration | Complete | ADR-002, ADR-014 |
 | 011 | [150-agent drain fixture (AC-NAV-20)](story-011-drain-fixture-150-agents.md) | Integration | Ready | ADR-002 |
 
 Order: 001 → 002 → 003 → 004 → 005 → 006; 007 after 001; 008 any time (early); 009 after 002, 004, 008; 010 after 006, 008, 009; 011 after 008, 009.

@@ -12,6 +12,7 @@ using IronGrind.MovementSystem;
 using IronGrind.Networking;
 using IronGrind.Randomness;
 using IronGrind.ServerLogic.Gateway;
+using IronGrind.ServerLogic.Navigation;
 using IronGrind.ServerLogic.ZoneInstancing;
 using IronGrind.SkillSystem;
 using IronGrind.StatusEffects;
@@ -54,7 +55,9 @@ namespace IronGrind.ServerLogic.ZoneServer
     /// teardown goes on; the exit code is never changed by a failure. A destroyed NGO manager
     /// (<see cref="IZoneNetwork.IsAlive"/> false) skips the tick unsubscribe and the NGO shutdown. The teardown
     /// starts from the first step with something to undo: navigation teardown (3) runs only once S6 called
-    /// <c>Initialize</c> (<see cref="MarkNavigationInitialized"/>), CR-ZI-12 (4) only once the zone state owner
+    /// <c>Initialize</c> (<see cref="MarkNavigationInitialized"/>; it halts nothing itself: the tick is already
+    /// unsubscribed at step 1, then <c>Teardown()</c> disables the agents and removes the NavMesh data, then the
+    /// composition destroys the Unity pool roots of the factory it built, Navigation Story 010), CR-ZI-12 (4) only once the zone state owner
     /// was told of T-2 or T-3 (<see cref="MarkZoneStateEntered"/>), and the flush (4b) and the drain (5) only
     /// after startup S9 completed the tick subscription (<see cref="MarkTickStarted"/>).
     /// <para>
@@ -117,7 +120,11 @@ namespace IronGrind.ServerLogic.ZoneServer
 
         private readonly IZoneApplication _application;
         private readonly IZoneNetwork _network;
-        private readonly IZoneNavigation _navigation;
+        // Not readonly: with the real backend and a null seam, S5 builds the real ZoneNavigationService (Navigation Story 010).
+        private IZoneNavigation _navigation;
+        private ZoneNavigationService _navigationService;
+        private UnityNavAgentFactory _unityNavAgentFactory;
+        private NavigationConfig _ownedNavigationConfig;
         private readonly IZoneCloseSteps _closeSteps;
         private readonly IZoneScene _scene;
         private readonly IZoneBoundsValidator _boundsValidator;
@@ -262,7 +269,11 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// </summary>
         /// <param name="application">Application seam.</param>
         /// <param name="network">NGO seam (also creates the send seam and the inbound transport).</param>
-        /// <param name="navigation">Navigation seam.</param>
+        /// <param name="navigation">
+        /// Navigation seam. Null (the host passes null): S5 builds the real <see cref="ZoneNavigationService"/>, its
+        /// <see cref="MobEventBus"/> and its phase step (Navigation Story 010). A non-null seam (tests) keeps the old
+        /// behaviour: no bus, no navigation step.
+        /// </param>
         /// <param name="closeSteps">CR-ZI-12 seam.</param>
         /// <param name="scene">Zone scene seam (S6).</param>
         /// <param name="boundsValidator">Bounds validator seam (S6).</param>
@@ -312,6 +323,54 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// with <c>Task.Run</c> and waited for <c>DbWarmupTimeoutMs</c>; the token is cancelled on a timeout.
         /// </summary>
         internal Func<CancellationToken, Task> WarmUpOverride;
+
+        /// <summary>
+        /// Test seam (Navigation Story 010): replaces the <see cref="UnityNavAgentFactory"/> the composition builds at S5
+        /// when no navigation seam was passed. When set, no concrete factory is kept, so teardown step 3 has no pool
+        /// roots to destroy. Null in production. Set before the run starts.
+        /// </summary>
+        internal Func<INavAgentFactory> NavAgentFactoryOverride;
+
+        /// <summary>
+        /// Test seam (Navigation Story 010): replaces the in-code default <see cref="NavigationConfig"/> the composition
+        /// creates at S5 (an override is never destroyed by the composition). Null in production. Set before the run starts.
+        /// </summary>
+        internal NavigationConfig NavigationConfigOverride;
+
+        /// <summary>
+        /// Test seam (Navigation Story 010, an approved small addition to the two hooks above): replaces
+        /// <see cref="UnityNavMeshInstanceOps"/>. EditMode fake scenes return a default (invalid) NavMeshDataInstance, so
+        /// the real ops would fail S6 there. Null in production. Set before the run starts.
+        /// </summary>
+        internal Func<INavMeshInstanceOps> NavMeshInstanceOpsOverride;
+
+        /// <summary>
+        /// The zone's one <see cref="MobEventBus"/> (Navigation Story 010), created at S5 only when the composition built the
+        /// navigation (no seam passed); null otherwise. The Enemy AI and Mob Spawning epics raise on it. The navigation
+        /// subscribes at S6 and unsubscribes in its own teardown; the Dispose pass drops this reference.
+        /// </summary>
+        internal MobEventBus MobEvents { get; private set; }
+
+        /// <summary>
+        /// The composed navigation as <see cref="INavigationProvider"/> for the Enemy AI epic: the same instance as the
+        /// service. Null when a navigation seam was passed in, and before S5.
+        /// </summary>
+        internal INavigationProvider NavigationProvider => _navigationService;
+
+        /// <summary>The composed navigation service (test accessor); null when a seam was passed in, and before S5.</summary>
+        internal ZoneNavigationService NavigationService => _navigationService;
+
+        /// <summary>The zone id parsed at S0 (<c>ZoneID.Invalid</c> before it); read by the frame-rate probe.</summary>
+        internal ZoneID ZoneId => _zoneId;
+
+        /// <summary>The concrete factory teardown step 3 destroys pool roots of; null with a factory override or a passed seam.</summary>
+        internal UnityNavAgentFactory UnityNavFactory => _unityNavAgentFactory;
+
+        /// <summary>
+        /// True once S9 subscribed the tick (the zone is Active) and no teardown was requested. The navigation frame-rate
+        /// probe starts only then.
+        /// </summary>
+        internal bool IsTickRunning => _tickStarted && !_teardownRequested;
 
         /// <summary>
         /// Dev seam (Authentication Story 017, AC-AUTH-05b): opens the per-tick timestamp log writer at S9 from the parsed
@@ -1162,6 +1221,10 @@ namespace IronGrind.ServerLogic.ZoneServer
             return true;
         }
 
+        // S6 part 2. With the real navigation (Navigation Story 010) a zone whose definition has no baked NavMesh fails
+        // here: ZoneNavigationService.Initialize throws on the invalid instance, which is S-fail at S6, and teardown
+        // step 3 still runs because MarkNavigationInitialized is set first. Only StartingZone exists today and it has the
+        // Story 008 bake.
         private bool StartupFinishScene()
         {
             if (!_scene.Succeeded)
@@ -1351,9 +1414,18 @@ namespace IronGrind.ServerLogic.ZoneServer
 
                     break;
                 case 3:
+                    // The tick is already halted (step 1). Teardown() disables the agents and removes the NavMesh data; the
+                    // pool roots (GameObjects) of the factory this composition built are destroyed after it, even if it threw.
                     if (_navigationInitialized)
                     {
-                        _navigation?.Teardown();
+                        try
+                        {
+                            _navigation?.Teardown();
+                        }
+                        finally
+                        {
+                            _unityNavAgentFactory?.DestroyPoolRoots();
+                        }
                     }
 
                     break;
@@ -1471,6 +1543,23 @@ namespace IronGrind.ServerLogic.ZoneServer
             }
 
             _disposables.Clear();
+
+            // Navigation Story 010: the navigation unsubscribed itself in Teardown (step 3); drop the bus reference and
+            // destroy the config asset this composition created (never an injected override).
+            MobEvents = null;
+            if (_ownedNavigationConfig != null)
+            {
+                if (Application.isPlaying)
+                {
+                    UnityEngine.Object.Destroy(_ownedNavigationConfig);
+                }
+                else
+                {
+                    UnityEngine.Object.DestroyImmediate(_ownedNavigationConfig);
+                }
+            }
+
+            _ownedNavigationConfig = null;
         }
 
         // ------------------------------------------------------------------ real backend (Story 044)
@@ -1844,6 +1933,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                 // Skill System Story 011: ZoneEntryCompletion takes its responder once, before Skill exists.
                 _owner.EntryResponder = new ForwardingZoneEntryResponder();
                 ZoneInstancingWiring wiring = BuildZoneInstancing(dispatcher, outbox, stateSource);
+                BuildNavigation();
                 StatusEffectsService statusEffects = BuildStatusEffects(wiring);
                 MovementService movement = BuildMovement(dispatcher, wiring, stateSource, statusEffects);
                 var ruBatch = new RUBatchOutboundStep(sendSeam, outbox, wiring.Pool.MaxPlayers);
@@ -1949,6 +2039,56 @@ namespace IronGrind.ServerLogic.ZoneServer
                 _owner._simulationSteps.Add(wiring);
                 _owner.AttachZoneInstancing(wiring);
                 return wiring;
+            }
+
+            // Navigation Story 010: runs only when no IZoneNavigation was passed (the host passes null). Builds the zone's
+            // MobEventBus, the Story 009 Unity adapters (or the test overrides), the ZoneNavigationService and its phase step.
+            // The service subscribes to the bus in Initialize (S6) and unsubscribes in Teardown (step 3).
+            // A caller that passed a seam keeps the old behaviour exactly: no bus, no step, no Observe.
+            private void BuildNavigation()
+            {
+                if (_owner._navigation != null)
+                {
+                    return;
+                }
+
+                var bus = new MobEventBus();
+                _owner.MobEvents = bus;
+
+                NavigationConfig config = _owner.NavigationConfigOverride;
+                if (config == null)
+                {
+                    // CreateInstance runs the field initializers, so the asset carries the in-code defaults. Destroyed in the Dispose pass.
+                    config = ScriptableObject.CreateInstance<NavigationConfig>();
+                    _owner._ownedNavigationConfig = config;
+                }
+
+                INavAgentFactory agentFactory;
+                if (_owner.NavAgentFactoryOverride != null)
+                {
+                    agentFactory = _owner.NavAgentFactoryOverride();
+                }
+                else
+                {
+                    // Kept as the concrete type so teardown step 3 can destroy its pool roots.
+                    _owner._unityNavAgentFactory = new UnityNavAgentFactory();
+                    agentFactory = _owner._unityNavAgentFactory;
+                }
+
+                INavMeshInstanceOps instanceOps = _owner.NavMeshInstanceOpsOverride != null
+                    ? _owner.NavMeshInstanceOpsOverride()
+                    : new UnityNavMeshInstanceOps();
+
+                var service = new ZoneNavigationService(config, agentFactory,
+                    new StandInNavMobSpeedSource(NavigationConfigValues.FromAsset(config)),
+                    new UnityNavMeshQuery(), instanceOps, bus);
+                Observe(nameof(ZoneNavigationService));
+
+                // ADR-002 Decision 1 and CR-AI-2: navigation phases 1 and 2 run before every phase-3 system. Status Effects ->
+                // Enemy AI -> Auto-Attack follows in the Enemy AI epic; the committed-position source is an empty stand-in until then.
+                _owner._simulationSteps.Add(new NavigationPhaseStep(service, new EmptyMobCommittedPositionSource()));
+                _owner._navigationService = service;
+                _owner._navigation = service;
             }
 
             // Status Effects Story 009: the Status Effects service over the zone's Character Stats (built in

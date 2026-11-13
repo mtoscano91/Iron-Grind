@@ -184,6 +184,9 @@ namespace IronGrind.Tests.EditMode.Navigation
         public int RemoveCalls;
         public Func<string> OnRemoveSnapshot;
 
+        /// <summary>When set, <see cref="Remove"/> throws an InvalidOperationException after recording (default false).</summary>
+        public bool ThrowOnRemove;
+
         /// <summary>Creates the ops; <paramref name="recorder"/> may be null.</summary>
         public FakeNavMeshInstanceOps(List<string> recorder = null)
         {
@@ -202,6 +205,10 @@ namespace IronGrind.Tests.EditMode.Navigation
             _added.Remove(instance);
             RemoveCalls++;
             _recorder?.Add(OnRemoveSnapshot != null ? OnRemoveSnapshot() : "Remove");
+            if (ThrowOnRemove)
+            {
+                throw new InvalidOperationException("Remove exploded");
+            }
         }
     }
 

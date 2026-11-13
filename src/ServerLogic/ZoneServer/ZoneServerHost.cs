@@ -2,6 +2,7 @@ using System;
 using System.Globalization;
 using IronGrind.ItemDatabase;
 using IronGrind.LevelingSystem;
+using IronGrind.ServerLogic.Navigation;
 using IronGrind.ServerLogic.ZoneInstancing;
 using IronGrind.SkillSystem;
 using UnityEngine;
@@ -47,6 +48,7 @@ namespace IronGrind.ServerLogic.ZoneServer
 
         private ZoneServerComposition _composition;
         private NgoZoneNetwork _network;
+        private NavFrameRateProbe _probe;
 #if DEVELOPMENT_BUILD || UNITY_EDITOR
         private const string FLAG_TEARDOWN_AFTER = "-teardownAfterSeconds";
         private float _teardownAfterSeconds = -1f;
@@ -63,7 +65,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                 _composition = ZoneServerComposition.CreateWithRealBackend(
                     new UnityZoneApplication(gameObject),
                     _network,
-                    new StandInZoneNavigation(),
+                    null, // navigation: the composition builds the real ZoneNavigationService, bus and phase step at S5 (Navigation Story 010)
                     null, // close steps: the Zone Instancing wiring built at S5 (Story 014)
                     new UnitySceneLoader(gameObject, _registry, slot),
                     new ZoneDefinitionBoundsValidator(slot),
@@ -110,7 +112,19 @@ namespace IronGrind.ServerLogic.ZoneServer
 #if DEVELOPMENT_BUILD || UNITY_EDITOR
             ReadTeardownTrigger(args);
 #endif
+            // Navigation Story 010: the frame-rate probe (flag -navFrameRateProbe, no value). The probe itself checks
+            // Debug.isDebugBuild once the zone is Active; ZoneStartupArgs.Parse ignores the unknown flag.
+            if (NavFrameRateProbe.IsRequested(args))
+            {
+                _probe = new NavFrameRateProbe(_composition, IsDebugBuild);
+            }
+
             StartCoroutine(_composition.Start(args));
+        }
+
+        private static bool IsDebugBuild()
+        {
+            return Debug.isDebugBuild;
         }
 
         private void Update()
@@ -130,6 +144,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                 _composition.RequestQuit();
             }
 #endif
+            _probe?.Tick(Time.unscaledTime);
             _composition.PollQuitStall();
             if (_composition.TryBeginTeardown())
             {

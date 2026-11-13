@@ -147,6 +147,15 @@ namespace IronGrind.ServerLogic.Navigation
         /// </summary>
         internal bool IsAcceptingSpawns => _initialized && !_tornDown;
 
+        /// <summary>Test accessor: how many times <see cref="Teardown"/> was called, including ignored repeat calls.</summary>
+        internal int TeardownCallCount { get; private set; }
+
+        /// <summary>Test accessor: true once <see cref="Teardown"/> has started.</summary>
+        internal bool IsTornDown => _tornDown;
+
+        /// <summary>Test accessor: the mob speed source this service was built with.</summary>
+        internal INavMobSpeedSource SpeedSource => _speedSource;
+
         /// <summary>
         /// Total entries across the active, pending, latest-request, failure-counter, queued, requested and
         /// path-health (one entry per registered agent) collections.
@@ -206,6 +215,7 @@ namespace IronGrind.ServerLogic.Navigation
         /// </remarks>
         public void Teardown()
         {
+            TeardownCallCount++;
             if (_tornDown)
             {
                 return;
@@ -691,6 +701,25 @@ namespace IronGrind.ServerLogic.Navigation
 
         /// <summary>Whether SetDestination was accepted for the entity since its claim (test accessor).</summary>
         internal bool HasRequestedDestination(EntityID agent) => _destinationRequested.Contains(agent);
+
+        /// <summary>
+        /// Reads the registered agent's <see cref="INavAgent.NextPosition"/> (Story 010 frame-rate probe, test accessor).
+        /// Silent: no warning for an unregistered entity.
+        /// </summary>
+        /// <param name="agent">The mob entity.</param>
+        /// <param name="position">The agent's nextPosition, or zero when not registered or torn down.</param>
+        /// <returns>True when the entity is registered.</returns>
+        internal bool TryGetAgentNextPosition(EntityID agent, out Vector3 position)
+        {
+            if (!_tornDown && _activeAgents.TryGetValue(agent, out INavAgent nav))
+            {
+                position = nav.NextPosition;
+                return true;
+            }
+
+            position = Vector3.zero;
+            return false;
+        }
 
         /// <summary>Whether the entity holds a queue slot (test accessor).</summary>
         internal bool IsQueued(EntityID agent) => _queuedEntities.Contains(agent);

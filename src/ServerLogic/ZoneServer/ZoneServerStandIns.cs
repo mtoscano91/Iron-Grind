@@ -58,7 +58,8 @@ namespace IronGrind.ServerLogic.ZoneServer
     }
 
     /// <summary>
-    /// Stand-in for <see cref="IZoneNavigation"/> until the Navigation epic ships (ADR-009 A1 Decision 2).
+    /// Stand-in for <see cref="IZoneNavigation"/>, now only for tests that pass it: the host passes null and the
+    /// composition builds the real navigation (Navigation Story 010; ADR-009 A1 Decision 2).
     /// Logs "[ZoneServer] navigation not implemented" once and does nothing else.
     /// </summary>
     /// <example>
