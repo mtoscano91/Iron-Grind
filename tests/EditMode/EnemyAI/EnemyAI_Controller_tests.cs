@@ -1,5 +1,4 @@
 using IronGrind.CharacterStats;
-using IronGrind.HitDetection;
 using IronGrind.LootTableSystem;
 using IronGrind.ServerLogic.EnemyAI;
 using IronGrind.ServerLogic.Navigation;
@@ -35,6 +34,11 @@ namespace IronGrind.Tests.EditMode.EnemyAI
             public int GetEffectiveStat(EntityID entityId, StatID statId) => 0;
         }
 
+        private sealed class NullResolver : IMobAttackResolver
+        {
+            public void ResolveAttack(EntityID mob, EntityID target, Vector3 mobPos, Vector3 targetPos, float attackRange, Vector3 capturedForward) { }
+        }
+
         private FakeNav _nav;
         private FakeStats _stats;
         private MobController _mob;
@@ -55,7 +59,7 @@ namespace IronGrind.Tests.EditMode.EnemyAI
             _nav = new FakeNav();
             _stats = new FakeStats();
             _mob = new MobController(new EntityID(7u), Definition(), Vector3.zero, _nav, _stats,
-                new HitDetector(HitDetectionConfig.Default), EnemyAIConfigValues.Defaults, new FakeCandidates());
+                new NullResolver(), EnemyAIConfigValues.Defaults, new FakeCandidates());
         }
 
         private sealed class FakeCandidates : IAggroCandidateSource
@@ -245,8 +249,6 @@ namespace IronGrind.Tests.EditMode.EnemyAI
 
         [TestCase(MobState.Dormant)]
         [TestCase(MobState.Pursuing)]
-        [TestCase(MobState.WindingUp)]
-        [TestCase(MobState.AttackExecution)]
         [TestCase(MobState.Recovering)]
         [TestCase(MobState.Returning)]
         public void test_controller_tick_live_state_stub_keeps_state(MobState state)

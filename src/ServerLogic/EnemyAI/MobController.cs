@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using IronGrind.CharacterStats;
-using IronGrind.HitDetection;
 using IronGrind.Networking;
 using IronGrind.ServerLogic.Navigation;
 using IronGrind.ServerLogic.ZoneServer;
@@ -10,8 +9,9 @@ using UnityEngine;
 namespace IronGrind.ServerLogic.EnemyAI
 {
     /// <summary>
-    /// Per-mob server-side behaviour controller (Enemy AI Story 003: states, spawn init, dead check, facing).
-    /// Holds no Unity objects; all inputs are injected seams. Per-state behaviour is filled in by Stories 004 to 006.
+    /// Per-mob server-side behaviour controller (Enemy AI Stories 003 to 005: states, spawn init, dead check, facing,
+    /// aggro and pursuit, attack cycle). Holds no Unity objects; all inputs are injected seams.
+    /// Returning and Dead handling are filled in by Stories 006 and 011.
     /// </summary>
     public sealed class MobController
     {
@@ -23,12 +23,16 @@ namespace IronGrind.ServerLogic.EnemyAI
 
         private readonly INavigationProvider _navigation;
         private readonly IZoneEntityStatReader _stats;
-        private readonly HitDetector _hitDetector;
+        private readonly IMobAttackResolver _attackResolver;
         private readonly EnemyAIConfigValues _config;
         private readonly IAggroCandidateSource _candidates;
         private readonly List<(EntityID Id, Vector3 Position)> _scanBuffer = new List<(EntityID Id, Vector3 Position)>();
         private int _ticksUntilScan;
+        private int _windUpTicksRemaining;
+        private int _recoveryTicksRemaining;
         private Vector3 _lastIssuedDestination;
+        private long _lastIssueTick = -1;
+        private bool _repathOnResume;
 
         /// <summary>Creates a controller for one mob. It starts Dormant.</summary>
         /// <param name="entityID">The mob's entity id.</param>
@@ -36,7 +40,7 @@ namespace IronGrind.ServerLogic.EnemyAI
         /// <param name="spawnPoint">World-space spawn point.</param>
         /// <param name="navigation">Navigation seam. Must not be null.</param>
         /// <param name="stats">Stat reader (HP for CR-AI-13). Must not be null.</param>
-        /// <param name="hitDetector">Hit detector, used by the attack cycle (Story 005). Must not be null.</param>
+        /// <param name="attackResolver">Attack seam, called on AttackExecution (Story 005). Must not be null.</param>
         /// <param name="config">Enemy AI knobs (scan interval, reposition threshold). A struct: build it with
         /// <see cref="EnemyAIConfigValues.Defaults"/>, <see cref="EnemyAIConfigValues.Create"/> or
         /// <see cref="EnemyAIConfigValues.FromAsset"/>; <c>default(EnemyAIConfigValues)</c> is rejected.</param>
@@ -49,7 +53,7 @@ namespace IronGrind.ServerLogic.EnemyAI
             Vector3 spawnPoint,
             INavigationProvider navigation,
             IZoneEntityStatReader stats,
-            HitDetector hitDetector,
+            IMobAttackResolver attackResolver,
             EnemyAIConfigValues config,
             IAggroCandidateSource candidates)
         {
@@ -68,7 +72,7 @@ namespace IronGrind.ServerLogic.EnemyAI
             _candidates = candidates ?? throw new ArgumentNullException(nameof(candidates));
             _navigation = navigation ?? throw new ArgumentNullException(nameof(navigation));
             _stats = stats ?? throw new ArgumentNullException(nameof(stats));
-            _hitDetector = hitDetector ?? throw new ArgumentNullException(nameof(hitDetector));
+            _attackResolver = attackResolver ?? throw new ArgumentNullException(nameof(attackResolver));
             DeadEnteredTick = -1;
             EnterState(MobState.Dormant, 0);
         }
@@ -94,10 +98,10 @@ namespace IronGrind.ServerLogic.EnemyAI
         /// <summary>The current target, or null when there is none.</summary>
         internal EntityID? TargetEntityID { get; set; }
 
-        /// <summary>Forward vector captured at attack start (Story 005).</summary>
+        /// <summary>Forward vector captured at wind-up start (Story 005, CR-AI-4).</summary>
         internal Vector3 CapturedForward { get; set; }
 
-        /// <summary>True once the mob has started an attack since acquiring its target.</summary>
+        /// <summary>True once the mob has executed an attack since acquiring its target (set on AttackExecution, CR-AI-6).</summary>
         internal bool HasAttackedOnce { get; set; }
 
         /// <summary>Tick of the last attack execution; -1 when none.</summary>
@@ -117,9 +121,6 @@ namespace IronGrind.ServerLogic.EnemyAI
 
         /// <summary>Navigation seam, for the per-state stories.</summary>
         internal INavigationProvider Navigation => _navigation;
-
-        /// <summary>Hit detector, for the attack cycle (Story 005).</summary>
-        internal HitDetector HitDetector => _hitDetector;
 
         /// <summary>
         /// Advances the mob one tick. CR-AI-13: a mob with HP at or below 0 (or NaN HP) becomes Dead and nothing
@@ -151,7 +152,11 @@ namespace IronGrind.ServerLogic.EnemyAI
             }
         }
 
-        /// <summary>Test hook: forces a state through the real entry routine.</summary>
+        /// <summary>
+        /// Test hook: forces a state through <see cref="EnterState"/> only. It does NOT run the attack-cycle entry work:
+        /// a forced WindingUp has no wind-up counter (it resolves on its first tick), no captured forward and no Stop;
+        /// a forced Recovering has a 0 counter (it exits on its first tick). Drive real transitions for those states.
+        /// </summary>
         /// <param name="state">The state to enter.</param>
         /// <param name="currentTick">Tick recorded if the state is Dead.</param>
         internal void ForceStateForTest(MobState state, uint currentTick = 0)
@@ -243,7 +248,8 @@ namespace IronGrind.ServerLogic.EnemyAI
         /// F-AI-2: XZ squared distance, inclusive; the first player in list order wins (AC-AI-2); HP at or below 0 or NaN is skipped.
         /// Players with a non-finite position are skipped. HP is read only for in-range candidates.
         /// On a hit the mob enters Pursuing, writes facing toward the target on that same tick (CR-AI-5) and issues
-        /// one SetDestination (never Resume, ADR-003).
+        /// one SetDestination (never Resume, ADR-003). EC-AI-3: if the target is already within attack range the
+        /// attack check then runs on the same tick and the mob enters WindingUp (Stop after SetDestination).
         /// </summary>
         private void TickDormant(uint currentTick)
         {
@@ -254,13 +260,25 @@ namespace IronGrind.ServerLogic.EnemyAI
             }
 
             _ticksUntilScan = _config.AggroScanIntervalTicks;
+            if (TryFindAggroTarget(out EntityID id, out Vector3 pos))
+            {
+                OnAggroAcquired(id, pos, currentTick);
+            }
+        }
+
+        /// <summary>
+        /// F-AI-2 scan: the first player in list order with a finite XZ position within AggroRange (inclusive) and HP above 0.
+        /// HP is read only for in-range candidates.
+        /// </summary>
+        private bool TryFindAggroTarget(out EntityID id, out Vector3 pos)
+        {
             _scanBuffer.Clear();
             _candidates.CopyPlayers(_scanBuffer);
             float range = Definition.AggroRange;
             float rangeSqr = range * range;
             for (int i = 0; i < _scanBuffer.Count; i++)
             {
-                (EntityID id, Vector3 pos) = _scanBuffer[i];
+                (id, pos) = _scanBuffer[i];
                 if (!IsFiniteXZ(pos))
                 {
                     continue;
@@ -279,22 +297,42 @@ namespace IronGrind.ServerLogic.EnemyAI
                     continue;
                 }
 
-                TargetEntityID = id;
-                EnterState(MobState.Pursuing, currentTick);
-                WriteFacing(BearingToFacing(Position, pos, FacingAngle));
-                IssueDestination(pos);
-                return;
+                return true;
+            }
+
+            id = default;
+            pos = default;
+            return false;
+        }
+
+        /// <summary>
+        /// Aggro entry: Pursuing, facing toward the target (CR-AI-5), one SetDestination (never Resume, ADR-003), then
+        /// the EC-AI-3 same-tick attack check (WindingUp, Stop after SetDestination).
+        /// </summary>
+        private void OnAggroAcquired(EntityID id, Vector3 pos, uint currentTick)
+        {
+            TargetEntityID = id;
+            EnterState(MobState.Pursuing, currentTick);
+            WriteFacing(BearingToFacing(Position, pos, FacingAngle));
+            IssueDestination(pos, currentTick);
+            if (AttackConditionMet(currentTick, pos))
+            {
+                EnterWindingUp(currentTick);
             }
         }
 
         /// <summary>
-        /// All SetDestination calls go through here so the reposition basis is never stale. Story 005/006 must use it.
+        /// All SetDestination calls go through here so the reposition basis is never stale and a same-tick Stop can be
+        /// detected. Story 006 (Returning) must use it.
         /// </summary>
         /// <param name="destination">World-space destination.</param>
-        private void IssueDestination(Vector3 destination)
+        /// <param name="currentTick">The current tick.</param>
+        private void IssueDestination(Vector3 destination, uint currentTick)
         {
             _navigation.SetDestination(EntityID, destination);
             _lastIssuedDestination = destination;
+            _lastIssueTick = currentTick;
+            _repathOnResume = false;
         }
 
         private static bool IsFiniteXZ(Vector3 v)
@@ -302,40 +340,165 @@ namespace IronGrind.ServerLogic.EnemyAI
             return !(float.IsNaN(v.x) || float.IsInfinity(v.x) || float.IsNaN(v.z) || float.IsInfinity(v.z));
         }
 
+        /// <summary>Reads the current target position; false when there is no target, it is unreadable or non-finite on X or Z.</summary>
+        private bool TryReadTarget(out Vector3 target)
+        {
+            if (!TargetEntityID.HasValue
+                || !_candidates.TryGetPlayerPosition(TargetEntityID.Value, out target))
+            {
+                target = Vector3.zero;
+                return false;
+            }
+
+            return IsFiniteXZ(target);
+        }
+
+        /// <summary>XZ squared distance from <see cref="Position"/> to <paramref name="target"/> is at most AttackRange squared (inclusive, Y ignored).</summary>
+        private bool InAttackRange(Vector3 target)
+        {
+            float dx = target.x - Position.x;
+            float dz = target.z - Position.z;
+            float range = Definition.AttackRange;
+            return dx * dx + dz * dz <= range * range;
+        }
+
+        /// <summary>CR-AI-6 cooldown gate: the first attack is ungated; later ones need AttackCooldownTicks since the last execution.</summary>
+        private bool CooldownElapsed(uint currentTick)
+        {
+            return !HasAttackedOnce
+                || (long)currentTick - LastAttackExecutionTick >= Definition.AttackCooldownTicks;
+        }
+
+        private bool AttackConditionMet(uint currentTick, Vector3 target)
+        {
+            return InAttackRange(target) && CooldownElapsed(currentTick);
+        }
+
         /// <summary>
-        /// CR-AI-5 / CR-AI-11 (Pursuing): writes facing toward the target every tick, then re-issues SetDestination when
-        /// the path is stale or the target moved more than PURSUIT_REPOSITION_THRESHOLD from the last issued destination (AC-AI-17, AC-AI-24).
+        /// Shared WindingUp entry (from Pursuing, the aggro tick and Recovering): arms the counter, captures the forward
+        /// vector from the current facing (CR-AI-4) and stops the agent once (ADR-003: Stop keeps the path).
+        /// Stop discards a destination requested but not yet issued (INavigationProvider.Stop), so a SetDestination on
+        /// this same tick (EC-AI-3 aggro tick) is lost: the next reposition check then re-paths.
+        /// </summary>
+        private void EnterWindingUp(uint currentTick)
+        {
+            EnterState(MobState.WindingUp, currentTick);
+            _windUpTicksRemaining = Definition.AttackWindUpTicks;
+            CapturedForward = FacingToForward((short)FacingAngle);
+            if (_lastIssueTick == currentTick)
+            {
+                _repathOnResume = true;
+            }
+
+            _navigation.Stop(EntityID);
+        }
+
+        /// <summary>
+        /// Story 004 reposition check: polls IsPathStale once and re-issues SetDestination when stale, when a request was
+        /// discarded by a same-tick Stop, or when the target is more than PURSUIT_REPOSITION_THRESHOLD from the last
+        /// issued destination (AC-AI-17, AC-AI-24; Story 005 adds the threshold test on Pursuing re-entry).
+        /// </summary>
+        private void RepositionIfNeeded(Vector3 target, uint currentTick)
+        {
+            bool stale = _navigation.IsPathStale(EntityID);
+            float dx = target.x - _lastIssuedDestination.x;
+            float dz = target.z - _lastIssuedDestination.z;
+            float threshold = _config.PursuitRepositionThreshold;
+            if (stale || _repathOnResume || dx * dx + dz * dz > threshold * threshold)
+            {
+                IssueDestination(target, currentTick);
+            }
+        }
+
+        /// <summary>
+        /// CR-AI-5 / CR-AI-11 / CR-AI-6 (Pursuing): reads the target, writes facing toward it, then either enters
+        /// WindingUp (attack condition met; no reposition that tick) or runs the reposition check.
         /// A target position that cannot be read, or is non-finite on X or Z, makes the tick a no-op (exit handled by Story 006).
         /// </summary>
         private void TickPursuing(uint currentTick)
         {
-            if (!TargetEntityID.HasValue
-                || !_candidates.TryGetPlayerPosition(TargetEntityID.Value, out Vector3 target))
-            {
-                return;
-            }
-
-            if (!IsFiniteXZ(target))
+            if (!TryReadTarget(out Vector3 target))
             {
                 return;
             }
 
             WriteFacing(BearingToFacing(Position, target, FacingAngle));
-            bool stale = _navigation.IsPathStale(EntityID);
-            float dx = target.x - _lastIssuedDestination.x;
-            float dz = target.z - _lastIssuedDestination.z;
-            float threshold = _config.PursuitRepositionThreshold;
-            if (stale || dx * dx + dz * dz > threshold * threshold)
+            if (AttackConditionMet(currentTick, target))
             {
-                IssueDestination(target);
+                EnterWindingUp(currentTick);
+                return;
+            }
+
+            RepositionIfNeeded(target, currentTick);
+        }
+
+        /// <summary>
+        /// Counts the wind-up down; on the tick it reaches 0 the mob enters AttackExecution and the attack resolves on
+        /// that same tick (Tick Model, attack tick X). Facing is never written. Target validity here is Story 005's
+        /// minimal rule (id set, position readable, finite XZ); HP and leash are Story 006.
+        /// </summary>
+        private void TickWindingUp(uint currentTick)
+        {
+            _windUpTicksRemaining--;
+            if (_windUpTicksRemaining > 0)
+            {
+                return;
+            }
+
+            EnterState(MobState.AttackExecution, currentTick);
+
+            // Cooldown bookkeeping first, so a throwing resolver (Story 010) cannot leave the attack unrecorded.
+            HasAttackedOnce = true;
+            LastAttackExecutionTick = currentTick;
+            if (TryReadTarget(out Vector3 target))
+            {
+                _attackResolver.ResolveAttack(EntityID, TargetEntityID.Value, Position, target,
+                    Definition.AttackRange, CapturedForward);
             }
         }
 
-        private void TickWindingUp(uint currentTick) { }
+        /// <summary>Tick X+1: enters Recovering and runs the first Recovering decrement-then-check in the same tick.</summary>
+        private void TickAttackExecution(uint currentTick)
+        {
+            EnterState(MobState.Recovering, currentTick);
+            _recoveryTicksRemaining = Definition.AttackRecoveryTicks;
+            TickRecovering(currentTick);
+        }
 
-        private void TickAttackExecution(uint currentTick) { }
+        /// <summary>
+        /// Decrement then check (EC-AI-8: R = 0 exits on the first Recovering tick). No facing writes or nav calls while
+        /// counting down. On exit: invalid target stays Recovering (Story 006 replaces this); in range with the cooldown
+        /// elapsed refreshes facing and re-enters WindingUp; otherwise returns to Pursuing via Resume (CR-AI-11, ADR-003).
+        /// </summary>
+        private void TickRecovering(uint currentTick)
+        {
+            if (_recoveryTicksRemaining > 0)
+            {
+                _recoveryTicksRemaining--;
+            }
 
-        private void TickRecovering(uint currentTick) { }
+            if (_recoveryTicksRemaining > 0)
+            {
+                return;
+            }
+
+            if (!TryReadTarget(out Vector3 target))
+            {
+                return;
+            }
+
+            if (AttackConditionMet(currentTick, target))
+            {
+                WriteFacing(BearingToFacing(Position, target, FacingAngle));
+                EnterWindingUp(currentTick);
+                return;
+            }
+
+            EnterState(MobState.Pursuing, currentTick);
+            _navigation.Resume(EntityID);
+            WriteFacing(BearingToFacing(Position, target, FacingAngle));
+            RepositionIfNeeded(target, currentTick);
+        }
 
         private void TickReturning(uint currentTick) { }
     }

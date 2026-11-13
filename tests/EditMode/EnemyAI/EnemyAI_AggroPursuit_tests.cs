@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using IronGrind.CharacterStats;
-using IronGrind.HitDetection;
 using IronGrind.LootTableSystem;
 using IronGrind.ServerLogic.EnemyAI;
 using IronGrind.ServerLogic.Navigation;
@@ -18,6 +17,11 @@ namespace IronGrind.Tests.EditMode.EnemyAI
     [TestFixture]
     internal sealed class EnemyAI_AggroPursuit_Tests
     {
+        private sealed class NullResolver : IMobAttackResolver
+        {
+            public void ResolveAttack(EntityID mob, EntityID target, Vector3 mobPos, Vector3 targetPos, float attackRange, Vector3 capturedForward) { }
+        }
+
         private const float AGGRO_RANGE = 8f;
         private static readonly EntityID PLAYER_A = new EntityID(101u);
         private static readonly EntityID PLAYER_B = new EntityID(102u);
@@ -136,7 +140,7 @@ namespace IronGrind.Tests.EditMode.EnemyAI
         private MobController NewMob(Vector3 spawn)
         {
             return new MobController(new EntityID(7u), Definition(), spawn, _nav, _stats,
-                new HitDetector(HitDetectionConfig.Default), _config, _candidates);
+                new NullResolver(), _config, _candidates);
         }
 
         private void Tick(int count)
@@ -160,7 +164,7 @@ namespace IronGrind.Tests.EditMode.EnemyAI
         [Test]
         public void test_aggro_scan_first_scan_fires_exactly_on_interval_tick()
         {
-            _candidates.Players.Add((PLAYER_A, PlayerAt(1f, 0f, 0f)));
+            _candidates.Players.Add((PLAYER_A, PlayerAt(3f, 0f, 0f)));
 
             Tick(N - 1);
             Assert.AreEqual(MobState.Dormant, _mob.State);
@@ -371,7 +375,7 @@ namespace IronGrind.Tests.EditMode.EnemyAI
         {
             AggroPlayerA(PlayerAt(6f, 0f, 0f));
             int copyBefore = _candidates.CopyCalls;
-            _candidates.Players.Add((PLAYER_B, PlayerAt(1f, 0f, 0f)));
+            _candidates.Players.Add((PLAYER_B, PlayerAt(3f, 0f, 0f)));
 
             Tick(3 * N);
 
@@ -387,7 +391,7 @@ namespace IronGrind.Tests.EditMode.EnemyAI
             Tick(N - 2);
             _mob.ForceStateForTest(MobState.Pursuing, _tick);
             _mob.ForceStateForTest(MobState.Dormant, _tick);
-            _candidates.Players.Add((PLAYER_A, PlayerAt(1f, 0f, 0f)));
+            _candidates.Players.Add((PLAYER_A, PlayerAt(3f, 0f, 0f)));
 
             Tick(N - 1);
             Assert.AreEqual(MobState.Dormant, _mob.State);
@@ -402,14 +406,14 @@ namespace IronGrind.Tests.EditMode.EnemyAI
         public void test_controller_ctor_null_candidates_throws()
         {
             Assert.Throws<ArgumentNullException>(() => new MobController(new EntityID(7u), Definition(), Vector3.zero,
-                _nav, _stats, new HitDetector(HitDetectionConfig.Default), _config, null));
+                _nav, _stats, new NullResolver(), _config, null));
         }
 
         [Test]
         public void test_controller_ctor_default_config_throws_out_of_range()
         {
             Assert.Throws<ArgumentOutOfRangeException>(() => new MobController(new EntityID(7u), Definition(),
-                Vector3.zero, _nav, _stats, new HitDetector(HitDetectionConfig.Default),
+                Vector3.zero, _nav, _stats, new NullResolver(),
                 default(EnemyAIConfigValues), _candidates));
         }
 
@@ -528,7 +532,7 @@ namespace IronGrind.Tests.EditMode.EnemyAI
         public void test_aggro_scan_nan_mob_position_never_aggroes()
         {
             _mob.Position = new Vector3(float.NaN, 0f, 0f);
-            _candidates.Players.Add((PLAYER_A, PlayerAt(1f, 0f, 0f)));
+            _candidates.Players.Add((PLAYER_A, PlayerAt(3f, 0f, 0f)));
             Tick(3 * N);
             Assert.AreEqual(MobState.Dormant, _mob.State);
             Assert.AreEqual(0, _nav.TotalCalls);

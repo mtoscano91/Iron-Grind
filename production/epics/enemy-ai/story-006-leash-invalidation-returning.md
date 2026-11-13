@@ -47,6 +47,11 @@
   - Pursuing with a null `TargetEntityID` is a no-op today.
   - Clear `TargetEntityID` on Dormant / Returning entry as the GDD requires.
   - Returning → Pursuing re-aggro must issue `SetDestination` through `MobController.IssueDestination`, so the reposition basis is the new target and not the spawn point.
+- *(Carried from Story 005 code review, 2026-11-13.)*
+  - Reset `HasAttackedOnce` (and `LastAttackExecutionTick` to −1) on target change / Dormant entry; otherwise a new target inherits the old cooldown. The wind-up and recovery counters are re-armed on entry and need no reset.
+  - Hooks for leash / target-HP / `pendingReturn`: `TickWindingUp` (before the countdown), `TickAttackExecution`, and the Recovering "invalid target" exit, which today holds the mob in Recovering (Story 005 placeholder) and becomes → Returning here.
+  - Returning can be entered from WindingUp or Recovering, where the agent is Stopped. Entry uses `IssueDestination(spawn, tick)` and no `Resume`; confirm `ZoneNavigationService.SetDestination` clears `IsStopped` after a `Stop` (or call `Resume` first if it does not) and add a test.
+  - `IssueDestination` now takes the tick; a `Stop` on the same tick as a `SetDestination` sets `_repathOnResume` (the request is discarded). Keep every SetDestination going through it.
 
 ---
 
