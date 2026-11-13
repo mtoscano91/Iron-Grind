@@ -1,7 +1,7 @@
 # Story 003: MobController Core — States, Spawn Init, Dead Check, Facing Conversion
 
 > **Epic**: Enemy AI
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Feature
 > **Type**: Logic
 > **Manifest Version**: 2026-11-06
@@ -31,6 +31,7 @@
 - [ ] `MobController` constructed per mob with its `EntityID`, `MobDefinition`, spawn point and injected seams: `INavigationProvider` (existing), `IZoneEntityStatReader` (existing; `GetCurrentHP` for CR-AI-13) and `HitDetector` (the concrete pure class, as `AutoAttackCombatSystem` uses it). No clock seam — `Tick(currentTick)` carries the tick. The target/world reader is added by Story 004, which first needs it. Fakes in tests. After construction: state Dormant, `pendingReturn` false, `hasAttackedOnce` false, `TargetEntityID` unset, `IsEnraged` false, `DeadEnteredTick == -1`, `DeadEntryCount == 0`.
 - [ ] `Tick(currentTick)` skeleton dispatches by state; the per-state behaviour is filled in by Stories 004–006 (here: per-state stubs do nothing).
 - [ ] **CR-AI-13**: at tick start, mob HP ≤ 0 and state ≠ Dead → state Dead, no further processing that tick (no navigation call, no `CheckHit`); already Dead → nothing. The Dead-entry routine is a hook Story 011 fills; here it sets `DeadEnteredTick = currentTick` and increments `DeadEntryCount` (exactly once per mob).
+  *Code review 2026-11-13:* "no `CheckHit`" is verified by inspection only — `HitDetector` is concrete, so a test cannot count calls; the Dead path never touches it. Story 005 decides whether to add a hit-check seam. Dead is terminal (re-entry is a no-op; HP restored above 0 stays Dead) and NaN HP counts as dead.
 - [ ] **CR-AI-14**: `pendingReturn` is cleared on Dormant entry and only there.
 - [ ] **F-AI-3 / AC-AI-16**: `FacingToForward(short)` — 0 → (0,0,1), 900 → (1,0,0), 1800 → (0,0,−1), 2700 → (−1,0,0), each component within 0.001.
 - [ ] **Facing write**: `BearingToFacing(from, to)` = `MovementIntentMessageCodec.NormalizeFacing((short)Mathf.RoundToInt(Mathf.Atan2(dx, dz) × Mathf.Rad2Deg × 10f))` — XZ only, wraps (359.97° → 3600 → 0; negative wraps). Zero-length bearing (XZ distance² < 1e-6) keeps the previous facing. Every write to the controller's `FacingAngle` goes through one guard `WriteFacing(int)`: a value outside [0, 3599] is clamped (3600 → 3599, −1 → 0) and logs one error per bad write (CR-AI-7 last sentence, in the stored ×10 unit). The controller holds `FacingAngle`; publishing it to the zone state view is out of scope here.
@@ -74,7 +75,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/EnemyAI/EnemyAI_Controller_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 33 tests pass
 
 ---
 
@@ -82,3 +83,12 @@
 
 - Depends on: Story 001
 - Unlocks: Stories 004, 005, 006, 007
+
+---
+
+## Completion Notes
+**Completed**: 2026-11-13
+**Criteria**: 7/7 passing
+**Deviations** (advisory): (1) CR-AI-13 "no `CheckHit`" verified by inspection only — `HitDetector` is concrete; Story 005 decides on a seam. (2) NaN HP counts as dead and Dead is terminal for the controller (code review; not stated in the GDD; respawn = new controller, Story 011). (3) `TargetEntityID` is `EntityID?`; `DeadEnteredTick` / `LastAttackExecutionTick` are `long` (−1 unset); `Tick(uint)`.
+**Test Evidence**: Logic — `tests/EditMode/EnemyAI/EnemyAI_Controller_tests.cs`, 33/33; batch EditMode 7531 / 7402 passed / 0 failed / 129 skipped.
+**Code Review**: Complete (APPROVED WITH SUGGESTIONS; all 8 applied). Lean mode: QL-TEST-COVERAGE and LP-CODE-REVIEW skipped.

@@ -85,7 +85,7 @@ This epic is complete when:
 |---|-------|------|--------|-----|
 | 001 | [Mob definition, registry and startup validation](story-001-mob-definition-registry.md) | Logic | Complete | ADR-012 |
 | 002 | [Enemy AI config and MVP mob roster asset](story-002-config-and-mob-roster.md) | Logic | Complete | ADR-012, ADR-009 |
-| 003 | [MobController core — states, spawn init, dead check, facing conversion](story-003-mob-controller-core.md) | Logic | Ready | ADR-014 |
+| 003 | [MobController core — states, spawn init, dead check, facing conversion](story-003-mob-controller-core.md) | Logic | Complete | ADR-014 |
 | 004 | [Aggro scan and pursuit](story-004-aggro-and-pursuit.md) | Logic | Ready | ADR-003, ADR-002 |
 | 005 | [Attack cycle — wind-up, execution, recovery, cooldown](story-005-attack-cycle.md) | Logic | Ready | ADR-003 |
 | 006 | [Leash, target invalidation and Returning](story-006-leash-invalidation-returning.md) | Logic | Ready | ADR-003 |
