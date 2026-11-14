@@ -39,6 +39,7 @@
 
 - Readiness: decide whether integration happens inside `EnemyAISystem.Run` after all controllers tick, or in a separate step placed after Movement — ADR-002 phase 4 is "after all phase 3 systems". Record the decision.
 - Mob Spawning does not exist yet: tests raise `MobEventBus.RaiseMobSpawned` directly.
+- *(Carried from Story 006 code review, 2026-11-13.)* `MobController.LeashBreached` and the `TickReturning` arrival check compare a squared distance with `>`, so a non-finite `Position` (NaN / ∞ on X or Z) never breaches the leash and "arrives" at spawn on the first Returning tick. When this story writes `Position` from the agent, either reject non-finite values at integration (keep the last finite position, log once) or make `MobController` treat a non-finite `Position` as a leash breach. Add a test for whichever is chosen.
 
 ---
 

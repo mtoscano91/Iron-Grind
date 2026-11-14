@@ -142,7 +142,7 @@ namespace IronGrind.Tests.EditMode.EnemyAI
         private void Build(int windUp, int recovery, int cooldown)
         {
             _mob = new MobController(new EntityID(7u), Definition(windUp, recovery, cooldown), Vector3.zero, _nav,
-                new FakeStats(), _resolver, EnemyAIConfigValues.Defaults, _candidates);
+                new FakeStats(), _resolver, EnemyAIConfigValues.Defaults, NavigationConfigValues.RETURN_SPEED_CAP_DEFAULT, _candidates);
         }
 
         private void Tick(int count)
@@ -481,17 +481,17 @@ namespace IronGrind.Tests.EditMode.EnemyAI
 
         // 17
         [Test]
-        public void test_attack_recovery_exit_with_invalid_target_stays_recovering_without_nav_calls()
+        public void test_attack_recovery_exit_with_invalid_target_enters_returning_with_speed_cap_then_spawn_destination()
         {
             uint x = RunToAttackTick(NEAR_X, 12);
             TickTo(x + 5);
             _candidates.PositionAvailable = false;
             _nav.Log.Clear();
 
-            Tick(3);
+            Tick(1);
 
-            Assert.AreEqual(MobState.Recovering, _mob.State);
-            Assert.AreEqual(0, _nav.Log.Count);
+            Assert.AreEqual(MobState.Returning, _mob.State);
+            CollectionAssert.AreEqual(new[] { "SetSpeed", "SetDestination" }, _nav.Log);
         }
 
         // 18 (AC-AI-20b)
@@ -576,7 +576,7 @@ namespace IronGrind.Tests.EditMode.EnemyAI
         public void test_attack_throwing_resolver_still_records_attack_before_exception_propagates()
         {
             _mob = new MobController(new EntityID(7u), Definition(12, 6, 10), Vector3.zero, _nav,
-                new FakeStats(), new ThrowingResolver(), EnemyAIConfigValues.Defaults, _candidates);
+                new FakeStats(), new ThrowingResolver(), EnemyAIConfigValues.Defaults, NavigationConfigValues.RETURN_SPEED_CAP_DEFAULT, _candidates);
             uint e = StartWindUp(NEAR_X);
             TickTo(e + 11);
             Assert.IsFalse(_mob.HasAttackedOnce);
@@ -608,41 +608,37 @@ namespace IronGrind.Tests.EditMode.EnemyAI
         }
 
         [Test]
-        public void test_attack_recovering_exit_invalid_target_then_valid_in_range_cooldown_elapsed_winds_up_with_stop()
+        public void test_attack_recovering_invalid_target_mid_countdown_enters_returning_without_waiting_for_counter()
         {
             Build(12, 6, 4);
             uint x = RunToAttackTick(NEAR_X, 12);
-            TickTo(x + 5);
+            TickTo(x + 3);
             _candidates.PositionAvailable = false;
             _nav.Log.Clear();
-            Tick(3);
-            Assert.AreEqual(MobState.Recovering, _mob.State);
-            Assert.AreEqual(0, _nav.Log.Count);
 
-            _candidates.PositionAvailable = true;
             Tick(1);
 
-            Assert.AreEqual(MobState.WindingUp, _mob.State);
-            CollectionAssert.AreEqual(new[] { "Stop" }, _nav.Log);
+            Assert.AreEqual(MobState.Returning, _mob.State, "x + 4: counter still above 0");
+            CollectionAssert.AreEqual(new[] { "SetSpeed", "SetDestination" }, _nav.Log);
         }
 
         [Test]
-        public void test_attack_recovering_exit_invalid_target_then_valid_out_of_range_resumes_then_polls_stale()
+        public void test_attack_recovering_invalid_then_valid_again_stays_returning_without_resume()
         {
             uint x = RunToAttackTick(NEAR_X, 12);
             TickTo(x + 5);
             _candidates.PositionAvailable = false;
             _nav.Log.Clear();
-            Tick(3);
-            Assert.AreEqual(MobState.Recovering, _mob.State);
-            Assert.AreEqual(0, _nav.Log.Count);
+            Tick(1);
+            Assert.AreEqual(MobState.Returning, _mob.State);
 
+            _mob.Position = new Vector3(10f, 0f, 0f);
             _candidates.PositionAvailable = true;
             _candidates.Position = FAR;
-            Tick(1);
+            Tick(3);
 
-            Assert.AreEqual(MobState.Pursuing, _mob.State);
-            CollectionAssert.AreEqual(new[] { "Resume", "IsPathStale" }, _nav.Log);
+            Assert.AreEqual(MobState.Returning, _mob.State);
+            CollectionAssert.AreEqual(new[] { "SetSpeed", "SetDestination" }, _nav.Log);
         }
 
         [TestCase(6, true)]
@@ -721,24 +717,25 @@ namespace IronGrind.Tests.EditMode.EnemyAI
         }
 
         [Test]
-        public void test_attack_pursuing_unreadable_target_makes_no_nav_calls_and_stays_pursuing()
+        public void test_attack_pursuing_unreadable_target_enters_returning_without_stop()
         {
             AggroAtFar();
             _candidates.PositionAvailable = false;
+            _mob.Position = new Vector3(10f, 0f, 0f);
             _nav.Log.Clear();
 
             Tick(3);
 
-            Assert.AreEqual(MobState.Pursuing, _mob.State);
+            Assert.AreEqual(MobState.Returning, _mob.State);
             Assert.AreEqual(0, _nav.Count("Stop"));
-            Assert.AreEqual(0, _nav.Count("SetDestination"));
+            CollectionAssert.AreEqual(new[] { "SetSpeed", "SetDestination" }, _nav.Log);
         }
 
         [Test]
         public void test_attack_controller_ctor_null_resolver_throws()
         {
             Assert.Throws<ArgumentNullException>(() => new MobController(new EntityID(7u), Definition(12, 6, 10),
-                Vector3.zero, _nav, new FakeStats(), null, EnemyAIConfigValues.Defaults, _candidates));
+                Vector3.zero, _nav, new FakeStats(), null, EnemyAIConfigValues.Defaults, NavigationConfigValues.RETURN_SPEED_CAP_DEFAULT, _candidates));
         }
     }
 }

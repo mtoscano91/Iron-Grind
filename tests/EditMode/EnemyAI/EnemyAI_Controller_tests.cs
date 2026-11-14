@@ -59,7 +59,7 @@ namespace IronGrind.Tests.EditMode.EnemyAI
             _nav = new FakeNav();
             _stats = new FakeStats();
             _mob = new MobController(new EntityID(7u), Definition(), Vector3.zero, _nav, _stats,
-                new NullResolver(), EnemyAIConfigValues.Defaults, new FakeCandidates());
+                new NullResolver(), EnemyAIConfigValues.Defaults, NavigationConfigValues.RETURN_SPEED_CAP_DEFAULT, new FakeCandidates());
         }
 
         private sealed class FakeCandidates : IAggroCandidateSource
@@ -247,29 +247,25 @@ namespace IronGrind.Tests.EditMode.EnemyAI
             LogAssert.NoUnexpectedReceived();
         }
 
-        [TestCase(MobState.Dormant)]
-        [TestCase(MobState.Pursuing)]
-        [TestCase(MobState.Recovering)]
-        [TestCase(MobState.Returning)]
-        public void test_controller_tick_live_state_stub_keeps_state(MobState state)
+        [TestCase(MobState.Dormant, MobState.Dormant, false, 0)]
+        [TestCase(MobState.Pursuing, MobState.Returning, true, 2)]
+        [TestCase(MobState.Recovering, MobState.Returning, true, 2)]
+        [TestCase(MobState.Returning, MobState.Dormant, false, 2)]
+        public void test_controller_tick_live_state_without_target_follows_story_006_rules(
+            MobState state, MobState expected, bool expectedPending, int expectedNavCalls)
         {
-            // Arrange
+            // Arrange: no target. Pursuing / Recovering: standard invalidation -> Returning (SetSpeed + SetDestination).
+            // Returning at spawn: arrival -> Dormant (Stop + SetSpeed), clearing pendingReturn.
             _mob.ForceStateForTest(state);
-            _mob.PendingReturn = true;
-            if (state == MobState.Dormant)
-            {
-                _mob.PendingReturn = false;
-            }
-
-            bool pendingBefore = _mob.PendingReturn;
+            _mob.PendingReturn = state != MobState.Dormant;
 
             // Act
             _mob.Tick(3u);
 
             // Assert
-            Assert.AreEqual(state, _mob.State);
-            Assert.AreEqual(pendingBefore, _mob.PendingReturn);
-            Assert.AreEqual(0, _nav.Calls);
+            Assert.AreEqual(expected, _mob.State);
+            Assert.AreEqual(expectedPending, _mob.PendingReturn);
+            Assert.AreEqual(expectedNavCalls, _nav.Calls);
         }
     }
 }

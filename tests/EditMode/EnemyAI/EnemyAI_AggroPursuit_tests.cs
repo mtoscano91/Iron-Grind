@@ -140,7 +140,7 @@ namespace IronGrind.Tests.EditMode.EnemyAI
         private MobController NewMob(Vector3 spawn)
         {
             return new MobController(new EntityID(7u), Definition(), spawn, _nav, _stats,
-                new NullResolver(), _config, _candidates);
+                new NullResolver(), _config, NavigationConfigValues.RETURN_SPEED_CAP_DEFAULT, _candidates);
         }
 
         private void Tick(int count)
@@ -343,7 +343,7 @@ namespace IronGrind.Tests.EditMode.EnemyAI
 
         // 11
         [Test]
-        public void test_pursuit_target_position_unavailable_is_noop()
+        public void test_pursuit_target_position_unavailable_enters_returning_without_facing_write()
         {
             AggroPlayerA(PlayerAt(5f, 0f, 0f));
             Tick(1);
@@ -354,9 +354,9 @@ namespace IronGrind.Tests.EditMode.EnemyAI
 
             Tick(1);
 
-            Assert.AreEqual(navBefore, _nav.TotalCalls);
+            Assert.AreEqual(navBefore + 2, _nav.TotalCalls, "Returning entry: SetSpeed + SetDestination(spawn)");
             Assert.AreEqual(facing, _mob.FacingAngle);
-            Assert.AreEqual(MobState.Pursuing, _mob.State);
+            Assert.AreEqual(MobState.Returning, _mob.State);
         }
 
         // 12
@@ -406,7 +406,7 @@ namespace IronGrind.Tests.EditMode.EnemyAI
         public void test_controller_ctor_null_candidates_throws()
         {
             Assert.Throws<ArgumentNullException>(() => new MobController(new EntityID(7u), Definition(), Vector3.zero,
-                _nav, _stats, new NullResolver(), _config, null));
+                _nav, _stats, new NullResolver(), _config, NavigationConfigValues.RETURN_SPEED_CAP_DEFAULT, null));
         }
 
         [Test]
@@ -414,7 +414,7 @@ namespace IronGrind.Tests.EditMode.EnemyAI
         {
             Assert.Throws<ArgumentOutOfRangeException>(() => new MobController(new EntityID(7u), Definition(),
                 Vector3.zero, _nav, _stats, new NullResolver(),
-                default(EnemyAIConfigValues), _candidates));
+                default(EnemyAIConfigValues), NavigationConfigValues.RETURN_SPEED_CAP_DEFAULT, _candidates));
         }
 
         [Test]
@@ -492,7 +492,7 @@ namespace IronGrind.Tests.EditMode.EnemyAI
         }
 
         [Test]
-        public void test_pursuit_non_finite_target_is_noop()
+        public void test_pursuit_non_finite_target_enters_returning_once_without_further_reposition()
         {
             AggroPlayerA(PlayerAt(5f, 0f, 0f));
             Tick(1);
@@ -500,13 +500,15 @@ namespace IronGrind.Tests.EditMode.EnemyAI
             int destinations = _nav.Destinations.Count;
             int staleCalls = _nav.StaleCalls;
             _nav.Stale = true;
+            _mob.Position = new Vector3(10f, 0f, 0f);
 
             _candidates.SetPosition(PLAYER_A, PlayerAt(float.NaN, 0f, 0f));
             Tick(1);
             _candidates.SetPosition(PLAYER_A, PlayerAt(0f, 0f, float.PositiveInfinity));
             Tick(1);
 
-            Assert.AreEqual(destinations, _nav.Destinations.Count);
+            Assert.AreEqual(MobState.Returning, _mob.State);
+            Assert.AreEqual(destinations + 1, _nav.Destinations.Count, "one SetDestination(spawn) on Returning entry only");
             Assert.AreEqual(staleCalls, _nav.StaleCalls);
             Assert.AreEqual(facing, _mob.FacingAngle);
         }
@@ -548,14 +550,16 @@ namespace IronGrind.Tests.EditMode.EnemyAI
         }
 
         [Test]
-        public void test_pursuit_null_target_id_is_noop()
+        public void test_pursuit_null_target_id_enters_returning_with_two_nav_calls()
         {
             _mob.ForceStateForTest(MobState.Pursuing, _tick);
             Assert.IsNull(_mob.TargetEntityID);
+            _mob.Position = new Vector3(10f, 0f, 0f);
 
             Assert.DoesNotThrow(() => Tick(3));
 
-            Assert.AreEqual(0, _nav.TotalCalls);
+            Assert.AreEqual(MobState.Returning, _mob.State);
+            Assert.AreEqual(2, _nav.TotalCalls, "SetSpeed + SetDestination on entry only");
         }
 
         [Test]

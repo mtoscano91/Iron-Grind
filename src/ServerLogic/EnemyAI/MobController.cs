@@ -9,9 +9,9 @@ using UnityEngine;
 namespace IronGrind.ServerLogic.EnemyAI
 {
     /// <summary>
-    /// Per-mob server-side behaviour controller (Enemy AI Stories 003 to 005: states, spawn init, dead check, facing,
-    /// aggro and pursuit, attack cycle). Holds no Unity objects; all inputs are injected seams.
-    /// Returning and Dead handling are filled in by Stories 006 and 011.
+    /// Per-mob server-side behaviour controller (Enemy AI Stories 003 to 006: states, spawn init, dead check, facing,
+    /// aggro and pursuit, attack cycle, leash, target invalidation and Returning). Holds no Unity objects; all inputs are injected seams.
+    /// Dead handling is filled in by Story 011.
     /// </summary>
     public sealed class MobController
     {
@@ -24,6 +24,7 @@ namespace IronGrind.ServerLogic.EnemyAI
         private readonly INavigationProvider _navigation;
         private readonly IZoneEntityStatReader _stats;
         private readonly IMobAttackResolver _attackResolver;
+        private readonly float _returnSpeedCap;
         private readonly EnemyAIConfigValues _config;
         private readonly IAggroCandidateSource _candidates;
         private readonly List<(EntityID Id, Vector3 Position)> _scanBuffer = new List<(EntityID Id, Vector3 Position)>();
@@ -33,6 +34,7 @@ namespace IronGrind.ServerLogic.EnemyAI
         private Vector3 _lastIssuedDestination;
         private long _lastIssueTick = -1;
         private bool _repathOnResume;
+        private bool _pendingReturnRescanOnly;
 
         /// <summary>Creates a controller for one mob. It starts Dormant.</summary>
         /// <param name="entityID">The mob's entity id.</param>
@@ -44,9 +46,10 @@ namespace IronGrind.ServerLogic.EnemyAI
         /// <param name="config">Enemy AI knobs (scan interval, reposition threshold). A struct: build it with
         /// <see cref="EnemyAIConfigValues.Defaults"/>, <see cref="EnemyAIConfigValues.Create"/> or
         /// <see cref="EnemyAIConfigValues.FromAsset"/>; <c>default(EnemyAIConfigValues)</c> is rejected.</param>
+        /// <param name="returnSpeedCap">RETURN_SPEED_CAP in m/s (owned by Navigation), applied on Returning entry. Must be finite and greater than 0.</param>
         /// <param name="candidates">Player seam for the aggro scan and pursuit. Must not be null.</param>
         /// <exception cref="ArgumentNullException">A reference argument is null.</exception>
-        /// <exception cref="ArgumentOutOfRangeException">The scan interval is below 1 or the reposition threshold is not greater than 0 (or is NaN).</exception>
+        /// <exception cref="ArgumentOutOfRangeException">The scan interval is below 1, the reposition threshold is not greater than 0 (or is NaN), or <paramref name="returnSpeedCap"/> is not finite and greater than 0.</exception>
         public MobController(
             EntityID entityID,
             MobDefinition definition,
@@ -55,6 +58,7 @@ namespace IronGrind.ServerLogic.EnemyAI
             IZoneEntityStatReader stats,
             IMobAttackResolver attackResolver,
             EnemyAIConfigValues config,
+            float returnSpeedCap,
             IAggroCandidateSource candidates)
         {
             EntityID = entityID;
@@ -62,6 +66,12 @@ namespace IronGrind.ServerLogic.EnemyAI
             SpawnPoint = spawnPoint;
             Position = spawnPoint;
             _config = config;
+            if (!(returnSpeedCap > 0f) || float.IsInfinity(returnSpeedCap))
+            {
+                throw new ArgumentOutOfRangeException(nameof(returnSpeedCap), "RETURN_SPEED_CAP must be finite and greater than 0.");
+            }
+
+            _returnSpeedCap = returnSpeedCap;
             if (config.AggroScanIntervalTicks < 1 || !(config.PursuitRepositionThreshold > 0f))
             {
                 throw new ArgumentOutOfRangeException(nameof(config),
@@ -92,7 +102,7 @@ namespace IronGrind.ServerLogic.EnemyAI
         /// <summary>Current behaviour state.</summary>
         internal MobState State { get; private set; }
 
-        /// <summary>CR-AI-14: a return to spawn is pending. Cleared on Dormant entry and only there.</summary>
+        /// <summary>CR-AI-14: a return to spawn is pending. Cleared on Dormant entry, and (documented deviation, AC-AI-12b) when a re-scan after target death succeeds at Recovering exit.</summary>
         internal bool PendingReturn { get; set; }
 
         /// <summary>The current target, or null when there is none.</summary>
@@ -165,7 +175,9 @@ namespace IronGrind.ServerLogic.EnemyAI
         }
 
         /// <summary>
-        /// Single state-entry routine. Dormant entry clears <see cref="PendingReturn"/> (CR-AI-14).
+        /// Single state-entry routine. Dormant entry clears <see cref="PendingReturn"/> (CR-AI-14), the target, the cooldown state
+        /// (<see cref="HasAttackedOnce"/>, <see cref="LastAttackExecutionTick"/>) and the re-scan-only flag, and restarts the
+        /// aggro scan countdown (the first scan runs AGGRO_SCAN_INTERVAL_TICKS Dormant ticks later).
         /// Dead is terminal: once Dead, every call is a no-op, so the Dead-entry routine runs exactly once.
         /// </summary>
         /// <param name="state">The state to enter.</param>
@@ -181,6 +193,10 @@ namespace IronGrind.ServerLogic.EnemyAI
             if (state == MobState.Dormant)
             {
                 PendingReturn = false;
+                _pendingReturnRescanOnly = false;
+                TargetEntityID = null;
+                HasAttackedOnce = false;
+                LastAttackExecutionTick = -1;
                 _ticksUntilScan = _config.AggroScanIntervalTicks;
             }
             else if (state == MobState.Dead)
@@ -323,7 +339,7 @@ namespace IronGrind.ServerLogic.EnemyAI
 
         /// <summary>
         /// All SetDestination calls go through here so the reposition basis is never stale and a same-tick Stop can be
-        /// detected. Story 006 (Returning) must use it.
+        /// detected. Pursuit (including the re-path after a target change), aggro entry and Returning entry (spawn point) all use it.
         /// </summary>
         /// <param name="destination">World-space destination.</param>
         /// <param name="currentTick">The current tick.</param>
@@ -395,8 +411,9 @@ namespace IronGrind.ServerLogic.EnemyAI
 
         /// <summary>
         /// Story 004 reposition check: polls IsPathStale once and re-issues SetDestination when stale, when a request was
-        /// discarded by a same-tick Stop, or when the target is more than PURSUIT_REPOSITION_THRESHOLD from the last
-        /// issued destination (AC-AI-17, AC-AI-24; Story 005 adds the threshold test on Pursuing re-entry).
+        /// discarded by a same-tick Stop, when the target changed since the last issue (Story 006, AC-AI-26: the threshold
+        /// is bypassed), or when the target is more than PURSUIT_REPOSITION_THRESHOLD from the last issued destination
+        /// (AC-AI-17, AC-AI-24; Story 005 adds the threshold test on Pursuing re-entry).
         /// </summary>
         private void RepositionIfNeeded(Vector3 target, uint currentTick)
         {
@@ -410,15 +427,162 @@ namespace IronGrind.ServerLogic.EnemyAI
             }
         }
 
+        /// <summary>Result of the per-tick leash and target-validity evaluation (Story 006 Tick Model section 1).</summary>
+        private enum TargetCheck
+        {
+            /// <summary>Leash intact and the target is valid and alive.</summary>
+            Ok,
+
+            /// <summary>The mob is beyond LeashRange from its spawn point (F-AI-4).</summary>
+            Leash,
+
+            /// <summary>Standard invalidation: no target, unreadable, non-finite or outside the leash from spawn.</summary>
+            Invalid,
+
+            /// <summary>The target is alive in the zone but its HP is 0 or NaN (CR-AI-10).</summary>
+            Dead
+        }
+
+        /// <summary>F-AI-4: XZ squared distance from <see cref="Position"/> to <see cref="SpawnPoint"/> is above LeashRange squared (equal is not a breach).</summary>
+        private bool LeashBreached()
+        {
+            float dx = Position.x - SpawnPoint.x;
+            float dz = Position.z - SpawnPoint.z;
+            float range = Definition.LeashRange;
+            return dx * dx + dz * dz > range * range;
+        }
+
         /// <summary>
-        /// CR-AI-5 / CR-AI-11 / CR-AI-6 (Pursuing): reads the target, writes facing toward it, then either enters
-        /// WindingUp (attack condition met; no reposition that tick) or runs the reposition check.
-        /// A target position that cannot be read, or is non-finite on X or Z, makes the tick a no-op (exit handled by Story 006).
+        /// Target validity (Tick Model section 1, step 2): unreadable or non-finite is <see cref="TargetCheck.Invalid"/>, a target beyond
+        /// LeashRange from the spawn point is <see cref="TargetCheck.Invalid"/>, HP at or below 0 or NaN is <see cref="TargetCheck.Dead"/>.
+        /// </summary>
+        private TargetCheck CheckTarget(out Vector3 target)
+        {
+            if (!TryReadTarget(out target))
+            {
+                return TargetCheck.Invalid;
+            }
+
+            float dx = target.x - SpawnPoint.x;
+            float dz = target.z - SpawnPoint.z;
+            float range = Definition.LeashRange;
+            if (dx * dx + dz * dz > range * range)
+            {
+                return TargetCheck.Invalid;
+            }
+
+            float hp = _stats.GetCurrentHP(TargetEntityID.Value);
+            return (hp <= 0f || float.IsNaN(hp)) ? TargetCheck.Dead : TargetCheck.Ok;
+        }
+
+        /// <summary>
+        /// Leash first (it wins), then target validity. Used outside the attack cycle. <paramref name="target"/> is only
+        /// meaningful for <see cref="TargetCheck.Ok"/> and <see cref="TargetCheck.Dead"/>; on a leash result it is not read.
+        /// </summary>
+        private TargetCheck EvaluateLeashAndTarget(out Vector3 target)
+        {
+            if (LeashBreached())
+            {
+                target = Vector3.zero;
+                return TargetCheck.Leash;
+            }
+
+            return CheckTarget(out target);
+        }
+
+        /// <summary>
+        /// Attack-cycle hook (WindingUp start, tick X, AttackExecution): a leash breach or invalid or dead target sets
+        /// <see cref="PendingReturn"/>; the cycle never exits early. Returns the target check so tick X can skip the resolver.
+        /// </summary>
+        private TargetCheck RunCycleHook(out Vector3 target)
+        {
+            bool leash = LeashBreached();
+            TargetCheck check = CheckTarget(out target);
+            if (leash || check == TargetCheck.Invalid)
+            {
+                NotePendingReturn(false);
+            }
+            else if (check == TargetCheck.Dead)
+            {
+                NotePendingReturn(true);
+            }
+
+            return check;
+        }
+
+        /// <summary>Sets <see cref="PendingReturn"/>; the re-scan-only flag stays true only while target death is the sole cause.</summary>
+        private void NotePendingReturn(bool deathOnly)
+        {
+            if (!PendingReturn)
+            {
+                PendingReturn = true;
+                _pendingReturnRescanOnly = deathOnly;
+            }
+            else if (!deathOnly)
+            {
+                _pendingReturnRescanOnly = false;
+            }
+        }
+
+        /// <summary>
+        /// Target change: new target, cooldown state reset so the new target does not inherit the old cooldown, and the next
+        /// reposition check re-paths whatever the threshold (AC-AI-26: the new target can be within PURSUIT_REPOSITION_THRESHOLD
+        /// of the old target's last destination). Covers both Pursuing and a swap in Recovering followed by the Pursuing exit.
+        /// </summary>
+        private void ChangeTarget(EntityID id)
+        {
+            TargetEntityID = id;
+            HasAttackedOnce = false;
+            LastAttackExecutionTick = -1;
+            _repathOnResume = true;
+        }
+
+        /// <summary>CR-AI-10 re-scan (reuses the aggro scan, so the dead target is excluded by its HP). On success the target is changed.</summary>
+        private bool TryRescan(out Vector3 pos)
+        {
+            if (TryFindAggroTarget(out EntityID id, out pos))
+            {
+                ChangeTarget(id);
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Returning entry (ADR-003): SetSpeed(RETURN_SPEED_CAP) then one SetDestination(spawn). No Resume (the nav drain clears
+        /// IsStopped), no Stop, no facing write. The target and cooldown state are cleared. <see cref="PendingReturn"/> is NOT
+        /// cleared here (CR-AI-14: Dormant entry only).
+        /// </summary>
+        private void EnterReturning(uint currentTick)
+        {
+            EnterState(MobState.Returning, currentTick);
+            _navigation.SetSpeed(EntityID, _returnSpeedCap);
+            IssueDestination(SpawnPoint, currentTick);
+            TargetEntityID = null;
+            HasAttackedOnce = false;
+            LastAttackExecutionTick = -1;
+        }
+
+        /// <summary>
+        /// CR-AI-5 / CR-AI-11 / CR-AI-6 / CR-AI-9 / CR-AI-10 (Pursuing). Leash breach or standard invalidation enters Returning on
+        /// this tick. A dead target triggers an immediate re-scan: none found enters Returning; found changes the target and the
+        /// rest of the tick runs against it (facing, attack check, then the reposition check, which re-paths toward the new
+        /// target regardless of the threshold, AC-AI-26). Otherwise: facing toward the target, then WindingUp (attack condition
+        /// met; no reposition that tick) or the reposition check.
         /// </summary>
         private void TickPursuing(uint currentTick)
         {
-            if (!TryReadTarget(out Vector3 target))
+            TargetCheck check = EvaluateLeashAndTarget(out Vector3 target);
+            if (check == TargetCheck.Leash || check == TargetCheck.Invalid)
             {
+                EnterReturning(currentTick);
+                return;
+            }
+
+            if (check == TargetCheck.Dead && !TryRescan(out target))
+            {
+                EnterReturning(currentTick);
                 return;
             }
 
@@ -433,12 +597,13 @@ namespace IronGrind.ServerLogic.EnemyAI
         }
 
         /// <summary>
-        /// Counts the wind-up down; on the tick it reaches 0 the mob enters AttackExecution and the attack resolves on
-        /// that same tick (Tick Model, attack tick X). Facing is never written. Target validity here is Story 005's
-        /// minimal rule (id set, position readable, finite XZ); HP and leash are Story 006.
+        /// Runs the attack-cycle hook first (leash / target validity set <see cref="PendingReturn"/>, never an early exit), then
+        /// counts the wind-up down; on the tick it reaches 0 the mob enters AttackExecution and the attack resolves on that
+        /// same tick (attack tick X) unless the target is invalid or dead. Facing is never written.
         /// </summary>
         private void TickWindingUp(uint currentTick)
         {
+            TargetCheck check = RunCycleHook(out Vector3 target);
             _windUpTicksRemaining--;
             if (_windUpTicksRemaining > 0)
             {
@@ -450,41 +615,93 @@ namespace IronGrind.ServerLogic.EnemyAI
             // Cooldown bookkeeping first, so a throwing resolver (Story 010) cannot leave the attack unrecorded.
             HasAttackedOnce = true;
             LastAttackExecutionTick = currentTick;
-            if (TryReadTarget(out Vector3 target))
+
+            // A leash breach alone does not skip the attack (AC-AI-9); an invalid or dead target does.
+            if (check == TargetCheck.Ok)
             {
                 _attackResolver.ResolveAttack(EntityID, TargetEntityID.Value, Position, target,
                     Definition.AttackRange, CapturedForward);
             }
         }
 
-        /// <summary>Tick X+1: enters Recovering and runs the first Recovering decrement-then-check in the same tick.</summary>
+        /// <summary>Tick X+1: runs the cycle hook, enters Recovering and runs the first Recovering decrement-then-check in the same tick.</summary>
         private void TickAttackExecution(uint currentTick)
         {
+            RunCycleHook(out _);
             EnterState(MobState.Recovering, currentTick);
             _recoveryTicksRemaining = Definition.AttackRecoveryTicks;
             TickRecovering(currentTick);
         }
 
         /// <summary>
-        /// Decrement then check (EC-AI-8: R = 0 exits on the first Recovering tick). No facing writes or nav calls while
-        /// counting down. On exit: invalid target stays Recovering (Story 006 replaces this); in range with the cooldown
-        /// elapsed refreshes facing and re-enters WindingUp; otherwise returns to Pursuing via Resume (CR-AI-11, ADR-003).
+        /// Every Recovering tick (including while counting down) runs the leash and target checks: leash breach or standard
+        /// invalidation enters Returning. A dead target is re-scanned (none: Returning; found: the target is swapped, with no nav
+        /// calls and the counter untouched). While <see cref="PendingReturn"/> is set, a dead target is held until the exit tick
+        /// instead (CR-AI-10: "on Recovering exit, not immediately"). So the re-scan timing depends on where the death was first
+        /// seen: during the cycle (the cycle hook set PendingReturn) it waits for the exit; first seen in Recovering with no
+        /// pending return it runs at once. On the exit tick a pending return that is not death-only enters Returning without a
+        /// re-scan. Decrement-then-check (EC-AI-8: R = 0 exits on the first Recovering tick); no facing writes or nav calls while
+        /// counting down. On exit, <see cref="TickRecoveringExit"/> applies the pending return and the Story 005 exit rules.
         /// </summary>
         private void TickRecovering(uint currentTick)
         {
+            TargetCheck check = EvaluateLeashAndTarget(out Vector3 target);
+            if (check == TargetCheck.Leash || check == TargetCheck.Invalid)
+            {
+                EnterReturning(currentTick);
+                return;
+            }
+
             if (_recoveryTicksRemaining > 0)
             {
                 _recoveryTicksRemaining--;
             }
 
-            if (_recoveryTicksRemaining > 0)
+            bool exiting = _recoveryTicksRemaining <= 0;
+            if (check == TargetCheck.Dead)
+            {
+                if (PendingReturn && !exiting)
+                {
+                    return;
+                }
+
+                // A leash / invalidation cause already decides the exit: skip the wasted re-scan.
+                if ((PendingReturn && !_pendingReturnRescanOnly) || !TryRescan(out target))
+                {
+                    EnterReturning(currentTick);
+                    return;
+                }
+            }
+
+            if (!exiting)
             {
                 return;
             }
 
-            if (!TryReadTarget(out Vector3 target))
+            TickRecoveringExit(currentTick, target);
+        }
+
+        /// <summary>
+        /// Recovering exit with a valid, alive target (the per-tick checks already ran). A pending return that is not
+        /// re-scan-only enters Returning. A re-scan-only pending return (the target died during the cycle) means the dead target
+        /// was already replaced by a successful re-scan, or the original target has HP above 0 again (combat continues against
+        /// it and its cooldown state is kept): <see cref="PendingReturn"/> and the re-scan-only flag are cleared here.
+        /// This deviates from CR-AI-14 (which clears pendingReturn only on Dormant entry) because AC-AI-12b requires a
+        /// successful re-scan to continue combat. Then the Story 005 exit rules: in range with the cooldown elapsed refreshes
+        /// facing and re-enters WindingUp; otherwise Pursuing via Resume (CR-AI-11, ADR-003).
+        /// </summary>
+        private void TickRecoveringExit(uint currentTick, Vector3 target)
+        {
+            if (PendingReturn)
             {
-                return;
+                if (!_pendingReturnRescanOnly)
+                {
+                    EnterReturning(currentTick);
+                    return;
+                }
+
+                PendingReturn = false;
+                _pendingReturnRescanOnly = false;
             }
 
             if (AttackConditionMet(currentTick, target))
@@ -500,6 +717,24 @@ namespace IronGrind.ServerLogic.EnemyAI
             RepositionIfNeeded(target, currentTick);
         }
 
-        private void TickReturning(uint currentTick) { }
+        /// <summary>
+        /// Returning: from the first tick after entry, arrival (XZ squared distance to spawn at most ReturnArrivalThreshold
+        /// squared, inclusive) calls Stop, then SetSpeed(MoveSpeed), then enters Dormant. Nothing else runs: no aggro, no target
+        /// checks, and a leash breach keeps the mob Returning.
+        /// </summary>
+        private void TickReturning(uint currentTick)
+        {
+            float dx = Position.x - SpawnPoint.x;
+            float dz = Position.z - SpawnPoint.z;
+            float threshold = _config.ReturnArrivalThreshold;
+            if (dx * dx + dz * dz > threshold * threshold)
+            {
+                return;
+            }
+
+            _navigation.Stop(EntityID);
+            _navigation.SetSpeed(EntityID, Definition.MoveSpeed);
+            EnterState(MobState.Dormant, currentTick);
+        }
     }
 }
