@@ -89,7 +89,7 @@ This epic is complete when:
 | 004 | [Aggro scan and pursuit](story-004-aggro-and-pursuit.md) | Logic | Complete | ADR-003, ADR-002 |
 | 005 | [Attack cycle — wind-up, execution, recovery, cooldown](story-005-attack-cycle.md) | Logic | Complete | ADR-003 |
 | 006 | [Leash, target invalidation and Returning](story-006-leash-invalidation-returning.md) | Logic | Complete | ADR-003 |
-| 007 | [Enraged spawn roll and stat scaling](story-007-enraged-spawn-roll.md) | Logic | Ready | ADR-013 |
+| 007 | [Enraged spawn roll and stat scaling](story-007-enraged-spawn-roll.md) | Logic | Complete | ADR-013 |
 | 008 | [Mob runtime state and stat seeding (TD-102)](story-008-mob-runtime-state.md) | Integration | Ready | ADR-002, ADR-010 |
 | 009 | [Enemy AI phase step and position integration](story-009-enemy-ai-phase-step.md) | Integration | Ready | ADR-002, ADR-014 |
 | 010 | [Mob → player damage](story-010-mob-to-player-damage.md) | Integration | Ready | ADR-012, ADR-010 |

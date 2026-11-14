@@ -38,6 +38,7 @@
 
 - `ZoneEntityStateSource` (`src/ServerLogic/ZoneServer/`) reads the roster today; give it a mob-state reader seam rather than a reference to Enemy AI types.
 - Character Stats is per zone (`ZoneStats`); confirm a mob `EntityID` needs no registration before `SetBaseStat`.
+- **Carry-forward from Story 007 code review (2026-11-13):** `MobSpawnSeeder.Seed` must not be called from inside a `CharacterStats.OnStatChanged` handler (re-entrant writes throw in Editor/Development, are dropped in release → partial stats), and must get a fresh or cleared mob `EntityID` (a stale MaxHP buff/equipment modifier on a reused ID changes the effective MaxHP that `SetCurrentHP` clamps to). Readiness: confirm how mob `EntityID`s are allocated and whether despawn clears their stats/modifiers.
 
 ---
 
