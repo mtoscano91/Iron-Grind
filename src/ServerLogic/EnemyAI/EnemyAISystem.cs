@@ -145,6 +145,29 @@ namespace IronGrind.ServerLogic.EnemyAI
         }
 
         /// <summary>
+        /// Reads a mob's current state (Story 012, used by <c>MobAwareZoneEntityCombatReader</c>). Allocates nothing.
+        /// </summary>
+        /// <param name="id">The mob.</param>
+        /// <param name="state">The state, or default (Dormant) when Enemy AI does not know the id.</param>
+        /// <returns>True when Enemy AI holds a controller for <paramref name="id"/>.</returns>
+        /// <example>
+        /// <code>
+        /// if (enemyAi.TryGetMobState(mobId, out MobState state)) { /* known mob */ }
+        /// </code>
+        /// </example>
+        public bool TryGetMobState(EntityID id, out MobState state)
+        {
+            if (_index.TryGetValue(id, out int i))
+            {
+                state = _controllers[i].State;
+                return true;
+            }
+
+            state = default;
+            return false;
+        }
+
+        /// <summary>
         /// Removes a mob's controller (swap-remove: the last controller takes its place, so the order stays deterministic).
         /// Called during <see cref="Run"/> (e.g. by the Dead linger despawn, Story 011), the removal is deferred to the end
         /// of <see cref="Run"/>: the mob keeps its slot until then, so no controller is skipped or gets another's velocity, and

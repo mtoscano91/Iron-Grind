@@ -103,7 +103,8 @@ namespace IronGrind.ServerLogic.ZoneServer
     /// </summary>
     /// <remarks>
     /// The real <see cref="AutoAttackCombatSystem"/> resolves only player slots, so a mob reads Idle (IsInCombat false,
-    /// CycleTimer 0) until mob combat state has a source (Enemy AI Story 012). Mob stats are seeded on spawn by
+    /// CycleTimer 0) unless the combat reader is a <c>MobAwareZoneEntityCombatReader</c> (Enemy AI Story 012; wired in
+    /// Story 013), which supplies mob <c>isInCombat</c> from Enemy AI. Mob stats are seeded on spawn by
     /// <c>MobRuntimeStore</c> once wired in Story 013 (TD-102); until then a mob reads 0 / 0 HP. A mob's position and
     /// facing come from the optional <see cref="IZoneMobTransformReader"/>; without it (or for a mob it does not hold)
     /// they are zero. RespawnTick is 0 until Death and Respawn exists.
