@@ -4,6 +4,7 @@ using IronGrind.CharacterPersistence;
 using IronGrind.CharacterStats;
 using IronGrind.EquipmentSystem;
 using IronGrind.LootTableSystem;
+using IronGrind.Networking;
 using IronGrind.ServerLogic.ZoneInstancing;
 using UnityEngine;
 using ZoneStats = IronGrind.CharacterStats.CharacterStats;
@@ -102,12 +103,16 @@ namespace IronGrind.ServerLogic.ZoneServer
     /// </summary>
     /// <remarks>
     /// The real <see cref="AutoAttackCombatSystem"/> resolves only player slots, so a mob reads Idle (IsInCombat false,
-    /// CycleTimer 0) until mob combat state has a source. Nothing seeds Character Stats for mobs yet either, so a mob
-    /// reads 0 / 0 HP (and is "not alive" to Skill targeting) until a spawn or mob-stats source does (TD-102).
-    /// RespawnTick is 0 until Death and Respawn exists.
+    /// CycleTimer 0) until mob combat state has a source (Enemy AI Story 012). Mob stats are seeded on spawn by
+    /// <c>MobRuntimeStore</c> once wired in Story 013 (TD-102); until then a mob reads 0 / 0 HP. A mob's position and
+    /// facing come from the optional <see cref="IZoneMobTransformReader"/>; without it (or for a mob it does not hold)
+    /// they are zero. RespawnTick is 0 until Death and Respawn exists.
     /// </remarks>
     public sealed class ZoneEntityStateSource : IZoneEntityStateSource
     {
+        private const float ROTATION_SCALE = 32767f;
+
+        private readonly IZoneMobTransformReader _mobTransforms;
         private readonly ZoneSlotPool _pool;
         private readonly IZoneMobRoster _mobs;
         private readonly IZoneEntityStatReader _stats;
@@ -122,9 +127,12 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// <param name="names">Character name lookup.</param>
         /// <param name="equipment">Equipment service.</param>
         /// <param name="combat">Auto-attack view.</param>
-        /// <exception cref="ArgumentNullException">Any argument is null.</exception>
+        /// <param name="mobTransforms">Optional committed mob transform reader (Enemy AI Story 008); null leaves mob
+        /// position, rotation and facing at zero.</param>
+        /// <exception cref="ArgumentNullException">Any argument other than <paramref name="mobTransforms"/> is null.</exception>
         public ZoneEntityStateSource(ZoneSlotPool pool, IZoneMobRoster mobs, IZoneEntityStatReader stats,
-            ICharacterNameLookup names, IEquipmentService equipment, IZoneEntityCombatReader combat)
+            ICharacterNameLookup names, IEquipmentService equipment, IZoneEntityCombatReader combat,
+            IZoneMobTransformReader mobTransforms = null)
         {
             _pool = pool ?? throw new ArgumentNullException(nameof(pool));
             _mobs = mobs ?? throw new ArgumentNullException(nameof(mobs));
@@ -132,6 +140,7 @@ namespace IronGrind.ServerLogic.ZoneServer
             _names = names ?? throw new ArgumentNullException(nameof(names));
             _equipment = equipment ?? throw new ArgumentNullException(nameof(equipment));
             _combat = combat ?? throw new ArgumentNullException(nameof(combat));
+            _mobTransforms = mobTransforms;
         }
 
         /// <inheritdoc/>
@@ -173,12 +182,33 @@ namespace IronGrind.ServerLogic.ZoneServer
             }
 
             // posX, posY, posZ, rotX, rotY, rotZ, rotW, facingAngle = 0 (rule 8; the Movement decorator passes mobs through).
-            view = new ZoneMobStateView(0, 0, 0, 0, 0, 0, 0, 0,
+            short px = 0, py = 0, pz = 0, rx = 0, ry = 0, rz = 0, rw = 0, face = 0;
+            if (_mobTransforms != null && _mobTransforms.TryGetTransform(id, out Vector3 position, out short facing))
+            {
+                Quaternion yaw = Quaternion.Euler(0f, facing / 10f, 0f);
+                px = ToWire(position.x);
+                py = ToWire(position.y);
+                pz = ToWire(position.z);
+                rx = (short)Mathf.RoundToInt(yaw.x * ROTATION_SCALE);
+                ry = (short)Mathf.RoundToInt(yaw.y * ROTATION_SCALE);
+                rz = (short)Mathf.RoundToInt(yaw.z * ROTATION_SCALE);
+                rw = (short)Mathf.RoundToInt(yaw.w * ROTATION_SCALE);
+                face = facing;
+            }
+
+            view = new ZoneMobStateView(px, py, pz, rx, ry, rz, rw, face,
                 Mathf.FloorToInt(_stats.GetCurrentHP(id)),
                 _stats.GetEffectiveStat(id, StatID.MaxHP),
                 IsEngaged(id),
                 CycleTimerBroadcastStep.NormalizeCycleTimer(_combat.GetActionTimer(id), _combat.GetCycleTicks(id)));
             return true;
+        }
+
+        // Same clamp as WireFixedPointCodec.EncodePosition (centimetres), silent.
+        private static short ToWire(float meters)
+        {
+            float clamped = Mathf.Clamp(meters, -WireFixedPointCodec.MaxPositionMeters, WireFixedPointCodec.MaxPositionMeters);
+            return (short)Mathf.RoundToInt(clamped * 100f);
         }
 
         private bool IsEngaged(EntityID id)

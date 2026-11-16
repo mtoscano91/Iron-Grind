@@ -44,6 +44,7 @@
 
 - `ILootTableService.ResolveMobDrop(EntityID mobEntityID, int tierShift)` exists (`src/ServerLogic/LootTableSystem/ILootTableService.cs`); Loot reads mob info through `IMobInfoProvider` — implement it over the registry + runtime store if loot is wired later (note only).
 - Navigation already listens to `MobEventBus.OnMobDied` to release the agent.
+- *(From Story 008, 2026-11-16.)* Despawn calls `MobRuntimeStore.Remove(id)`. `CharacterStats` has no per-entity removal, so a despawned mob's base stats and HP stay in memory (IDs are never reused, so this is a slow leak, not a correctness bug): add a removal API here or log a TD entry.
 
 ---
 

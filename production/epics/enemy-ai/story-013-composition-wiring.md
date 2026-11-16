@@ -39,6 +39,7 @@
 ## Implementation Notes
 
 - Comments in `ZoneServerComposition.cs` (lines near `NavigationPhaseStep` and `BuildAutoAttackCombat`) say "follows in the Enemy AI epic" — update them.
+- *(From Story 008 readiness, 2026-11-16.)* `MobEventBus` calls `OnMobSpawned` handlers in subscription order: build `MobRuntimeStore` (it seeds stats on spawn) **before** `EnemyAISystem`, so controllers never see an unseeded mob. Pass the store's `IZoneMobTransformReader` adapter to `ZoneEntityStateSource`, update the pinned test `test_composition_entity_state_source_serves_a_roster_mob_after_startup` (raise `MobSpawned` on `MobEvents`; seeded HP instead of 0 — the rig needs the built bus, not a navigation seam), and narrow TD-102 to the mob combat-state reader (Story 012).
 
 ---
 
