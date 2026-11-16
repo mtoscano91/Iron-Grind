@@ -25,7 +25,7 @@
 # STATUS VALUES: active | deprecated | superseded-by: TR-[system]-NNN
 
 version: 2
-last_updated: "2026-11-13"  # 2026-11-13: TR-ai-001..010 added (Enemy AI EPIC.md table, /create-epics). 2026-11-12: TR-nav-001..009 added (Navigation / Pathfinding EPIC.md table, /create-epics). 2026-11-06: TR-auth-006 added (Authentication Story 005 /story-readiness).2026-11-02: TR-sk-001..011 added (Skill System EPIC.md table, /create-epics). Same day, earlier: TR-aa-001..009 added (Auto-Attack Combat EPIC.md table, by hand at user request). 2026-10-15: 107 TR-IDs registered from the 13 EPIC.md tables (/architecture-review, docs/architecture/architecture-review-2026-10-15-tr-registry.md); 7 carry a revised date
+last_updated: "2026-11-16"  # 2026-11-16: TR-ms-001..008 added (Mob Spawning EPIC.md table, /create-epics). 2026-11-13: TR-ai-001..010 added (Enemy AI EPIC.md table, /create-epics). 2026-11-12: TR-nav-001..009 added (Navigation / Pathfinding EPIC.md table, /create-epics). 2026-11-06: TR-auth-006 added (Authentication Story 005 /story-readiness).2026-11-02: TR-sk-001..011 added (Skill System EPIC.md table, /create-epics). Same day, earlier: TR-aa-001..009 added (Auto-Attack Combat EPIC.md table, by hand at user request). 2026-10-15: 107 TR-IDs registered from the 13 EPIC.md tables (/architecture-review, docs/architecture/architecture-review-2026-10-15-tr-registry.md); 7 carry a revised date
 
 requirements:
   # --- auth: design/gdd/authentication.md (production/epics/authentication/EPIC.md) ---
@@ -1084,5 +1084,61 @@ requirements:
     gdd: design/gdd/enemy-ai.md
     requirement: "Zone wiring: `MobController` created on `MobEventBus.MobSpawned`; phase 3 order Status Effects → Enemy AI → Auto-Attack in the composition root; the registry replaces `StandInNavMobSpeedSource`; MVP mob roster data; assembly isolation (CR-AI-1, CR-AI-2, AC-AI-21)"
     created: 2026-11-13
+    revised: ""
+    status: active
+  - id: TR-ms-001
+    system: ms
+    gdd: design/gdd/mob-spawning.md
+    requirement: "`ZoneSpawnTable` data asset per zone template (`SpawnPointID`, `MobTypeID`, `Position`, `RespawnDelayOverrideTicks`); T-1 load rejects a table with more than `MAX_MOBS_PER_ZONE` points (`SpawnTableOverCapacity`, zone does not reach Active, no `TryAddMob`) and 150 loads (CR-MS-2, AC-MS-1)"
+    created: 2026-11-16
+    revised: ""
+    status: active
+  - id: TR-ms-002
+    system: ms
+    gdd: design/gdd/mob-spawning.md
+    requirement: "Runtime `SpawnPoint` struct array pre-allocated at 150: `State` {Uninitialized, Live, Dying, Respawning, Deferred, Cancelled}, `CurrentEntityID`, `TimerTick`; transitions 1–8; ticked on the main thread with no yield between `GetMobCount` and `TryAddMob` (CR-MS-3, CR-MS-4)"
+    created: 2026-11-16
+    revised: ""
+    status: active
+  - id: TR-ms-003
+    system: ms
+    gdd: design/gdd/mob-spawning.md
+    requirement: "T-2 population sweep in declaration order on the T-2 tick: `GetMobCount` before each `TryAddMob`, Live + `MobSpawned` on success, Deferred at cap (CR-MS-7, AC-MS-2, AC-MS-3)"
+    created: 2026-11-16
+    revised: ""
+    status: active
+  - id: TR-ms-004
+    system: ms
+    gdd: design/gdd/mob-spawning.md
+    requirement: "`MobEventBus.MobDied` moves the matching Live point to Dying with `TimerTick = DEATH_LINGER_TICKS` (no `RemoveMob` yet); unknown EntityID and duplicate deaths are ignored (CR-MS-5, AC-MS-4, AC-MS-11, AC-MS-12)"
+    created: 2026-11-16
+    revised: ""
+    status: active
+  - id: TR-ms-005
+    system: ms
+    gdd: design/gdd/mob-spawning.md
+    requirement: "Dying → Respawning at linger end: `RemoveMob` once, `CurrentEntityID` cleared, `TimerTick` = F-MS-1 (override if > 0, else `RESPAWN_DELAY_{COMMON,UNCOMMON,RARE,ELITE}_TICKS` by `MobTier`, data-driven, read once per transition) (CR-MS-9, F-MS-1, AC-MS-5, AC-MS-10)"
+    created: 2026-11-16
+    revised: ""
+    status: active
+  - id: TR-ms-006
+    system: ms
+    gdd: design/gdd/mob-spawning.md
+    requirement: "Respawning → Live / Deferred at timer end; deferred `List<int>` (capacity 150) polled every `SPAWN_DENSITY_RETRY_INTERVAL_TICKS` with swap-remove; `TryAddMob` returning `EntityID.Invalid` → Deferred + `UnexpectedTryAddMobFailure`, no `MobSpawned` (CR-MS-6, AC-MS-6, AC-MS-7, AC-MS-8, AC-MS-13)"
+    created: 2026-11-16
+    revised: ""
+    status: active
+  - id: TR-ms-007
+    system: ms
+    gdd: design/gdd/mob-spawning.md
+    requirement: "`CancelAllSpawnTimers(ZoneID)` replaces `LoggingZoneMobSpawnTimers`: every point Cancelled, deferred list cleared, no `RemoveMob` during teardown, `MobDied` unsubscribed, no `TryAddMob` / `RemoveMob` / `MobSpawned` after return (CR-MS-8, AC-MS-9, AC-MS-14)"
+    created: 2026-11-16
+    revised: ""
+    status: active
+  - id: TR-ms-008
+    system: ms
+    gdd: design/gdd/mob-spawning.md
+    requirement: "Zone wiring: spawner built per zone with the zone's `MobEventBus`, `IZoneMobRoster` and `IMobDefinitionRegistry`; per-tick step placed in the phase list (ADR-014); T-2 sweep on `MarkActive`; starting-zone `ZoneSpawnTable` from roster MobTypeIDs 1–4; end-to-end check that a player kills a spawned mob and it respawns"
+    created: 2026-11-16
     revised: ""
     status: active

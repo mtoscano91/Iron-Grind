@@ -1,3 +1,4 @@
+using IronGrind.ServerLogic.MobSpawning;
 using UnityEngine;
 using UnityEngine.AI;
 
@@ -27,6 +28,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         [SerializeField] private Vector3 _townRespawnPoint;
         [SerializeField] private bool _townRespawnPointAuthored;
         [SerializeField] private NavMeshData _bakedNavMesh;
+        [SerializeField] private ZoneSpawnTable _spawnTable;
 
         /// <summary>The template this definition describes.</summary>
         public ZoneTemplateID TemplateId => _templateId;
@@ -45,6 +47,15 @@ namespace IronGrind.ServerLogic.ZoneInstancing
 
         /// <summary>The baked NavMesh data; null when the zone has none yet.</summary>
         public NavMeshData BakedNavMesh => _bakedNavMesh;
+
+        /// <summary>The zone's mob spawn table (Mob Spawning Story 001); null when not assigned.</summary>
+        public ZoneSpawnTable SpawnTable => _spawnTable;
+
+        /// <summary>Test-only setter for <see cref="SpawnTable"/> (EditMode tests see internals).</summary>
+        internal void SetSpawnTableForTests(ZoneSpawnTable table)
+        {
+            _spawnTable = table;
+        }
 
         /// <summary>Test-only initialiser (EditMode tests see internals).</summary>
         internal void Initialize(
