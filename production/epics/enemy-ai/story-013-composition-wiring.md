@@ -40,6 +40,7 @@
 
 - Comments in `ZoneServerComposition.cs` (lines near `NavigationPhaseStep` and `BuildAutoAttackCombat`) say "follows in the Enemy AI epic" — update them.
 - *(From Story 008 readiness, 2026-11-16.)* `MobEventBus` calls `OnMobSpawned` handlers in subscription order: build `MobRuntimeStore` (it seeds stats on spawn) **before** `EnemyAISystem`, so controllers never see an unseeded mob. Pass the store's `IZoneMobTransformReader` adapter to `ZoneEntityStateSource`, update the pinned test `test_composition_entity_state_source_serves_a_roster_mob_after_startup` (raise `MobSpawned` on `MobEvents`; seeded HP instead of 0 — the rig needs the built bus, not a navigation seam), and narrow TD-102 to the mob combat-state reader (Story 012).
+- *(From Story 009 readiness, 2026-11-16.)* Mob position integration is a separate step, `EnemyAISystem.IntegrationStep` (ADR-002 phase 4): add `EnemyAISystem` between Status Effects and Auto-Attack, and add `IntegrationStep` **after the last phase 3 system** (after Skill). It reads only velocities cached in phase 3. `NavigationPhaseStep`'s source becomes the `MobRuntimeStore`. Build `ZoneAggroCandidateSource` over the zone's `ZoneSlotPool` and `MovementService`. The pinned step-order test asserts both positions.
 
 ---
 
