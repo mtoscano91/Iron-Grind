@@ -100,6 +100,8 @@ At the start of each mob's AI tick, if HP ≤ 0 and the mob is not already in `D
 
 **Hit Detection**
 On `AttackExecution`: calls `CheckHit(attackerPos: mob position, targetPos: target position, attackRange, capturedForward)` (CR-HD-1). Receives `HitResult`. If `HitResult.Hit`: writes damage to target's `EntityState.HP`. The mob entity has no client — `HitCheckResult` is routed to the defending player's client per CR-HD-10.
+> **Note (2026-11-16, Story 010 — `production/epics/enemy-ai/story-010-mob-to-player-damage.md`)**: on `Hit`, mob damage goes through Damage Calculation (`PhysicalAuto`, base damage = the mob's `AttackPower` stat, no weapon), then Character Stats `ApplyDamage` on the target (not a direct HP write).
+> `HitCheckResult` goes to the defender via `HitResultEmitter`; `DamageEvent` (R-U) goes to all zone clients; no `SelfDamageEvent` (a mob has no client).
 
 **Entity State**
 Reads: `Position` (every tick in `Pursuing`, at scan in `Dormant`); `FacingAngle` (at `WindingUp` entry); target `HP` (for invalidation check). Writes: mob `FacingAngle` (every tick in `Pursuing`); target `HP` (on hit).

@@ -92,7 +92,7 @@ This epic is complete when:
 | 007 | [Enraged spawn roll and stat scaling](story-007-enraged-spawn-roll.md) | Logic | Complete | ADR-013 |
 | 008 | [Mob runtime state and stat seeding (TD-102)](story-008-mob-runtime-state.md) | Integration | Complete | ADR-002, ADR-010 |
 | 009 | [Enemy AI phase step and position integration](story-009-enemy-ai-phase-step.md) | Integration | Complete | ADR-002, ADR-014 |
-| 010 | [Mob → player damage](story-010-mob-to-player-damage.md) | Integration | Ready | ADR-012, ADR-010 |
+| 010 | [Mob → player damage](story-010-mob-to-player-damage.md) | Integration | Complete | ADR-012, ADR-010 |
 | 011 | [Death bridge — OnMobDied → loot → MobEventBus.MobDied](story-011-death-bridge.md) | Integration | Ready | ADR-010 |
 | 012 | [Replace Combat's mob stand-ins](story-012-combat-mob-seams.md) | Integration | Ready | ADR-010 |
 | 013 | [Composition wiring](story-013-composition-wiring.md) | Integration | Ready | ADR-014, ADR-002, ADR-012 |
