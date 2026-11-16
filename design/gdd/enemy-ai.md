@@ -509,6 +509,7 @@ Enraged status is communicated by in-world VFX/audio only at MVP (UI-AI-2). A na
 
 **OQ-AI-4: Mob AI tick budget at target density (F-NET-6)**
 Carried from Hit Detection review (prior session blocker #18). The server processes up to 150 mob entities per zone per tick. Enemy AI adds: one FacingAngle write per Pursuing mob, one `CheckHit` call per AttackExecution mob, and `AGGRO_SCAN_INTERVAL_TICKS`-rate scans for Dormant mobs. Total per-tick cost must be profiled against the 16.6ms server frame budget before enabling at target density. **Must be profiled before first zone load test.**
+*Data point (2026-11-16, Enemy AI Story 014, Editor batch mode — not a server or device build):* 150 mobs on the real starting-zone NavMesh, all six live states exercised. `EnemyAISystem.Run` first tick 0.596 ms; over 200 measured ticks max 0.586 ms, p95 0.086 ms; 0 bytes GC allocated per tick. Excludes the real `MobAttackResolver` / `CheckHit` (counting fake), target-death and target-lost branches, and pursuit reposition (players static). Navigation phase-step cost from Navigation Story 011: first call 6.043 ms, drain ticks max 0.198 ms. Stays open until measured on the Linux server build.
 
 **OQ-AI-5: RESOLVED — Mob re-aggro after target death in party context**
 **Decision (2026-05-25):** Option A adopted. On target death, mob immediately re-scans for any player within `AggroRange`. If found, assigns as new `TargetEntityID` and continues pursuit. If no player is in range, transitions to `Returning`. Rule added in CR-AI-10. AC-AI-26 covers the testable behavior.

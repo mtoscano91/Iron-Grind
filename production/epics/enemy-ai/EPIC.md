@@ -3,7 +3,7 @@
 > **Layer**: Feature
 > **GDD**: design/gdd/enemy-ai.md
 > **Architecture Module**: Enemy AI (`architecture.md` layer map, Feature; phase 3 game system of the ADR-002 tick), `src/ServerLogic/` (ADR-012)
-> **Status**: In Progress
+> **Status**: Complete
 > **Stories**: 14 created 2026-11-13 — see Stories
 > **Manifest Version**: 2026-11-06
 
@@ -96,10 +96,10 @@ This epic is complete when:
 | 011 | [Death bridge — OnMobDied → loot → MobEventBus.MobDied](story-011-death-bridge.md) | Integration | Complete | ADR-010 |
 | 012 | [Replace Combat's mob stand-ins](story-012-combat-mob-seams.md) | Integration | Complete | ADR-010 |
 | 013 | [Composition wiring](story-013-composition-wiring.md) | Integration | Complete | ADR-014, ADR-002, ADR-012 |
-| 014 | [150-mob tick budget fixture (OQ-AI-4)](story-014-tick-budget-fixture.md) | Integration | Ready | ADR-002, ADR-004 |
+| 014 | [150-mob tick budget fixture (OQ-AI-4)](story-014-tick-budget-fixture.md) | Integration | Complete | ADR-002, ADR-004, ADR-014 |
 
 Order: 001 → 002, 003 → 004 → 005 → 006; 003 → 007 → 008; 006 + 008 → 009 → 010, 011 → 012 → 013 → 014. The end-to-end smoke run (a player kills a spawned mob) needs Mob Spawning to raise `MobSpawned` and belongs to that epic.
 
 ## Next Step
 
-Run `/story-readiness production/epics/enemy-ai/story-001-mob-definition-registry.md`.
+Epic Complete (14/14, 2026-11-16). Next per the post-auth roadmap: the next combat-loop epic (Mob Spawning, Death & Respawn — not yet created).

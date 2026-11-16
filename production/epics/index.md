@@ -26,7 +26,7 @@ Control Manifest Version: 2026-11-06
 | [Skill System](skill-system/EPIC.md) | Core | Skill System | design/gdd/skill-system.md | 13 stories (001-012 written 2026-11-02, 013 added): 13 Complete (last 013 on 2026-11-04) | Complete |
 | [Navigation / Pathfinding](navigation-pathfinding/EPIC.md) | Core | Navigation / Pathfinding | design/gdd/navigation-pathfinding.md | 11 stories (001-011 written 2026-11-12), all Complete (2026-11-13) | Complete |
 | [Enhancement System](enhancement-system/EPIC.md) | Feature | Enhancement System | design/gdd/enhancement-system.md | 16 stories (001-016 Complete); DoD open: AC-ENH-2 and the other deferred criteria | In Progress |
-| [Enemy AI](enemy-ai/EPIC.md) | Feature | Enemy AI | design/gdd/enemy-ai.md | 14 stories (001-014 written 2026-11-13): 13 Complete (001-013) | In Progress |
+| [Enemy AI](enemy-ai/EPIC.md) | Feature | Enemy AI | design/gdd/enemy-ai.md | 14 stories (001-014 written 2026-11-13): 14 Complete | Complete |
 
 ## Notes
 
