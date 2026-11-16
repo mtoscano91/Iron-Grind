@@ -147,6 +147,24 @@ namespace IronGrind.Tests.EditMode.EnemyAI
             }
         }
 
+        private sealed class NullCombat : IronGrind.AutoAttackCombat.ICombatService
+        {
+#pragma warning disable CS0067
+            public event Action<MobDeathContext>? OnMobDied;
+#pragma warning restore CS0067
+        }
+
+        private sealed class NullLoot : ILootTableService
+        {
+            public void RecordDamage(EntityID mobEntityId, CharacterID attacker, uint finalDamage) { }
+
+            public void ClearMob(EntityID mobEntityId) { }
+
+            public void ResolveMobDrop(EntityID mobEntityID, int tierShift) { }
+
+            public void Clear() { }
+        }
+
         private sealed class FakeTicks : IServerTickSource
         {
             public uint ServerTickNumber => 100u;
@@ -201,10 +219,14 @@ namespace IronGrind.Tests.EditMode.EnemyAI
         private FakeStats _stats = null!;
         private FakeCandidates _candidates = null!;
         private EnemyAISystem _system = null!;
+        private NullCombat _combat = null!;
+        private NullLoot _loot = null!;
 
         [SetUp]
         public void SetUp()
         {
+            _combat = new NullCombat();
+            _loot = new NullLoot();
             _zoneStats = CharacterStatsFixture.Create();
             _bus = new MobEventBus();
             _registry = new FakeRegistry();
@@ -226,8 +248,8 @@ namespace IronGrind.Tests.EditMode.EnemyAI
 
         private EnemyAISystem NewSystem(INavigationProvider nav)
         {
-            return new EnemyAISystem(_bus, _store, _registry, nav, _stats, new NullResolver(),
-                EnemyAIConfigValues.Defaults, RETURN_SPEED_CAP, _candidates, MANY_MOBS);
+            return new EnemyAISystem(Zone, _bus, _store, _registry, nav, _stats, new NullResolver(),
+                EnemyAIConfigValues.Defaults, RETURN_SPEED_CAP, _candidates, _combat, _loot, MANY_MOBS);
         }
 
         private static EntityID MobId(uint offset) => new EntityID(MOB_RAW_ID + offset);
@@ -794,8 +816,8 @@ namespace IronGrind.Tests.EditMode.EnemyAI
         public void test_run_capacityBelowMobCount_growsAndAllMobsMoveWithStoreInSync(int capacity)
         {
             _system.Dispose();
-            _system = new EnemyAISystem(_bus, _store, _registry, _nav, _stats, new NullResolver(),
-                EnemyAIConfigValues.Defaults, RETURN_SPEED_CAP, _candidates, capacity);
+            _system = new EnemyAISystem(Zone, _bus, _store, _registry, _nav, _stats, new NullResolver(),
+                EnemyAIConfigValues.Defaults, RETURN_SPEED_CAP, _candidates, _combat, _loot, capacity);
             _candidates.Players.Add((PLAYER, new Vector3(5f, 0f, 0f)));
             _nav.Velocity = new Vector3(2f, 0f, 1f);
             var mobs = new MobController[5];
@@ -819,13 +841,16 @@ namespace IronGrind.Tests.EditMode.EnemyAI
         {
             EnemyAIConfigValues cfg = EnemyAIConfigValues.Defaults;
             var res = new NullResolver();
-            Assert.Throws<ArgumentNullException>(() => new EnemyAISystem(null!, _store, _registry, _nav, _stats, res, cfg, RETURN_SPEED_CAP, _candidates, 1));
-            Assert.Throws<ArgumentNullException>(() => new EnemyAISystem(_bus, null!, _registry, _nav, _stats, res, cfg, RETURN_SPEED_CAP, _candidates, 1));
-            Assert.Throws<ArgumentNullException>(() => new EnemyAISystem(_bus, _store, null!, _nav, _stats, res, cfg, RETURN_SPEED_CAP, _candidates, 1));
-            Assert.Throws<ArgumentNullException>(() => new EnemyAISystem(_bus, _store, _registry, null!, _stats, res, cfg, RETURN_SPEED_CAP, _candidates, 1));
-            Assert.Throws<ArgumentNullException>(() => new EnemyAISystem(_bus, _store, _registry, _nav, null!, res, cfg, RETURN_SPEED_CAP, _candidates, 1));
-            Assert.Throws<ArgumentNullException>(() => new EnemyAISystem(_bus, _store, _registry, _nav, _stats, null!, cfg, RETURN_SPEED_CAP, _candidates, 1));
-            Assert.Throws<ArgumentNullException>(() => new EnemyAISystem(_bus, _store, _registry, _nav, _stats, res, cfg, RETURN_SPEED_CAP, null!, 1));
+            Assert.Throws<ArgumentNullException>(() => new EnemyAISystem(Zone, null!, _store, _registry, _nav, _stats, res, cfg, RETURN_SPEED_CAP, _candidates, _combat, _loot, 1));
+            Assert.Throws<ArgumentNullException>(() => new EnemyAISystem(Zone, _bus, null!, _registry, _nav, _stats, res, cfg, RETURN_SPEED_CAP, _candidates, _combat, _loot, 1));
+            Assert.Throws<ArgumentNullException>(() => new EnemyAISystem(Zone, _bus, _store, null!, _nav, _stats, res, cfg, RETURN_SPEED_CAP, _candidates, _combat, _loot, 1));
+            Assert.Throws<ArgumentNullException>(() => new EnemyAISystem(Zone, _bus, _store, _registry, null!, _stats, res, cfg, RETURN_SPEED_CAP, _candidates, _combat, _loot, 1));
+            Assert.Throws<ArgumentNullException>(() => new EnemyAISystem(Zone, _bus, _store, _registry, _nav, null!, res, cfg, RETURN_SPEED_CAP, _candidates, _combat, _loot, 1));
+            Assert.Throws<ArgumentNullException>(() => new EnemyAISystem(Zone, _bus, _store, _registry, _nav, _stats, null!, cfg, RETURN_SPEED_CAP, _candidates, _combat, _loot, 1));
+            Assert.Throws<ArgumentNullException>(() => new EnemyAISystem(Zone, _bus, _store, _registry, _nav, _stats, res, cfg, RETURN_SPEED_CAP, null!, _combat, _loot, 1));
+
+            Assert.Throws<ArgumentNullException>(() => new EnemyAISystem(Zone, _bus, _store, _registry, _nav, _stats, res, cfg, RETURN_SPEED_CAP, _candidates, null!, _loot, 1));
+            Assert.Throws<ArgumentNullException>(() => new EnemyAISystem(Zone, _bus, _store, _registry, _nav, _stats, res, cfg, RETURN_SPEED_CAP, _candidates, _combat, null!, 1));
 
             var pool = new ZoneSlotPool(Zone, new FakeTicks(), new FakeListener());
             Assert.Throws<ArgumentNullException>(() => new ZoneAggroCandidateSource(Zone, null!, new FakePositions()));

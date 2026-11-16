@@ -11,7 +11,9 @@ namespace IronGrind.ServerLogic.EnemyAI
     /// <summary>
     /// Per-mob server-side behaviour controller (Enemy AI Stories 003 to 006: states, spawn init, dead check, facing,
     /// aggro and pursuit, attack cycle, leash, target invalidation and Returning). Holds no Unity objects; all inputs are injected seams.
-    /// Dead handling is filled in by Story 011.
+    /// Dead is terminal (Story 011): entering it records <see cref="DeadEnteredTick"/> and counts once in
+    /// <see cref="DeadEntryCount"/>; <see cref="EnemyAISystem"/> then runs the loot / MobDied routine and despawns the mob
+    /// after the linger, because the controller holds neither the loot service nor the event bus.
     /// </summary>
     public sealed class MobController
     {
@@ -126,8 +128,14 @@ namespace IronGrind.ServerLogic.EnemyAI
         /// <summary>Tick the mob entered Dead; -1 until then.</summary>
         internal long DeadEnteredTick { get; private set; }
 
-        /// <summary>How many times the Dead-entry routine ran (exactly 1 once dead).</summary>
+        /// <summary>How many times the mob entered Dead (exactly 1 once dead; Dead is terminal). The loot / MobDied routine is tracked by <see cref="DeathRoutineRan"/>.</summary>
         internal int DeadEntryCount { get; private set; }
+
+        /// <summary>Set by <see cref="EnemyAISystem"/> when the loot / MobDied routine has run for this mob (Story 011); guards it to once.</summary>
+        internal bool DeathRoutineRan { get; set; }
+
+        /// <summary>Wind-up ticks left in WindingUp; the attack executes on the tick this reaches 0 (read by tests).</summary>
+        internal int WindUpTicksRemaining => _windUpTicksRemaining;
 
         /// <summary>Navigation seam, for the per-state stories.</summary>
         internal INavigationProvider Navigation => _navigation;
@@ -205,7 +213,7 @@ namespace IronGrind.ServerLogic.EnemyAI
             }
         }
 
-        /// <summary>Dead-entry hook (Story 011 fills it). Records the tick and counts the entry.</summary>
+        /// <summary>Dead-entry hook: records the tick and counts the entry. The loot / MobDied routine and the despawn live in <see cref="EnemyAISystem"/> (Story 011).</summary>
         private void OnDeadEntered(uint currentTick)
         {
             DeadEnteredTick = currentTick;
