@@ -37,16 +37,14 @@ namespace IronGrind.Tests.EditMode.Navigation
         // Builds values from the defaults with one knob replaced.
         private static NavigationConfigValues With(
             int? pool = null, int? pathUpdates = null, int? partialTimeout = null, float? returnCap = null,
-            float? minFraction = null, int? stuck = null, int? offMesh = null, float? sampleRadius = null,
-            float? standInSpeed = null)
+            float? minFraction = null, int? stuck = null, int? offMesh = null, float? sampleRadius = null)
         {
             NavigationConfigValues d = NavigationConfigValues.Defaults;
             return new NavigationConfigValues(
                 pool ?? d.MaxAgentPoolSize, pathUpdates ?? d.MaxPathUpdatesPerTick,
                 partialTimeout ?? d.PartialPathTimeoutTicks, returnCap ?? d.ReturnSpeedCap,
                 minFraction ?? d.MinValidSpawnFraction, stuck ?? d.NavStuckRerouteDetectionTicks,
-                offMesh ?? d.NavOffMeshRecoveryTicks, sampleRadius ?? d.SpawnSampleRadius,
-                standInSpeed ?? d.StandInMobMoveSpeed);
+                offMesh ?? d.NavOffMeshRecoveryTicks, sampleRadius ?? d.SpawnSampleRadius);
         }
 
         private static bool Validate(NavigationConfigValues values, out List<string> errors, out List<string> warnings)
@@ -84,7 +82,6 @@ namespace IronGrind.Tests.EditMode.Navigation
             Assert.That(d.NavStuckRerouteDetectionTicks, Is.EqualTo(10));
             Assert.That(d.NavOffMeshRecoveryTicks, Is.EqualTo(3));
             Assert.That(d.SpawnSampleRadius, Is.EqualTo(0.1f));
-            Assert.That(d.StandInMobMoveSpeed, Is.EqualTo(3.5f));
         }
 
         [Test]
@@ -103,7 +100,6 @@ namespace IronGrind.Tests.EditMode.Navigation
             Assert.That(v.NavStuckRerouteDetectionTicks, Is.EqualTo(d.NavStuckRerouteDetectionTicks));
             Assert.That(v.NavOffMeshRecoveryTicks, Is.EqualTo(d.NavOffMeshRecoveryTicks));
             Assert.That(v.SpawnSampleRadius, Is.EqualTo(d.SpawnSampleRadius));
-            Assert.That(v.StandInMobMoveSpeed, Is.EqualTo(d.StandInMobMoveSpeed));
             Assert.That(Validate(v, out List<string> errors, out List<string> warnings), Is.True);
             Assert.That(errors, Is.Empty);
             Assert.That(warnings, Is.Empty);
@@ -113,7 +109,7 @@ namespace IronGrind.Tests.EditMode.Navigation
         public void SetForTesting_RoundTripsAllKnobs()
         {
             _config = ScriptableObject.CreateInstance<NavigationConfig>();
-            _config.SetForTesting(new NavigationConfigValues(150, 7, 33, 4.5f, 0.75f, 12, 5, 0.25f, 2.0f));
+            _config.SetForTesting(new NavigationConfigValues(150, 7, 33, 4.5f, 0.75f, 12, 5, 0.25f));
 
             NavigationConfigValues v = NavigationConfigValues.FromAsset(_config);
 
@@ -125,7 +121,6 @@ namespace IronGrind.Tests.EditMode.Navigation
             Assert.That(v.NavStuckRerouteDetectionTicks, Is.EqualTo(12));
             Assert.That(v.NavOffMeshRecoveryTicks, Is.EqualTo(5));
             Assert.That(v.SpawnSampleRadius, Is.EqualTo(0.25f));
-            Assert.That(v.StandInMobMoveSpeed, Is.EqualTo(2.0f));
         }
 
         // ---- Provider contract (AC1) ----
@@ -233,15 +228,6 @@ namespace IronGrind.Tests.EditMode.Navigation
         }
 
         [Test]
-        public void StandInSpeed_BoundsPass_OutsideFails()
-        {
-            AssertAccepted(With(standInSpeed: 0.1f), "STAND_IN_MOB_MOVE_SPEED");
-            AssertAccepted(With(standInSpeed: 20.0f), "STAND_IN_MOB_MOVE_SPEED");
-            AssertRejected(With(standInSpeed: 0.09f), "STAND_IN_MOB_MOVE_SPEED");
-            AssertRejected(With(standInSpeed: 20.01f), "STAND_IN_MOB_MOVE_SPEED");
-        }
-
-        [Test]
         public void MaxPathUpdates_ZeroAnd151_Fail()
         {
             AssertRejected(With(pathUpdates: 0), "MAX_PATH_UPDATES_PER_TICK");
@@ -274,7 +260,6 @@ namespace IronGrind.Tests.EditMode.Navigation
         [TestCase("RETURN_SPEED_CAP")]
         [TestCase("MIN_VALID_SPAWN_FRACTION")]
         [TestCase("SPAWN_SAMPLE_RADIUS")]
-        [TestCase("STAND_IN_MOB_MOVE_SPEED")]
         public void NaNKnob_Fails(string knob)
         {
             float nan = float.NaN;
@@ -284,7 +269,6 @@ namespace IronGrind.Tests.EditMode.Navigation
                 case "RETURN_SPEED_CAP": values = With(returnCap: nan); break;
                 case "MIN_VALID_SPAWN_FRACTION": values = With(minFraction: nan); break;
                 case "SPAWN_SAMPLE_RADIUS": values = With(sampleRadius: nan); break;
-                case "STAND_IN_MOB_MOVE_SPEED": values = With(standInSpeed: nan); break;
                 default: throw new ArgumentException(knob);
             }
 
@@ -622,77 +606,6 @@ namespace IronGrind.Tests.EditMode.Navigation
             bus.RaiseMobSpawned(new MobSpawnedArgs(ZONE, ENTITY, MOB_TYPE, SPAWN_POS));
 
             Assert.That(log, Is.EqualTo(new[] { "A", "B" }));
-        }
-
-        // ---- Stand-in speed source ----
-
-        private const string STAND_IN_LOG = "[ZoneServer] navigation mob speed source not implemented";
-
-        [Test]
-        public void StandIn_TwoInstancesCalledTwiceEach_LogsOncePerInstance()
-        {
-            var first = new StandInNavMobSpeedSource(NavigationConfigValues.Defaults);
-            var second = new StandInNavMobSpeedSource(NavigationConfigValues.Defaults);
-            LogAssert.Expect(LogType.Log, STAND_IN_LOG);
-            LogAssert.Expect(LogType.Log, STAND_IN_LOG);
-
-            first.TryGetMoveSpeed(MOB_TYPE, out _);
-            first.TryGetMoveSpeed(MOB_TYPE, out _);
-            second.TryGetMoveSpeed(MOB_TYPE, out _);
-            second.TryGetMoveSpeed(MOB_TYPE, out _);
-
-            LogAssert.NoUnexpectedReceived();
-        }
-
-        [TestCase(0u)]
-        [TestCase(1u)]
-        [TestCase(uint.MaxValue)]
-        public void StandIn_AnyMobType_ReturnsTrueWithSameSpeed(uint rawMobType)
-        {
-            var source = new StandInNavMobSpeedSource(NavigationConfigValues.Defaults);
-            LogAssert.Expect(LogType.Log, STAND_IN_LOG);
-
-            bool found = source.TryGetMoveSpeed(new MobTypeID(rawMobType), out float speed);
-
-            Assert.That(found, Is.True);
-            Assert.That(speed, Is.EqualTo(NavigationConfigValues.Defaults.StandInMobMoveSpeed));
-        }
-
-        [Test]
-        public void StandIn_DefaultConfig_ReturnsTrueAnd3Point5()
-        {
-            var source = new StandInNavMobSpeedSource(NavigationConfigValues.Defaults);
-            LogAssert.Expect(LogType.Log, STAND_IN_LOG);
-
-            bool found = source.TryGetMoveSpeed(MOB_TYPE, out float speed);
-
-            Assert.That(found, Is.True);
-            Assert.That(speed, Is.EqualTo(3.5f));
-        }
-
-        [Test]
-        public void StandIn_ConfiguredSpeed_ReturnsConfiguredValue()
-        {
-            var source = new StandInNavMobSpeedSource(With(standInSpeed: 5.0f));
-            LogAssert.Expect(LogType.Log, STAND_IN_LOG);
-
-            bool found = source.TryGetMoveSpeed(new MobTypeID(1234u), out float speed);
-
-            Assert.That(found, Is.True);
-            Assert.That(speed, Is.EqualTo(5.0f));
-        }
-
-        [Test]
-        public void StandIn_TwoCalls_LogsOnce()
-        {
-            var source = new StandInNavMobSpeedSource(NavigationConfigValues.Defaults);
-            LogAssert.Expect(LogType.Log, STAND_IN_LOG);
-
-            source.TryGetMoveSpeed(MOB_TYPE, out _);
-            source.TryGetMoveSpeed(MOB_TYPE, out _);
-
-            // A second log line would be an unexpected message and fail the test.
-            LogAssert.NoUnexpectedReceived();
         }
     }
 }

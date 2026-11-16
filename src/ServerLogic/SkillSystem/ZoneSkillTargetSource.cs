@@ -6,7 +6,7 @@ namespace IronGrind.SkillSystem
 {
     /// <summary>
     /// <see cref="ISkillTargetSource"/> over the zone's slot pool (in zone, kind) and the zone entity state source
-    /// (alive = CurrentHp &gt; 0). Same precedent as <c>StandInAutoAttackTargetValidity</c> (Story 005).
+    /// (alive = CurrentHp &gt; 0). Same precedent as <c>MobTargetValidity</c> (Enemy AI Story 012).
     /// </summary>
     /// <remarks>
     /// A player or mob without state is reported as not alive. MVP gap carried to the Party System epic: every player

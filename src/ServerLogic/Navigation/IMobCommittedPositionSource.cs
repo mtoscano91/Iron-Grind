@@ -8,7 +8,7 @@ namespace IronGrind.ServerLogic.Navigation
     /// Source of the committed (server-authoritative) mob positions that phase 1 of the tick feeds to
     /// <see cref="ZoneNavigationService.SyncAgentPositions(IReadOnlyDictionary{EntityID, Vector3})"/> (CR-NAV-12).
     /// Enemy AI owns mob position integration (phase 4) and is the real implementation;
-    /// <see cref="EmptyMobCommittedPositionSource"/> stands in until then.
+    /// <c>MobRuntimeStore</c> implements it.
     /// </summary>
     public interface IMobCommittedPositionSource
     {

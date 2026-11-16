@@ -76,13 +76,6 @@ namespace IronGrind.ServerLogic.Navigation
         /// <summary>SPAWN_SAMPLE_RADIUS safe range maximum.</summary>
         public const float SPAWN_SAMPLE_RADIUS_MAX = 1.0f;
 
-        /// <summary>STAND_IN_MOB_MOVE_SPEED default, in m/s.</summary>
-        public const float STAND_IN_MOB_MOVE_SPEED_DEFAULT = 3.5f;
-        /// <summary>STAND_IN_MOB_MOVE_SPEED safe range minimum (CR-NAV-8 clamp range).</summary>
-        public const float STAND_IN_MOB_MOVE_SPEED_MIN = 0.1f;
-        /// <summary>STAND_IN_MOB_MOVE_SPEED safe range maximum.</summary>
-        public const float STAND_IN_MOB_MOVE_SPEED_MAX = 20.0f;
-
         /// <summary>
         /// Lowest agent speed in m/s (CR-NAV-8 clamp range). A plain constant, not a tunable knob; the claim path
         /// (Story 003) and <c>SetSpeed</c> (Story 004) both use it.
@@ -99,7 +92,7 @@ namespace IronGrind.ServerLogic.Navigation
         public static NavigationConfigValues Defaults => new NavigationConfigValues(
             MAX_AGENT_POOL_SIZE_DEFAULT, MAX_PATH_UPDATES_PER_TICK_DEFAULT, PARTIAL_PATH_TIMEOUT_TICKS_DEFAULT,
             RETURN_SPEED_CAP_DEFAULT, MIN_VALID_SPAWN_FRACTION_DEFAULT, NAV_STUCK_REROUTE_DETECTION_TICKS_DEFAULT,
-            NAV_OFF_MESH_RECOVERY_TICKS_DEFAULT, SPAWN_SAMPLE_RADIUS_DEFAULT, STAND_IN_MOB_MOVE_SPEED_DEFAULT);
+            NAV_OFF_MESH_RECOVERY_TICKS_DEFAULT, SPAWN_SAMPLE_RADIUS_DEFAULT);
 
         /// <summary>Builds the values exactly as given (no clamping).</summary>
         /// <param name="maxAgentPoolSize">MAX_AGENT_POOL_SIZE.</param>
@@ -110,11 +103,10 @@ namespace IronGrind.ServerLogic.Navigation
         /// <param name="navStuckRerouteDetectionTicks">NAV_STUCK_REROUTE_DETECTION_TICKS.</param>
         /// <param name="navOffMeshRecoveryTicks">NAV_OFF_MESH_RECOVERY_TICKS.</param>
         /// <param name="spawnSampleRadius">SPAWN_SAMPLE_RADIUS.</param>
-        /// <param name="standInMobMoveSpeed">STAND_IN_MOB_MOVE_SPEED.</param>
         public NavigationConfigValues(
             int maxAgentPoolSize, int maxPathUpdatesPerTick, int partialPathTimeoutTicks, float returnSpeedCap,
             float minValidSpawnFraction, int navStuckRerouteDetectionTicks, int navOffMeshRecoveryTicks,
-            float spawnSampleRadius, float standInMobMoveSpeed)
+            float spawnSampleRadius)
         {
             MaxAgentPoolSize = maxAgentPoolSize;
             MaxPathUpdatesPerTick = maxPathUpdatesPerTick;
@@ -124,7 +116,6 @@ namespace IronGrind.ServerLogic.Navigation
             NavStuckRerouteDetectionTicks = navStuckRerouteDetectionTicks;
             NavOffMeshRecoveryTicks = navOffMeshRecoveryTicks;
             SpawnSampleRadius = spawnSampleRadius;
-            StandInMobMoveSpeed = standInMobMoveSpeed;
         }
 
         /// <summary>MAX_AGENT_POOL_SIZE: agents created at Initialize; must equal ZoneSlotPool.MAX_MOBS_PER_ZONE.</summary>
@@ -151,9 +142,6 @@ namespace IronGrind.ServerLogic.Navigation
         /// <summary>SPAWN_SAMPLE_RADIUS: radius of the spawn NavMesh sample, in world units.</summary>
         public float SpawnSampleRadius { get; }
 
-        /// <summary>STAND_IN_MOB_MOVE_SPEED: speed of every mob until Enemy AI supplies real ones, in m/s.</summary>
-        public float StandInMobMoveSpeed { get; }
-
         /// <summary>Copies the values from an asset without clamping.</summary>
         /// <param name="asset">The authored asset; not null.</param>
         /// <returns>The values as authored.</returns>
@@ -168,7 +156,7 @@ namespace IronGrind.ServerLogic.Navigation
             return new NavigationConfigValues(
                 asset.MaxAgentPoolSize, asset.MaxPathUpdatesPerTick, asset.PartialPathTimeoutTicks,
                 asset.ReturnSpeedCap, asset.MinValidSpawnFraction, asset.NavStuckRerouteDetectionTicks,
-                asset.NavOffMeshRecoveryTicks, asset.SpawnSampleRadius, asset.StandInMobMoveSpeed);
+                asset.NavOffMeshRecoveryTicks, asset.SpawnSampleRadius);
         }
 
         /// <summary>
@@ -212,8 +200,6 @@ namespace IronGrind.ServerLogic.Navigation
                 NAV_OFF_MESH_RECOVERY_TICKS_MIN, NAV_OFF_MESH_RECOVERY_TICKS_MAX, errors);
             CheckFloat("SPAWN_SAMPLE_RADIUS", values.SpawnSampleRadius,
                 SPAWN_SAMPLE_RADIUS_MIN, SPAWN_SAMPLE_RADIUS_MAX, errors);
-            CheckFloat("STAND_IN_MOB_MOVE_SPEED", values.StandInMobMoveSpeed,
-                STAND_IN_MOB_MOVE_SPEED_MIN, STAND_IN_MOB_MOVE_SPEED_MAX, errors);
 
             return errors.Count == before;
         }

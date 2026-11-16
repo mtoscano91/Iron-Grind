@@ -28,6 +28,11 @@ namespace IronGrind.Tests.EditMode.Navigation
         private const int POOL_SIZE = NavigationConfigValues.MAX_AGENT_POOL_SIZE_DEFAULT;
         private const int R = NavigationConfigValues.MAX_PATH_UPDATES_PER_TICK_DEFAULT;
 
+        private sealed class EmptyPositions : IMobCommittedPositionSource
+        {
+            public void CopyCommittedPositions(Dictionary<EntityID, Vector3> into) { }
+        }
+
         private sealed class FakePositionSource : IMobCommittedPositionSource
         {
             public readonly Dictionary<EntityID, Vector3> Positions = new Dictionary<EntityID, Vector3>();
@@ -90,7 +95,7 @@ namespace IronGrind.Tests.EditMode.Navigation
                 NavigationConfigValues.RETURN_SPEED_CAP_DEFAULT, NavigationConfigValues.MIN_VALID_SPAWN_FRACTION_DEFAULT,
                 NavigationConfigValues.NAV_STUCK_REROUTE_DETECTION_TICKS_DEFAULT,
                 NavigationConfigValues.NAV_OFF_MESH_RECOVERY_TICKS_DEFAULT,
-                NavigationConfigValues.SPAWN_SAMPLE_RADIUS_DEFAULT, NavigationConfigValues.STAND_IN_MOB_MOVE_SPEED_DEFAULT));
+                NavigationConfigValues.SPAWN_SAMPLE_RADIUS_DEFAULT));
             var speeds = new FakeSpeedSource();
             speeds.Speeds[TYPE_A] = 3.5f;
             _service = new ZoneNavigationService(_config, _factory, speeds, new FakeMeshQuery(), _ops, _bus);
@@ -571,7 +576,7 @@ namespace IronGrind.Tests.EditMode.Navigation
         public void test_tick_drain_step_empty_source_nothing_queued_no_agent_calls()
         {
             FakeNavAgent[] agents = InitAndSpawn(2);
-            var step = new NavigationPhaseStep(_service, new EmptyMobCommittedPositionSource());
+            var step = new NavigationPhaseStep(_service, new EmptyPositions());
             _recorder.Clear();
 
             step.Run(1u, 0.05f);
@@ -674,7 +679,7 @@ namespace IronGrind.Tests.EditMode.Navigation
         public void test_tick_drain_step_null_service_or_source_throws_argument_null()
         {
             Assert.Throws<ArgumentNullException>(
-                () => new NavigationPhaseStep(null, new EmptyMobCommittedPositionSource()));
+                () => new NavigationPhaseStep(null, new EmptyPositions()));
             Assert.Throws<ArgumentNullException>(() => new NavigationPhaseStep(_service, null));
         }
     }

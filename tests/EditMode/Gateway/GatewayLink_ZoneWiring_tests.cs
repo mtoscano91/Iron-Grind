@@ -17,6 +17,7 @@ using IronGrind.Tests.EditMode.Networking;
 using NUnit.Framework;
 using UnityEngine.TestTools;
 using PendingPurchaseRecord = IronGrind.CharacterPersistence.PendingPurchaseRecord;
+using EnemyAICompositionFixtures = IronGrind.Tests.EditMode.EnemyAI.EnemyAICompositionFixtures;
 
 namespace IronGrind.Tests.EditMode.Gateway
 {
@@ -707,6 +708,7 @@ namespace IronGrind.Tests.EditMode.Gateway
                     new SuBounds(Log, Plan), new SuStatic(Log, Plan), new SuStateOwner(Log), registration,
                     new SuConfigSource(Log, Plan) { Json = LINK_CONFIG }, env, () => 0d);
                 Comp.ItemDatabaseOverride = WiRig.EmptyItemDatabase();
+                Comp.MobRegistryOverride = EnemyAICompositionFixtures.Registry();
                 Comp.WarmUpOverride = ct => Task.CompletedTask;
                 Comp.ListenerFactoryOverride = (connectionString, receiver) => new WiListener(Log);
                 Comp.GatewayLinkChannelFactoryOverride = config =>

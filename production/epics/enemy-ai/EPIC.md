@@ -95,7 +95,7 @@ This epic is complete when:
 | 010 | [Mob → player damage](story-010-mob-to-player-damage.md) | Integration | Complete | ADR-012, ADR-010 |
 | 011 | [Death bridge — OnMobDied → loot → MobEventBus.MobDied](story-011-death-bridge.md) | Integration | Complete | ADR-010 |
 | 012 | [Replace Combat's mob stand-ins](story-012-combat-mob-seams.md) | Integration | Complete | ADR-010 |
-| 013 | [Composition wiring](story-013-composition-wiring.md) | Integration | Ready | ADR-014, ADR-002, ADR-012 |
+| 013 | [Composition wiring](story-013-composition-wiring.md) | Integration | Complete | ADR-014, ADR-002, ADR-012 |
 | 014 | [150-mob tick budget fixture (OQ-AI-4)](story-014-tick-budget-fixture.md) | Integration | Ready | ADR-002, ADR-004 |
 
 Order: 001 → 002, 003 → 004 → 005 → 006; 003 → 007 → 008; 006 + 008 → 009 → 010, 011 → 012 → 013 → 014. The end-to-end smoke run (a player kills a spawned mob) needs Mob Spawning to raise `MobSpawned` and belongs to that epic.

@@ -235,10 +235,10 @@ namespace IronGrind.PlayModeTests
             _query = new RecordingQuery(_threadIds);
             _ops = new RecordingOps(_threadIds);
             _service = new ZoneNavigationService(
-                _config, _factory, new StandInNavMobSpeedSource(NavigationConfigValues.Defaults), _query, _ops, _bus);
+                _config, _factory, new FixedNavSpeedSource(3.5f), _query, _ops, _bus);
         }
 
-        private static float StandInSpeed => NavigationConfigValues.Defaults.StandInMobMoveSpeed;
+        private static float FixedSpeed => 3.5f;
 
         private RecordingAgent EnabledAgentFor(EntityID entity)
         {
@@ -332,9 +332,9 @@ namespace IronGrind.PlayModeTests
         private static void AssertMovingTowardDestination(Vector3 v)
         {
             Assert.That(v.x, Is.GreaterThan(0f));
-            Assert.That(v.magnitude, Is.EqualTo(StandInSpeed).Within(StandInSpeed * SPEED_TOLERANCE));
+            Assert.That(v.magnitude, Is.EqualTo(FixedSpeed).Within(FixedSpeed * SPEED_TOLERANCE));
             Assert.That(Mathf.Abs(v.y), Is.LessThan(ZERO_EPSILON));
-            Assert.That(Mathf.Abs(v.z), Is.LessThan(StandInSpeed * SPEED_TOLERANCE));
+            Assert.That(Mathf.Abs(v.z), Is.LessThan(FixedSpeed * SPEED_TOLERANCE));
         }
 
         // ---- Pool, factory, instance ----
@@ -548,7 +548,7 @@ namespace IronGrind.PlayModeTests
         {
             int mainId = Thread.CurrentThread.ManagedThreadId;
             yield return StartMove();
-            _service.SetSpeed(E1, StandInSpeed);
+            _service.SetSpeed(E1, FixedSpeed);
             _service.IsPathStale(E1);
             _service.Stop(E1);
             _service.Resume(E1);

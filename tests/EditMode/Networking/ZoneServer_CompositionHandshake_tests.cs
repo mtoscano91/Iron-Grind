@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using IronGrind.CharacterPersistence;
 using IronGrind.CharacterStats;
 using IronGrind.Currency;
+using IronGrind.Events;
 using IronGrind.EquipmentSystem;
 using IronGrind.InventorySystem;
 using IronGrind.ItemDatabase;
@@ -17,6 +18,7 @@ using IronGrind.ServerLogic.ZoneServer;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
+using EnemyAICompositionFixtures = IronGrind.Tests.EditMode.EnemyAI.EnemyAICompositionFixtures;
 
 namespace IronGrind.Tests.EditMode.Networking
 {
@@ -155,16 +157,20 @@ namespace IronGrind.Tests.EditMode.Networking
             var rig = new WiRig();
             SuRig.Drive(rig.Comp.Start(SuRig.ARGS));
             ZoneInstancingWiring wiring = rig.Comp.ZoneInstancing;
-            EntityID mob = wiring.MobRoster.TryAddMob(wiring.Pool.Zone, new MobTypeID(5u), Vector3.zero);
+            EntityID mob = wiring.MobRoster.TryAddMob(wiring.Pool.Zone, EnemyAICompositionFixtures.MobType, Vector3.zero);
             Assert.AreNotEqual(EntityID.Invalid, mob);
+
+            // Enemy AI Story 013: the store seeds the mob from the spawn event (TD-102: HP is no longer 0).
+            rig.Comp.MobEvents.RaiseMobSpawned(new MobSpawnedArgs(rig.Comp.ZoneId, mob, EnemyAICompositionFixtures.MobType, Vector3.zero));
 
             // Act
             bool found = rig.Comp.EntityStateSource.TryGetMobState(mob, out ZoneMobStateView view);
 
-            // Assert: real Character Stats and Auto-Attack adapters answer without throwing; with no mob stats source
-            // and player-only combat, the mob reads 0 HP and Idle (TD-102).
+            // Assert: the seeded HP and MaxHP of the registry definition; a Dormant mob is not in combat
+            // (the rig passes a navigation seam, so the combat reader is the player-only one: always false for a mob).
             Assert.IsTrue(found);
-            Assert.AreEqual(0, view.CurrentHp);
+            Assert.AreEqual(EnemyAICompositionFixtures.MOB_HP, view.CurrentHp);
+            Assert.AreEqual(EnemyAICompositionFixtures.MOB_HP, view.MaxHp);
             Assert.IsFalse(view.IsInCombat);
         }
     }

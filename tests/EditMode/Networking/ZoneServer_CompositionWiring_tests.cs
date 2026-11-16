@@ -16,6 +16,7 @@ using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
 using UnityEngine.TestTools.Constraints;
+using EnemyAICompositionFixtures = IronGrind.Tests.EditMode.EnemyAI.EnemyAICompositionFixtures;
 
 namespace IronGrind.Tests.EditMode.Networking
 {
@@ -180,6 +181,8 @@ namespace IronGrind.Tests.EditMode.Networking
             // Character Persistence Story 020: S5 fails without an item database, and the recording S2 loaders give none.
             // Tests that want the S2 loader's database set ItemDatabaseOverride back to null.
             Comp.ItemDatabaseOverride = EmptyItemDatabase();
+            // Enemy AI Story 013: S5 fails without a mob registry, and the recording S2 loaders give none.
+            Comp.MobRegistryOverride = EnemyAICompositionFixtures.Registry();
             if (realWarmUpAndListener)
             {
                 return;
@@ -1024,7 +1027,10 @@ namespace IronGrind.Tests.EditMode.Networking
             SuRig.Drive(rig.Comp.Start(SuRig.ARGS));
             ZoneSlotPool pool = rig.Comp.ZoneInstancing.Pool;
             EntityID player = AaAddPlayer(rig, AA_CLIENT_ONE);
-            Assert.IsTrue(pool.TryAllocateMob(pool.Zone, out _, out EntityID mob));
+            // Enemy AI Story 013: a roster mob seeded into the runtime store (MobTargetValidity needs the store entry and HP > 0).
+            EntityID mob = rig.Comp.ZoneInstancing.MobRoster.TryAddMob(pool.Zone, EnemyAICompositionFixtures.MobType, Vector3.zero);
+            Assert.AreNotEqual(EntityID.Invalid, mob);
+            rig.Comp.MobEvents.RaiseMobSpawned(new IronGrind.Events.MobSpawnedArgs(rig.Comp.ZoneId, mob, EnemyAICompositionFixtures.MobType, Vector3.zero));
 
             AaSendToggle(rig, AA_CLIENT_ONE, player, true, AA_SEQUENCE);
             AaSendTarget(rig, AA_CLIENT_ONE, player, mob, AA_SEQUENCE + 1u);
@@ -1038,8 +1044,9 @@ namespace IronGrind.Tests.EditMode.Networking
             Assert.AreEqual(AutoAttackState.Idle, rig.Comp.AutoAttackCombat.GetState(player));
         }
 
-        // A real hit cannot land in composition: the stand-in damage calculator rejects every hit, so the wiring is
-        // asserted by type here and the send behaviour is covered in AutoAttackCombat_DamageOutput_tests.cs.
+        // The damage calculator is the real DamageCalculator now, but the EditMode composition has no placed, named player the
+        // combat state source can resolve, so a hit is not driven here: the wiring is asserted by type; the hit path is covered
+        // by EnemyAI_CombatSeams_tests.cs and the send behaviour by AutoAttackCombat_DamageOutput_tests.cs.
         [Test]
         public void test_production_composition_damage_applier_is_the_damage_output_decorator()
         {

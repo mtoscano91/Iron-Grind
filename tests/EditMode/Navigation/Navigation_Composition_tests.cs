@@ -14,6 +14,7 @@ using IronGrind.Tests.EditMode.Networking;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
+using EnemyAICompositionFixtures = IronGrind.Tests.EditMode.EnemyAI.EnemyAICompositionFixtures;
 
 namespace IronGrind.Tests.EditMode.Navigation
 {
@@ -54,6 +55,7 @@ namespace IronGrind.Tests.EditMode.Navigation
                 new SuConfigSource(Log, Plan) { Json = WiRig.DEFAULT_CONFIG }, env, null);
             Comp.ConstructionObserver = Observed.Add;
             Comp.ItemDatabaseOverride = WiRig.EmptyItemDatabase();
+            Comp.MobRegistryOverride = EnemyAICompositionFixtures.Registry();
             Comp.WarmUpOverride = ct => Task.CompletedTask;
             Comp.ListenerFactoryOverride = (connectionString, receiver) => new WiListener(Log);
             if (!ownConfig)
@@ -165,7 +167,7 @@ namespace IronGrind.Tests.EditMode.Navigation
         // ---------------------------------------------------------------- host type and seams
 
         [Test]
-        public void test_composition_null_navigation_builds_real_service_with_override_factory_and_stand_in_speeds()
+        public void test_composition_null_navigation_builds_real_service_with_override_factory_and_registry_speeds()
         {
             NavCompositionRig rig = NewRig();
 
@@ -173,23 +175,25 @@ namespace IronGrind.Tests.EditMode.Navigation
 
             Assert.IsInstanceOf<ZoneNavigationService>(rig.Comp.NavigationService);
             Assert.AreEqual(NavigationConfigValues.MAX_AGENT_POOL_SIZE_DEFAULT, rig.Factory.CreateCalls);
-            Assert.IsInstanceOf<StandInNavMobSpeedSource>(((ZoneNavigationService)rig.Comp.NavigationService).SpeedSource);
+            Assert.IsInstanceOf<IronGrind.ServerLogic.EnemyAI.MobDefinitionRegistryNavSpeedSource>(((ZoneNavigationService)rig.Comp.NavigationService).SpeedSource);
 
             rig.Comp.MobEvents.RaiseMobSpawned(SpawnArgs(rig.Comp, 900u));
             FakeNavAgent claimed = rig.Factory.Created.Find(a => a.EnabledValue);
             Assert.IsNotNull(claimed);
-            Assert.AreEqual(NavigationConfigValues.STAND_IN_MOB_MOVE_SPEED_DEFAULT, claimed.SpeedValue);
+            Assert.AreEqual(EnemyAICompositionFixtures.MOVE_SPEED, claimed.SpeedValue);
         }
 
         [Test]
-        public void test_composition_passed_seam_builds_no_bus_no_step_and_no_provider()
+        public void test_composition_passed_seam_builds_bus_and_store_but_no_step_no_enemy_ai_and_no_provider()
         {
             var seamLog = new List<string>();
             NavCompositionRig withSeam = NewRig(seam: new SuNav(seamLog, new SuPlan()));
 
             withSeam.Start();
 
-            Assert.IsNull(withSeam.Comp.MobEvents);
+            Assert.IsNotNull(withSeam.Comp.MobEvents, "the bus is always built");
+            Assert.IsNotNull(withSeam.Comp.MobStore);
+            Assert.IsNull(withSeam.Comp.EnemyAI);
             Assert.IsNull(withSeam.Comp.NavigationProvider);
             Assert.IsNull(withSeam.Comp.NavigationService);
             Assert.AreEqual(-1, IndexOfStep(withSeam.Comp.SimulationSteps, nameof(NavigationPhaseStep)));

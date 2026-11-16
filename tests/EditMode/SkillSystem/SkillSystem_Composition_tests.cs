@@ -17,6 +17,7 @@ using IronGrind.Tests.EditMode.Networking;
 using NUnit.Framework;
 using UnityEngine.TestTools;
 using UnityEngine;
+using EnemyAICompositionFixtures = IronGrind.Tests.EditMode.EnemyAI.EnemyAICompositionFixtures;
 
 namespace IronGrind.Tests.EditMode.SkillSystemTests
 {
@@ -441,11 +442,11 @@ namespace IronGrind.Tests.EditMode.SkillSystemTests
         // ---- Wiring by type ----
 
         [Test]
-        public void test_composition_seams_are_the_expected_production_and_stand_in_types()
+        public void test_composition_seams_are_the_expected_production_types()
         {
             WiRig rig = StartRig();
 
-            Assert.IsInstanceOf<StandInAutoAttackDamageApplier>(rig.Comp.AutoAttackInnerDamageApplier);
+            Assert.IsInstanceOf<CharacterStatsAutoAttackDamageApplier>(rig.Comp.AutoAttackInnerDamageApplier);
             Assert.IsNotInstanceOf<DamageOutputApplier>(rig.Comp.AutoAttackInnerDamageApplier, "Decision B: inner applier");
             Assert.IsInstanceOf<ForwardingZoneEntryResponder>(rig.Comp.EntryResponder);
             Assert.IsInstanceOf<SkillCooldownSnapshotResponder>(rig.Comp.EntryResponder.Target);
@@ -456,10 +457,9 @@ namespace IronGrind.Tests.EditMode.SkillSystemTests
             Assert.IsNotNull(FindInstance<SkillEffectExecutionStep>(rig.Comp.SkillExecutor));
             Assert.IsNotNull(FindInstance<StatusEffectsSkillEffectSink>(rig.Comp.SkillExecutor));
             Assert.IsNotNull(FindInstance<CharacterStatsSkillStatSource>(damageStep));
-            Assert.IsNotNull(FindInstance<StandInSkillDamageCalculator>(damageStep));
-            Assert.IsNull(FindInstance<DamageCalculatorSkillAdapter>(damageStep), "adapter stays unwired");
-            Assert.IsNotNull(FindInstance<StandInAutoAttackDamageApplier>(damageStep));
-            Assert.IsInstanceOf<StandInAutoAttackDamageApplier>(DirectField<IAutoAttackDamageApplier>(damageStep), "inner applier, not the wrapper");
+            Assert.IsNotNull(FindInstance<DamageCalculatorSkillAdapter>(damageStep), "Enemy AI Story 013: the real adapter is wired");
+            Assert.IsNotNull(FindInstance<CharacterStatsAutoAttackDamageApplier>(damageStep));
+            Assert.IsInstanceOf<CharacterStatsAutoAttackDamageApplier>(DirectField<IAutoAttackDamageApplier>(damageStep), "inner applier, not the wrapper");
             Assert.AreSame(rig.Comp.AutoAttackCombat, FindInstance<AutoAttackCombatSystem>(damageStep));
             Assert.AreSame(rig.Comp.AutoAttackFaceOutput, FindInstance<AutoFaceEmitter>(damageStep));
             Assert.IsNotNull(FindInstance<SkillCastOutputEmitter>(rig.Comp.SkillStep));
@@ -471,7 +471,7 @@ namespace IronGrind.Tests.EditMode.SkillSystemTests
             ISkillStatSource damageStats = DirectField<ISkillStatSource>(damageStep);
             Assert.IsInstanceOf<CharacterStatsSkillStatSource>(damageStats);
             Assert.AreSame(damageStats, DirectField<ISkillStatSource>(effectStep), "one stat source shared by the damage and effect steps");
-            Assert.IsInstanceOf<StandInAutoAttackXpAward>(DirectField<IAutoAttackXpAward>(damageStep));
+            Assert.IsInstanceOf<IronGrind.ServerLogic.EnemyAI.MobRuntimeStoreXpAward>(DirectField<IAutoAttackXpAward>(damageStep));
             Assert.IsInstanceOf<CharacterStatsSkillManaSink>(DirectField<ISkillManaSink>(rig.Comp.SkillExecutor));
             Assert.IsNotNull(FindInstance<NoPartyZonePresence>(rig.Comp.SkillStep, 6), "no-party presence");
             Assert.IsNotNull(FindInstance<NoSilenceSource>(rig.Comp.SkillStep), "no-silence source");
@@ -678,7 +678,10 @@ namespace IronGrind.Tests.EditMode.SkillSystemTests
 
             world.Player = AddPlayer(rig, CLIENT_ONE, out world.Slot);
             ZoneSlotPool pool = rig.Comp.ZoneInstancing.Pool;
-            Assert.IsTrue(pool.TryAllocateMob(pool.Zone, out _, out world.Mob));
+            // Enemy AI Story 013: a roster mob seeded into the runtime store (MobTargetValidity needs the store entry and HP > 0).
+            world.Mob = rig.Comp.ZoneInstancing.MobRoster.TryAddMob(pool.Zone, EnemyAICompositionFixtures.MobType, Vector3.zero);
+            Assert.AreNotEqual(EntityID.Invalid, world.Mob);
+            rig.Comp.MobEvents.RaiseMobSpawned(new IronGrind.Events.MobSpawnedArgs(rig.Comp.ZoneId, world.Mob, EnemyAICompositionFixtures.MobType, Vector3.zero));
             LevelingService leveling = rig.Comp.ZoneLeveling;
             leveling.RegisterPlayerEntity(world.Player);
             leveling.InitializeAtL1(world.Player, CLASS_WARRIOR);
@@ -800,7 +803,8 @@ namespace IronGrind.Tests.EditMode.SkillSystemTests
             int levelUps = 0;
             rig.Comp.ZoneLeveling.OnLevelUp += args => levelUps++;
             // Earliest point before the Skill step: a step between Combat and Skill awards the XP through the real
-            // CharacterStats / LevelingService (a Combat-step kill is unreachable: the stand-in damage never kills).
+            // CharacterStats / LevelingService. This isolates the level-up-before-Skill ordering; the Combat kill path itself (real
+            // DamageCalculator) is covered by EnemyAI_CombatSeams_tests.
             BeforeSkill(rig, () =>
                 rig.Comp.ZoneCharacterStats.AddExperience(world.Player, rig.Comp.ZoneLeveling.GetExperienceThreshold(world.Player)));
             SendCast(world, SKILL_LEVEL_TWO, world.Player);

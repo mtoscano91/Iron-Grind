@@ -41,7 +41,7 @@ namespace IronGrind.Tests.EditMode.Navigation
             _config.SetForTesting(new NavigationConfigValues(
                 d.MaxAgentPoolSize, d.MaxPathUpdatesPerTick, d.PartialPathTimeoutTicks, d.ReturnSpeedCap,
                 fraction ?? d.MinValidSpawnFraction, d.NavStuckRerouteDetectionTicks, d.NavOffMeshRecoveryTicks,
-                radius ?? d.SpawnSampleRadius, d.StandInMobMoveSpeed));
+                radius ?? d.SpawnSampleRadius));
         }
 
         // Points 0..count-1 at (i, 0, 0), ids 100 + i. Indexes in invalid (ascending) are off the mesh.

@@ -3,8 +3,8 @@ using IronGrind.LootTableSystem;
 namespace IronGrind.ServerLogic.Navigation
 {
     /// <summary>
-    /// Source of a mob type's base move speed (CR-NAV-5). Enemy AI's mob definition registry replaces
-    /// <see cref="StandInNavMobSpeedSource"/>.
+    /// Source of a mob type's base move speed (CR-NAV-5). Enemy AI's mob definition registry supplies it through
+    /// <see cref="IronGrind.ServerLogic.EnemyAI.MobDefinitionRegistryNavSpeedSource"/>.
     /// </summary>
     public interface INavMobSpeedSource
     {

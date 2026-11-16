@@ -82,8 +82,7 @@ namespace IronGrind.Tests.EditMode.Navigation
             _config.SetForTesting(new NavigationConfigValues(
                 POOL_SIZE, NavigationConfigValues.MAX_PATH_UPDATES_PER_TICK_DEFAULT, partialTimeout,
                 NavigationConfigValues.RETURN_SPEED_CAP_DEFAULT, NavigationConfigValues.MIN_VALID_SPAWN_FRACTION_DEFAULT,
-                STUCK_N, OFF_N, NavigationConfigValues.SPAWN_SAMPLE_RADIUS_DEFAULT,
-                NavigationConfigValues.STAND_IN_MOB_MOVE_SPEED_DEFAULT));
+                STUCK_N, OFF_N, NavigationConfigValues.SPAWN_SAMPLE_RADIUS_DEFAULT));
             var speeds = new FakeSpeedSource();
             speeds.Speeds[TYPE_A] = 3.5f;
             _service = new ZoneNavigationService(_config, _factory, speeds, new FakeMeshQuery(), _ops, _bus);

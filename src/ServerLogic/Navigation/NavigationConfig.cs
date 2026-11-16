@@ -25,7 +25,6 @@ namespace IronGrind.ServerLogic.Navigation
         [SerializeField] private int _navStuckRerouteDetectionTicks = NavigationConfigValues.NAV_STUCK_REROUTE_DETECTION_TICKS_DEFAULT;
         [SerializeField] private int _navOffMeshRecoveryTicks = NavigationConfigValues.NAV_OFF_MESH_RECOVERY_TICKS_DEFAULT;
         [SerializeField] private float _spawnSampleRadius = NavigationConfigValues.SPAWN_SAMPLE_RADIUS_DEFAULT;
-        [SerializeField] private float _standInMobMoveSpeed = NavigationConfigValues.STAND_IN_MOB_MOVE_SPEED_DEFAULT;
 
         /// <summary>MAX_AGENT_POOL_SIZE as authored.</summary>
         public int MaxAgentPoolSize => _maxAgentPoolSize;
@@ -51,9 +50,6 @@ namespace IronGrind.ServerLogic.Navigation
         /// <summary>SPAWN_SAMPLE_RADIUS as authored, in world units.</summary>
         public float SpawnSampleRadius => _spawnSampleRadius;
 
-        /// <summary>STAND_IN_MOB_MOVE_SPEED as authored, in m/s.</summary>
-        public float StandInMobMoveSpeed => _standInMobMoveSpeed;
-
         /// <summary>Sets every knob; test seam only.</summary>
         internal void SetForTesting(NavigationConfigValues values)
         {
@@ -65,7 +61,6 @@ namespace IronGrind.ServerLogic.Navigation
             _navStuckRerouteDetectionTicks = values.NavStuckRerouteDetectionTicks;
             _navOffMeshRecoveryTicks = values.NavOffMeshRecoveryTicks;
             _spawnSampleRadius = values.SpawnSampleRadius;
-            _standInMobMoveSpeed = values.StandInMobMoveSpeed;
         }
 
 #if UNITY_EDITOR

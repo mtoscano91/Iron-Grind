@@ -284,7 +284,7 @@ namespace IronGrind.PlayModeTests
             _unityFactory = new UnityNavAgentFactory(Vector3.zero);
             _factory = new RecordingFactory(_unityFactory, _clock);
             _service = new ZoneNavigationService(
-                _config, _factory, new StandInNavMobSpeedSource(NavigationConfigValues.Defaults),
+                _config, _factory, new FixedNavSpeedSource(3.5f),
                 new UnityNavMeshQuery(), new UnityNavMeshInstanceOps(), _bus);
             _service.Initialize(ZONE, _instance);
             _source = new AgentPositionSource(_clock);

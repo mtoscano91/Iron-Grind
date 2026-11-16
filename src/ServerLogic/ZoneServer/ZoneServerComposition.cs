@@ -6,11 +6,13 @@ using System.Threading;
 using System.Threading.Tasks;
 using IronGrind.AutoAttackCombat;
 using IronGrind.CharacterPersistence;
+using IronGrind.DamageCalculation;
 using IronGrind.HitDetection;
 using IronGrind.LevelingSystem;
 using IronGrind.MovementSystem;
 using IronGrind.Networking;
 using IronGrind.Randomness;
+using IronGrind.ServerLogic.EnemyAI;
 using IronGrind.ServerLogic.Gateway;
 using IronGrind.ServerLogic.Navigation;
 using IronGrind.ServerLogic.ZoneInstancing;
@@ -103,6 +105,9 @@ namespace IronGrind.ServerLogic.ZoneServer
 
         /// <summary>Logged once at S5 when neither the override nor the S2 loader gives an item database (Character Persistence Story 020).</summary>
         internal const string NO_ITEM_DATABASE_ERROR = "[ZoneServer] S5: no item database from S2";
+
+        /// <summary>Logged once at S5 when neither the override nor the S2 loader gives a mob registry (Enemy AI Story 013).</summary>
+        internal const string NO_MOB_REGISTRY_ERROR = "[ZoneServer] S5: no mob registry from S2";
 
         /// <summary>
         /// Seconds without a completed network tick, with a quit pending (or the zone Draining), after which
@@ -345,11 +350,31 @@ namespace IronGrind.ServerLogic.ZoneServer
         internal Func<INavMeshInstanceOps> NavMeshInstanceOpsOverride;
 
         /// <summary>
-        /// The zone's one <see cref="MobEventBus"/> (Navigation Story 010), created at S5 only when the composition built the
-        /// navigation (no seam passed); null otherwise. The Enemy AI and Mob Spawning epics raise on it. The navigation
+        /// The zone's one <see cref="MobEventBus"/> (Navigation Story 010), created at S5 (Enemy AI Story 013: always, also with a navigation seam; Navigation Story 010 built it only
+        /// without a seam); null before S5. Mob Spawning raises on it. The runtime store and Enemy AI subscribe at S5; the navigation
         /// subscribes at S6 and unsubscribes in its own teardown; the Dispose pass drops this reference.
         /// </summary>
         internal MobEventBus MobEvents { get; private set; }
+
+        /// <summary>
+        /// Test seam (Enemy AI Story 013): the mob definition registry. Null means the S2 loader's registry
+        /// (<see cref="IZoneMobData"/>); when the loader has none, S5 fails with <see cref="NO_MOB_REGISTRY_ERROR"/>. Set before the run starts.
+        /// </summary>
+        internal IMobDefinitionRegistry MobRegistryOverride;
+
+        /// <summary>The mob registry the store, navigation and Enemy AI actually use; null before S5.</summary>
+        internal IMobDefinitionRegistry MobRegistryInUse { get; private set; }
+
+        /// <summary>The zone's mob runtime store, built at S5 (Enemy AI Story 013), also with a navigation seam; null before S5 and after the Dispose pass.</summary>
+        internal MobRuntimeStore MobStore { get; private set; }
+
+        /// <summary>The zone's Enemy AI system; null before S5, after the Dispose pass, and when a navigation seam was passed (no INavigationProvider).</summary>
+        internal EnemyAISystem EnemyAI { get; private set; }
+
+        // The one DamageCalculator (Enemy AI Story 013), shared by player autos, skills and mob attacks; and RETURN_SPEED_CAP
+        // of the navigation config the composition built (Enemy AI input).
+        private DamageCalculator _damageCalculator;
+        private float _returnSpeedCap;
 
         /// <summary>
         /// The composed navigation as <see cref="INavigationProvider"/> for the Enemy AI epic: the same instance as the
@@ -478,7 +503,7 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// <summary>Skill System config asset (Story 011). Null means <c>SkillSystemConfigValues.Default</c>. Set before the run starts.</summary>
         internal SkillSystemConfig SkillSystemConfigOverride;
 
-        /// <summary>Test seam (Skill System Story 011 Part B): the skill damage calculator. Null keeps <see cref="StandInSkillDamageCalculator"/>. Set before the run starts.</summary>
+        /// <summary>Test seam (Skill System Story 011 Part B): the skill damage calculator. Null builds a <see cref="DamageCalculatorSkillAdapter"/> over the zone's one DamageCalculator. Set before the run starts.</summary>
         internal ISkillDamageCalculator SkillDamageCalculatorOverride;
 
         /// <summary>The zone's Leveling service, built at S5 (Skill System Story 011); null before S5.</summary>
@@ -542,7 +567,7 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// <summary>The zone's skill-cast executor, built at S5 (Story 011); null before S5.</summary>
         internal SkillCastExecutor SkillExecutor { get; private set; }
 
-        /// <summary>The inner (stand-in) auto-attack damage applier under <see cref="AutoAttackDamageApplier"/>; null before S5.</summary>
+        /// <summary>The inner auto-attack damage applier (<c>CharacterStatsAutoAttackDamageApplier</c>) under <see cref="AutoAttackDamageApplier"/>; null before S5.</summary>
         internal IAutoAttackDamageApplier AutoAttackInnerDamageApplier { get; private set; }
 
         /// <summary>The late-bound zone entry responder (Story 011); null before S5.</summary>
@@ -575,7 +600,7 @@ namespace IronGrind.ServerLogic.ZoneServer
 
         /// <summary>
         /// The damage applier handed to the Auto-Attack Combat system: a <see cref="DamageOutputApplier"/> over the
-        /// stand-in applier (Auto-Attack Combat Story 007); null until S5 has built it.
+        /// inner applier (Auto-Attack Combat Story 007); null until S5 has built it.
         /// </summary>
         internal IAutoAttackDamageApplier AutoAttackDamageApplier { get; private set; }
 
@@ -1547,6 +1572,11 @@ namespace IronGrind.ServerLogic.ZoneServer
             // Navigation Story 010: the navigation unsubscribed itself in Teardown (step 3); drop the bus reference and
             // destroy the config asset this composition created (never an injected override).
             MobEvents = null;
+            MobStore = null;
+            EnemyAI = null;
+            MobRegistryInUse = null;
+            _damageCalculator = null;
+            _returnSpeedCap = 0f;
             if (_ownedNavigationConfig != null)
             {
                 if (Application.isPlaying)
@@ -1819,6 +1849,11 @@ namespace IronGrind.ServerLogic.ZoneServer
                     return false;
                 }
 
+                if (!BuildMobRegistry())
+                {
+                    return false;
+                }
+
                 ICharacterRecordStore store = _owner.RecordStoreOverride ?? new NpgsqlCharacterRecordStore(_dataSource);
                 // Observed under the production name even when the test override is used: the construction-order
                 // check names the step, not the type that filled it.
@@ -1884,6 +1919,22 @@ namespace IronGrind.ServerLogic.ZoneServer
                 return true;
             }
 
+            // Enemy AI Story 013: the mob definition registry from the override or the S2 loader (IZoneMobData). No registry is a
+            // startup failure, like a missing item database: the store, navigation speeds and Enemy AI all need it.
+            private bool BuildMobRegistry()
+            {
+                IMobDefinitionRegistry registry = _owner.MobRegistryOverride
+                    ?? (_owner._staticDataLoader as IZoneMobData)?.LoadedMobRegistry;
+                if (registry == null)
+                {
+                    Debug.LogError(NO_MOB_REGISTRY_ERROR);
+                    return false;
+                }
+
+                _owner.MobRegistryInUse = registry;
+                return true;
+            }
+
             private void BuildRelay()
             {
                 _allowlist = CrossZoneRelayAllowlist.CreateProduction();
@@ -1933,7 +1984,9 @@ namespace IronGrind.ServerLogic.ZoneServer
                 // Skill System Story 011: ZoneEntryCompletion takes its responder once, before Skill exists.
                 _owner.EntryResponder = new ForwardingZoneEntryResponder();
                 ZoneInstancingWiring wiring = BuildZoneInstancing(dispatcher, outbox, stateSource);
-                BuildNavigation();
+
+                NavigationPhaseStep navigationStep = BuildMobStoreAndNavigation(wiring, out MobEventBus mobBus,
+                    out MobRuntimeStore mobStore, out IMobDefinitionRegistry mobRegistry);
                 StatusEffectsService statusEffects = BuildStatusEffects(wiring);
                 MovementService movement = BuildMovement(dispatcher, wiring, stateSource, statusEffects);
                 var ruBatch = new RUBatchOutboundStep(sendSeam, outbox, wiring.Pool.MaxPlayers);
@@ -1941,15 +1994,16 @@ namespace IronGrind.ServerLogic.ZoneServer
                 _owner.RUBatch = ruBatch;
                 _owner.HitResultEmitter = new HitResultEmitter(wiring.Pool, ruBatch, _tickLoop);
                 Observe(nameof(HitResultEmitter));
-                BuildAutoAttackCombat(dispatcher, wiring, stateSource, statusEffects, movement, outbox, ruBatch);
-                entityStateForwarder?.Bind(new ZoneEntityStateSource(wiring.Pool, wiring.MobRoster,
-                    new CharacterStatsZoneEntityStatReader(_owner.ZoneCharacterStats), _owner.PersistenceService,
-                    _owner.ZoneEquipment, new AutoAttackZoneEntityCombatReader(_owner.AutoAttackCombat)));
+
+                EnemyAISystem enemyAI = BuildCombatAndEnemyAI(dispatcher, wiring, stateSource, statusEffects, movement,
+                    outbox, ruBatch, mobBus, mobStore, mobRegistry, entityStateForwarder);
                 SkillSystemService skill = BuildSkillSystem(dispatcher, wiring, stateSource, statusEffects, outbox, ruBatch);
                 // Gateway Story 011: the link pump drains the inbox at step 1b and sends PlayerCount at the END of phase 3
-                // (added last, after the Skill cast step), so it sees every session-count change of the tick.
+                // (after the Skill cast step), so it sees every session-count change of the tick.
                 var linkPump = new GatewayLinkPump(_owner._linkChannel, _owner._linkOutbox, wiring);
-                _owner._simulationSteps.Add(linkPump);
+
+                AddPhaseThreeSteps(navigationStep, statusEffects, movement, enemyAI, linkPump);
+
                 _owner._linkRegistration = new GatewayLinkRegistration(_owner._linkChannel, linkPump, _owner._gatewayLinkPort,
                     () =>
                     {
@@ -1994,6 +2048,84 @@ namespace IronGrind.ServerLogic.ZoneServer
 
                 _owner.AttachOwnedObjects(_queue, outbox, null, transport, _owner._currentTickReader, null);
                 _owner.AttachTickLoop(_tickLoop);
+            }
+
+            // Enemy AI Story 013: the zone's one MobEventBus is always built (also with a navigation seam), then the
+            // runtime store, which must subscribe before navigation (S6) and Enemy AI so mobs are seeded first; then the
+            // navigation call. Returns the navigation phase step (null with a passed seam).
+            private NavigationPhaseStep BuildMobStoreAndNavigation(ZoneInstancingWiring wiring, out MobEventBus mobBus,
+                out MobRuntimeStore mobStore, out IMobDefinitionRegistry mobRegistry)
+            {
+                mobBus = new MobEventBus();
+                _owner.MobEvents = mobBus;
+                mobRegistry = _owner.MobRegistryInUse;
+                mobStore = new MobRuntimeStore(_owner._zoneId, mobBus, mobRegistry, _owner.RandomProvider,
+                    new CharacterStatsMobStatWriter(_owner.ZoneCharacterStats), wiring.Pool.MaxMobs);
+                _owner.MobStore = mobStore;
+                _owner.RegisterDisposable(mobStore);
+
+                return BuildNavigation(mobBus, mobStore, mobRegistry);
+            }
+
+            // Builds the zone's one DamageCalculator (player autos, skills and mob attacks; Enemy AI Story 012 / 013), then
+            // Combat, then Enemy AI, then binds the production entity-state source with the mob-aware combat reader.
+            // Construction order: Combat first (Enemy AI subscribes to its OnMobDied), then Enemy AI. This is NOT the
+            // phase-3 step order, which AddPhaseThreeSteps lists. Returns Enemy AI (null with a passed navigation seam).
+            private EnemyAISystem BuildCombatAndEnemyAI(InboundRequestDispatcher dispatcher, ZoneInstancingWiring wiring,
+                MovementZoneEntityStateSource stateSource, StatusEffectsService statusEffects, MovementService movement,
+                ClientMessageOutbox outbox, RUBatchOutboundStep ruBatch, MobEventBus mobBus, MobRuntimeStore mobStore,
+                IMobDefinitionRegistry mobRegistry, ForwardingZoneEntityStateSource entityStateForwarder)
+            {
+                var damageCalculator = new DamageCalculator(_owner.ZoneCharacterStats, _owner.ZoneEquipment,
+                    _owner.ItemDatabaseInUse, new EnhancementBonusProvider(EnhancementConfig.Default),
+                    DamageCalculationConfig.Default, _owner.RandomProvider);
+                _owner._damageCalculator = damageCalculator;
+                var autoAttackAdapter = new DamageCalculatorAutoAttackAdapter(damageCalculator);
+
+                BuildAutoAttackCombat(dispatcher, wiring, stateSource, statusEffects, movement, outbox, ruBatch,
+                    mobStore, autoAttackAdapter);
+                EnemyAISystem enemyAI = BuildEnemyAI(wiring, movement, outbox, ruBatch, mobBus, mobStore, mobRegistry,
+                    autoAttackAdapter);
+                IZoneEntityCombatReader combatReader = new AutoAttackZoneEntityCombatReader(_owner.AutoAttackCombat);
+                if (enemyAI != null)
+                {
+                    combatReader = new MobAwareZoneEntityCombatReader(enemyAI, combatReader);
+                }
+
+                entityStateForwarder?.Bind(new ZoneEntityStateSource(wiring.Pool, wiring.MobRoster,
+                    new CharacterStatsZoneEntityStatReader(_owner.ZoneCharacterStats), _owner.PersistenceService,
+                    _owner.ZoneEquipment, combatReader, new MobRuntimeStoreTransformReader(mobStore)));
+                return enemyAI;
+            }
+
+            // The phase-3 order, listed in ONE place (ADR-014, CR-AI-2; construction order is not step order):
+            // ZoneInstancingWiring (added in BuildZoneInstancing), NavigationPhaseStep (phases 1-2), Status Effects,
+            // Movement, Enemy AI, Auto-Attack Combat, Skill cast, Gateway link pump, then Enemy AI's
+            // MobPositionIntegrationStep (ADR-002 phase 4, last). Navigation step and Enemy AI exist only when the
+            // composition built the navigation itself (no INavigationProvider with a passed seam).
+            private void AddPhaseThreeSteps(NavigationPhaseStep navigationStep, StatusEffectsService statusEffects,
+                MovementService movement, EnemyAISystem enemyAI, GatewayLinkPump linkPump)
+            {
+                List<IZoneSimulationStep> steps = _owner._simulationSteps;
+                if (navigationStep != null)
+                {
+                    steps.Add(navigationStep);
+                }
+
+                steps.Add(statusEffects);
+                steps.Add(movement);
+                if (enemyAI != null)
+                {
+                    steps.Add(enemyAI);
+                }
+
+                steps.Add(_owner.AutoAttackCombat);
+                steps.Add(_owner.SkillStep);
+                steps.Add(linkPump);
+                if (enemyAI != null)
+                {
+                    steps.Add(enemyAI.IntegrationStep);
+                }
             }
 
             // Zone Instancing (Story 014): built after the outbox exists and before the dispatcher is sealed. Its tick
@@ -2041,19 +2173,18 @@ namespace IronGrind.ServerLogic.ZoneServer
                 return wiring;
             }
 
-            // Navigation Story 010: runs only when no IZoneNavigation was passed (the host passes null). Builds the zone's
-            // MobEventBus, the Story 009 Unity adapters (or the test overrides), the ZoneNavigationService and its phase step.
+            // Navigation Story 010 / Enemy AI Story 013: runs only when no IZoneNavigation was passed (the host passes null).
+            // Builds the Story 009 Unity adapters (or the test overrides), the ZoneNavigationService and its phase step over
+            // the zone's bus (built by the caller), the mob registry (speeds) and the runtime store (committed positions).
             // The service subscribes to the bus in Initialize (S6) and unsubscribes in Teardown (step 3).
-            // A caller that passed a seam keeps the old behaviour exactly: no bus, no step, no Observe.
-            private void BuildNavigation()
+            // A caller that passed a seam keeps the old behaviour: no service, no step, no Observe (the bus still exists).
+            // Returns the phase step (listed by the caller in the phase-3 order), or null with a passed seam.
+            private NavigationPhaseStep BuildNavigation(MobEventBus bus, MobRuntimeStore store, IMobDefinitionRegistry registry)
             {
                 if (_owner._navigation != null)
                 {
-                    return;
+                    return null;
                 }
-
-                var bus = new MobEventBus();
-                _owner.MobEvents = bus;
 
                 NavigationConfig config = _owner.NavigationConfigOverride;
                 if (config == null)
@@ -2080,15 +2211,42 @@ namespace IronGrind.ServerLogic.ZoneServer
                     : new UnityNavMeshInstanceOps();
 
                 var service = new ZoneNavigationService(config, agentFactory,
-                    new StandInNavMobSpeedSource(NavigationConfigValues.FromAsset(config)),
+                    new MobDefinitionRegistryNavSpeedSource(registry),
                     new UnityNavMeshQuery(), instanceOps, bus);
                 Observe(nameof(ZoneNavigationService));
+                _owner._returnSpeedCap = NavigationConfigValues.FromAsset(config).ReturnSpeedCap;
 
-                // ADR-002 Decision 1 and CR-AI-2: navigation phases 1 and 2 run before every phase-3 system. Status Effects ->
-                // Enemy AI -> Auto-Attack follows in the Enemy AI epic; the committed-position source is an empty stand-in until then.
-                _owner._simulationSteps.Add(new NavigationPhaseStep(service, new EmptyMobCommittedPositionSource()));
+                // ADR-002 Decision 1 and CR-AI-2: navigation phases 1 and 2 run before every phase-3 system (the caller
+                // adds this step first); mob committed positions come from the runtime store.
                 _owner._navigationService = service;
                 _owner._navigation = service;
+                return new NavigationPhaseStep(service, store);
+            }
+
+            // Enemy AI Story 013: the Enemy AI system, built AFTER Combat (it subscribes to OnMobDied) and Movement. Built
+            // only when the composition built the navigation itself: with a passed seam there is no INavigationProvider, so
+            // no Enemy AI and no integration step (store and combat seams still exist). Returns null in that case.
+            private EnemyAISystem BuildEnemyAI(ZoneInstancingWiring wiring, MovementService movement,
+                ClientMessageOutbox outbox, RUBatchOutboundStep ruBatch, MobEventBus bus, MobRuntimeStore store,
+                IMobDefinitionRegistry registry, IAutoAttackDamageCalculator calculator)
+            {
+                if (_owner._navigationService == null)
+                {
+                    return null;
+                }
+
+                ZoneStats stats = _owner.ZoneCharacterStats;
+                var resolver = new MobAttackResolver(new HitDetector(HitDetectionConfig.Default), _owner.HitResultEmitter,
+                    calculator, stats, new AutoAttackDamageOutputEmitter(wiring.Pool, _owner._zoneId, outbox, ruBatch));
+                var candidates = new ZoneAggroCandidateSource(_owner._zoneId, wiring.Pool,
+                    new MovementPlayerPositionReader(movement));
+                var enemyAI = new EnemyAISystem(_owner._zoneId, bus, store, registry, _owner._navigationService,
+                    new CharacterStatsZoneEntityStatReader(stats), resolver, EnemyAIConfigValues.Defaults,
+                    _owner._returnSpeedCap, candidates, _owner.AutoAttackCombat, new StandInLootTableService(),
+                    wiring.Pool.MaxMobs);
+                _owner.RegisterDisposable(enemyAI);
+                _owner.EnemyAI = enemyAI;
+                return enemyAI;
             }
 
             // Status Effects Story 009: the Status Effects service over the zone's Character Stats (built in
@@ -2104,7 +2262,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                 // The pool's release listener is set in BuildOutboundAndPipeline (composite: Status Effects, Movement, Skill, Combat).
                 _owner.RegisterDisposable(statusEffects);
                 _owner.StatusEffects = statusEffects;
-                _owner._simulationSteps.Add(statusEffects);
+                // Listed in the phase-3 order by BuildOutboundAndPipeline (ADR-014).
                 return statusEffects;
             }
 
@@ -2144,22 +2302,25 @@ namespace IronGrind.ServerLogic.ZoneServer
                 // The entry listener (Movement, then Skill) is set once in BuildOutboundAndPipeline after both builds.
                 // The pool's release listener is set in BuildOutboundAndPipeline (composite: Status Effects, Movement, Skill, Combat).
                 _owner.Movement = movement;
-                _owner._simulationSteps.Add(movement);
+                // Listed in the phase-3 order by BuildOutboundAndPipeline (ADR-014).
                 return movement;
             }
 
-            // Auto-Attack Combat Story 006: the Combat step joins phase 3 after Movement (the fire check sees this tick's
-            // positions); SetTarget and SetAutoAttack register before Seal and apply in the dispatch step (EC-8); the slot
-            // release listener is set in BuildOutboundAndPipeline, once, with Combat last so BeforeRelease still finds the slot.
-            // Mob seams (validity, damage, XP, mob type) are stand-ins until Enemy AI, Leveling and the item database.
+            // Auto-Attack Combat Story 006: the Combat step runs in phase 3 after Movement and Enemy AI (the fire check sees this
+            // tick's positions; the order is listed by BuildOutboundAndPipeline); SetTarget and SetAutoAttack register before
+            // Seal and apply in the dispatch step (EC-8); the slot release listener is set in BuildOutboundAndPipeline, once,
+            // with Combat last so BeforeRelease still finds the slot.
+            // Enemy AI Story 013: the mob seams are the real ones (MobTargetValidity, the one DamageCalculator through its
+            // adapter, CharacterStatsAutoAttackDamageApplier, MobRuntimeStoreXpAward, ZoneMobRosterMobTypeSource).
             // Story 007: the damage applier is wrapped so each applied hit also sends SelfDamageEvent (R-OD, attacker) and
-            // DamageEvent (R-U, other zone clients); the stand-in still changes no health.
+            // DamageEvent (R-U, other zone clients).
             private void BuildAutoAttackCombat(InboundRequestDispatcher dispatcher, ZoneInstancingWiring wiring,
                 MovementZoneEntityStateSource stateSource, StatusEffectsService statusEffects, MovementService movement,
-                ClientMessageOutbox outbox, RUBatchOutboundStep ruBatch)
+                ClientMessageOutbox outbox, RUBatchOutboundStep ruBatch, MobRuntimeStore mobStore,
+                IAutoAttackDamageCalculator calculator)
             {
                 ZoneStats stats = _owner.ZoneCharacterStats;
-                var innerApplier = new StandInAutoAttackDamageApplier();
+                var innerApplier = new CharacterStatsAutoAttackDamageApplier(stats);
                 _owner.AutoAttackInnerDamageApplier = innerApplier;
                 var damageApplier = new DamageOutputApplier(innerApplier,
                     new AutoAttackDamageOutputEmitter(wiring.Pool, _owner._zoneId, outbox, ruBatch));
@@ -2167,17 +2328,17 @@ namespace IronGrind.ServerLogic.ZoneServer
                 _owner.AutoAttackFaceOutput = faceEmitter;
                 var combat = new AutoAttackCombatSystem(
                     wiring.Pool,
-                    new StandInAutoAttackTargetValidity(wiring.Pool),
+                    new MobTargetValidity(wiring.Pool, mobStore, stats),
                     new CharacterStatsAttackSpeedSource(stats),
                     stateSource,
                     new HitDetector(HitDetectionConfig.Default),
                     _owner.HitResultEmitter,
                     new CharacterStatsAutoAttackStatSource(stats),
-                    new StandInAutoAttackDamageCalculator(),
+                    calculator,
                     damageApplier,
-                    new StandInAutoAttackXpAward(),
+                    new MobRuntimeStoreXpAward(mobStore),
                     new CharacterStatsExperienceSink(stats),
-                    new StandInAutoAttackMobTypeSource(),
+                    new ZoneMobRosterMobTypeSource(wiring.MobRoster),
                     _owner._zoneId,
                     faceEmitter);
                 Observe(nameof(AutoAttackCombatSystem));
@@ -2195,7 +2356,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                 NetworkingCoreInboundRegistration.RegisterHeartbeat(dispatcher, new NoOpHeartbeatSink());
 
                 _owner.AutoAttackCombat = combat;
-                _owner._simulationSteps.Add(combat);
+                // Listed in the phase-3 order by BuildOutboundAndPipeline (ADR-014).
             }
 
             // Skill System Story 011: builds the whole Skill System graph and joins phase 3 after Combat (epic
@@ -2203,11 +2364,11 @@ namespace IronGrind.ServerLogic.ZoneServer
             // Decisions (user, 2026-11-04):
             //  - Class registry: _owner.ClassRegistryOverride, else the S2 loader's (Story 013), shared with Leveling
             //    (BuildStatusEffects); an empty registry when neither (silent: composition tests fail on any unexpected log).
-            //  - Damage: StandInSkillDamageCalculator (logs once, rejects every hit); DamageCalculatorSkillAdapter stays
-            //    unwired until the item database and equipment exist in the zone.
+            //  - Damage: SkillDamageCalculatorOverride, else DamageCalculatorSkillAdapter over the zone's one DamageCalculator
+            //    (Enemy AI Story 013); XP from the mob runtime store.
             //  - Roster / config: _owner.SkillDatabaseOverride (else the S2 loader's) and _owner.SkillSystemConfigOverride; the fallbacks are an
             //    empty in-code SkillDatabase (silent, destroyed in the Dispose pass) and SkillSystemConfigValues.Default.
-            //  - Decision B: the damage step takes the INNER stand-in applier, not DamageOutputApplier, so a skill hit
+            //  - Decision B: the damage step takes the INNER applier (CharacterStatsAutoAttackDamageApplier), not DamageOutputApplier, so a skill hit
             //    sends no DamageEvent / SelfDamageEvent.
             // The entry and release listeners are set once in BuildOutboundAndPipeline (Skill joins both composites); the
             // cooldown snapshot responder is bound to the forwarding responder here.
@@ -2265,7 +2426,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                 _owner.SkillIntake = intake;
                 _owner.SkillStep = castStep;
                 _owner.SkillExecutor = executor;
-                _owner._simulationSteps.Add(castStep);
+                // The cast step is listed in the phase-3 order by BuildOutboundAndPipeline (ADR-014).
                 return service;
             }
 
@@ -2283,8 +2444,8 @@ namespace IronGrind.ServerLogic.ZoneServer
                     combat,
                     statSource,
                     positions,
-                    _owner.SkillDamageCalculatorOverride ?? new StandInSkillDamageCalculator(),
-                    new StandInAutoAttackXpAward(),
+                    _owner.SkillDamageCalculatorOverride ?? new DamageCalculatorSkillAdapter(_owner._damageCalculator),
+                    new MobRuntimeStoreXpAward(_owner.MobStore),
                     new CharacterStatsExperienceSink(stats),
                     _owner.AutoAttackInnerDamageApplier,
                     _owner.AutoAttackFaceOutput,
