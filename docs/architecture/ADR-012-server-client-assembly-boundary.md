@@ -128,6 +128,7 @@ An interface lives with its consumer. An interface that server code calls and se
 
 - The existing test assembly `IronGrind.Foundation.EditModeTests` adds references to `IronGrind.ServerLogic` and `IronGrind.Client`. It is Editor-only, where both compile. One test assembly is kept; it is not split by this ADR.
 - Each new assembly has its own `AssemblyInfo.cs` with `InternalsVisibleTo("IronGrind.Foundation.EditModeTests")`.
+- Amendment 2026-11-16 (Mob Spawning Story 008): `IronGrind.ServerLogic` also grants `InternalsVisibleTo("IronGrind.PlayModeTests")`, so PlayMode tests on the real NavMesh can read internal state (e.g. spawn point states). Grants go to test assemblies only.
 - `InternalsVisibleTo` between production assemblies is forbidden. If `ServerLogic` needs a member of a `Foundation` type, that member becomes public, or the type is in the wrong assembly.
 
 ### Decision 6 — Automated checks

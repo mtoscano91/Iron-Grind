@@ -3,7 +3,7 @@
 > **Layer**: Feature
 > **GDD**: design/gdd/mob-spawning.md
 > **Architecture Module**: Mob Spawning (`architecture.md` layer map, Feature; phase 3 game system of the ADR-002 tick), `src/ServerLogic/` (ADR-012)
-> **Status**: In Progress
+> **Status**: Complete (2026-11-17)
 > **Stories**: 8 created 2026-11-16 — see Stories
 > **Manifest Version**: 2026-11-06
 
@@ -88,7 +88,7 @@ This epic is complete when:
 | 005 | [Zone load — cap and NavMesh validation](story-005-zone-load-validation.md) | Integration | Complete | ADR-002 |
 | 006 | [Zone composition wiring](story-006-zone-composition-wiring.md) | Integration | Complete | ADR-014 |
 | 007 | [Starting-zone spawn table content](story-007-starting-zone-spawn-table.md) | Config/Data | Complete | ADR-002 |
-| 008 | [End-to-end — kill a spawned mob, see it respawn](story-008-end-to-end-kill-and-respawn.md) | Integration | Ready | ADR-002 |
+| 008 | [End-to-end — kill a spawned mob, see it respawn](story-008-end-to-end-kill-and-respawn.md) | Integration | Complete | ADR-002 |
 
 Order: 001 → 002 → 003 → 004; 005 after 001 + 002; 006 after 003 + 004 + 005; 007 after 001 + 005; 008 after 006 + 007.
 
