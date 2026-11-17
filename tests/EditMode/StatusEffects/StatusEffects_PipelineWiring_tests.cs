@@ -295,15 +295,16 @@ namespace IronGrind.Tests.EditMode.StatusEffects
 
             IList<IZoneSimulationStep> steps = rig.Comp.SimulationSteps;
 
-            Assert.AreEqual(6, steps.Count, "Combat is the fourth step (Auto-Attack Story 006), Skill the fifth (Skill System Story 011), the gateway link pump last (Gateway Story 011)");
-            Assert.IsInstanceOf<IronGrind.ServerLogic.Gateway.GatewayLinkPump>(steps[5]);
-            Assert.AreSame(rig.Comp.SkillStep, steps[4]);
-            Assert.AreSame(rig.Comp.AutoAttackCombat, steps[3]);
-            Assert.AreSame(rig.Comp.Movement, steps[2]);
+            Assert.AreEqual(7, steps.Count, "Mob Spawning second (Mob Spawning Story 006), Combat fifth (Auto-Attack Story 006), Skill sixth (Skill System Story 011), the gateway link pump last (Gateway Story 011)");
+            Assert.IsInstanceOf<IronGrind.ServerLogic.Gateway.GatewayLinkPump>(steps[6]);
+            Assert.AreSame(rig.Comp.SkillStep, steps[5]);
+            Assert.AreSame(rig.Comp.AutoAttackCombat, steps[4]);
+            Assert.AreSame(rig.Comp.Movement, steps[3]);
             Assert.AreSame(rig.Comp.ZoneInstancing, steps[0]);
             Assert.IsInstanceOf<ZoneInstancingWiring>(steps[0]);
-            Assert.AreSame(rig.Comp.StatusEffects, steps[1]);
-            Assert.IsInstanceOf<StatusEffectsService>(steps[1]);
+            Assert.AreSame(rig.Comp.MobSpawningStep, steps[1]);
+            Assert.AreSame(rig.Comp.StatusEffects, steps[2]);
+            Assert.IsInstanceOf<StatusEffectsService>(steps[2]);
         }
 
         [Test]

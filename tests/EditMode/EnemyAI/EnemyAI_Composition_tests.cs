@@ -138,7 +138,8 @@ namespace IronGrind.Tests.EditMode.EnemyAI
 
             CollectionAssert.AreEqual(new[]
             {
-                nameof(ZoneInstancingWiring), nameof(NavigationPhaseStep), "StatusEffectsService", "MovementService",
+                nameof(ZoneInstancingWiring), nameof(NavigationPhaseStep), nameof(MobSpawningPhaseStep),
+                "StatusEffectsService", "MovementService",
                 nameof(EnemyAISystem), "AutoAttackCombatSystem", "SkillCastStep", "GatewayLinkPump",
                 "MobPositionIntegrationStep"
             }, names);

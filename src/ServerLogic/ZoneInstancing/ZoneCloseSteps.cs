@@ -83,6 +83,9 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         private readonly List<Work> _work = new List<Work>();
         private bool _ran;
 
+        /// <summary>The mob spawn timers step 1 cancels (test accessor, Mob Spawning Story 006).</summary>
+        internal IZoneMobSpawnTimers Timers => _timers;
+
         /// <summary>Creates the close steps for one zone.</summary>
         /// <param name="pool">The player and mob slot pool (one pool holds both).</param>
         /// <param name="directory">Connection-to-character map; entries are removed in step 6.</param>

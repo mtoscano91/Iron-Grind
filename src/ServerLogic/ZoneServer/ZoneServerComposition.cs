@@ -14,6 +14,7 @@ using IronGrind.Networking;
 using IronGrind.Randomness;
 using IronGrind.ServerLogic.EnemyAI;
 using IronGrind.ServerLogic.Gateway;
+using IronGrind.ServerLogic.MobSpawning;
 using IronGrind.ServerLogic.Navigation;
 using IronGrind.ServerLogic.ZoneInstancing;
 using IronGrind.SkillSystem;
@@ -108,6 +109,12 @@ namespace IronGrind.ServerLogic.ZoneServer
 
         /// <summary>Logged once at S5 when neither the override nor the S2 loader gives a mob registry (Enemy AI Story 013).</summary>
         internal const string NO_MOB_REGISTRY_ERROR = "[ZoneServer] S5: no mob registry from S2";
+
+        /// <summary>
+        /// Start of the info line logged once after the T-2 sweep (Mob Spawning Story 007 AC-6):
+        /// <c>[MobSpawning] zone &lt;id&gt;: &lt;live&gt; of &lt;total&gt; points Live, &lt;deferred&gt; Deferred</c>.
+        /// </summary>
+        internal const string MOB_SPAWNING_POPULATED_LOG_PREFIX = "[MobSpawning] zone ";
 
         /// <summary>
         /// Seconds without a completed network tick, with a quit pending (or the zone Draining), after which
@@ -370,6 +377,43 @@ namespace IronGrind.ServerLogic.ZoneServer
 
         /// <summary>The zone's Enemy AI system; null before S5, after the Dispose pass, and when a navigation seam was passed (no INavigationProvider).</summary>
         internal EnemyAISystem EnemyAI { get; private set; }
+
+        /// <summary>
+        /// The zone's spawner (Mob Spawning Story 006), built at S6 by <see cref="MobSpawningZoneLoader"/>; null before S6,
+        /// after the Dispose pass, when S6 failed, and when the composition has no definition slot or no spawn point
+        /// validator (a navigation seam without <see cref="SpawnPointValidatorOverride"/>).
+        /// </summary>
+        internal MobSpawningService MobSpawner { get; private set; }
+
+        /// <summary>
+        /// The teardown seam passed to the Zone Instancing wiring at S5 as <c>MobSpawnTimers</c>; it forwards to
+        /// <see cref="MobSpawner"/> once S6 built it. Null before S5.
+        /// </summary>
+        internal ForwardingZoneMobSpawnTimers MobSpawnTimers { get; private set; }
+
+        /// <summary>The spawner's phase 3 step, built at S5 (listed by <c>AddPhaseThreeSteps</c>); null before S5.</summary>
+        internal MobSpawningPhaseStep MobSpawningStep { get; private set; }
+
+        /// <summary>
+        /// Test seam (Mob Spawning Story 006): the spawn point validator S6 uses instead of one over
+        /// <c>UnityNavMeshQuery</c> (EditMode has no NavMesh). Null in production. Set before the run starts.
+        /// </summary>
+        internal SpawnPointValidator SpawnPointValidatorOverride;
+
+        /// <summary>
+        /// Test seam (Mob Spawning Story 006): the Mob Spawning config values S6 uses instead of
+        /// <see cref="MobSpawningConfigValues.Defaults"/>. Null in production. Set before the run starts.
+        /// </summary>
+        internal MobSpawningConfigValues? MobSpawningConfigOverride;
+
+        // Mob Spawning Story 006: the Enemy AI config values, chosen once at S5 so Enemy AI and the spawner share one
+        // DEATH_LINGER_TICKS; and the navigation config the composition built navigation with (the spawn point
+        // validator's settings; null with a navigation seam).
+        private EnemyAIConfigValues _enemyAIConfig;
+        private NavigationConfig _navigationConfigInUse;
+
+        /// <summary>The Enemy AI config values Enemy AI and the spawner use (chosen at S5).</summary>
+        internal EnemyAIConfigValues EnemyAIConfigInUse => _enemyAIConfig;
 
         // The one DamageCalculator (Enemy AI Story 013), shared by player autos, skills and mob attacks; and RETURN_SPEED_CAP
         // of the navigation config the composition built (Enemy AI input).
@@ -1268,6 +1312,56 @@ namespace IronGrind.ServerLogic.ZoneServer
                 return false;
             }
 
+            return TryBuildMobSpawner();
+        }
+
+        // T-2 sweep (Story 006) and its one info line (Story 007 AC-6, the smoke check's observable). No spawner: nothing.
+        private void PopulateMobSpawner()
+        {
+            MobSpawningService spawner = MobSpawner;
+            if (spawner == null)
+            {
+                return;
+            }
+
+            spawner.PopulateOnActive();
+            Debug.Log(MOB_SPAWNING_POPULATED_LOG_PREFIX + _zoneId + ": " + spawner.LiveCount + " of "
+                + spawner.PointCount + " points Live, " + spawner.DeferredCount + " Deferred");
+        }
+
+        // Mob Spawning Story 006 (CR-MS-2, T-1): the spawner is built here, not at S5, because the scene loader fills the
+        // definition slot during S6 and the NavMesh exists only after _navigation.Initialize (ADR-002). A failed load is
+        // S-fail at S6 (the validators logged why). No slot (EditMode rigs) or no validator (a navigation seam without
+        // SpawnPointValidatorOverride) builds no spawner and logs nothing; the S5 forwarder and step stay no-ops.
+        private bool TryBuildMobSpawner()
+        {
+            if (_definitionSlot == null || MobEvents == null || ZoneInstancing == null)
+            {
+                return true;
+            }
+
+            SpawnPointValidator validator = SpawnPointValidatorOverride;
+            if (validator == null)
+            {
+                if (_navigationConfigInUse == null)
+                {
+                    return true;
+                }
+
+                validator = new SpawnPointValidator(new UnityNavMeshQuery(), _navigationConfigInUse);
+            }
+
+            MobSpawningConfigValues config = MobSpawningConfigOverride ?? MobSpawningConfigValues.Defaults;
+            if (!MobSpawningZoneLoader.TryLoad(_zoneId, _definitionSlot.Current, MobRegistryInUse, validator,
+                    ZoneInstancing.MobRoster, MobEvents, config, _enemyAIConfig.DeathLingerTicks,
+                    out MobSpawningService spawner))
+            {
+                return false;
+            }
+
+            MobSpawner = spawner;
+            MobSpawnTimers.Spawner = spawner;
+            MobSpawningStep.Spawner = spawner;
             return true;
         }
 
@@ -1294,6 +1388,8 @@ namespace IronGrind.ServerLogic.ZoneServer
 
             MarkZoneStateEntered();
             StateOwner.MarkActive(_zoneId);
+            // Mob Spawning Story 006 (CR-MS-7, T-2): populate right after Active, before the first tick.
+            PopulateMobSpawner();
             _previousTickSeconds = _clock();
             _lastTickSeconds = _previousTickSeconds;
             OpenTickLog();
@@ -1574,6 +1670,19 @@ namespace IronGrind.ServerLogic.ZoneServer
             MobEvents = null;
             MobStore = null;
             EnemyAI = null;
+            // Mob Spawning Story 006: the spawner unsubscribed from the bus at close step 1; drop the references.
+            MobSpawner = null;
+            if (MobSpawnTimers != null)
+            {
+                MobSpawnTimers.Spawner = null;
+            }
+
+            if (MobSpawningStep != null)
+            {
+                MobSpawningStep.Spawner = null;
+            }
+
+            _navigationConfigInUse = null;
             MobRegistryInUse = null;
             _damageCalculator = null;
             _returnSpeedCap = 0f;
@@ -2058,6 +2167,8 @@ namespace IronGrind.ServerLogic.ZoneServer
             {
                 mobBus = new MobEventBus();
                 _owner.MobEvents = mobBus;
+                // Mob Spawning Story 006: chosen once, read by Enemy AI (S5) and the spawner (S6).
+                _owner._enemyAIConfig = EnemyAIConfigValues.Defaults;
                 mobRegistry = _owner.MobRegistryInUse;
                 mobStore = new MobRuntimeStore(_owner._zoneId, mobBus, mobRegistry, _owner.RandomProvider,
                     new CharacterStatsMobStatWriter(_owner.ZoneCharacterStats), wiring.Pool.MaxMobs);
@@ -2099,7 +2210,8 @@ namespace IronGrind.ServerLogic.ZoneServer
             }
 
             // The phase-3 order, listed in ONE place (ADR-014, CR-AI-2; construction order is not step order):
-            // ZoneInstancingWiring (added in BuildZoneInstancing), NavigationPhaseStep (phases 1-2), Status Effects,
+            // ZoneInstancingWiring (added in BuildZoneInstancing), NavigationPhaseStep (phases 1-2), Mob Spawning
+            // (MobSpawningPhaseStep, Mob Spawning Story 006), Status Effects,
             // Movement, Enemy AI, Auto-Attack Combat, Skill cast, Gateway link pump, then Enemy AI's
             // MobPositionIntegrationStep (ADR-002 phase 4, last). Navigation step and Enemy AI exist only when the
             // composition built the navigation itself (no INavigationProvider with a passed seam).
@@ -2112,6 +2224,13 @@ namespace IronGrind.ServerLogic.ZoneServer
                     steps.Add(navigationStep);
                 }
 
+                // Mob Spawning Story 006: the first game-system step, after navigation phases 1-2 (ADR-002) and before
+                // Enemy AI, so a mob spawned on tick T has its store entry and controller before Enemy AI's Run on T
+                // (MobSpawned subscribers: store, then Enemy AI, then navigation; ADR-010). Listed in every composition;
+                // it ticks nothing until S6 sets a spawner.
+                var spawningStep = new MobSpawningPhaseStep();
+                _owner.MobSpawningStep = spawningStep;
+                steps.Add(spawningStep);
                 steps.Add(statusEffects);
                 steps.Add(movement);
                 if (enemyAI != null)
@@ -2165,7 +2284,9 @@ namespace IronGrind.ServerLogic.ZoneServer
                         Equipment = _owner.ZoneEquipment,
                         Validator = _owner.EntryTokenValidatorOverride,
                         Currency = _owner.ZoneCurrency,
-                        GatewayOutbox = linkOutbox
+                        GatewayOutbox = linkOutbox,
+                        // Mob Spawning Story 006: the spawner exists only at S6; the forwarder reaches it from close step 1.
+                        MobSpawnTimers = _owner.MobSpawnTimers = new ForwardingZoneMobSpawnTimers()
                     });
                 Observe(nameof(ZoneInstancingWiring));
                 _owner._simulationSteps.Add(wiring);
@@ -2193,6 +2314,8 @@ namespace IronGrind.ServerLogic.ZoneServer
                     config = ScriptableObject.CreateInstance<NavigationConfig>();
                     _owner._ownedNavigationConfig = config;
                 }
+
+                _owner._navigationConfigInUse = config;
 
                 INavAgentFactory agentFactory;
                 if (_owner.NavAgentFactoryOverride != null)
@@ -2241,7 +2364,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                 var candidates = new ZoneAggroCandidateSource(_owner._zoneId, wiring.Pool,
                     new MovementPlayerPositionReader(movement));
                 var enemyAI = new EnemyAISystem(_owner._zoneId, bus, store, registry, _owner._navigationService,
-                    new CharacterStatsZoneEntityStatReader(stats), resolver, EnemyAIConfigValues.Defaults,
+                    new CharacterStatsZoneEntityStatReader(stats), resolver, _owner._enemyAIConfig,
                     _owner._returnSpeedCap, candidates, _owner.AutoAttackCombat, new StandInLootTableService(),
                     wiring.Pool.MaxMobs);
                 _owner.RegisterDisposable(enemyAI);

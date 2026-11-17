@@ -84,10 +84,10 @@ This epic is complete when:
 | 001 | [Spawn config and ZoneSpawnTable data](story-001-spawn-config-and-table-data.md) | Logic | Complete | ADR-012 |
 | 002 | [Spawn point runtime core — T-2 fill and MobDied](story-002-spawn-point-runtime-core.md) | Logic | Complete | ADR-010 |
 | 003 | [Per-tick timers, respawn delay and deferred queue](story-003-tick-timers-and-deferred-queue.md) | Logic | Complete | ADR-014 |
-| 004 | [Teardown — CancelAllSpawnTimers](story-004-teardown-cancel-all-spawn-timers.md) | Logic | Ready | ADR-010 |
-| 005 | [Zone load — cap and NavMesh validation](story-005-zone-load-validation.md) | Integration | Ready | ADR-002 |
-| 006 | [Zone composition wiring](story-006-zone-composition-wiring.md) | Integration | Ready | ADR-014 |
-| 007 | [Starting-zone spawn table content](story-007-starting-zone-spawn-table.md) | Config/Data | Ready | ADR-002 |
+| 004 | [Teardown — CancelAllSpawnTimers](story-004-teardown-cancel-all-spawn-timers.md) | Logic | Complete | ADR-010 |
+| 005 | [Zone load — cap and NavMesh validation](story-005-zone-load-validation.md) | Integration | Complete | ADR-002 |
+| 006 | [Zone composition wiring](story-006-zone-composition-wiring.md) | Integration | Complete | ADR-014 |
+| 007 | [Starting-zone spawn table content](story-007-starting-zone-spawn-table.md) | Config/Data | Complete | ADR-002 |
 | 008 | [End-to-end — kill a spawned mob, see it respawn](story-008-end-to-end-kill-and-respawn.md) | Integration | Ready | ADR-002 |
 
 Order: 001 → 002 → 003 → 004; 005 after 001 + 002; 006 after 003 + 004 + 005; 007 after 001 + 005; 008 after 006 + 007.

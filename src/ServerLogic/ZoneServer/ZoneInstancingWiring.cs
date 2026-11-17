@@ -532,6 +532,9 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// <summary>The mob roster over <see cref="Pool"/>; the composition reads it for the production entity state source (Story 015).</summary>
         internal ZoneMobRoster MobRoster => _mobs;
 
+        /// <summary>The mob spawn timers close step 1 cancels (test accessor, Mob Spawning Story 006).</summary>
+        internal IZoneMobSpawnTimers MobSpawnTimers => _closeSteps.Timers;
+
         /// <summary>The entry completion; the composition registers Movement as its entry listener (Movement Story 009).</summary>
         internal ZoneEntryCompletion EntryCompletion => _completion;
 

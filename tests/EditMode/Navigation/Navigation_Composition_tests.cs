@@ -33,12 +33,16 @@ namespace IronGrind.Tests.EditMode.Navigation
         public readonly ZoneServerComposition Comp;
         public readonly NavigationConfig Config;
 
+        /// <summary>The scene seam (its <c>OnPoll</c> runs during the S6 scene wait, after S5).</summary>
+        public readonly SuScene Scene;
+
         /// <param name="validInstance">Whether the fake instance ops call the (default) instance valid.</param>
         /// <param name="factoryOverride">Whether the fake factory is injected; false keeps the real Unity factory.</param>
         /// <param name="ownConfig">True: no config override, the composition creates (and destroys) its own.</param>
         /// <param name="seam">A navigation seam to pass instead of null.</param>
+        /// <param name="definitionSlot">The zone definition slot (Mob Spawning Story 006); null: none, so no spawner.</param>
         public NavCompositionRig(bool validInstance = true, bool factoryOverride = true, bool ownConfig = false,
-            IZoneNavigation seam = null)
+            IZoneNavigation seam = null, ZoneDefinitionSlot definitionSlot = null)
         {
             Factory = new FakeNavAgentFactory(Log);
             Ops = new FakeNavMeshInstanceOps(Log);
@@ -50,9 +54,9 @@ namespace IronGrind.Tests.EditMode.Navigation
             var env = new WiEnvironment();
             env.Variables["IRONGRIND_PG_PASSWORD"] = WiRig.PASSWORD;
             Comp = ZoneServerComposition.CreateWithRealBackend(
-                new SuApp(Log, Plan), Net = new WiNetwork(Log), seam, new ZsClose(Log), new SuScene(Log, Plan),
+                new SuApp(Log, Plan), Net = new WiNetwork(Log), seam, new ZsClose(Log), Scene = new SuScene(Log, Plan),
                 new SuBounds(Log, Plan), new SuStatic(Log, Plan), new SuStateOwner(Log), new SuGateway(Log, Plan),
-                new SuConfigSource(Log, Plan) { Json = WiRig.DEFAULT_CONFIG }, env, null);
+                new SuConfigSource(Log, Plan) { Json = WiRig.DEFAULT_CONFIG }, env, null, definitionSlot);
             Comp.ConstructionObserver = Observed.Add;
             Comp.ItemDatabaseOverride = WiRig.EmptyItemDatabase();
             Comp.MobRegistryOverride = EnemyAICompositionFixtures.Registry();

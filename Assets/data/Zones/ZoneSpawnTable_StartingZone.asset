@@ -1,0 +1,208 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f3d84acfd948e934fa2ac3949df3e492, type: 3}
+  m_Name: ZoneSpawnTable_StartingZone
+  m_EditorClassIdentifier: IronGrind.ServerLogic::IronGrind.ServerLogic.MobSpawning.ZoneSpawnTable
+  _templateId: 0
+  _entries:
+  - _spawnPointId: 1
+    _mobTypeId: 1
+    _position: {x: 11.5, y: 0, z: -1.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 2
+    _mobTypeId: 1
+    _position: {x: 14.5, y: 0, z: -1.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 3
+    _mobTypeId: 1
+    _position: {x: 11.5, y: 0, z: 1.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 4
+    _mobTypeId: 1
+    _position: {x: 14.5, y: 0, z: 1.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 5
+    _mobTypeId: 1
+    _position: {x: 2.5, y: 0, z: 10.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 6
+    _mobTypeId: 1
+    _position: {x: 5.5, y: 0, z: 10.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 7
+    _mobTypeId: 1
+    _position: {x: 2.5, y: 0, z: 13.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 8
+    _mobTypeId: 1
+    _position: {x: 5.5, y: 0, z: 13.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 9
+    _mobTypeId: 1
+    _position: {x: -12, y: 0, z: 6}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 10
+    _mobTypeId: 1
+    _position: {x: -9, y: 0, z: 6}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 11
+    _mobTypeId: 1
+    _position: {x: -12, y: 0, z: 9}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 12
+    _mobTypeId: 1
+    _position: {x: -9, y: 0, z: 9}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 13
+    _mobTypeId: 1
+    _position: {x: -12, y: 0, z: -9}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 14
+    _mobTypeId: 1
+    _position: {x: -9, y: 0, z: -9}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 15
+    _mobTypeId: 1
+    _position: {x: -12, y: 0, z: -6}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 16
+    _mobTypeId: 1
+    _position: {x: -9, y: 0, z: -6}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 17
+    _mobTypeId: 1
+    _position: {x: 2.5, y: 0, z: -13.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 18
+    _mobTypeId: 1
+    _position: {x: 5.5, y: 0, z: -13.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 19
+    _mobTypeId: 1
+    _position: {x: 2.5, y: 0, z: -10.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 20
+    _mobTypeId: 1
+    _position: {x: 5.5, y: 0, z: -10.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 21
+    _mobTypeId: 2
+    _position: {x: 19.5, y: 0, z: 13.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 22
+    _mobTypeId: 2
+    _position: {x: 22.5, y: 0, z: 13.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 23
+    _mobTypeId: 2
+    _position: {x: 19.5, y: 0, z: 16.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 24
+    _mobTypeId: 2
+    _position: {x: 22.5, y: 0, z: 16.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 25
+    _mobTypeId: 2
+    _position: {x: 21, y: 0, z: 18}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 26
+    _mobTypeId: 2
+    _position: {x: -25.5, y: 0, z: 9}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 27
+    _mobTypeId: 2
+    _position: {x: -22.5, y: 0, z: 9}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 28
+    _mobTypeId: 2
+    _position: {x: -25.5, y: 0, z: 12}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 29
+    _mobTypeId: 2
+    _position: {x: -22.5, y: 0, z: 12}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 30
+    _mobTypeId: 2
+    _position: {x: -24, y: 0, z: 13.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 31
+    _mobTypeId: 2
+    _position: {x: 1.5, y: 0, z: -27.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 32
+    _mobTypeId: 2
+    _position: {x: 4.5, y: 0, z: -27.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 33
+    _mobTypeId: 2
+    _position: {x: 1.5, y: 0, z: -24.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 34
+    _mobTypeId: 2
+    _position: {x: 4.5, y: 0, z: -24.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 35
+    _mobTypeId: 3
+    _position: {x: -26.5, y: 0, z: 23.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 36
+    _mobTypeId: 3
+    _position: {x: -23.5, y: 0, z: 23.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 37
+    _mobTypeId: 3
+    _position: {x: -26.5, y: 0, z: 26.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 38
+    _mobTypeId: 3
+    _position: {x: -23.5, y: 0, z: 26.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 39
+    _mobTypeId: 3
+    _position: {x: -25, y: 0, z: 28}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 40
+    _mobTypeId: 3
+    _position: {x: 23.5, y: 0, z: -26.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 41
+    _mobTypeId: 3
+    _position: {x: 26.5, y: 0, z: -26.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 42
+    _mobTypeId: 3
+    _position: {x: 23.5, y: 0, z: -23.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 43
+    _mobTypeId: 3
+    _position: {x: 26.5, y: 0, z: -23.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 44
+    _mobTypeId: 4
+    _position: {x: 29.5, y: 0, z: 29.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 45
+    _mobTypeId: 4
+    _position: {x: 32.5, y: 0, z: 29.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 46
+    _mobTypeId: 4
+    _position: {x: 29.5, y: 0, z: 32.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 47
+    _mobTypeId: 4
+    _position: {x: 32.5, y: 0, z: 32.5}
+    _respawnDelayOverrideTicks: 0
+  - _spawnPointId: 48
+    _mobTypeId: 4
+    _position: {x: 31, y: 0, z: 34}
+    _respawnDelayOverrideTicks: 0
