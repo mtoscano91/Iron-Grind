@@ -1,6 +1,6 @@
 # Epics Index
 
-Last Updated: 2026-11-16
+Last Updated: 2026-11-17
 Engine: Unity 6.3 LTS (6000.3)
 Control Manifest Version: 2026-11-06
 
@@ -28,6 +28,7 @@ Control Manifest Version: 2026-11-06
 | [Enhancement System](enhancement-system/EPIC.md) | Feature | Enhancement System | design/gdd/enhancement-system.md | 16 stories (001-016 Complete); DoD open: AC-ENH-2 and the other deferred criteria | In Progress |
 | [Enemy AI](enemy-ai/EPIC.md) | Feature | Enemy AI | design/gdd/enemy-ai.md | 14 stories (001-014 written 2026-11-13): 14 Complete | Complete |
 | [Mob Spawning](mob-spawning/EPIC.md) | Feature | Mob Spawning | design/gdd/mob-spawning.md | 8 stories (001-008 written 2026-11-16): 8 Complete | Complete (2026-11-17) |
+| [Death & Respawn](death-and-respawn/EPIC.md) | Feature | Death & Respawn | design/gdd/death-and-respawn.md | 9 stories (001-009 written 2026-11-17), 1 Complete (001) | In Progress — server only; party ACs to the Party System epic (seam here), client visuals to presentation |
 
 ## Notes
 
@@ -43,6 +44,6 @@ Control Manifest Version: 2026-11-06
 | Layer | Epics Created | Remaining |
 |-------|--------------|-----------|
 | Foundation | 4 / 4 (all Complete) | — |
-| Core | 14 created (Equipment added 2026-10-07, Character Persistence 2026-10-12, Movement 2026-10-29, Hit Detection 2026-10-30, Auto-Attack Combat 2026-10-30, Skill System 2026-11-02, Navigation / Pathfinding 2026-11-12) | Combat-loop Gameplay epics decided 2026-11-12 (see Navigation EPIC.md Decisions): Enemy AI created 2026-11-13, Mob Spawning 2026-11-16 (Feature rows); Death & Respawn not yet created |
+| Core | 14 created (Equipment added 2026-10-07, Character Persistence 2026-10-12, Movement 2026-10-29, Hit Detection 2026-10-30, Auto-Attack Combat 2026-10-30, Skill System 2026-11-02, Navigation / Pathfinding 2026-11-12) | Combat-loop Gameplay epics decided 2026-11-12 (see Navigation EPIC.md Decisions): Enemy AI created 2026-11-13, Mob Spawning 2026-11-16 (Feature rows); Death & Respawn 2026-11-17 |
 | Feature | 3 (Enhancement, created 2026-10-07 ahead of its two gates; Enemy AI 2026-11-13; Mob Spawning 2026-11-16) | Run `/create-epics layer: feature` for the rest after Core is nearly complete |
 | Presentation | 0 | Run `/create-epics layer: presentation` after Feature is nearly complete |

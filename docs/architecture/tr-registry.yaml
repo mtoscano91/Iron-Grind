@@ -25,7 +25,7 @@
 # STATUS VALUES: active | deprecated | superseded-by: TR-[system]-NNN
 
 version: 2
-last_updated: "2026-11-16"  # 2026-11-16: TR-ms-001..008 added (Mob Spawning EPIC.md table, /create-epics). 2026-11-13: TR-ai-001..010 added (Enemy AI EPIC.md table, /create-epics). 2026-11-12: TR-nav-001..009 added (Navigation / Pathfinding EPIC.md table, /create-epics). 2026-11-06: TR-auth-006 added (Authentication Story 005 /story-readiness).2026-11-02: TR-sk-001..011 added (Skill System EPIC.md table, /create-epics). Same day, earlier: TR-aa-001..009 added (Auto-Attack Combat EPIC.md table, by hand at user request). 2026-10-15: 107 TR-IDs registered from the 13 EPIC.md tables (/architecture-review, docs/architecture/architecture-review-2026-10-15-tr-registry.md); 7 carry a revised date
+last_updated: "2026-11-17"  # 2026-11-17: TR-dr-001..009 added (Death & Respawn EPIC.md table, /create-epics). 2026-11-16: TR-ms-001..008 added (Mob Spawning EPIC.md table, /create-epics). 2026-11-13: TR-ai-001..010 added (Enemy AI EPIC.md table, /create-epics). 2026-11-12: TR-nav-001..009 added (Navigation / Pathfinding EPIC.md table, /create-epics). 2026-11-06: TR-auth-006 added (Authentication Story 005 /story-readiness).2026-11-02: TR-sk-001..011 added (Skill System EPIC.md table, /create-epics). Same day, earlier: TR-aa-001..009 added (Auto-Attack Combat EPIC.md table, by hand at user request). 2026-10-15: 107 TR-IDs registered from the 13 EPIC.md tables (/architecture-review, docs/architecture/architecture-review-2026-10-15-tr-registry.md); 7 carry a revised date
 
 requirements:
   # --- auth: design/gdd/authentication.md (production/epics/authentication/EPIC.md) ---
@@ -1140,5 +1140,68 @@ requirements:
     gdd: design/gdd/mob-spawning.md
     requirement: "Zone wiring: spawner built per zone with the zone's `MobEventBus`, `IZoneMobRoster` and `IMobDefinitionRegistry`; per-tick step placed in the phase list (ADR-014); T-2 sweep on `MarkActive`; starting-zone `ZoneSpawnTable` from roster MobTypeIDs 1–4; end-to-end check that a player kills a spawned mob and it respawns"
     created: 2026-11-16
+    revised: ""
+    status: active
+  - id: TR-dr-001
+    system: dr
+    gdd: design/gdd/death-and-respawn.md
+    requirement: "Respawn config: `RESPAWN_DELAY_SECONDS` (default 7.0, [5.0, 10.0]) rejected below 5.0 at startup (error, refuse to start, no clamp); F-DR-1 `RoundToInt(seconds × 20)` with ≥ 100 assertion; `RESPAWN_ANCHOR_RETRY_TICKS` (default 40, [20, 200]); data-driven (EC-DR-5, AC-DR-12, AC-DR-14)"
+    created: 2026-11-17
+    revised: ""
+    status: active
+  - id: TR-dr-002
+    system: dr
+    gdd: design/gdd/death-and-respawn.md
+    requirement: "Death entry for players: per-player `DeathState` (`long` ticks), `OnEntityDied` ignores non-players, duplicates in Dead / Respawning dropped, `SetCombatProhibited(true)`, slot `Dead`, `RespawnTick = DeathTick + RESPAWN_DELAY_TICKS`, all in the death tick (CR-DR-1 to 3, CR-DR-6, AC-DR-1, 2, 3, 15)"
+    created: 2026-11-17
+    revised: ""
+    status: active
+  - id: TR-dr-003
+    system: dr
+    gdd: design/gdd/death-and-respawn.md
+    requirement: "Ghost branch first: record `GhostDeath = 3`, release the zone slot, return; no Dead state, timer, combat ban or `EntityDied` (CR-DR-Ghost, T-4, AC-DR-10, AC-DR-11)"
+    created: 2026-11-17
+    revised: ""
+    status: active
+  - id: TR-dr-004
+    system: dr
+    gdd: design/gdd/death-and-respawn.md
+    requirement: "Respawn on tick `RespawnTick` exactly: single-tick Respawning, `GetTownRespawnPoint` with retry up to `RESPAWN_ANCHOR_RETRY_TICKS` then fallback + critical log, HP / MP to effective max via `SetBaseStat`, position set, `SetCombatProhibited(false)`, `StatusEffects.OnEntityRespawned`, slot Alive; no `LoadCharacter` (CR-DR-8 to 11a, CR-DR-14, EC-DR-9, AC-DR-5 to 9)"
+    created: 2026-11-17
+    revised: ""
+    status: active
+  - id: TR-dr-005
+    system: dr
+    gdd: design/gdd/death-and-respawn.md
+    requirement: "Wire messages (R-OD, 0xE000–0xEFFF): `EntityDied` to zone (relevance-filtered, never for a ghost), `DeathStateEntered` to the dying player, `EntityRespawned` to zone + `RespawnConfirmed` to the player in the T-3 tick; `SelfPositionUpdate` suppressed while Dead / Respawning (CR-DR-6, 7, 13, AC-DR-NEW-1 to 3, AC-NC-39)"
+    created: 2026-11-17
+    revised: ""
+    status: active
+  - id: TR-dr-006
+    system: dr
+    gdd: design/gdd/death-and-respawn.md
+    requirement: "Dead permissions: skills rejected, voluntary zone change rejected, `RespawnNow` dropped silently, dead players excluded from player targeting and mob aggro (CR-DR-15 to 17, AC-DR-4, AC-DR-17, AC-DR-NEW-5, AC-DR-NEW-6)"
+    created: 2026-11-17
+    revised: ""
+    status: active
+  - id: TR-dr-007
+    system: dr
+    gdd: design/gdd/death-and-respawn.md
+    requirement: "Disconnect / teardown / expiry: timer runs while disconnected, `RespawnTick` feeds the reconnect snapshot, HP 0 saves and the load clamp bring the character back alive (EC-DR-1, 2, 3, 7, AC-DR-16)"
+    created: 2026-11-17
+    revised: ""
+    status: active
+  - id: TR-dr-008
+    system: dr
+    gdd: design/gdd/death-and-respawn.md
+    requirement: "Zone wiring: service built per zone, countdown step in the phase list (ADR-014); end-to-end check that a mob kills a player who respawns at the town point with full HP / MP"
+    created: 2026-11-17
+    revised: ""
+    status: active
+  - id: TR-dr-009
+    system: dr
+    gdd: design/gdd/death-and-respawn.md
+    requirement: "Party seam: `IPartyMemberStatusSink.SetMemberStatus` Dead on (non-ghost) death and Online at T-3, no-op in production until Party System exists; unit test verifies the calls (CR-DR-5, CR-DR-12, AC-DR-13 unit part)"
+    created: 2026-11-17
     revised: ""
     status: active
