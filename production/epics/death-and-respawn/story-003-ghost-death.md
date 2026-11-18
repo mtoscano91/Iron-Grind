@@ -1,7 +1,7 @@
 # Story 003: Ghost Death Branch
 
 > **Epic**: Death & Respawn
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Feature
 > **Type**: Logic
 > **Estimate**: 2–3 h
@@ -26,12 +26,12 @@
 
 ## Acceptance Criteria
 
-- [ ] **AC-1 First check**: the `OnEntityDied` handler checks ghost status before anything else (before duplicate suppression), through a narrow `IGhostStatusSource.IsGhost(EntityID)`. The production adapter `ZoneSlotGhostStatusSource` is built in this story: true when `ZoneSlotPool.TryGetPlayer(id)` finds the slot and its state is `ZoneSessionState.Disconnected_SessionActive`; false for an unknown id or a mob.
-- [ ] **AC-2 Ghost path (AC-DR-10)**: for a ghost, the handler calls `IGhostDeathSink.OnGhostDied(entity)` exactly once and returns; `DeathState.CurrentState` stays Alive; no respawn tick is set. The handler does not release the slot, persist, or change session state — the sink owns all of that (Story 010).
-- [ ] **AC-3 Nothing else (CR-DR-Ghost)**: for a ghost, no `SetCombatProhibited`, no movement prohibition, no party sink call, no `DeathStateEntered`, no `EntityDied` (AC-DR-11; Story 005 adds the wire assertion against the outbox).
-- [ ] **AC-4 Non-ghost unchanged**: a non-ghost death still follows Story 002 exactly. The adapter is tested against a real `ZoneSlotPool`: Connected → false, Disconnected_SessionActive → true, unknown id → false, mob → false.
-- [ ] **AC-5 Sink failure**: if `OnGhostDied` throws, the error is logged with the entity id and the handler returns without entering Dead; no exception escapes the handler.
-- [ ] **AC-6 Dead, then disconnected**: P dies (Dead), then disconnects (slot `Disconnected_SessionActive`), then a second `OnEntityDied(P)` arrives: the ghost path is taken (sink called once, `DeathState` unchanged). Accepted behaviour until Story 007 makes `DeathState` the source of truth; Story 007 re-checks this case.
+- [x] **AC-1 First check**: the `OnEntityDied` handler checks ghost status before anything else (before duplicate suppression), through a narrow `IGhostStatusSource.IsGhost(EntityID)`. The production adapter `ZoneSlotGhostStatusSource` is built in this story: true when `ZoneSlotPool.TryGetPlayer(id)` finds the slot and its state is `ZoneSessionState.Disconnected_SessionActive`; false for an unknown id or a mob.
+- [x] **AC-2 Ghost path (AC-DR-10)**: for a ghost, the handler calls `IGhostDeathSink.OnGhostDied(entity)` exactly once and returns; `DeathState.CurrentState` stays Alive; no respawn tick is set. The handler does not release the slot, persist, or change session state — the sink owns all of that (Story 010).
+- [x] **AC-3 Nothing else (CR-DR-Ghost)**: for a ghost, no `SetCombatProhibited`, no movement prohibition, no party sink call, no `DeathStateEntered`, no `EntityDied` (AC-DR-11; Story 005 adds the wire assertion against the outbox).
+- [x] **AC-4 Non-ghost unchanged**: a non-ghost death still follows Story 002 exactly. The adapter is tested against a real `ZoneSlotPool`: Connected → false, Disconnected_SessionActive → true, unknown id → false, mob → false.
+- [x] **AC-5 Sink failure**: if `OnGhostDied` throws, the error is logged with the entity id and the handler returns without entering Dead; no exception escapes the handler.
+- [x] **AC-6 Dead, then disconnected**: P dies (Dead), then disconnects (slot `Disconnected_SessionActive`), then a second `OnEntityDied(P)` arrives: the ghost path is taken (sink called once, `DeathState` unchanged). Accepted behaviour until Story 007 makes `DeathState` the source of truth; Story 007 re-checks this case.
 
 ---
 
@@ -70,7 +70,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/DeathAndRespawn/DeathAndRespawn_GhostDeath_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 16 tests, pass (2026-11-18)
 
 ---
 
@@ -78,3 +78,12 @@
 
 - Depends on: Story 002
 - Unlocks: Stories 005, 010
+
+---
+
+## Completion Notes
+**Completed**: 2026-11-18
+**Criteria**: 6/6 passing (all automated)
+**Deviations**: None blocking. Advisory: ghost deaths are not deduplicated, so a repeat death calls the sink again — `IGhostDeathSink` documents that sinks must be idempotent (Story 010). AC-6 (dead, then disconnected, takes the ghost path) is the accepted gap until Story 007, which has a re-check note. Three over-long lines from Story 002 were wrapped in `DeathAndRespawnService.cs`; Story 002's tests were updated only for the two new constructor arguments.
+**Test Evidence**: Logic — `tests/EditMode/DeathAndRespawn/DeathAndRespawn_GhostDeath_tests.cs` 16/16; filter `DeathAndRespawn` 73/73; full EditMode `-testCategory "!Database"` 7907/7907
+**Code Review**: Complete (`/code-review` with unity-specialist + qa-tester; all required changes and suggestions applied)

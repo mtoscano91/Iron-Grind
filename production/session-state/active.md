@@ -7200,3 +7200,33 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Story: production/epics/gateway/story-010-zone-link-thread.md — Zone link thread
 - Tech debt logged: None
 - Next recommended: production/epics/gateway/story-011-zone-link-wiring.md (Ready) — commit Story 010 first
+
+## Session Extract — /dev-story 2026-11-18
+- Story: production/epics/death-and-respawn/story-003-ghost-death.md — Ghost Death Branch
+- Files changed: src/ServerLogic/DeathAndRespawn/{IGhostStatusSource,IGhostDeathSink,ZoneSlotGhostStatusSource}.cs (new + metas), DeathAndRespawnService.cs (ctor +ghosts, ghostDeaths; ghost branch first in OnEntityDied, try/catch + LogError), tests/EditMode/DeathAndRespawn/DeathAndRespawn_DeathEntry_tests.cs (ctor call sites + 2 null asserts)
+- Test written: tests/EditMode/DeathAndRespawn/DeathAndRespawn_GhostDeath_tests.cs (13); filter DeathAndRespawn 70/70; full -testCategory "!Database" 7904/7904, 0 error CS. Not committed.
+- Review notes: class summary line over-long; LOG_PREFIX const sits between readonly fields.
+- Blockers: None
+- Next: /code-review the 4 src files + 2 test files, then /story-done production/epics/death-and-respawn/story-003-ghost-death.md
+
+## /code-review Death & Respawn Story 003 2026-11-18: CHANGES REQUIRED (small), awaiting user
+- R1 line length: DeathAndRespawnService.cs:14 (218), :49 ctor sig (123), :123 comment (122), IGhostStatusSource.cs:11 (123)
+- R2 LOG_PREFIX const above instance fields; drop stray blank line
+- R3 AC-1 test (:194): assert combat/movement/party 0 + state still Dead with original ticks; rename ..._ghost_check_runs_before_dedup
+- R4 AC-5 test (:298): regex "ghost death hand-off for " + EntityID; assert 0 combat/movement/party, state Alive
+- R5 AC-6 test: assert sink.Calls[0] == player; movement/party counts
+- Suggestions: two players same tick (ghost + connected); sink throws then other player's normal death works; mob path 0 calls; adapter false for Dead / Disconnected_SessionExpired; IGhostDeathSink doc (handler guards, death dropped; sink should be idempotent — repeated ghost deaths not deduped); ZoneSlotGhostStatusSource O(1) note; AC-3 comment wire deferred to Story 005
+- Next: on approval apply, rerun filter + full -testCategory "!Database", then /story-done
+
+## Review fixes applied, Death & Respawn Story 003 2026-11-18: APPROVED (not committed)
+- User "fix all". Service: LOG_PREFIX first member; all >120 lines wrapped (incl. 3 pre-existing from Story 002); ctor ghost params on own line. IGhostDeathSink doc: throw → logged + death dropped; sinks must be idempotent. ZoneSlotGhostStatusSource: O(1)/no-alloc note.
+- Tests (16 in GhostDeath file): AC-1 renamed test_ghost_death_ghost_check_runs_before_dedup + no side effects + Dead/ticks unchanged; AC-3 comment (wire → Story 005); mob 0 calls; ghost+connected same tick; AC-5 regex "ghost death hand-off for EntityID(n) threw" + Alive + no side effects; sink throws then other player dies normally; AC-6 sink EntityID + movement/party; adapter Dead/Respawning false (ZoneSessionState has no SessionExpired).
+- Filter DeathAndRespawn 73/73; full -testCategory "!Database" 7907/7907.
+- Next: /story-done production/epics/death-and-respawn/story-003-ghost-death.md
+
+## Session Extract — /story-done 2026-11-18
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/death-and-respawn/story-003-ghost-death.md — Ghost Death Branch (6/6 ACs; 16 tests; full 7907/7907)
+- Tech debt logged: None (sink idempotency → Story 010; AC-6 gap → Story 007 note)
+- Updated: story (Complete, ACs ticked, Completion Notes), EPIC.md (row 003 Complete, Next Step → Story 004), index (3 Complete). Not committed.
+- Next recommended: /story-readiness production/epics/death-and-respawn/story-004-respawn-sequence.md

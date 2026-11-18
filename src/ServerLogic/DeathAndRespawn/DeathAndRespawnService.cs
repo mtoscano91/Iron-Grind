@@ -3,6 +3,7 @@ using IronGrind.CharacterStats;
 using IronGrind.MovementSystem;
 using IronGrind.ServerLogic.ZoneInstancing;
 using IronGrind.StatusEffects;
+using UnityEngine;
 using EntityDiedHandler = IronGrind.CharacterStats.CharacterStats.EntityDiedHandler;
 
 namespace IronGrind.ServerLogic.DeathAndRespawn
@@ -10,11 +11,14 @@ namespace IronGrind.ServerLogic.DeathAndRespawn
     /// <summary>
     /// Death entry (death-and-respawn.md CR-DR-1, CR-DR-2, CR-DR-3, CR-DR-5, CR-DR-6, T-1, EC-DR-6; Death and Respawn
     /// Story 002, ADR-010). Subscribes once to the entity-death source; a player death sets Dead, stamps the death and
-    /// respawn ticks, marks the pool slot Dead, and bans combat and movement. Respawn (Story 004), the ghost branch
-    /// (Story 003) and wire messages (Story 005) are not here. Tick thread only; allocates nothing per death.
+    /// respawn ticks, marks the pool slot Dead, and bans combat and movement. A ghost death (Story 003, CR-DR-Ghost)
+    /// is checked first and handed to <see cref="IGhostDeathSink"/> with no Dead state. Respawn (Story 004) and wire
+    /// messages (Story 005) are not here. Tick thread only; allocates nothing per death.
     /// </summary>
     public sealed class DeathAndRespawnService : IDisposable
     {
+        private const string LOG_PREFIX = "[DeathAndRespawn] ";
+
         private readonly DeathAndRespawnConfigValues _config;
         private readonly ZoneSlotPool _pool;
         private readonly IEntityDeathSource _deathSource;
@@ -22,24 +26,31 @@ namespace IronGrind.ServerLogic.DeathAndRespawn
         private readonly ICombatProhibitionSink _combat;
         private readonly IMovementSystem _movement;
         private readonly IPartyMemberStatusSink _party;
+        private readonly IGhostStatusSource _ghosts;
+        private readonly IGhostDeathSink _ghostDeaths;
         private readonly DeathState[] _states;
         private readonly EntityDiedHandler _deathHandler;
         private bool _disposed;
 
         /// <summary>Creates the service and subscribes to <paramref name="deathSource"/> once.</summary>
-        /// <param name="config">Config values (RESPAWN_DELAY_TICKS); must pass <see cref="DeathAndRespawnConfigValues.Validate"/>.</param>
+        /// <param name="config">
+        /// Config values (RESPAWN_DELAY_TICKS); must pass <see cref="DeathAndRespawnConfigValues.Validate"/>.
+        /// </param>
         /// <param name="pool">The zone slot pool.</param>
         /// <param name="deathSource">Entity-death notification seam.</param>
         /// <param name="ticks">Current tick source.</param>
         /// <param name="combat">Combat prohibition seam (CR-DR-3).</param>
         /// <param name="movement">Movement prohibition seam (CR-DR-3).</param>
         /// <param name="party">Party status seam (CR-DR-5).</param>
+        /// <param name="ghosts">Ghost status seam (CR-DR-Ghost).</param>
+        /// <param name="ghostDeaths">Ghost death hand-off seam (Story 010 adapter).</param>
         /// <exception cref="ArgumentNullException">A reference argument is null.</exception>
-        /// <exception cref="ArgumentException"><paramref name="config"/> fails validation (the errors are logged; EC-DR-5:
+        /// <exception cref="ArgumentException"><paramref name="config"/> fails validation (errors logged; EC-DR-5:
         /// reject, never clamp).</exception>
         public DeathAndRespawnService(DeathAndRespawnConfigValues config, ZoneSlotPool pool,
             IEntityDeathSource deathSource, IDeathTickSource ticks, ICombatProhibitionSink combat,
-            IMovementSystem movement, IPartyMemberStatusSink party)
+            IMovementSystem movement, IPartyMemberStatusSink party,
+            IGhostStatusSource ghosts, IGhostDeathSink ghostDeaths)
         {
             _pool = pool ?? throw new ArgumentNullException(nameof(pool));
             _deathSource = deathSource ?? throw new ArgumentNullException(nameof(deathSource));
@@ -47,6 +58,8 @@ namespace IronGrind.ServerLogic.DeathAndRespawn
             _combat = combat ?? throw new ArgumentNullException(nameof(combat));
             _movement = movement ?? throw new ArgumentNullException(nameof(movement));
             _party = party ?? throw new ArgumentNullException(nameof(party));
+            _ghosts = ghosts ?? throw new ArgumentNullException(nameof(ghosts));
+            _ghostDeaths = ghostDeaths ?? throw new ArgumentNullException(nameof(ghostDeaths));
             if (!config.Validate())
             {
                 throw new ArgumentException("DeathAndRespawnConfigValues failed validation (see the logged errors).",
@@ -111,7 +124,7 @@ namespace IronGrind.ServerLogic.DeathAndRespawn
             }
         }
 
-        /// <summary>T-1 handler: Alive to Dead for a player (CR-DR-1, CR-DR-2, CR-DR-3, CR-DR-5, AC-1 to AC-6).</summary>
+        /// <summary>T-1 handler: Alive to Dead for a player (CR-DR-1/2/3/5, AC-1 to AC-6), ghost first.</summary>
         private void OnEntityDied(EntityID entity)
         {
             if (_disposed)
@@ -119,7 +132,22 @@ namespace IronGrind.ServerLogic.DeathAndRespawn
                 return; // a handler already queued when Dispose ran
             }
 
-            // Story 003: the CR-DR-Ghost check goes here; it must run before CR-DR-2 below.
+            // CR-DR-Ghost (Story 003): a ghost never enters Dead; no timer, combat ban or EntityDied. Runs before
+            // CR-DR-2 and duplicate suppression. AC-6 accepted: a player who died (Dead) and then disconnected takes
+            // this path on a later death until Story 007 defines that case.
+            if (_ghosts.IsGhost(entity))
+            {
+                try
+                {
+                    _ghostDeaths.OnGhostDied(entity);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"{LOG_PREFIX}ghost death hand-off for {entity} threw: {ex}");
+                }
+
+                return;
+            }
 
             if (!_pool.TryGetPlayerSlot(entity, out byte slot))
             {

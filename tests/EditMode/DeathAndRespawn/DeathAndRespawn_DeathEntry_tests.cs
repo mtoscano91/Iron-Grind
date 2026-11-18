@@ -139,6 +139,20 @@ namespace IronGrind.Tests.EditMode.DeathAndRespawn
             }
         }
 
+        private sealed class FakeGhostStatus : IGhostStatusSource
+        {
+            public bool IsGhost(EntityID id) { return false; }
+        }
+
+        private sealed class FakeGhostSink : IGhostDeathSink
+        {
+            public int Calls;
+
+            public void OnGhostDied(EntityID entity) { Calls++; }
+        }
+
+        private FakeGhostStatus _notGhost;
+        private FakeGhostSink _ghostSink;
         private ZoneSlotPool _pool;
         private FakeServerTicks _serverTicks;
         private FakeDeathSource _source;
@@ -171,7 +185,9 @@ namespace IronGrind.Tests.EditMode.DeathAndRespawn
             _combat = new FakeCombatSink();
             _movement = new FakeMovement();
             _party = new FakeParty();
-            _service = new DeathAndRespawnService(Config, _pool, _source, _ticks, _combat, _movement, _party);
+            _notGhost = new FakeGhostStatus();
+            _ghostSink = new FakeGhostSink();
+            _service = new DeathAndRespawnService(Config, _pool, _source, _ticks, _combat, _movement, _party, _notGhost, _ghostSink);
         }
 
         [TearDown]
@@ -230,12 +246,14 @@ namespace IronGrind.Tests.EditMode.DeathAndRespawn
         {
             DeathAndRespawnConfigValues c = Config;
 
-            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, null, _source, _ticks, _combat, _movement, _party));
-            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, null, _ticks, _combat, _movement, _party));
-            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, null, _combat, _movement, _party));
-            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, _ticks, null, _movement, _party));
-            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, _ticks, _combat, null, _party));
-            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, _ticks, _combat, _movement, null));
+            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, null, _source, _ticks, _combat, _movement, _party, _notGhost, _ghostSink));
+            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, null, _ticks, _combat, _movement, _party, _notGhost, _ghostSink));
+            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, null, _combat, _movement, _party, _notGhost, _ghostSink));
+            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, _ticks, null, _movement, _party, _notGhost, _ghostSink));
+            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, _ticks, _combat, null, _party, _notGhost, _ghostSink));
+            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, _ticks, _combat, _movement, null, _notGhost, _ghostSink));
+            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, _ticks, _combat, _movement, _party, null, _ghostSink));
+            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, _ticks, _combat, _movement, _party, _notGhost, null));
         }
 
         [Test]
@@ -246,7 +264,7 @@ namespace IronGrind.Tests.EditMode.DeathAndRespawn
             LogAssert.Expect(LogType.Error, new Regex("RESPAWN_ANCHOR_RETRY_TICKS"));
 
             Assert.Throws<ArgumentException>(() => new DeathAndRespawnService(default(DeathAndRespawnConfigValues),
-                _pool, source, _ticks, _combat, _movement, _party));
+                _pool, source, _ticks, _combat, _movement, _party, _notGhost, _ghostSink));
 
             Assert.AreEqual(0, source.SubscribeCalls);
         }
