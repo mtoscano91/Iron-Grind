@@ -507,6 +507,7 @@ namespace IronGrind.Tests.EditMode.Networking
             rig.Now = 10.0;
             // S3: RandomProviderFactory writes the one seed line itself.
             LogAssert.Expect(LogType.Log, new System.Text.RegularExpressions.Regex(@"^\[Random\] PRNG seed: -?\d+$"));
+            LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"Death and Respawn not built"));
             SuRig.Drive(rig.Comp.Start(SuRig.ARGS));
 
             rig.Now = 10.05;

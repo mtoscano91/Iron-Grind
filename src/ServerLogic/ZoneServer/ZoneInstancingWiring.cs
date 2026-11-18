@@ -5,6 +5,7 @@ using IronGrind.CharacterStats;
 using IronGrind.Currency;
 using IronGrind.InventorySystem;
 using IronGrind.Networking;
+using IronGrind.ServerLogic.DeathAndRespawn;
 using IronGrind.ServerLogic.Gateway;
 using IronGrind.ServerLogic.StandIns;
 using IronGrind.ServerLogic.ZoneInstancing;
@@ -133,6 +134,18 @@ namespace IronGrind.ServerLogic.ZoneServer
 
         /// <summary>Ghost TTL enumeration. Null: <see cref="LoggingZoneGhostSessionSource"/> (empty).</summary>
         public IZoneGhostSessionSource Ghosts;
+
+        /// <summary>
+        /// Dead-ness reader for the snapshot builder and zone close (Death and Respawn Story 008). The composition
+        /// passes a late-bound forwarder, bound once the service exists. Null: nobody is dead.
+        /// </summary>
+        public IPlayerDeathStateReader DeathStateReader;
+
+        /// <summary>Pre-disconnect HP source for ghost death saves (Story 008). Null: none.</summary>
+        public IPreDisconnectHpSource PreDisconnectHp;
+
+        /// <summary>Effective MaxHP reader, the ghost death save's fallback HP (Story 008). Null: none.</summary>
+        public Func<EntityID, float> EffectiveMaxHp;
 
         /// <summary>
         /// The recording activity sink the dispatcher reports to (Story 016). The composition builds it before the
@@ -465,7 +478,8 @@ namespace IronGrind.ServerLogic.ZoneServer
                 tickRateHz: options.TickRateHz);
             ZoneEntryReclamation.Register(dispatcher, _reclamation);
 
-            _snapshotBuilder = new ZoneSnapshotBuilder(zone, _pool, _mobs, state, ticks, outbox);
+            _snapshotBuilder = new ZoneSnapshotBuilder(zone, _pool, _mobs, state, ticks, outbox,
+                options.DeathStateReader);
             _snapshotRequests = new ZoneSnapshotRequestService(zone, _pool, _lifecycle, _snapshotBuilder, outbox);
             ZoneSnapshotRequestService.Register(dispatcher, _snapshotRequests);
 
@@ -487,13 +501,22 @@ namespace IronGrind.ServerLogic.ZoneServer
 
             _closeSteps = new ZoneCloseSteps(_pool, _directory, _roster, _reclamation, persistence, queue, party,
                 options.MobSpawnTimers ?? new LoggingZoneMobSpawnTimers(),
-                options.TeardownSessionSink ?? new LoggingZoneTeardownSessionSink(), this, outbox, zone);
+                options.TeardownSessionSink ?? new LoggingZoneTeardownSessionSink(), this, outbox, zone,
+                options.DeathStateReader);
             _playerExit = new ZonePlayerExit(_pool, _reclamation);
             _sessionEnds = new SessionEndCoordinator(persistence, sessionRelease, queue, gate, _sessions, inventory,
                 equipment, options.ClearEquipRequestStore ?? (_ => { }),
                 options.UnregisterPlayerEntity ?? (_ => { }), _ => { },
                 (characterId, type) => _playerExit.ReleasePlayer(characterId, type),
-                CloseClientOfAccount);
+                CloseClientOfAccount,
+                // Death and Respawn Story 008 (Decision 5). Left null on purpose: broadcastGhostExpired (no
+                // GhostExpiredEvent wire message exists), deTargetMobsOf (mobs drop a target at HP 0 on their own),
+                // sendZoneSessionEnded (no client is attached while the account is Reconnecting).
+                preDisconnectHp: options.PreDisconnectHp,
+                effectiveMaxHp: options.EffectiveMaxHp,
+                broadcastGhostExpired: null,
+                deTargetMobsOf: null,
+                sendZoneSessionEnded: null);
             _gatewayEvict = new GatewayEvictHandler(_admitted, _tokenStore, gatewayOutbox, _admission, _reclamation, _sessions, _sessionEnds);
             _gatewayReconnect = new GatewayReconnectHandler(_sessions, _tokenStore, _sessionEnds, gatewayOutbox, options.ReauthFailureLimit);
 
@@ -531,6 +554,12 @@ namespace IronGrind.ServerLogic.ZoneServer
 
         /// <summary>The mob roster over <see cref="Pool"/>; the composition reads it for the production entity state source (Story 015).</summary>
         internal ZoneMobRoster MobRoster => _mobs;
+
+        /// <summary>The snapshot builder (test accessor, Death and Respawn Story 008).</summary>
+        internal ZoneSnapshotBuilder SnapshotBuilder => _snapshotBuilder;
+
+        /// <summary>The zone close steps (test accessor, Death and Respawn Story 008).</summary>
+        internal ZoneCloseSteps CloseSteps => _closeSteps;
 
         /// <summary>The mob spawn timers close step 1 cancels (test accessor, Mob Spawning Story 006).</summary>
         internal IZoneMobSpawnTimers MobSpawnTimers => _closeSteps.Timers;

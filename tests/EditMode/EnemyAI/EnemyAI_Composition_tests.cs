@@ -308,6 +308,7 @@ namespace IronGrind.Tests.EditMode.EnemyAI
         public void test_composition_reported_kills_reach_the_loot_stand_in_which_logs_once()
         {
             LogAssert.Expect(LogType.Log, new Regex(@"^\[Random\] PRNG seed: ")); // S3 startup info line; NoUnexpectedReceived below would flag it
+            LogAssert.Expect(LogType.Warning, new Regex(@"Death and Respawn not built")); // no town respawn provider here
             NavCompositionRig rig = StartedRig();
             ZoneInstancingWiring wiring = rig.Comp.ZoneInstancing;
             Assert.IsTrue(wiring.Pool.TryAllocatePlayer(wiring.Pool.Zone, new CharacterID(11u), new AccountID(1011u), 11u,

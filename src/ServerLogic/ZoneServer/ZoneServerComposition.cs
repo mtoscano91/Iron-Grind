@@ -12,6 +12,7 @@ using IronGrind.LevelingSystem;
 using IronGrind.MovementSystem;
 using IronGrind.Networking;
 using IronGrind.Randomness;
+using IronGrind.ServerLogic.DeathAndRespawn;
 using IronGrind.ServerLogic.EnemyAI;
 using IronGrind.ServerLogic.Gateway;
 using IronGrind.ServerLogic.MobSpawning;
@@ -520,6 +521,30 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// Set before the run starts. Null in production.
         /// </summary>
         internal ITownRespawnPointProvider RespawnProviderOverride;
+
+        /// <summary>
+        /// Test seam (Death and Respawn Story 008): the Death and Respawn config asset. Null means
+        /// <see cref="DeathAndRespawnConfigValues.Defaults"/> (no warning). An invalid asset makes the service
+        /// constructor throw, so S5 fails. Set before the run starts.
+        /// </summary>
+        internal DeathAndRespawnConfig DeathAndRespawnConfigOverride;
+
+        /// <summary>
+        /// The zone's Death and Respawn service, built at S5 (Story 008); null before S5 and in a composition with no
+        /// town respawn point provider (no definition slot and no <see cref="RespawnProviderOverride"/>).
+        /// </summary>
+        internal DeathAndRespawnService DeathAndRespawn { get; private set; }
+
+        /// <summary>
+        /// The phase 3 step that ticks <see cref="DeathAndRespawn"/>; null when no service was built.
+        /// </summary>
+        internal DeathAndRespawnPhaseStep DeathAndRespawnStep { get; private set; }
+
+        /// <summary>
+        /// The late-bound dead-ness reader shared by the snapshot builder, zone close, Enemy AI's candidate
+        /// source and the entity state source; bound to <see cref="DeathAndRespawn"/> at S5. Null before S5.
+        /// </summary>
+        internal ForwardingPlayerDeathStateReader DeathStateReader { get; private set; }
 
         /// <summary>
         /// Test seam (like <see cref="RespawnProviderOverride"/>): the inner entity-state source under the Movement
@@ -1819,6 +1844,10 @@ namespace IronGrind.ServerLogic.ZoneServer
             private RecordingConnectionActivitySink _activitySink;
             private ConnectionStateMachine _sessionMachine;
             private readonly DeferredTransportDisconnector _disconnector = new DeferredTransportDisconnector();
+            // Death and Respawn Story 008: created before the wiring, bound once the service is built.
+            private readonly ForwardingPlayerDeathStateReader _deathReader = new ForwardingPlayerDeathStateReader();
+            // The provider Movement got (Story 008 AC-2: the service gets the same instance); null without one.
+            private ITownRespawnPointProvider _respawnProvider;
 
             public RealBackend(ZoneServerComposition owner, IZoneEnvironment environment)
             {
@@ -2111,7 +2140,9 @@ namespace IronGrind.ServerLogic.ZoneServer
                 // (after the Skill cast step), so it sees every session-count change of the tick.
                 var linkPump = new GatewayLinkPump(_owner._linkChannel, _owner._linkOutbox, wiring);
 
-                AddPhaseThreeSteps(navigationStep, statusEffects, movement, enemyAI, linkPump);
+                DeathAndRespawnService deathAndRespawn = BuildDeathAndRespawn(wiring, outbox, statusEffects, movement);
+
+                AddPhaseThreeSteps(navigationStep, statusEffects, movement, enemyAI, linkPump, deathAndRespawn);
 
                 _owner._linkRegistration = new GatewayLinkRegistration(_owner._linkChannel, linkPump, _owner._gatewayLinkPort,
                     () =>
@@ -2123,8 +2154,14 @@ namespace IronGrind.ServerLogic.ZoneServer
                 // first on entry; Combat last on release so BeforeRelease still finds the player's slot.
                 wiring.EntryCompletion.SetEntryListener(new CompositeZonePlayerEntryListener(
                     movement, new SkillSpawnEntryListener(skill, _owner.ZoneLeveling)));
-                wiring.Pool.SetReleaseListener(new CompositeZoneSlotReleaseListener(
-                    statusEffects, movement, new SkillSlotReleaseListener(skill), _owner.AutoAttackCombat));
+                // Death and Respawn (Story 008): resets the slot's death state; before Combat, which stays last.
+                IZoneSlotReleaseListener releaseListeners = deathAndRespawn == null
+                    ? new CompositeZoneSlotReleaseListener(
+                        statusEffects, movement, new SkillSlotReleaseListener(skill), _owner.AutoAttackCombat)
+                    : new CompositeZoneSlotReleaseListener(
+                        statusEffects, movement, new SkillSlotReleaseListener(skill), deathAndRespawn,
+                        _owner.AutoAttackCombat);
+                wiring.Pool.SetReleaseListener(releaseListeners);
                 var cycleBroadcast = new CycleTimerBroadcastStep(_owner.AutoAttackCombat, wiring.Pool, sendSeam, outbox);
                 Observe(nameof(CycleTimerBroadcastStep));
                 _owner.CycleTimerBroadcast = cycleBroadcast;
@@ -2205,7 +2242,7 @@ namespace IronGrind.ServerLogic.ZoneServer
 
                 entityStateForwarder?.Bind(new ZoneEntityStateSource(wiring.Pool, wiring.MobRoster,
                     new CharacterStatsZoneEntityStatReader(_owner.ZoneCharacterStats), _owner.PersistenceService,
-                    _owner.ZoneEquipment, combatReader, new MobRuntimeStoreTransformReader(mobStore)));
+                    _owner.ZoneEquipment, combatReader, new MobRuntimeStoreTransformReader(mobStore), _deathReader));
                 return enemyAI;
             }
 
@@ -2216,7 +2253,8 @@ namespace IronGrind.ServerLogic.ZoneServer
             // MobPositionIntegrationStep (ADR-002 phase 4, last). Navigation step and Enemy AI exist only when the
             // composition built the navigation itself (no INavigationProvider with a passed seam).
             private void AddPhaseThreeSteps(NavigationPhaseStep navigationStep, StatusEffectsService statusEffects,
-                MovementService movement, EnemyAISystem enemyAI, GatewayLinkPump linkPump)
+                MovementService movement, EnemyAISystem enemyAI, GatewayLinkPump linkPump,
+                DeathAndRespawnService deathAndRespawn)
             {
                 List<IZoneSimulationStep> steps = _owner._simulationSteps;
                 if (navigationStep != null)
@@ -2232,6 +2270,16 @@ namespace IronGrind.ServerLogic.ZoneServer
                 _owner.MobSpawningStep = spawningStep;
                 steps.Add(spawningStep);
                 steps.Add(statusEffects);
+                // Death and Respawn (Story 008, Decision 3): after Status Effects and before Movement, so a player
+                // respawned on tick T is teleported and free to move on T, and targetable by Enemy AI and Auto-Attack
+                // on T. Listed only when the service was built (it needs a town respawn point provider).
+                if (deathAndRespawn != null)
+                {
+                    var deathStep = new DeathAndRespawnPhaseStep(deathAndRespawn);
+                    _owner.DeathAndRespawnStep = deathStep;
+                    steps.Add(deathStep);
+                }
+
                 steps.Add(movement);
                 if (enemyAI != null)
                 {
@@ -2245,6 +2293,40 @@ namespace IronGrind.ServerLogic.ZoneServer
                 {
                     steps.Add(enemyAI.IntegrationStep);
                 }
+            }
+
+            // Death and Respawn Story 008: one service per zone, built after Status Effects, Movement and Combat
+            // exist (and the wiring with its SessionEnds). Returns null, building nothing, with one warning, when
+            // there is no town respawn point provider (no definition slot and no RespawnProviderOverride: test
+            // compositions); the forwarder then stays unbound and nobody is dead. An invalid config override makes
+            // the constructor throw ArgumentException (the validation logs the reason); the S5 step wrapper then
+            // logs "startup failed at S5".
+            private DeathAndRespawnService BuildDeathAndRespawn(ZoneInstancingWiring wiring, ClientMessageOutbox outbox,
+                StatusEffectsService statusEffects, MovementService movement)
+            {
+                _owner.DeathStateReader = _deathReader;
+                if (_respawnProvider == null)
+                {
+                    Debug.LogWarning("[ZoneServer] Death and Respawn not built: no town respawn point provider; "
+                        + "nobody is ever dead in this zone.");
+                    return null;
+                }
+
+                ZoneStats stats = _owner.ZoneCharacterStats;
+                DeathAndRespawnConfigValues config = _owner.DeathAndRespawnConfigOverride == null
+                    ? DeathAndRespawnConfigValues.Defaults
+                    : DeathAndRespawnConfigValues.FromAsset(_owner.DeathAndRespawnConfigOverride);
+                var service = new DeathAndRespawnService(config, wiring.Pool, new CharacterStatsDeathSource(stats),
+                    new ServerTickDeathTickSource(_tickLoop), _owner.AutoAttackCombat, movement,
+                    new NoOpPartyMemberStatusSink(), new ZoneSlotGhostStatusSource(wiring.Pool),
+                    new SessionEndGhostDeathSink(wiring.Pool, wiring.SessionEnds), _respawnProvider,
+                    new CharacterStatsRespawnVitalsWriter(stats), movement, statusEffects,
+                    new DeathMessageEmitter(wiring.Pool, outbox));
+                Observe(nameof(DeathAndRespawnService));
+                _deathReader.Bind(service);
+                _owner.RegisterDisposable(service);
+                _owner.DeathAndRespawn = service;
+                return service;
             }
 
             // Zone Instancing (Story 014): built after the outbox exists and before the dispatcher is sealed. Its tick
@@ -2276,6 +2358,12 @@ namespace IronGrind.ServerLogic.ZoneServer
                         Sessions = _sessionMachine,
                         ActivitySink = _activitySink,
                         Ghosts = new SessionMachineGhostSource(_sessionMachine, ZoneSlotPool.MAX_PLAYERS_PER_ZONE),
+                        // Death and Respawn Story 008: forwarder (bound at S5 once the service exists), the no-op HP
+                        // source (no production pre-disconnect HP source yet) and the MaxHP fallback of a ghost save.
+                        DeathStateReader = _deathReader,
+                        PreDisconnectHp = new NoOpPreDisconnectHpSource(),
+                        EffectiveMaxHp = entity => _owner.ZoneCharacterStats.GetEffectiveStat(
+                            entity, IronGrind.CharacterStats.StatID.MaxHP),
                         ConnectingTimeoutSeconds = _owner.EffectiveConnectingTimeoutSeconds,
                         LogTransitions = _owner.LogTeardownSteps,
                         EntityState = entityState,
@@ -2362,7 +2450,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                 var resolver = new MobAttackResolver(new HitDetector(HitDetectionConfig.Default), _owner.HitResultEmitter,
                     calculator, stats, new AutoAttackDamageOutputEmitter(wiring.Pool, _owner._zoneId, outbox, ruBatch));
                 var candidates = new ZoneAggroCandidateSource(_owner._zoneId, wiring.Pool,
-                    new MovementPlayerPositionReader(movement));
+                    new MovementPlayerPositionReader(movement), _deathReader);
                 var enemyAI = new EnemyAISystem(_owner._zoneId, bus, store, registry, _owner._navigationService,
                     new CharacterStatsZoneEntityStatReader(stats), resolver, _owner._enemyAIConfig,
                     _owner._returnSpeedCap, candidates, _owner.AutoAttackCombat, new StandInLootTableService(),
@@ -2405,6 +2493,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                     respawn = new ZoneDefinitionSlotRespawnPointProvider(_owner._zoneId, _owner._definitionSlot);
                 }
 
+                _respawnProvider = respawn;
                 MovementService movement;
                 if (respawn != null)
                 {
