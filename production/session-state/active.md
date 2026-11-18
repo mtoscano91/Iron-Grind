@@ -7230,3 +7230,7 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: None (sink idempotency → Story 010; AC-6 gap → Story 007 note)
 - Updated: story (Complete, ACs ticked, Completion Notes), EPIC.md (row 003 Complete, Next Step → Story 004), index (3 Complete). Not committed.
 - Next recommended: /story-readiness production/epics/death-and-respawn/story-004-respawn-sequence.md
+
+## /story-readiness Death & Respawn Story 004 2026-11-18: NEEDS WORK → rewritten, READY (not committed)
+- User "yes, rewrite". Gaps fixed: AC-3 SetBaseStat → IRespawnVitalsWriter.RestoreToFull + CharacterStatsRespawnVitalsWriter (SetCurrentHP/MP to effective max; GDD wording deviation advisory); AC-2 zero = not resolved, per-slot retry up to RespawnAnchorRetryTicks, then respawn at zero + one critical log (zone from pool.Zone); AC-4 separate IMovementTeleport on MovementService (IMovementSystem unchanged — AutoFaceEmitter + fakes implement it), reuse OnPlayerEntering placement; AC-8 slot → Connected only if Dead/Respawning, Disconnected_SessionActive left; new IStatusEffectsRespawnSink implemented by StatusEffectsService; Tick(long); AC-10 GC.GetAllocatedBytesForCurrentThread pattern. Estimate 5 h. Story 008 AC-2 wiring list updated.
+- Next: commit if wanted, then /dev-story production/epics/death-and-respawn/story-004-respawn-sequence.md
