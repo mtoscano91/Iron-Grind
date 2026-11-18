@@ -3,7 +3,7 @@
 > **Layer**: Feature
 > **GDD**: design/gdd/party-system.md
 > **Architecture Module**: Party System (`architecture.md` layer map, Feature), `src/ServerLogic/` (ADR-012)
-> **Status**: Ready
+> **Status**: In Progress
 > **Stories**: 12 created 2026-11-18 — see Stories
 > **Manifest Version**: 2026-11-06
 
@@ -93,7 +93,7 @@ This epic is complete when:
 
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
-| 001 | [Party config and F-PS-1](story-001-party-config-and-xp-formula.md) | Logic | Ready | ADR-012 |
+| 001 | [Party config and F-PS-1](story-001-party-config-and-xp-formula.md) | Logic | Complete | ADR-012 |
 | 002 | [Party registry — solo PartyIDs and membership](story-002-party-registry.md) | Logic | Ready | ADR-010 |
 | 003 | [Leader index and round-robin cursor](story-003-leader-and-round-robin.md) | Logic | Ready | ADR-010 |
 | 004 | [Member status and XP eligibility](story-004-member-status-and-eligibility.md) | Logic | Ready | ADR-010 |
@@ -116,4 +116,4 @@ Order: 001 → 002 → 004 → 003 → 005; 006 any time before 007 / 008; 007 a
 
 ## Next Step
 
-Run `/story-readiness production/epics/party-system/story-001-party-config-and-xp-formula.md`.
+Story 001 Complete (2026-11-18). Run `/story-readiness production/epics/party-system/story-002-party-registry.md`.

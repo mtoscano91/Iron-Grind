@@ -7475,3 +7475,29 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Findings: no leave/disband/invite-result messages in protocol; PartyMemberStatusChanged has no schema; no disband ack message (timeout only).
 - EPIC.md stories table + order + findings; index row.
 - Next: /story-readiness production/epics/party-system/story-001-party-config-and-xp-formula.md
+
+## /story-readiness Party System Story 001 2026-11-18: NEEDS WORK → user decisions → READY (not committed)
+- Epic + stories committed first as 69727c2.
+- Found: Mathf.RoundToInt = (int)Math.Round (half to even) + 1-0.10f = 0.89999998 → XP_base 5, N 2 gives 4 (GDD said 5); MAX_PARTY_SIZE range [2,6] vs wire PartyStateUpdate fixed 4 slots; InviteRetrySeconds / DisbandTimeoutSeconds had no range; tick constant ServerTickLoop.TICK_RATE_HZ.
+- User: keep float + RoundToInt, fix GDD; size [2,4]. Applied: story 001 (Readiness Decisions, AC-1 ranges incl. retry [1,10] < timeout, disband [5,30], AC-2, AC-3 5→4, QA, impl notes: joint-constraint internal helper); GDD party-system.md edge case line 182 + tuning knob MAX_PARTY_SIZE [2,4] + Last Updated; entities.yaml MAX_PARTY_SIZE safe range [2,4] revised 2026-11-18.
+- Next: /dev-story production/epics/party-system/story-001-party-config-and-xp-formula.md
+
+## Session Extract — /dev-story 2026-11-18 (Party System Story 001)
+- Story: production/epics/party-system/story-001-party-config-and-xp-formula.md — Party config and F-PS-1
+- gameplay-programmer (14 tool uses). New: src/ServerLogic/PartySystem/PartySystemConfig.cs (+ internal SetForTests), PartySystemConfigValues.cs (ranges, tick props, JOINT_DEDUCTION_LIMIT, internal retry/joint helpers, NaN skips cross-field checks), PartyXpFormula.cs; tests/EditMode/PartySystem/PartySystem_ConfigAndFormula_tests.cs (22 methods, 31 cases). Metas generated.
+- Full EditMode !Database 8125/8125 (19:09:31Z, +31), 0 error CS.
+- Check at review: test names camelCase (test_partyConfig_defaults_equalGddValuesAndValidate) vs repo snake_case convention; 2 src lines > 120 (ConfigValues, XpFormula).
+- Next: /code-review src/ServerLogic/PartySystem/*.cs tests/EditMode/PartySystem/PartySystem_ConfigAndFormula_tests.cs then /story-done
+
+## /code-review Party System Story 001 2026-11-18: APPROVED WITH SUGGESTIONS, awaiting user
+- unity-specialist: matches D&R pattern; REQUIRED only 2 lines > 120 (PartySystemConfigValues.cs:80, PartyXpFormula.cs:15). Suggestions: NaN rate guard in Compute (`if (!(multiplier > 0f)) return 0;`), unused `bool ok = true`, doc why 5→4 (0.89999998); ±Infinity may log a second cross-rule error.
+- qa-tester: TESTABLE, no required gaps; naming fine (12% of repo camelCase first segment; party names include the system). Suggestions: default-struct test → 6 exact LogAssert.Expect instead of ignoreFailingMessages; size 1 message has no "wire schema"; pin TICK_RATE_HZ == 20; tighter just-outside float values; FromAsset out-of-range unclamped then rejected; helper edges (70 vs 60, 0.49×2); formula multiplier exactly 0, negative rate, int.MaxValue overflow pin.
+- Next: on approval apply, rerun EditMode !Database, then /story-done
+
+> **Review fixes applied, Party System Story 001 2026-11-18: APPROVED (not committed).** User "yes" → required + all suggestions. `PartySystemConfigValues`: line 80 wrapped, unused `bool ok = true` removed. `PartyXpFormula.Compute`: `!(multiplier > 0f)` → 0 (NaN guard), new `multiplier >= 1f` → `xpBase` unchanged (no bonus for a negative rate; avoids the 2^31 int-cast overflow at int.MaxValue N 1), doc remark on 5 → 4 (0.89999998); param line wrapped. Tests +8 (30 methods): TICK_RATE_HZ 20 pinned, FromAsset out-of-range copied unclamped then 3 exact errors, size-1 message anchored (no wire-schema suffix), tighter just-outside floats, CheckRetryBelowTimeout(70,60), CheckJointDeduction(0.49,3), default struct 6 exact errors + NoUnexpectedReceived, multiplier 0 / NaN rate / negative rate / int.MaxValue N 1 and N 2 (1932735232). Full EditMode `-testCategory "!Database"` 8133/8133 (23:31:41Z), 0 `error CS`. **Next:** `/story-done` approval → mark Complete, commit.
+
+## Session Extract — /story-done 2026-11-18
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/party-system/story-001-party-config-and-xp-formula.md — Party Config and F-PS-1
+- Tech debt logged: None (advisory: formula caps at xpBase for multiplier ≥ 1)
+- Next recommended: production/epics/party-system/story-002-party-registry.md (/story-readiness)

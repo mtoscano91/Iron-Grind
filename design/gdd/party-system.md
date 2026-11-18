@@ -2,7 +2,7 @@
 
 > **Status**: Approved (lean re-review 2026-05-17) — amended 2026-05-29 (MemberStatus.Dead added for Death & Respawn integration); amended 2026-06-19 (PartyMemberSlot data type + GetPartyMembersWithStatus added for Party Chat)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-06-19 (Party Chat amendment: PartyMemberSlot struct + GetPartyMembersWithStatus method added to Exposed Data Types and Interactions; downstream Party Chat row updated; bidirectional check updated)
+> **Last Updated**: 2026-11-18 (Party System Story 001 readiness: F-PS-1 midpoint example corrected to banker's rounding + float result 4; `MAX_PARTY_SIZE` safe range [2, 4] because the wire schema is fixed at 4 slots)
 > **Implements Pillar**: Social Gravity (primary) — Earned Power (supporting)
 
 ## Overview
@@ -179,7 +179,7 @@ PartyMemberSlot
 - **If `N_eligible = 0` at kill time** (all members are Ghost/OutOfZone/Disconnected/Dead simultaneously): do not evaluate F-PS-1. Award 0 XP to all members. The unguarded formula would compute `XP_base × (1.0 − 0.10 × −1) = XP_base × 1.10`, which is a bug.
 - **If `N_eligible = 1` and that member is not the party leader**: award full solo XP (`XP_base × 1.00`) to that member. A party of 6 where 5 are ineligible produces solo-equivalent XP for the one eligible member.
 - **If a member is at `LEVEL_CAP = 60` and in party**: the capped member satisfies the ±5 eligibility check. `AddExperience()` to a capped character is a no-op in the Leveling System. The capped member **counts toward `N_eligible`** and reduces per-kill XP for other members — intentional. A level-capped support player (healer, buffer) enables harder content with higher XP_base per mob and contributes to party survival; the per-kill deduction reflects the presence of a capable party member, not a penalty for the healer's role. `AddExperience()` to a capped character is a no-op in the Leveling System.
-- **If `Mathf.RoundToInt` produces a `.5` midpoint**: Unity's `Mathf.RoundToInt` uses round-half-away-from-zero (IEEE 754 standard), not banker's rounding, across all builds including IL2CPP. At midpoint `XP_base = 5, N_eligible = 2` → `5 × 0.90 = 4.5` → rounds to 5. No special handling required.
+- **If `Mathf.RoundToInt` meets a `.5` midpoint**: Unity's `Mathf.RoundToInt` is `(int)Math.Round(f)`, which rounds a `.5` to the nearest even integer (banker's rounding), and the float multiplier is not exact (`1 − 0.10f` is 0.89999998). Example: `XP_base = 5, N_eligible = 2` → `5 × 0.89999998 = 4.4999998` → **4**. Accepted (Party System Story 001 readiness, 2026-11-18): the same float + `Mathf.RoundToInt` path as Leveling; the difference only shows at tiny `XP_base`, below the [200, 2,000,000] range.
 
 **Level gate interacting with leader changes (CR-PS-3 + CR-PS-8):**
 - **If the leader changes and the new leader's level places existing members outside ±5**: existing members remain in the party but lose XP eligibility immediately. The server sends a `PartyStateUpdate` that includes each member's updated eligibility status so the HUD can indicate which members are currently XP-ineligible.
@@ -247,7 +247,7 @@ PartyMemberSlot
 
 | Knob | Default | Safe Range | Effect if Too Low | Effect if Too High |
 |------|---------|-----------|------------------|--------------------|
-| `MAX_PARTY_SIZE` | 4 | [2, 6] | Less social density; elite zones feel lonely | Zone management complexity; HP update bandwidth scales with party size; joint constraint with RATE must hold |
+| `MAX_PARTY_SIZE` | 4 | [2, 4] (wire `PartyStateUpdate` is fixed at 4 member slots; going above 4 needs a wire-protocol change — Story 001 readiness 2026-11-18) | Less social density; elite zones feel lonely | Zone management complexity; HP update bandwidth scales with party size; joint constraint with RATE must hold |
 | `XP_PARTY_DEDUCTION_RATE` | 0.10 | [0.00, 0.20] | Parties become XP-dominant; solo grind feels pointless | Parties feel punishing; detriment outweighs throughput gain; Social Gravity collapses |
 | Level range gate (±N levels) | ±5 | [0, 15] | Hard to party with friends near level boundaries; Social Gravity friction | Enables trivial power-leveling (e.g., L60 + L1); Earned Power violated |
 | Invite timeout | 60s | [30s, 120s] | Invitee misses invite during loading or combat | Long pending-invite queues accumulate; UX clutter |

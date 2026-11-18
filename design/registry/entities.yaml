@@ -615,9 +615,9 @@ constants:
     type: "int constant"
     value: 4
     unit: "maximum number of players in one party"
-    note: "Party System CR-PS-2: maximum party size is 4 (MVP). Design review 2026-05-16 set value to 4 (was 6) — 6-frame HUD layout infeasible on iPhone landscape; MVP scope aligned with game-concept.md provisional 2–4. Flat 4-slot CharacterID array in PartyState; join-order stable. F-PS-1 N_eligible range is [1,4]; output range multiplier [×0.70 to ×1.00]. Safe range: [2, 6]. Joint constraint with XP_PARTY_DEDUCTION_RATE: RATE × (MAX_PARTY_SIZE − 1) < 1.0 must hold. Changing this constant requires coordinated updates to: F-PS-1 output table, HUD party panel slot count, loot-table-system.md F-LT-2 N range, and game-concept.md party size statement."
+    note: "Party System CR-PS-2: maximum party size is 4 (MVP). Design review 2026-05-16 set value to 4 (was 6) — 6-frame HUD layout infeasible on iPhone landscape; MVP scope aligned with game-concept.md provisional 2–4. Flat 4-slot CharacterID array in PartyState; join-order stable. F-PS-1 N_eligible range is [1,4]; output range multiplier [×0.70 to ×1.00]. Safe range: [2, 4] (revised 2026-11-18, Party System Story 001 readiness: wire PartyStateUpdate is fixed at 4 member slots; above 4 needs a wire-protocol change). Joint constraint with XP_PARTY_DEDUCTION_RATE: RATE × (MAX_PARTY_SIZE − 1) < 1.0 must hold. Changing this constant requires coordinated updates to: F-PS-1 output table, HUD party panel slot count, loot-table-system.md F-LT-2 N range, and game-concept.md party size statement."
     added: "2026-05-16"
-    revised: "2026-05-16"
+    revised: "2026-11-18"
 
   - name: XP_PARTY_DEDUCTION_RATE
     status: active
