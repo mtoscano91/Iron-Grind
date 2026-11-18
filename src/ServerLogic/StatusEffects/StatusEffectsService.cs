@@ -2,6 +2,7 @@ using System;
 using System.Runtime.ExceptionServices;
 using IronGrind.CharacterStats;
 using IronGrind.Networking;
+using IronGrind.ServerLogic.DeathAndRespawn;
 using IronGrind.ServerLogic.ZoneInstancing;
 
 namespace IronGrind.StatusEffects
@@ -22,7 +23,8 @@ namespace IronGrind.StatusEffects
     /// the entity's slot is released.
     /// Not thread-safe: every call runs on the server tick thread.
     /// </summary>
-    public sealed class StatusEffectsService : IDisposable, IZoneSlotReleaseListener, IZoneSimulationStep
+    public sealed class StatusEffectsService : IDisposable, IZoneSlotReleaseListener, IZoneSimulationStep,
+        IStatusEffectsRespawnSink
     {
         private const string LOG_PREFIX = "[StatusEffects]";
         private const int ROWS_PER_ENTITY = StatusEffectsConstants.MAX_ACTIVE_BUFFS_PER_ENTITY;

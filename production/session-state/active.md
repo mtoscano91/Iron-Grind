@@ -7234,3 +7234,25 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 ## /story-readiness Death & Respawn Story 004 2026-11-18: NEEDS WORK → rewritten, READY (not committed)
 - User "yes, rewrite". Gaps fixed: AC-3 SetBaseStat → IRespawnVitalsWriter.RestoreToFull + CharacterStatsRespawnVitalsWriter (SetCurrentHP/MP to effective max; GDD wording deviation advisory); AC-2 zero = not resolved, per-slot retry up to RespawnAnchorRetryTicks, then respawn at zero + one critical log (zone from pool.Zone); AC-4 separate IMovementTeleport on MovementService (IMovementSystem unchanged — AutoFaceEmitter + fakes implement it), reuse OnPlayerEntering placement; AC-8 slot → Connected only if Dead/Respawning, Disconnected_SessionActive left; new IStatusEffectsRespawnSink implemented by StatusEffectsService; Tick(long); AC-10 GC.GetAllocatedBytesForCurrentThread pattern. Estimate 5 h. Story 008 AC-2 wiring list updated.
 - Next: commit if wanted, then /dev-story production/epics/death-and-respawn/story-004-respawn-sequence.md
+
+## Session Extract — /dev-story 2026-11-18 (Story 004)
+- Story: production/epics/death-and-respawn/story-004-respawn-sequence.md — Respawn Sequence T-2/T-3
+- Files: new src/ServerLogic/DeathAndRespawn/{IRespawnVitalsWriter,CharacterStatsRespawnVitalsWriter,IStatusEffectsRespawnSink}.cs, src/ServerLogic/MovementSystem/IMovementTeleport.cs (+metas); modified DeathAndRespawnService.cs (ctor +4, Tick(long), TryRespawn, _retryAttempts[], EnqueueRespawnMessages placeholder), MovementService.cs (IMovementTeleport, PlaceSlot helper shared with OnPlayerEntering), StatusEffectsService.cs (implements IStatusEffectsRespawnSink + using); DeathEntry/GhostDeath tests ctor sites (+4 null asserts)
+- Tests: DeathAndRespawn_Respawn_tests.cs 19 (shared RespawnStubs), MovementSystem_Teleport_tests.cs 4; filter DeathAndRespawn|MovementSystem 411/411; full !Database 7930/7930 (= 7907 + 23). Agent miscounted as 20+5.
+- Decisions: retry counter parallel int[]; pool slot not written Respawning; Respawning-dup test still uses SetStateForTests (real mid-T-3 path covered in Respawn tests); teleport's ResetSlot also clears Prohibited.
+- Check at review: StatusEffects → DeathAndRespawn namespace dependency (same asmdef; precedent AutoAttackCombat : ICombatProhibitionSink); DeathState RespawnZoneID/RespawnPosition left filled after respawn.
+- Next: /code-review then /story-done
+
+## /code-review Death & Respawn Story 004 2026-11-18: CHANGES REQUIRED, awaiting user
+- R1 T-3 exception safety (DeathAndRespawnService.cs ~217-270): a throwing seam leaves the slot Respawning forever (bans on, Tick only fires on Dead) and aborts the Tick loop. Proposed: per-step try/catch (log entity + step), respawn always completes to Alive; extract ApplyRespawn so TryRespawn ≤ 40 lines; test: vitals throws → bans lifted, Alive, other player same tick respawns.
+- R2 Respawn tests :445-475, :571-587 assert step kinds/counts only; record and assert EntityID (+ Online status, teleport point) in the ordered log.
+- R3 missing tests: two players same tick; one retrying while another respawns (per-call provider script); Tick after Dispose; slot released while dead (no throw, no calls, still Dead).
+- Suggestions: comment that Vector3 == is approximate on purpose; teleport encodable-range log like OnPlayerEntering; re-flow class doc (DR) and MovementService class declaration; DeathState doc: RespawnZoneID/Position kept after respawn; writer test with a MaxHP modifier; teleport test asserts Prohibited cleared; AC-10 warm up twice; Story 007 note: reset _retryAttempts on slot release.
+- Next: on approval apply, rerun filter + full, then /story-done
+
+## Session Extract — /story-done 2026-11-18 (Story 004)
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/death-and-respawn/story-004-respawn-sequence.md — Respawn Sequence T-2/T-3 (10/10 ACs; Respawn 26 + Teleport 5 tests; filter 419/419; full 7938, TD-110 flake 2 of 5 runs)
+- Tech debt: TD-110 updated (recurrence, P1, impact High); none new
+- Updated: story (Complete, ACs, Completion Notes), EPIC.md (row 004, Next Step → Story 005), index (4 Complete). Not committed.
+- Next recommended: /story-readiness production/epics/death-and-respawn/story-005-wire-messages.md

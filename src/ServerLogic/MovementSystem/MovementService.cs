@@ -32,8 +32,8 @@ namespace IronGrind.MovementSystem
     /// service.Run(tick, ServerTickLoop.FIXED_DELTA_TIME);
     /// </code>
     /// </example>
-    public sealed class MovementService : IZoneSimulationStep, IMovementSystem, IZonePlayerEntryListener,
-        IZoneSlotReleaseListener
+    public sealed class MovementService : IZoneSimulationStep, IMovementSystem, IMovementTeleport,
+        IZonePlayerEntryListener, IZoneSlotReleaseListener
     {
         /// <summary>NavMesh sample radius in meters (movement-system.md CR-MOV-7; a GDD value, not a tuning knob).</summary>
         public const float NAVMESH_SAMPLE_RADIUS = 0.5f;
@@ -260,12 +260,37 @@ namespace IronGrind.MovementSystem
             if (!MovementPositionGuard.IsEncodable(point))
                 Debug.LogError($"{LOG_PREFIX} town respawn point {point} for entity {id.RawValue} is outside the encodable range; registered anyway");
 
-            ResetSlot(slot);
-            _intents.TryTakeIntent(slot, out _);
+            PlaceSlot(slot, point);
             _occupied[slot] = true;
             _ids[slot] = id;
-            _positions[slot] = point;
             _facing[slot] = 0;
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>
+        /// Death and Respawn Story 004 (CR-DR-10): the same placement steps as <see cref="OnPlayerEntering"/> (reset
+        /// slot state, drop the pending intent, set the position); facing and occupancy are unchanged. The reset also
+        /// clears Prohibited, which the respawn lifts anyway.
+        /// </remarks>
+        public bool TrySetAuthoritativePosition(EntityID id, Vector3 position)
+        {
+            if (!TryFindSlot(id, out int slot))
+                return false;
+
+            if (!MovementPositionGuard.IsEncodable(position))
+                Debug.LogError($"{LOG_PREFIX} authoritative position {position} for entity {id.RawValue} is outside the encodable range; set anyway");
+
+            PlaceSlot(slot, position);
+            return true;
+        }
+
+        // Shared by OnPlayerEntering and TrySetAuthoritativePosition: reset per-slot state, drop any pending
+        // intent, set the position. Does not touch occupancy, id or facing.
+        private void PlaceSlot(int slot, Vector3 point)
+        {
+            ResetSlot(slot);
+            _intents.TryTakeIntent(slot, out _);
+            _positions[slot] = point;
         }
 
         /// <summary>

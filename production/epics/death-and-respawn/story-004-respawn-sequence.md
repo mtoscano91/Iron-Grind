@@ -1,7 +1,7 @@
 # Story 004: Respawn Sequence — T-2 and T-3
 
 > **Epic**: Death & Respawn
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Feature
 > **Type**: Logic
 > **Estimate**: 5 h
@@ -43,16 +43,16 @@
 
 ## Acceptance Criteria
 
-- [ ] **AC-1 Exact tick (AC-DR-6)**: with death at tick T and delay 140, `Tick(currentTick)` starts the respawn on tick T + 140 exactly and not on T + 139. Guard: `State == Dead && currentTick >= RespawnTick`; a default (Alive, zero) state never fires. Works for T ≥ 2^32 (`long`).
-- [ ] **AC-2 Town point (CR-DR-8, CR-DR-14)**: the position comes from `ITownRespawnPointProvider.GetTownRespawnPoint(pool.Zone)`. `Vector3.zero` means "not resolved" (the provider's contract): the player stays Dead and the lookup is retried on each following tick, up to `RespawnAnchorRetryTicks` attempts in all (a per-slot counter, no allocation). When the budget is used up, the respawn proceeds at `Vector3.zero` (the end of the provider's own fallback chain; no separate per-zone fallback exists) and one `Debug.LogError` critical alert names the zone and the entity. Accepted edge case: a town point authored exactly at the origin goes through the retries and logs a false alert.
-- [ ] **AC-3 HP / MP (AC-DR-7, CR-DR-9)**: `IRespawnVitalsWriter.RestoreToFull(id)` is called once. The production writer, tested against a real `CharacterStats`, leaves CurrentHP == effective MaxHP and CurrentMP == effective MaxMP. `LoadCharacter` is never called (the service has no persistence dependency).
-- [ ] **AC-4 Position (AC-DR-8, CR-DR-10)**: `IMovementTeleport.TrySetAuthoritativePosition(id, point)` is called once with the resolved point. `MovementService` implements it by reusing what `OnPlayerEntering` does to place a player (reset slot state, take and drop any pending intent, set the position; facing and occupancy unchanged); unknown id → false. If it returns false, the service logs an error and continues the respawn. Movement unit test: the position reads back within 0.1 units, a queued intent is dropped, unknown id returns false.
-- [ ] **AC-5 Bans lifted (AC-DR-9, CR-DR-11)**: `ICombatProhibitionSink.SetCombatProhibited(id, false)` and `IMovementSystem.SetProhibited(id, false)` are each called once (fakes record the calls; real wiring verified in Story 008).
-- [ ] **AC-6 Status Effects (AC-DR-5, CR-DR-11a)**: `IStatusEffectsRespawnSink.OnEntityRespawned(id)` is called once. With the real `StatusEffectsService` as the sink, `ApplyEffect` on the player succeeds after T-3 (the "buffs cleared at death" half is Status Effects' own death subscription, already built).
-- [ ] **AC-7 Party (CR-DR-12)**: party sink called once with `Online`.
-- [ ] **AC-8 Single tick (T-2 → T-3)**: Respawning is entered and left in the same `Tick`; at the end of the tick `DeathState` is Alive with `DeathTick` / `RespawnTick` and the retry counter zeroed. The slot state is set to `ZoneSessionState.Connected` only when it is `Dead` or `Respawning`; a `Disconnected_SessionActive` slot is left unchanged (Story 007 AC-2: the timer runs while disconnected). An `OnEntityDied` raised during the T-3 steps for a connected player is dropped by duplicate suppression (CR-DR-2); an `OnEntityDied` on a later tick is a fresh death (EC-DR-4).
-- [ ] **AC-9 Order**: the T-3 side effects run in GDD order: HP/MP → position → combat → movement ban lifted → Status Effects → party → (Story 005 messages).
-- [ ] **AC-10 No allocation**: `Tick` allocates 0 bytes after warm-up, including a tick with a respawn (measured with `GC.GetAllocatedBytesForCurrentThread`, as in `EnemyAI_DeathBridge_tests.cs`; the provider fake returns a non-zero point, since the zero path logs).
+- [x] **AC-1 Exact tick (AC-DR-6)**: with death at tick T and delay 140, `Tick(currentTick)` starts the respawn on tick T + 140 exactly and not on T + 139. Guard: `State == Dead && currentTick >= RespawnTick`; a default (Alive, zero) state never fires. Works for T ≥ 2^32 (`long`).
+- [x] **AC-2 Town point (CR-DR-8, CR-DR-14)**: the position comes from `ITownRespawnPointProvider.GetTownRespawnPoint(pool.Zone)`. `Vector3.zero` means "not resolved" (the provider's contract): the player stays Dead and the lookup is retried on each following tick, up to `RespawnAnchorRetryTicks` attempts in all (a per-slot counter, no allocation). When the budget is used up, the respawn proceeds at `Vector3.zero` (the end of the provider's own fallback chain; no separate per-zone fallback exists) and one `Debug.LogError` critical alert names the zone and the entity. Accepted edge case: a town point authored exactly at the origin goes through the retries and logs a false alert.
+- [x] **AC-3 HP / MP (AC-DR-7, CR-DR-9)**: `IRespawnVitalsWriter.RestoreToFull(id)` is called once. The production writer, tested against a real `CharacterStats`, leaves CurrentHP == effective MaxHP and CurrentMP == effective MaxMP. `LoadCharacter` is never called (the service has no persistence dependency).
+- [x] **AC-4 Position (AC-DR-8, CR-DR-10)**: `IMovementTeleport.TrySetAuthoritativePosition(id, point)` is called once with the resolved point. `MovementService` implements it by reusing what `OnPlayerEntering` does to place a player (reset slot state, take and drop any pending intent, set the position; facing and occupancy unchanged); unknown id → false. If it returns false, the service logs an error and continues the respawn. Movement unit test: the position reads back within 0.1 units, a queued intent is dropped, unknown id returns false.
+- [x] **AC-5 Bans lifted (AC-DR-9, CR-DR-11)**: `ICombatProhibitionSink.SetCombatProhibited(id, false)` and `IMovementSystem.SetProhibited(id, false)` are each called once (fakes record the calls; real wiring verified in Story 008).
+- [x] **AC-6 Status Effects (AC-DR-5, CR-DR-11a)**: `IStatusEffectsRespawnSink.OnEntityRespawned(id)` is called once. With the real `StatusEffectsService` as the sink, `ApplyEffect` on the player succeeds after T-3 (the "buffs cleared at death" half is Status Effects' own death subscription, already built).
+- [x] **AC-7 Party (CR-DR-12)**: party sink called once with `Online`.
+- [x] **AC-8 Single tick (T-2 → T-3)**: Respawning is entered and left in the same `Tick`; at the end of the tick `DeathState` is Alive with `DeathTick` / `RespawnTick` and the retry counter zeroed. The slot state is set to `ZoneSessionState.Connected` only when it is `Dead` or `Respawning`; a `Disconnected_SessionActive` slot is left unchanged (Story 007 AC-2: the timer runs while disconnected). An `OnEntityDied` raised during the T-3 steps for a connected player is dropped by duplicate suppression (CR-DR-2); an `OnEntityDied` on a later tick is a fresh death (EC-DR-4).
+- [x] **AC-9 Order**: the T-3 side effects run in GDD order: HP/MP → position → combat → movement ban lifted → Status Effects → party → (Story 005 messages).
+- [x] **AC-10 No allocation**: `Tick` allocates 0 bytes after warm-up, including a tick with a respawn (measured with `GC.GetAllocatedBytesForCurrentThread`, as in `EnemyAI_DeathBridge_tests.cs`; the provider fake returns a non-zero point, since the zero path logs).
 
 ---
 
@@ -97,7 +97,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/DeathAndRespawn/DeathAndRespawn_Respawn_tests.cs` (+ the Movement teleport test in the Movement test folder) — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — Respawn 26 tests + Movement teleport 5 tests, pass (2026-11-18)
 
 ---
 
@@ -105,3 +105,12 @@
 
 - Depends on: Stories 001, 002 (Complete), 003 (Complete — constructor shape)
 - Unlocks: Stories 005, 007, 010
+
+---
+
+## Completion Notes
+**Completed**: 2026-11-18
+**Criteria**: 10/10 passing (all automated)
+**Deviations**: Advisory — CR-DR-9 names `SetBaseStat`; HP / MP are written with `SetCurrentHP` / `SetCurrentMP` through `IRespawnVitalsWriter` (decided at readiness, same outcome). Each T-3 step is guarded by its own try/catch (log entity + step, continue, always end Alive), added at code review; not specified by the GDD, consistent with Story 003. Retry counter is a parallel `int[]`; the pool slot is not written Respawning. Story 007 notes: reset `_retryAttempts[slot]` on slot release.
+**Test Evidence**: Logic — `tests/EditMode/DeathAndRespawn/DeathAndRespawn_Respawn_tests.cs` 26, `tests/EditMode/MovementSystem/MovementSystem_Teleport_tests.cs` 5; filter `DeathAndRespawn|MovementSystem` 419/419; full EditMode `-testCategory "!Database"` 7938/7938 on one run, 7937/7938 on two runs (the failure is the known TD-110 flaky Skill System composition test, unrelated)
+**Code Review**: Complete (`/code-review` with unity-specialist + qa-tester; all required changes and suggestions applied)

@@ -18,10 +18,13 @@ namespace IronGrind.ServerLogic.DeathAndRespawn
         /// <summary>Tick at which the respawn fires: <c>DeathTick + RESPAWN_DELAY_TICKS</c> (F-DR-1). 0 while Alive.</summary>
         public long RespawnTick;
 
-        /// <summary>Respawn zone; filled by Story 004, default until then.</summary>
+        /// <summary>
+        /// Respawn zone, filled at T-2. Keeps its value after the respawn; meaningful only while Dead or Respawning
+        /// (Story 005 reads it before the reset).
+        /// </summary>
         public ZoneID RespawnZoneID;
 
-        /// <summary>Respawn position; filled by Story 004, default until then.</summary>
+        /// <summary>Respawn position, filled at T-2. Same lifetime as <see cref="RespawnZoneID"/>.</summary>
         public Vector3 RespawnPosition;
     }
 }
