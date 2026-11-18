@@ -156,7 +156,7 @@ namespace IronGrind.Tests.EditMode.DeathAndRespawn
             _ghosts = new ZoneSlotGhostStatusSource(_pool);
             _service = new DeathAndRespawnService(Config, _pool, _source, _ticks, _combat, _movement, _party,
                 _ghosts, _sink, new RespawnStubs.Points(), new RespawnStubs.Vitals(), new RespawnStubs.Teleport(),
-                new RespawnStubs.Status());
+                new RespawnStubs.Status(), new RespawnStubs.Output());
         }
 
         [TearDown]

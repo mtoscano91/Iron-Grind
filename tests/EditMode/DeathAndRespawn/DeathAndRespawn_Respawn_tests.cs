@@ -46,6 +46,14 @@ namespace IronGrind.Tests.EditMode.DeathAndRespawn
         {
             public void OnEntityRespawned(EntityID entity) { }
         }
+
+        /// <summary>Does nothing (Story 005).</summary>
+        internal sealed class Output : IDeathMessageOutput
+        {
+            public void SendDeath(EntityID entity, byte respawnTimerSeconds) { }
+
+            public void SendRespawn(EntityID entity, Vector3 position) { }
+        }
     }
 
     /// <summary>
@@ -294,7 +302,7 @@ namespace IronGrind.Tests.EditMode.DeathAndRespawn
         {
             return new DeathAndRespawnService(Config, _pool, _source, _ticks, new LogCombat(_log),
                 new LogMovement(_log), new LogParty(_log), new NotGhost(), new NoGhostSink(), _points, _vitals,
-                _teleport, status);
+                _teleport, status, new RespawnStubs.Output());
         }
 
         private EntityID AllocatePlayer(uint raw)
@@ -778,13 +786,13 @@ namespace IronGrind.Tests.EditMode.DeathAndRespawn
             DeathAndRespawnConfigValues c = Config;
 
             Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, _ticks, combat,
-                movement, party, new NotGhost(), new NoGhostSink(), null, _vitals, _teleport, status));
+                movement, party, new NotGhost(), new NoGhostSink(), null, _vitals, _teleport, status, new RespawnStubs.Output()));
             Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, _ticks, combat,
-                movement, party, new NotGhost(), new NoGhostSink(), _points, null, _teleport, status));
+                movement, party, new NotGhost(), new NoGhostSink(), _points, null, _teleport, status, new RespawnStubs.Output()));
             Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, _ticks, combat,
-                movement, party, new NotGhost(), new NoGhostSink(), _points, _vitals, null, status));
+                movement, party, new NotGhost(), new NoGhostSink(), _points, _vitals, null, status, new RespawnStubs.Output()));
             Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, _ticks, combat,
-                movement, party, new NotGhost(), new NoGhostSink(), _points, _vitals, _teleport, null));
+                movement, party, new NotGhost(), new NoGhostSink(), _points, _vitals, _teleport, null, new RespawnStubs.Output()));
         }
 
         // ---- Production vitals writer ----

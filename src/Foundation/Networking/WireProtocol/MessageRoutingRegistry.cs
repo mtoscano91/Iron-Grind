@@ -289,6 +289,16 @@ namespace IronGrind.Networking
             AddPriority(SkillCooldownSnapshot.MessageTypeId, nameof(SkillCooldownSnapshot), DesignPillar.RhythmMastery,
                 MessageDirection.ServerToOwningClient, "Owner-only cooldown state of all 10 skill slots on zone join (CR-SK-12); a lost snapshot leaves the HUD skill bar without the running cooldowns.");
 
+            // Death & Respawn Story 005: death / respawn notices, R-OD priority path (not cap-exempt). 0xE160-0xE16F reserved for the epic.
+            AddPriority(EntityDied.MessageTypeId, nameof(EntityDied), DesignPillar.SocialSignals,
+                MessageDirection.ServerToAllZoneClients, "Zone-wide death notice, the dying player included (RFR-7); a lost notice leaves other clients showing a living character.");
+            AddPriority(DeathStateEntered.MessageTypeId, nameof(DeathStateEntered), DesignPillar.Infrastructure,
+                MessageDirection.ServerToOwningClient, "Owner-only death state with the respawn countdown (CR-DR-6); a lost notice leaves the client without the death overlay.");
+            AddPriority(EntityRespawned.MessageTypeId, nameof(EntityRespawned), DesignPillar.SocialSignals,
+                MessageDirection.ServerToAllZoneClients, "Zone-wide respawn notice with the respawn position (CR-DR-13); a lost notice leaves other clients showing a dead character.");
+            AddPriority(RespawnConfirmed.MessageTypeId, nameof(RespawnConfirmed), DesignPillar.Infrastructure,
+                MessageDirection.ServerToOwningClient, "Owner-only respawn confirmation (CR-DR-13); clears the death overlay.");
+
             // Skill System Story 004: the cast request, U-U (dropped requests are not retransmitted; the client re-submits next beat).
             Add(new MessageRoutingEntry(
                 messageTypeId: SkillCastRequest.MessageTypeId,

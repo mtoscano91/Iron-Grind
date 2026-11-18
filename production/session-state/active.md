@@ -7256,3 +7256,39 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt: TD-110 updated (recurrence, P1, impact High); none new
 - Updated: story (Complete, ACs, Completion Notes), EPIC.md (row 004, Next Step → Story 005), index (4 Complete). Not committed.
 - Next recommended: /story-readiness production/epics/death-and-respawn/story-005-wire-messages.md
+
+## /story-readiness Death & Respawn Story 005 2026-11-18: NEEDS WORK → rewritten, READY (not committed)
+- Story 004 committed first as a3a0ffb (Editor noise left out).
+- User "yes, rewrite with all 9 fixes". Story 005 now 10 ACs: AC-1 structs/codecs 0xE160–0xE163 (confirmed free) + MessageRoutingRegistry AddPriority (EntityDied/EntityRespawned ServerToAllZoneClients, DeathStateEntered/RespawnConfirmed ServerToOwningClient, not cap-exempt); AC-2 IDeathMessageOutput (SendDeath/SendRespawn) as last service ctor param, respawnTimerSeconds = (byte)RoundToInt(RespawnDelaySeconds) once; AC-3/4 calls in T-1 and T-3 (after slot step, even if a step threw, RespawnPosition incl. zero fallback); AC-5 ghost none; AC-6 DeathMessageEmitter(ZoneSlotPool, ClientMessageOutbox), order owner-then-zone on death, zone-then-owner on respawn; AC-7 disconnected skip (outbox removal / TryGetSequenceCounter, no log); AC-8 fault logged once; AC-9 overflow via WireFixedPointCodec.EncodePosition; AC-10 allow-list. EntityDied zone-wide per RFR-7 (CR-DR-7 / TR-dr-005 "relevance-filtered" wording = advisory GDD fix). Estimate 4 h. Evidence: tests/EditMode/Networking/DeathAndRespawnMessages_Codec_tests.cs + tests/EditMode/DeathAndRespawn/DeathAndRespawn_WireMessages_tests.cs. Story 008 AC-2 wiring list now names DeathMessageEmitter.
+- Next: /dev-story production/epics/death-and-respawn/story-005-wire-messages.md
+
+## Session Extract — /dev-story 2026-11-18 (Story 005)
+- Story: production/epics/death-and-respawn/story-005-wire-messages.md — Death and Respawn Wire Messages
+- Files: new src/Foundation/Networking/WireProtocol/{EntityDied,DeathStateEntered,EntityRespawned,RespawnConfirmed}{,Codec}.cs; new src/ServerLogic/DeathAndRespawn/{IDeathMessageOutput,DeathMessageEmitter}.cs; modified MessageRoutingRegistry.cs (4 AddPriority, 0xE160-0xE16F reserved), DeathAndRespawnService.cs (last ctor param output, _respawnTimerSeconds, placeholders filled), AssemblyBoundaryLists.cs (8 entries); ctor arg added in DeathEntry/GhostDeath/Respawn tests (RespawnStubs.Output, +1 null assert)
+- Tests: tests/EditMode/Networking/DeathAndRespawnMessages_Codec_tests.cs (9 [Test] + 16 [TestCase] = 25 cases), tests/EditMode/DeathAndRespawn/DeathAndRespawn_WireMessages_tests.cs (18 [Test] + 3 [TestCase] = 21); filtered 1760/1760; full !Database 7984/7984 (= 7938 + 46, 13:46:44Z), 0 error CS. network-programmer (46 tool uses).
+- Deviations to check at review: codecs use TryReadBody (bool, like AppearanceChangedEventCodec) not ReadBody; AC-8 once-only LogError unreachable in tests (outbox sealed + catches its own faults) — no-throw tested via throwing seam with LogAssert.ignoreFailingMessages; registry test does not assert isCapExempt; DesignPillar SocialSignals (zone-wide) / Infrastructure (owner).
+- Next: /code-review then /story-done
+
+## /code-review Death & Respawn Story 005 2026-11-18: CHANGES REQUIRED (tests only + AC-8 wording), awaiting user
+- unity-specialist CLEAN; qa-tester GAPS; own check: IDs/sizes/allow-list OK; stray whitespace change on existing WireStringCodec allow-list line (revert).
+- R1 AC-8: emitter catch unreachable (outbox sealed, Enqueue only buffers, seam throws in Flush). Keep catch as defensive (SkillUnlockOutputEmitter precedent); amend AC-8 + QA to "outbox contains its faults; emitter never throws; catch is defensive"; test: drop ignoreFailingMessages, LogAssert.Expect the outbox's own error, assert no [DeathMessageEmitter] log.
+- R2 AC-3 mob case (mob in pool → no sends). R3 AC-3 order: fake captures DeathState Dead + slot Dead + combat/movement prohibited at SendDeath time. R4 AC-4 retry-then-resolved → one SendRespawn(P, TownPoint); exhausted stays 1 after more ticks; tick source advanced. R5 AC-6 exact packet counts (4/4) + Y. R6 AC-4 slot Connected asserted at send; teleport-throws variant.
+- Suggestions: DeathStateEnteredCodec slice to BodySize first (ArgumentOutOfRange before partial write) + undersized-span tests; restore prior ignoreFailingMessages (moot after R1); teleport position cross-check; two players same tick; Dispose → no sends; story note: registry has no cap-exempt field (flag is the enqueue arg).
+- Next: on approval apply, rerun filter + full, then /story-done
+
+## Review fixes applied, Death & Respawn Story 005 2026-11-18: APPROVED (not committed)
+- User "fix all". Story: AC-8 reworded (outbox contains its faults; emitter catch defensive, untested), QA AC-8 updated, cap-exempt implementation note. network-programmer applied R1-R6 + S1-S5: AC-8 test expects the outbox's own SendThrew logs, no packets, NoUnexpectedReceived; real mob case (TryAllocateMob); state captured at SendDeath (Dead/Dead/combat+movement banned); TickAt advances tick source; retry-then-resolve + exhausted stays 1; 4-packet counts + Y; Connected at send + teleport-throws variant; DeathStateEnteredCodec slices first + undersized-span test; teleport position cross-check; two deaths same tick (service + emitter); Dispose → no send; WireStringCodec whitespace reverted.
+- Tests: Codec 10 [Test] + 16 [TestCase]; WireMessages 25 [Test] + 3 [TestCase]. Filter 1768/1768; full !Database 7992/7992 (13:53:04Z), 0 error CS.
+- Next: /story-done production/epics/death-and-respawn/story-005-wire-messages.md
+
+## Session Extract — /story-done 2026-11-18 (Story 005)
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/death-and-respawn/story-005-wire-messages.md — Death and Respawn Wire Messages (10/10 ACs; Codec 26 cases + WireMessages 28 cases; full !Database 7992/7992)
+- Tech debt logged: None
+- Updated: story (Complete, ACs, Completion Notes), EPIC.md (row 005, Next Step), index (5 Complete). Not committed.
+- Next recommended: /story-readiness for 006 (dead permissions), 007 or 010 (007 + 010 gate 008)
+
+## /story-readiness Death & Respawn Story 006 2026-11-18: NEEDS WORK → fixed, READY (not committed)
+- Story 005 (Complete) still uncommitted; user not yet asked/answered on commit.
+- User "fix all" (6 gaps). AC-1 rewritten: mob targeting is ZoneAggroCandidateSource (Connected only) + MobController scan HP (318) + chase TargetCheck.Dead (482); MobTargetValidity = player auto-attack validity (mobs only), not involved. AC-2: PvE confirmed (players cannot target players), tests = dead P's SetTarget/auto-attack on mob → no damage; MobAttackResolver on dead P → no damage. AC-3 adds AutoAttackState Prohibited. AC-5 split: (a) reflection public methods exactly {Tick, TryGetDeathState, IsDead, Dispose}; (b) no ClientToServer type in 0xE160-0xE16F; (c) per-tick SetTarget/SetAutoAttack/SkillCast handler flood → respawn on exactly RespawnTick. Old AC-6 moved to notes (CR-DR-15, untested). Respawning-tick hedge removed (set/cleared in one Tick). Out of scope + party invite (Party System), PvP; performance note added.
+- Next: /dev-story production/epics/death-and-respawn/story-006-dead-permissions.md

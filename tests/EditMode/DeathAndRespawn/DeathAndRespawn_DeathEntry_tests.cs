@@ -188,7 +188,7 @@ namespace IronGrind.Tests.EditMode.DeathAndRespawn
             _notGhost = new FakeGhostStatus();
             _ghostSink = new FakeGhostSink();
             _service = new DeathAndRespawnService(Config, _pool, _source, _ticks, _combat, _movement, _party, _notGhost, _ghostSink,
-                new RespawnStubs.Points(), new RespawnStubs.Vitals(), new RespawnStubs.Teleport(), new RespawnStubs.Status());
+                new RespawnStubs.Points(), new RespawnStubs.Vitals(), new RespawnStubs.Teleport(), new RespawnStubs.Status(), new RespawnStubs.Output());
         }
 
         [TearDown]
@@ -247,18 +247,19 @@ namespace IronGrind.Tests.EditMode.DeathAndRespawn
         {
             DeathAndRespawnConfigValues c = Config;
 
-            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, null, _source, _ticks, _combat, _movement, _party, _notGhost, _ghostSink, new RespawnStubs.Points(), new RespawnStubs.Vitals(), new RespawnStubs.Teleport(), new RespawnStubs.Status()));
-            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, null, _ticks, _combat, _movement, _party, _notGhost, _ghostSink, new RespawnStubs.Points(), new RespawnStubs.Vitals(), new RespawnStubs.Teleport(), new RespawnStubs.Status()));
-            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, null, _combat, _movement, _party, _notGhost, _ghostSink, new RespawnStubs.Points(), new RespawnStubs.Vitals(), new RespawnStubs.Teleport(), new RespawnStubs.Status()));
-            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, _ticks, null, _movement, _party, _notGhost, _ghostSink, new RespawnStubs.Points(), new RespawnStubs.Vitals(), new RespawnStubs.Teleport(), new RespawnStubs.Status()));
-            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, _ticks, _combat, null, _party, _notGhost, _ghostSink, new RespawnStubs.Points(), new RespawnStubs.Vitals(), new RespawnStubs.Teleport(), new RespawnStubs.Status()));
-            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, _ticks, _combat, _movement, null, _notGhost, _ghostSink, new RespawnStubs.Points(), new RespawnStubs.Vitals(), new RespawnStubs.Teleport(), new RespawnStubs.Status()));
-            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, _ticks, _combat, _movement, _party, null, _ghostSink, new RespawnStubs.Points(), new RespawnStubs.Vitals(), new RespawnStubs.Teleport(), new RespawnStubs.Status()));
-            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, _ticks, _combat, _movement, _party, _notGhost, null, new RespawnStubs.Points(), new RespawnStubs.Vitals(), new RespawnStubs.Teleport(), new RespawnStubs.Status()));
-            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, _ticks, _combat, _movement, _party, _notGhost, _ghostSink, null, new RespawnStubs.Vitals(), new RespawnStubs.Teleport(), new RespawnStubs.Status()));
-            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, _ticks, _combat, _movement, _party, _notGhost, _ghostSink, new RespawnStubs.Points(), null, new RespawnStubs.Teleport(), new RespawnStubs.Status()));
-            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, _ticks, _combat, _movement, _party, _notGhost, _ghostSink, new RespawnStubs.Points(), new RespawnStubs.Vitals(), null, new RespawnStubs.Status()));
-            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, _ticks, _combat, _movement, _party, _notGhost, _ghostSink, new RespawnStubs.Points(), new RespawnStubs.Vitals(), new RespawnStubs.Teleport(), null));
+            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, null, _source, _ticks, _combat, _movement, _party, _notGhost, _ghostSink, new RespawnStubs.Points(), new RespawnStubs.Vitals(), new RespawnStubs.Teleport(), new RespawnStubs.Status(), new RespawnStubs.Output()));
+            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, null, _ticks, _combat, _movement, _party, _notGhost, _ghostSink, new RespawnStubs.Points(), new RespawnStubs.Vitals(), new RespawnStubs.Teleport(), new RespawnStubs.Status(), new RespawnStubs.Output()));
+            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, null, _combat, _movement, _party, _notGhost, _ghostSink, new RespawnStubs.Points(), new RespawnStubs.Vitals(), new RespawnStubs.Teleport(), new RespawnStubs.Status(), new RespawnStubs.Output()));
+            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, _ticks, null, _movement, _party, _notGhost, _ghostSink, new RespawnStubs.Points(), new RespawnStubs.Vitals(), new RespawnStubs.Teleport(), new RespawnStubs.Status(), new RespawnStubs.Output()));
+            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, _ticks, _combat, null, _party, _notGhost, _ghostSink, new RespawnStubs.Points(), new RespawnStubs.Vitals(), new RespawnStubs.Teleport(), new RespawnStubs.Status(), new RespawnStubs.Output()));
+            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, _ticks, _combat, _movement, null, _notGhost, _ghostSink, new RespawnStubs.Points(), new RespawnStubs.Vitals(), new RespawnStubs.Teleport(), new RespawnStubs.Status(), new RespawnStubs.Output()));
+            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, _ticks, _combat, _movement, _party, null, _ghostSink, new RespawnStubs.Points(), new RespawnStubs.Vitals(), new RespawnStubs.Teleport(), new RespawnStubs.Status(), new RespawnStubs.Output()));
+            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, _ticks, _combat, _movement, _party, _notGhost, null, new RespawnStubs.Points(), new RespawnStubs.Vitals(), new RespawnStubs.Teleport(), new RespawnStubs.Status(), new RespawnStubs.Output()));
+            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, _ticks, _combat, _movement, _party, _notGhost, _ghostSink, null, new RespawnStubs.Vitals(), new RespawnStubs.Teleport(), new RespawnStubs.Status(), new RespawnStubs.Output()));
+            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, _ticks, _combat, _movement, _party, _notGhost, _ghostSink, new RespawnStubs.Points(), null, new RespawnStubs.Teleport(), new RespawnStubs.Status(), new RespawnStubs.Output()));
+            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, _ticks, _combat, _movement, _party, _notGhost, _ghostSink, new RespawnStubs.Points(), new RespawnStubs.Vitals(), null, new RespawnStubs.Status(), new RespawnStubs.Output()));
+            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, _ticks, _combat, _movement, _party, _notGhost, _ghostSink, new RespawnStubs.Points(), new RespawnStubs.Vitals(), new RespawnStubs.Teleport(), null, new RespawnStubs.Output()));
+            Assert.Throws<ArgumentNullException>(() => new DeathAndRespawnService(c, _pool, _source, _ticks, _combat, _movement, _party, _notGhost, _ghostSink, new RespawnStubs.Points(), new RespawnStubs.Vitals(), new RespawnStubs.Teleport(), new RespawnStubs.Status(), null));
         }
 
         [Test]
@@ -270,7 +271,7 @@ namespace IronGrind.Tests.EditMode.DeathAndRespawn
 
             Assert.Throws<ArgumentException>(() => new DeathAndRespawnService(default(DeathAndRespawnConfigValues),
                 _pool, source, _ticks, _combat, _movement, _party, _notGhost, _ghostSink,
-                new RespawnStubs.Points(), new RespawnStubs.Vitals(), new RespawnStubs.Teleport(), new RespawnStubs.Status()));
+                new RespawnStubs.Points(), new RespawnStubs.Vitals(), new RespawnStubs.Teleport(), new RespawnStubs.Status(), new RespawnStubs.Output()));
 
             Assert.AreEqual(0, source.SubscribeCalls);
         }

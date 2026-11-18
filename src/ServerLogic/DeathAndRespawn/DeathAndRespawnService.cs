@@ -34,6 +34,9 @@ namespace IronGrind.ServerLogic.DeathAndRespawn
         private readonly IRespawnVitalsWriter _vitals;
         private readonly IMovementTeleport _teleport;
         private readonly IStatusEffectsRespawnSink _statusEffects;
+        private readonly IDeathMessageOutput _output;
+        // RespawnDelaySeconds rounded once; Validate() bounds it so the byte cast cannot overflow (Story 005 AC-2).
+        private readonly byte _respawnTimerSeconds;
         private readonly DeathState[] _states;
         // Town point lookup attempts used so far for the pending respawn, per slot; reset at T-3 (AC-2).
         private readonly int[] _retryAttempts;
@@ -56,6 +59,7 @@ namespace IronGrind.ServerLogic.DeathAndRespawn
         /// <param name="vitals">HP / MP restore seam (CR-DR-9).</param>
         /// <param name="teleport">Authoritative position seam (CR-DR-10).</param>
         /// <param name="statusEffects">Status Effects respawn seam (CR-DR-11a).</param>
+        /// <param name="output">Death and respawn wire message seam (CR-DR-6, CR-DR-13; Story 005).</param>
         /// <exception cref="ArgumentNullException">A reference argument is null.</exception>
         /// <exception cref="ArgumentException"><paramref name="config"/> fails validation (errors logged; EC-DR-5:
         /// reject, never clamp).</exception>
@@ -63,7 +67,8 @@ namespace IronGrind.ServerLogic.DeathAndRespawn
             IEntityDeathSource deathSource, IDeathTickSource ticks, ICombatProhibitionSink combat,
             IMovementSystem movement, IPartyMemberStatusSink party,
             IGhostStatusSource ghosts, IGhostDeathSink ghostDeaths, ITownRespawnPointProvider respawnPoints,
-            IRespawnVitalsWriter vitals, IMovementTeleport teleport, IStatusEffectsRespawnSink statusEffects)
+            IRespawnVitalsWriter vitals, IMovementTeleport teleport, IStatusEffectsRespawnSink statusEffects,
+            IDeathMessageOutput output)
         {
             _pool = pool ?? throw new ArgumentNullException(nameof(pool));
             _deathSource = deathSource ?? throw new ArgumentNullException(nameof(deathSource));
@@ -77,6 +82,7 @@ namespace IronGrind.ServerLogic.DeathAndRespawn
             _vitals = vitals ?? throw new ArgumentNullException(nameof(vitals));
             _teleport = teleport ?? throw new ArgumentNullException(nameof(teleport));
             _statusEffects = statusEffects ?? throw new ArgumentNullException(nameof(statusEffects));
+            _output = output ?? throw new ArgumentNullException(nameof(output));
             if (!config.Validate())
             {
                 throw new ArgumentException("DeathAndRespawnConfigValues failed validation (see the logged errors).",
@@ -84,6 +90,7 @@ namespace IronGrind.ServerLogic.DeathAndRespawn
             }
 
             _config = config;
+            _respawnTimerSeconds = (byte)Mathf.RoundToInt(config.RespawnDelaySeconds);
             _states = new DeathState[pool.MaxPlayers];
             _retryAttempts = new int[pool.MaxPlayers];
 
@@ -300,14 +307,16 @@ namespace IronGrind.ServerLogic.DeathAndRespawn
             Debug.LogError($"{LOG_PREFIX}respawn step {step} for {entity} threw: {ex}");
         }
 
+        // CR-DR-13: the output seam contains its own faults; the position is the one teleported to.
         private void EnqueueRespawnMessages(EntityID entity, in DeathState state)
         {
-            // Story 005 enqueues EntityRespawned and RespawnConfirmed here.
+            _output.SendRespawn(entity, state.RespawnPosition);
         }
 
+        // CR-DR-6 / CR-DR-7: after the state and seam calls of the death tick.
         private void EnqueueDeathMessages(EntityID entity, in DeathState state)
         {
-            // Story 005 enqueues DeathStateEntered and EntityDied here.
+            _output.SendDeath(entity, _respawnTimerSeconds);
         }
     }
 }
