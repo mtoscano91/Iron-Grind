@@ -7292,3 +7292,30 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Story 005 (Complete) still uncommitted; user not yet asked/answered on commit.
 - User "fix all" (6 gaps). AC-1 rewritten: mob targeting is ZoneAggroCandidateSource (Connected only) + MobController scan HP (318) + chase TargetCheck.Dead (482); MobTargetValidity = player auto-attack validity (mobs only), not involved. AC-2: PvE confirmed (players cannot target players), tests = dead P's SetTarget/auto-attack on mob → no damage; MobAttackResolver on dead P → no damage. AC-3 adds AutoAttackState Prohibited. AC-5 split: (a) reflection public methods exactly {Tick, TryGetDeathState, IsDead, Dispose}; (b) no ClientToServer type in 0xE160-0xE16F; (c) per-tick SetTarget/SetAutoAttack/SkillCast handler flood → respawn on exactly RespawnTick. Old AC-6 moved to notes (CR-DR-15, untested). Respawning-tick hedge removed (set/cleared in one Tick). Out of scope + party invite (Party System), PvP; performance note added.
 - Next: /dev-story production/epics/death-and-respawn/story-006-dead-permissions.md
+
+## Session Extract — /dev-story 2026-11-18 (Story 006)
+- Story 005 committed first as 88c4550 (Editor noise left out).
+- Story: production/epics/death-and-respawn/story-006-dead-permissions.md — Dead Player Permissions
+- Files: new tests/EditMode/DeathAndRespawn/DeathAndRespawn_DeadPermissions_tests.cs (+ .meta); no production code (HP>0 / Connected-slot / combat+movement prohibition checks already sufficient)
+- Tests: 13 [Test] (AC-1 x4 incl. control, AC-2 x3 incl. control, AC-3 x2, AC-4 x1, AC-5 a/b/c). Filter DeathAndRespawn 166/166; full !Database 8005/8005 (~14:11Z), 0 error CS. gameplay-programmer (2 runs, 28 tool uses).
+- Check at review: mob state is Dormant (story says Idle); handlers called directly with InboundRequestContext (no dispatcher); reuses internal AutoAttackCombat fakes, so "damage event" = FakeDamageApplier.Count; uses internal MovementService.SeedForTesting / MobController.State.
+- Next: /code-review tests/EditMode/DeathAndRespawn/DeathAndRespawn_DeadPermissions_tests.cs then /story-done
+
+## /code-review Death & Respawn Story 006 2026-11-18: CHANGES REQUIRED (tests only), awaiting user
+- unity-specialist CLEAN; qa-tester GAPS; own check agrees.
+- R1 AC-2 no alive control for player auto-attack (add control applier.Count>0; assert Prohibited before ActivateAutoAttack). R2 MOB_MAX_HP asserts at L491/L553 vacuous (fakes never write _stats) — remove or comment. R3 AC-3: CountingCastOutput discards code → capture SkillCastRejectionCode, assert caster-not-alive; record _castSink==0 as status-effect proof in story, drop unused StatusEffects using. R4 AC-5(c) assert one rejection per flooded tick + Prohibited before final tick. R5 AC-5(b) positive control: EntityDied/RespawnConfirmed (0xE160..) present and not ClientToServer.
+- Suggestions: _service?.Dispose(); rename 5a to ..._public_instance_methods_... scope ok or add public settable props/fields check; named consts (START_X 3f, MOVE_TICKS 10); loop caps at L462/L622; tighter drop assert L449-451; pre-kill Pursuing hold in L440; drop trivial HP-0 assert L512; Test Evidence line.
+- Next: on approval apply, rerun filter + full, then /story-done
+
+## Review fixes applied, Death & Respawn Story 006 2026-11-18: APPROVED (not committed)
+- User "fix all" (R1-R5 + suggestions), applied directly to the test file. R1 new alive control `test_dead_permissions_control_alive_player_auto_attack_applies_damage` (applier.Count > 0) + Prohibited asserted after activation (shows Prohibited only on activation, per AutoAttackCombatSystem doc). R2 vacuous MOB_MAX_HP asserts removed, comment says counters are the proof. R3 CountingCastOutput.LastCode, asserts CasterNotAlive; story Test Evidence records castSink==0 as status-effect proof. R4 flood: one CasterNotAlive rejection per flooded tick + Prohibited before final tick. R5 registry test control: EntityDied + RespawnConfirmed in range. Suggestions: `_service?.Dispose()`, PLAYER_START_X / MOVE_TICKS / LOOP_CAP_MARGIN consts, StepUntil + capped flood loop, chase test holds Pursuing pre-kill then asserts null target + Dormant|Returning, trivial HP-0 assert removed, AutoAttackWindow helper. AC-5a kept as public-methods scope (name already says so). StatusEffects using is needed (IEntitySlotIndex) — kept.
+- Tests: 14. Filter DeathAndRespawn 167/167; full !Database 8006/8006 (14:18:29Z), 0 error CS.
+- Next: /story-done production/epics/death-and-respawn/story-006-dead-permissions.md
+
+## Session Extract — /story-done 2026-11-18 (Story 006)
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/death-and-respawn/story-006-dead-permissions.md — Dead Player Permissions (5/5 ACs automated; 14 tests; filter 167/167; full !Database 8006/8006 14:18:29Z). No production code.
+- Advisory (not tech debt): Dormant vs "Idle"; handlers called directly (dispatcher = Story 008); fake-counter proof; AC-DR-NEW-6 → zone-travel epic; CR-DR-16 party invite → Party System.
+- Tech debt logged: None
+- Updated: story (Complete, ACs ticked, Completion Notes), EPIC.md (row 006, Next Step), index (6 Complete). Not committed (Story 006 test + story + epic/index/active.md).
+- Next recommended: commit Story 006, then /story-readiness production/epics/death-and-respawn/story-007-disconnect-teardown-expiry.md (or 010; both gate 008; 009 needs 006 + 008)

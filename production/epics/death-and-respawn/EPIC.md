@@ -92,7 +92,7 @@ This epic is complete when:
 | 003 | [Ghost death branch](story-003-ghost-death.md) | Logic | Complete | ADR-010 |
 | 004 | [Respawn sequence — T-2 and T-3](story-004-respawn-sequence.md) | Logic | Complete | ADR-014 |
 | 005 | [Death and respawn wire messages](story-005-wire-messages.md) | Logic | Complete | ADR-010, ADR-014 |
-| 006 | [Dead player permissions](story-006-dead-permissions.md) | Logic | Ready | ADR-014 |
+| 006 | [Dead player permissions](story-006-dead-permissions.md) | Logic | Complete | ADR-014 |
 | 007 | [Disconnect, reconnect, teardown and expiry while dead](story-007-disconnect-teardown-expiry.md) | Integration | Ready | ADR-011 |
 | 008 | [Zone composition wiring](story-008-zone-composition-wiring.md) | Integration | Ready | ADR-014 |
 | 009 | [End-to-end — a mob kills a player, the player respawns](story-009-end-to-end-mob-kills-player.md) | Integration | Ready | ADR-014 |
@@ -111,4 +111,4 @@ Order: 001 → 002 → (003, 004, 006) → 005 after 003 + 004 → 007 after 004
 
 ## Next Step
 
-Stories 001 (2026-11-17), 002, 003, 004 and 005 (2026-11-18) Complete; Story 010 added at Story 003 readiness. Ready next: 006, 007, 010 (007 and 010 gate Story 008). Run `/story-readiness production/epics/death-and-respawn/story-006-dead-permissions.md` (or 007 / 010).
+Stories 001 (2026-11-17), 002, 003, 004, 005 and 006 (2026-11-18) Complete; Story 010 added at Story 003 readiness. Ready next: 007 and 010 (both gate Story 008; 006 unlocks 009). Run `/story-readiness production/epics/death-and-respawn/story-007-disconnect-teardown-expiry.md` (or 010).
