@@ -28,7 +28,7 @@
 ## Acceptance Criteria
 
 - [ ] **AC-1 Startup config**: the server loads the Death & Respawn config asset at startup; a validation failure (Story 001) logs and stops startup, as other config failures do (AC-DR-12 at the process level).
-- [ ] **AC-2 Built per zone**: `ZoneServerComposition` builds `DeathAndRespawnService` with the zone's Character Stats, Auto-Attack Combat, Movement, Status Effects, `ITownRespawnPointProvider`, slot pool, ghost status source, outbound send seam / outbox, tick source and `NoOpPartyMemberStatusSink`.
+- [ ] **AC-2 Built per zone**: `ZoneServerComposition` builds `DeathAndRespawnService` with the zone's Character Stats, Auto-Attack Combat, Movement, Status Effects, `ITownRespawnPointProvider`, slot pool, `ZoneSlotGhostStatusSource`, the Story 010 `IGhostDeathSink` adapter, outbound send seam / outbox, tick source and `NoOpPartyMemberStatusSink`.
 - [ ] **AC-3 Tick placement**: the countdown step is in `AddPhaseThreeSteps` at a fixed, commented position. Proposed default (confirm at readiness): after Status Effects and before Enemy AI / Auto-Attack, so a player respawned this tick is targetable and can act from the same tick's combat step, and Status Effects' next-tick death cleanup (CR-SE-10) has already run on the tick after death.
 - [ ] **AC-4 Readers wired**: the snapshot builder and teardown get the service as `IPlayerDeathStateReader` (Story 007); `ZonePlayerStateView.RespawnTick` is filled.
 - [ ] **AC-5 Lifecycle**: player enter resets the player's `DeathState`; release clears it; zone teardown disposes the service (no `OnEntityDied` handling afterwards).
@@ -72,5 +72,5 @@
 
 ## Dependencies
 
-- Depends on: Stories 001–007
+- Depends on: Stories 001–007, 010
 - Unlocks: Story 009

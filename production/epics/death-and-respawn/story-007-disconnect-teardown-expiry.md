@@ -38,6 +38,7 @@
 ## Implementation Notes
 
 - Readiness: decide whether the slot keeps `Dead` / `Respawning` at all once `DeathState` is authoritative (simplest: keep writing it for anything else that reads it, but no reader decides dead-ness from it).
+- Re-check Story 003 AC-6: once `DeathState` is authoritative, a Dead player who disconnected and gets a second `OnEntityDied` should no longer take the ghost path (decide and update that test).
 - Readiness: confirm where the session-TTL-expiry save picks its HP (the dead path must pass 0, not the stale in-memory value if that differs).
 
 ---

@@ -14,35 +14,39 @@
 *(Requirement text lives in `docs/architecture/tr-registry.yaml` — read fresh at review time)*
 
 **ADR Governing Implementation**: ADR-010: Event and Messaging Architecture
-**ADR Decision Summary**: The ghost hand-off is a direct call into the existing ghost-session code from the `OnEntityDied` handler; no new event.
+**ADR Decision Summary**: The ghost hand-off is a direct call from the `OnEntityDied` handler into a narrow `IGhostDeathSink`; no new event. The production sink (save, release, session end) is Story 010.
 
 **Engine**: Unity 6.3 LTS | **Risk**: LOW
 **Engine Notes**: none (plain C#).
 
 **Control Manifest Rules (this layer)**:
-- Forbidden: `async`/`await` in the handler; a persistence write is started and tracked per ADR-011 by the existing ghost cleanup, not awaited here
+- Forbidden: `async`/`await` in the handler; the session end and its persistence write are started and tracked per ADR-011 by the sink (Story 010), not awaited here
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] **AC-1 First check**: the `OnEntityDied` handler checks ghost status before anything else (before duplicate suppression), through a narrow `IGhostStatusSource.IsGhost(EntityID)` backed in production by `GhostEntityTracker.IsGhost` (EntityID → CharacterID mapping from the zone slot).
-- [ ] **AC-2 Ghost path (AC-DR-10)**: for a ghost, the existing ghost-death cleanup runs (`GhostCleanupSequencer.CompleteGhostDeathCleanup` / the connection state machine path that records `GhostDeath = 3` for reconnect delivery) and the zone slot is released; `DeathState.CurrentState` stays Alive; no respawn tick is set.
+- [ ] **AC-1 First check**: the `OnEntityDied` handler checks ghost status before anything else (before duplicate suppression), through a narrow `IGhostStatusSource.IsGhost(EntityID)`. The production adapter `ZoneSlotGhostStatusSource` is built in this story: true when `ZoneSlotPool.TryGetPlayer(id)` finds the slot and its state is `ZoneSessionState.Disconnected_SessionActive`; false for an unknown id or a mob.
+- [ ] **AC-2 Ghost path (AC-DR-10)**: for a ghost, the handler calls `IGhostDeathSink.OnGhostDied(entity)` exactly once and returns; `DeathState.CurrentState` stays Alive; no respawn tick is set. The handler does not release the slot, persist, or change session state — the sink owns all of that (Story 010).
 - [ ] **AC-3 Nothing else (CR-DR-Ghost)**: for a ghost, no `SetCombatProhibited`, no movement prohibition, no party sink call, no `DeathStateEntered`, no `EntityDied` (AC-DR-11; Story 005 adds the wire assertion against the outbox).
-- [ ] **AC-4 Non-ghost unchanged**: a non-ghost death still follows Story 002 exactly.
-- [ ] **AC-5 Cleanup failure**: if the ghost cleanup call throws, the error is logged with the entity id and the handler returns without entering Dead.
+- [ ] **AC-4 Non-ghost unchanged**: a non-ghost death still follows Story 002 exactly. The adapter is tested against a real `ZoneSlotPool`: Connected → false, Disconnected_SessionActive → true, unknown id → false, mob → false.
+- [ ] **AC-5 Sink failure**: if `OnGhostDied` throws, the error is logged with the entity id and the handler returns without entering Dead; no exception escapes the handler.
+- [ ] **AC-6 Dead, then disconnected**: P dies (Dead), then disconnects (slot `Disconnected_SessionActive`), then a second `OnEntityDied(P)` arrives: the ghost path is taken (sink called once, `DeathState` unchanged). Accepted behaviour until Story 007 makes `DeathState` the source of truth; Story 007 re-checks this case.
 
 ---
 
 ## Implementation Notes
 
-- Readiness must confirm which existing entry point is the right one for a ghost dying in a live zone (`CompleteGhostDeathCleanup` takes persistence and broadcast callbacks; `HandleGhostDeathWhileReconnecting` is for the Reconnecting race). Wire whichever the Networking Core stories built for this case; do not duplicate their persistence logic.
+- Decided at readiness (2026-11-18): `GhostEntityTracker` is not wired in production (no `PromoteToGhost` callers); the production ghost signal is the slot's `ZoneSessionState.Disconnected_SessionActive`. The Networking Core ghost methods (`GhostCleanupSequencer.CompleteGhostDeathCleanup`, `ConnectionStateMachine.CompleteGhostDeathFromDisconnected`, `HandleGhostDeathWhileReconnecting`) are not called here: production session ends run through `SessionEndCoordinator` (ADR-011 mutation gate + release chain), which gets its ghost-death path in Story 010.
+- `IGhostStatusSource`, `IGhostDeathSink` and `ZoneSlotGhostStatusSource` live in `src/ServerLogic/DeathAndRespawn/`. The service constructor takes both seams (null → `ArgumentNullException`, like the other seams).
 - `ZoneSessionEnded(GhostDeath = 3)` is delivered on reconnect by the ghost session (CR-GH-6), not sent here.
 
 ---
 
 ## Out of Scope
 
+- Story 010: the production `IGhostDeathSink` — save (snapshot HP, respawn position, `wasKilledWhileDisconnected`), release chain, `Disconnected_SessionExpired` "GhostDeath", `GhostExpiredEvent`, mob de-targeting
+- Story 008: wiring `ZoneSlotGhostStatusSource` and the Story 010 sink into `ZoneServerComposition`
 - Story 005: the outbox-level "no `EntityDied`" assertion
 - Ghost session reconnect delivery (Networking Core, already built)
 
@@ -50,12 +54,14 @@
 
 ## QA Test Cases
 
-*Lean mode: written at `/create-stories` 2026-11-17; refine at `/story-readiness`.*
+*Refined at `/story-readiness` 2026-11-18.*
 
-- **AC-2**: Given P is a ghost, When `OnEntityDied(P)`, Then cleanup fake called once with P's character, slot release called, `IsDead(P) == false`.
+- **AC-1**: Given P is a ghost and (via `SetStateForTests`) already Dead, When `OnEntityDied(P)`, Then the sink is called (ghost check precedes dedup).
+- **AC-2**: Given P is a ghost, When `OnEntityDied(P)`, Then sink fake called once with P, `IsDead(P) == false`, `TryGetDeathState(P)` Alive with no respawn tick.
 - **AC-3**: Same setup; combat, movement and party fakes record zero calls.
-- **AC-1**: Given P is a ghost and (artificially) already Dead, When `OnEntityDied(P)`, Then the ghost path still runs (ghost check precedes dedup).
-- **AC-5**: Cleanup fake throws; error logged naming P; P not Dead; no exception escapes the handler.
+- **AC-4**: Given P is not a ghost, When `OnEntityDied(P)`, Then the Story 002 path runs and the sink records zero calls. Adapter cases against a real `ZoneSlotPool` (Connected, Disconnected_SessionActive, unknown, mob).
+- **AC-5**: Sink fake throws; `LogAssert.Expect` an error naming P; P not Dead; no exception escapes.
+- **AC-6**: P dies, slot set to `Disconnected_SessionActive`, second `OnEntityDied(P)` → sink called once; `DeathTick` / `RespawnTick` unchanged.
 
 ---
 
@@ -71,4 +77,4 @@
 ## Dependencies
 
 - Depends on: Story 002
-- Unlocks: Story 005
+- Unlocks: Stories 005, 010

@@ -73,7 +73,7 @@ TR-IDs below are registered in `docs/architecture/tr-registry.yaml` (2026-11-17)
 2. **Message IDs.** Assign the four MessageTypeIDs in 0xE000–0xEFFF and register their codecs; check the relevance filter path for `EntityDied` (RFR-7).
 3. **Mob targeting.** Confirm whether Enemy AI aggro and target re-checks already skip dead players by HP, or need the dead state (AC-DR-4).
 4. **Town point.** Zone0 has no authored town respawn point (Mob Spawning Story 007 laid out its gradient from the origin). Decide whether to author one now; if so, re-check the spawn-table gradient and that no mob aggro reaches it (EC-DR-4).
-5. **Ghost path.** How the handler reads `isGhost` (`GhostEntityTracker.IsGhost`) and hands off to `GhostCleanupSequencer.CompleteGhostDeathCleanup` / `HandleGhostDeathWhileReconnecting`.
+5. **Ghost path.** Resolved at Story 003 readiness (2026-11-18): the handler reads ghost status from the slot's `ZoneSessionState.Disconnected_SessionActive` (`ZoneSlotGhostStatusSource`; `GhostEntityTracker` is not wired in production) and hands off to `IGhostDeathSink`; the production session end is Story 010 (`SessionEndCoordinator.BeginGhostDeath`).
 
 ## Definition of Done
 
@@ -96,8 +96,9 @@ This epic is complete when:
 | 007 | [Disconnect, reconnect, teardown and expiry while dead](story-007-disconnect-teardown-expiry.md) | Integration | Ready | ADR-011 |
 | 008 | [Zone composition wiring](story-008-zone-composition-wiring.md) | Integration | Ready | ADR-014 |
 | 009 | [End-to-end — a mob kills a player, the player respawns](story-009-end-to-end-mob-kills-player.md) | Integration | Ready | ADR-014 |
+| 010 | [Ghost death session end](story-010-ghost-death-session-end.md) | Integration | Ready | ADR-011, ADR-010 |
 
-Order: 001 → 002 → (003, 004, 006) → 005 after 003 + 004 → 007 after 004 → 008 after 001–007 → 009 after 006 + 008.
+Order: 001 → 002 → (003, 004, 006) → 005 after 003 + 004 → 007 after 004 → 010 after 003 + 004 → 008 after 001–007 + 010 → 009 after 006 + 008.
 
 ## Findings at `/create-stories` (2026-11-17)
 
@@ -106,7 +107,8 @@ Order: 001 → 002 → (003, 004, 006) → 005 after 003 + 004 → 007 after 004
 3. **HP > 0 already gates** mob target validity and skill casting (Story 006 mostly tests).
 4. **Not in code**: no `RespawnNow` message (AC-DR-17 tested as "no early path"); no voluntary zone-change request (AC-DR-NEW-6 moves to the epic that builds zone travel); no production `SelfPositionUpdate` emitter (suppression deferred).
 5. **Message IDs**: 0xE160–0xE163 (next free block after 0xE151).
+6. **No production ghost-death path** (found at Story 003 readiness, 2026-11-18): `GhostEntityTracker` and the Networking Core ghost-death methods are not wired; `SessionEndCoordinator` (ADR-011) has no ghost-death end. Story 003 builds the handler branch behind `IGhostStatusSource` / `IGhostDeathSink`; new Story 010 adds `SessionEndCoordinator.BeginGhostDeath` and the production sink.
 
 ## Next Step
 
-Stories 001 (2026-11-17) and 002 (2026-11-18) Complete. Run `/story-readiness production/epics/death-and-respawn/story-003-ghost-death.md`, then `/dev-story`.
+Stories 001 (2026-11-17) and 002 (2026-11-18) Complete. Story 003 re-scoped at readiness 2026-11-18 (READY); Story 010 added. Run `/dev-story production/epics/death-and-respawn/story-003-ghost-death.md`.
