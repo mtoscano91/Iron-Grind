@@ -1205,3 +1205,87 @@ requirements:
     created: 2026-11-17
     revised: ""
     status: active
+  - id: TR-party-001
+    system: party
+    gdd: design/gdd/party-system.md
+    requirement: "Solo PartyID: every player outside a formal party has a unique non-zero solo PartyID (IsSoloParty, write-once); 0 never in stable state; solo party cleaned up on join or TTL (CR-PS-1, AC-PS-1)"
+    created: 2026-11-18
+    revised: ""
+    status: active
+  - id: TR-party-002
+    system: party
+    gdd: design/gdd/party-system.md
+    requirement: "Membership: 2-4 members, join-order array of MAX_PARTY_SIZE, compaction on removal, one party per player, capacity re-checked on accept (CR-PS-2, AC-PS-2, AC-PS-23)"
+    created: 2026-11-18
+    revised: ""
+    status: active
+  - id: TR-party-003
+    system: party
+    gdd: design/gdd/party-system.md
+    requirement: "Level gate: member within +-5 of the leader's level at invite / accept, inclusive; a leader change never removes members (CR-PS-3, AC-PS-3 to AC-PS-5)"
+    created: 2026-11-18
+    revised: ""
+    status: active
+  - id: TR-party-004
+    system: party
+    gdd: design/gdd/party-system.md
+    requirement: "Invite flow: PartyInviteRequest / PartyInviteReceived / PartyInviteResponse, 60 s expiry, one retry at 5 s, one pending invite per recipient with a queue, send-acknowledgement to queued senders, same zone instance only (CR-PS-4, AC-PS-6 to AC-PS-8, AC-PS-29)"
+    created: 2026-11-18
+    revised: ""
+    status: active
+  - id: TR-party-005
+    system: party
+    gdd: design/gdd/party-system.md
+    requirement: "XP: F-PS-1 per eligible member (same zone, +-5 of leader, not Ghost / OutOfZone / Dead / Disconnected), N_eligible = 0 awards nothing, eligibility snapshot before same-tick membership changes, Disbanding still awards; replaces the direct attacker AddExperience (CR-PS-5, CR-PS-10, AC-PS-9 to AC-PS-15, AC-PS-24, AC-PS-30)"
+    created: 2026-11-18
+    revised: ""
+    status: active
+  - id: TR-party-006
+    system: party
+    gdd: design/gdd/party-system.md
+    requirement: "No drop-rate bonus: party size never modifies drop rolls (CR-PS-6, AC-PS-16)"
+    created: 2026-11-18
+    revised: ""
+    status: active
+  - id: TR-party-007
+    system: party
+    gdd: design/gdd/party-system.md
+    requirement: "Round-robin cursor: AdvanceRrNextIndex advances, skips ineligible and empty slots (visit-counted), leaves the cursor unchanged and logs when none is eligible, clamps on shrink, serialized per party (CR-PS-7, AC-PS-17 to AC-PS-20, AC-PS-27)"
+    created: 2026-11-18
+    revised: ""
+    status: active
+  - id: TR-party-008
+    system: party
+    gdd: design/gdd/party-system.md
+    requirement: "Leader: first member leads; transfer on leave or disconnect to the lowest non-empty non-Ghost index (wrap), immediate on disconnect, no reclaim on reconnect; LeaderIndex tracks compaction (CR-PS-8, AC-PS-21, AC-PS-22, AC-PS-28)"
+    created: 2026-11-18
+    revised: ""
+    status: active
+  - id: TR-party-009
+    system: party
+    gdd: design/gdd/party-system.md
+    requirement: "Leave, disband, disconnect: voluntary leave gives a new solo PartyID; leader disband -> Disbanding -> cleanup after acks or 10 s; last member auto-disbands; disconnected slot held for SESSION_TTL_SECONDS then treated as leave; 5 s reconnect grace suppresses the Ghost broadcast (CR-PS-9, CR-PS-11, AC-PS-25, AC-PS-26)"
+    created: 2026-11-18
+    revised: ""
+    status: active
+  - id: TR-party-010
+    system: party
+    gdd: design/gdd/party-system.md
+    requirement: "Member status: Online / Dead / Ghost / OutOfZone / Disconnected per slot; real IPartyMemberStatusSink (Death & Respawn Dead / Online, slot retained), IPartyZonePresence entry / exit -> OutOfZone; GetPartyMembersWithStatus (PartyMemberSlot[]); Death & Respawn party ACs (AC-DR-13b, AC-DR-18, AC-DR-NEW-4, AC-DR-NEW-7 to NEW-9)"
+    created: 2026-11-18
+    revised: ""
+    status: active
+  - id: TR-party-011
+    system: party
+    gdd: design/gdd/party-system.md
+    requirement: "Wire output: PartyStateUpdate (R-OD, full snapshot, per-party sequenceId) on every membership, leader, status, eligibility or cursor change; PartyDisbanded (R-OD); PartyMemberHealthUpdate (R-U, absolute values, <= 20 Hz to Online / Dead members, 5 % delta and full-health suppression)"
+    created: 2026-11-18
+    revised: ""
+    status: active
+  - id: TR-party-012
+    system: party
+    gdd: design/gdd/party-system.md
+    requirement: "Zone wiring: the service built per zone and bound to the loot, zone, skill and death seams; party step in the phase list (ADR-014); end-to-end check that two players form a party, share a kill's XP by F-PS-1 and see a PartyStateUpdate"
+    created: 2026-11-18
+    revised: ""
+    status: active

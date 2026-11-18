@@ -7463,3 +7463,15 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Updated: story (Complete, ACs ticked, Completion Notes, Test Evidence), EPIC.md (Status Complete, row 009, Next Step), index (10 Complete, Complete). **Death & Respawn epic COMPLETE.**
 - Not committed: Story 009 test + meta, StartingZone asset, ZoneAssets test, story/EPIC/index/tech-debt/active.md. Editor noise left out.
 - Next recommended: commit Story 009; then per post-auth roadmap step 2 is done (combat loop: Navigation, Enemy AI, Mob Spawning, Death & Respawn) → step 3 Party System + Party Chat, NPC Shop, Consumable Use (/create-epics), or the Linux/VPS/iOS infrastructure push.
+
+## /create-epics Party System 2026-11-18 (not committed)
+- Story 009 committed as e5897cb; Death & Respawn epic Complete. User chose Party System next.
+- Lean (PR-EPIC skipped). User decisions: zone-local parties at MVP (ADR-010 note 2026-11-18; cross-instance → later ADR on ADR-015 relay); server only (UI → presentation, Party Chat separate epic).
+- Written: production/epics/party-system/EPIC.md (Ready; existing seams table: IPartyService loot, IPartyZonePresence/NoPartyZonePresence, ZoneSkillCastPartySource, IPartyMemberStatusSink/NoOp, PartyDisbandCoordinator, direct attacker AddExperience at AutoAttackCombatSystem.cs:571 + SkillDamageExecutionStep.cs:126; moved out: UI, Party Chat, cross-instance, real loot drops (StandInLootTableService in prod), F-PS-2 gold; 7 open items: 6→4 GDD leftovers, OQ-PS-2 PartyID counter, OutOfZone meaning, message IDs, kill XP seam, PartyDisbandCoordinator/GhostXpPoolTracker, OQ-PS-4 F-LS-2); TR-party-001..012 in tr-registry.yaml; ADR-010 note; index row.
+- Next: /create-stories party-system
+
+## /create-stories party-system 2026-11-18 (not committed)
+- Lean (QL-STORY-READY skipped). 12 stories written (5 Logic, 7 Integration, ~48 h): 001 config + F-PS-1; 002 registry (solo ids, membership); 003 leader + round-robin + IPartyService; 004 member status + eligibility + IPartyMemberStatusSink impl; 005 XP distribution (one seam for auto-attack + skill kill XP); 006 wire messages (+ new PartyLeaveRequest, PartyDisbandRequest, PartyInviteResult; ids 0xE170-0xE17F; wire-protocol amendment); 007 invite flow; 008 leave/disband/state broadcast; 009 disconnect/grace/zone presence; 010 health stream; 011 composition wiring; 012 end-to-end.
+- Findings: no leave/disband/invite-result messages in protocol; PartyMemberStatusChanged has no schema; no disband ack message (timeout only).
+- EPIC.md stories table + order + findings; index row.
+- Next: /story-readiness production/epics/party-system/story-001-party-config-and-xp-formula.md
