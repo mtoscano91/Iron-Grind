@@ -14,5 +14,10 @@ namespace IronGrind.CharacterPersistence
 
         /// <summary>The gateway evicted the session (<c>Evict</c> link message, Authentication Story 014).</summary>
         Evicted = 3,
+
+        /// <summary>
+        /// A disconnected ghost died; the session ends with the respawn HP (Death and Respawn Story 010).
+        /// </summary>
+        GhostDeath = 4,
     }
 }

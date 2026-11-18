@@ -96,7 +96,7 @@ This epic is complete when:
 | 007 | [Disconnect, reconnect, teardown and expiry while dead](story-007-disconnect-teardown-expiry.md) | Integration | Complete | ADR-011 |
 | 008 | [Zone composition wiring](story-008-zone-composition-wiring.md) | Integration | Ready | ADR-014 |
 | 009 | [End-to-end — a mob kills a player, the player respawns](story-009-end-to-end-mob-kills-player.md) | Integration | Ready | ADR-014 |
-| 010 | [Ghost death session end](story-010-ghost-death-session-end.md) | Integration | Ready | ADR-011, ADR-010 |
+| 010 | [Ghost death session end](story-010-ghost-death-session-end.md) | Integration | Complete | ADR-011, ADR-010 |
 
 Order: 001 → 002 → (003, 004, 006) → 005 after 003 + 004 → 007 after 004 → 010 after 003 + 004 → 008 after 001–007 + 010 → 009 after 006 + 008.
 
@@ -111,4 +111,4 @@ Order: 001 → 002 → (003, 004, 006) → 005 after 003 + 004 → 007 after 004
 
 ## Next Step
 
-Stories 001 (2026-11-17), 002, 003, 004, 005, 006 and 007 (2026-11-18) Complete; Story 010 added at Story 003 readiness. Story 007 made `DeathState` the only source of dead-ness (`IPlayerDeathStateReader`, optional in four consumers; Story 008 AC-4 / AC-6 now require them wired). Next: `/story-readiness production/epics/death-and-respawn/story-010-ghost-death-session-end.md` (Story 010 is the last gate for Story 008; 006 + 008 unlock 009).
+Stories 001 (2026-11-17), 002-007 and 010 (2026-11-18) Complete. Story 007 made `DeathState` the only source of dead-ness (`IPlayerDeathStateReader`, optional in four consumers; Story 008 AC-4 / AC-6 require them wired). Story 010 added `SessionEndCoordinator.BeginGhostDeath` and `SessionEndGhostDeathSink` (HP from `IPreDisconnectHpSource`, MaxHP fallback; no position persisted; release on save failure like TTL; slot freed through `broadcastPlayerLeftZone`; in-memory ghost-death mark consumed by the gateway reconnect rejection — reason field and persisted flag in TD-111; Story 008 AC-4b composes it). Next: `/story-readiness production/epics/death-and-respawn/story-008-zone-composition-wiring.md` (all its dependencies are Complete; 006 + 008 unlock 009).

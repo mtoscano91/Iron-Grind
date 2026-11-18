@@ -7353,3 +7353,40 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: None
 - Updated: story (Complete, ACs ticked, Completion Notes, Test Evidence status), EPIC.md (row 007, Next Step), index (7 Complete). Not committed: Story 007 code/tests/metas, Story 003/008 + EPIC/index/active.md edits.
 - Next recommended: commit Story 007, then /story-readiness production/epics/death-and-respawn/story-010-ghost-death-session-end.md
+
+## /story-readiness Death & Respawn Story 010 2026-11-18: NEEDS WORK → user decisions → READY (not committed)
+- Story 007 committed first as 6975212 (Editor noise left out).
+- Lean (QL-STORY-READY skipped). Found: no prod pre-disconnect HP snapshot; no position column; wasKilledWhileDisconnected stored nowhere; CompleteGhostDeathFromDisconnected does not free the zone slot (needs removeEntityFromZone + broadcastPlayerLeftZone → ZonePlayerExit.ReleasePlayer); TTL releases whatever the save result; HandleGhostDeathWhileReconnecting persists synchronously; GhostExpired / de-target are delegate-only; ZoneSessionEndedCodec exists (stale doc).
+- User chose: HP seam IPreDisconnectHpSource + effective MaxHP fallback; in-memory ghost-death mark in ConnectionStateMachine (DB column → TD at story-done); save failure releases like TTL.
+- Story 010 rewritten: Readiness Decisions 1-5, AC-1..AC-7 (new SessionEndReason.GhostDeath = 4, Reconnecting accepted, async save, SessionEndGhostDeathSink), QA cases, estimate 6 h. Story 008 AC-4b (sink + HP source + optional delegates). EPIC Next Step.
+- Next: /dev-story production/epics/death-and-respawn/story-010-ghost-death-session-end.md
+
+## Session Extract — /dev-story 2026-11-18 (Story 010)
+- Story: production/epics/death-and-respawn/story-010-ghost-death-session-end.md — Ghost Death Session End
+- AC-6 revised first (user): gateway Reconnect has no reason field and rejects before the zone, so the mark is consumed in GatewayReconnectHandler's no-session branch (plain accepted:false); reason field → tech debt with the DB column. AC-5 ZoneSessionEnded via optional sendZoneSessionEnded delegate.
+- gameplay-programmer (58 tool uses). src: SessionEndReason.GhostDeath = 4; SessionEndCoordinator.BeginGhostDeath + gate wait (PendingEnd.IsGhostDeath) + OnGhostDeathSaved/FinishGhostDeath + 5 optional ctor params (preDisconnectHp, effectiveMaxHp, broadcastGhostExpired, deTargetMobsOf, sendZoneSessionEnded); ConnectionStateMachine MarkGhostDeath/HasGhostDeathMark/TryConsumeGhostDeathMark, EnterConnecting clears, stale ZoneSessionEnded remark fixed; GatewayReconnectHandler consumes mark; new IPreDisconnectHpSource, NoOpPreDisconnectHpSource, SessionEndGhostDeathSink.
+- tests: new DeathAndRespawn_GhostSessionEnd_tests.cs (22; agent said 24); CharacterPersistence_Contract_tests SessionEndReason pin + GhostDeath 4 (first run 1 failure there).
+- Full EditMode !Database 8057/8057 (17:33:53Z), 0 error CS.
+- Check at review: CharacterPersistence coordinator now uses IronGrind.ServerLogic.DeathAndRespawn (IPreDisconnectHpSource) — layering; FinishGhostDeath (mark + delegates) runs even if Release threw midway; warning prints "unknown" via `state == default` (Connecting = 0 also prints unknown); log lines > 120 chars; AC-3 test uses "session record gone" instead of a transition entry in the call log.
+- Next: /code-review (SessionEndCoordinator.cs, ConnectionStateMachine.cs, GatewayReconnectHandler.cs, SessionEndReason.cs, 3 new DeathAndRespawn src files, test file) then /story-done production/epics/death-and-respawn/story-010-ghost-death-session-end.md
+
+## /code-review Death & Respawn Story 010 2026-11-18: CHANGES REQUIRED (small), awaiting user
+- unity-specialist (ADR-011 compliant, flow sound) + qa-tester + own check.
+- Required code: C1 wrap new lines >120 (SessionEndCoordinator docs/logs, SessionEndReason summary, ctor params, sink :38, test file 14 lines); C2 :666 replace HasState side-effect call with explicit LogError naming both accepted states + actual state / "no session"; C3 ResumeGhostDeath: Connected → warning (like ResumeTtl), other → error; C4 BeginGhostDeath "unknown" via state==default (Connecting=0) → use found flag, print "no session"; C5 FinishGhostDeath optional delegates in try/catch (or try/finally) so AfterNonForcedEnd always runs.
+- Required tests: T1 AC-3 order: remove delegate logs state gone + mark not yet set; expired logs mark set; TestObserver for trigger "GhostDeath" if available; T2 AC-5 Reconnecting chain order + expired/detarget asserted; T3 Connected-at-completion asserts _sent empty.
+- Suggestions: S1 gate held then Connected before open (warning, no save) + session gone variant; S2 gate wait HP read at save start (snapshot set after begin → 42) + EFFECTIVE_MAX_HP on existing gate test; S3 eviction waiter joins ghost-death end (fires after chain; also failed/Connected branches); S4 Release throws → no in-flight left, mark still set; S5 state missing at completion → error, no mark; S6 optional delegates independent; S7 snapshot 0 written as 0, MaxHP func not called, entity passed through; S9 second gateway Reconnect after consume, sink null ctor args; S10 move IPreDisconnectHpSource to IronGrind.CharacterPersistence (namespace inversion; same asmdef) before Story 008; S11 comment DisconnectType.Timeout closest value; S12 mark field comment (kept until next login).
+- Next: on approval apply, rerun full !Database, then /story-done
+
+## Review fixes applied, Death & Respawn Story 010 2026-11-18: APPROVED (not committed)
+- User "yes" → all required + suggestions, via gameplay-programmer. C1 new lines ≤120; C2 explicit error in "other state" completion branch; C3 ResumeGhostDeath Connected → warning; C4 "no session" via found flag; C5 optional hooks each in try/catch; S9 IPreDisconnectHpSource + NoOp moved to src/ServerLogic/CharacterPersistence (namespace IronGrind.CharacterPersistence; old DeathAndRespawn files + metas deleted, coordinator no longer uses DeathAndRespawn namespace); S10 DisconnectType.Timeout comment; S11 mark field comment.
+- Tests 22 → 36: T1 order (state gone + mark not yet at remove, mark set at expired, observer transition trigger GhostDeath), T2 Reconnecting chain + transition, T3 Connected no send; S1 gate→Connected/gone; S2 HP read at save start; S3 eviction waiter joins; S4 release throws; S5 session gone at completion; S6 hooks independent + throwing hook; S7 HP 0, entity passed; S8 second reconnect, sink null ctor.
+- Full EditMode !Database 8071/8071 (17:41:42Z), 0 error CS.
+- Next: /story-done production/epics/death-and-respawn/story-010-ghost-death-session-end.md
+
+## Session Extract — /story-done 2026-11-18 (Story 010)
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/death-and-respawn/story-010-ghost-death-session-end.md — Ghost Death Session End (7/7 ACs automated; full !Database 8071/8071 17:41:42Z)
+- Advisory: no position persisted; MaxHP until a pre-disconnect HP source exists; reconnect after ghost death is a plain gateway rejection (mark in memory); save failure releases like TTL; hooks optional until Story 008.
+- Tech debt logged: TD-111 (persisted wasKilledWhileDisconnected + ReconnectResult reason field).
+- Updated: story (Complete, ACs ticked, Completion Notes, Test Evidence), EPIC.md (row 010, Next Step), index (8 Complete), tech-debt register. Not committed: Story 010 code/tests/metas + docs.
+- Next recommended: commit Story 010, then /story-readiness production/epics/death-and-respawn/story-008-zone-composition-wiring.md

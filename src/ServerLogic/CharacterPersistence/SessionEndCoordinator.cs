@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using System.Threading.Tasks;
 using IronGrind.CharacterStats;
 using IronGrind.Currency;
 using IronGrind.EquipmentSystem;
@@ -54,6 +55,11 @@ namespace IronGrind.CharacterPersistence
     /// and nothing unsubscribes, so the coordinator is meant to live as long as the gate (one per zone server). An end still waiting
     /// on a gate when the server shuts down is never started and nothing is logged for it; a save started from a gate opened during
     /// the shutdown drain is reported by <see cref="ITickCompletionQueue"/>'s shutdown alert with no callback (TD-071).</para>
+    /// <para><b>Ghost-death end (Death and Respawn Story 010, <see cref="BeginGhostDeath"/>)</b>: a disconnected
+    /// ghost that dies is saved with <see cref="SessionEndReason.GhostDeath"/> and the pre-disconnect or respawn HP,
+    /// then released whatever the save result (like the TTL end), the state machine's ghost-death completion runs
+    /// (Disconnected_SessionActive or Reconnecting at completion), the zone slot is freed, the account is marked
+    /// and the optional delegates run.</para>
     /// <para>Not thread-safe: tick thread only, like <see cref="ITickCompletionQueue"/>.</para>
     /// </remarks>
     /// <example>
@@ -96,6 +102,13 @@ namespace IronGrind.CharacterPersistence
         private readonly Dictionary<uint, List<Action>> _waiters = new Dictionary<uint, List<Action>>();
         private readonly Action<uint> _closeTransportIfOpen;
 
+        // Ghost-death end seams (Story 010); all optional.
+        private readonly IPreDisconnectHpSource _preDisconnectHp;
+        private readonly Func<EntityID, float> _effectiveMaxHp;
+        private readonly Action<uint, string> _broadcastGhostExpired;
+        private readonly Action<EntityID> _deTargetMobsOf;
+        private readonly Action<uint, DisconnectReason> _sendZoneSessionEnded;
+
 #if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
         /// <summary>Test/dev-build observer passed to the state machine's eviction and exhaustion completions.</summary>
         internal INetworkTestObserver TestObserver { get; set; }
@@ -108,6 +121,8 @@ namespace IronGrind.CharacterPersistence
             public bool IsExhaustion;
             public SessionEndReason Reason;
             public bool IsLogout;
+            public bool IsGhostDeath;
+            public EntityID GhostEntity;
             public uint SessionExpiryTick;
             public Action<CharacterSaveResult> OnResult;
         }
@@ -131,6 +146,24 @@ namespace IronGrind.CharacterPersistence
         /// Optional (Story 014): closes the account's transport connection when a gateway eviction or re-auth exhaustion ends
         /// its session; called with the account id. Null: nothing is closed.
         /// </param>
+        /// <param name="preDisconnectHp">
+        /// Optional (Death and Respawn Story 010): the pre-disconnect HP snapshot written by a ghost-death save.
+        /// Null: none.
+        /// </param>
+        /// <param name="effectiveMaxHp">
+        /// Optional: the entity's effective MaxHP, written when there is no snapshot. Null and no snapshot: the save
+        /// uses the no-override overload (the stored session state decides the HP).
+        /// </param>
+        /// <param name="broadcastGhostExpired">
+        /// Optional: called with (raw character id, "GhostDeath") after a ghost-death end.
+        /// </param>
+        /// <param name="deTargetMobsOf">
+        /// Optional: called with the dead ghost's entity so mobs drop it (CR-GH-7).
+        /// </param>
+        /// <param name="sendZoneSessionEnded">
+        /// Optional: sends <c>ZoneSessionEnded(GhostDeath)</c> when the account is Reconnecting at completion.
+        /// Null: nothing.
+        /// </param>
         /// <exception cref="ArgumentNullException">Any required argument is null.</exception>
         public SessionEndCoordinator(
             ICharacterPersistence persistence,
@@ -144,8 +177,18 @@ namespace IronGrind.CharacterPersistence
             Action<EntityID> unregisterPlayerEntity,
             Action<uint> removeEntityFromZone,
             Action<uint, DisconnectType> broadcastPlayerLeftZone,
-            Action<uint> closeTransportIfOpen = null)
+            Action<uint> closeTransportIfOpen = null,
+            IPreDisconnectHpSource preDisconnectHp = null,
+            Func<EntityID, float> effectiveMaxHp = null,
+            Action<uint, string> broadcastGhostExpired = null,
+            Action<EntityID> deTargetMobsOf = null,
+            Action<uint, DisconnectReason> sendZoneSessionEnded = null)
         {
+            _preDisconnectHp = preDisconnectHp;
+            _effectiveMaxHp = effectiveMaxHp;
+            _broadcastGhostExpired = broadcastGhostExpired;
+            _deTargetMobsOf = deTargetMobsOf;
+            _sendZoneSessionEnded = sendZoneSessionEnded;
             _closeTransportIfOpen = closeTransportIfOpen ?? (_ => { });
             _persistence = persistence ?? throw new ArgumentNullException(nameof(persistence));
             _sessionRelease = sessionRelease ?? throw new ArgumentNullException(nameof(sessionRelease));
@@ -314,7 +357,11 @@ namespace IronGrind.CharacterPersistence
 
             _pending.Remove(charId);
             bool stateFound = _stateMachine.TryGetSessionState(end.AccountId, out SessionState state);
-            if (end.IsForced)
+            if (end.IsGhostDeath)
+            {
+                ResumeGhostDeath(end, charId, stateFound, state);
+            }
+            else if (end.IsForced)
             {
                 ResumeForced(end, charId, stateFound, state);
             }
@@ -449,6 +496,241 @@ namespace IronGrind.CharacterPersistence
             }
 
             AfterNonForcedEnd(accountId);
+        }
+
+        // ----- Ghost-death end (Death and Respawn Story 010) -----------------------------------------------
+
+        /// <summary>
+        /// Ends the session of a disconnected ghost that died (Death and Respawn Story 010, CR-GH-6, CR-GH-7):
+        /// saves with <see cref="SessionEndReason.GhostDeath"/> and the pre-disconnect HP (or the effective MaxHP),
+        /// waiting on the
+        /// mutation gate if held, then releases whatever the save result and completes the state machine. Accepts
+        /// <see cref="SessionState.Disconnected_SessionActive"/> and <see cref="SessionState.Reconnecting"/>.
+        /// </summary>
+        /// <param name="accountId">The ghost's account.</param>
+        /// <param name="entity">The ghost's EntityID.</param>
+        /// <returns>
+        /// <see langword="true"/> if the save was started or is waiting on the gate; <see langword="false"/>
+        /// (one warning, nothing started) if an end is already in flight or the account is in another state or unknown.
+        /// </returns>
+        /// <example><code>ends.BeginGhostDeath(accountId: 7, entity);</code></example>
+        public bool BeginGhostDeath(uint accountId, EntityID entity)
+        {
+            if (_inFlight.Contains(accountId))
+            {
+                Debug.LogWarning(
+                    $"{LOG_PREFIX} Ghost death for account {accountId} ignored: a session end is already in flight.");
+                return false;
+            }
+
+            if (!IsGhostDeathState(accountId, out bool found, out SessionState state))
+            {
+                Debug.LogWarning(
+                    $"{LOG_PREFIX} Ghost death for account {accountId} ignored: the session is not "
+                    + "Disconnected_SessionActive or Reconnecting "
+                    + $"(state: {(found ? state.ToString() : "no session")}).");
+                return false;
+            }
+
+            CharacterID charId = CharacterOf(accountId);
+            try
+            {
+                if (_gate.IsHeld(charId))
+                {
+                    _pending[charId] = new PendingEnd
+                    {
+                        AccountId = accountId,
+                        IsGhostDeath = true,
+                        GhostEntity = entity,
+                    };
+                    _inFlight.Add(accountId);
+                    return true;
+                }
+
+                StartGhostDeathSave(accountId, charId, entity);
+            }
+            catch (Exception ex)
+            {
+                _inFlight.Remove(accountId);
+                Debug.LogError($"{LOG_PREFIX} Starting the ghost-death save for {charId} threw: {ex}");
+                return false;
+            }
+
+            return true;
+        }
+
+        // found is false when the account has no session (state is then meaningless).
+        private bool IsGhostDeathState(uint accountId, out bool found, out SessionState state)
+        {
+            found = _stateMachine.TryGetSessionState(accountId, out state);
+            if (!found)
+            {
+                return false;
+            }
+
+            return state == SessionState.Disconnected_SessionActive || state == SessionState.Reconnecting;
+        }
+
+        private void StartGhostDeathSave(uint accountId, CharacterID charId, EntityID entity)
+        {
+            var cts = new CancellationTokenSource();
+            try
+            {
+                // The HP is computed here, at save start (AC-2), also when a gate wait delayed the start.
+                Task<CharacterSaveResult> save;
+                if (_preDisconnectHp != null && _preDisconnectHp.TryGetHp(entity, out float snapshotHp))
+                {
+                    save = _persistence.SaveSession(charId, SessionEndReason.GhostDeath, snapshotHp, cts.Token);
+                }
+                else if (_effectiveMaxHp != null)
+                {
+                    save = _persistence.SaveSession(
+                        charId, SessionEndReason.GhostDeath, _effectiveMaxHp(entity), cts.Token);
+                }
+                else
+                {
+                    save = _persistence.SaveSession(charId, SessionEndReason.GhostDeath, cts.Token);
+                }
+
+                _queue.Track(save, cts, result => OnGhostDeathSaved(accountId, charId, entity, cts, result));
+            }
+            catch
+            {
+                cts.Dispose();
+                throw;
+            }
+
+            _inFlight.Add(accountId);
+        }
+
+        private void ResumeGhostDeath(PendingEnd end, CharacterID charId, bool stateFound, SessionState state)
+        {
+            if (!stateFound || (state != SessionState.Disconnected_SessionActive && state != SessionState.Reconnecting))
+            {
+                _inFlight.Remove(end.AccountId);
+                string prefix = $"{LOG_PREFIX} Ghost-death end for account {end.AccountId} / {charId} was waiting on "
+                    + "the mutation gate but ";
+                if (stateFound && state == SessionState.Connected)
+                {
+                    // A reconnect during the wait is a legitimate race (like ResumeTtl).
+                    Debug.LogWarning(prefix + "the player reconnected (Connected); nothing was started.");
+                }
+                else
+                {
+                    Debug.LogError(prefix + "the session is no longer Disconnected_SessionActive or Reconnecting; "
+                        + "nothing was started.");
+                }
+
+                AfterNonForcedEnd(end.AccountId);
+                return;
+            }
+
+            try
+            {
+                StartGhostDeathSave(end.AccountId, charId, end.GhostEntity);
+            }
+            catch (Exception ex)
+            {
+                _inFlight.Remove(end.AccountId);
+                Debug.LogError(
+                    $"{LOG_PREFIX} Starting the ghost-death save for {charId} "
+                    + $"after the mutation gate opened threw: {ex}");
+                AfterNonForcedEnd(end.AccountId);
+            }
+        }
+
+        private void OnGhostDeathSaved(
+            uint accountId,
+            CharacterID charId,
+            EntityID entity,
+            CancellationTokenSource cts,
+            TickTaskResult<CharacterSaveResult> result)
+        {
+            _inFlight.Remove(accountId);
+            DisposeUnlessTimedOut(cts, result.Status);
+
+            if (result.Status != TickTaskStatus.Completed || result.Value != CharacterSaveResult.Success)
+            {
+                // Decision 4: like the TTL end, release and transition anyway.
+                Debug.LogError(
+                    $"{LOG_PREFIX} Ghost-death save for {charId} did not succeed ({result.Status}); "
+                    + "the session is released anyway.");
+            }
+
+            uint rawChar = charId.RawValue;
+            bool found = _stateMachine.TryGetSessionState(accountId, out SessionState state);
+            if (found && state == SessionState.Disconnected_SessionActive)
+            {
+                Release(charId, "ghost death", () =>
+                {
+                    _stateMachine.CompleteGhostDeathFromDisconnected(accountId, NoOpPersist
+#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
+                        , TestObserver
+#endif
+                        );
+                    _removeEntityFromZone(rawChar);
+                    // Closest existing DisconnectType (the enum has Graceful, Timeout, ZoneTransfer).
+                    _broadcastPlayerLeftZone(rawChar, DisconnectType.Timeout);
+                });
+                FinishGhostDeath(accountId, rawChar, entity);
+            }
+            else if (found && state == SessionState.Reconnecting)
+            {
+                Release(charId, "ghost death", () =>
+                {
+                    _stateMachine.HandleGhostDeathWhileReconnecting(
+                        accountId,
+                        NoOpPersist,
+                        _sendZoneSessionEnded ?? ((_, __) => { })
+#if UNITY_INCLUDE_TESTS || DEVELOPMENT_BUILD
+                        , TestObserver
+#endif
+                        );
+                    _removeEntityFromZone(rawChar);
+                    // Closest existing DisconnectType (the enum has Graceful, Timeout, ZoneTransfer).
+                    _broadcastPlayerLeftZone(rawChar, DisconnectType.Timeout);
+                });
+                FinishGhostDeath(accountId, rawChar, entity);
+            }
+            else if (found && state == SessionState.Connected)
+            {
+                Debug.LogWarning(
+                    $"{LOG_PREFIX} Ghost-death end for account {accountId} / {charId} finished but the player "
+                    + "reconnected (Connected) during the save; nothing was released.");
+            }
+            else
+            {
+                Debug.LogError(
+                    $"{LOG_PREFIX} Ghost-death end for account {accountId} / {charId} finished but the session is "
+                    + "not Disconnected_SessionActive or Reconnecting "
+                    + $"(state: {(found ? state.ToString() : "no session")}); no release step was run.");
+            }
+
+            AfterNonForcedEnd(accountId);
+        }
+
+        private void FinishGhostDeath(uint accountId, uint rawChar, EntityID entity)
+        {
+            _stateMachine.MarkGhostDeath(accountId);
+
+            // Each optional hook is isolated: a throwing hook must not skip the other hook or AfterNonForcedEnd.
+            try
+            {
+                _broadcastGhostExpired?.Invoke(rawChar, "GhostDeath");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"{LOG_PREFIX} The ghost-expired broadcast for account {accountId} threw: {ex}");
+            }
+
+            try
+            {
+                _deTargetMobsOf?.Invoke(entity);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"{LOG_PREFIX} De-targeting mobs of the dead ghost of account {accountId} threw: {ex}");
+            }
         }
 
         // ----- Gateway-forced ends (Authentication Story 014) ---------------------------------------------

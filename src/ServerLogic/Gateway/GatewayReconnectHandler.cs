@@ -21,6 +21,7 @@ namespace IronGrind.ServerLogic.Gateway
     /// that end's completion re-check fail and leak the session) answers <c>accepted:false</c> and counts nothing.
     /// A <see cref="SessionState.Connected"/> account is rejected even with the correct token (story decision: no rule
     /// defines a second client's handshake against a live Connected session).
+    /// A rejection for an account without a session also consumes its ghost-death mark (Death and Respawn Story 010).
     /// </remarks>
     public sealed class GatewayReconnectHandler
     {
@@ -67,6 +68,9 @@ namespace IronGrind.ServerLogic.Gateway
                 || !_sessions.TryGetSessionExpiryTick(id, out uint expiry)
                 || _ends.IsEndInFlight(id)) // the end in flight releases the session; nothing is rotated or counted
             {
+                // Ghost-death mark (Death and Respawn Story 010, CR-GH-6 step 6): consumed here; the reply has no
+                // reason field, so the client sees the same rejection as for any account without a session.
+                _sessions.TryConsumeGhostDeathMark(id);
                 _outbox.EnqueueReconnectResult(requestId, false, null);
                 return;
             }

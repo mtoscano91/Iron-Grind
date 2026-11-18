@@ -291,6 +291,27 @@ namespace IronGrind.Networking
 
         private readonly Dictionary<uint, AccountSessionRecord> _sessions = new();
 
+        // Death and Respawn Story 010 (Decision 3): accounts whose ghost died while disconnected. In memory only
+        // (lost on server restart); cleared by EnterConnecting or consumed by the gateway Reconnect handler.
+        // An account that never returns keeps its mark until the next login (EnterConnecting) or process restart.
+        private readonly HashSet<uint> _ghostDeathMarks = new();
+
+        /// <summary>
+        /// Marks <paramref name="accountId"/> as ended by a ghost death (Death and Respawn Story 010, CR-GH-6 step 6).
+        /// </summary>
+        /// <param name="accountId">The account whose ghost died.</param>
+        public void MarkGhostDeath(uint accountId) => _ghostDeathMarks.Add(accountId);
+
+        /// <summary>Whether <paramref name="accountId"/> carries a ghost-death mark.</summary>
+        /// <param name="accountId">The account to check.</param>
+        /// <returns><see langword="true"/> while the mark is set.</returns>
+        public bool HasGhostDeathMark(uint accountId) => _ghostDeathMarks.Contains(accountId);
+
+        /// <summary>Removes the ghost-death mark of <paramref name="accountId"/>, if set.</summary>
+        /// <param name="accountId">The account to check.</param>
+        /// <returns><see langword="true"/> if a mark was set and is now consumed.</returns>
+        public bool TryConsumeGhostDeathMark(uint accountId) => _ghostDeathMarks.Remove(accountId);
+
         // Reused scratch buffer for EvaluateTimeouts' deferred-removal pass (see class remarks) —
         // cleared at the start of every call, so no steady-state allocation once warmed up.
         private readonly List<uint> _connectingTimeoutScratch = new();
@@ -353,6 +374,7 @@ namespace IronGrind.Networking
 #endif
             )
         {
+            _ghostDeathMarks.Remove(accountId); // a new session supersedes a ghost-death mark (Story 010 AC-6)
             _sessions[accountId] = new AccountSessionRecord
             {
                 State = SessionState.Connecting,
@@ -1741,10 +1763,9 @@ namespace IronGrind.Networking
         /// <para>
         /// <b><paramref name="sendZoneSessionEnded"/> is a delegate seam, not a real transport
         /// message</b> (mirrors this class's established precedent for <c>persistFinalCharacterState</c>/
-        /// <c>removeEntityFromZone</c>/<c>broadcastPlayerLeftZone</c> elsewhere in this class): no
-        /// <c>ZoneSessionEnded</c> message serializer exists yet in this codebase, and no
-        /// <see cref="INetworkTestObserver"/> hook exists for it either (confirmed before
-        /// implementation — the delegate seam is the resolution, not a missing observer callback).
+        /// <c>removeEntityFromZone</c>/<c>broadcastPlayerLeftZone</c> elsewhere in this class): a
+        /// <c>ZoneSessionEnded</c> codec exists (<c>ZoneSessionEndedCodec</c>), but a Reconnecting account has no
+        /// client attached, so the send stays a caller-supplied delegate (Death and Respawn Story 010).
         /// </para>
         /// </remarks>
         /// <param name="accountId">The account whose reconnect is being superseded by ghost death.</param>
