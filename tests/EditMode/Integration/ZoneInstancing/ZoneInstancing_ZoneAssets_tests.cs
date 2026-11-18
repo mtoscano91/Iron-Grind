@@ -49,7 +49,8 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
             Assert.AreEqual(new Vector3(50f, 50f, 50f), definition.WalkableBoundsMax);
             Assert.IsTrue(ZoneDefinitionBoundsValidator.AreBoundsValid(
                 definition.WalkableBoundsMin, definition.WalkableBoundsMax, out string failure), failure);
-            Assert.IsFalse(definition.TownRespawnPointAuthored);
+            Assert.IsTrue(definition.TownRespawnPointAuthored, "TD-112: authored town point");
+            Assert.AreEqual(new Vector3(-40f, 0f, -40f), definition.TownRespawnPoint);
             // Navigation Story 008 baked the starting-zone NavMesh and assigned it to the definition.
             Assert.IsTrue(definition.BakedNavMesh != null);
             Assert.AreEqual(STARTING_ZONE_NAV_MESH_PATH, AssetDatabase.GetAssetPath(definition.BakedNavMesh));

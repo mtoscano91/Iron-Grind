@@ -15,7 +15,7 @@ MonoBehaviour:
   _templateId: 0
   _walkableBoundsMin: {x: -50, y: -50, z: -50}
   _walkableBoundsMax: {x: 50, y: 50, z: 50}
-  _townRespawnPoint: {x: 0, y: 0, z: 0}
-  _townRespawnPointAuthored: 0
+  _townRespawnPoint: {x: -40, y: 0, z: -40}
+  _townRespawnPointAuthored: 1
   _bakedNavMesh: {fileID: 23800000, guid: 9433f31d87399bb489f441ae4129a966, type: 2}
   _spawnTable: {fileID: 11400000, guid: ff65822de7357ce40aefd0c5bc078762, type: 2}
