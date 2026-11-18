@@ -7,6 +7,7 @@ using IronGrind.CharacterStats;
 using IronGrind.Currency;
 using IronGrind.LootTableSystem;
 using IronGrind.Networking;
+using IronGrind.ServerLogic.DeathAndRespawn;
 using IronGrind.ServerLogic.ZoneServer;
 using UnityEngine;
 
@@ -60,7 +61,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             public EntityID Entity;
             public CharacterID Character;
             public uint ClientId;
-            public ZoneSessionState State;
+            public bool IsDead;
             public bool IsGhost;
             public bool IsEntering;
             public bool AwaitingSave;
@@ -79,6 +80,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         private readonly IZoneTeardownSessionSink _sessionSink;
         private readonly IZoneDrainNoticeLog _drainLog;
         private readonly IClientMessageOutbox _outbox;
+        private readonly IPlayerDeathStateReader _deathStates;
         private readonly ZoneID _zone;
         private readonly List<Work> _work = new List<Work>();
         private bool _ran;
@@ -99,12 +101,17 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         /// <param name="drainLog">Which clients already got <c>ZoneSessionEnded</c> at T-4.</param>
         /// <param name="outbox">Receives <c>ZoneSessionEnded</c>.</param>
         /// <param name="zone">The zone being closed; not <see cref="ZoneID.Invalid"/>.</param>
+        /// <param name="deathStates">
+        /// Optional dead-ness reader (Death and Respawn Story 007, EC-DR-3): a dead, connected player is saved with
+        /// HP 0 in step 2. Null means nobody is dead.
+        /// </param>
         /// <exception cref="ArgumentNullException">A reference argument is null.</exception>
         /// <exception cref="ArgumentException"><paramref name="zone"/> is invalid.</exception>
         public ZoneCloseSteps(ZoneSlotPool pool, ZoneConnectionCharacterDirectory directory, ZoneTickRoster roster,
             ZoneEntryReclamation reclamation, ICharacterPersistence persistence, ITickCompletionQueue queue,
             IPartyZonePresence party, IZoneMobSpawnTimers timers, IZoneTeardownSessionSink sessionSink,
-            IZoneDrainNoticeLog drainLog, IClientMessageOutbox outbox, ZoneID zone)
+            IZoneDrainNoticeLog drainLog, IClientMessageOutbox outbox, ZoneID zone,
+            IPlayerDeathStateReader deathStates = null)
         {
             if (zone == ZoneID.Invalid)
             {
@@ -123,6 +130,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             _drainLog = drainLog ?? throw new ArgumentNullException(nameof(drainLog));
             _outbox = outbox ?? throw new ArgumentNullException(nameof(outbox));
             _zone = zone;
+            _deathStates = deathStates;
         }
 
         /// <summary>
@@ -178,7 +186,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
                         Entity = slot.Entity,
                         Character = slot.Character,
                         ClientId = slot.ClientId,
-                        State = slot.State,
+                        IsDead = _deathStates != null && _deathStates.IsDead(slot.Entity),
                         IsGhost = slot.State == ZoneSessionState.Disconnected_SessionActive,
                         IsEntering = _reclamation.IsEntering(slot.Entity),
                     });
@@ -209,7 +217,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
                 Task<CharacterSaveResult> save = null;
                 try
                 {
-                    save = w.State == ZoneSessionState.Dead || w.State == ZoneSessionState.Respawning
+                    save = w.IsDead
                         ? _persistence.SaveSession(w.Character, SessionEndReason.ZoneClosed, 0f, cts.Token)
                         : _persistence.SaveSession(w.Character, SessionEndReason.ZoneClosed, cts.Token);
                     TrackSave(w, cts, save, "SaveSession");

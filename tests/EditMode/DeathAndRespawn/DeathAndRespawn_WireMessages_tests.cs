@@ -322,7 +322,7 @@ namespace IronGrind.Tests.EditMode.DeathAndRespawn
 
             Assert.AreEqual(1, _output.Deaths.Count);
             Assert.AreEqual(DeathStateKind.Dead, _output.Deaths[0].Kind);
-            Assert.AreEqual(ZoneSessionState.Dead, _output.Deaths[0].Slot);
+            Assert.AreEqual(ZoneSessionState.Connected, _output.Deaths[0].Slot);
             Assert.IsTrue(_output.Deaths[0].CombatBanned);
             Assert.IsTrue(_output.Deaths[0].MovementBanned);
         }

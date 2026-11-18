@@ -9,6 +9,7 @@ using IronGrind.Currency;
 using IronGrind.LootTableSystem;
 using IronGrind.Networking;
 using IronGrind.ServerLogic.ZoneInstancing;
+using IronGrind.Tests.EditMode.DeathAndRespawn;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
@@ -341,6 +342,7 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
         private FakeParty _party;
         private FakeTimers _timers;
         private FakeSink _sink;
+        private FakePlayerDeathStateReader _deaths;
         private FakeDrainLog _drainLog;
         private FakeDisconnector _disconnector;
         private ZoneSlotPool _pool;
@@ -353,6 +355,7 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
         [SetUp]
         public void SetUp()
         {
+            _deaths = new FakePlayerDeathStateReader();
             var ticks = new FakeTicks();
             _outbox = new FakeOutbox();
             _persistence = new FakePersistence();
@@ -373,13 +376,20 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
 
         private ZoneCloseSteps Steps(ITickCompletionQueue queue = null) =>
             new ZoneCloseSteps(_pool, _directory, _roster, _reclamation, _persistence, queue ?? _queue, _party, _timers, _sink,
-                _drainLog, _outbox, Zone);
+                _drainLog, _outbox, Zone, _deaths);
 
         private P AddPlayer(uint client, ZoneSessionState state = ZoneSessionState.Connected, bool inParty = true)
         {
             uint n = _nextCharacter++;
             var character = new CharacterID(n);
             Assert.IsTrue(_pool.TryAllocatePlayer(Zone, character, new AccountID(n + 5000u), client, out _, out EntityID id));
+            // Death and Respawn Story 007: dead-ness comes from the death reader; the slot keeps the connection state.
+            if (state == ZoneSessionState.Dead || state == ZoneSessionState.Respawning)
+            {
+                _deaths.SetDead(id);
+                state = ZoneSessionState.Connected;
+            }
+
             _pool.SetSessionState(id, state);
             _directory.Add(client, character);
             _roster.AddPending(id);
@@ -488,6 +498,42 @@ namespace IronGrind.Tests.EditMode.Integration.ZoneInstancing
             CompleteSave(a);
             Drain();
             Assert.AreEqual(1, _party.ExitsFor(a.Entity));
+        }
+
+        // Death and Respawn Story 007 AC-4 (EC-DR-3): dead + connected → HP 0 overload; dead + disconnected is a
+        // ghost and goes only through step 3; alive → normal overload.
+        [Test]
+        public void test_death_and_respawn_dead_connected_dead_ghost_and_alive_take_their_own_save_paths()
+        {
+            // Arrange
+            P dead = AddPlayer(1u, ZoneSessionState.Dead);
+            P deadGhost = AddPlayer(2u, ZoneSessionState.Disconnected_SessionActive);
+            _deaths.SetDead(deadGhost.Entity);
+            P alive = AddPlayer(3u);
+
+            // Act
+            Steps().RunCloseSteps();
+
+            // Assert
+            Assert.AreEqual(2, _persistence.Calls.Count);
+            foreach (SaveCall call in _persistence.Calls)
+            {
+                Assert.AreEqual(SessionEndReason.ZoneClosed, call.Reason);
+                if (call.Character == dead.Character)
+                {
+                    Assert.IsTrue(call.HasOverride);
+                    Assert.AreEqual(0f, call.HpOverride);
+                }
+                else
+                {
+                    Assert.AreEqual(alive.Character, call.Character);
+                    Assert.IsFalse(call.HasOverride);
+                }
+            }
+
+            Assert.AreEqual(0, _persistence.CallsFor(deadGhost.Character), "a dead ghost gets no step 2 save");
+            Assert.AreEqual(1, _sink.GhostSaves.Count);
+            Assert.AreEqual(deadGhost.Character, _sink.GhostSaves[0].Key);
         }
 
         [Test]

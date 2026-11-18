@@ -203,16 +203,19 @@ namespace IronGrind.Tests.EditMode.DeathAndRespawn
 
         // ---- AC-1 ----
 
+        // Story 007 AC-7 reversed the order: duplicate suppression runs before the ghost check.
         [Test]
-        public void test_ghost_death_ghost_check_runs_before_dedup()
+        public void test_ghost_death_dedup_runs_before_ghost_check()
         {
+            // Arrange
             _service.SetStateForTests(_player, DeathStateKind.Dead);
             MakeGhost(_player);
 
+            // Act
             _source.Raise(_player);
 
-            Assert.AreEqual(1, _sink.Calls.Count);
-            Assert.AreEqual(_player, _sink.Calls[0]);
+            // Assert
+            Assert.AreEqual(0, _sink.Calls.Count);
             AssertNoSideEffectCalls();
             DeathState state = StateOf(_player);
             Assert.AreEqual(DeathStateKind.Dead, state.CurrentState);
@@ -261,7 +264,7 @@ namespace IronGrind.Tests.EditMode.DeathAndRespawn
 
             Assert.AreEqual(0, _sink.Calls.Count);
             Assert.AreEqual(DeathStateKind.Dead, StateOf(_player).CurrentState);
-            Assert.AreEqual(ZoneSessionState.Dead, SessionState(_player));
+            Assert.AreEqual(ZoneSessionState.Connected, SessionState(_player));
             Assert.AreEqual(1, _combat.Calls);
             Assert.AreEqual(1, _movement.Calls);
             Assert.AreEqual(1, _party.Calls);
@@ -371,21 +374,25 @@ namespace IronGrind.Tests.EditMode.DeathAndRespawn
             LogAssert.NoUnexpectedReceived();
         }
 
-        // ---- AC-6 ----
+        // ---- AC-6 (revised by Story 007 AC-7: duplicate suppression runs before the ghost check) ----
 
         [Test]
-        public void test_ghost_death_dead_then_disconnected_second_death_takes_ghost_path()
+        public void test_ghost_death_dead_then_disconnected_second_death_is_dropped()
         {
+            // Arrange
             _source.Raise(_player);
             DeathState before = StateOf(_player);
             Assert.AreEqual(DeathStateKind.Dead, before.CurrentState);
             Assert.IsTrue(_pool.SetSessionState(_player, ZoneSessionState.Disconnected_SessionActive));
+            Assert.IsTrue(_ghosts.IsGhost(_player));
             _ticks.Value = LATER_TICK;
 
+            // Act
             _source.Raise(_player);
 
-            Assert.AreEqual(1, _sink.Calls.Count);
-            Assert.AreEqual(_player, _sink.Calls[0]);
+            // Assert
+            Assert.AreEqual(0, _sink.Calls.Count);
+            Assert.AreEqual(DeathStateKind.Dead, StateOf(_player).CurrentState);
             DeathState after = StateOf(_player);
             Assert.AreEqual(before.DeathTick, after.DeathTick);
             Assert.AreEqual(before.RespawnTick, after.RespawnTick);

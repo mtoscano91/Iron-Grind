@@ -4,6 +4,7 @@ using IronGrind.CharacterPersistence;
 using IronGrind.CharacterStats;
 using IronGrind.LootTableSystem;
 using IronGrind.Networking;
+using IronGrind.ServerLogic.DeathAndRespawn;
 using UnityEngine;
 
 namespace IronGrind.ServerLogic.ZoneInstancing
@@ -24,10 +25,10 @@ namespace IronGrind.ServerLogic.ZoneInstancing
     /// <para>
     /// <b>Data.</b> Fields the zone does not own come from <see cref="IZoneEntityStateSource"/>; an entity the seam
     /// has no data for is skipped and one warning per call is logged. A mob whose type id does not fit the 16-bit
-    /// wire field (above <see cref="ushort.MaxValue"/>) is skipped the same way. A player is dead (<c>isInDeadState</c>) in
-    /// <see cref="ZoneSessionState.Dead"/> or <see cref="ZoneSessionState.Respawning"/>, with
-    /// <c>respawnTicksRemaining = max(0, RespawnTick - tick)</c>; a ghost is
-    /// <see cref="ZoneSessionState.Disconnected_SessionActive"/>.
+    /// wire field (above <see cref="ushort.MaxValue"/>) is skipped the same way. A player is dead
+    /// (<c>isInDeadState</c>) when the <see cref="IPlayerDeathStateReader"/> says so (Death and Respawn Story 007; the
+    /// slot state no longer carries dead-ness), with <c>respawnTicksRemaining = max(0, RespawnTick - tick)</c>;
+    /// without a reader nobody is dead. A ghost is <see cref="ZoneSessionState.Disconnected_SessionActive"/>.
     /// </para>
     /// <para>
     /// Main thread only. Buffers are allocated once in the constructor; a call allocates nothing unless it warns,
@@ -47,6 +48,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         private readonly IZoneEntityStateSource _source;
         private readonly IServerTickSource _ticks;
         private readonly IClientMessageOutbox _outbox;
+        private readonly IPlayerDeathStateReader _deathStates;
         private readonly byte[] _stream;
         private readonly byte[] _fragmentBody;
 
@@ -57,10 +59,13 @@ namespace IronGrind.ServerLogic.ZoneInstancing
         /// <param name="source">The read seam for position, health and the other fields.</param>
         /// <param name="ticks">The tick source; its tick is the snapshot version.</param>
         /// <param name="outbox">Receives the fragments.</param>
-        /// <exception cref="ArgumentNullException">An argument is null.</exception>
+        /// <param name="deathStates">
+        /// Optional dead-ness reader (Death and Respawn Story 007); null means nobody is dead.
+        /// </param>
+        /// <exception cref="ArgumentNullException">A required argument is null.</exception>
         /// <exception cref="ArgumentException"><paramref name="zone"/> is the invalid (0) zone id.</exception>
         public ZoneSnapshotBuilder(ZoneID zone, ZoneSlotPool pool, IZoneMobRoster mobs, IZoneEntityStateSource source,
-            IServerTickSource ticks, IClientMessageOutbox outbox)
+            IServerTickSource ticks, IClientMessageOutbox outbox, IPlayerDeathStateReader deathStates = null)
         {
             if (pool == null)
             {
@@ -93,6 +98,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
             }
 
             _zone = zone;
+            _deathStates = deathStates;
             _pool = pool;
             _mobs = mobs;
             _source = source;
@@ -133,7 +139,7 @@ namespace IronGrind.ServerLogic.ZoneInstancing
                     continue;
                 }
 
-                bool dead = slot.State == ZoneSessionState.Dead || slot.State == ZoneSessionState.Respawning;
+                bool dead = _deathStates != null && _deathStates.IsDead(id);
                 uint remaining = dead && v.RespawnTick > tick ? v.RespawnTick - tick : 0u;
                 EntityState entry = EntityState.CreatePlayer(id, v.PosX, v.PosY, v.PosZ, v.RotX, v.RotY, v.RotZ, v.RotW,
                     v.CurrentHp, v.MaxHp, v.IsInCombat, slot.State == ZoneSessionState.Disconnected_SessionActive,

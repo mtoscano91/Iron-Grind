@@ -2,6 +2,7 @@
 #pragma warning disable CS0067 // the fake equipment service never raises its event
 using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using IronGrind.AutoAttackCombat;
 using IronGrind.CharacterPersistence;
 using IronGrind.CharacterStats;
@@ -11,10 +12,13 @@ using IronGrind.ItemDatabase;
 using IronGrind.LootTableSystem;
 using IronGrind.MovementSystem;
 using IronGrind.Networking;
+using IronGrind.ServerLogic.DeathAndRespawn;
 using IronGrind.ServerLogic.ZoneInstancing;
 using IronGrind.ServerLogic.ZoneServer;
+using IronGrind.Tests.EditMode.DeathAndRespawn;
 using NUnit.Framework;
 using UnityEngine;
+using UnityEngine.TestTools;
 using UnityEngine.TestTools.Constraints;
 using Is = UnityEngine.TestTools.Constraints.Is;
 
@@ -352,6 +356,130 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
             Assert.AreEqual(CycleTimerBroadcastStep.NormalizeCycleTimer(5, 20), view.CycleTimer);
             Assert.AreNotEqual((ushort)0, view.CycleTimer);
             Assert.AreEqual(0u, view.RespawnTick);
+        }
+
+        // ----- Death and Respawn Story 007 AC-3: RespawnTick from the death reader ------------
+
+        private ZoneEntityStateSource SourceWith(FakePlayerDeathStateReader deaths) =>
+            new ZoneEntityStateSource(_pool, _roster, _stats, _names, _equipment, _combat, null, deaths);
+
+        [Test]
+        public void test_player_respawn_tick_dead_player_is_read_from_death_reader()
+        {
+            // Arrange
+            EntityID id = AddPlayer();
+            var deaths = new FakePlayerDeathStateReader();
+            deaths.SetDead(id, 1140L);
+
+            // Act
+            Assert.IsTrue(SourceWith(deaths).TryGetPlayerState(id, out ZonePlayerStateView view));
+
+            // Assert
+            Assert.AreEqual(1140u, view.RespawnTick);
+        }
+
+        [Test]
+        public void test_player_respawn_tick_alive_player_with_reader_is_zero()
+        {
+            // Arrange
+            EntityID id = AddPlayer();
+            ZoneEntityStateSource source = SourceWith(new FakePlayerDeathStateReader());
+
+            // Act
+            Assert.IsTrue(source.TryGetPlayerState(id, out ZonePlayerStateView view));
+
+            // Assert
+            Assert.AreEqual(0u, view.RespawnTick);
+        }
+
+        [Test]
+        public void test_player_respawn_tick_without_reader_is_zero_even_if_dead_elsewhere()
+        {
+            // Arrange: the default source (no reader) cannot see a death recorded in an unconnected reader.
+            EntityID id = AddPlayer();
+            new FakePlayerDeathStateReader().SetDead(id, 1140L);
+
+            // Act
+            Assert.IsTrue(_source.TryGetPlayerState(id, out ZonePlayerStateView view));
+
+            // Assert
+            Assert.AreEqual(0u, view.RespawnTick);
+        }
+
+        [TestCase(0L)]
+        [TestCase(-5L)]
+        public void test_player_respawn_tick_not_positive_is_zero_and_silent(long respawnTick)
+        {
+            // Arrange
+            EntityID id = AddPlayer();
+            var deaths = new FakePlayerDeathStateReader();
+            deaths.SetDead(id, respawnTick);
+
+            // Act
+            Assert.IsTrue(SourceWith(deaths).TryGetPlayerState(id, out ZonePlayerStateView view));
+
+            // Assert
+            Assert.AreEqual(0u, view.RespawnTick);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        // Real DeathAndRespawnService as the reader: the death it records reaches the view, and the respawn clears it.
+        [Test]
+        public void test_player_respawn_tick_real_death_service_dead_then_respawned()
+        {
+            // Arrange
+            EntityID id = AddPlayer();
+            var deaths = new RealDeathRig(_pool);
+            var source = new ZoneEntityStateSource(_pool, _roster, _stats, _names, _equipment, _combat,
+                null, deaths.Service);
+            long respawnAt = RealDeathRig.DEATH_TICK + DeathAndRespawnConfigValues.Defaults.RespawnDelayTicks;
+
+            try
+            {
+                // Act + Assert: dead
+                deaths.Kill(id);
+                Assert.IsTrue(source.TryGetPlayerState(id, out ZonePlayerStateView dead));
+                Assert.AreEqual((uint)respawnAt, dead.RespawnTick);
+
+                // Act + Assert: respawned
+                deaths.Service.Tick(respawnAt);
+                Assert.IsTrue(source.TryGetPlayerState(id, out ZonePlayerStateView alive));
+                Assert.AreEqual(0u, alive.RespawnTick);
+            }
+            finally
+            {
+                deaths.Service.Dispose();
+            }
+        }
+
+        [Test]
+        public void test_player_respawn_tick_above_uint_max_is_clamped_and_logs_one_error()
+        {
+            // Arrange
+            EntityID id = AddPlayer();
+            var deaths = new FakePlayerDeathStateReader();
+            deaths.SetDead(id, (long)uint.MaxValue + 1L);
+            LogAssert.Expect(LogType.Error, new Regex(@"RespawnTick 4294967296 .* clamped to 4294967295"));
+
+            // Act
+            Assert.IsTrue(SourceWith(deaths).TryGetPlayerState(id, out ZonePlayerStateView view));
+
+            // Assert
+            Assert.AreEqual(uint.MaxValue, view.RespawnTick);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void test_player_respawn_tick_exactly_uint_max_is_not_clamped()
+        {
+            EntityID id = AddPlayer();
+            var deaths = new FakePlayerDeathStateReader();
+            deaths.SetDead(id, uint.MaxValue);
+
+            Assert.IsTrue(SourceWith(deaths).TryGetPlayerState(id, out ZonePlayerStateView view));
+
+            Assert.AreEqual(uint.MaxValue, view.RespawnTick);
+            LogAssert.NoUnexpectedReceived();
         }
 
         [TestCase(0, 0)]

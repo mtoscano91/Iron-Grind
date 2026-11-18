@@ -7319,3 +7319,37 @@ Character Stats, Item Database, Currency System, Class System, Leveling System, 
 - Tech debt logged: None
 - Updated: story (Complete, ACs ticked, Completion Notes), EPIC.md (row 006, Next Step), index (6 Complete). Not committed (Story 006 test + story + epic/index/active.md).
 - Next recommended: commit Story 006, then /story-readiness production/epics/death-and-respawn/story-007-disconnect-teardown-expiry.md (or 010; both gate 008; 009 needs 006 + 008)
+
+## /story-readiness Death & Respawn Story 007 2026-11-18: NEEDS WORK → user "apply all 11" → READY (not committed)
+- Story 006 committed first as 1b60b0e (Editor noise left out).
+- Lean (QL-STORY-READY skipped). Story 007 rewritten: Readiness Decisions 1-6; slot state = connection only (D&R stops writing Dead and stops restoring Connected); new IPlayerDeathStateReader (IsDead, TryGetRespawnTick) read by ZoneSnapshotBuilder, ZoneCloseSteps (slot snapshot IsDead, step 2 HP 0 overload), ZoneAggroCandidateSource (Connected and not dead); optional ctor params (null → nobody dead). No prod disconnect writer exists (tests use SetSessionState / RebindClient). New AC-7: duplicate check before ghost check → second death while Dead dropped (Story 003 AC-6 test changes; GDD order deviation advisory). AC-4: dead+connected → HP 0 overload; dead ghost → step 3 unchanged. AC-5: TTL-while-dead unreachable (delay ≤10 s < TTL ≥60 s), fakes-only test, no Database variant. AC-3: ZoneEntityStateSource optional reader, long→uint clamp + LogError. AC-6: service implements IZoneSlotReleaseListener.BeforeRelease (reset DeathState + _retryAttempts). Out of scope: Networking Core disconnect/ghost sink, composition (Story 008), Story 010. Estimate 5 h. Performance note added.
+- Not yet propagated: Story 003 AC-6 text/notes and EPIC.md (user scoped edits to Story 007 only).
+- Next: /dev-story production/epics/death-and-respawn/story-007-disconnect-teardown-expiry.md
+
+## Session Extract — /dev-story 2026-11-18 (Story 007)
+- Propagated first: Story 003 (AC-6 superseded note, QA case, deviations) and EPIC (open item 1, Next Step).
+- Story: production/epics/death-and-respawn/story-007-disconnect-teardown-expiry.md — implemented inline (no agent).
+- src: new IPlayerDeathStateReader (IsDead, TryGetRespawnTick); DeathAndRespawnService implements it + IZoneSlotReleaseListener.BeforeRelease (reset DeathState + _retryAttempts), duplicate check before ghost check (AC-7), no SetSessionState(Dead), no Connected restore in T-3; optional reader param in ZoneSnapshotBuilder, ZoneCloseSteps (Work.IsDead replaces Work.State), ZoneAggroCandidateSource (Connected and not dead), ZoneEntityStateSource (RespawnTick, clamp to uint.MaxValue + LogError); ZoneSlotPool doc example. No composition wiring (Story 008).
+- tests: new DeathAndRespawn_DisconnectTeardown_tests.cs (13) + shared FakePlayerDeathStateReader.cs; added ZoneEntityStateSource 4, SnapshotAssembly 3, Teardown 1 (dead ghost → step 3), SaveSession 1 (AC-5). Migrated: slot-Dead asserts → Connected (DeathEntry, GhostDeath, Respawn, WireMessages, DeadPermissions); Teardown/SnapshotAssembly AddPlayer maps Dead/Respawning to fake reader; EnemyAI PhaseStep QA 14 uses fake reader; DeadPermissions candidates get _service; Story 003 AC-6 test → ..._is_dropped; ghost-before-dedup test → test_ghost_death_dedup_runs_before_ghost_check; reviewed public set + BeforeRelease, TryGetRespawnTick.
+- Full EditMode !Database 8028/8028 (14:35:38Z), 0 error CS (first run 2 expected failures, fixed).
+- Check at review: AC-3 snapshot proven via fake reader + ZoneEntityStateSource unit tests (no single end-to-end through the real service); AC-4 consumer tested with fake reader; GDD order deviation CR-DR-Ghost vs CR-DR-2 for /story-done.
+- Next: /code-review (6 src + 12 test files) then /story-done production/epics/death-and-respawn/story-007-disconnect-teardown-expiry.md
+
+## /code-review Death & Respawn Story 007 2026-11-18: APPROVED WITH SUGGESTIONS, awaiting user
+- unity-specialist ISSUES (no logic defects) + qa-tester TESTABLE (no required gaps) + own check. Both agents hit the 5-h limit once and were resumed.
+- Required (small): R1 ZoneEntityStateSource.cs:215 "Same clamp as WireFixedPointCodec..." comment now sits above ReadRespawnTick — move it back above ToWire. R2 ~20 changed lines >120 chars (service summaries/comments, param docs in Aggro/Close/Snapshot/EntityStateSource, LogError line, ZoneSlotPool example, tests DisconnectTeardown:150/204, FakePlayerDeathStateReader:8) — rewrap.
+- Suggestions: S1 end-to-end AC-3 test (real service + ZoneEntityStateSource-style RespawnTick into ZoneSnapshotBuilder); S2 Respawning via real service reader (raise death from a T-3 seam) + AC-7 in Respawning; S3 ReadRespawnTick respawnTick<=0 → 0 no log; S4 explicit null-reader RespawnTick test; S5 AAA comments at DisconnectTeardown :286/:316/:453, drop `= default` :473; S6 aggro doc "mob HP check still guards" → name it; S7 stale doc ICharacterPersistence.cs:51, CharacterStatsSkillCasterAliveSource.cs:10; S8 Story 008 AC: composition test asserting isInDeadState after a kill (null-default reader risk); S9 retry test assumes RespawnAnchorRetryTicks ≥ 2 (MIN is 20, fine).
+- Next: on approval apply, rerun full !Database, then /story-done
+
+## Review fixes applied, Death & Respawn Story 007 2026-11-18: APPROVED (not committed)
+- User "continue" → R1, R2, S1-S8 applied. R1 ToWire comment moved back. R2 all Story 007 lines ≤120. S1 RealDeathRig.cs (shared real service with inert seams) → ZoneEntityStateSource real-service RespawnTick test + SnapshotAssembly real-service reader test (dead 90 remaining, alive after respawn; clears _sink.Sends between snapshots). S2/S3 ProbeVitals hook in T-3: reader dead while Respawning; death raised while Respawning + disconnected dropped. S3 RespawnTick ≤0 → 0 silent (TestCase 0, -5); S4 null-reader test; S5 AAA comments, `= default` dropped; S6 aggro doc names MobController HP check; S7 ICharacterPersistence + CharacterStatsSkillCasterAliveSource docs; S8 Story 008 AC-4 (all 4 consumers + release listener) and AC-6 (one assertion per reader).
+- Full EditMode !Database 8035/8035 (17:18:37Z), 0 error CS.
+- Next: /story-done production/epics/death-and-respawn/story-007-disconnect-teardown-expiry.md
+
+## Session Extract — /story-done 2026-11-18 (Story 007)
+- Verdict: COMPLETE WITH NOTES
+- Story: production/epics/death-and-respawn/story-007-disconnect-teardown-expiry.md — Disconnect, Reconnect, Teardown and Expiry While Dead (7/7 ACs automated; full !Database 8035/8035 17:18:37Z)
+- Advisory: dedup before ghost check (GDD order deviation); ZoneSessionState.Dead/Respawning unused; readers optional until Story 008 (AC-4/AC-6 added); AC-3 real service tested per consumer, not one chain; AC-5 unreachable in practice.
+- Tech debt logged: None
+- Updated: story (Complete, ACs ticked, Completion Notes, Test Evidence status), EPIC.md (row 007, Next Step), index (7 Complete). Not committed: Story 007 code/tests/metas, Story 003/008 + EPIC/index/active.md edits.
+- Next recommended: commit Story 007, then /story-readiness production/epics/death-and-respawn/story-010-ghost-death-session-end.md

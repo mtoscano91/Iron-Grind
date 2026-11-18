@@ -12,12 +12,14 @@ namespace IronGrind.ServerLogic.DeathAndRespawn
     /// <summary>
     /// Death entry (death-and-respawn.md CR-DR-1, CR-DR-2, CR-DR-3, CR-DR-5, CR-DR-6, T-1, EC-DR-6; Death and Respawn
     /// Story 002, ADR-010). Subscribes once to the entity-death source; a player death sets Dead, stamps the death and
-    /// respawn ticks, marks the pool slot Dead, and bans combat and movement. A ghost death (Story 003, CR-DR-Ghost)
-    /// is checked first and handed to <see cref="IGhostDeathSink"/> with no Dead state. Story 004 adds the respawn
-    /// countdown (<see cref="Tick"/>, T-2 and T-3). Wire messages (Story 005) are not here. Tick thread only;
-    /// allocates nothing per death or respawn.
+    /// respawn ticks, and bans combat and movement; it never writes the pool slot state (Story 007). After duplicate
+    /// suppression (a dead player's repeat death is dropped, Story 007 AC-7), an Alive ghost's death (Story 003,
+    /// CR-DR-Ghost) is handed to <see cref="IGhostDeathSink"/> with no Dead state. Story 004 adds the respawn countdown
+    /// (<see cref="Tick"/>, T-2 and T-3). Story 007 adds <see cref="IPlayerDeathStateReader"/> (the only source of
+    /// dead-ness) and <see cref="IZoneSlotReleaseListener"/> (reset on release). Tick thread only; allocates nothing
+    /// per death or respawn.
     /// </summary>
-    public sealed class DeathAndRespawnService : IDisposable
+    public sealed class DeathAndRespawnService : IDisposable, IPlayerDeathStateReader, IZoneSlotReleaseListener
     {
         private const string LOG_PREFIX = "[DeathAndRespawn] ";
 
@@ -137,6 +139,34 @@ namespace IronGrind.ServerLogic.DeathAndRespawn
             return _pool.TryGetPlayerSlot(id, out byte slot) && _states[slot].CurrentState != DeathStateKind.Alive;
         }
 
+        /// <inheritdoc/>
+        public bool TryGetRespawnTick(EntityID id, out long respawnTick)
+        {
+            if (_pool.TryGetPlayerSlot(id, out byte slot) && _states[slot].CurrentState != DeathStateKind.Alive)
+            {
+                respawnTick = _states[slot].RespawnTick;
+                return true;
+            }
+
+            respawnTick = 0L;
+            return false;
+        }
+
+        /// <summary>
+        /// Slot release (Story 007 AC-6): resets the player's <see cref="DeathState"/> to Alive and the town point
+        /// retry counter, so a new occupant of the slot inherits nothing. Called while the slot is still held. An
+        /// unknown id changes nothing. Seam calls (bans, party) are not made: the player is leaving the zone.
+        /// </summary>
+        /// <param name="id">The EntityID whose slot is about to be released.</param>
+        public void BeforeRelease(EntityID id)
+        {
+            if (_pool.TryGetPlayerSlot(id, out byte slot))
+            {
+                _states[slot] = default;
+                _retryAttempts[slot] = 0;
+            }
+        }
+
         /// <summary>
         /// Test-only: forces a player's state kind (to reach Respawning before Story 004 exists). No side effects
         /// on the pool or sinks. Story 004 adds the real T-2 path; replace the Respawning test's use of this then.
@@ -149,7 +179,9 @@ namespace IronGrind.ServerLogic.DeathAndRespawn
             }
         }
 
-        /// <summary>T-1 handler: Alive to Dead for a player (CR-DR-1/2/3/5, AC-1 to AC-6), ghost first.</summary>
+        /// <summary>
+        /// T-1 handler: Alive to Dead for a player (CR-DR-1/2/3/5, AC-1 to AC-6); duplicate check, then ghost.
+        /// </summary>
         private void OnEntityDied(EntityID entity)
         {
             if (_disposed)
@@ -157,9 +189,16 @@ namespace IronGrind.ServerLogic.DeathAndRespawn
                 return; // a handler already queued when Dispose ran
             }
 
-            // CR-DR-Ghost (Story 003): a ghost never enters Dead; no timer, combat ban or EntityDied. Runs before
-            // CR-DR-2 and duplicate suppression. AC-6 accepted: a player who died (Dead) and then disconnected takes
-            // this path on a later death until Story 007 defines that case.
+            bool isPlayer = _pool.TryGetPlayerSlot(entity, out byte slot);
+
+            // Duplicate suppression (CR-DR-2, AC-3) runs before the ghost check (Story 007 AC-7, advisory deviation
+            // from the GDD order): a player who died and then disconnected is dropped, never handed to the ghost sink.
+            if (isPlayer && _states[slot].CurrentState != DeathStateKind.Alive)
+            {
+                return;
+            }
+
+            // CR-DR-Ghost (Story 003): an Alive ghost never enters Dead; no timer, combat ban or EntityDied.
             if (_ghosts.IsGhost(entity))
             {
                 try
@@ -174,14 +213,9 @@ namespace IronGrind.ServerLogic.DeathAndRespawn
                 return;
             }
 
-            if (!_pool.TryGetPlayerSlot(entity, out byte slot))
+            if (!isPlayer)
             {
                 return; // a mob or unknown id (AC-2)
-            }
-
-            if (_states[slot].CurrentState != DeathStateKind.Alive)
-            {
-                return; // duplicate suppression (AC-3)
             }
 
             long now = _ticks.CurrentTick;
@@ -189,7 +223,7 @@ namespace IronGrind.ServerLogic.DeathAndRespawn
             _states[slot].DeathTick = now;
             _states[slot].RespawnTick = now + (long)_config.RespawnDelayTicks;
 
-            _pool.SetSessionState(entity, ZoneSessionState.Dead);
+            // Story 007: the slot state says only whether the player is connected; DeathState alone holds dead-ness.
             _combat.SetCombatProhibited(entity, true);
             _movement.SetProhibited(entity, true);
             _party.SetMemberStatus(entity, PartyMemberDeathStatus.Dead);
@@ -225,7 +259,7 @@ namespace IronGrind.ServerLogic.DeathAndRespawn
         {
             if (!_pool.TryGetPlayerAtSlot(slot, out EntityID entity, out _))
             {
-                return; // slot released while dead; teardown is Story 007
+                return; // defensive: BeforeRelease resets the slot, so a released slot is never Dead here
             }
 
             ZoneID zone = _pool.Zone;
@@ -246,8 +280,7 @@ namespace IronGrind.ServerLogic.DeathAndRespawn
             }
 
             // Respawning is entered before the T-3 steps so an OnEntityDied raised by one of them is dropped by
-            // duplicate suppression (CR-DR-2). The pool slot is not marked Respawning: nothing can observe it within
-            // this tick, and a Disconnected_SessionActive slot must stay as it is (Story 007).
+            // duplicate suppression (CR-DR-2). The pool slot state is never written (Story 007).
             _states[slot].CurrentState = DeathStateKind.Respawning;
             _states[slot].RespawnZoneID = zone;
             _states[slot].RespawnPosition = point;
@@ -289,16 +322,8 @@ namespace IronGrind.ServerLogic.DeathAndRespawn
             try { _party.SetMemberStatus(entity, PartyMemberDeathStatus.Online); }
             catch (Exception ex) { LogStepFailure("party", entity, ex); }
 
-            try
-            {
-                if (_pool.TryGetPlayer(entity, out ZonePlayerSlot player)
-                    && (player.State == ZoneSessionState.Dead || player.State == ZoneSessionState.Respawning))
-                {
-                    _pool.SetSessionState(entity, ZoneSessionState.Connected);
-                }
-            }
-            catch (Exception ex) { LogStepFailure("slotState", entity, ex); }
-
+            // Story 007: the slot state is not touched; a player who disconnected while dead stays
+            // Disconnected_SessionActive.
             EnqueueRespawnMessages(entity, in _states[slot]);
         }
 

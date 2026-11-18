@@ -93,7 +93,7 @@ This epic is complete when:
 | 004 | [Respawn sequence — T-2 and T-3](story-004-respawn-sequence.md) | Logic | Complete | ADR-014 |
 | 005 | [Death and respawn wire messages](story-005-wire-messages.md) | Logic | Complete | ADR-010, ADR-014 |
 | 006 | [Dead player permissions](story-006-dead-permissions.md) | Logic | Complete | ADR-014 |
-| 007 | [Disconnect, reconnect, teardown and expiry while dead](story-007-disconnect-teardown-expiry.md) | Integration | Ready | ADR-011 |
+| 007 | [Disconnect, reconnect, teardown and expiry while dead](story-007-disconnect-teardown-expiry.md) | Integration | Complete | ADR-011 |
 | 008 | [Zone composition wiring](story-008-zone-composition-wiring.md) | Integration | Ready | ADR-014 |
 | 009 | [End-to-end — a mob kills a player, the player respawns](story-009-end-to-end-mob-kills-player.md) | Integration | Ready | ADR-014 |
 | 010 | [Ghost death session end](story-010-ghost-death-session-end.md) | Integration | Ready | ADR-011, ADR-010 |
@@ -102,7 +102,7 @@ Order: 001 → 002 → (003, 004, 006) → 005 after 003 + 004 → 007 after 004
 
 ## Findings at `/create-stories` (2026-11-17)
 
-1. **Disconnect overwrites Dead**: the slot's `ZoneSessionState` goes to `Disconnected_SessionActive` on disconnect, and the snapshot builder and teardown read dead-ness from it. Story 007 makes `DeathState` the source of truth through `IPlayerDeathStateReader`.
+1. **Disconnect vs Dead in one slot state**: `ZoneSessionState` held both facts (T-1 wrote `Dead`, hiding a disconnect; T-3 wrote `Connected`, making a disconnected player look connected). Story 007 (readiness 2026-11-18): the slot state says only whether the player is connected; Death & Respawn no longer writes it; `DeathState` is the source of dead-ness through `IPlayerDeathStateReader` (snapshot builder, zone close, aggro candidates). No production code marks a slot disconnected yet (Networking Core ghost wiring). Story 007 AC-7 also revises Story 003 AC-6: a second death while Dead is dropped before the ghost check.
 2. **No movement teleport**: Story 004 adds `TrySetAuthoritativePosition` to Movement; `SetProhibited` already covers "cannot move".
 3. **HP > 0 already gates** mob target validity and skill casting (Story 006 mostly tests).
 4. **Not in code**: no `RespawnNow` message (AC-DR-17 tested as "no early path"); no voluntary zone-change request (AC-DR-NEW-6 moves to the epic that builds zone travel); no production `SelfPositionUpdate` emitter (suppression deferred).
@@ -111,4 +111,4 @@ Order: 001 → 002 → (003, 004, 006) → 005 after 003 + 004 → 007 after 004
 
 ## Next Step
 
-Stories 001 (2026-11-17), 002, 003, 004, 005 and 006 (2026-11-18) Complete; Story 010 added at Story 003 readiness. Ready next: 007 and 010 (both gate Story 008; 006 unlocks 009). Run `/story-readiness production/epics/death-and-respawn/story-007-disconnect-teardown-expiry.md` (or 010).
+Stories 001 (2026-11-17), 002, 003, 004, 005, 006 and 007 (2026-11-18) Complete; Story 010 added at Story 003 readiness. Story 007 made `DeathState` the only source of dead-ness (`IPlayerDeathStateReader`, optional in four consumers; Story 008 AC-4 / AC-6 now require them wired). Next: `/story-readiness production/epics/death-and-respawn/story-010-ghost-death-session-end.md` (Story 010 is the last gate for Story 008; 006 + 008 unlock 009).

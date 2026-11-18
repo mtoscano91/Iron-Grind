@@ -48,7 +48,8 @@ namespace IronGrind.CharacterPersistence
 
         /// <summary>
         /// Saves a character at the end of a session, writing <paramref name="hpOverride"/> as
-        /// <c>CurrentHP</c>. Used by Zone Instancing teardown for Dead/Respawning slots (CR-ZI-12 step 2).
+        /// <c>CurrentHP</c>. Used by Zone Instancing teardown for dead players (CR-ZI-12 step 2; dead-ness from
+        /// Death and Respawn's <c>IPlayerDeathStateReader</c>, Story 007).
         /// </summary>
         /// <param name="id">The character to save.</param>
         /// <param name="reason">Why the session ended.</param>

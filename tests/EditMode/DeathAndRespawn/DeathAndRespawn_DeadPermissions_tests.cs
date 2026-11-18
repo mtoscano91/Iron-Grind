@@ -297,7 +297,8 @@ namespace IronGrind.Tests.EditMode.DeathAndRespawn
             _setAuto = new SetAutoAttackRequestHandler(_combat);
 
             _mobResolver = new CountingMobResolver();
-            var candidates = new ZoneAggroCandidateSource(Zone, _pool, new MovementPlayerPositionReader(_movement));
+            var candidates = new ZoneAggroCandidateSource(Zone, _pool, new MovementPlayerPositionReader(_movement),
+                _service);
             _mobController = new MobController(_mob, MobDef(), Vector3.zero, new NullNav(),
                 new CharacterStatsZoneEntityStatReader(_stats), _mobResolver, EnemyAIConfigValues.Defaults,
                 NavigationConfigValues.RETURN_SPEED_CAP_DEFAULT, candidates);
@@ -447,7 +448,8 @@ namespace IronGrind.Tests.EditMode.DeathAndRespawn
         public void test_dead_permissions_mob_with_only_dead_player_in_range_does_not_select_player()
         {
             Kill();
-            Assert.AreEqual(ZoneSessionState.Dead, SlotState());
+            Assert.AreEqual(ZoneSessionState.Connected, SlotState()); // Story 007: slot state is connection only
+            Assert.IsTrue(_service.IsDead(_player));
 
             Step(ScanInterval * 3);
 
@@ -621,7 +623,11 @@ namespace IronGrind.Tests.EditMode.DeathAndRespawn
                 .OrderBy(n => n, StringComparer.Ordinal)
                 .ToArray();
 
-            CollectionAssert.AreEqual(new[] { "Dispose", "IsDead", "Tick", "TryGetDeathState" }, names,
+            // Story 007 added BeforeRelease (pool release only; the player leaves the zone) and TryGetRespawnTick
+            // (read-only).
+            CollectionAssert.AreEqual(
+                new[] { "BeforeRelease", "Dispose", "IsDead", "Tick", "TryGetDeathState", "TryGetRespawnTick" },
+                names,
                 "a new public method must be reviewed against CR-DR-17 (no way to respawn before RespawnTick)");
         }
 

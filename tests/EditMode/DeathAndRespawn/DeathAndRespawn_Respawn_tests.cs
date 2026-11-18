@@ -537,7 +537,7 @@ namespace IronGrind.Tests.EditMode.DeathAndRespawn
         public void test_respawn_ends_alive_with_zeroed_ticks_and_slot_connected()
         {
             Die();
-            Assert.AreEqual(ZoneSessionState.Dead, SessionState(_player));
+            Assert.AreEqual(ZoneSessionState.Connected, SessionState(_player));
 
             _service.Tick(START_TICK + DELAY_TICKS);
 

@@ -670,6 +670,30 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             Assert.AreEqual(650f, _rig.Stats.GetCurrentHP(_rig.Entity), "The live HP is not changed by the save.");
         }
 
+        // Death and Respawn Story 007 AC-5 (AC-DR-16, EC-DR-2, EC-DR-7): the TTL expiry save uses the normal
+        // overload; a dead character's in-memory HP is 0, so 0 is written with no override, and the next load
+        // comes back at full HP.
+        [Test]
+        public void test_death_and_respawn_ttl_expiry_with_hp_zero_writes_zero_and_next_load_restores_max_hp()
+        {
+            // Arrange
+            SeedAndLoad(_rig, MakeSeed());
+            _rig.Stats.SetCurrentHP(_rig.Entity, 0f);
+
+            // Act
+            CharacterSaveResult result = Complete(_rig.Service.SaveSession(CHAR_A, SessionEndReason.SessionTTLExpiry,
+                CancellationToken.None));
+            Rig fresh = BuildRig(TimeSpan.FromSeconds(5), null);
+            LoadInto(fresh);
+
+            // Assert
+            Assert.AreEqual(CharacterSaveResult.Success, result);
+            Assert.AreEqual(0f, Stored().CurrentHP);
+            float maxHp = fresh.Stats.GetEffectiveStat(fresh.Entity, StatID.MaxHP);
+            Assert.Greater(maxHp, 0f);
+            Assert.AreEqual(maxHp, fresh.Stats.GetCurrentHP(fresh.Entity));
+        }
+
         [Test]
         public void SaveSession_NoOverrideWithHp350_WritesHp350()
         {

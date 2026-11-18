@@ -13,6 +13,7 @@ using IronGrind.ServerLogic.Navigation;
 using IronGrind.ServerLogic.ZoneInstancing;
 using IronGrind.ServerLogic.ZoneServer;
 using IronGrind.Tests.EditMode.CharacterStats;
+using IronGrind.Tests.EditMode.DeathAndRespawn;
 using IronGrind.Tests.EditMode.Randomness;
 using NUnit.Framework;
 using UnityEngine;
@@ -574,10 +575,11 @@ namespace IronGrind.Tests.EditMode.EnemyAI
             }
 
             pool.SetSessionState(ids[1], ZoneSessionState.Disconnected_SessionActive);
-            pool.SetSessionState(ids[2], ZoneSessionState.Dead);
-            pool.SetSessionState(ids[3], ZoneSessionState.Respawning);
+            var deaths = new FakePlayerDeathStateReader(); // Story 007: dead-ness comes from DeathState, not the slot
+            deaths.SetDead(ids[2]);
+            deaths.SetDead(ids[3]);
             positions.Map.Remove(ids[4]);
-            var source = new ZoneAggroCandidateSource(Zone, pool, positions);
+            var source = new ZoneAggroCandidateSource(Zone, pool, positions, deaths);
 
             var into = new List<(EntityID Id, Vector3 Position)>();
             source.CopyPlayers(into);

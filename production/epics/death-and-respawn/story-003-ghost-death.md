@@ -31,7 +31,7 @@
 - [x] **AC-3 Nothing else (CR-DR-Ghost)**: for a ghost, no `SetCombatProhibited`, no movement prohibition, no party sink call, no `DeathStateEntered`, no `EntityDied` (AC-DR-11; Story 005 adds the wire assertion against the outbox).
 - [x] **AC-4 Non-ghost unchanged**: a non-ghost death still follows Story 002 exactly. The adapter is tested against a real `ZoneSlotPool`: Connected → false, Disconnected_SessionActive → true, unknown id → false, mob → false.
 - [x] **AC-5 Sink failure**: if `OnGhostDied` throws, the error is logged with the entity id and the handler returns without entering Dead; no exception escapes the handler.
-- [x] **AC-6 Dead, then disconnected**: P dies (Dead), then disconnects (slot `Disconnected_SessionActive`), then a second `OnEntityDied(P)` arrives: the ghost path is taken (sink called once, `DeathState` unchanged). Accepted behaviour until Story 007 makes `DeathState` the source of truth; Story 007 re-checks this case.
+- [x] **AC-6 Dead, then disconnected**: P dies (Dead), then disconnects (slot `Disconnected_SessionActive`), then a second `OnEntityDied(P)` arrives: the ghost path is taken (sink called once, `DeathState` unchanged). Accepted behaviour until Story 007. **Superseded by Story 007 AC-7 (readiness 2026-11-18)**: the duplicate check now runs before the ghost check, so a second death while Dead or Respawning is dropped (sink not called); Story 007 rewrites this test.
 
 ---
 
@@ -61,7 +61,7 @@
 - **AC-3**: Same setup; combat, movement and party fakes record zero calls.
 - **AC-4**: Given P is not a ghost, When `OnEntityDied(P)`, Then the Story 002 path runs and the sink records zero calls. Adapter cases against a real `ZoneSlotPool` (Connected, Disconnected_SessionActive, unknown, mob).
 - **AC-5**: Sink fake throws; `LogAssert.Expect` an error naming P; P not Dead; no exception escapes.
-- **AC-6**: P dies, slot set to `Disconnected_SessionActive`, second `OnEntityDied(P)` → sink called once; `DeathTick` / `RespawnTick` unchanged.
+- **AC-6**: P dies, slot set to `Disconnected_SessionActive`, second `OnEntityDied(P)` → sink called once; `DeathTick` / `RespawnTick` unchanged. *(Story 007 AC-7: sink now called 0 times.)*
 
 ---
 
@@ -84,6 +84,6 @@
 ## Completion Notes
 **Completed**: 2026-11-18
 **Criteria**: 6/6 passing (all automated)
-**Deviations**: None blocking. Advisory: ghost deaths are not deduplicated, so a repeat death calls the sink again — `IGhostDeathSink` documents that sinks must be idempotent (Story 010). AC-6 (dead, then disconnected, takes the ghost path) is the accepted gap until Story 007, which has a re-check note. Three over-long lines from Story 002 were wrapped in `DeathAndRespawnService.cs`; Story 002's tests were updated only for the two new constructor arguments.
+**Deviations**: None blocking. Advisory: ghost deaths are not deduplicated, so a repeat death calls the sink again — `IGhostDeathSink` documents that sinks must be idempotent (Story 010). AC-6 (dead, then disconnected, takes the ghost path) was the accepted gap until Story 007, whose AC-7 drops a second death while Dead (duplicate check before the ghost check; advisory deviation from the GDD order CR-DR-Ghost before CR-DR-2). Three over-long lines from Story 002 were wrapped in `DeathAndRespawnService.cs`; Story 002's tests were updated only for the two new constructor arguments.
 **Test Evidence**: Logic — `tests/EditMode/DeathAndRespawn/DeathAndRespawn_GhostDeath_tests.cs` 16/16; filter `DeathAndRespawn` 73/73; full EditMode `-testCategory "!Database"` 7907/7907
 **Code Review**: Complete (`/code-review` with unity-specialist + qa-tester; all required changes and suggestions applied)

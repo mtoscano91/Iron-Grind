@@ -292,7 +292,8 @@ namespace IronGrind.Tests.EditMode.DeathAndRespawn
             Assert.AreEqual(DeathStateKind.Dead, state.CurrentState);
             Assert.AreEqual(START_TICK, state.DeathTick);
             Assert.AreEqual(1140L, state.RespawnTick);
-            Assert.AreEqual(ZoneSessionState.Dead, SessionState(_player));
+            Assert.AreEqual(ZoneSessionState.Connected, SessionState(_player)); // Story 007: never written
+            Assert.IsTrue(_service.IsDead(_player));
         }
 
         [Test]
@@ -339,7 +340,7 @@ namespace IronGrind.Tests.EditMode.DeathAndRespawn
                 Assert.AreEqual(DeathStateKind.Dead, state.CurrentState);
                 Assert.AreEqual(START_TICK, state.DeathTick);
                 Assert.AreEqual(START_TICK + DelayTicks, state.RespawnTick);
-                Assert.AreEqual(ZoneSessionState.Dead, SessionState(id));
+                Assert.AreEqual(ZoneSessionState.Connected, SessionState(id));
             }
 
             Assert.AreEqual(2, _combat.Calls.Count);

@@ -7,6 +7,7 @@ using IronGrind.Currency;
 using IronGrind.LootTableSystem;
 using IronGrind.Networking;
 using IronGrind.ServerLogic.ZoneInstancing;
+using IronGrind.Tests.EditMode.DeathAndRespawn;
 using IronGrind.Tests.EditMode.Networking;
 using NUnit.Framework;
 using UnityEngine;
@@ -66,6 +67,7 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
         private ClientMessageOutbox _outbox;
         private NetworkTestObserver _observer;
         private ZoneSnapshotBuilder _builder;
+        private FakePlayerDeathStateReader _deaths;
         private uint _nextCharacter;
         private int _lastSent;
 
@@ -83,7 +85,8 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
             _outbox.AddClient(CLIENT);
             _observer = (NetworkTestObserver)NetworkingTestHarness.CreateNetworkTestObserver();
             _outbox.SetTestObserver(_observer);
-            _builder = new ZoneSnapshotBuilder(Zone, _pool, _roster, _source, _ticks, _outbox);
+            _deaths = new FakePlayerDeathStateReader();
+            _builder = new ZoneSnapshotBuilder(Zone, _pool, _roster, _source, _ticks, _outbox, _deaths);
             _nextCharacter = 1000u;
         }
 
@@ -95,6 +98,13 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
             uint n = _nextCharacter++;
             Assert.IsTrue(_pool.TryAllocatePlayer(Zone, new CharacterID(n), new AccountID(n + 5000u), clientId ?? n + 9000u,
                 out _, out EntityID id));
+            // Death and Respawn Story 007: dead-ness comes from the death reader; the slot keeps the connection state.
+            if (state == ZoneSessionState.Dead || state == ZoneSessionState.Respawning)
+            {
+                _deaths.SetDead(id, respawnTick);
+                state = ZoneSessionState.Connected;
+            }
+
             _pool.SetSessionState(id, state);
             _source.Players[id] = new ZonePlayerStateView(1, 2, 3, 4, 5, 6, 7, 8, 90, 100, 40, 50, 12, true, 2500, 3, name, respawnTick);
             return id;
@@ -246,6 +256,95 @@ namespace IronGrind.Tests.EditMode.ZoneInstancing
 
             Assert.IsTrue(entry.IsInDeadState);
             Assert.AreEqual(30u, entry.RespawnTicksRemaining);
+        }
+
+        // Death and Respawn Story 007 AC-1 / AC-3 (EC-DR-1): dead-ness comes from the reader, not the slot state.
+        [Test]
+        public void test_snapshot_dead_and_disconnected_player_is_dead_and_ghost()
+        {
+            // Arrange
+            _ticks.Tick = 1010u;
+            EntityID id = AddPlayer("dead", ZoneSessionState.Dead, 1140u);
+            Assert.IsTrue(_pool.SetSessionState(id, ZoneSessionState.Disconnected_SessionActive));
+
+            // Act
+            EntityState entry = SnapshotEntries()[0];
+
+            // Assert
+            Assert.IsTrue(entry.IsInDeadState);
+            Assert.IsTrue(entry.IsGhost);
+            Assert.AreEqual(130u, entry.RespawnTicksRemaining);
+        }
+
+        [Test]
+        public void test_snapshot_dead_player_reconnected_at_1050_has_90_remaining_and_is_not_ghost()
+        {
+            // Arrange: died at 1000 (delay 140), disconnected at 1010, reconnected at 1050.
+            EntityID id = AddPlayer("dead", ZoneSessionState.Dead, 1140u);
+            Assert.IsTrue(_pool.SetSessionState(id, ZoneSessionState.Disconnected_SessionActive));
+            Assert.IsTrue(_pool.RebindClient(id, 4242u));
+            _ticks.Tick = 1050u;
+
+            // Act
+            EntityState entry = SnapshotEntries()[0];
+
+            // Assert
+            Assert.IsTrue(entry.IsInDeadState);
+            Assert.IsFalse(entry.IsGhost);
+            Assert.AreEqual(90u, entry.RespawnTicksRemaining);
+        }
+
+        // The real DeathAndRespawnService as the builder's reader; the view's RespawnTick is the service's (the
+        // ZoneEntityStateSource copy of it is covered in ZoneEntityStateSource_tests).
+        [Test]
+        public void test_snapshot_real_death_service_reader_dead_at_1050_has_90_remaining_then_alive_after_respawn()
+        {
+            // Arrange
+            EntityID id = AddPlayer("p");
+            var rig = new RealDeathRig(_pool);
+            _builder = new ZoneSnapshotBuilder(Zone, _pool, _roster, _source, _ticks, _outbox, rig.Service);
+            try
+            {
+                rig.Kill(id);
+                Assert.IsTrue(rig.Service.TryGetRespawnTick(id, out long respawnTick));
+                _source.Players[id] = new ZonePlayerStateView(1, 2, 3, 4, 5, 6, 7, 8, 0, 100, 0, 50, 12, false, 0, 3,
+                    "p", (uint)respawnTick);
+                _ticks.Tick = 1050u;
+
+                // Act
+                EntityState dead = SnapshotEntries()[0];
+                _sink.Sends.Clear(); // SendAndCollect reads every recorded send
+                rig.Service.Tick(respawnTick);
+                _source.Players[id] = new ZonePlayerStateView(1, 2, 3, 4, 5, 6, 7, 8, 100, 100, 50, 50, 12, false, 0, 3,
+                    "p", 0u);
+                _ticks.Tick = (uint)respawnTick + 1u;
+                EntityState alive = SnapshotEntries()[0];
+
+                // Assert
+                Assert.IsTrue(dead.IsInDeadState);
+                Assert.AreEqual(90u, dead.RespawnTicksRemaining);
+                Assert.IsFalse(alive.IsInDeadState);
+                Assert.AreEqual(0u, alive.RespawnTicksRemaining);
+            }
+            finally
+            {
+                rig.Service.Dispose();
+            }
+        }
+
+        [Test]
+        public void test_snapshot_without_death_reader_nobody_is_dead()
+        {
+            // Arrange
+            AddPlayer("dead", ZoneSessionState.Dead, 140u); // recorded in _deaths, which this builder is not given
+            _builder = new ZoneSnapshotBuilder(Zone, _pool, _roster, _source, _ticks, _outbox);
+
+            // Act
+            EntityState entry = SnapshotEntries()[0];
+
+            // Assert
+            Assert.IsFalse(entry.IsInDeadState);
+            Assert.AreEqual(0u, entry.RespawnTicksRemaining);
         }
 
         [Test]

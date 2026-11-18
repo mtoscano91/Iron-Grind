@@ -5,6 +5,7 @@ using IronGrind.CharacterStats;
 using IronGrind.EquipmentSystem;
 using IronGrind.LootTableSystem;
 using IronGrind.Networking;
+using IronGrind.ServerLogic.DeathAndRespawn;
 using IronGrind.ServerLogic.ZoneInstancing;
 using UnityEngine;
 using ZoneStats = IronGrind.CharacterStats.CharacterStats;
@@ -107,7 +108,9 @@ namespace IronGrind.ServerLogic.ZoneServer
     /// Story 013), which supplies mob <c>isInCombat</c> from Enemy AI. Mob stats are seeded on spawn by
     /// <c>MobRuntimeStore</c> once wired in Story 013 (TD-102); until then a mob reads 0 / 0 HP. A mob's position and
     /// facing come from the optional <see cref="IZoneMobTransformReader"/>; without it (or for a mob it does not hold)
-    /// they are zero. RespawnTick is 0 until Death and Respawn exists.
+    /// they are zero. RespawnTick comes from the optional <see cref="IPlayerDeathStateReader"/> (Death and Respawn
+    /// Story 007, EC-DR-1): the dead player's <c>DeathState.RespawnTick</c>, clamped to <see cref="uint.MaxValue"/>
+    /// with one error log per clamp; 0 when the player is alive or there is no reader.
     /// </remarks>
     public sealed class ZoneEntityStateSource : IZoneEntityStateSource
     {
@@ -120,6 +123,7 @@ namespace IronGrind.ServerLogic.ZoneServer
         private readonly ICharacterNameLookup _names;
         private readonly IEquipmentService _equipment;
         private readonly IZoneEntityCombatReader _combat;
+        private readonly IPlayerDeathStateReader _deathStates;
 
         /// <summary>Creates the source.</summary>
         /// <param name="pool">Player slot pool.</param>
@@ -130,10 +134,14 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// <param name="combat">Auto-attack view.</param>
         /// <param name="mobTransforms">Optional committed mob transform reader (Enemy AI Story 008); null leaves mob
         /// position, rotation and facing at zero.</param>
-        /// <exception cref="ArgumentNullException">Any argument other than <paramref name="mobTransforms"/> is null.</exception>
+        /// <param name="deathStates">
+        /// Optional dead-ness reader (Death and Respawn Story 007); null gives RespawnTick 0.
+        /// </param>
+        /// <exception cref="ArgumentNullException">Any argument other than <paramref name="mobTransforms"/> or
+        /// <paramref name="deathStates"/> is null.</exception>
         public ZoneEntityStateSource(ZoneSlotPool pool, IZoneMobRoster mobs, IZoneEntityStatReader stats,
             ICharacterNameLookup names, IEquipmentService equipment, IZoneEntityCombatReader combat,
-            IZoneMobTransformReader mobTransforms = null)
+            IZoneMobTransformReader mobTransforms = null, IPlayerDeathStateReader deathStates = null)
         {
             _pool = pool ?? throw new ArgumentNullException(nameof(pool));
             _mobs = mobs ?? throw new ArgumentNullException(nameof(mobs));
@@ -142,6 +150,7 @@ namespace IronGrind.ServerLogic.ZoneServer
             _equipment = equipment ?? throw new ArgumentNullException(nameof(equipment));
             _combat = combat ?? throw new ArgumentNullException(nameof(combat));
             _mobTransforms = mobTransforms;
+            _deathStates = deathStates;
         }
 
         /// <inheritdoc/>
@@ -169,7 +178,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                 CycleTimerBroadcastStep.NormalizeCycleTimer(_combat.GetActionTimer(id), _combat.GetCycleTicks(id)),
                 _equipment.GetAppearanceFlags(slot.Character),
                 name,
-                0u);
+                ReadRespawnTick(id));
             return true;
         }
 
@@ -203,6 +212,25 @@ namespace IronGrind.ServerLogic.ZoneServer
                 IsEngaged(id),
                 CycleTimerBroadcastStep.NormalizeCycleTimer(_combat.GetActionTimer(id), _combat.GetCycleTicks(id)));
             return true;
+        }
+
+        // Death and Respawn Story 007 AC-3: DeathState.RespawnTick (long) into the view's uint; 0 when alive, not
+        // positive, or no reader.
+        private uint ReadRespawnTick(EntityID id)
+        {
+            if (_deathStates == null || !_deathStates.TryGetRespawnTick(id, out long respawnTick) || respawnTick <= 0L)
+            {
+                return 0u;
+            }
+
+            if (respawnTick > uint.MaxValue)
+            {
+                Debug.LogError($"[ZoneEntityStateSource] RespawnTick {respawnTick} of {id} does not fit the uint "
+                    + $"snapshot field; clamped to {uint.MaxValue}.");
+                return uint.MaxValue;
+            }
+
+            return (uint)respawnTick;
         }
 
         // Same clamp as WireFixedPointCodec.EncodePosition (centimetres), silent.

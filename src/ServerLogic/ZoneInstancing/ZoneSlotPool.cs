@@ -42,7 +42,8 @@ namespace IronGrind.ServerLogic.ZoneInstancing
     /// var pool = new ZoneSlotPool(new ZoneID(7u), tickSource, listener);
     /// if (pool.TryAllocatePlayer(zone, characterId, accountId, clientId, out byte slot, out EntityID id))
     /// {
-    ///     pool.SetSessionState(id, ZoneSessionState.Dead);
+    ///     // The session state is the connection state only (Death and Respawn Story 007).
+    ///     pool.SetSessionState(id, ZoneSessionState.Disconnected_SessionActive);
     ///     IReadOnlyList&lt;EntityID&gt; roster = pool.GetPlayerEntityIDsInZone(zone);
     ///     pool.ReleasePlayer(id);   // listener.OnOccupiedPlayerSlotsChanged(0, tick)
     /// }
