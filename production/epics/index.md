@@ -28,7 +28,7 @@ Control Manifest Version: 2026-11-06
 | [Enhancement System](enhancement-system/EPIC.md) | Feature | Enhancement System | design/gdd/enhancement-system.md | 16 stories (001-016 Complete); DoD open: AC-ENH-2 and the other deferred criteria | In Progress |
 | [Enemy AI](enemy-ai/EPIC.md) | Feature | Enemy AI | design/gdd/enemy-ai.md | 14 stories (001-014 written 2026-11-13): 14 Complete | Complete |
 | [Mob Spawning](mob-spawning/EPIC.md) | Feature | Mob Spawning | design/gdd/mob-spawning.md | 8 stories (001-008 written 2026-11-16): 8 Complete | Complete (2026-11-17) |
-| [Death & Respawn](death-and-respawn/EPIC.md) | Feature | Death & Respawn | design/gdd/death-and-respawn.md | 9 stories (001-009 written 2026-11-17), 1 Complete (001) | In Progress — server only; party ACs to the Party System epic (seam here), client visuals to presentation |
+| [Death & Respawn](death-and-respawn/EPIC.md) | Feature | Death & Respawn | design/gdd/death-and-respawn.md | 9 stories (001-009 written 2026-11-17), 2 Complete (001-002) | In Progress — server only; party ACs to the Party System epic (seam here), client visuals to presentation |
 
 ## Notes
 

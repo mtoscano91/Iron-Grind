@@ -6,6 +6,7 @@ using IronGrind.Events;
 using IronGrind.HitDetection;
 using IronGrind.LootTableSystem;
 using IronGrind.Networking;
+using IronGrind.ServerLogic.DeathAndRespawn;
 using IronGrind.ServerLogic.ZoneInstancing;
 using UnityEngine;
 
@@ -79,7 +80,7 @@ namespace IronGrind.AutoAttackCombat
     /// </code>
     /// </example>
     public sealed class AutoAttackCombatSystem : IZoneSimulationStep, ICombatService, IAutoAttackSkillUseSink,
-        IAutoAttackInputSink, IZoneSlotReleaseListener, IMobKillReporter
+        IAutoAttackInputSink, IZoneSlotReleaseListener, IMobKillReporter, ICombatProhibitionSink
     {
         /// <inheritdoc />
         /// <remarks>

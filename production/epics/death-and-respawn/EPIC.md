@@ -88,7 +88,7 @@ This epic is complete when:
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
 | 001 | [Respawn config and F-DR-1](story-001-respawn-config.md) | Logic | Complete | ADR-012 |
-| 002 | [Death entry — DeathState and T-1](story-002-death-entry.md) | Logic | Ready | ADR-010 |
+| 002 | [Death entry — DeathState and T-1](story-002-death-entry.md) | Logic | Complete | ADR-010 |
 | 003 | [Ghost death branch](story-003-ghost-death.md) | Logic | Ready | ADR-010 |
 | 004 | [Respawn sequence — T-2 and T-3](story-004-respawn-sequence.md) | Logic | Ready | ADR-014 |
 | 005 | [Death and respawn wire messages](story-005-wire-messages.md) | Logic | Ready | ADR-010, ADR-014 |
@@ -109,4 +109,4 @@ Order: 001 → 002 → (003, 004, 006) → 005 after 003 + 004 → 007 after 004
 
 ## Next Step
 
-Story 001 Complete (2026-11-17). Run `/story-readiness production/epics/death-and-respawn/story-002-death-entry.md`, then `/dev-story`.
+Stories 001 (2026-11-17) and 002 (2026-11-18) Complete. Run `/story-readiness production/epics/death-and-respawn/story-003-ghost-death.md`, then `/dev-story`.
