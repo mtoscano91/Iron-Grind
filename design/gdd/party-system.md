@@ -2,7 +2,7 @@
 
 > **Status**: Approved (lean re-review 2026-05-17) — amended 2026-05-29 (MemberStatus.Dead added for Death & Respawn integration); amended 2026-06-19 (PartyMemberSlot data type + GetPartyMembersWithStatus added for Party Chat)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-11-19 (Party System Story 009: AC-PS-21 leader transfer measured from the Ghost transition, after the CR-PS-11 grace); 2026-11-19 (Party System Story 006: `PartyMemberStatusChanged` has no wire schema — status rides in `PartyStateUpdate`; AC-PS-26 "zero `PartyMemberStatusChanged`" = no `PartyStateUpdate` showing that member Ghost); 2026-11-19 (Party System Story 004: "Disconnected" = Ghost note under CR-PS-5); 2026-11-18 (Party System Story 001 readiness: F-PS-1 midpoint example corrected to banker's rounding + float result 4; `MAX_PARTY_SIZE` safe range [2, 4] because the wire schema is fixed at 4 slots)
+> **Last Updated**: 2026-11-19 (Party System Story 010: `PartyMemberHealthUpdate` MP threshold, first send, full / zero edges); 2026-11-19 (Party System Story 009: AC-PS-21 leader transfer measured from the Ghost transition, after the CR-PS-11 grace); 2026-11-19 (Party System Story 006: `PartyMemberStatusChanged` has no wire schema — status rides in `PartyStateUpdate`; AC-PS-26 "zero `PartyMemberStatusChanged`" = no `PartyStateUpdate` showing that member Ghost); 2026-11-19 (Party System Story 004: "Disconnected" = Ghost note under CR-PS-5); 2026-11-18 (Party System Story 001 readiness: F-PS-1 midpoint example corrected to banker's rounding + float result 4; `MAX_PARTY_SIZE` safe range [2, 4] because the wire schema is fixed at 4 slots)
 > **Implements Pillar**: Social Gravity (primary) — Earned Power (supporting)
 
 ## Overview
@@ -134,6 +134,8 @@ PartyMemberSlot
 | **Party Chat** | ← provides | `PartyID GetPartyID(CharacterID)` → solo-discard check; `PartyMemberSlot[] GetPartyMembersWithStatus(PartyID)` → full slot array with MemberStatus for CR-PC-2 eligibility filter and sender SenderNotEligible check | Per-message relay; Party Chat calls both at each relay request |
 
 **`PartyMemberHealthUpdate` bandwidth management:** At `MAX_PARTY_SIZE = 4`, 20 Hz, each member receives 3 updates per tick. Server gates sends on `status ∈ {Online, Dead}` — Dead members continue to receive `PartyMemberHealthUpdate` with HP=0 so the party panel tracks the death state and respawn transition (per EC-RFR-2, `networking-relevance-filter.md`). No updates sent for Ghost or OutOfZone slots. Delta threshold: suppress if `|currentHP − lastSentHP| < HP_DELTA_THRESHOLD_FRACTION × maxHP` (tuning knob, default 5%). Full-health + full-MP suppression: if both values equal their maximums, suppress the update entirely.
+
+*(Note 2026-11-19, Party System Story 010 readiness: the threshold applies to MP with the same fraction (`|currentMP − lastSentMP| ≥ HP_DELTA_THRESHOLD_FRACTION × maxMP`), and a change of maxHP or maxMP always sends. Last-sent values are kept per (recipient, member); a pair with no record always sends, even at full health, because `PartyStateUpdate` carries no HP; the record is dropped on any tick the pair is not eligible. An update always sends when HP and MP reach full, and when HP reaches or leaves 0. Disbanding parties send nothing.)*
 
 ## Formulas
 
