@@ -61,7 +61,7 @@
 
 - `LoadCharacter`'s synchronous prefix is the id check; the fetch is the first `await` (`ConfigureAwait(false)`); validation runs after it on the fetched object only — allowed by ADR-011 Decision 3 because it is not live state.
 - The token: race the fetch against `ct` (e.g. a `TaskCompletionSource` with `RunContinuationsAsynchronously` registered on `ct`), and map cancellation and store exceptions to `DatabaseError` inside a try/catch so the returned task never faults.
-- `ApplyLoadedRecord` takes a record that `LoadCharacter` has already validated; it does not re-validate. Order inside it for this story: `RegisterPlayerClassType`, the 11 int stats, the 5 floats, `RestoreLevelingState`. Whether `LevelingService.RegisterPlayerEntity` is also needed for a player entity is to be checked against Leveling Story 009 at implementation.
+- `ApplyLoadedRecord` takes a record that `LoadCharacter` has already validated; it does not re-validate. Order inside it for this story: `RegisterPlayerClassType`, the 11 int stats, the 5 floats, `RestoreLevelingState`. Whether `LevelingService.RegisterPlayerEntity` is also needed for a player entity is to be checked against Leveling Story 009 at implementation. **Resolved 2026-11-19 (Party System Story 012):** it is needed — without it `CharacterStats.AddExperience` ignores the entity; `ApplyLoadedRecord` now calls it before `RegisterPlayerClassType` (unregister on release: TD-115).
 - The service gains `CharacterStats` and `LevelingService` (or narrow seams over them) as constructor dependencies; `CreateStub` and the existing tests must keep compiling.
 - AC-CP-11 (all step-3 writes before the first `AddEquipmentModifier`) is Story 005's.
 

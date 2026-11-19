@@ -225,6 +225,22 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             Assert.AreEqual(10u, syncs[0].Version);
         }
 
+        // ---------------------------------------------------------------- player registration (Party System Story 012)
+
+        [Test]
+        public void ApplyLoadedRecord_RegistersThePlayerEntity_SoAddExperienceIsCounted()
+        {
+            Assert.IsFalse(_leveling.IsPlayerEntity(_entity), "precondition: not registered before the load");
+            CharacterRecord r = MakeRecord();
+            int before = r.Experience;
+
+            _service.ApplyLoadedRecord(_entity, r);
+            _stats.AddExperience(_entity, 9);
+
+            Assert.IsTrue(_leveling.IsPlayerEntity(_entity), "the load registers the entity as a player");
+            Assert.AreEqual(before + 9, _stats.GetBaseStat(_entity, StatID.Experience), "a kill award is no longer dropped");
+        }
+
         // ---------------------------------------------------------------- at-cap (step 7, AC-CP-10)
 
         [Test]
@@ -234,7 +250,6 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             r.Level = LEVEL_CAP;
             r.Experience = CAP_THRESHOLD;
             _service.ApplyLoadedRecord(_entity, r);
-            _leveling.RegisterPlayerEntity(_entity);
             int levelUps = 0;
             _leveling.OnLevelUp += _ => levelUps++;
 
@@ -251,7 +266,6 @@ namespace IronGrind.Tests.EditMode.CharacterPersistence
             r.Level = LEVEL_CAP - 1;
             r.Experience = CAP_THRESHOLD - 10;
             _service.ApplyLoadedRecord(_entity, r);
-            _leveling.RegisterPlayerEntity(_entity);
             int levelUps = 0;
             _leveling.OnLevelUp += _ => levelUps++;
 

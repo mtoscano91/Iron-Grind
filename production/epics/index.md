@@ -29,7 +29,7 @@ Control Manifest Version: 2026-11-06
 | [Enemy AI](enemy-ai/EPIC.md) | Feature | Enemy AI | design/gdd/enemy-ai.md | 14 stories (001-014 written 2026-11-13): 14 Complete | Complete |
 | [Mob Spawning](mob-spawning/EPIC.md) | Feature | Mob Spawning | design/gdd/mob-spawning.md | 8 stories (001-008 written 2026-11-16): 8 Complete | Complete (2026-11-17) |
 | [Death & Respawn](death-and-respawn/EPIC.md) | Feature | Death & Respawn | design/gdd/death-and-respawn.md | 10 stories (001-009 written 2026-11-17, 010 added 2026-11-18), 10 Complete | Complete (2026-11-18) — server only; party ACs to the Party System epic (seam here), client visuals to presentation |
-| [Party System](party-system/EPIC.md) | Feature | Party System | design/gdd/party-system.md | 12 stories (written 2026-11-18), 11 Complete | In Progress — server only, zone-local parties at MVP (ADR-010 note 2026-11-18); party UI to presentation; Party Chat later |
+| [Party System](party-system/EPIC.md) | Feature | Party System | design/gdd/party-system.md | 12 stories (written 2026-11-18), 12 Complete | Complete (2026-11-19) — server only, zone-local parties at MVP (ADR-010 note 2026-11-18); party UI to presentation; Party Chat later |
 
 ## Notes
 

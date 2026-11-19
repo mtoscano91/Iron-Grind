@@ -3,7 +3,7 @@
 > **Layer**: Feature
 > **GDD**: design/gdd/party-system.md
 > **Architecture Module**: Party System (`architecture.md` layer map, Feature), `src/ServerLogic/` (ADR-012)
-> **Status**: In Progress
+> **Status**: Complete (2026-11-19)
 > **Stories**: 12 created 2026-11-18 — see Stories
 > **Manifest Version**: 2026-11-06
 
@@ -104,7 +104,7 @@ This epic is complete when:
 | 009 | [Disconnect, reconnect grace and zone presence](story-009-disconnect-grace-and-zone-presence.md) | Integration | Complete | ADR-011 |
 | 010 | [Party health stream](story-010-party-health-stream.md) | Logic | Complete | ADR-014 |
 | 011 | [Zone composition wiring](story-011-zone-composition-wiring.md) | Integration | Complete | ADR-014 |
-| 012 | [End-to-end — two players party up and share a kill](story-012-end-to-end-party-kill.md) | Integration | Ready | ADR-014 |
+| 012 | [End-to-end — two players party up and share a kill](story-012-end-to-end-party-kill.md) | Integration | Complete | ADR-014 |
 
 Order: 001 → 002 → 004 → 006 → 003 → 005 (006 before 003 for the XP-ineligible notice, Story 004 readiness 2026-11-19); 007 and 008 after 006; 009 after 008; 010 after 008; 011 after 005 and 007–010; 012 last.
 
@@ -116,4 +116,4 @@ Order: 001 → 002 → 004 → 006 → 003 → 005 (006 before 003 for the XP-in
 
 ## Next Step
 
-Stories 001, 002 (2026-11-18), 004, 006, 003, 005, 007, 008, 009, 010 and 011 (2026-11-19) Complete. Run `/story-readiness production/epics/party-system/story-012-end-to-end-party-kill.md`. Story 011 left for Story 012: the zone now composes the whole Party System (registry, `PartyTickStep` after the link pump, both registrations, listeners, D&R status sink, shared XP distributor, XP-ineligible notice sink); Story 012 drives two clients through invite, join, a shared kill (F-PS-1) and a `PartyStateUpdate` end to end, and can measure the < 0.1 ms per-tick guardrail.
+Stories 001, 002 (2026-11-18), 004, 006, 003, 005, 007, 008, 009, 010, 011 and 012 (2026-11-19) Complete. **Epic COMPLETE 2026-11-19 (12/12).** Story 012 drove two clients end to end in an EditMode composition (invite, accept, shared skill kill by F-PS-1, leave / auto-disband, second kill at full XP, bystander unaffected; party step p95 about 0.002 ms against the 0.1 ms guardrail) and found that no production path registered players with Leveling, so kill XP was dropped: fixed in `CharacterPersistenceService.ApplyLoadedRecord` (unregister on release is TD-115). Carried: loot round-robin end to end (TD-107, loot not composed), party UI to presentation, Party Chat later, TD-114. Next: roadmap step 3 (shop / consumables).

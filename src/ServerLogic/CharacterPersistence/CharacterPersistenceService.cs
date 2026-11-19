@@ -433,6 +433,9 @@ namespace IronGrind.CharacterPersistence
                 _sessions.Remove(record.CharacterID);
             }
 
+            // Party System Story 012: without this no production path marks the entity as a player, and
+            // CharacterStats.AddExperience drops every kill award for it (it ignores non-player entities).
+            _leveling.RegisterPlayerEntity(entityId);
             _leveling.RegisterPlayerClassType(entityId, record.ClassType);
 
             _stats.SetBaseStat(entityId, StatID.Level, record.Level);
