@@ -444,7 +444,7 @@ namespace IronGrind.Tests.EditMode.DeathAndRespawn
 
             object composite = FieldOfType(rig.Comp.ZoneInstancing.Pool, typeof(IZoneSlotReleaseListener));
             var listeners = (IZoneSlotReleaseListener[])FieldOfType(composite, typeof(IZoneSlotReleaseListener[]));
-            Assert.AreEqual(4, listeners.Length);
+            Assert.AreEqual(5, listeners.Length); // 5 since Party System Story 011 (party listener before Combat)
             Assert.AreSame(rig.Comp.AutoAttackCombat, listeners[listeners.Length - 1], "Combat is last");
             Assert.DoesNotThrow(() => Kill(rig, player));
         }

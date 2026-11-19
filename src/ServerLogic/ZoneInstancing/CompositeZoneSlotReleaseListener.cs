@@ -15,6 +15,9 @@ namespace IronGrind.ServerLogic.ZoneInstancing
 
         private readonly IZoneSlotReleaseListener[] _listeners;
 
+        /// <summary>Test seam: the listeners in call order.</summary>
+        internal System.Collections.Generic.IReadOnlyList<IZoneSlotReleaseListener> Listeners => _listeners;
+
         /// <summary>Creates the composite. The array is copied.</summary>
         /// <param name="listeners">Listeners in call order.</param>
         /// <exception cref="ArgumentNullException">The array or an element is null.</exception>

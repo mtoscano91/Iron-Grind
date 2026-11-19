@@ -17,6 +17,7 @@ using IronGrind.ServerLogic.EnemyAI;
 using IronGrind.ServerLogic.Gateway;
 using IronGrind.ServerLogic.MobSpawning;
 using IronGrind.ServerLogic.Navigation;
+using IronGrind.ServerLogic.PartySystem;
 using IronGrind.ServerLogic.ZoneInstancing;
 using IronGrind.SkillSystem;
 using IronGrind.StatusEffects;
@@ -528,6 +529,28 @@ namespace IronGrind.ServerLogic.ZoneServer
         /// constructor throw, so S5 fails. Set before the run starts.
         /// </summary>
         internal DeathAndRespawnConfig DeathAndRespawnConfigOverride;
+
+        /// <summary>
+        /// Test seam (Party System Story 011): the Party System config asset. Null means
+        /// <see cref="PartySystemConfigValues.Defaults"/>. An invalid asset makes the registry constructor throw
+        /// <see cref="ArgumentException"/>, so S5 fails. Set before the run starts.
+        /// </summary>
+        internal PartySystemConfig PartySystemConfigOverride;
+
+        /// <summary>The zone's one party registry (Party System Story 011), built first at S5; null before S5.</summary>
+        internal PartyRegistry PartyRegistry { get; private set; }
+
+        /// <summary>The zone's formal-party presence (<see cref="ZoneInstancingWiringOptions.Party"/>, skill party source); null before S5.</summary>
+        internal PartyZonePresence PartyPresence { get; private set; }
+
+        /// <summary>The one party XP distributor shared by Auto-Attack Combat and the Skill System; null before S5.</summary>
+        internal PartyExperienceDistributor PartyExperienceSink { get; private set; }
+
+        /// <summary>The Party System's phase-3 step; null before S5.</summary>
+        internal PartyTickStep PartyTickStep { get; private set; }
+
+        /// <summary>The XP-ineligible notifier (the registry's leader-change listener); null before S5.</summary>
+        internal PartyXpIneligibleNotifier PartyNotifier { get; private set; }
 
         /// <summary>
         /// The zone's Death and Respawn service, built at S5 (Story 008); null before S5 and in a composition with no
@@ -2121,6 +2144,9 @@ namespace IronGrind.ServerLogic.ZoneServer
                 _owner.EntityStateSource = stateSource;
                 // Skill System Story 011: ZoneEntryCompletion takes its responder once, before Skill exists.
                 _owner.EntryResponder = new ForwardingZoneEntryResponder();
+                // Party System Story 011: the registry, level source, eligibility and the one XP distributor need only
+                // the config and the stat reader, so they are built before every consumer (wiring, Combat, Skill, D&R).
+                BuildPartyCore();
                 ZoneInstancingWiring wiring = BuildZoneInstancing(dispatcher, outbox, stateSource);
 
                 NavigationPhaseStep navigationStep = BuildMobStoreAndNavigation(wiring, out MobEventBus mobBus,
@@ -2142,7 +2168,9 @@ namespace IronGrind.ServerLogic.ZoneServer
 
                 DeathAndRespawnService deathAndRespawn = BuildDeathAndRespawn(wiring, outbox, statusEffects, movement);
 
-                AddPhaseThreeSteps(navigationStep, statusEffects, movement, enemyAI, linkPump, deathAndRespawn);
+                PartyTickStep partyStep = BuildPartyWiring(dispatcher, wiring, outbox, ruBatch);
+
+                AddPhaseThreeSteps(navigationStep, statusEffects, movement, enemyAI, linkPump, deathAndRespawn, partyStep);
 
                 _owner._linkRegistration = new GatewayLinkRegistration(_owner._linkChannel, linkPump, _owner._gatewayLinkPort,
                     () =>
@@ -2153,13 +2181,13 @@ namespace IronGrind.ServerLogic.ZoneServer
                 // Once, after both builds (the pool and the entry completion each take one listener). Order: Movement
                 // first on entry; Combat last on release so BeforeRelease still finds the player's slot.
                 wiring.EntryCompletion.SetEntryListener(new CompositeZonePlayerEntryListener(
-                    movement, new SkillSpawnEntryListener(skill, _owner.ZoneLeveling)));
+                    movement, new SkillSpawnEntryListener(skill, _owner.ZoneLeveling), _partyEntryListener));
                 // Death and Respawn (Story 008): resets the slot's death state; before Combat, which stays last.
                 IZoneSlotReleaseListener releaseListeners = deathAndRespawn == null
                     ? new CompositeZoneSlotReleaseListener(
-                        statusEffects, movement, new SkillSlotReleaseListener(skill), _owner.AutoAttackCombat)
+                        statusEffects, movement, new SkillSlotReleaseListener(skill), _partyReleaseListener, _owner.AutoAttackCombat)
                     : new CompositeZoneSlotReleaseListener(
-                        statusEffects, movement, new SkillSlotReleaseListener(skill), deathAndRespawn,
+                        statusEffects, movement, new SkillSlotReleaseListener(skill), deathAndRespawn, _partyReleaseListener,
                         _owner.AutoAttackCombat);
                 wiring.Pool.SetReleaseListener(releaseListeners);
                 var cycleBroadcast = new CycleTimerBroadcastStep(_owner.AutoAttackCombat, wiring.Pool, sendSeam, outbox);
@@ -2249,12 +2277,13 @@ namespace IronGrind.ServerLogic.ZoneServer
             // The phase-3 order, listed in ONE place (ADR-014, CR-AI-2; construction order is not step order):
             // ZoneInstancingWiring (added in BuildZoneInstancing), NavigationPhaseStep (phases 1-2), Mob Spawning
             // (MobSpawningPhaseStep, Mob Spawning Story 006), Status Effects,
-            // Movement, Enemy AI, Auto-Attack Combat, Skill cast, Gateway link pump, then Enemy AI's
+            // Movement, Enemy AI, Auto-Attack Combat, Skill cast, Gateway link pump, the Party tick step
+            // (Party System Story 011: after dispatch and simulation, before the outbound flush), then Enemy AI's
             // MobPositionIntegrationStep (ADR-002 phase 4, last). Navigation step and Enemy AI exist only when the
             // composition built the navigation itself (no INavigationProvider with a passed seam).
             private void AddPhaseThreeSteps(NavigationPhaseStep navigationStep, StatusEffectsService statusEffects,
                 MovementService movement, EnemyAISystem enemyAI, GatewayLinkPump linkPump,
-                DeathAndRespawnService deathAndRespawn)
+                DeathAndRespawnService deathAndRespawn, PartyTickStep partyStep)
             {
                 List<IZoneSimulationStep> steps = _owner._simulationSteps;
                 if (navigationStep != null)
@@ -2289,10 +2318,74 @@ namespace IronGrind.ServerLogic.ZoneServer
                 steps.Add(_owner.AutoAttackCombat);
                 steps.Add(_owner.SkillStep);
                 steps.Add(linkPump);
+                steps.Add(partyStep);
                 if (enemyAI != null)
                 {
                     steps.Add(enemyAI.IntegrationStep);
                 }
+            }
+
+            // Party System Story 011: the shared party objects (see BuildPartyCore / BuildPartyWiring).
+            private PartySystemConfigValues _partyConfig;
+            private PartyRegistry _partyRegistry;
+            private PartyZonePresence _partyPresence;
+            private CharacterStatsZoneEntityStatReader _partyStats;
+            private StatReaderPartyMemberLevelSource _partyLevels;
+            private PartyXpEligibility _partyEligibility;
+            private IZonePlayerEntryListener _partyEntryListener;
+            private IZoneSlotReleaseListener _partyReleaseListener;
+
+            // Party System Story 011 AC-1 / AC-2: config (override or defaults), then the one registry (its constructor
+            // validates the config and throws ArgumentException, so S5 fails with "startup failed at S5"), presence,
+            // level source, eligibility and the ONE experience distributor that Combat and Skill share.
+            private void BuildPartyCore()
+            {
+                _partyConfig = _owner.PartySystemConfigOverride == null
+                    ? PartySystemConfigValues.Defaults
+                    : PartySystemConfigValues.FromAsset(_owner.PartySystemConfigOverride);
+                _partyRegistry = new PartyRegistry(_partyConfig);
+                Observe(nameof(PartyRegistry));
+                _partyPresence = new PartyZonePresence(_partyRegistry);
+                _partyStats = new CharacterStatsZoneEntityStatReader(_owner.ZoneCharacterStats);
+                _partyLevels = new StatReaderPartyMemberLevelSource(_partyStats);
+                _partyEligibility = new PartyXpEligibility(_partyRegistry, _partyLevels, _partyConfig);
+                _owner.PartyRegistry = _partyRegistry;
+                _owner.PartyPresence = _partyPresence;
+                _owner.PartyExperienceSink = new PartyExperienceDistributor(
+                    new CharacterStatsExperienceSink(_owner.ZoneCharacterStats), _partyRegistry, _partyEligibility,
+                    _partyConfig);
+            }
+
+            // Party System Story 011 AC-3 / AC-4 / AC-5 / AC-6: sinks, invites, broadcast, membership, presence, health
+            // stream, the XP-ineligible notifier, the inbound requests (before Seal) and the tick step. Builds the entry
+            // and release listeners that BuildOutboundAndPipeline puts into the composites. No party object is IDisposable.
+            private PartyTickStep BuildPartyWiring(InboundRequestDispatcher dispatcher, ZoneInstancingWiring wiring,
+                ClientMessageOutbox outbox, RUBatchOutboundStep ruBatch)
+            {
+                ZoneSlotPool pool = wiring.Pool;
+                var inviteSink = new OutboxPartyInviteMessageSink(_partyRegistry, pool, outbox);
+                var stateSink = new OutboxPartyStateMessageSink(_partyRegistry, pool, outbox);
+                var invites = new PartyInviteService(inviteSink, _partyRegistry, _partyLevels,
+                    _owner.PersistenceService, _partyConfig);
+                var broadcast = new PartyBroadcastStep(_partyRegistry, _partyLevels, _partyEligibility, stateSink);
+                var membership = new PartyMembershipStep(_partyRegistry, stateSink, inviteSink, broadcast, _partyConfig);
+                var presence = new PartyPresenceStep(_partyRegistry,
+                    new SessionMachinePartySessionStateSource(pool, _sessionMachine), invites, _partyConfig);
+                var health = new PartyHealthStreamStep(_partyRegistry, _partyStats,
+                    new PoolPartyClientResolver(_partyRegistry, pool, outbox), ruBatch, _partyConfig, pool.MaxPlayers);
+                _owner.PartyNotifier = new PartyXpIneligibleNotifier(_partyRegistry, _partyEligibility,
+                    new OutboxPartyXpIneligibleNoticeSink(_partyRegistry, pool, outbox));
+
+                PartyInboundRegistration.Register(dispatcher, new PartyInviteClientRequestHandlers(invites));
+                PartyInboundRegistration.RegisterLeaveAndDisband(dispatcher,
+                    new PartyLeaveDisbandClientRequestHandlers(_partyRegistry, membership));
+
+                _partyEntryListener = new PartyPlayerEntryListener(_partyRegistry, pool);
+                _partyReleaseListener = new PartySlotReleaseListener(_partyRegistry, invites, membership, presence);
+                var step = new PartyTickStep(invites, membership, presence, broadcast, health);
+                Observe(nameof(PartyTickStep));
+                _owner.PartyTickStep = step;
+                return step;
             }
 
             // Death and Respawn Story 008: one service per zone, built after Status Effects, Movement and Combat
@@ -2318,7 +2411,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                     : DeathAndRespawnConfigValues.FromAsset(_owner.DeathAndRespawnConfigOverride);
                 var service = new DeathAndRespawnService(config, wiring.Pool, new CharacterStatsDeathSource(stats),
                     new ServerTickDeathTickSource(_tickLoop), _owner.AutoAttackCombat, movement,
-                    new NoOpPartyMemberStatusSink(), new ZoneSlotGhostStatusSource(wiring.Pool),
+                    new PartyMemberStatusSink(_partyRegistry), new ZoneSlotGhostStatusSource(wiring.Pool),
                     new SessionEndGhostDeathSink(wiring.Pool, wiring.SessionEnds), _respawnProvider,
                     new CharacterStatsRespawnVitalsWriter(stats), movement, statusEffects,
                     new DeathMessageEmitter(wiring.Pool, outbox));
@@ -2356,6 +2449,8 @@ namespace IronGrind.ServerLogic.ZoneServer
                     {
                         Directory = _directory,
                         Sessions = _sessionMachine,
+                        // Party System Story 011: the registry-backed presence replaces NoPartyZonePresence.
+                        Party = _partyPresence,
                         ActivitySink = _activitySink,
                         Ghosts = new SessionMachineGhostSource(_sessionMachine, ZoneSlotPool.MAX_PLAYERS_PER_ZONE),
                         // Death and Respawn Story 008: forwarder (bound at S5 once the service exists), the no-op HP
@@ -2549,7 +2644,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                     calculator,
                     damageApplier,
                     new MobRuntimeStoreXpAward(mobStore),
-                    new CharacterStatsExperienceSink(stats),
+                    _owner.PartyExperienceSink,
                     new ZoneMobRosterMobTypeSource(wiring.MobRoster),
                     _owner._zoneId,
                     faceEmitter);
@@ -2620,7 +2715,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                 Observe(nameof(SkillSystemService));
 
                 var intake = new SkillCastIntake(slotIndex, pool.MaxPlayers);
-                var party = new ZoneSkillCastPartySource(pool, new NoPartyZonePresence());
+                var party = new ZoneSkillCastPartySource(pool, _partyPresence);
                 var output = new SkillCastOutputEmitter(pool, _owner._zoneId, _owner.TargetSlotTracker, party, ruBatch, service);
 
                 BuildSkillCastPipeline(wiring, stateSource, statusEffects, service, database, configSource, output,
@@ -2658,7 +2753,7 @@ namespace IronGrind.ServerLogic.ZoneServer
                     positions,
                     _owner.SkillDamageCalculatorOverride ?? new DamageCalculatorSkillAdapter(_owner._damageCalculator),
                     new MobRuntimeStoreXpAward(_owner.MobStore),
-                    new CharacterStatsExperienceSink(stats),
+                    _owner.PartyExperienceSink,
                     _owner.AutoAttackInnerDamageApplier,
                     _owner.AutoAttackFaceOutput,
                     combat);

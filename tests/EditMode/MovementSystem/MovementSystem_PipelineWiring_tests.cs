@@ -272,7 +272,8 @@ namespace IronGrind.Tests.EditMode.MovementSystem
 
             IList<IZoneSimulationStep> steps = rig.Comp.SimulationSteps;
 
-            Assert.AreEqual(7, steps.Count, "Mob Spawning second (Mob Spawning Story 006), Combat fifth (Auto-Attack Story 006), Skill sixth (Skill System Story 011), the gateway link pump last (Gateway Story 011)");
+            Assert.AreEqual(8, steps.Count, "Mob Spawning second (Mob Spawning Story 006), Combat fifth (Auto-Attack Story 006), Skill sixth (Skill System Story 011), the gateway link pump seventh (Gateway Story 011), the party tick step last (Party System Story 011)");
+            Assert.AreSame(rig.Comp.PartyTickStep, steps[7]);
             Assert.IsInstanceOf<IronGrind.ServerLogic.Gateway.GatewayLinkPump>(steps[6]);
             Assert.AreSame(rig.Comp.SkillStep, steps[5]);
             Assert.AreSame(rig.Comp.ZoneInstancing, steps[0]);

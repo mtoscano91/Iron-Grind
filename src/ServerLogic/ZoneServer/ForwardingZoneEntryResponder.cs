@@ -57,6 +57,9 @@ namespace IronGrind.ServerLogic.ZoneServer
     {
         private readonly IZonePlayerEntryListener[] _listeners;
 
+        /// <summary>Test seam: the listeners in call order.</summary>
+        internal System.Collections.Generic.IReadOnlyList<IZonePlayerEntryListener> Listeners => _listeners;
+
         /// <summary>Creates the composite.</summary>
         /// <param name="listeners">The listeners, in call order; none may be null.</param>
         /// <exception cref="ArgumentNullException">The array or an element is null.</exception>

@@ -229,11 +229,12 @@ namespace IronGrind.Tests.EditMode.Networking
             // Character Persistence Story 018: Character Stats (and Leveling) before Persistence, Status Effects after Zone Instancing.
             // Story 019: the real Inventory and Equipment between Character Stats and the store.
             // Story 020: the write queue and the zone locator between the store and Persistence.
+            // Party System Story 011: the party registry before Zone Instancing (the wiring takes its presence), the party tick step after Skill.
             "TickCompletionQueue", "ServerTickLoop", "CharacterStats", "InventoryService", "EquipmentService", "NpgsqlCharacterRecordStore", "CharacterWriteQueue", "ZoneServerCharacterZoneLocator", "CharacterPersistenceService",
             "CrossZoneRelayAllowlist", "CrossZoneRelayOrigin", "CrossZoneRelayInbox", "CrossZoneRelayReceiver",
             "NpgsqlRelayPublisher", "CrossCuttingRpcGuardChain", "CharacterMutationGate", "InboundRequestDispatcher",
-            "ClientMessageOutbox", "ZoneInstancingWiring", "StatusEffectsService",
-            "MovementIntentBuffer", "MovementService", "RUBatchOutboundStep", "HitResultEmitter", "AutoAttackCombatSystem", "SkillSystemService", "CycleTimerBroadcastStep", "PositionBroadcastStep", "ServerWideBroadcaster", "ZoneClientRelayHandler", "ZoneSimulationStep",
+            "ClientMessageOutbox", "PartyRegistry", "ZoneInstancingWiring", "StatusEffectsService",
+            "MovementIntentBuffer", "MovementService", "RUBatchOutboundStep", "HitResultEmitter", "AutoAttackCombatSystem", "SkillSystemService", "PartyTickStep", "CycleTimerBroadcastStep", "PositionBroadcastStep", "ServerWideBroadcaster", "ZoneClientRelayHandler", "ZoneSimulationStep",
             "ZoneTickPipeline", "Seal", "RegisterTickDriven", "CreateInboundTransport"
         };
 

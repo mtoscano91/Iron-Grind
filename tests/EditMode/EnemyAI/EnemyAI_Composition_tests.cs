@@ -141,6 +141,7 @@ namespace IronGrind.Tests.EditMode.EnemyAI
                 nameof(ZoneInstancingWiring), nameof(NavigationPhaseStep), nameof(MobSpawningPhaseStep),
                 "StatusEffectsService", "MovementService",
                 nameof(EnemyAISystem), "AutoAttackCombatSystem", "SkillCastStep", "GatewayLinkPump",
+                "PartyTickStep", // Party System Story 011 AC-4: after the link pump, before phase 4
                 "MobPositionIntegrationStep"
             }, names);
             Assert.AreSame(rig.Comp.EnemyAI.IntegrationStep, rig.Comp.SimulationSteps[names.Count - 1]);

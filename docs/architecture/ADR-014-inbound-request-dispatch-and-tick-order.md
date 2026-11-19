@@ -12,6 +12,8 @@ Amended a second time 2026-10-09 after `architecture-review-2026-10-09-adr-014-r
 
 Note 2026-10-16 (ADR-015 Accepted): ADR-015 Decision 7 amends Decision 6. `ZoneTickPipeline` gains step **1a — Relay** between Completion and Requests: `ICrossZoneRelayInbox.Drain(currentTick, handler)` hands each relayed body to `IZoneClientBroadcastSink.EnqueueToAllClients(..., isCapExempt: false)`, in its own `try`/`catch` (`STEP_RELAY`). The pipeline takes `ICrossZoneRelayInbox` and `ICrossZoneRelayHandler` as constructor arguments; "four steps" in this ADR reads as five. No other decision changes.
 
+Note 2026-11-19 (Party System Story 011): the Party System runs as one simulation step, `PartyTickStep`, listed after the gateway link pump and before Enemy AI's `MobPositionIntegrationStep` (which stays last, ADR-002 phase 4). Inside it: `PartyInviteService.Tick` → `PartyMembershipStep.ApplyQueued` → `PartyPresenceStep.Poll` → `PartyBroadcastStep.Flush` → `PartyHealthStreamStep.Run`, each in its own `try`/`catch`. So a leave or disband queued in the Requests step of tick T applies after the Auto-Attack and Skill steps of T (a same-tick kill awards party XP before the removal), and the health updates enter the R-U batch that the outbound step flushes on T. No decision changes.
+
 ## Engine Compatibility
 
 | Field | Value |

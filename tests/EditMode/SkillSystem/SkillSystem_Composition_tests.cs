@@ -473,7 +473,8 @@ namespace IronGrind.Tests.EditMode.SkillSystemTests
             Assert.AreSame(damageStats, DirectField<ISkillStatSource>(effectStep), "one stat source shared by the damage and effect steps");
             Assert.IsInstanceOf<IronGrind.ServerLogic.EnemyAI.MobRuntimeStoreXpAward>(DirectField<IAutoAttackXpAward>(damageStep));
             Assert.IsInstanceOf<CharacterStatsSkillManaSink>(DirectField<ISkillManaSink>(rig.Comp.SkillExecutor));
-            Assert.IsNotNull(FindInstance<NoPartyZonePresence>(rig.Comp.SkillStep, 6), "no-party presence");
+            // Party System Story 011 AC-2: the registry-backed presence replaced NoPartyZonePresence.
+            Assert.IsNotNull(FindInstance<IronGrind.ServerLogic.PartySystem.PartyZonePresence>(rig.Comp.SkillStep, 6), "party presence");
             Assert.IsNotNull(FindInstance<NoSilenceSource>(rig.Comp.SkillStep), "no-silence source");
 
             SkillCastOutputEmitter stepOutput = FindInstance<SkillCastOutputEmitter>(rig.Comp.SkillStep);

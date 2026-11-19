@@ -26,6 +26,9 @@ namespace IronGrind.ServerLogic.PartySystem
 
         private IPartyLeaderChangeListener _leaderListener;
 
+        /// <summary>Test seam: the registered leader-change listener (null when none).</summary>
+        internal IPartyLeaderChangeListener LeaderListener => _leaderListener;
+
         private readonly int _maxPartySize;
         private readonly Dictionary<CharacterID, PartyID> _partyOf = new Dictionary<CharacterID, PartyID>();
         private readonly Dictionary<CharacterID, EntityID> _entityOf = new Dictionary<CharacterID, EntityID>();

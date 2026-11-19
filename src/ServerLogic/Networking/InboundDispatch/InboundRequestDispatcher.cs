@@ -394,6 +394,13 @@ namespace IronGrind.Networking
             }
         }
 
+        /// <summary>Test seam: whether a request type is registered.</summary>
+        /// <param name="messageTypeId">The message type id.</param>
+        internal bool IsRegistered(ushort messageTypeId)
+        {
+            return _typeIndexById.ContainsKey(messageTypeId);
+        }
+
         private void ThrowIfDuplicate(ushort messageTypeId)
         {
             if (_typeIndexById.ContainsKey(messageTypeId))
