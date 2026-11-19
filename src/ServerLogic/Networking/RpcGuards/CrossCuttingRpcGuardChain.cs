@@ -472,6 +472,9 @@ namespace IronGrind.Networking
                 case RpcTypeTag.EquipRequest:
                 case RpcTypeTag.MovementIntent:
                 case RpcTypeTag.SetAutoAttack:
+                // Party System Story 007's PartyInviteRequest and PartyInviteResponse are unlimited too.
+                case RpcTypeTag.PartyInviteRequest:
+                case RpcTypeTag.PartyInviteResponse:
                     return 0;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(rpcTypeTag), rpcTypeTag,

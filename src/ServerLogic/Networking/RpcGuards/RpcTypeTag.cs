@@ -79,5 +79,11 @@ namespace IronGrind.Networking
 
         /// <summary><c>SetAutoAttack</c> (Auto-Attack Combat Story 006, ADR-014 Decision 1). No rate limit (gap 0).</summary>
         SetAutoAttack = 10,
+
+        /// <summary><c>PartyInviteRequest</c> (Party System Story 007, ADR-014 Decision 1). No rate limit (gap 0).</summary>
+        PartyInviteRequest = 11,
+
+        /// <summary><c>PartyInviteResponse</c> (Party System Story 007, ADR-014 Decision 1). No rate limit (gap 0).</summary>
+        PartyInviteResponse = 12,
     }
 }

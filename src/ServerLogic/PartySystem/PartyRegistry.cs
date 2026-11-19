@@ -368,6 +368,21 @@ namespace IronGrind.ServerLogic.PartySystem
             return false;
         }
 
+        /// <summary>Finds the entity registered for a character (Party System Story 007).</summary>
+        /// <param name="character">The character.</param>
+        /// <param name="entity">The entity, or <c>EntityID.Invalid</c>.</param>
+        /// <returns>True when the character is registered. Allocation-free.</returns>
+        public bool TryGetEntity(CharacterID character, out EntityID entity)
+        {
+            if (_entityOf.TryGetValue(character, out entity))
+            {
+                return true;
+            }
+
+            entity = EntityID.Invalid;
+            return false;
+        }
+
         /// <summary>
         /// Writes a party's members in join order with their statuses into a caller buffer (no allocation).
         /// Indices <c>0 .. MaxPartySize - 1</c> are written; empty indices are CharacterID 0, <c>EntityID.Invalid</c>,
