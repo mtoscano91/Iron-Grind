@@ -41,6 +41,7 @@
 - Follow Death & Respawn Story 008 (`BuildDeathAndRespawn`, `ForwardingPlayerDeathStateReader`, override seam, phase step); where a consumer is built before the party service exists, use a forwarding seam bound later.
 - Check how loot is composed today (`StandInLootTableService`): if it takes no `IPartyService`, AC-5 is structural and the real-loot binding stays moved out (epic).
 - **From Story 003 readiness (2026-11-19):** `PartyRegistry` itself implements `IPartyService` (no separate `PartyService`). Story 003 adds the seam `IPartyXpIneligibleNoticeSink.Notify(CharacterID, PartyID)` with a no-op default; this story writes and binds the production adapter: encode `PartyXpIneligibleNotice` (0xE178, 4-byte body `partyId`), resolve the character's client id, `IClientMessageOutbox.Enqueue` (owning client). Add it to the ACs at this story's readiness.
+- **From Story 005 readiness (2026-11-19, G3):** the XP sink binding wraps the existing `CharacterStatsExperienceSink` with `PartyExperienceDistributor` (one instance, passed to both combat systems). Place Story 008's party membership step (queued leave / disband) after phase 3 so a same-tick kill awards before the removal, and record the position as an ADR-014 note.
 
 ---
 

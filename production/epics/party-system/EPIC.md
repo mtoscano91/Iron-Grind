@@ -97,7 +97,7 @@ This epic is complete when:
 | 002 | [Party registry — solo PartyIDs and membership](story-002-party-registry.md) | Logic | Complete | ADR-010 |
 | 003 | [Leader index and round-robin cursor](story-003-leader-and-round-robin.md) | Logic | Complete | ADR-010 |
 | 004 | [Member status and XP eligibility](story-004-member-status-and-eligibility.md) | Logic | Complete | ADR-010 |
-| 005 | [Party XP distribution](story-005-party-xp-distribution.md) | Integration | Ready | ADR-010 |
+| 005 | [Party XP distribution](story-005-party-xp-distribution.md) | Integration | Complete | ADR-010 |
 | 006 | [Party wire messages](story-006-party-wire-messages.md) | Logic | Complete | ADR-014 |
 | 007 | [Invite flow](story-007-invite-flow.md) | Integration | Ready | ADR-014 |
 | 008 | [Leave, disband and state broadcast](story-008-leave-disband-and-state-broadcast.md) | Integration | Ready | ADR-014 |
@@ -116,4 +116,4 @@ Order: 001 → 002 → 004 → 006 → 003 → 005 (006 before 003 for the XP-in
 
 ## Next Step
 
-Stories 001, 002 (2026-11-18), 004, 006 and 003 (2026-11-19) Complete. Run `/story-readiness production/epics/party-system/story-005-party-xp-distribution.md`. Story 003 left: `PartyRegistry` is the `IPartyService`; `TransferLeadership(PartyID)` for Story 009; `IPartyXpIneligibleNoticeSink` adapter for Story 011; TD-114 (Loot-side skip of an ineligible member at the cursor).
+Stories 001, 002 (2026-11-18), 004, 006, 003 and 005 (2026-11-19) Complete. Run `/story-readiness production/epics/party-system/story-007-invite-flow.md`. Story 005 left: `PartyExperienceDistributor` (wraps `CharacterStatsExperienceSink`, one instance for both combat systems) for Story 011; same-tick leave rule (queued leave / disband, party step after phase 3) for Stories 008 and 011. Story 003 left: `PartyRegistry` is the `IPartyService`; `TransferLeadership(PartyID)` for Story 009; `IPartyXpIneligibleNoticeSink` adapter for Story 011; TD-114 (Loot-side skip of an ineligible member at the cursor).

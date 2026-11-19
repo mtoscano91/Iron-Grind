@@ -553,6 +553,20 @@ namespace IronGrind.ServerLogic.PartySystem
             }
         }
 
+        /// <summary>Test seam: sets a party's lifecycle state. Disbanding is unreachable until Story 008.</summary>
+        /// <param name="partyId">The party.</param>
+        /// <param name="state">The state to set.</param>
+        /// <exception cref="ArgumentException">The party is unknown (a test typo must not pass silently).</exception>
+        internal void SetStateForTests(PartyID partyId, PartyLifecycleState state)
+        {
+            if (!_parties.TryGetValue(partyId, out PartyState party))
+            {
+                throw new ArgumentException("Unknown party " + partyId, nameof(partyId));
+            }
+
+            party.SetState(state);
+        }
+
         /// <summary>Test seam: sets the next id the counter will issue.</summary>
         /// <param name="next">The next id; 0 is refused (PartyID 0 is never issued).</param>
         /// <exception cref="ArgumentOutOfRangeException"><paramref name="next"/> is 0.</exception>
