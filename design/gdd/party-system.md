@@ -15,7 +15,7 @@ For the player, the party system is invisible until it isn't: a clean solo grind
 
 The party is a contract, not a feature. When you accept an invite, you are agreeing — without saying so — that the four names now on your left-side HUD matter to your survival, and you to theirs. The healer is watching your HP bar. The tank is pulling so you don't get flanked. You hit harder when you know someone has your back. That shift in responsibility — from solitary grinder to party member — is felt immediately, not explained.
 
-The fantasy is not efficiency (though parties are efficient). It is the specific weight of being *witnessed*. When a Steel item hits the ground in front of all six of you, nobody moves for a moment. Everyone saw it. Everyone knows what it's worth. The three seconds of silence before someone types anything — that is Social Gravity. The drop doesn't matter more because it's rare; it matters more because five other people are standing there knowing it's rare too. Solo grinding builds your character. Party grinding builds your reputation.
+The fantasy is not efficiency (though parties are efficient). It is the specific weight of being *witnessed*. When a Steel item hits the ground in front of all four of you, nobody moves for a moment. Everyone saw it. Everyone knows what it's worth. The three seconds of silence before someone types anything — that is Social Gravity. The drop doesn't matter more because it's rare; it matters more because three other people are standing there knowing it's rare too. Solo grinding builds your character. Party grinding builds your reputation.
 
 *Pillar alignment: Social Gravity (primary) — the party is the gravitational field; everything about it pulls players toward each other without locking the solo player out. Earned Power (supporting) — faster kill throughput delivers measurably better XP/hr and gold/hr despite per-member per-kill detriment; the party advantage is earned through kill speed, not a free multiplier. Legendary Gear (contextual) — the witnessed loot moment is where the gear's social value is first established.*
 
@@ -68,7 +68,7 @@ On `AdvanceRrNextIndex()` the Party System:
 If all remaining members are ineligible, `rrNextIndex` is unchanged (reset to pre-call value) and no loot is assigned. On party size decrease: if `rrNextIndex >= newSize`, clamp via `rrNextIndex = rrNextIndex % newSize`. Solo parties (`MemberCount = 1`) do not use `rrNextIndex` for loot; it is set to 0 and ignored.
 
 **CR-PS-8 — Party Leader**
-The first confirmed member is the initial leader. Leader is tracked as `LeaderIndex` (index into the 6-slot member array; derive CharacterID at callsite via `GetMember(state.LeaderIndex)`). Leadership transfers automatically:
+The first confirmed member is the initial leader. Leader is tracked as `LeaderIndex` (index into the 4-slot (`MAX_PARTY_SIZE`) member array; derive CharacterID at callsite via `GetMember(state.LeaderIndex)`). Leadership transfers automatically:
 - Leader leaves voluntarily **or** disconnect TTL expires → transfer to the **lowest non-empty member index**; if none below `LeaderIndex`, wrap to 0.
 - On disconnect: transfer **immediately** (do not wait for TTL expiry).
 - If the leader is the last member → party disbands (CR-PS-9), not transferred.
@@ -193,7 +193,7 @@ PartyMemberSlot
 **`rrNextIndex` correctness (CR-PS-7):**
 - **If `AdvanceRrNextIndex` is called by two kill events in the same server tick**: rrNextIndex updates are serialized per party. The server processes kill events sequentially within a single party's context — the second kill reads the post-first-advance index.
 - **If a freed slot (CharacterID = 0) is reached by the do-while skip loop**: the eligibility check includes `CharacterID != 0` in addition to status flags. An empty slot has no status and is always ineligible.
-- **If a member joins and fills slot index 5 while `rrNextIndex = 5`**: the new member immediately becomes the next round-robin target. This is intentional — join order determines eligibility. No "skip-first-cycle" grace period exists unless explicitly added.
+- **If a member joins and fills slot index 3 (the last slot at `MAX_PARTY_SIZE` 4) while `rrNextIndex = 3`**: the new member immediately becomes the next round-robin target. This is intentional — join order determines eligibility. No "skip-first-cycle" grace period exists unless explicitly added.
 - **Clamp-then-advance order on size decrease**: clamp `rrNextIndex` via `rrNextIndex % newMemberCount` at the moment of member removal, before the next `AdvanceRrNextIndex` call.
 
 **State machine ordering (CR-PS-9 + concurrent events):**
@@ -380,7 +380,7 @@ AC-PS-30: GIVEN a level-60 member is in a party of 4 with 3 leveling members, WH
 | ID | Question | Owner | Blocks |
 |----|----------|-------|--------|
 | OQ-PS-1 | Zone Instancing architecture — can party members zone-transfer individually or only as a group? Does "OutOfZone" mean a different instance of the same zone or a different zone entirely? | Zone Instancing GDD (not yet authored) | Provisional assumption in CR-PS-5 and Dependencies |
-| OQ-PS-2 | PartyID counter range and persistence — does the sequential counter reset between server restarts? What is the maximum value before wrap-around, and how is wrap-around handled? | systems-designer, network-programmer | CR-PS-1 |
+| ~~OQ-PS-2~~ | ~~PartyID counter range and persistence~~ — **RESOLVED (2026-11-18, Party System Story 002):** a per-process `uint` counter starting at 1, never persisted: parties are zone-local and die with the zone process (ADR-010 note 2026-11-18), so the counter restarts with it. Solo and real PartyIDs come from the same counter; an id is never reused within the process. The counter never wraps: when the ids an operation needs would reach `uint.MaxValue`, the registry logs one error and refuses the operation with no state change (`uint.MaxValue` and 0 are never issued). | Resolved | — |
 | OQ-PS-3 | Original leader reconnect — does the system offer the reconnected original leader an option to reclaim leadership, or is the transfer permanent? Current spec: permanent (no reclaim). | Game Designer | CR-PS-8, AC-PS-22 |
 | OQ-PS-4 | Leveling System F-LS-2 supersession — `leveling-system.md` still contains F-LS-2 as an active bonus formula (opposite direction to F-PS-1). Must be marked superseded and replaced with a reference to F-PS-1. `entities.yaml` already has the SUPERSEDED note. N range in both documents is correctly [1, 4] for MAX_PARTY_SIZE=4 — no range change needed. | Next leveling-system authoring session (priority: HIGH — two live formulas with opposite XP effects are a programmer trap) | None (flagged in Dependencies) |
 | OQ-PS-5 | ~~Level range gate reference point~~ — **RESOLVED (2026-05-16):** Reference point is **leader's level** (current spec maintained). Simpler to compute; level gate shifts on leader transfer but existing members are never forcibly removed (CR-PS-3). | Resolved | — |

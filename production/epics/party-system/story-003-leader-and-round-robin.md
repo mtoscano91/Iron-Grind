@@ -42,6 +42,7 @@
 - Status values come from Story 004; this story may define the `PartyMemberStatus` enum (Online = 0, Ghost, OutOfZone, Dead = 3 per `networking-wire-protocol.md`, plus Disconnected if the wire enum has it — check) and a setter for tests, or depend on 004 landing first (decide at readiness).
 - Cursor changes mark the party "state changed" so Story 008 can broadcast; only when the value changes (CR-PS-7 step 3).
 - Read `LootTableSystem/PartyTagTracker` and the loot distributor to confirm the call order they expect (`GetRrNextIndex` then `AdvanceRrNextIndex`).
+- **From Story 002 (2026-11-18):** `PartyRegistry.RemoveMember` and `UnregisterPlayer` compact the slots through `PartyState.RemoveAt` but never touch `LeaderIndex` (always 0) or `RrNextIndex`; after removing index 0 the leader index is stale. Hook the AC-5 leader compaction and the cursor clamp into that removal path (both callers), and test removal of the leader through both `RemoveMember` and `UnregisterPlayer`. Freed parties are marked `PartyState.IsFreed`; `IPartyService` calls must resolve parties by id, never a cached `PartyState`. Read `GetPartyMembers` / `Members` with indexed loops (no `foreach`, it allocates).
 
 ---
 
