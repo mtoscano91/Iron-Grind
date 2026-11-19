@@ -1289,3 +1289,59 @@ requirements:
     created: 2026-11-18
     revised: ""
     status: active
+  - id: TR-shop-001
+    system: shop
+    gdd: design/gdd/npc-shop.md
+    requirement: "Catalog: 10 items (4 scrolls, 6 potions), infinite stock, no gear for sale, prices data-driven; startup validation halts on shopPrice = 0, a catalog item missing from the Item Database, or F-NS-3 (BuyPrice x 10) < (SellPriceGold x 15) for an item with SellPriceGold > 0 (scrolls exempt) (CR-SHOP-2, CR-SHOP-10, AC-NS-27, 28, 30)"
+    created: 2026-11-19
+    revised: ""
+    status: active
+  - id: TR-shop-002
+    system: shop
+    gdd: design/gdd/npc-shop.md
+    requirement: "Shop session: OpenNPCInteraction only in a town hub zone (zone data flag) else RejectedNotInTownHub; replaces any active NPC session silently; re-open restarts the 300 s wall-clock lifetime; closed by CloseNPCInteraction, zone change or expiry, never by death (CR-SHOP-3, CR-SHOP-4, AC-NS-01 to 06, 35)"
+    created: 2026-11-19
+    revised: ""
+    status: active
+  - id: TR-shop-003
+    system: shop
+    gdd: design/gdd/npc-shop.md
+    requirement: "Buy: checks in order (session, 1 <= quantity <= 99, in catalog, TrySpendGold F-NS-1); BeginPurchase (fail -> in-memory refund, OutcomeUnknown -> retry); PickupRequest -> CompletePurchase -> BuyResult; grant failure -> RefundPurchase then AddGold(CompensatingRefund) -> RejectedInventoryFull; refund survives session close (CR-SHOP-5, AC-NS-07 to 15, 31, 34, 36, 37)"
+    created: 2026-11-19
+    revised: ""
+    status: active
+  - id: TR-shop-004
+    system: shop
+    gdd: design/gdd/npc-shop.md
+    requirement: "Sell: checks in order (session, slot 0-19, slot holds itemId, not locked, SellPriceGold > 0, 1 <= quantity <= stack); SellItem then AddGold(ItemSell); goldEarned is the amount actually credited (GOLD_CAP); enhanced gear at base price; quantitySold = 0 -> error log, no AddGold, no SellResult; no PendingSell (ADR-001 note 2026-11-19) (CR-SHOP-7 to 9, AC-NS-17 to 25)"
+    created: 2026-11-19
+    revised: ""
+    status: active
+  - id: TR-shop-005
+    system: shop
+    gdd: design/gdd/npc-shop.md
+    requirement: "Idempotency and rate limit: dedup on (charId, messageType, requestId) for SESSION_TTL_SECONDS, a duplicate returns the cached result without re-processing; 10 Buy/Sell per second per character -> RejectedRateLimited (ADR-001 Decisions 1, 5, A1)"
+    created: 2026-11-19
+    revised: ""
+    status: active
+  - id: TR-shop-006
+    system: shop
+    gdd: design/gdd/npc-shop.md
+    requirement: "Wire output: codecs and R-OD IDs for BuyRequest, BuyResult, SellRequest, SellResult and the 10 shared-schema rejections, routing registry entries; a GoldSyncEvent queued after every successful buy and sell (AC-NS-32, 33)"
+    created: 2026-11-19
+    revised: ""
+    status: active
+  - id: TR-shop-007
+    system: shop
+    gdd: design/gdd/npc-shop.md
+    requirement: "Reconnect reconciliation: every GoldDebited PendingPurchase refunded once at login and on re-auth before gameplay messages, store first (RefundPurchase, then AddGold), replacing the QueryNoPurchases stand-in; each refund logged (ADR-001 Decision 4, A2)"
+    created: 2026-11-19
+    revised: ""
+    status: active
+  - id: TR-shop-008
+    system: shop
+    gdd: design/gdd/npc-shop.md
+    requirement: "Zone wiring: catalog, NPC session tracker, production ITownHubQuery, shop handlers and reconciliation composed in the zone server; end-to-end check that a player in the hub opens the shop, buys, sells, and sees BuyResult / SellResult and GoldSyncEvent"
+    created: 2026-11-19
+    revised: ""
+    status: active

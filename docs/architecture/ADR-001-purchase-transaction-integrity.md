@@ -25,7 +25,7 @@
 | **Depends On** | None (standalone — written before ADR-006 Persistence Layer and ADR-007 Hosting Backend) |
 | **Enables** | ADR-006 (Persistence Layer): OQ-ADR1-1 resolved by ADR-006 Decision 3 — `PendingPurchase` stored in a dedicated `pending_purchases` table in the same PostgreSQL DB; INSERT shares one `NpgsqlTransaction` with the `TrySpendGold` UPDATE |
 | **Blocks** | NPC Shop implementation; Consumable Use System implementation — both require `BeginPurchase` on an Accepted persistence backend (ADR-006) |
-| **Ordering Note** | ADR-006 must be Accepted before NPC Shop or Consumable Use implementation epics begin. OQ-ADR1-1 closed by ADR-006 Decision 3. OQ-ADR1-2 (`SellRequest` atomicity) remains open — deferred to a follow-up amendment. |
+| **Ordering Note** | ADR-006 must be Accepted before NPC Shop or Consumable Use implementation epics begin. OQ-ADR1-1 closed by ADR-006 Decision 3. OQ-ADR1-2 (`SellRequest` atomicity) closed 2026-11-19: no `PendingSell` (see Open Questions). |
 
 ## Context
 
@@ -164,6 +164,8 @@ A true 2PC protocol across Currency System and Inventory System with a transacti
 **OQ-ADR1-1 — Storage backend for PendingPurchase**: Should `PendingPurchase` records be stored in the same persistence layer as character state (Character Persistence), or in a dedicated transaction log? For MVP, co-location with character state is simpler. For production scale, a dedicated transaction log table (with its own flush cadence) may be preferable. Defer to Character Persistence GDD author.
 
 **OQ-ADR1-2 — Sell-back atomicity**: This ADR covers `BuyRequest` (debit → grant). `SellRequest` also has a failure window: `SellItem` (item removed) before `AddGold` (gold credited). Should a `PendingSell` record follow the same pattern? Recommended yes — use the same mechanism for symmetry. Deferring full spec to a follow-up amendment of this ADR.
+
+> **Closed 2026-11-19 — no `PendingSell` (user decision, NPC Shop `/create-epics`).** Since Amendment A2 the in-memory state is the authority during a session. `SellItem` and `AddGold(ItemSell)` both change in-memory state only, and `SaveSession` persists the bag and the gold together, so a crash loses both changes or neither — there is no durable window with the item gone and the gold missing. A sell writes nothing to the store on its own. Revisit if a sell ever writes to the store outside `SaveSession`.
 
 ---
 
