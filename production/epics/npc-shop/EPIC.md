@@ -4,7 +4,7 @@
 > **GDD**: design/gdd/npc-shop.md
 > **Architecture Module**: NPC Shop (`architecture.md` layer map, Feature), `src/ServerLogic/` (ADR-012)
 > **Status**: Ready
-> **Stories**: Not yet created — run `/create-stories npc-shop`
+> **Stories**: 10 created 2026-11-19 — see Stories
 > **Manifest Version**: 2026-11-06
 
 ## Overview
@@ -87,6 +87,23 @@ This epic is complete when:
 - All Logic and Integration stories have passing test files in `tests/`
 - ADR-001 carries the OQ-ADR1-2 note; `networking-wire-protocol.md` carries the assigned message IDs
 
+## Stories
+
+Created 2026-11-19 (lean: QL-STORY-READY skipped; QA test cases written at creation, refine at `/story-readiness`). Suggested order: 001 → 003 → 002 → 004 → 005 → 006 → 007 → 008 → 009 → 010 (sell before buy: no async step).
+
+| # | Story | Type | Status | ADR |
+|---|-------|------|--------|-----|
+| 001 | [Shop catalog and startup validation](story-001-shop-catalog-and-startup-validation.md) | Logic | Ready | ADR-001, ADR-012 |
+| 002 | [Town hub flag and shop session](story-002-town-hub-flag-and-shop-session.md) | Integration | Ready | ADR-014 |
+| 003 | [Shop wire messages](story-003-shop-wire-messages.md) | Logic | Ready | ADR-014, ADR-001 A1 |
+| 004 | [Repeat-request cache and rate limit](story-004-request-dedup-and-rate-limit.md) | Logic | Ready | ADR-001 |
+| 005 | [Sell transaction](story-005-sell-transaction.md) | Integration | Ready | ADR-001, ADR-014 |
+| 006 | [Buy transaction — happy path and rejections](story-006-buy-transaction.md) | Integration | Ready | ADR-001 A2, ADR-006, ADR-011 |
+| 007 | [Buy failure and refund paths](story-007-buy-failure-and-refund-paths.md) | Integration | Ready | ADR-001 A2 |
+| 008 | [Reconnect purchase refunds](story-008-reconnect-purchase-refunds.md) | Integration | Ready | ADR-001, ADR-011 |
+| 009 | [Zone composition wiring](story-009-zone-composition-wiring.md) | Integration | Ready | ADR-014 |
+| 010 | [End-to-end buy and sell](story-010-end-to-end-buy-and-sell.md) | Integration | Ready | ADR-014, ADR-001 |
+
 ## Next Step
 
-Run `/create-stories npc-shop` to break this epic into implementable stories.
+Run `/story-readiness production/epics/npc-shop/story-001-shop-catalog-and-startup-validation.md`, then `/dev-story`.
