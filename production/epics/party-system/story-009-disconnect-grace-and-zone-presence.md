@@ -39,6 +39,7 @@
 ## Implementation Notes
 
 - **From Story 007 readiness (2026-11-19):** cancel pending and queued invites to or from a player who disconnects or leaves the zone (until this story they only expire on the 60 s timer; the Story 007 accept-time re-check already answers `Expired` for a vanished inviter). Decide here whether the other side is told (`Expired`) or the entry is dropped silently.
+- **From Story 008 readiness (2026-11-19, L8):** `PartyDisbandCoordinator` (Networking Core, EC-GH-7 / AC-GH-18: `OnPartyDisbanded` then `GhostXpPoolTracker.StopAccumulation` per ghosted member) is called from the disband path here, since only Ghost members are involved. Story 008 disband / auto-disband does not call it.
 - Find the existing hooks first: slot release listener composite (`CompositeZoneSlotReleaseListener`), session machine ghost transitions (`SessionMachineGhostSource`, `ZoneSlotGhostStatusSource`), entry listener composite (`CompositeZonePlayerEntryListener`), and where `IPartyZonePresence` is called (`ZoneEntryCompletion`, `ZoneEntryReclamation`, `ZoneCloseSteps`).
 - **From Story 006 (2026-11-19):** `PartyMemberStatusChanged` has no wire message — status rides in `PartyStateUpdate` (0xE170). AC-2 / AC-PS-26 "no Ghost status broadcast" means no `PartyStateUpdate` showing that member Ghost during the 5 s grace.
 - Under zone-local parties, a member leaving the zone process is also leaving the party's process: decide at readiness whether exit → OutOfZone (held until TTL) or immediate leave; the GDD and ADR-010 note say OutOfZone until return or TTL.

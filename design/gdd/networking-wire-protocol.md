@@ -879,7 +879,7 @@ PartyStateUpdate {
     PartyMemberSlot members[4];   // 44 bytes — fixed MAX_PARTY_SIZE slots; empty slots: characterId=0
 }
 ```
-*Sent to all online party members (status == Online) on any state change. Ghost and OutOfZone members do NOT receive this message — they are updated on reconnect or zone re-entry via `SessionReady`. The client must apply `IsNewerVersion(incoming.sequenceId, cached.sequenceId)` before updating cached party state. Client must range-check `leaderIndex` and `rrNextIndex` against `memberCount` before use.*
+*Sent to every connected party member in the zone (status Online or Dead; amended 2026-11-19, Party System Story 008 readiness L3 — a dead player keeps its party panel current) at most once per party per tick on any state change; `sequenceId` is the party's current value and may rise by more than 1 between messages. Ghost and OutOfZone members do NOT receive this message — they are updated on reconnect or zone re-entry via `SessionReady`. The client must apply `IsNewerVersion(incoming.sequenceId, cached.sequenceId)` before updating cached party state. Client must range-check `leaderIndex` and `rrNextIndex` against `memberCount` before use.*
 
 *MessageTypeID: `0xE170` (Party System Story 006, 2026-11-19; R-OD block 0xE170–0xE17F reserved for the Party System epic). Direction `ServerToParty`. Decoder rules: `memberCount` > 4 is rejected; an unknown `PartyMemberStatus` byte decodes as `Online` and the decoder reports it so the client can log (see §PartyMemberStatus). `PartyMemberStatusChanged` (named in `party-system.md`) has no schema of its own: member status rides in `PartyStateUpdate`.*
 
@@ -891,7 +891,7 @@ PartyDisbanded {
     PartyID partyId; // 4 bytes — identifies the disbanded party
 }
 ```
-*Sent when the leader calls disband (CR-PS-9) or when the last member leaves. Client collapses the party panel and shows the system message. Online members receive this before their solo `PartyStateUpdate`.*
+*Sent when the leader calls disband (CR-PS-9) or when the last member leaves. Client collapses the party panel and shows the system message. Connected members (Online or Dead, amended 2026-11-19) receive this before their solo `PartyStateUpdate`; on a leader disband the solo updates follow at cleanup (10 s timeout), on an auto-disband (one member left) in the same tick.*
 
 *MessageTypeID: `0xE171` (Party System Story 006, 2026-11-19). Direction `ServerToParty`.*
 

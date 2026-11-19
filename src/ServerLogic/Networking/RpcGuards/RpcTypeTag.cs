@@ -85,5 +85,11 @@ namespace IronGrind.Networking
 
         /// <summary><c>PartyInviteResponse</c> (Party System Story 007, ADR-014 Decision 1). No rate limit (gap 0).</summary>
         PartyInviteResponse = 12,
+
+        /// <summary><c>PartyLeaveRequest</c> (Party System Story 008, ADR-014 Decision 1). No rate limit (gap 0).</summary>
+        PartyLeaveRequest = 13,
+
+        /// <summary><c>PartyDisbandRequest</c> (Party System Story 008, ADR-014 Decision 1). No rate limit (gap 0).</summary>
+        PartyDisbandRequest = 14,
     }
 }

@@ -475,6 +475,9 @@ namespace IronGrind.Networking
                 // Party System Story 007's PartyInviteRequest and PartyInviteResponse are unlimited too.
                 case RpcTypeTag.PartyInviteRequest:
                 case RpcTypeTag.PartyInviteResponse:
+                // Party System Story 008: leave and disband requests are unlimited too.
+                case RpcTypeTag.PartyLeaveRequest:
+                case RpcTypeTag.PartyDisbandRequest:
                     return 0;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(rpcTypeTag), rpcTypeTag,

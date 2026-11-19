@@ -298,6 +298,49 @@ namespace IronGrind.ServerLogic.PartySystem
             return PartyRegistryResult.Ok;
         }
 
+        /// <summary>
+        /// Moves a real party to <c>Disbanding</c> (Party System Story 008, CR-PS-9). Members stay in place until
+        /// <see cref="DisbandParty"/>. No sequence bump: a Disbanding party sends no state update.
+        /// </summary>
+        /// <param name="partyId">The party.</param>
+        /// <returns>True when the party was real and not already Disbanding.</returns>
+        internal bool BeginDisband(PartyID partyId)
+        {
+            if (!_parties.TryGetValue(partyId, out PartyState party) || party.IsSoloParty
+                || party.State == PartyLifecycleState.Disbanding)
+            {
+                return false;
+            }
+
+            party.SetState(PartyLifecycleState.Disbanding);
+            return true;
+        }
+
+        /// <summary>
+        /// Copies the ids of the real (non-solo) parties into a caller buffer, in no particular order (Story 008
+        /// broadcast). Allocation-free.
+        /// </summary>
+        /// <param name="destination">The buffer; filling stops when it is full.</param>
+        /// <returns>The number of ids written.</returns>
+        public int CopyRealPartyIds(Span<PartyID> destination)
+        {
+            int written = 0;
+            foreach (KeyValuePair<PartyID, PartyState> pair in _parties)
+            {
+                if (written >= destination.Length)
+                {
+                    break;
+                }
+
+                if (!pair.Value.IsSoloParty)
+                {
+                    destination[written++] = pair.Key;
+                }
+            }
+
+            return written;
+        }
+
         /// <summary>The party a character belongs to.</summary>
         /// <param name="character">The character.</param>
         /// <returns>The party id, or <c>Uninitialized</c> when the character is not registered.</returns>

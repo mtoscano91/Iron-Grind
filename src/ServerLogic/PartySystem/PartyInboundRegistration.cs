@@ -30,5 +30,27 @@ namespace IronGrind.ServerLogic.PartySystem
                     heldDuringIrreversibleWrite: false, maxBodyBytes: (ushort)PartyInviteResponse.BodySize),
                 handlers.HandleInviteResponse);
         }
+
+        /// <summary>
+        /// Registers <see cref="PartyLeaveRequest"/> (0xE175) and <see cref="PartyDisbandRequest"/> (0xE176), both
+        /// body 0, not held, unlimited (Story 008). Does not call <c>Seal()</c>.
+        /// </summary>
+        /// <param name="dispatcher">The dispatcher to register on.</param>
+        /// <param name="handlers">The leave and disband handlers.</param>
+        public static void RegisterLeaveAndDisband(IInboundRequestDispatcher dispatcher,
+            PartyLeaveDisbandClientRequestHandlers handlers)
+        {
+            if (dispatcher == null) throw new ArgumentNullException(nameof(dispatcher));
+            if (handlers == null) throw new ArgumentNullException(nameof(handlers));
+
+            dispatcher.Register(
+                new InboundRequestDescriptor(PartyLeaveRequest.MessageTypeId, RpcTypeTag.PartyLeaveRequest,
+                    heldDuringIrreversibleWrite: false, maxBodyBytes: (ushort)PartyLeaveRequest.BodySize),
+                handlers.HandleLeave);
+            dispatcher.Register(
+                new InboundRequestDescriptor(PartyDisbandRequest.MessageTypeId, RpcTypeTag.PartyDisbandRequest,
+                    heldDuringIrreversibleWrite: false, maxBodyBytes: (ushort)PartyDisbandRequest.BodySize),
+                handlers.HandleDisband);
+        }
     }
 }

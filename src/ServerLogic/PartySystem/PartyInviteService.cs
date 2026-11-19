@@ -370,21 +370,27 @@ namespace IronGrind.ServerLogic.PartySystem
         private PartyInviteResultCode Validate(CharacterID inviter, CharacterID target)
         {
             InviterRole role = ResolveInviter(inviter, out PartyState party, out EntityID leaderEntity, out _);
-            PartyInviteResultCode roleCode = ValidateInviter(role);
+            PartyInviteResultCode roleCode = ValidateInviter(role, party);
             return roleCode != PartyInviteResultCode.Sent
                 ? roleCode
                 : ValidateTargetAndLevels(inviter, target, party, leaderEntity);
         }
 
-        /// <summary>The inviter role checks: an unregistered inviter is Expired, a non-leader member NotLeader.</summary>
-        private static PartyInviteResultCode ValidateInviter(InviterRole role)
+        /// <summary>
+        /// The inviter role checks: an unregistered inviter is Expired, a non-leader member NotLeader, and so is
+        /// any inviter whose party is Disbanding (Story 008, L2); an accept into it is then answered Expired.
+        /// </summary>
+        private static PartyInviteResultCode ValidateInviter(InviterRole role, PartyState party)
         {
             if (role == InviterRole.NotRegistered)
             {
                 return PartyInviteResultCode.Expired;
             }
 
-            return role == InviterRole.Member ? PartyInviteResultCode.NotLeader : PartyInviteResultCode.Sent;
+            bool disbanding = party != null && party.State == PartyLifecycleState.Disbanding;
+            return role == InviterRole.Member || disbanding
+                ? PartyInviteResultCode.NotLeader
+                : PartyInviteResultCode.Sent;
         }
 
         /// <summary>
