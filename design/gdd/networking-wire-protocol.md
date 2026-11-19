@@ -881,6 +881,8 @@ PartyStateUpdate {
 ```
 *Sent to all online party members (status == Online) on any state change. Ghost and OutOfZone members do NOT receive this message — they are updated on reconnect or zone re-entry via `SessionReady`. The client must apply `IsNewerVersion(incoming.sequenceId, cached.sequenceId)` before updating cached party state. Client must range-check `leaderIndex` and `rrNextIndex` against `memberCount` before use.*
 
+*MessageTypeID: `0xE170` (Party System Story 006, 2026-11-19; R-OD block 0xE170–0xE17F reserved for the Party System epic). Direction `ServerToParty`. Decoder rules: `memberCount` > 4 is rejected; an unknown `PartyMemberStatus` byte decodes as `Online` and the decoder reports it so the client can log (see §PartyMemberStatus). `PartyMemberStatusChanged` (named in `party-system.md`) has no schema of its own: member status rides in `PartyStateUpdate`.*
+
 ---
 
 **PartyDisbanded** (R-OD, server → all party members, 4-byte body; 14 bytes standalone):
@@ -891,6 +893,8 @@ PartyDisbanded {
 ```
 *Sent when the leader calls disband (CR-PS-9) or when the last member leaves. Client collapses the party panel and shows the system message. Online members receive this before their solo `PartyStateUpdate`.*
 
+*MessageTypeID: `0xE171` (Party System Story 006, 2026-11-19). Direction `ServerToParty`.*
+
 ---
 
 **PartyInviteRequest** (R-OD, client → server, 4-byte body; 18 bytes standalone):
@@ -899,7 +903,9 @@ PartyInviteRequest {
     CharacterID targetCharacterId; // 4 bytes — character to invite
 }
 ```
-*Standalone: 10 (envelope) + 4 (SenderEntityID) + 4 (body) = 18 bytes. Server validates: (1) sender has an active session; (2) sender's party is not full (`MemberCount < MAX_PARTY_SIZE`); (3) target is not already in a party; (4) level range gate passes (CR-PS-3). Validation failure: server discards silently and logs — no error response at MVP. One pending invite per recipient at a time; further invites queue (CR-PS-4).*
+*Standalone: 10 (envelope) + 4 (SenderEntityID) + 4 (body) = 18 bytes. Server validates: (1) sender has an active session; (2) sender's party is not full (`MemberCount < MAX_PARTY_SIZE`); (3) target is not already in a party; (4) level range gate passes (CR-PS-3). Validation failure: server sends `PartyInviteResult` with the failure code (Party System Story 006). One pending invite per recipient at a time; further invites queue (CR-PS-4).*
+
+*MessageTypeID: `0xE172` (Party System Story 006, 2026-11-19). Direction `ClientToServer`.*
 
 ---
 
@@ -915,6 +921,8 @@ PartyInviteReceived {
 ```
 *Variable-length: minimum body 15 bytes (empty name), maximum 39 bytes (24 UTF-8 bytes). Standalone range: 25–49 bytes. Server re-sends once after 5 server-side seconds if no `PartyInviteResponse` is received (1 retry only, CR-PS-4). Both sends are identical messages — client deduplicates by `inviterCharacterId`. Client renders the invite banner with `inviterName`, `inviterLevel`, Accept/Decline buttons, and a countdown to `inviteExpiryTick`.*
 
+*MessageTypeID: `0xE173` (Party System Story 006, 2026-11-19). Direction `ServerToOwningClient`. The name is cut to 24 UTF-8 bytes at a character boundary on encode; the decoder rejects a name length above 24, a truncated name and missing trailing bytes.*
+
 ---
 
 **PartyInviteResponse** (R-OD, client → server, 5-byte body; 19 bytes standalone):
@@ -924,7 +932,56 @@ PartyInviteResponse {
     bool        accepted;           // 1 byte — true = Accept, false = Decline
 }
 ```
-*Standalone: 10 (envelope) + 4 (SenderEntityID) + 5 (body) = 19 bytes. Server validates: (1) invite identified by `inviterCharacterId` is still pending (not expired or already responded to); (2) if `accepted=true`, party capacity still available and level range still valid. On valid accept: party state updated; `PartyStateUpdate` broadcast to all members. On decline or expired: invite cleared; next queued invite (if any) delivered. On invalid: silently discarded.*
+*Standalone: 10 (envelope) + 4 (SenderEntityID) + 5 (body) = 19 bytes. Server validates: (1) invite identified by `inviterCharacterId` is still pending (not expired or already responded to); (2) if `accepted=true`, party capacity still available and level range still valid. On valid accept: party state updated; `PartyStateUpdate` broadcast to all members. On decline or expired: invite cleared; next queued invite (if any) delivered. On invalid: silently discarded (a late accept on a full party is answered with `PartyInviteResult(PartyFull)`).*
+
+*MessageTypeID: `0xE174` (Party System Story 006, 2026-11-19). Direction `ClientToServer`. The `accepted` byte must be 0 or 1; any other value is rejected.*
+
+---
+
+**PartyLeaveRequest** (R-OD, client → server, 0-byte body; 14 bytes standalone):
+```
+PartyLeaveRequest {
+    // No body. The server identifies the party from SenderEntityID.
+}
+```
+*Standalone: 10 (envelope) + 4 (SenderEntityID) = 14 bytes. Leaves the sender's current party. MessageTypeID: `0xE175` (Party System Story 006, 2026-11-19). Direction `ClientToServer`.*
+
+---
+
+**PartyDisbandRequest** (R-OD, client → server, 0-byte body; 14 bytes standalone):
+```
+PartyDisbandRequest {
+    // No body. The server identifies the party from SenderEntityID.
+}
+```
+*Standalone: 10 (envelope) + 4 (SenderEntityID) = 14 bytes. Leader only; a non-leader is answered with `PartyInviteResult(NotLeader, targetCharacterId = 0)`. MessageTypeID: `0xE176` (Party System Story 006, 2026-11-19). Direction `ClientToServer`.*
+
+---
+
+**PartyInviteResult** (R-OD, server → owning client, 5-byte body; 15 bytes standalone):
+```
+PartyInviteResult {
+    PartyInviteResultCode resultCode;        // 1 byte — see enum below
+    CharacterID           targetCharacterId; // 4 bytes — the invited character; 0 when answering a PartyDisbandRequest
+}
+
+enum PartyInviteResultCode : byte
+{
+    Sent = 0, Queued = 1, PartyFull = 2, LevelRange = 3, AlreadyInParty = 4,
+    TargetNotFound = 5, NotLeader = 6, Expired = 7, Declined = 8
+}
+```
+*Standalone: 10 (envelope) + 5 (body) = 15 bytes. Sent to the inviter (Sent, Queued, LevelRange, AlreadyInParty, TargetNotFound, NotLeader, Expired, Declined) or to the accepting target (PartyFull on a late accept). A result code above 8 is rejected by the decoder. MessageTypeID: `0xE177` (Party System Story 006, 2026-11-19). Direction `ServerToOwningClient`.*
+
+---
+
+**PartyXpIneligibleNotice** (R-OD, server → owning client, 4-byte body; 14 bytes standalone):
+```
+PartyXpIneligibleNotice {
+    PartyID partyId; // 4 bytes
+}
+```
+*Standalone: 10 (envelope) + 4 (body) = 14 bytes. Client shows "You are outside your party's level range. XP grants are suspended." (CR-PS-5). MessageTypeID: `0xE178` (Party System Story 006, 2026-11-19). Direction `ServerToOwningClient`.*
 
 ---
 

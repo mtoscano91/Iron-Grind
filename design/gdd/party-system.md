@@ -2,7 +2,7 @@
 
 > **Status**: Approved (lean re-review 2026-05-17) — amended 2026-05-29 (MemberStatus.Dead added for Death & Respawn integration); amended 2026-06-19 (PartyMemberSlot data type + GetPartyMembersWithStatus added for Party Chat)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-11-19 (Party System Story 004: "Disconnected" = Ghost note under CR-PS-5); 2026-11-18 (Party System Story 001 readiness: F-PS-1 midpoint example corrected to banker's rounding + float result 4; `MAX_PARTY_SIZE` safe range [2, 4] because the wire schema is fixed at 4 slots)
+> **Last Updated**: 2026-11-19 (Party System Story 006: `PartyMemberStatusChanged` has no wire schema — status rides in `PartyStateUpdate`; AC-PS-26 "zero `PartyMemberStatusChanged`" = no `PartyStateUpdate` showing that member Ghost); 2026-11-19 (Party System Story 004: "Disconnected" = Ghost note under CR-PS-5); 2026-11-18 (Party System Story 001 readiness: F-PS-1 midpoint example corrected to banker's rounding + float result 4; `MAX_PARTY_SIZE` safe range [2, 4] because the wire schema is fixed at 4 slots)
 > **Implements Pillar**: Social Gravity (primary) — Earned Power (supporting)
 
 ## Overview
@@ -266,7 +266,7 @@ The Party System has no standalone VFX. Visual and audio requirements are fulfil
 | Event | Required Signal | Notes |
 |-------|----------------|-------|
 | Member joins party | `PartyStateUpdate` → HUD adds member frame | Frame: name, level, HP bar, ArchetypeRole badge, leader crown if LeaderIndex |
-| Member disconnects / Ghost | `PartyMemberStatusChanged (Ghost)` | HUD grays out member frame; Ghost indicator shown. Suppressed during 5s reconnect grace (CR-PS-11). |
+| Member disconnects / Ghost | `PartyMemberStatusChanged (Ghost)` — client-side event raised from the slot status in `PartyStateUpdate`; no separate wire message (Party System Story 006, 2026-11-19) | HUD grays out member frame; Ghost indicator shown. Suppressed during 5s reconnect grace (CR-PS-11). |
 | Member dies | `PartyStateUpdate` with `MemberStatus.Dead` | HUD shows HP=0 on member frame; `PartyMemberHealthUpdate` continues with HP=0 (EC-RFR-2). Visual treatment (greyscale frame or skull badge) defined in `death-and-respawn.md` Visual/Audio requirements. |
 | Leader transfer | `PartyStateUpdate` with new LeaderIndex | HUD moves leader crown to new leader frame |
 | XP ineligibility (level range) | `PartyStateUpdate` with per-member eligibility flags | HUD indicates ineligible members (dimmed frame or warning icon) |

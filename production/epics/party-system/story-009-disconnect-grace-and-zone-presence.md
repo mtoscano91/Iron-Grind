@@ -39,6 +39,7 @@
 ## Implementation Notes
 
 - Find the existing hooks first: slot release listener composite (`CompositeZoneSlotReleaseListener`), session machine ghost transitions (`SessionMachineGhostSource`, `ZoneSlotGhostStatusSource`), entry listener composite (`CompositeZonePlayerEntryListener`), and where `IPartyZonePresence` is called (`ZoneEntryCompletion`, `ZoneEntryReclamation`, `ZoneCloseSteps`).
+- **From Story 006 (2026-11-19):** `PartyMemberStatusChanged` has no wire message — status rides in `PartyStateUpdate` (0xE170). AC-2 / AC-PS-26 "no Ghost status broadcast" means no `PartyStateUpdate` showing that member Ghost during the 5 s grace.
 - Under zone-local parties, a member leaving the zone process is also leaving the party's process: decide at readiness whether exit → OutOfZone (held until TTL) or immediate leave; the GDD and ADR-010 note say OutOfZone until return or TTL.
 - `PartyDisbandCoordinator` / `GhostXpPoolTracker` (Networking Core Story 020): decide whether the party service drives them (epic open item 6).
 

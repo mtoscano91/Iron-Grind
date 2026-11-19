@@ -1,7 +1,7 @@
 # Story 006: Party Wire Messages
 
 > **Epic**: Party System
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Feature
 > **Type**: Logic
 > **Estimate**: 5 h (raised from 4 h at readiness 2026-11-19: 9 codecs + wire GDD and ADR-014 table amendments)
@@ -36,15 +36,15 @@
 
 ## Acceptance Criteria
 
-- [ ] **AC-1 Existing schemas**: codecs for `PartyStateUpdate` (56-byte body: partyId 4, sequenceId 4, isSoloParty 1, memberCount 1, leaderIndex 1, rrNextIndex 1, 4 × 11-byte `PartyMemberSlot` {characterId 4, entityId 4, level 1, status 1, xpEligible 1}), `PartyDisbanded` (4: partyId), `PartyInviteRequest` (4: targetCharacterId), `PartyInviteReceived` (15–39: inviterCharacterId 4, inviterEntityId 4, inviterName ushort length + ≤ 24 UTF-8 bytes, inviterLevel 1, inviteExpiryTick 4) and `PartyInviteResponse` (5: inviterCharacterId 4, accepted 1) match the wire spec field for field, in that order, little-endian; round-trip tests and golden byte arrays. The slot status is `IronGrind.PartySystem.PartyMemberStatus` (Story 004), not a new enum.
-- [ ] **AC-2 New schemas**: codecs for the four new messages, and the wire GDD §Party System Messages amended with their schemas, sizes (body and standalone) and IDs:
+- [x] **AC-1 Existing schemas**: codecs for `PartyStateUpdate` (56-byte body: partyId 4, sequenceId 4, isSoloParty 1, memberCount 1, leaderIndex 1, rrNextIndex 1, 4 × 11-byte `PartyMemberSlot` {characterId 4, entityId 4, level 1, status 1, xpEligible 1}), `PartyDisbanded` (4: partyId), `PartyInviteRequest` (4: targetCharacterId), `PartyInviteReceived` (15–39: inviterCharacterId 4, inviterEntityId 4, inviterName ushort length + ≤ 24 UTF-8 bytes, inviterLevel 1, inviteExpiryTick 4) and `PartyInviteResponse` (5: inviterCharacterId 4, accepted 1) match the wire spec field for field, in that order, little-endian; round-trip tests and golden byte arrays. The slot status is `IronGrind.PartySystem.PartyMemberStatus` (Story 004), not a new enum.
+- [x] **AC-2 New schemas**: codecs for the four new messages, and the wire GDD §Party System Messages amended with their schemas, sizes (body and standalone) and IDs:
   - `PartyLeaveRequest` (C→S, 0-byte body; 14 B standalone) — leave the sender's current party.
   - `PartyDisbandRequest` (C→S, 0-byte body; 14 B standalone) — leader only.
   - `PartyInviteResult` (S→C, 5-byte body; 15 B standalone): `PartyInviteResultCode resultCode` (byte: Sent 0, Queued 1, PartyFull 2, LevelRange 3, AlreadyInParty 4, TargetNotFound 5, NotLeader 6, Expired 7, Declined 8) + `CharacterID targetCharacterId` (4; the invited character, or 0 when answering a `PartyDisbandRequest`). Sent to the inviter (Sent, Queued, LevelRange, AlreadyInParty, TargetNotFound, NotLeader, Expired, Declined) or to the accepting target (PartyFull on a late accept).
   - `PartyXpIneligibleNotice` (S→C, 4-byte body; 14 B standalone): `PartyID partyId` — client shows *"You are outside your party's level range. XP grants are suspended."* (CR-PS-5); sent by Story 003.
   - The `PartyInviteRequest` note "Validation failure: server discards silently and logs — no error response at MVP" is replaced with "Validation failure: server sends `PartyInviteResult` with the failure code".
   - A note that `PartyMemberStatusChanged` (named in `party-system.md`) has no schema: status rides in `PartyStateUpdate`.
-- [ ] **AC-3 IDs and routing**: the nine IDs below are constants on the codecs, distinct, and each is registered in `MessageRoutingRegistry` under a comment "Party System Story 006 … 0xE170-0xE17F reserved for the epic" (R-OD priority path, not cap-exempt, as Death & Respawn Story 005); ADR-014's classification table gains rows for `PartyLeaveRequest` and `PartyDisbandRequest` (R-OD, request, not held, body 0) and the existing party rows stay (4, 5). Each client→server codec exposes `BodySize` (or `MaxBodySize`) for the Story 007 / 008 dispatcher descriptors.
+- [x] **AC-3 IDs and routing**: the nine IDs below are constants on the codecs, distinct, and each is registered in `MessageRoutingRegistry` under a comment "Party System Story 006 … 0xE170-0xE17F reserved for the epic" (R-OD priority path, not cap-exempt, as Death & Respawn Story 005); ADR-014's classification table gains rows for `PartyLeaveRequest` and `PartyDisbandRequest` (R-OD, request, not held, body 0) and the existing party rows stay (4, 5). Each client→server codec exposes `BodySize` (or `MaxBodySize`) for the Story 007 / 008 dispatcher descriptors.
 
   | ID | Message | Direction (`MessageDirection`) | Body |
   |---|---|---|---|
@@ -58,7 +58,7 @@
   | 0xE177 | `PartyInviteResult` | `ServerToOwningClient` | 5 |
   | 0xE178 | `PartyXpIneligibleNotice` | `ServerToOwningClient` | 4 |
 
-- [ ] **AC-4 Decode safety**: `TryRead` returns false without throwing on: each fixed-size body one byte short; `PartyInviteReceived` truncated inside the name, with a name length > 24, or with trailing bytes missing after the name; `PartyStateUpdate` with `memberCount` > 4; `PartyInviteResult` with a result code > 8; `PartyInviteResponse` with an `accepted` byte other than 0 / 1. A `PartyStateUpdate` with an unknown status byte (e.g. 7) decodes (true), that slot reads `Online` and `hadUnknownStatus` is true; with all statuses valid `hadUnknownStatus` is false. Encoders write exactly `BodySize` bytes (or the computed `PartyInviteReceived` size) and return false on a short destination.
+- [x] **AC-4 Decode safety**: `TryRead` returns false without throwing on: each fixed-size body one byte short; `PartyInviteReceived` truncated inside the name, with a name length > 24, or with trailing bytes missing after the name; `PartyStateUpdate` with `memberCount` > 4; `PartyInviteResult` with a result code > 8; `PartyInviteResponse` with an `accepted` byte other than 0 / 1. A `PartyStateUpdate` with an unknown status byte (e.g. 7) decodes (true), that slot reads `Online` and `hadUnknownStatus` is true; with all statuses valid `hadUnknownStatus` is false. Encoders write exactly `BodySize` bytes (or the computed `PartyInviteReceived` size) and return false on a short destination.
 
 ---
 
@@ -97,7 +97,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/PartySystem/PartySystem_WireMessages_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 48 cases, passing
 
 ---
 
@@ -105,3 +105,17 @@
 
 - Depends on: Story 004 (Complete — `PartyMemberStatus` in `src/Foundation/PartySystem/`)
 - Unlocks: Stories 003 (XP-ineligible notice), 007, 008
+
+---
+
+## Completion Notes
+**Completed**: 2026-11-19
+**Criteria**: 4/4 passing (all automated)
+**Deviations** (advisory, documented in code and pinned by tests):
+- `PartyInviteReceived.TryRead` allocates the name string (same as `EntityState`) — exception to the zero-allocation decode guardrail.
+- `isSoloParty` / `xpEligible` decode leniently (non-zero = true); `leaderIndex` / `rrNextIndex` are not range-checked by the decoder (consumer checks, per wire spec). `PartyInviteResponse.accepted` is strict (0 / 1).
+- `PartyStateUpdate` exposes slots as `Member0`–`Member3` + `GetMember(i)` (no array, allocation-free).
+- `PartyMemberStatusChanged` has no wire schema: status rides in `PartyStateUpdate` (wire GDD note; `party-system.md` note added; the HUD event of that name is client-side, raised from `PartyStateUpdate` diffs).
+**Test Evidence**: Logic — `tests/EditMode/PartySystem/PartySystem_WireMessages_tests.cs` (34 methods / 48 cases); PartySystem 186/186; full EditMode `!Database` 8280/8280 (2026-11-19 12:58:14Z)
+**Code Review**: Complete (`/code-review` 2026-11-19, CHANGES REQUIRED → all fixed); LP-CODE-REVIEW and QL-TEST-COVERAGE skipped (lean)
+**Also changed**: `MessageRoutingRegistry.cs` (9 entries), `networking-wire-protocol.md` §Party System Messages, ADR-014 table (+2 rows), `AssemblyBoundaryLists.cs` (11 entries). Dispatcher registration of the four request types is Stories 007 / 008.

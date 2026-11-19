@@ -299,6 +299,26 @@ namespace IronGrind.Networking
             AddPriority(RespawnConfirmed.MessageTypeId, nameof(RespawnConfirmed), DesignPillar.Infrastructure,
                 MessageDirection.ServerToOwningClient, "Owner-only respawn confirmation (CR-DR-13); clears the death overlay.");
 
+            // Party System Story 006: party messages, R-OD priority path (not cap-exempt). 0xE170-0xE17F reserved for the epic.
+            AddPriority(PartyStateUpdate.MessageTypeId, nameof(PartyStateUpdate), DesignPillar.SocialSignals,
+                MessageDirection.ServerToParty, "Full party snapshot on any membership change (CR-PS-3); a lost update leaves the party panel stale.");
+            AddPriority(PartyDisbanded.MessageTypeId, nameof(PartyDisbanded), DesignPillar.SocialSignals,
+                MessageDirection.ServerToParty, "Party disband notice (CR-PS-9); a lost notice leaves a dead party panel.");
+            AddPriority(PartyInviteRequest.MessageTypeId, nameof(PartyInviteRequest), DesignPillar.SocialSignals,
+                MessageDirection.ClientToServer, "Leader invite request (CR-PS-4); the failure answer is a PartyInviteResult.");
+            AddPriority(PartyInviteReceived.MessageTypeId, nameof(PartyInviteReceived), DesignPillar.SocialSignals,
+                MessageDirection.ServerToOwningClient, "Invite banner for the target (CR-PS-4); a lost invite is never seen.");
+            AddPriority(PartyInviteResponse.MessageTypeId, nameof(PartyInviteResponse), DesignPillar.SocialSignals,
+                MessageDirection.ClientToServer, "Accept or decline answer to an invite (CR-PS-4).");
+            AddPriority(PartyLeaveRequest.MessageTypeId, nameof(PartyLeaveRequest), DesignPillar.SocialSignals,
+                MessageDirection.ClientToServer, "Leave the sender's party; empty body, the party comes from SenderEntityID.");
+            AddPriority(PartyDisbandRequest.MessageTypeId, nameof(PartyDisbandRequest), DesignPillar.SocialSignals,
+                MessageDirection.ClientToServer, "Leader-only disband (CR-PS-9); empty body.");
+            AddPriority(PartyInviteResult.MessageTypeId, nameof(PartyInviteResult), DesignPillar.SocialSignals,
+                MessageDirection.ServerToOwningClient, "Invite or disband outcome code for the inviter or late accepter (Party System Story 006).");
+            AddPriority(PartyXpIneligibleNotice.MessageTypeId, nameof(PartyXpIneligibleNotice), DesignPillar.SocialSignals,
+                MessageDirection.ServerToOwningClient, "Owner-only notice that XP grants are suspended outside the level range (CR-PS-5).");
+
             // Skill System Story 004: the cast request, U-U (dropped requests are not retransmitted; the client re-submits next beat).
             Add(new MessageRoutingEntry(
                 messageTypeId: SkillCastRequest.MessageTypeId,

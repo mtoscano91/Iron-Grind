@@ -96,6 +96,8 @@ ADR-011 Decision 4 relies on "the session's inbound request dispatcher — the s
 | `LootBidRequest` | R-OD | request | no | — | 8 |
 | `PartyInviteRequest` | R-OD | request | no | — | 4 |
 | `PartyInviteResponse` | R-OD | request | no | — | 5 |
+| `PartyLeaveRequest` | R-OD | request | no | — | 0 |
+| `PartyDisbandRequest` | R-OD | request | no | — | 0 |
 | `PartyChatRequest` (`party-chat.md`) | R-OD | request | no | — | 386 |
 | `GhostDismissRequest` | R-OD | request | no | — | 8 |
 | `OpenNPCInteraction` | R-OD | request | no | — | 4 |
