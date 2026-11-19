@@ -95,7 +95,7 @@ This epic is complete when:
 |---|-------|------|--------|-----|
 | 001 | [Party config and F-PS-1](story-001-party-config-and-xp-formula.md) | Logic | Complete | ADR-012 |
 | 002 | [Party registry — solo PartyIDs and membership](story-002-party-registry.md) | Logic | Complete | ADR-010 |
-| 003 | [Leader index and round-robin cursor](story-003-leader-and-round-robin.md) | Logic | Ready | ADR-010 |
+| 003 | [Leader index and round-robin cursor](story-003-leader-and-round-robin.md) | Logic | Complete | ADR-010 |
 | 004 | [Member status and XP eligibility](story-004-member-status-and-eligibility.md) | Logic | Complete | ADR-010 |
 | 005 | [Party XP distribution](story-005-party-xp-distribution.md) | Integration | Ready | ADR-010 |
 | 006 | [Party wire messages](story-006-party-wire-messages.md) | Logic | Complete | ADR-014 |
@@ -116,4 +116,4 @@ Order: 001 → 002 → 004 → 006 → 003 → 005 (006 before 003 for the XP-in
 
 ## Next Step
 
-Stories 001, 002 (2026-11-18), 004 and 006 (2026-11-19) Complete. Run `/story-readiness production/epics/party-system/story-003-leader-and-round-robin.md` (Story 006 landed the XP-ineligible notice, `PartyXpIneligibleNotice` 0xE178).
+Stories 001, 002 (2026-11-18), 004, 006 and 003 (2026-11-19) Complete. Run `/story-readiness production/epics/party-system/story-005-party-xp-distribution.md`. Story 003 left: `PartyRegistry` is the `IPartyService`; `TransferLeadership(PartyID)` for Story 009; `IPartyXpIneligibleNoticeSink` adapter for Story 011; TD-114 (Loot-side skip of an ineligible member at the cursor).

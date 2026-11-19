@@ -55,10 +55,10 @@ namespace IronGrind.ServerLogic.PartySystem
         /// <summary>The number of members.</summary>
         public int MemberCount => _count;
 
-        /// <summary>The leader's slot index (always 0 in Story 002; leader rules arrive in Story 003).</summary>
+        /// <summary>The leader's slot index; maintained by <see cref="PartyRegistry"/>: compaction and transfer.</summary>
         public int LeaderIndex { get; private set; }
 
-        /// <summary>The round-robin cursor (always 0 in Story 002; arrives in Story 003).</summary>
+        /// <summary>The round-robin cursor; maintained by <see cref="PartyRegistry"/>: advance and clamp.</summary>
         public byte RrNextIndex { get; private set; }
 
         /// <summary>
@@ -132,10 +132,18 @@ namespace IronGrind.ServerLogic.PartySystem
             SequenceId++;
         }
 
-        /// <summary>Test seam: sets the leader index unchecked. Story 003 replaces it with the real transfer.</summary>
-        internal void SetLeaderIndexForTests(int index)
+        /// <summary>Sets the leader index (registry use; no sequence bump).</summary>
+        /// <param name="index">The new leader slot index.</param>
+        internal void SetLeaderIndex(int index)
         {
             LeaderIndex = index;
+        }
+
+        /// <summary>Sets the round-robin cursor (registry use; no sequence bump).</summary>
+        /// <param name="index">The new cursor.</param>
+        internal void SetRrNextIndex(byte index)
+        {
+            RrNextIndex = index;
         }
 
         internal void SetState(PartyLifecycleState state)

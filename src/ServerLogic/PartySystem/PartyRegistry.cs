@@ -15,13 +15,16 @@ namespace IronGrind.ServerLogic.PartySystem
     /// </summary>
     /// <remarks>
     /// Failures return a <see cref="PartyRegistryResult"/> and change no state. Mutations may allocate; queries do
-    /// not. Not thread-safe (called from the server tick). Leader transfer, the round-robin cursor and the
-    /// IPartyService facade are Story 003. A party's <c>SequenceId</c> also bumps when a member's status value
-    /// changes (<see cref="SetMemberStatus"/>), not only on membership changes.
+    /// not. Not thread-safe (called from the server tick). Also the <see cref="IPartyService"/> the loot module
+    /// reads, and owns the leader index and round-robin cursor (CR-PS-7, CR-PS-8; Story 003). A party's
+    /// <c>SequenceId</c> also bumps when a member's status value changes (<see cref="SetMemberStatus"/>) or the
+    /// cursor / leader value changes, not only on membership changes.
     /// </remarks>
-    public sealed class PartyRegistry
+    public sealed class PartyRegistry : IPartyService
     {
         private const string LOG_PREFIX = "[PartyRegistry] ";
+
+        private IPartyLeaderChangeListener _leaderListener;
 
         private readonly int _maxPartySize;
         private readonly Dictionary<CharacterID, PartyID> _partyOf = new Dictionary<CharacterID, PartyID>();
@@ -183,8 +186,14 @@ namespace IronGrind.ServerLogic.PartySystem
 
         /// <summary>
         /// Removes a member from a real party with compaction (join order preserved) and gives them a fresh solo
-        /// party. Freeing the last member frees the party. Leader index handling is Story 003.
+        /// party. Freeing the last member frees the party.
         /// </summary>
+        /// <remarks>
+        /// Removal applies leader compaction (CR-PS-8): (a) a member below the leader shifts the leader index down
+        /// by one; (b) a member above the leader leaves it unchanged; (c) removing the leader promotes the
+        /// lowest-index non-Ghost remaining member (index 0 when all are Ghost) and notifies the leader-change
+        /// listener. The round-robin cursor is then clamped (modulo the new count) when it is out of range.
+        /// </remarks>
         /// <param name="partyId">The real party.</param>
         /// <param name="character">The member to remove.</param>
         /// <param name="newSoloPartyId">The character's new solo party id, or <c>Uninitialized</c> on failure.</param>
@@ -213,12 +222,7 @@ namespace IronGrind.ServerLogic.PartySystem
                 return PartyRegistryResult.IdsExhausted;
             }
 
-            party.RemoveAt(index);
-            if (party.MemberCount == 0)
-            {
-                FreeParty(partyId);
-            }
-
+            RemoveSlot(partyId, party, index);
             newSoloPartyId = CreateSolo(character);
             return PartyRegistryResult.Ok;
         }
@@ -245,12 +249,7 @@ namespace IronGrind.ServerLogic.PartySystem
             }
             else
             {
-                party.RemoveAt(party.IndexOf(character));
-                if (party.MemberCount == 0)
-                {
-                    FreeParty(current);
-                }
-
+                RemoveSlot(current, party, party.IndexOf(character));
                 formerRealPartyId = current;
             }
 
@@ -426,14 +425,131 @@ namespace IronGrind.ServerLogic.PartySystem
             return true;
         }
 
-        /// <summary>Test seam: moves a party's leader index. Story 003 replaces it with the real transfer.</summary>
+        /// <summary>The configured maximum party size (MAX_PARTY_SIZE).</summary>
+        public int MaxPartySize => _maxPartySize;
+
+        /// <summary>Sets (or, with null, clears) the leader-change listener. Default: none.</summary>
+        /// <remarks>
+        /// The registry holds a single listener: this replaces any previous one. Listeners must not mutate the
+        /// registry from their callbacks (not reentrant).
+        /// </remarks>
+        /// <param name="listener">The listener, or null.</param>
+        public void SetLeaderChangeListener(IPartyLeaderChangeListener listener)
+        {
+            _leaderListener = listener;
+        }
+
+        /// <inheritdoc/>
+        public int GetRrNextIndex(PartyID partyId)
+        {
+            return _parties.TryGetValue(partyId, out PartyState party) ? party.RrNextIndex : 0;
+        }
+
+        /// <summary>
+        /// Advances the round-robin cursor to the next Online member, visiting at most MemberCount slots (CR-PS-7).
+        /// Unknown or solo party: no-op. No eligible slot: the cursor stays, no sequence bump, one warning.
+        /// </summary>
+        /// <param name="partyId">The party.</param>
+        public void AdvanceRrNextIndex(PartyID partyId)
+        {
+            if (!_parties.TryGetValue(partyId, out PartyState party) || party.IsSoloParty)
+            {
+                return;
+            }
+
+            int count = party.MemberCount;
+            int pre = party.RrNextIndex;
+            int idx = pre;
+            for (int visited = 0; visited < count; visited++)
+            {
+                idx = (idx + 1) % count;
+                CharacterID member = party.GetMemberAtIndex(idx);
+                if (IsLootEligible(member, GetMemberStatus(member)))
+                {
+                    if (idx != pre)
+                    {
+                        // Safe: idx < MemberCount <= MaxPartySize (validated <= 4, well under 255).
+                        party.SetRrNextIndex((byte)idx);
+                        party.MarkChanged();
+                    }
+
+                    return;
+                }
+            }
+
+            Debug.LogWarning(LOG_PREFIX + "round-robin cursor frozen: " + partyId + " cursor " + pre
+                + " (no eligible member).");
+        }
+
+        /// <summary>
+        /// Whether a member counts for the round-robin cursor (CR-PS-7): not <c>Invalid</c> and <c>Online</c>.
+        /// Ghost, OutOfZone and Dead members are excluded.
+        /// </summary>
+        private static bool IsLootEligible(CharacterID member, PartyMemberStatus status)
+        {
+            return member != CharacterID.Invalid && status == PartyMemberStatus.Online;
+        }
+
+        /// <inheritdoc/>
+        public bool IsMemberConnected(CharacterID characterId)
+        {
+            return GetMemberStatus(characterId) != PartyMemberStatus.Ghost;
+        }
+
+        /// <summary>
+        /// Moves leadership to the lowest-index non-Ghost member other than the current leader (CR-PS-8; Dead and
+        /// OutOfZone members can lead). Called by Story 009 on disconnect.
+        /// </summary>
+        /// <param name="partyId">The party.</param>
+        /// <returns>
+        /// True when the leader changed; false for an unknown, solo or freed party or when there is no candidate
+        /// (the leader is unchanged and one info line is logged).
+        /// </returns>
+        public bool TransferLeadership(PartyID partyId)
+        {
+            if (!_parties.TryGetValue(partyId, out PartyState party) || party.IsSoloParty || party.IsFreed)
+            {
+                return false;
+            }
+
+            int count = party.MemberCount;
+            for (int i = 0; i < count; i++)
+            {
+                if (i == party.LeaderIndex || GetMemberStatus(party.GetMemberAtIndex(i)) == PartyMemberStatus.Ghost)
+                {
+                    continue;
+                }
+
+                _leaderListener?.OnLeaderChanging(partyId);
+                party.SetLeaderIndex(i);
+                party.MarkChanged();
+                _leaderListener?.OnLeaderChanged(partyId);
+                return true;
+            }
+
+            Debug.Log(LOG_PREFIX + "leadership not transferred: " + partyId + " has no other non-Ghost member.");
+            return false;
+        }
+
+        /// <summary>Test seam: sets a party's round-robin cursor.</summary>
+        /// <param name="partyId">The party.</param>
+        /// <param name="index">The cursor value.</param>
+        internal void SetRrNextIndexForTests(PartyID partyId, byte index)
+        {
+            if (_parties.TryGetValue(partyId, out PartyState party))
+            {
+                party.SetRrNextIndex(index);
+            }
+        }
+
+        /// <summary>Test seam: moves a party's leader index unchecked.</summary>
         /// <param name="partyId">The party.</param>
         /// <param name="index">The new leader index.</param>
         internal void SetLeaderIndexForTests(PartyID partyId, int index)
         {
             if (_parties.TryGetValue(partyId, out PartyState party))
             {
-                party.SetLeaderIndexForTests(index);
+                party.SetLeaderIndex(index);
             }
         }
 
@@ -448,6 +564,68 @@ namespace IronGrind.ServerLogic.PartySystem
             }
 
             _nextPartyId = next;
+        }
+
+        /// <summary>
+        /// Removes one slot with compaction and applies the leader rule (CR-PS-8) and the cursor clamp (CR-PS-7).
+        /// RemoveAt bumps SequenceId once; nothing here bumps again. Frees the party when it empties.
+        /// </summary>
+        private void RemoveSlot(PartyID partyId, PartyState party, int index)
+        {
+            int oldCount = party.MemberCount;
+            int leader = party.LeaderIndex;
+            bool leaderChanges = index == leader && oldCount > 1;
+            if (leaderChanges)
+            {
+                _leaderListener?.OnLeaderChanging(partyId);
+            }
+
+            party.RemoveAt(index);
+            int newCount = oldCount - 1;
+            if (newCount == 0)
+            {
+                FreeParty(partyId);
+                return;
+            }
+
+            if (index < leader)
+            {
+                party.SetLeaderIndex(leader - 1);
+            }
+            else if (index == leader)
+            {
+                party.SetLeaderIndex(PickNewLeaderIndex(party, newCount));
+            }
+
+            ClampCursor(party, newCount);
+            if (leaderChanges)
+            {
+                _leaderListener?.OnLeaderChanged(partyId);
+            }
+        }
+
+        /// <summary>Lowest-index non-Ghost member of the compacted party; index 0 when all are Ghost (CR-PS-8).</summary>
+        private int PickNewLeaderIndex(PartyState party, int newCount)
+        {
+            for (int i = 0; i < newCount; i++)
+            {
+                if (GetMemberStatus(party.GetMemberAtIndex(i)) != PartyMemberStatus.Ghost)
+                {
+                    return i;
+                }
+            }
+
+            return 0;
+        }
+
+        /// <summary>Clamps the round-robin cursor into range with modulo (CR-PS-7). No shift on removal by design.</summary>
+        private static void ClampCursor(PartyState party, int newCount)
+        {
+            if (party.RrNextIndex >= newCount)
+            {
+                // Safe: the result is < newCount < MaxPartySize (validated <= 4, well under 255).
+                party.SetRrNextIndex((byte)(party.RrNextIndex % newCount));
+            }
         }
 
         private void FreeParty(PartyID partyId)

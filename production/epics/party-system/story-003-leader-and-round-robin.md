@@ -1,7 +1,7 @@
 # Story 003: Leader Index and Round-Robin Cursor
 
 > **Epic**: Party System
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Feature
 > **Type**: Logic
 > **Estimate**: 5 h
@@ -43,14 +43,14 @@
 
 ## Acceptance Criteria
 
-- [ ] **AC-1 Cursor advance**: party [A, B, C] all Online, `RrNextIndex = 2` → `GetRrNextIndex` = 2, `GetMemberAtIndex(party, 2)` = C, and after `AdvanceRrNextIndex` the cursor is 0 (AC-PS-17); from 0 it advances to 1.
-- [ ] **AC-2 Skip**: `AdvanceRrNextIndex` skips slots whose status is Ghost, OutOfZone or Dead, and empty slots, advancing at most `MemberCount` times (AC-PS-18; Dead per CR-DR-20).
-- [ ] **AC-3 None eligible**: all members ineligible → `RrNextIndex` equals its pre-call value, `SequenceId` unchanged, and exactly one `LogWarning` frozen-cursor line (AC-PS-19 cursor half, AC-PS-27).
-- [ ] **AC-4 Clamp**: party of 4, `RrNextIndex = 3`, member 3 leaves → `RrNextIndex = 0` immediately (AC-PS-20); `RrNextIndex = 1`, member 3 leaves → stays 1; a solo party's cursor is always 0.
-- [ ] **AC-5 Leader compaction**: [A, B, C], `LeaderIndex = 2`, B leaves → [A, C], `LeaderIndex = 1` (AC-PS-28); removal above the leader leaves it unchanged; removal of the leader applies the transfer rule (G3, G4) — through both `RemoveMember` and `UnregisterPlayer`.
-- [ ] **AC-6 Transfer**: `TransferLeadership` moves the leader to the lowest-index non-Ghost member other than the current leader (G4) and returns `true`; with no candidate it returns `false` and the leader is unchanged (G3); a former leader whose status returns to Online does not regain leadership (AC-PS-22); the last member leaving frees the party (no transfer).
-- [ ] **AC-7 Notice**: a leader change (leave or transfer) that makes a member XP-ineligible calls `IPartyXpIneligibleNoticeSink.Notify(member, party)` once for that member only (CR-PS-5); member count is unchanged by the eligibility change.
-- [ ] **AC-8 `IPartyService`**: `PartyRegistry` implements `IPartyService` (`GetPartyID`, `GetPartyMembers`, `GetMemberAtIndex`, `GetRrNextIndex`, `AdvanceRrNextIndex`, `IsMemberConnected`); unknown party → `GetRrNextIndex` 0 and `AdvanceRrNextIndex` no-op; `IsMemberConnected` false only for Ghost.
+- [x] **AC-1 Cursor advance**: party [A, B, C] all Online, `RrNextIndex = 2` → `GetRrNextIndex` = 2, `GetMemberAtIndex(party, 2)` = C, and after `AdvanceRrNextIndex` the cursor is 0 (AC-PS-17); from 0 it advances to 1.
+- [x] **AC-2 Skip**: `AdvanceRrNextIndex` skips slots whose status is Ghost, OutOfZone or Dead, and empty slots, advancing at most `MemberCount` times (AC-PS-18; Dead per CR-DR-20).
+- [x] **AC-3 None eligible**: all members ineligible → `RrNextIndex` equals its pre-call value, `SequenceId` unchanged, and exactly one `LogWarning` frozen-cursor line (AC-PS-19 cursor half, AC-PS-27).
+- [x] **AC-4 Clamp**: party of 4, `RrNextIndex = 3`, member 3 leaves → `RrNextIndex = 0` immediately (AC-PS-20); `RrNextIndex = 1`, member 3 leaves → stays 1; a solo party's cursor is always 0.
+- [x] **AC-5 Leader compaction**: [A, B, C], `LeaderIndex = 2`, B leaves → [A, C], `LeaderIndex = 1` (AC-PS-28); removal above the leader leaves it unchanged; removal of the leader applies the transfer rule (G3, G4) — through both `RemoveMember` and `UnregisterPlayer`.
+- [x] **AC-6 Transfer**: `TransferLeadership` moves the leader to the lowest-index non-Ghost member other than the current leader (G4) and returns `true`; with no candidate it returns `false` and the leader is unchanged (G3); a former leader whose status returns to Online does not regain leadership (AC-PS-22); the last member leaving frees the party (no transfer).
+- [x] **AC-7 Notice**: a leader change (leave or transfer) that makes a member XP-ineligible calls `IPartyXpIneligibleNoticeSink.Notify(member, party)` once for that member only (CR-PS-5); member count is unchanged by the eligibility change.
+- [x] **AC-8 `IPartyService`**: `PartyRegistry` implements `IPartyService` (`GetPartyID`, `GetPartyMembers`, `GetMemberAtIndex`, `GetRrNextIndex`, `AdvanceRrNextIndex`, `IsMemberConnected`); unknown party → `GetRrNextIndex` 0 and `AdvanceRrNextIndex` no-op; `IsMemberConnected` false only for Ghost.
 
 ---
 
@@ -92,7 +92,7 @@
 **Story Type**: Logic
 **Required evidence**: `tests/EditMode/PartySystem/PartySystem_LeaderAndCursor_tests.cs` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 53 cases pass (2026-11-19)
 
 ---
 
@@ -100,3 +100,16 @@
 
 - Depends on: Story 002, Story 004 (status enum and eligibility), Story 006 (`PartyXpIneligibleNotice` schema used by the Story 011 adapter) — all Complete
 - Unlocks: Stories 005, 008, 009, 011 (notice adapter)
+
+---
+
+## Completion Notes
+**Completed**: 2026-11-19
+**Criteria**: 8/8 passing (all automated; no deferred items)
+**Deviations** (advisory):
+- G1: the notice runs through `IPartyLeaderChangeListener` (registry calls `OnLeaderChanging` / `OnLeaderChanged`) and `PartyXpIneligibleNotifier` (registry + `PartyXpEligibility` + sink, registers itself), not a sink injected into the registry — the registry has no level source. Single listener slot; listeners must not mutate the registry. Production sink adapter: Story 011.
+- G2: `GetRrNextIndex` is a pure read; a member who turns ineligible while the cursor points at them still gets the next drop (Loot-side fix, TD-114).
+- Removing a member below the cursor does not shift the cursor (GDD only clamps), so the next drop skips one member; pinned by `test_leader_cursor_pin_removing_first_slot_does_not_shift_cursor`.
+- Flaky, unrelated: first full run failed TD-097 and TD-110 tests; rerun 8333/8333.
+**Test Evidence**: Logic — `tests/EditMode/PartySystem/PartySystem_LeaderAndCursor_tests.cs`, 53 cases (44 `[Test]` + 9 `[TestCase]`); full EditMode `-testCategory "!Database"` 8333/8333 (13:14:43Z)
+**Code Review**: Complete (`/code-review` 2026-11-19, CHANGES REQUIRED → all required + suggestions applied); QL-TEST-COVERAGE and LP-CODE-REVIEW skipped (lean)
