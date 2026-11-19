@@ -27,7 +27,7 @@
 
 ## Acceptance Criteria
 
-- [ ] **AC-1 Build**: `ZoneServerComposition` loads the catalog asset (Story 001) and validates it at startup — invalid → `ArgumentException` / startup failure, like `PartySystemConfigOverride`; builds one `NpcInteractionSessionTracker` with the production `ITownHubQuery` (Story 002), a wall clock and `SESSION_TTL_SECONDS`, the request cache (Story 004) and `NpcShopService` (Stories 005–007).
+- [ ] **AC-1 Build**: `ZoneServerHost` gets a serialized `NpcShopCatalog` field referenced in the zone server scene, and `ZoneShopCatalogLoader` (Story 001) sits in the host's S2 chain between `ZoneItemDataLoader` and the stand-in, with outer loaders forwarding `IZoneShopCatalogData` (an invalid catalog fails S2, as decided at Story 001 readiness G1). `ZoneServerComposition` reads the validated catalog from `IZoneShopCatalogData` (or `NpcShopCatalogOverride` in tests; no catalog → startup failure); builds one `NpcInteractionSessionTracker` with the production `ITownHubQuery` (Story 002), a wall clock and `SESSION_TTL_SECONDS`, the request cache (Story 004) and `NpcShopService` (Stories 005–007).
 - [ ] **AC-2 Requests**: Open, Close, Buy and Sell are registered on the inbound dispatcher before `Seal()` with their body sizes and `RpcTypeTag`s; the dispatcher test seam lists them.
 - [ ] **AC-3 Close triggers**: zone exit and session end call `NotifyZoneTransition` / `NotifySessionEnded` (find the existing release / exit listener chain — as Party Story 011 did) and drop the character's cache entries.
 - [ ] **AC-4 Reconciliation**: the reconciler (Story 008) is composed on the load and re-auth paths; no purchase stand-in remains in production code.
