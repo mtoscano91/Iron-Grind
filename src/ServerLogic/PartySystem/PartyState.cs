@@ -61,10 +61,15 @@ namespace IronGrind.ServerLogic.PartySystem
         /// <summary>The round-robin cursor (always 0 in Story 002; arrives in Story 003).</summary>
         public byte RrNextIndex { get; private set; }
 
-        /// <summary>Incremented on every membership change.</summary>
+        /// <summary>
+        /// Incremented on every membership change and on every member status change that alters a stored value
+        /// (<see cref="MarkChanged"/>).
+        /// </summary>
         public uint SequenceId { get; private set; }
 
-        /// <summary>The current members in join order, no empty slots. An immutable snapshot, replaced on change.</summary>
+        /// <summary>
+        /// The current members in join order, no empty slots. An immutable snapshot, replaced on change.
+        /// </summary>
         /// <remarks>Read it with an indexed loop: <c>foreach</c> over the interface allocates an enumerator.</remarks>
         public IReadOnlyList<CharacterID> Members => _snapshot;
 
@@ -76,7 +81,9 @@ namespace IronGrind.ServerLogic.PartySystem
             return index >= 0 && index < _count ? _members[index] : CharacterID.Invalid;
         }
 
-        /// <summary>The entity registered for the member at a slot index, or the default entity when out of range.</summary>
+        /// <summary>
+        /// The entity registered for the member at a slot index, or the default entity when out of range.
+        /// </summary>
         /// <param name="index">Join-order index.</param>
         /// <returns>The entity, or <c>EntityID.Invalid</c>.</returns>
         public EntityID GetEntityAtIndex(int index)
@@ -119,12 +126,26 @@ namespace IronGrind.ServerLogic.PartySystem
             Changed();
         }
 
+        /// <summary>Marks a non-membership change (a member status write): <c>SequenceId</c> + 1.</summary>
+        internal void MarkChanged()
+        {
+            SequenceId++;
+        }
+
+        /// <summary>Test seam: sets the leader index unchecked. Story 003 replaces it with the real transfer.</summary>
+        internal void SetLeaderIndexForTests(int index)
+        {
+            LeaderIndex = index;
+        }
+
         internal void SetState(PartyLifecycleState state)
         {
             State = state;
         }
 
-        /// <summary>Marks the party freed: clears every slot, empties <see cref="Members"/>, bumps the sequence.</summary>
+        /// <summary>
+        /// Marks the party freed: clears every slot, empties <see cref="Members"/>, bumps the sequence.
+        /// </summary>
         internal void Free()
         {
             Array.Clear(_members, 0, _members.Length);

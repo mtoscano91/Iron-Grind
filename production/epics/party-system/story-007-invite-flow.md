@@ -40,6 +40,7 @@
 
 - `PartyInviteService` with per-recipient pending invite + FIFO queue (bound it, e.g. `MaxPartySize × 2`; overflow → result code, decide at readiness); timers in ticks from Story 001 config.
 - Register the two handlers with the inbound dispatcher (ADR-014) the way `MovementInboundRegistration` / Death & Respawn do; `SenderEntityID` from the envelope identifies the sender's slot.
+- **From Story 006 readiness (2026-11-19):** this story owns the dispatcher registration of `PartyInviteRequest` (0xE172, body 4) and `PartyInviteResponse` (0xE174, body 5) — descriptor from the codec `BodySize`, a new `RpcTypeTag` if the guard chain needs one — plus an intake test: a 3-byte and a 6-byte invite body are rejected before the handler runs. Results go out as `PartyInviteResult` (0xE177, codes Sent 0 … Declined 8); a late-accept `PartyFull` goes to the accepting target.
 - Invites are delivered regardless of combat state (CR-PS-4); a dead target may receive an invite (no rule against it — confirm at readiness).
 - Zone-local: target lookup by CharacterID within this zone's slot pool only (ADR-010 note 2026-11-18).
 

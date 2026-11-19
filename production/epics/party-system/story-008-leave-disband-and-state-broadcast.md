@@ -38,6 +38,7 @@
 ## Implementation Notes
 
 - A per-party "dirty" flag set by registry / status / cursor changes; a `PartyBroadcastStep` (outbound phase) builds the snapshot with the Story 006 codec into the `ClientMessageOutbox` (as `DeathMessageEmitter`).
+- **From Story 006 readiness (2026-11-19):** this story owns the dispatcher registration of `PartyLeaveRequest` (0xE175) and `PartyDisbandRequest` (0xE176), both body 0, not held — plus an intake test: a 1-byte body is rejected before the handler runs. The non-leader disband answer is `PartyInviteResult(NotLeader)` with `targetCharacterId = 0`. `PartyStateUpdate` (0xE170) and `PartyDisbanded` (0xE171) route as `MessageDirection.ServerToParty`.
 - Disband acknowledgements: the GDD mentions "all acknowledgments" but defines no ack message; implement the 10 s timeout and record the deviation.
 - **Open at readiness (from Story 002 readiness, 2026-11-18):** CR-PS-2 says a real party has 2–4 members and CR-PS-9 says "last member leaves: auto-disband", but neither says whether an `Active` party that drops to one member auto-disbands (the remaining member re-soloed) or stays a party of one. Decide here; the Story 002 registry primitives (`RemoveMember`, `DisbandParty`) support either.
 - `PartyDisbandCoordinator` (Networking Core) handles the ghost-period part of disband — call it from the disband path if it applies (decide at readiness with Story 009).

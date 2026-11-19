@@ -63,6 +63,9 @@ namespace IronGrind.Tests.EditMode.Architecture
             "IronGrind.InventorySystem.MoveFailReason",    // consumer (planned): inventory screen (wire enum, MoveResult message)
             "IronGrind.InventorySystem.InventoryConstants", // consumer (planned): inventory screen and the InventoryFullSync / InventorySlotUpdate codecs (slot count; Inventory Story 012)
 
+            // Party System: the member status is a wire enum decoded by the client party panel.
+            "IronGrind.PartySystem.PartyMemberStatus", // consumer (planned): client party panel via PartyStateUpdate decode (Party Story 006 wire codec)
+
             // Enhancement: the result code is a wire enum decoded by clients (Enhancement Story 010).
             "IronGrind.EnhancementSystem.EnhancementResultCode", // consumer (planned): Enhancement UI epic (wire enum, EnhancementAttemptResult and EnhancementPreviewRejected messages)
 

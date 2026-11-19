@@ -96,7 +96,7 @@ This epic is complete when:
 | 001 | [Party config and F-PS-1](story-001-party-config-and-xp-formula.md) | Logic | Complete | ADR-012 |
 | 002 | [Party registry — solo PartyIDs and membership](story-002-party-registry.md) | Logic | Complete | ADR-010 |
 | 003 | [Leader index and round-robin cursor](story-003-leader-and-round-robin.md) | Logic | Ready | ADR-010 |
-| 004 | [Member status and XP eligibility](story-004-member-status-and-eligibility.md) | Logic | Ready | ADR-010 |
+| 004 | [Member status and XP eligibility](story-004-member-status-and-eligibility.md) | Logic | Complete | ADR-010 |
 | 005 | [Party XP distribution](story-005-party-xp-distribution.md) | Integration | Ready | ADR-010 |
 | 006 | [Party wire messages](story-006-party-wire-messages.md) | Logic | Ready | ADR-014 |
 | 007 | [Invite flow](story-007-invite-flow.md) | Integration | Ready | ADR-014 |
@@ -106,14 +106,14 @@ This epic is complete when:
 | 011 | [Zone composition wiring](story-011-zone-composition-wiring.md) | Integration | Ready | ADR-014 |
 | 012 | [End-to-end — two players party up and share a kill](story-012-end-to-end-party-kill.md) | Integration | Ready | ADR-014 |
 
-Order: 001 → 002 → 004 → 003 → 005; 006 any time before 007 / 008; 007 and 008 after 006; 009 after 008; 010 after 008; 011 after 005 and 007–010; 012 last.
+Order: 001 → 002 → 004 → 006 → 003 → 005 (006 before 003 for the XP-ineligible notice, Story 004 readiness 2026-11-19); 007 and 008 after 006; 009 after 008; 010 after 008; 011 after 005 and 007–010; 012 last.
 
 ## Findings at `/create-stories` (2026-11-18)
 
-1. **Missing client → server messages.** The wire protocol has no leave request, disband request or invite result / error message, though CR-PS-4 and CR-PS-9 need them; Story 006 adds them (ids 0xE170–0xE17F) and amends `networking-wire-protocol.md`.
+1. **Missing client → server messages.** The wire protocol has no leave request, disband request or invite result / error message, though CR-PS-4 and CR-PS-9 need them; Story 006 adds them (ids 0xE170–0xE17F) and amends `networking-wire-protocol.md`. Readiness 2026-11-19 fixed the IDs (0xE170 `PartyStateUpdate` … 0xE178 `PartyXpIneligibleNotice`), empty-body leave / disband requests, `PartyInviteResult` (9 codes, also the non-leader disband answer) and the ADR-014 table rows; dispatcher registration of the four request types moves to Stories 007 / 008.
 2. **`PartyMemberStatusChanged`** is named in the GDD but has no schema; status travels in `PartyStateUpdate`.
 3. **Disband acknowledgements** are not in the protocol: Story 008 uses the 10 s timeout only.
 
 ## Next Step
 
-Stories 001 and 002 Complete (2026-11-18). Run `/story-readiness production/epics/party-system/story-004-member-status-and-eligibility.md`.
+Stories 001, 002 (2026-11-18) and 004 (2026-11-19) Complete. Story 006 READY (readiness 2026-11-19). Run `/dev-story production/epics/party-system/story-006-party-wire-messages.md` (006 before 003 for the XP-ineligible notice).

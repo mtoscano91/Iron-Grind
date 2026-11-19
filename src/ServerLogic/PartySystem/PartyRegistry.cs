@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using IronGrind.CharacterStats;
 using IronGrind.Currency;
 using IronGrind.LootTableSystem;
+using IronGrind.PartySystem;
 using UnityEngine;
 
 namespace IronGrind.ServerLogic.PartySystem
@@ -15,7 +16,8 @@ namespace IronGrind.ServerLogic.PartySystem
     /// <remarks>
     /// Failures return a <see cref="PartyRegistryResult"/> and change no state. Mutations may allocate; queries do
     /// not. Not thread-safe (called from the server tick). Leader transfer, the round-robin cursor and the
-    /// IPartyService facade are Story 003.
+    /// IPartyService facade are Story 003. A party's <c>SequenceId</c> also bumps when a member's status value
+    /// changes (<see cref="SetMemberStatus"/>), not only on membership changes.
     /// </remarks>
     public sealed class PartyRegistry
     {
@@ -25,6 +27,9 @@ namespace IronGrind.ServerLogic.PartySystem
         private readonly Dictionary<CharacterID, PartyID> _partyOf = new Dictionary<CharacterID, PartyID>();
         private readonly Dictionary<CharacterID, EntityID> _entityOf = new Dictionary<CharacterID, EntityID>();
         private readonly Dictionary<PartyID, PartyState> _parties = new Dictionary<PartyID, PartyState>();
+        private readonly Dictionary<EntityID, CharacterID> _characterOf = new Dictionary<EntityID, CharacterID>();
+        private readonly Dictionary<CharacterID, PartyMemberStatus> _statusOf =
+            new Dictionary<CharacterID, PartyMemberStatus>();
         private uint _nextPartyId = 1;
 
         /// <summary>Creates a registry.</summary>
@@ -44,7 +49,9 @@ namespace IronGrind.ServerLogic.PartySystem
         /// <summary>The number of live parties, solo and real.</summary>
         public int PartyCount => _parties.Count;
 
-        /// <summary>Registers a player and gives them a solo party (state <c>Active</c>: a solo party is stable).</summary>
+        /// <summary>
+        /// Registers a player and gives them a solo party (state <c>Active</c>: a solo party is stable).
+        /// </summary>
         /// <param name="character">The character; must not be <c>CharacterID.Invalid</c>.</param>
         /// <param name="entity">The character's runtime entity; must not be <c>EntityID.Invalid</c>.</param>
         /// <param name="soloPartyId">The new solo party id, or <c>Uninitialized</c> on failure.</param>
@@ -67,12 +74,19 @@ namespace IronGrind.ServerLogic.PartySystem
                 return PartyRegistryResult.AlreadyRegistered;
             }
 
+            if (_characterOf.ContainsKey(entity))
+            {
+                return PartyRegistryResult.EntityAlreadyRegistered;
+            }
+
             if (!HasIds(1))
             {
                 return PartyRegistryResult.IdsExhausted;
             }
 
             _entityOf[character] = entity;
+            _characterOf[entity] = character;
+            _statusOf[character] = PartyMemberStatus.Online;
             soloPartyId = CreateSolo(character);
             return PartyRegistryResult.Ok;
         }
@@ -241,7 +255,15 @@ namespace IronGrind.ServerLogic.PartySystem
             }
 
             _partyOf.Remove(character);
+            if (_entityOf.TryGetValue(character, out EntityID entity)
+                && _characterOf.TryGetValue(entity, out CharacterID owner)
+                && owner == character)
+            {
+                _characterOf.Remove(entity);
+            }
+
             _entityOf.Remove(character);
+            _statusOf.Remove(character);
             return PartyRegistryResult.Ok;
         }
 
@@ -297,10 +319,14 @@ namespace IronGrind.ServerLogic.PartySystem
         /// <summary>The member at a join-order index.</summary>
         /// <param name="partyId">The party.</param>
         /// <param name="index">The index.</param>
-        /// <returns>The member, or <c>CharacterID.Invalid</c> for an unknown party or bad index. Never throws.</returns>
+        /// <returns>
+        /// The member, or <c>CharacterID.Invalid</c> for an unknown party or bad index. Never throws.
+        /// </returns>
         public CharacterID GetMemberAtIndex(PartyID partyId, int index)
         {
-            return _parties.TryGetValue(partyId, out PartyState party) ? party.GetMemberAtIndex(index) : CharacterID.Invalid;
+            return _parties.TryGetValue(partyId, out PartyState party)
+                ? party.GetMemberAtIndex(index)
+                : CharacterID.Invalid;
         }
 
         /// <summary>Looks up a party's state.</summary>
@@ -318,6 +344,97 @@ namespace IronGrind.ServerLogic.PartySystem
         public bool IsRegistered(CharacterID character)
         {
             return _partyOf.ContainsKey(character);
+        }
+
+        /// <summary>The status of a character (Party System Story 004).</summary>
+        /// <param name="character">The character.</param>
+        /// <returns>The stored status; <c>Online</c> for an unregistered character. Never throws.</returns>
+        public PartyMemberStatus GetMemberStatus(CharacterID character)
+        {
+            return _statusOf.TryGetValue(character, out PartyMemberStatus status) ? status : PartyMemberStatus.Online;
+        }
+
+        /// <summary>Finds the character registered for an entity.</summary>
+        /// <param name="entity">The entity.</param>
+        /// <param name="character">The character, or <c>CharacterID.Invalid</c>.</param>
+        /// <returns>True when the entity is registered.</returns>
+        public bool TryGetCharacter(EntityID entity, out CharacterID character)
+        {
+            if (entity != EntityID.Invalid && _characterOf.TryGetValue(entity, out character))
+            {
+                return true;
+            }
+
+            character = CharacterID.Invalid;
+            return false;
+        }
+
+        /// <summary>
+        /// Writes a party's members in join order with their statuses into a caller buffer (no allocation).
+        /// Indices <c>0 .. MaxPartySize - 1</c> are written; empty indices are CharacterID 0, <c>EntityID.Invalid</c>,
+        /// <c>Online</c>.
+        /// </summary>
+        /// <param name="partyId">The party.</param>
+        /// <param name="buffer">The buffer; must hold at least MAX_PARTY_SIZE entries.</param>
+        /// <returns>The member count; 0 (and nothing written) for an unknown party or a short buffer.</returns>
+        public int GetPartyMembersWithStatus(PartyID partyId, Span<PartyMemberStatusEntry> buffer)
+        {
+            if (buffer.Length < _maxPartySize || !_parties.TryGetValue(partyId, out PartyState party))
+            {
+                return 0;
+            }
+
+            int count = party.MemberCount;
+            for (int i = 0; i < _maxPartySize; i++)
+            {
+                if (i < count)
+                {
+                    CharacterID member = party.GetMemberAtIndex(i);
+                    buffer[i] = new PartyMemberStatusEntry(member, party.GetEntityAtIndex(i), GetMemberStatus(member));
+                }
+                else
+                {
+                    buffer[i] = new PartyMemberStatusEntry(CharacterID.Invalid, EntityID.Invalid,
+                        PartyMemberStatus.Online);
+                }
+            }
+
+            return count;
+        }
+
+        /// <summary>
+        /// Stores a registered character's status. A change bumps the character's current party's
+        /// <c>SequenceId</c> by 1; the same value changes nothing. Shared by the death sink and Story 009.
+        /// </summary>
+        /// <param name="character">The character.</param>
+        /// <param name="status">The new status.</param>
+        /// <returns>True when the stored value changed; false when unregistered or unchanged.</returns>
+        internal bool SetMemberStatus(CharacterID character, PartyMemberStatus status)
+        {
+            if (!_statusOf.TryGetValue(character, out PartyMemberStatus current) || current == status)
+            {
+                return false;
+            }
+
+            _statusOf[character] = status;
+            if (_partyOf.TryGetValue(character, out PartyID partyId)
+                && _parties.TryGetValue(partyId, out PartyState party))
+            {
+                party.MarkChanged();
+            }
+
+            return true;
+        }
+
+        /// <summary>Test seam: moves a party's leader index. Story 003 replaces it with the real transfer.</summary>
+        /// <param name="partyId">The party.</param>
+        /// <param name="index">The new leader index.</param>
+        internal void SetLeaderIndexForTests(PartyID partyId, int index)
+        {
+            if (_parties.TryGetValue(partyId, out PartyState party))
+            {
+                party.SetLeaderIndexForTests(index);
+            }
         }
 
         /// <summary>Test seam: sets the next id the counter will issue.</summary>

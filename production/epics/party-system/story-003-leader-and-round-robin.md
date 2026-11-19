@@ -43,6 +43,7 @@
 - Cursor changes mark the party "state changed" so Story 008 can broadcast; only when the value changes (CR-PS-7 step 3).
 - Read `LootTableSystem/PartyTagTracker` and the loot distributor to confirm the call order they expect (`GetRrNextIndex` then `AdvanceRrNextIndex`).
 - **From Story 002 (2026-11-18):** `PartyRegistry.RemoveMember` and `UnregisterPlayer` compact the slots through `PartyState.RemoveAt` but never touch `LeaderIndex` (always 0) or `RrNextIndex`; after removing index 0 the leader index is stale. Hook the AC-5 leader compaction and the cursor clamp into that removal path (both callers), and test removal of the leader through both `RemoveMember` and `UnregisterPlayer`. Freed parties are marked `PartyState.IsFreed`; `IPartyService` calls must resolve parties by id, never a cached `PartyState`. Read `GetPartyMembers` / `Members` with indexed loops (no `foreach`, it allocates).
+- **From Story 004 readiness (2026-11-19):** Story 004 lands first and defines `PartyMemberStatus` (Online 0, Ghost 1, OutOfZone 2, Dead 3; `src/Foundation/PartySystem/`), per-character status (`GetMemberStatus`, internal `SetMemberStatus`), `PartyState.MarkChanged()` and `IsXpEligible`, which reads the current `LeaderIndex`. GDD "Disconnected" = Ghost at MVP (no separate value). This story: replace the internal `SetLeaderIndexForTests` use with the real transfer; a leader change bumps `SequenceId`; add a QA case "leader transfer → two members fall outside the level gate → `IsXpEligible` false, member count unchanged"; and send the XP-ineligible notice (CR-PS-5 last paragraph; Story 006: `PartyXpIneligibleNotice` 0xE178, 4-byte body `partyId`, owning client) to each member that becomes ineligible because of the leader change.
 
 ---
 
@@ -79,5 +80,5 @@
 
 ## Dependencies
 
-- Depends on: Story 002 (and Story 004 for status, if 004 lands first — decide at readiness)
+- Depends on: Story 002, Story 004 (status enum and eligibility; decided 2026-11-19), Story 006 for the XP-ineligible notice message
 - Unlocks: Stories 005, 008, 009

@@ -44,5 +44,8 @@ namespace IronGrind.ServerLogic.PartySystem
 
         /// <summary>The party id counter cannot issue the ids the operation needs (OQ-PS-2).</summary>
         IdsExhausted = 12,
+
+        /// <summary>The entity is already registered to another character.</summary>
+        EntityAlreadyRegistered = 13,
     }
 }

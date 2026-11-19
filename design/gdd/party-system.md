@@ -2,7 +2,7 @@
 
 > **Status**: Approved (lean re-review 2026-05-17) — amended 2026-05-29 (MemberStatus.Dead added for Death & Respawn integration); amended 2026-06-19 (PartyMemberSlot data type + GetPartyMembersWithStatus added for Party Chat)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-11-18 (Party System Story 001 readiness: F-PS-1 midpoint example corrected to banker's rounding + float result 4; `MAX_PARTY_SIZE` safe range [2, 4] because the wire schema is fixed at 4 slots)
+> **Last Updated**: 2026-11-19 (Party System Story 004: "Disconnected" = Ghost note under CR-PS-5); 2026-11-18 (Party System Story 001 readiness: F-PS-1 midpoint example corrected to banker's rounding + float result 4; `MAX_PARTY_SIZE` safe range [2, 4] because the wire schema is fixed at 4 slots)
 > **Implements Pillar**: Social Gravity (primary) — Earned Power (supporting)
 
 ## Overview
@@ -49,6 +49,7 @@ On mob kill, the Party System computes each eligible member's XP grant and calls
 - Member must be in the same zone instance as the kill event.
 - Member's level must be within ±5 of the current party leader's level.
 - Member must not be `Ghost`, `OutOfZone`, or `Dead` status. *(`Dead` added 2026-05-29 — death-and-respawn.md OQ-DR-1 resolution: dead members are ineligible for XP during the respawn countdown per CR-DR-19.)*
+*(Note 2026-11-19, Party System Story 004 readiness: at MVP "Disconnected" in this document is the `Ghost` status — a disconnected player with a live session is a ghost (ADR-011); `PartyMemberStatus` has exactly the four wire values Online / Ghost / OutOfZone / Dead, `networking-wire-protocol.md`.)*
 
 Bonus formula: **F-PS-1** (defined in Formulas section).
 
