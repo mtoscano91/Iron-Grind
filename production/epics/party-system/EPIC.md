@@ -77,7 +77,7 @@ TR-IDs below are registered in `docs/architecture/tr-registry.yaml` (2026-11-18)
 3. **OutOfZone (OQ-PS-1).** Under the zone-local decision, OutOfZone means "left this zone process"; check `zone-instancing.md` entry step 8 and teardown step 5 for the exact calls.
 4. **Message IDs.** `PartyStateUpdate`, `PartyDisbanded`, `PartyInviteReceived`, `PartyInviteRequest`, `PartyInviteResponse` need MessageTypeIDs and codecs (R-OD ids in 0xE000–0xEFFF); check the routing registry first.
 5. **Kill XP hand-off.** Both kill paths (`AutoAttackCombatSystem`, `SkillDamageExecutionStep`) call `AddExperience` on the attacker; the party split needs one seam both use (direct call, ADR-010).
-6. **`PartyDisbandCoordinator` and `GhostXpPoolTracker`.** Built by Networking Core; decide whether the party service drives them or replaces them.
+6. **`PartyDisbandCoordinator` and `GhostXpPoolTracker`.** Built by Networking Core; decide whether the party service drives them or replaces them. **Resolved at Story 009 readiness (2026-11-19):** not driven at MVP — neither is constructed in production and Ghost members are XP-ineligible (CR-PS-5), so there is no post-disconnect share to stop.
 7. **Leveling F-LS-2 (OQ-PS-4).** `leveling-system.md` still shows the old additive bonus; F-PS-1 is authoritative.
 
 ## Definition of Done
@@ -101,7 +101,7 @@ This epic is complete when:
 | 006 | [Party wire messages](story-006-party-wire-messages.md) | Logic | Complete | ADR-014 |
 | 007 | [Invite flow](story-007-invite-flow.md) | Integration | Complete | ADR-014 |
 | 008 | [Leave, disband and state broadcast](story-008-leave-disband-and-state-broadcast.md) | Integration | Complete | ADR-014 |
-| 009 | [Disconnect, reconnect grace and zone presence](story-009-disconnect-grace-and-zone-presence.md) | Integration | Ready | ADR-011 |
+| 009 | [Disconnect, reconnect grace and zone presence](story-009-disconnect-grace-and-zone-presence.md) | Integration | Complete | ADR-011 |
 | 010 | [Party health stream](story-010-party-health-stream.md) | Logic | Ready | ADR-014 |
 | 011 | [Zone composition wiring](story-011-zone-composition-wiring.md) | Integration | Ready | ADR-014 |
 | 012 | [End-to-end — two players party up and share a kill](story-012-end-to-end-party-kill.md) | Integration | Ready | ADR-014 |
@@ -116,4 +116,4 @@ Order: 001 → 002 → 004 → 006 → 003 → 005 (006 before 003 for the XP-in
 
 ## Next Step
 
-Stories 001, 002 (2026-11-18), 004, 006, 003, 005, 007 and 008 (2026-11-19) Complete. Run `/story-readiness production/epics/party-system/story-009-disconnect-grace-and-zone-presence.md`. Story 008 left: membership step + broadcast step order and both registrations for Story 011; disconnect leave via `EnqueueLeave` for Story 009. Story 007 left: `PartyInviteService.Tick` + `PartyInboundRegistration` + `OutboxPartyInviteMessageSink` for Story 011; join detection via the registry change counter for Story 008; invite cancellation on disconnect for Story 009. Story 005 left: `PartyExperienceDistributor` (wraps `CharacterStatsExperienceSink`, one instance for both combat systems) for Story 011; same-tick leave rule (queued leave / disband, party step after phase 3) for Stories 008 and 011. Story 003 left: `PartyRegistry` is the `IPartyService`; `TransferLeadership(PartyID)` for Story 009; `IPartyXpIneligibleNoticeSink` adapter for Story 011; TD-114 (Loot-side skip of an ineligible member at the cursor).
+Stories 001, 002 (2026-11-18), 004, 006, 003, 005, 007, 008 and 009 (2026-11-19) Complete. Run `/story-readiness production/epics/party-system/story-010-party-health-stream.md`. Story 009 left: compose the entry / release listeners, `PartyZonePresence`, `PartyMemberStatusSink` and `PartyPresenceStep` (over `SessionMachinePartySessionStateSource`) for Story 011, order invite `Tick` → dispatch → simulation → `ApplyQueued` → `Poll` → `Flush`. Story 008 left: membership step + broadcast step order and both registrations for Story 011. Story 007 left: `PartyInviteService.Tick` + `PartyInboundRegistration` + `OutboxPartyInviteMessageSink` for Story 011; join detection via the registry change counter for Story 008; invite cancellation on disconnect for Story 009. Story 005 left: `PartyExperienceDistributor` (wraps `CharacterStatsExperienceSink`, one instance for both combat systems) for Story 011; same-tick leave rule (queued leave / disband, party step after phase 3) for Stories 008 and 011. Story 003 left: `PartyRegistry` is the `IPartyService`; `TransferLeadership(PartyID)` for Story 009; `IPartyXpIneligibleNoticeSink` adapter for Story 011; TD-114 (Loot-side skip of an ineligible member at the cursor).

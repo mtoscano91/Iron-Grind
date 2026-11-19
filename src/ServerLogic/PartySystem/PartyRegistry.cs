@@ -33,7 +33,21 @@ namespace IronGrind.ServerLogic.PartySystem
         private readonly Dictionary<EntityID, CharacterID> _characterOf = new Dictionary<EntityID, CharacterID>();
         private readonly Dictionary<CharacterID, PartyMemberStatus> _statusOf =
             new Dictionary<CharacterID, PartyMemberStatus>();
+        private readonly Dictionary<CharacterID, MemberFlags> _flagsOf = new Dictionary<CharacterID, MemberFlags>();
         private uint _nextPartyId = 1;
+
+        /// <summary>
+        /// The per-member flags (Party System Story 009, D4). <see cref="PartyMemberStatus"/> is derived from them
+        /// with the precedence Ghost, OutOfZone, Dead, Online.
+        /// </summary>
+        [Flags]
+        private enum MemberFlags : byte
+        {
+            None = 0,
+            Ghost = 1,
+            OutOfZone = 2,
+            Dead = 4,
+        }
 
         /// <summary>Creates a registry.</summary>
         /// <param name="config">The Party System knobs; must pass <c>Validate()</c>.</param>
@@ -90,6 +104,7 @@ namespace IronGrind.ServerLogic.PartySystem
             _entityOf[character] = entity;
             _characterOf[entity] = character;
             _statusOf[character] = PartyMemberStatus.Online;
+            _flagsOf[character] = MemberFlags.None;
             soloPartyId = CreateSolo(character);
             return PartyRegistryResult.Ok;
         }
@@ -263,6 +278,7 @@ namespace IronGrind.ServerLogic.PartySystem
 
             _entityOf.Remove(character);
             _statusOf.Remove(character);
+            _flagsOf.Remove(character);
             return PartyRegistryResult.Ok;
         }
 
@@ -466,14 +482,86 @@ namespace IronGrind.ServerLogic.PartySystem
         /// <param name="character">The character.</param>
         /// <param name="status">The new status.</param>
         /// <returns>True when the stored value changed; false when unregistered or unchanged.</returns>
+        /// <remarks>
+        /// Test seam / legacy shim (Story 009): the status is mapped onto the flags (Ghost, OutOfZone and Dead set that one flag alone,
+        /// Online clears all three), so older callers and tests keep their "last write wins" behaviour. Production
+        /// writers use <see cref="SetGhost"/>, <see cref="SetOutOfZone"/> and <see cref="SetDead"/>.
+        /// </remarks>
         internal bool SetMemberStatus(CharacterID character, PartyMemberStatus status)
         {
-            if (!_statusOf.TryGetValue(character, out PartyMemberStatus current) || current == status)
+            MemberFlags flags;
+            switch (status)
+            {
+                case PartyMemberStatus.Ghost:
+                    flags = MemberFlags.Ghost;
+                    break;
+                case PartyMemberStatus.OutOfZone:
+                    flags = MemberFlags.OutOfZone;
+                    break;
+                case PartyMemberStatus.Dead:
+                    flags = MemberFlags.Dead;
+                    break;
+                default:
+                    flags = MemberFlags.None;
+                    break;
+            }
+
+            return ApplyFlags(character, flags);
+        }
+
+        /// <summary>Sets or clears a member's ghost flag (disconnected past the grace). Story 009.</summary>
+        /// <param name="character">The character.</param>
+        /// <param name="ghost">The new flag value.</param>
+        /// <returns>True when the derived status changed.</returns>
+        internal bool SetGhost(CharacterID character, bool ghost)
+        {
+            return SetFlag(character, MemberFlags.Ghost, ghost);
+        }
+
+        /// <summary>Sets or clears a member's out-of-zone flag. Story 009.</summary>
+        /// <param name="character">The character.</param>
+        /// <param name="outOfZone">The new flag value.</param>
+        /// <returns>True when the derived status changed.</returns>
+        internal bool SetOutOfZone(CharacterID character, bool outOfZone)
+        {
+            return SetFlag(character, MemberFlags.OutOfZone, outOfZone);
+        }
+
+        /// <summary>Sets or clears a member's dead flag (Death and Respawn). Story 009.</summary>
+        /// <param name="character">The character.</param>
+        /// <param name="dead">The new flag value.</param>
+        /// <returns>True when the derived status changed.</returns>
+        internal bool SetDead(CharacterID character, bool dead)
+        {
+            return SetFlag(character, MemberFlags.Dead, dead);
+        }
+
+        private bool SetFlag(CharacterID character, MemberFlags flag, bool on)
+        {
+            if (!_flagsOf.TryGetValue(character, out MemberFlags current))
             {
                 return false;
             }
 
-            _statusOf[character] = status;
+            return ApplyFlags(character, on ? current | flag : current & ~flag);
+        }
+
+        /// <summary>Stores the flags, re-derives the status and marks the party changed only when it differs.</summary>
+        private bool ApplyFlags(CharacterID character, MemberFlags flags)
+        {
+            if (!_flagsOf.ContainsKey(character))
+            {
+                return false;
+            }
+
+            _flagsOf[character] = flags;
+            PartyMemberStatus derived = Derive(flags);
+            if (_statusOf[character] == derived)
+            {
+                return false;
+            }
+
+            _statusOf[character] = derived;
             if (_partyOf.TryGetValue(character, out PartyID partyId)
                 && _parties.TryGetValue(partyId, out PartyState party))
             {
@@ -481,6 +569,21 @@ namespace IronGrind.ServerLogic.PartySystem
             }
 
             return true;
+        }
+
+        private static PartyMemberStatus Derive(MemberFlags flags)
+        {
+            if ((flags & MemberFlags.Ghost) != 0)
+            {
+                return PartyMemberStatus.Ghost;
+            }
+
+            if ((flags & MemberFlags.OutOfZone) != 0)
+            {
+                return PartyMemberStatus.OutOfZone;
+            }
+
+            return (flags & MemberFlags.Dead) != 0 ? PartyMemberStatus.Dead : PartyMemberStatus.Online;
         }
 
         /// <summary>The configured maximum party size (MAX_PARTY_SIZE).</summary>
@@ -722,6 +825,20 @@ namespace IronGrind.ServerLogic.PartySystem
         private PartyID AllocateId()
         {
             return new PartyID(_nextPartyId++);
+        }
+
+        /// <summary>
+        /// Clears the Ghost and OutOfZone flags of a member that became solo (no longer polled for presence); Dead stays.
+        /// Called by the membership step after a leave or disband, not on every re-solo (Story 004 pins that a bare registry re-solo keeps the status). No sequence bump: callers request the solo update.
+        /// </summary>
+        internal void ClearPresenceFlags(CharacterID character)
+        {
+            if (_flagsOf.TryGetValue(character, out MemberFlags flags))
+            {
+                flags &= MemberFlags.Dead;
+                _flagsOf[character] = flags;
+                _statusOf[character] = Derive(flags);
+            }
         }
 
         private PartyID CreateSolo(CharacterID character)

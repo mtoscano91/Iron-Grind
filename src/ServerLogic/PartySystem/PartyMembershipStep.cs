@@ -164,13 +164,26 @@ namespace IronGrind.ServerLogic.PartySystem
                 return;
             }
 
+            _registry.ClearPresenceFlags(character);
             _broadcast.RequestSoloUpdate(character);
             if (party.MemberCount != 1)
             {
                 return;
             }
 
-            CharacterID remaining = party.GetMemberAtIndex(0);
+            FinishAutoDisband(partyId, party.GetMemberAtIndex(0), wasDisbanding);
+        }
+
+        /// <summary>
+        /// The "one member left" tail shared by <c>ApplyLeave</c> and the slot release listener (Story 009): sends
+        /// <c>PartyDisbanded</c> to the remaining member when connected (unless the party was already Disbanding),
+        /// disbands the party and requests the remaining member's solo update.
+        /// </summary>
+        /// <param name="partyId">The party that is down to one member.</param>
+        /// <param name="remaining">The remaining member.</param>
+        /// <param name="wasDisbanding">True when the party was Disbanding (the first notice already went out).</param>
+        internal void FinishAutoDisband(PartyID partyId, CharacterID remaining, bool wasDisbanding)
+        {
             if (!wasDisbanding)
             {
                 SendDisbandedIfConnected(remaining, partyId);
@@ -178,6 +191,7 @@ namespace IronGrind.ServerLogic.PartySystem
 
             if (_registry.DisbandParty(partyId) == PartyRegistryResult.Ok)
             {
+                _registry.ClearPresenceFlags(remaining);
                 _broadcast.RequestSoloUpdate(remaining);
             }
             else
@@ -245,6 +259,7 @@ namespace IronGrind.ServerLogic.PartySystem
 
             for (int i = 0; i < count; i++)
             {
+                _registry.ClearPresenceFlags(members[i]);
                 _broadcast.RequestSoloUpdate(members[i]);
             }
         }

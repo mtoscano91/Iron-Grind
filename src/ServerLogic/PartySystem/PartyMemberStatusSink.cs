@@ -26,22 +26,23 @@ namespace IronGrind.ServerLogic.PartySystem
         /// <inheritdoc/>
         public void SetMemberStatus(EntityID entity, PartyMemberDeathStatus status)
         {
-            PartyMemberStatus mapped;
+            bool dead;
             switch (status)
             {
                 case PartyMemberDeathStatus.Dead:
-                    mapped = PartyMemberStatus.Dead;
+                    dead = true;
                     break;
                 case PartyMemberDeathStatus.Online:
-                    mapped = PartyMemberStatus.Online;
+                    dead = false;
                     break;
                 default:
                     return;
             }
 
+            // Story 009 (D4): writes only the dead flag; a Ghost or OutOfZone member keeps that status.
             if (_registry.TryGetCharacter(entity, out CharacterID character))
             {
-                _registry.SetMemberStatus(character, mapped);
+                _registry.SetDead(character, dead);
             }
         }
     }

@@ -67,6 +67,7 @@ namespace IronGrind.ServerLogic.PartySystem
         private readonly Dictionary<CharacterID, RecipientInvites> _pending;
         private readonly Stack<RecipientInvites> _pool;
         private readonly List<CharacterID> _scratch;
+        private uint _lastTick;
 
         /// <summary>Creates the service.</summary>
         /// <param name="sink">Outbound messages.</param>
@@ -121,12 +122,93 @@ namespace IronGrind.ServerLogic.PartySystem
             return _pending.ContainsKey(target);
         }
 
+        /// <summary>
+        /// Removes every pending or queued invite where <paramref name="character"/> is the target or the inviter
+        /// (Story 009 AC-7: the player became Ghost or its slot was released). A connected inviter whose target
+        /// vanished gets one <c>Expired</c> naming the target; a target whose inviter vanished is told nothing.
+        /// </summary>
+        /// <remarks>
+        /// Queue choice: when a vanished inviter's pending entry is removed and the target has queued invites, the
+        /// existing promotion logic runs (the next queued invite that still validates is delivered). Its timers use
+        /// the latest tick this service saw (<c>HandleInvite</c>, <c>HandleResponse</c> or <c>Tick</c>). When the
+        /// target vanished, the pending inviter and every queued inviter get the <c>Expired</c> notice.
+        /// Call it while the character is still registered or after; no allocation in steady state.
+        /// </remarks>
+        /// <param name="character">The character that vanished.</param>
+        public void CancelFor(CharacterID character)
+        {
+            if (_pending.Count == 0)
+            {
+                return;
+            }
+
+            if (_pending.TryGetValue(character, out RecipientInvites own))
+            {
+                NotifyExpired(own.Inviter, character);
+                for (int i = 0; i < own.QueueCount; i++)
+                {
+                    NotifyExpired(own.Queue[i], character);
+                }
+
+                Array.Clear(own.Queue, 0, own.Queue.Length);
+                own.QueueCount = 0;
+                own.Inviter = CharacterID.Invalid;
+                _pending.Remove(character);
+                _pool.Push(own);
+            }
+
+            _scratch.Clear();
+            foreach (KeyValuePair<CharacterID, RecipientInvites> pair in _pending)
+            {
+                _scratch.Add(pair.Key);
+            }
+
+            for (int i = 0; i < _scratch.Count; i++)
+            {
+                CharacterID target = _scratch[i];
+                RecipientInvites entry = _pending[target];
+                RemoveFromQueue(entry, character);
+                if (entry.Inviter == character)
+                {
+                    Resolve(target, entry, _lastTick);
+                }
+            }
+        }
+
+        private void NotifyExpired(CharacterID inviter, CharacterID target)
+        {
+            if (inviter != target && _registry.IsRegistered(inviter) && _registry.IsMemberConnected(inviter))
+            {
+                _sink.SendInviteResult(inviter, PartyInviteResultCode.Expired, target);
+            }
+        }
+
+        private static void RemoveFromQueue(RecipientInvites entry, CharacterID character)
+        {
+            int write = 0;
+            for (int read = 0; read < entry.QueueCount; read++)
+            {
+                if (entry.Queue[read] != character)
+                {
+                    entry.Queue[write++] = entry.Queue[read];
+                }
+            }
+
+            for (int i = write; i < entry.QueueCount; i++)
+            {
+                entry.Queue[i] = CharacterID.Invalid;
+            }
+
+            entry.QueueCount = write;
+        }
+
         /// <summary>Handles a <c>PartyInviteRequest</c> from <paramref name="senderEntity"/> (AC-1, AC-2, AC-6, AC-7).</summary>
         /// <param name="senderEntity">The envelope's sender entity.</param>
         /// <param name="target">The invited character.</param>
         /// <param name="currentTick">The dispatch tick.</param>
         public void HandleInvite(EntityID senderEntity, CharacterID target, uint currentTick)
         {
+            _lastTick = currentTick;
             if (!_registry.TryGetCharacter(senderEntity, out CharacterID sender))
             {
                 return;
@@ -186,6 +268,7 @@ namespace IronGrind.ServerLogic.PartySystem
         /// <param name="currentTick">The dispatch tick.</param>
         public void HandleResponse(EntityID responderEntity, CharacterID inviter, bool accepted, uint currentTick)
         {
+            _lastTick = currentTick;
             if (!_registry.TryGetCharacter(responderEntity, out CharacterID target)
                 || !_pending.TryGetValue(target, out RecipientInvites entry)
                 || entry.Inviter != inviter)
@@ -232,6 +315,7 @@ namespace IronGrind.ServerLogic.PartySystem
         /// <param name="currentTick">The current server tick.</param>
         public void Tick(uint currentTick)
         {
+            _lastTick = currentTick;
             if (_pending.Count == 0)
             {
                 return;

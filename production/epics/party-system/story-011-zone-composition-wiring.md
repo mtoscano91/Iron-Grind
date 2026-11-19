@@ -30,7 +30,7 @@
 - [ ] **AC-1 Built per zone**: the composed zone builds the party registry / service (config from `PartySystemConfigOverride` ?? defaults) and exposes it internally for tests; nothing is built twice; disposed at teardown.
 - [ ] **AC-2 Seams bound**: the party service replaces `NoPartyZonePresence` (zone entry / reclamation / close steps and `ZoneSkillCastPartySource`), `NoOpPartyMemberStatusSink` (Death & Respawn), the XP sinks of Auto-Attack Combat and the Skill System (Story 005 distributor), and is the `IPartyService` handed to loot wherever loot takes one.
 - [ ] **AC-3 Requests and steps**: `PartyInviteRequest`, `PartyInviteResponse`, `PartyLeaveRequest`, `PartyDisbandRequest` are registered with the dispatcher; the invite timer / disband timeout step and the state broadcast and health stream are in the phase list at documented positions (order recorded in the story at readiness).
-- [ ] **AC-4 Listeners**: entry, slot release and session ghost / reconnect listeners from Story 009 are composed with the existing composites (release composite keeps Combat last).
+- [ ] **AC-4 Listeners**: entry and slot release listeners and the presence poll step from Story 009 are composed with the existing composites (release composite keeps Combat last).
 - [ ] **AC-5 No drop bonus**: a structural / behavioural check that the loot path's drop parameters carry no party-size modifier (`PartyBonus` = 1.0 or no such field) (AC-PS-16).
 - [ ] **AC-6 Existing tests**: existing composition tests still pass (any that pinned `NoPartyZonePresence` / `NoOpPartyMemberStatusSink` are updated with a note).
 
@@ -42,6 +42,7 @@
 - Check how loot is composed today (`StandInLootTableService`): if it takes no `IPartyService`, AC-5 is structural and the real-loot binding stays moved out (epic).
 - **From Story 003 readiness (2026-11-19):** `PartyRegistry` itself implements `IPartyService` (no separate `PartyService`). Story 003 adds the seam `IPartyXpIneligibleNoticeSink.Notify(CharacterID, PartyID)` with a no-op default; this story writes and binds the production adapter: encode `PartyXpIneligibleNotice` (0xE178, 4-byte body `partyId`), resolve the character's client id, `IClientMessageOutbox.Enqueue` (owning client). Add it to the ACs at this story's readiness.
 - **From Story 005 readiness (2026-11-19, G3):** the XP sink binding wraps the existing `CharacterStatsExperienceSink` with `PartyExperienceDistributor` (one instance, passed to both combat systems). Place Story 008's party membership step (queued leave / disband) after phase 3 so a same-tick kill awards before the removal, and record the position as an ADR-014 note.
+- **From Story 009 readiness (2026-11-19):** there are no session ghost / reconnect listeners; Story 009 polls the session machine (`PartyPresenceStep.Poll`, `IPartySessionStateSource` over `ConnectionStateMachine`). Compose `PartyPlayerEntryListener` into `CompositeZonePlayerEntryListener`, `PartySlotReleaseListener` into `CompositeZoneSlotReleaseListener` (Combat still last), `PartyZonePresence` as `ZoneInstancingWiring.Party` and in `ZoneSkillCastPartySource` (replacing both `NoPartyZonePresence`s), and `PartyMemberStatusSink` for Death & Respawn. Party step order: invite `Tick` → dispatch → simulation → `ApplyQueued` → `Poll` → `Flush`.
 
 ---
 

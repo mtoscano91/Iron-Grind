@@ -2,7 +2,7 @@
 
 > **Status**: Approved (lean re-review 2026-05-17) — amended 2026-05-29 (MemberStatus.Dead added for Death & Respawn integration); amended 2026-06-19 (PartyMemberSlot data type + GetPartyMembersWithStatus added for Party Chat)
 > **Author**: Manuel Toscano + agents
-> **Last Updated**: 2026-11-19 (Party System Story 006: `PartyMemberStatusChanged` has no wire schema — status rides in `PartyStateUpdate`; AC-PS-26 "zero `PartyMemberStatusChanged`" = no `PartyStateUpdate` showing that member Ghost); 2026-11-19 (Party System Story 004: "Disconnected" = Ghost note under CR-PS-5); 2026-11-18 (Party System Story 001 readiness: F-PS-1 midpoint example corrected to banker's rounding + float result 4; `MAX_PARTY_SIZE` safe range [2, 4] because the wire schema is fixed at 4 slots)
+> **Last Updated**: 2026-11-19 (Party System Story 009: AC-PS-21 leader transfer measured from the Ghost transition, after the CR-PS-11 grace); 2026-11-19 (Party System Story 006: `PartyMemberStatusChanged` has no wire schema — status rides in `PartyStateUpdate`; AC-PS-26 "zero `PartyMemberStatusChanged`" = no `PartyStateUpdate` showing that member Ghost); 2026-11-19 (Party System Story 004: "Disconnected" = Ghost note under CR-PS-5); 2026-11-18 (Party System Story 001 readiness: F-PS-1 midpoint example corrected to banker's rounding + float result 4; `MAX_PARTY_SIZE` safe range [2, 4] because the wire schema is fixed at 4 slots)
 > **Implements Pillar**: Social Gravity (primary) — Earned Power (supporting)
 
 ## Overview
@@ -353,6 +353,7 @@ AC-PS-20: GIVEN a party of 4 with rrNextIndex = 3, WHEN the member at index 3 le
 **Leader / membership:**
 
 AC-PS-21: GIVEN the party leader disconnects, WHEN measured within 1 server tick, THEN leadership transfers to the lowest non-empty non-Ghost array index and all party members receive a PartyStateUpdate reflecting the new leader.
+*(Note 2026-11-19, Party System Story 009 readiness: CR-PS-11 suppresses the Ghost state during the reconnect grace, so "disconnects" here means "becomes Ghost" — leadership transfers within 1 server tick of the grace ending. A reconnect within the grace keeps the leader.)*
 
 AC-PS-22: GIVEN leadership transferred after the original leader disconnected, WHEN the original leader reconnects, THEN they do NOT automatically regain leadership — the current leader is unchanged.
 
