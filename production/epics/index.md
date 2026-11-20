@@ -1,6 +1,6 @@
 # Epics Index
 
-Last Updated: 2026-11-19
+Last Updated: 2026-11-20
 Engine: Unity 6.3 LTS (6000.3)
 Control Manifest Version: 2026-11-06
 
@@ -30,7 +30,7 @@ Control Manifest Version: 2026-11-06
 | [Mob Spawning](mob-spawning/EPIC.md) | Feature | Mob Spawning | design/gdd/mob-spawning.md | 8 stories (001-008 written 2026-11-16): 8 Complete | Complete (2026-11-17) |
 | [Death & Respawn](death-and-respawn/EPIC.md) | Feature | Death & Respawn | design/gdd/death-and-respawn.md | 10 stories (001-009 written 2026-11-17, 010 added 2026-11-18), 10 Complete | Complete (2026-11-18) — server only; party ACs to the Party System epic (seam here), client visuals to presentation |
 | [Party System](party-system/EPIC.md) | Feature | Party System | design/gdd/party-system.md | 12 stories (written 2026-11-18), 12 Complete | Complete (2026-11-19) — server only, zone-local parties at MVP (ADR-010 note 2026-11-18); party UI to presentation; Party Chat later |
-| [NPC Shop](npc-shop/EPIC.md) | Feature | NPC Shop | design/gdd/npc-shop.md | 10 stories (written 2026-11-19), 0 Complete | Ready (2026-11-19) — server only; town hub is a zone data flag (D1); no `PendingSell` (ADR-001 note); shop UI to presentation |
+| [NPC Shop](npc-shop/EPIC.md) | Feature | NPC Shop | design/gdd/npc-shop.md | 10 stories (written 2026-11-19), 1 Complete | In Progress (2026-11-20) — server only; town hub is a zone data flag (D1); no `PendingSell` (ADR-001 note); shop UI to presentation |
 
 ## Notes
 

@@ -3,7 +3,7 @@
 > **Layer**: Feature
 > **GDD**: design/gdd/npc-shop.md
 > **Architecture Module**: NPC Shop (`architecture.md` layer map, Feature), `src/ServerLogic/` (ADR-012)
-> **Status**: Ready
+> **Status**: In Progress
 > **Stories**: 10 created 2026-11-19 — see Stories
 > **Manifest Version**: 2026-11-06
 
@@ -93,7 +93,7 @@ Created 2026-11-19 (lean: QL-STORY-READY skipped; QA test cases written at creat
 
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
-| 001 | [Shop catalog and startup validation](story-001-shop-catalog-and-startup-validation.md) | Logic | Ready | ADR-001, ADR-012 |
+| 001 | [Shop catalog and startup validation](story-001-shop-catalog-and-startup-validation.md) | Logic | Complete (2026-11-20) | ADR-001, ADR-012 |
 | 002 | [Town hub flag and shop session](story-002-town-hub-flag-and-shop-session.md) | Integration | Ready | ADR-014 |
 | 003 | [Shop wire messages](story-003-shop-wire-messages.md) | Logic | Ready | ADR-014, ADR-001 A1 |
 | 004 | [Repeat-request cache and rate limit](story-004-request-dedup-and-rate-limit.md) | Logic | Ready | ADR-001 |
@@ -106,4 +106,4 @@ Created 2026-11-19 (lean: QL-STORY-READY skipped; QA test cases written at creat
 
 ## Next Step
 
-Run `/story-readiness production/epics/npc-shop/story-001-shop-catalog-and-startup-validation.md`, then `/dev-story`.
+Story 001 Complete (2026-11-20). Next: `/story-readiness production/epics/npc-shop/story-003-shop-wire-messages.md` (suggested order 001 → 003 → 002 → …).

@@ -1,0 +1,38 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7c3e91a5d2b44f08a6e1b95d03f7c248, type: 3}
+  m_Name: NpcShopCatalog
+  m_EditorClassIdentifier: IronGrind.ServerLogic::IronGrind.ServerLogic.NpcShop.NpcShopCatalog
+  _entries:
+  - _itemId: 35
+    _buyPrice: 90
+  - _itemId: 36
+    _buyPrice: 150
+  - _itemId: 37
+    _buyPrice: 230
+  - _itemId: 38
+    _buyPrice: 350
+  - _itemId: 29
+    _buyPrice: 3
+  - _itemId: 30
+    _buyPrice: 10
+  - _itemId: 31
+    _buyPrice: 30
+  - _itemId: 32
+    _buyPrice: 3
+  - _itemId: 33
+    _buyPrice: 10
+  - _itemId: 34
+    _buyPrice: 30
+  _quantityCap: 99
+  _ratioNumerator: 15
+  _ratioDenominator: 10
